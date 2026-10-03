@@ -132,7 +132,7 @@ impl KiwiStream {
     fn message(&self, frame: &[u8]) -> Next<Block> {
         for field in fields(frame) {
             if let Field::Refused(refusal) = field {
-                return self.end(refusal.reason());
+                return self.end(refusal.kick_reason());
             }
         }
         Next::Idle

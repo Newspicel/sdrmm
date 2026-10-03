@@ -20,13 +20,17 @@ workspace = true
 sdrmm-server.workspace = true
 xtask-release.workspace = true
 sdrmm-recorder.workspace = true
+sdrmm-device.workspace = true
 sdrmm-device-virtual.workspace = true
+sdrmm-device-kiwisdr.workspace = true
+sdrmm-device-spyserver.workspace = true
 sdrmm-channels = { workspace = true, features = ["fixtures"] }
 # The APRS fixture is keyed by the real modulator, which is configured with wire types.
 sdrmm-wire.workspace = true
 sdrmm-modem-test-support.workspace = true
 sdrmm-dsp.workspace = true
 num-complex.workspace = true
+png.workspace = true
 rustfft.workspace = true
 notify.workspace = true
 clap.workspace = true

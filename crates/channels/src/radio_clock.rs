@@ -11,6 +11,10 @@ use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, 
 
 const RATE: f64 = 2_000.0;
 const CHANNEL_TAPS: usize = 257;
+const SECOND: u32 = RATE as u32;
+const BEAT_SLIP: u32 = SECOND / 20;
+const DEBOUNCE: u32 = SECOND / 50;
+const THRESHOLD: f32 = 0.25;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "radio_clock".to_owned(),
@@ -38,9 +42,12 @@ pub struct RadioClockChannel {
     low: f32,
     high: f32,
     last_active: bool,
+    held: bool,
+    disagreeing: u32,
     since_boundary: u32,
     have_boundary: bool,
-    active_samples: u32,
+    pulse_open: bool,
+    pulse_samples: u32,
     bins: [u32; 10],
     decoder: Decoder,
 }
@@ -80,9 +87,12 @@ impl ChannelRx for RadioClockChannel {
             low: f32::INFINITY,
             high: 0.0,
             last_active: false,
+            held: false,
+            disagreeing: 0,
             since_boundary: 0,
             have_boundary: false,
-            active_samples: 0,
+            pulse_open: false,
+            pulse_samples: 0,
             bins: [0; 10],
             decoder: Decoder::new(p.standard),
         })
@@ -114,11 +124,46 @@ impl RadioClockChannel {
         self.low = f32::INFINITY;
         self.high = 0.0;
         self.last_active = false;
+        self.held = false;
+        self.disagreeing = 0;
         self.since_boundary = 0;
         self.have_boundary = false;
-        self.active_samples = 0;
+        self.pulse_open = false;
+        self.pulse_samples = 0;
         self.bins = [0; 10];
         self.decoder = Decoder::new(self.standard);
+    }
+
+    fn on_beat(&self) -> bool {
+        let since = self.since_boundary;
+        since.abs_diff(SECOND) <= BEAT_SLIP || since.abs_diff(2 * SECOND) <= BEAT_SLIP
+    }
+
+    fn lose_sync(&mut self) {
+        self.have_boundary = false;
+        self.pulse_open = false;
+        self.decoder = Decoder::new(self.standard);
+    }
+
+    fn debounce(&mut self, raw: bool) -> bool {
+        if raw == self.held {
+            self.disagreeing = 0;
+        } else {
+            self.disagreeing += 1;
+            if self.disagreeing >= DEBOUNCE {
+                self.held = raw;
+                self.disagreeing = 0;
+            }
+        }
+        self.held
+    }
+
+    fn track_pulse(&mut self, active: bool) {
+        if self.pulse_open && active {
+            self.pulse_samples = self.since_boundary + 1;
+        } else {
+            self.pulse_open = false;
+        }
     }
 
     fn push(&mut self, magnitude: f32, out: &mut ChannelOutputs) {
@@ -135,24 +180,27 @@ impl RadioClockChannel {
         } else {
             self.high + (magnitude - self.high) * 0.000_001
         };
-        let threshold = self.low + (self.high - self.low) * 0.5;
+        let threshold = self.low + (self.high - self.low) * THRESHOLD;
         let normally_active = match self.standard {
             RadioClockStandard::Jjy => magnitude > threshold,
             _ => magnitude < threshold,
         };
-        let active = normally_active ^ self.invert;
+        let active = self.debounce(normally_active ^ self.invert);
 
         if self.have_boundary {
             let bin = ((self.since_boundary as usize) / 200).min(9);
             if active {
-                self.active_samples = self.active_samples.saturating_add(1);
                 self.bins[bin] = self.bins[bin].saturating_add(1);
             }
+            self.track_pulse(active);
             self.since_boundary = self.since_boundary.saturating_add(1);
+            if self.since_boundary > 2 * SECOND + BEAT_SLIP {
+                self.lose_sync();
+            }
         }
 
         let new_pulse = active && !self.last_active;
-        if new_pulse && (!self.have_boundary || self.since_boundary > 1_400) {
+        if new_pulse && (!self.have_boundary || self.on_beat()) {
             self.boundary(out);
         }
         self.last_active = active;
@@ -161,7 +209,7 @@ impl RadioClockChannel {
     fn boundary(&mut self, out: &mut ChannelOutputs) {
         if self.have_boundary {
             let spacing_ms = self.since_boundary as f32 * 1_000.0 / RATE as f32;
-            let active_ms = self.active_samples as f32 * 1_000.0 / RATE as f32;
+            let active_ms = self.pulse_samples as f32 * 1_000.0 / RATE as f32;
             let half_bin = (RATE / 20.0) as u32;
             let second = Second {
                 spacing_ms,
@@ -175,7 +223,8 @@ impl RadioClockChannel {
         }
         self.have_boundary = true;
         self.since_boundary = 0;
-        self.active_samples = 0;
+        self.pulse_open = true;
+        self.pulse_samples = 0;
         self.bins = [0; 10];
     }
 }
@@ -902,8 +951,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn synthesized_iq_minute_reaches_the_typed_output() {
+    fn golden_dcf77_minute() -> Vec<Symbol> {
         let mut bits = vec![Symbol::Zero; 60];
         bits[18] = Symbol::One;
         bits[20] = Symbol::One;
@@ -953,23 +1001,36 @@ mod tests {
         even_parity(&mut bits, 29..=34, 35);
         even_parity(&mut bits, 36..=57, 58);
         bits[59] = Symbol::Marker;
+        bits
+    }
 
+    fn dcf77_iq(bits: &[Symbol], fades: &[(usize, usize)]) -> Vec<Complex<f32>> {
         let mut iq = Vec::with_capacity(121_000);
         iq.extend((0..2_000).map(|_| Complex::new(1.0, 0.0)));
         for _ in 0..2 {
-            for symbol in &bits {
+            for symbol in bits {
                 let low = match symbol {
                     Symbol::Zero => 200,
                     Symbol::One => 400,
                     Symbol::Marker | Symbol::Invalid => 0,
                 };
-                iq.extend((0..2_000).map(|n| Complex::new(if n < low { 0.1 } else { 1.0 }, 0.0)));
+                iq.extend((0..2_000).map(|n| {
+                    let faded = fades.iter().any(|&(at, len)| (at..at + len).contains(&n));
+                    Complex::new(if n < low || faded { 0.1 } else { 1.0 }, 0.0)
+                }));
             }
         }
+        iq
+    }
+
+    fn decode(standard: RadioClockStandard, iq: &[Complex<f32>]) -> Vec<RadioClockFrame> {
         let settings = ChannelSettings {
             frequency_hz: 0.0,
             squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::RadioClock(RadioClockParams::default()),
+            params: ChannelParams::RadioClock(RadioClockParams {
+                standard,
+                invert: false,
+            }),
             blanker: Default::default(),
         };
         let mut channel = RadioClockChannel::new(ChannelCtx { input_rate: RATE }, settings)
@@ -978,8 +1039,68 @@ mod tests {
         for chunk in iq.chunks(997) {
             channel.process(chunk, &mut output);
         }
-        assert!(output.events.iter().any(|event| {
-            matches!(event, DecoderEvent::RadioClock(frame) if frame.datetime == "2026-08-15T12:34:00+01:00")
-        }));
+        output
+            .events
+            .into_iter()
+            .filter_map(|event| match event {
+                DecoderEvent::RadioClock(frame) => Some(frame),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn off_air(bytes: &[u8]) -> Vec<Complex<f32>> {
+        let mut filtered = Vec::new();
+        channel_filter().process(&crate::testutil::cf32_le(bytes), &mut filtered);
+        filtered
+    }
+
+    #[test]
+    fn synthesized_iq_minute_reaches_the_typed_output() {
+        let frames = decode(
+            RadioClockStandard::Dcf77,
+            &dcf77_iq(&golden_dcf77_minute(), &[]),
+        );
+        assert!(
+            frames
+                .iter()
+                .any(|frame| frame.datetime == "2026-08-15T12:34:00+01:00")
+        );
+    }
+
+    #[test]
+    fn fades_between_pulses_do_not_split_seconds() {
+        let fades = [(250, 15), (700, 30), (1_300, 25), (1_950, 20)];
+        let frames = decode(
+            RadioClockStandard::Dcf77,
+            &dcf77_iq(&golden_dcf77_minute(), &fades),
+        );
+        assert!(
+            frames
+                .iter()
+                .any(|frame| frame.datetime == "2026-08-15T12:34:00+01:00"),
+            "{frames:?}"
+        );
+    }
+
+    #[test]
+    fn dcf77_off_air_with_agc_decodes() {
+        let iq = off_air(include_bytes!(
+            "../../../fixtures/radio_clock_dcf77_offair_2k.sigmf-data"
+        ));
+        let frames = decode(RadioClockStandard::Dcf77, &iq);
+        assert_eq!(frames.len(), 1, "{frames:?}");
+        assert_eq!(frames[0].datetime, "2026-10-03T22:04:00+02:00");
+        assert!(frames[0].dst);
+    }
+
+    #[test]
+    fn jjy_off_air_decodes() {
+        let iq = off_air(include_bytes!(
+            "../../../fixtures/radio_clock_jjy_offair_2k.sigmf-data"
+        ));
+        let frames = decode(RadioClockStandard::Jjy, &iq);
+        assert_eq!(frames.len(), 1, "{frames:?}");
+        assert_eq!(frames[0].datetime, "2026-10-04T05:16:00+09:00");
     }
 }

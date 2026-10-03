@@ -344,7 +344,7 @@ impl FlexChannel {
     }
 
     fn symbol(&mut self, tone: usize, out: &mut ChannelOutputs) {
-        let bit = tone < TONES / 2;
+        let bit = tone >= TONES / 2;
         let mut next = None;
         match &mut self.state {
             State::Search => {}
@@ -429,11 +429,11 @@ impl FlexChannel {
 }
 
 fn flex_bits(tone: usize, levels: u8) -> [bool; 2] {
-    let negative = tone < TONES / 2;
+    let positive = tone >= TONES / 2;
     if levels == 2 {
-        return [negative, false];
+        return [positive, false];
     }
-    [negative, tone == 1 || tone == 2]
+    [positive, tone == 1 || tone == 2]
 }
 
 fn deinterleave(bits: &[bool]) -> Option<[u32; WORDS]> {
@@ -651,6 +651,40 @@ impl ChannelRx for FlexChannel {
 mod tests {
     use super::*;
     use crate::{synth, testutil::settings};
+
+    #[test]
+    fn decodes_a_p2000_page_off_air() {
+        let iq = crate::testutil::cf32_le(include_bytes!(
+            "../../../fixtures/flex_p2000_offair_48k.sigmf-data"
+        ));
+        let params = FlexParams::default();
+        let mut filtered = Vec::new();
+        channel_filter(&params).unwrap().process(&iq, &mut filtered);
+        let mut channel = FlexChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::Flex(params)),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        for chunk in filtered.chunks(997) {
+            channel.process(chunk, &mut out);
+        }
+        let messages = out
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Flex(message) => Some(message),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].address, 2_029_574);
+        assert_eq!(
+            messages[0].text,
+            "A2 DP2 Leidschendam-Voorburg Via Donizetti VOORB VWS 15123"
+        );
+        assert_eq!((messages[0].cycle, messages[0].frame), (0, 72));
+    }
 
     #[test]
     fn decodes_all_flex_modes_from_recorded_iq_in_ragged_blocks() {

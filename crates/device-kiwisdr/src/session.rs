@@ -90,7 +90,7 @@ pub(crate) fn refused(refusal: &Refusal) -> DeviceError {
     let reason = refusal.reason();
     match refusal {
         Refusal::Busy(_) | Refusal::Password(5) => DeviceError::InUse(reason),
-        Refusal::Password(_) => DeviceError::PermissionDenied(reason),
+        Refusal::Password(_) | Refusal::AppsDenied => DeviceError::PermissionDenied(reason),
         _ => DeviceError::Disconnected(reason),
     }
 }

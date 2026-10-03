@@ -10,6 +10,7 @@ const PROTECT_FRAC: f64 = 0.5;
 pub const STOPBAND_DB: f64 = 100.0;
 const CHUNK: usize = 2048;
 const CUBIC_SPAN: f64 = 4.0;
+const MIN_FILTERED_UPSAMPLING: f64 = 2.0;
 
 #[must_use]
 pub fn flat_bandwidth_hz(output_rate: f64) -> f64 {
@@ -25,29 +26,29 @@ pub enum DdcError {
 #[derive(Clone, Debug)]
 enum Fraction {
     None,
-    Down(Box<FracResampler>),
-    Up(CubicInterpolator),
+    Resample(Box<FracResampler>),
+    Interpolate(CubicInterpolator),
 }
 
 impl Fraction {
     fn for_ratio(ratio: f64, keep: Option<f64>) -> Self {
         if (ratio - 1.0).abs() <= 1e-12 {
             Self::None
-        } else if ratio < 1.0 {
-            Self::Down(Box::new(keep.map_or_else(
+        } else if (1.0..MIN_FILTERED_UPSAMPLING).contains(&ratio) {
+            Self::Interpolate(CubicInterpolator::new(ratio))
+        } else {
+            Self::Resample(Box::new(keep.map_or_else(
                 || FracResampler::new(ratio),
                 |keep| FracResampler::keeping(ratio, keep),
             )))
-        } else {
-            Self::Up(CubicInterpolator::new(ratio))
         }
     }
 
     fn reset(&mut self) {
         match self {
             Self::None => {}
-            Self::Down(r) => r.reset(),
-            Self::Up(r) => r.reset(),
+            Self::Resample(r) => r.reset(),
+            Self::Interpolate(r) => r.reset(),
         }
     }
 
@@ -57,8 +58,8 @@ impl Fraction {
                 out.clear();
                 out.extend_from_slice(input);
             }
-            Self::Down(r) => r.process(input, out),
-            Self::Up(r) => r.process(input, out),
+            Self::Resample(r) => r.process(input, out),
+            Self::Interpolate(r) => r.process(input, out),
         }
     }
 }
@@ -123,10 +124,10 @@ impl Ddc {
             }
         }
         let ratio = output_rate / rate;
-        if ratio < 1.0 - 1e-12 {
-            span += crate::resamp::taps_per_phase(ratio) as f64 * input_rate / rate;
-        } else if ratio > 1.0 + 1e-12 {
+        if (1.0 + 1e-12..MIN_FILTERED_UPSAMPLING).contains(&ratio) {
             span += CUBIC_SPAN * input_rate / rate;
+        } else if (ratio - 1.0).abs() > 1e-12 {
+            span += crate::resamp::taps_per_phase(ratio) as f64 * input_rate / rate;
         }
         Ok(Self {
             settling: (span * output_rate / input_rate).ceil() as usize,
@@ -411,6 +412,31 @@ mod tests {
                 ),
                 "{input}→{output}"
             );
+        }
+    }
+
+    #[test]
+    fn upsampling_leaves_no_image_of_a_tone_near_the_input_edge() {
+        let (fs_in, fs_out) = (12_000.0f64, 48_000.0f64);
+        let tone_hz = 0.4 * fs_in;
+        let mut ddc = Ddc::new(fs_in, fs_out, 0.0).unwrap();
+        let collected = run(&mut ddc, &tone_at_rate(tone_hz, fs_in, 24_000));
+        let settled = &collected[4_096..];
+        let level = |hz: f64| {
+            let sum: Complex<f64> = settled
+                .iter()
+                .enumerate()
+                .map(|(n, s)| {
+                    let phase = -std::f64::consts::TAU * hz * n as f64 / fs_out;
+                    Complex::new(f64::from(s.re), f64::from(s.im)) * Complex::from_polar(1.0, phase)
+                })
+                .sum();
+            20.0 * (sum.norm() / settled.len() as f64).log10()
+        };
+        let tone = level(tone_hz);
+        for image in [tone_hz - fs_in, tone_hz + fs_in] {
+            let below = tone - level(image);
+            assert!(below > 60.0, "image at {image} Hz only {below:.1} dB down");
         }
     }
 

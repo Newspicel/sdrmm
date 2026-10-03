@@ -13,6 +13,7 @@ const LITTLE_ENDIAN: u8 = 0x80;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Refusal {
     Busy(u32),
+    AppsDenied,
     Password(u32),
     Down,
     Redirect(String),
@@ -24,7 +25,10 @@ pub(crate) enum Refusal {
 impl Refusal {
     fn of(key: &str, value: &str) -> Option<Self> {
         match key {
-            "too_busy" => Some(Self::Busy(value.parse().unwrap_or(0))),
+            "too_busy" => match value.parse::<u32>() {
+                Ok(0) => Some(Self::AppsDenied),
+                count => Some(Self::Busy(count.unwrap_or(0))),
+            },
             "badp" => match value.parse::<u32>() {
                 Ok(0) => None,
                 code => Some(Self::Password(code.unwrap_or(u32::MAX))),
@@ -38,9 +42,17 @@ impl Refusal {
         }
     }
 
+    pub(crate) fn kick_reason(&self) -> String {
+        match self {
+            Self::Busy(apps) => format!("the KiwiSDR admits {apps} third-party apps at a time"),
+            other => other.reason(),
+        }
+    }
+
     pub(crate) fn reason(&self) -> String {
         match self {
             Self::Busy(channels) => format!("all {channels} KiwiSDR channels are busy"),
+            Self::AppsDenied => "the KiwiSDR admits only its own web client".to_string(),
             Self::Password(1) => {
                 "the KiwiSDR wants a password or has no free public channel".to_string()
             }
@@ -227,6 +239,10 @@ mod tests {
             vec![Field::Refused(Refusal::Busy(4))]
         );
         assert_eq!(
+            refused("too_busy=0"),
+            vec![Field::Refused(Refusal::AppsDenied)]
+        );
+        assert_eq!(
             refused("badp=1"),
             vec![Field::Refused(Refusal::Password(1))]
         );
@@ -250,6 +266,15 @@ mod tests {
             refused("kiwi_kick=1,bye"),
             vec![Field::Refused(Refusal::Kicked)]
         );
+    }
+
+    #[test]
+    fn a_busy_kick_mid_stream_names_the_app_limit() {
+        assert_eq!(
+            Refusal::Busy(4).kick_reason(),
+            "the KiwiSDR admits 4 third-party apps at a time"
+        );
+        assert_eq!(Refusal::Down.kick_reason(), Refusal::Down.reason());
     }
 
     #[test]

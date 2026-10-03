@@ -102,15 +102,24 @@ fn push_lsb(bits: &mut Vec<bool>, value: u32, count: usize) {
     bits.extend((0..count).map(|bit| value >> bit & 1 == 1));
 }
 
-fn header_bits(mode: Mode, cycle: u8, frame: u8) -> Vec<bool> {
+fn sync_bits(mode: Mode) -> Vec<bool> {
     let sync_code = mode.sync();
     let sync = u64::from(sync_code) << 48 | u64::from(SYNC_MARKER) << 16 | u64::from(!sync_code);
-    let fiw = encode_word(checksum(u32::from(cycle) << 4 | u32::from(frame) << 8));
     let mut bits = (0..960).map(|index| index % 2 == 0).collect::<Vec<_>>();
     push_msb(&mut bits, sync, 64);
     bits.extend((0..16).map(|index| index % 2 == 0));
+    bits
+}
+
+fn fiw_bits(cycle: u8, frame: u8) -> Vec<bool> {
+    let fiw = encode_word(checksum(u32::from(cycle) << 4 | u32::from(frame) << 8));
+    let mut bits = Vec::with_capacity(32);
     push_lsb(&mut bits, fiw, 32);
     bits
+}
+
+fn data_tone(bit: bool) -> f64 {
+    if bit { 4_800.0 } else { -4_800.0 }
 }
 
 fn phase_bits(words: &[u32; WORDS]) -> Vec<bool> {
@@ -131,17 +140,13 @@ fn data_symbols(page: &Page, mode: Mode) -> Vec<f64> {
     let phases = [&active, &idle, &idle, &idle];
     let mut frequencies = Vec::with_capacity(mode.symbol_rate() * 176 / 100);
     let pair = |left: bool, right: bool| match (left, right) {
-        (true, false) => -4_800.0,
-        (true, true) => -1_600.0,
-        (false, true) => 1_600.0,
-        (false, false) => 4_800.0,
+        (true, false) => 4_800.0,
+        (true, true) => 1_600.0,
+        (false, true) => -1_600.0,
+        (false, false) => -4_800.0,
     };
     match (mode.symbol_rate(), mode.levels()) {
-        (1_600, 2) => frequencies.extend(
-            active
-                .iter()
-                .map(|bit| if *bit { -4_800.0 } else { 4_800.0 }),
-        ),
+        (1_600, 2) => frequencies.extend(active.iter().map(|bit| data_tone(*bit))),
         (1_600, 4) => frequencies.extend(
             phases[0]
                 .iter()
@@ -150,8 +155,8 @@ fn data_symbols(page: &Page, mode: Mode) -> Vec<f64> {
         ),
         (3_200, 2) => {
             for (&phase_a, &phase_c) in phases[0].iter().zip(phases[2]) {
-                frequencies.push(if phase_a { -4_800.0 } else { 4_800.0 });
-                frequencies.push(if phase_c { -4_800.0 } else { 4_800.0 });
+                frequencies.push(data_tone(phase_a));
+                frequencies.push(data_tone(phase_c));
             }
         }
         (3_200, 4) => {
@@ -193,9 +198,10 @@ pub fn transmission_mode(
     rate: f64,
     mode: Mode,
 ) -> Vec<Complex<f32>> {
-    let header = header_bits(mode, cycle, frame)
+    let header = sync_bits(mode)
         .into_iter()
-        .map(|bit| if bit { -4_800.0 } else { 4_800.0 })
+        .map(|bit| -data_tone(bit))
+        .chain(fiw_bits(cycle, frame).into_iter().map(data_tone))
         .collect::<Vec<_>>();
     let sync2 = (0..mode.symbol_rate() / 40)
         .map(|index| if index % 2 == 0 { -4_800.0 } else { 4_800.0 })

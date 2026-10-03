@@ -58,8 +58,8 @@ impl FskDemod {
     }
 
     fn correlate(&mut self, sample: Complex<f32>) -> (f32, f32) {
-        let mark = sample * Complex::from_polar(1.0, -(self.center_phase + self.shift_phase));
-        let space = sample * Complex::from_polar(1.0, -(self.center_phase - self.shift_phase));
+        let mark = sample * Complex::from_polar(1.0, -(self.center_phase - self.shift_phase));
+        let space = sample * Complex::from_polar(1.0, -(self.center_phase + self.shift_phase));
         self.mark_sum += widen(mark) - widen(self.mark[self.slot]);
         self.space_sum += widen(space) - widen(self.space[self.slot]);
         self.mark[self.slot] = mark;

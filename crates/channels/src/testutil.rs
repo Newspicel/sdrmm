@@ -15,6 +15,20 @@ pub(crate) fn settings(params: ChannelParams) -> ChannelSettings {
     }
 }
 
+pub(crate) fn cf32_le(bytes: &[u8]) -> Vec<Complex<f32>> {
+    bytes
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|s| {
+            Complex::new(
+                f32::from_le_bytes([s[0], s[1], s[2], s[3]]),
+                f32::from_le_bytes([s[4], s[5], s[6], s[7]]),
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn complex_tone(freq_norm: f64, len: usize) -> Vec<Complex<f32>> {
     (0..len)
         .map(|n| {

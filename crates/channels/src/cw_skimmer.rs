@@ -34,6 +34,7 @@ const ECHO_MARGIN_DB: f32 = 6.0;
 /// No receiver hears a station this far under the loudest one in its passband; a peak that deep is
 /// the analysis window's own skirt, not another operator.
 const SPUR_RANGE_DB: f32 = 80.0;
+const UNHEARD_FLOOR_DB: f32 = 30.0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "cw_skimmer".to_owned(),
@@ -174,6 +175,7 @@ pub struct CwSkimmerChannel {
     samples: Vec<Complex<f32>>,
     power: Vec<f32>,
     floor: Vec<f32>,
+    ranked: Vec<f32>,
     candidates: Vec<(f32, f32)>,
     pending: Vec<Pending>,
     spots: Vec<CwSkimmerSpot>,
@@ -262,6 +264,14 @@ impl CwSkimmerChannel {
         Ok(())
     }
 
+    fn band_floor(&mut self) -> f32 {
+        self.ranked.clear();
+        self.ranked.extend_from_slice(&self.floor);
+        let rank = self.ranked.len() * 9 / 10;
+        let (_, floor, _) = self.ranked.select_nth_unstable_by(rank, f32::total_cmp);
+        *floor
+    }
+
     fn analyze(&mut self) {
         self.analyzer
             .power_db(&self.samples[..FFT_SIZE], &mut self.power);
@@ -277,11 +287,13 @@ impl CwSkimmerChannel {
         if self.floor.len() != high - low {
             return;
         }
+        let heard_floor = self.band_floor() - UNHEARD_FLOOR_DB;
         self.candidates.clear();
         for index in low..high {
             let power = self.power[index];
             let floor = self.floor[index - low];
-            if power >= floor + self.threshold_db
+            if floor >= heard_floor
+                && power >= floor + self.threshold_db
                 && power > self.power[index - 1]
                 && power >= self.power[index + 1]
                 && power - self.power[index - 2].max(self.power[index + 2]) >= 3.0
@@ -405,6 +417,7 @@ impl ChannelRx for CwSkimmerChannel {
             samples: Vec::with_capacity(FFT_SIZE + FFT_HOP),
             power: vec![0.0; FFT_SIZE],
             floor: Vec::with_capacity(FFT_SIZE),
+            ranked: Vec::with_capacity(FFT_SIZE),
             candidates: Vec::with_capacity(usize::from(params.max_signals) * 4),
             pending: Vec::with_capacity(pending_limit(params.max_signals)),
             spots: Vec::with_capacity(spot_limit(params.max_signals)),
@@ -560,6 +573,34 @@ mod tests {
             ghosts.is_empty(),
             "key clicks reported as stations: {ghosts:?}"
         );
+    }
+
+    #[test]
+    fn a_narrow_radio_leaves_no_images_beyond_its_band() {
+        let narrow = 12_000.0;
+        let iq = loud(
+            synth::morse::transmission("CQ DE DL1AAA K CQ DE DL1AAA K", 22.0, -1_300.0, narrow),
+            30.0,
+            11,
+        );
+        let mut upsampled = Vec::new();
+        Ddc::new(narrow, RATE, 0.0)
+            .unwrap()
+            .process(&iq, &mut upsampled);
+        let mut channel = channel(CwSkimmerParams::default()).unwrap();
+        let all = spots(&mut channel, &upsampled);
+        let heard: String = all
+            .iter()
+            .filter(|spot| (spot.offset_hz + 1_300.0).abs() <= 150.0)
+            .map(|spot| spot.text.as_str())
+            .collect();
+        assert!(heard.contains("DL1AAA"), "{heard:?}");
+        let images: Vec<(f32, &str)> = all
+            .iter()
+            .filter(|spot| spot.offset_hz.abs() > narrow as f32 / 2.0)
+            .map(|spot| (spot.offset_hz, spot.text.as_str()))
+            .collect();
+        assert!(images.is_empty(), "images reported as stations: {images:?}");
     }
 
     #[test]

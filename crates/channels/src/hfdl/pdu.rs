@@ -125,12 +125,13 @@ fn icao(b: &[u8]) -> String {
 }
 
 fn position_obj(fix: &Fix, who: &Value) -> Option<Value> {
-    if fix.lat == 0.0 && fix.lon == 0.0 {
+    let (lat, lon) = fix.lat.zip(fix.lon)?;
+    if lat == 0.0 && lon == 0.0 {
         return None;
     }
     let mut position = json!({
-        "lat": fix.lat,
-        "lon": fix.lon,
+        "lat": lat,
+        "lon": lon,
         "utc_s": fix.utc_s,
         "utc": fix.utc.clone(),
         "flight": fix.flight,
@@ -146,8 +147,8 @@ fn position_obj(fix: &Fix, who: &Value) -> Option<Value> {
 
 struct Fix {
     flight: String,
-    lat: f64,
-    lon: f64,
+    lat: Option<f64>,
+    lon: Option<f64>,
     utc_s: u32,
     utc: Value,
 }
@@ -158,10 +159,11 @@ fn fix(h: &[u8]) -> Fix {
     let lon = coordinate(u32::from(h[10]) >> 4 | u32::from(h[11]) << 4 | u32::from(h[12]) << 12);
     let raw = u16::from_le_bytes([h[13], h[14]]);
     let (hour, min, sec) = utc_hms(raw);
+    let known = (-90.0..=90.0).contains(&lat);
     Fix {
         flight: flight.trim().to_owned(),
-        lat,
-        lon,
+        lat: known.then_some(lat),
+        lon: known.then_some(lon),
         utc_s: u32::from(raw) * 2,
         utc: json!({ "hour": hour, "min": min, "sec": sec }),
     }

@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 8000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "KiwiSDR ei4hq.proxy.kiwisdr.com (Cobh, Ireland)",
+    "core:description": "DSC off air on 2187.5 kHz: Lyngby Radio (002191000) calls a ship, routine individual station call, position request"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 2187500.0,
+      "core:datetime": "2026-10-03T20:18:13Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "public KiwiSDR IQ via cargo xtask net-capture; source SHA-256 0926d756b79aeaf0d6c3ca3368c3afa8f1e85487a63278c43565022ba10c6351; samples 10277050..10403038 at 11998.891385 Hz",
+      "core:sample_count": 84000,
+      "core:sample_start": 0
+    }
+  ]
+}

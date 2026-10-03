@@ -22,6 +22,7 @@ mod ber;
 mod broadcast_fixtures;
 mod bundle;
 mod bundled;
+mod capture;
 mod compare;
 mod denoise_model;
 mod excerpt;
@@ -76,6 +77,7 @@ enum Cmd {
     },
     Excerpt(excerpt::Excerpt),
     Replay(replay::Replay),
+    NetCapture(capture::NetCapture),
     Bandplan {
         #[arg(long)]
         offline: bool,
@@ -148,6 +150,7 @@ fn main() -> Result<()> {
         Cmd::BroadcastFixtures { out } => broadcast_fixtures::run(&out),
         Cmd::Excerpt(args) => excerpt::run(&root(), &args),
         Cmd::Replay(args) => replay::run(&args),
+        Cmd::NetCapture(args) => capture::run(&args),
         Cmd::Compare { suite } => compare::run(&root(), &suite),
         Cmd::Bandplan { offline } => bandplan::run(&root(), offline),
         Cmd::Ber { entry, out, full } => ber::run(&root(), &entry, out.as_deref(), full),

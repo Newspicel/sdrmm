@@ -59,10 +59,17 @@ fn xng_datalink(message: &xng_mode_dsc::DscMessage) -> DataLinkMessage {
 
 pub(super) fn run_xng(iq: &[Complex<f32>], chunk: usize) -> Vec<DataLinkMessage> {
     let mut decoder = xng_mode_dsc::DscChannelDecoder::new(RATE, 0.0).expect("xng decoder");
-    iq.chunks(chunk)
+    let mirrored = mirror(iq.to_vec());
+    mirrored
+        .chunks(chunk)
         .flat_map(|piece| decoder.process(piece))
         .map(|message| xng_datalink(&message))
         .collect()
+}
+
+fn mirror(mut iq: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
+    iq.iter_mut().for_each(|sample| *sample = sample.conj());
+    iq
 }
 
 pub(super) fn run_ours(iq: &[Complex<f32>], chunk: usize) -> Vec<DataLinkMessage> {
@@ -95,7 +102,9 @@ pub(super) fn offset_transmission(
         if realistic {
             iq.extend(modulate::m493_call_iq(call, RATE, 0.0, 1.0));
         } else {
-            iq.extend(xng_mode_dsc::modulate::call_iq(call, RATE, 0.0, 1.0));
+            iq.extend(mirror(xng_mode_dsc::modulate::call_iq(
+                call, RATE, 0.0, 1.0,
+            )));
         }
         iq.extend(vec![Complex::new(0.0, 0.0); 3_000]);
     }
@@ -111,7 +120,7 @@ fn modulators_agree() {
     for call in CALLS {
         assert_eq!(
             modulate::call_iq(call, RATE, 0.0, 0.7),
-            xng_mode_dsc::modulate::call_iq(call, RATE, 0.0, 0.7)
+            mirror(xng_mode_dsc::modulate::call_iq(call, RATE, 0.0, 0.7))
         );
     }
 }

@@ -243,7 +243,7 @@ impl ChannelRx for DscChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{run_events, settings};
+    use crate::testutil::{cf32_le, run_events, settings};
 
     const DISTRESS: &[i32] = &[
         112, 112, 25, 58, 5, 99, 70, 107, 4, 52, 60, 13, 7, 12, 52, 109, 127, 52, 127, 127,
@@ -352,5 +352,20 @@ mod tests {
             out.iter()
                 .any(|m| m.format == Format::DistressAlert && m.ecc_ok())
         );
+    }
+
+    #[test]
+    fn decodes_a_coast_station_off_air() {
+        let iq = cf32_le(include_bytes!("../../../fixtures/dsc_offair_8k.sigmf-data"));
+        let mut filtered = Vec::new();
+        channel_filter().process(&iq, &mut filtered);
+        let out = decode_all(&filtered);
+        assert_eq!(out.len(), 1, "{out:?}");
+        let m = &out[0];
+        assert_eq!(m.format, Format::IndividualStationCall);
+        assert_eq!(m.from.as_deref(), Some("002191000"));
+        assert_eq!(m.to.as_deref(), Some("231700000"));
+        assert_eq!(m.eos, message::EndOfSequence::AcknowledgeBq);
+        assert!(m.ecc_ok());
     }
 }
