@@ -10,19 +10,19 @@ covers the modes that need more than a frequency.
 | Group | Tested on air | Fixture only | Experimental |
 |---|---|---|---|
 | Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
-| Digital voice | DMR, FreeDV 1600 | D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | |
-| Aviation | ADS-B (1090ES), VDL Mode 2, High Frequency Data Link | ACARS, [Inmarsat Classic Aero](#inmarsat-and-iridium) | VOR, ILS localizer / glideslope |
+| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, P25 Phase 1, M17 | NXDN, dPMR | |
+| Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium) | VOR, ILS localizer / glideslope |
 | Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC | |
-| Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW) | APRS / AX.25 with [weather](#aprs-weather), PSK | |
-| Paging and telemetry | POCSAG, FLEX pager, Radio clock (DCF77 / MSF / JJY) | ERMES pager, Selcall (CCIR/ZVEI), Radio clock (WWVB) | |
-| Pictures and video | | [SSTV](#sstv), ATV | |
-| Weather and satellites | [WEFAX](#wefax) | [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | |
-| Broadcast digital | [DAB / DAB+](#dab-and-dab) | [DRM30 / DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal) | [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect) | GNSS lab (GPS L1 C/A) |
+| Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
+| Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager | |
+| Pictures and video | [SSTV](#sstv) | ATV | |
+| Weather and satellites | [WEFAX](#wefax), [NOAA APT](#weather-satellites), [Radiosonde](#radiosondes) | [Meteor LRPT](#weather-satellites) | |
+| Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect) | | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
-| Tested on air | Verified on live signals, from a local radio or a public KiwiSDR or SpyServer |
+| Tested on air | Verified on real off-air signals, live or recorded |
 | Fixture only | Verified on recordings, generated IQ, or reference vectors, not yet live |
 | Experimental | Works with the limits below |
 

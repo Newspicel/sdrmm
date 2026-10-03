@@ -13,6 +13,9 @@ const RATE: f64 = 2_048_000.0;
 const SAMPLES_PER_MS: usize = 2_048;
 const CHIPS: usize = 1_023;
 const DOPPLER_STEP_HZ: i32 = 500;
+const ACQUIRE_MS: usize = 16;
+const ACQUIRE_GAP_MS: u8 = 16;
+const CONFIRM_SAMPLES: usize = 2;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "gnss".to_owned(),
@@ -34,6 +37,15 @@ struct Lock {
     carrier_phase: f32,
 }
 
+impl Lock {
+    fn repeats(&self, before: &Self) -> bool {
+        let phase = self.code_phase.abs_diff(before.code_phase);
+        let phase = phase.min(SAMPLES_PER_MS - phase);
+        phase <= CONFIRM_SAMPLES
+            && (self.doppler_hz - before.doppler_hz).abs() <= DOPPLER_STEP_HZ as f32
+    }
+}
+
 pub struct GnssChannel {
     params: GnssParams,
     code: Vec<f32>,
@@ -43,6 +55,9 @@ pub struct GnssChannel {
     fft: FftPair,
     lock: Option<Lock>,
     acquisition_wait_ms: u8,
+    powers: Vec<f32>,
+    summed_ms: usize,
+    candidate: Option<Lock>,
     prompt_ms: Vec<f32>,
     bit_phase: Option<usize>,
     nav: NavDecoder,
@@ -88,6 +103,9 @@ impl ChannelRx for GnssChannel {
     fn retuned(&mut self) {
         self.lock = None;
         self.acquisition_wait_ms = 0;
+        self.summed_ms = 0;
+        self.powers.fill(0.0);
+        self.candidate = None;
         self.samples.clear();
         self.prompt_ms.clear();
         self.bit_phase = None;
@@ -120,6 +138,9 @@ impl GnssChannel {
             code_fft,
             samples: Vec::with_capacity(SAMPLES_PER_MS),
             fft_buf: vec![Complex::default(); SAMPLES_PER_MS],
+            powers: vec![0.0; doppler_bins(params.doppler_hz) * SAMPLES_PER_MS],
+            summed_ms: 0,
+            candidate: None,
             fft,
             lock: None,
             acquisition_wait_ms: 0,
@@ -135,8 +156,21 @@ impl GnssChannel {
                 self.acquisition_wait_ms -= 1;
                 return;
             }
-            self.acquisition_wait_ms = 19;
-            if let Some(found) = self.acquire() {
+            self.accumulate();
+            if self.summed_ms < ACQUIRE_MS {
+                return;
+            }
+            let found = self.acquire();
+            let confirmed = found
+                .zip(self.candidate)
+                .filter(|(now, before)| now.repeats(before));
+            self.candidate = found.filter(|_| confirmed.is_none());
+            self.acquisition_wait_ms = if self.candidate.is_some() {
+                0
+            } else {
+                ACQUIRE_GAP_MS
+            };
+            if let Some((found, _)) = confirmed {
                 self.lock = Some(found);
                 out.events.push(DecoderEvent::Gnss(self.event(found, None)));
             }
@@ -164,40 +198,53 @@ impl GnssChannel {
         self.extract_nav(lock, out);
     }
 
-    fn acquire(&mut self) -> Option<Lock> {
-        let mut best_power = 0.0_f32;
-        let mut best_phase = 0;
-        let mut best_doppler = 0;
-        let mut best_carrier_phase = 0.0;
-        let mut floor_sum = 0.0_f64;
-        let mut floor_count = 0_u64;
+    fn correlate(&mut self, doppler: i32) {
+        wipe(&self.samples, doppler as f32, &mut self.fft_buf);
+        self.fft.forward(&mut self.fft_buf);
+        for (bin, code) in self.fft_buf.iter_mut().zip(&self.code_fft) {
+            *bin *= code.conj();
+        }
+        self.fft.inverse(&mut self.fft_buf);
+    }
+
+    fn dopplers(&self) -> impl Iterator<Item = i32> + use<> {
         let span = self.params.doppler_hz as i32;
-        for doppler in (-span..=span).step_by(DOPPLER_STEP_HZ as usize) {
-            wipe(&self.samples, doppler as f32, &mut self.fft_buf);
-            self.fft.forward(&mut self.fft_buf);
-            for (bin, code) in self.fft_buf.iter_mut().zip(&self.code_fft) {
-                *bin *= code.conj();
-            }
-            self.fft.inverse(&mut self.fft_buf);
-            for (phase, value) in self.fft_buf.iter().enumerate() {
-                let power = value.norm_sqr();
-                floor_sum += f64::from(power);
-                floor_count += 1;
-                if power > best_power {
-                    best_power = power;
-                    best_phase = (SAMPLES_PER_MS - phase) % SAMPLES_PER_MS;
-                    best_doppler = doppler;
-                    best_carrier_phase = -value.arg();
-                }
+        (-span..=span).step_by(DOPPLER_STEP_HZ as usize)
+    }
+
+    fn accumulate(&mut self) {
+        for (row, doppler) in self.dopplers().enumerate() {
+            self.correlate(doppler);
+            let powers = &mut self.powers[row * SAMPLES_PER_MS..(row + 1) * SAMPLES_PER_MS];
+            for (sum, value) in powers.iter_mut().zip(&self.fft_buf) {
+                *sum += value.norm_sqr();
             }
         }
-        let floor = (floor_sum / floor_count.max(1) as f64) as f32;
-        let ratio = best_power / floor.max(f32::MIN_POSITIVE);
-        (ratio >= self.params.threshold).then(|| Lock {
-            doppler_hz: best_doppler as f32,
-            code_phase: best_phase,
+        self.summed_ms += 1;
+    }
+
+    fn acquire(&mut self) -> Option<Lock> {
+        let floor = self.powers.iter().map(|&p| f64::from(p)).sum::<f64>()
+            / self.powers.len().max(1) as f64;
+        let (best, &best_power) = self
+            .powers
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))?;
+        self.summed_ms = 0;
+        self.powers.fill(0.0);
+        let ratio = best_power / (floor as f32).max(f32::MIN_POSITIVE);
+        if ratio < self.params.threshold {
+            return None;
+        }
+        let doppler = self.dopplers().nth(best / SAMPLES_PER_MS)?;
+        let phase = best % SAMPLES_PER_MS;
+        self.correlate(doppler);
+        Some(Lock {
+            doppler_hz: doppler as f32,
+            code_phase: (SAMPLES_PER_MS - phase) % SAMPLES_PER_MS,
             cn0_db_hz: (10.0 * ((ratio - 1.0).max(1e-6) * 1_000.0).log10()).clamp(0.0, 65.0),
-            carrier_phase: best_carrier_phase,
+            carrier_phase: -self.fft_buf[phase].arg(),
         })
     }
 
@@ -247,6 +294,10 @@ impl GnssChannel {
             words,
         }
     }
+}
+
+fn doppler_bins(span_hz: u32) -> usize {
+    (2 * span_hz as usize) / DOPPLER_STEP_HZ as usize + 1
 }
 
 fn wipe(input: &[Complex<f32>], doppler_hz: f32, out: &mut [Complex<f32>]) {
@@ -487,7 +538,7 @@ mod tests {
         let params = GnssParams {
             prn: 7,
             doppler_hz: 2_000,
-            threshold: 2.5,
+            threshold: 4.0,
         };
         let mut channel = GnssChannel::build(params);
         let code = sampled_code(7);
@@ -497,6 +548,7 @@ mod tests {
             let carrier = Complex::from_polar(1.0, TAU * doppler * n as f32 / RATE as f32);
             carrier * code[(n + shift) % SAMPLES_PER_MS]
         }));
+        channel.accumulate();
         let lock = channel.acquire().expect("clean fixture acquires");
         assert_eq!(lock.doppler_hz, doppler);
         assert_eq!(lock.code_phase, shift);
@@ -509,7 +561,50 @@ mod tests {
         channel
             .samples
             .resize(SAMPLES_PER_MS, Complex::new(0.0, 0.0));
+        channel.accumulate();
         assert!(channel.acquire().is_none());
+    }
+
+    #[test]
+    fn noise_acquires_no_satellite() {
+        for prn in [1, 7, 19, 30] {
+            let mut channel = GnssChannel::build(GnssParams {
+                prn,
+                ..GnssParams::default()
+            });
+            let noise = crate::testutil::complex_noise(u32::from(prn), 0.5, RATE as usize);
+            let mut out = ChannelOutputs::default();
+            channel.process(&noise, &mut out);
+            assert!(out.events.is_empty(), "PRN {prn}: {:?}", out.events.first());
+        }
+    }
+
+    #[test]
+    fn a_weak_satellite_still_acquires() {
+        let code = sampled_code(12);
+        let doppler = -2_500.0f32;
+        let snr_per_ms = 10f32.powf((40.0 - 30.0) / 10.0);
+        let noise_amp = 0.5f32;
+        let noise_power = 2.0 * noise_amp * noise_amp / 3.0;
+        let amplitude = (snr_per_ms * noise_power / SAMPLES_PER_MS as f32).sqrt();
+        let mut iq = crate::testutil::complex_noise(5, noise_amp, SAMPLES_PER_MS * 40);
+        for (n, sample) in iq.iter_mut().enumerate() {
+            let carrier = Complex::from_polar(amplitude, TAU * doppler * n as f32 / RATE as f32);
+            *sample += carrier * code[(n + 900) % SAMPLES_PER_MS];
+        }
+        let mut channel = GnssChannel::build(GnssParams {
+            prn: 12,
+            ..GnssParams::default()
+        });
+        let mut out = ChannelOutputs::default();
+        channel.process(&iq, &mut out);
+        let lock = channel.lock.expect("a 40 dB-Hz satellite acquires");
+        assert!(
+            (lock.doppler_hz - doppler).abs() < 100.0,
+            "{}",
+            lock.doppler_hz
+        );
+        assert_eq!(lock.code_phase, 900);
     }
 
     #[test]

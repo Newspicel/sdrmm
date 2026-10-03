@@ -19,7 +19,7 @@ pub const fn aac_frames(plus: bool, rate_hz: u32) -> Option<usize> {
     }
 }
 
-const fn header_bytes(frames: usize) -> usize {
+pub(crate) const fn header_bytes(frames: usize) -> usize {
     ((frames - 1) * 12).div_ceil(8)
 }
 
@@ -61,6 +61,64 @@ pub fn aac_superframe(
         ));
     }
     Ok(())
+}
+
+pub fn join_protected(
+    superframe: &[u8],
+    frames: usize,
+    higher: usize,
+    ranges: &mut Vec<(u8, Range<usize>)>,
+    out: &mut Vec<u8>,
+) -> Result<(), &'static str> {
+    let header = header_bytes(frames);
+    let per = higher
+        .checked_sub(header + frames)
+        .ok_or("Protected audio part shorter than its header")?
+        / frames;
+    aac_superframe(superframe, frames, ranges)?;
+    out.clear();
+    out.extend_from_slice(&superframe[..header]);
+    out.extend((0..frames).map(|frame| superframe[header + frame * (per + 1) + per]));
+    let mut lower = higher;
+    for (frame, (_, range)) in ranges.iter().enumerate() {
+        let start = header + frame * (per + 1);
+        let rest = if frame + 1 == frames {
+            superframe.len().saturating_sub(lower)
+        } else {
+            range
+                .len()
+                .checked_sub(per)
+                .ok_or("Audio frame shorter than its protected part")?
+        };
+        let tail = superframe
+            .get(lower..lower + rest)
+            .ok_or("Audio super frame too short")?;
+        out.extend_from_slice(&superframe[start..start + per]);
+        out.extend_from_slice(tail);
+        lower += rest;
+    }
+    Ok(())
+}
+
+#[cfg(any(test, feature = "synth"))]
+#[must_use]
+pub fn split_protected(joined: &[u8], frames: usize, higher: usize) -> Option<Vec<u8>> {
+    let header = header_bytes(frames);
+    let per = higher.checked_sub(header + frames)? / frames;
+    let mut ranges = Vec::with_capacity(frames);
+    aac_superframe(joined, frames, &mut ranges).ok()?;
+    let mut out = joined[..header].to_vec();
+    let mut lower = Vec::with_capacity(joined.len());
+    for (check, range) in &ranges {
+        let body = joined.get(range.clone())?;
+        out.extend_from_slice(body.get(..per)?);
+        out.push(*check);
+        lower.extend_from_slice(&body[per..]);
+    }
+    out.resize(higher, 0);
+    out.extend_from_slice(&lower);
+    out.extend_from_slice(&joined[ranges.last()?.1.end..]);
+    Some(out)
 }
 
 #[derive(Default)]
@@ -231,6 +289,42 @@ pub fn build_aac_superframe(frames: &[Vec<u8>], length: usize) -> Option<Vec<u8>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_protected_part_round_trips_through_the_receiver() {
+        let frames: Vec<Vec<u8>> = (0..5u8)
+            .map(|index| {
+                let mut frame = vec![0xA0 | index];
+                frame.extend((0..80 + usize::from(index)).map(|at| at as u8 ^ index));
+                frame
+            })
+            .collect();
+        for (higher, unused) in [(101, 0), (60, 4)] {
+            let joined = build_aac_superframe(&frames, 459 - unused).expect("fits");
+            let split = split_protected(&joined, 5, higher).expect("splits");
+            assert_eq!(split.len(), 459);
+            let mut ranges = Vec::new();
+            let mut out = Vec::new();
+            join_protected(&split, 5, higher, &mut ranges, &mut out).expect("joins");
+            assert_eq!(out, joined, "higher {higher}");
+        }
+    }
+
+    #[test]
+    fn each_frame_start_is_followed_by_its_crc_in_the_protected_part() {
+        let frames: Vec<Vec<u8>> = (0..5u8)
+            .map(|index| {
+                std::iter::once(0x4B)
+                    .chain([0xFE, index].into_iter().cycle().take(88))
+                    .collect()
+            })
+            .collect();
+        let joined = build_aac_superframe(&frames, 459).expect("fits");
+        let split = split_protected(&joined, 5, 101).expect("splits");
+        assert_eq!(&split[6..9], &[0xFE, 0x00, 0xFE]);
+        assert_eq!(split[6 + 18], 0x4B);
+        assert_eq!(&split[6 + 19..6 + 21], &[0xFE, 0x01]);
+    }
 
     #[test]
     fn aac_superframes_split_at_their_borders() {

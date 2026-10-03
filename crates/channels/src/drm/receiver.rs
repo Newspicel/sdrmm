@@ -2,7 +2,7 @@ use num_complex::Complex;
 
 use super::{
     aac::{AudioConfig, Coding},
-    audio::{Superframes, XheAssembler, aac_frames, aac_superframe, split_text},
+    audio::{Superframes, XheAssembler, aac_frames, aac_superframe, join_protected, split_text},
     bits::pack,
     cells::{Cell as Kind, Layout},
     coding::{Plan, Qam},
@@ -89,6 +89,7 @@ pub struct Receiver {
     audio: Vec<u8>,
     unit: Vec<u8>,
     ranges: Vec<(u8, std::ops::Range<usize>)>,
+    joined: Vec<u8>,
     pub selection: Option<Selection>,
     pub wanted: Option<u8>,
     pub changed: bool,
@@ -151,6 +152,7 @@ impl Receiver {
             audio: Vec::new(),
             unit: Vec::new(),
             ranges: Vec::new(),
+            joined: Vec::new(),
             selection: None,
             wanted: None,
             changed: false,
@@ -455,6 +457,12 @@ impl Receiver {
             return;
         };
         let config = selection.config;
+        let higher = self
+            .sdc
+            .multiplex
+            .as_ref()
+            .and_then(|multiplex| multiplex.streams.get(selection.stream))
+            .map_or(0, |stream| usize::from(stream.higher));
         let (audio, text) = split_text(logical, &config);
         if let Some(piece) = text {
             let bad = self.text.segments_bad;
@@ -468,19 +476,38 @@ impl Receiver {
         if self.superframes.push(audio, starts, &mut superframe) {
             self.audio_superframes = self.audio_superframes.saturating_add(1);
             match config.coding {
-                Coding::Aac => self.aac(&superframe, &config, media),
+                Coding::Aac => self.aac(&superframe, &config, higher, media),
                 Coding::Xhe => self.xhe_superframe(&superframe, &config, media),
             }
         }
         self.audio = superframe;
     }
 
-    fn aac(&mut self, superframe: &[u8], config: &AudioConfig, media: &mut BroadcastMedia) {
+    fn aac(
+        &mut self,
+        superframe: &[u8],
+        config: &AudioConfig,
+        higher: usize,
+        media: &mut BroadcastMedia,
+    ) {
         let Some(count) = aac_frames(self.mode.plus(), config.rate_hz) else {
             media.audio_gap(1, "Unsupported DRM AAC sampling rate");
             return;
         };
+        let mut joined = std::mem::take(&mut self.joined);
         let mut ranges = std::mem::take(&mut self.ranges);
+        let superframe = if higher > 0 && !self.mode.plus() {
+            if let Err(reason) = join_protected(superframe, count, higher, &mut ranges, &mut joined)
+            {
+                media.audio_gap(count as u32, reason);
+                self.joined = joined;
+                self.ranges = ranges;
+                return;
+            }
+            &joined[..]
+        } else {
+            superframe
+        };
         match aac_superframe(superframe, count, &mut ranges) {
             Ok(()) => {
                 self.pairing_failures = 0;
@@ -502,6 +529,7 @@ impl Receiver {
             }
         }
         self.ranges = ranges;
+        self.joined = joined;
     }
 
     fn xhe_superframe(

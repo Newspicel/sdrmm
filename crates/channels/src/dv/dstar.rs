@@ -21,7 +21,7 @@ pub(crate) const PULSE_SPAN: usize = 3;
 pub(crate) const MATCHED_SPAN: usize = 3;
 pub(crate) const BANDWIDTH_HZ: f64 = 6_250.0;
 
-pub(crate) const SYNC: u32 = 0x0055_2D16;
+pub(crate) const SYNC: u32 = 0x00AA_B468;
 pub(crate) const SYNC_BITS: u32 = 24;
 pub(crate) const SYNC_TOLERANCE: u32 = 2;
 
@@ -32,6 +32,7 @@ const FRAMES_PER_SUPERFRAME: usize = 21;
 const COHERENT_LOOP_BW: f64 = 0.01;
 const COHERENT_TIMING_BW: f64 = 0.02;
 const RELEASE_SYMBOLS: usize = FRAME_BITS;
+const SYNC_SLACK: usize = 4;
 
 const SCRAMBLER: [u8; 3] = [0x70, 0x4F, 0x93];
 
@@ -218,6 +219,7 @@ struct Decoder {
     bit: usize,
     frame: usize,
     synced: bool,
+    expecting: usize,
     data: u32,
     voice_bits: [bool; 72],
     packet: Vec<u8>,
@@ -234,6 +236,7 @@ impl Decoder {
             bit: 0,
             frame: 0,
             synced: false,
+            expecting: 0,
             data: 0,
             voice_bits: [false; 72],
             packet: Vec::with_capacity(6),
@@ -251,6 +254,7 @@ impl Decoder {
     fn reset(&mut self) {
         self.register = 0;
         self.synced = false;
+        self.expecting = 0;
         self.bit = 0;
         self.frame = 0;
         self.packet.clear();
@@ -263,8 +267,14 @@ impl Decoder {
         self.register = self.register << 1 | u32::from(bit);
         if !self.synced {
             let mask = (1u32 << SYNC_BITS) - 1;
+            let tolerance = if self.expecting > 0 {
+                SYNC_TOLERANCE
+            } else {
+                0
+            };
+            self.expecting = self.expecting.saturating_sub(1);
             if hamming_distance(u64::from(self.register & mask), u64::from(SYNC & mask))
-                <= SYNC_TOLERANCE
+                <= tolerance
             {
                 self.synced = true;
                 self.bit = 0;
@@ -289,6 +299,7 @@ impl Decoder {
         self.frame += 1;
         if self.frame >= FRAMES_PER_SUPERFRAME {
             self.synced = false;
+            self.expecting = FRAME_BITS + SYNC_SLACK;
         }
         if !frame.is_multiple_of(FRAMES_PER_SUPERFRAME) {
             self.slow_data(frame, out);
@@ -297,7 +308,8 @@ impl Decoder {
 
     fn slow_data(&mut self, frame: usize, out: &mut ChannelOutputs) {
         for (i, mask) in SCRAMBLER.into_iter().enumerate() {
-            self.packet.push((self.data >> (16 - i * 8)) as u8 ^ mask);
+            self.packet
+                .push(((self.data >> (16 - i * 8)) as u8).reverse_bits() ^ mask);
         }
         if frame.is_multiple_of(2) && self.packet.len() >= 6 {
             let packet: Vec<u8> = self.packet.drain(..6).collect();
@@ -418,6 +430,22 @@ mod tests {
         );
         assert!(audio.iter().all(|sample| sample.is_finite()));
         assert!(audio.iter().all(|sample| sample.abs() <= 1.0));
+    }
+
+    #[test]
+    fn frame_sync_is_the_on_air_bit_string() {
+        assert_eq!(SYNC, 0b1010_1010_1011_0100_0110_1000);
+    }
+
+    #[test]
+    fn noise_plays_no_voice() {
+        let noise = crate::testutil::complex_noise(7, 0.5, 4_800_000);
+        let mut channel = channel();
+        let mut out = ChannelOutputs::default();
+        for chunk in noise.chunks(4_096) {
+            channel.process(chunk, &mut out);
+        }
+        assert!(out.audio_pcm.is_empty(), "{} samples", out.audio_pcm.len());
     }
 
     #[test]

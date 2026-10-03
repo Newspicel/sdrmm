@@ -5,7 +5,7 @@ use sdrmm_dsp::fft::Transform;
 
 use crate::drm::{
     aac::{AudioConfig, AudioMode, Coding, MAX_CONFIG, drm_frame_padded},
-    audio::{TEXT_BYTES, aac_frames, build_aac_superframe},
+    audio::{TEXT_BYTES, aac_frames, build_aac_superframe, header_bytes, split_protected},
     cells::{Cell, Layout},
     coding::{Plan, Qam},
     fac::{Fac, FacService, fac_bits, fac_rate},
@@ -152,8 +152,13 @@ impl Program {
         piece
     }
 
-    fn superframe(&mut self, plus: bool, length: usize) -> Vec<u8> {
+    fn superframe(&mut self, plus: bool, length: usize, higher: usize) -> Vec<u8> {
         let count = aac_frames(plus, self.config.rate_hz).expect("a DRM AAC rate");
+        let higher = if plus { 0 } else { higher };
+        let unused = higher
+            .checked_sub(header_bytes(count) + count)
+            .map_or(0, |part| part % count);
+        let length = length - unused;
         let raw: Vec<Vec<u8>> = (0..count)
             .map(|index| self.units[(self.next + index) % self.units.len()].clone())
             .collect();
@@ -168,21 +173,25 @@ impl Program {
         let spare = length.saturating_sub(used);
         frames[last] = drm_frame_padded(&raw[last], &self.config, frames[last].len() - 1 + spare)
             .expect("a padded DRM AAC frame");
-        build_aac_superframe(&frames, length).expect("the audio fits its stream")
+        let joined = build_aac_superframe(&frames, length).expect("the audio fits its stream");
+        if higher == 0 {
+            return joined;
+        }
+        split_protected(&joined, count, higher).expect("the protected part holds the headers")
     }
 
-    fn logical(&mut self, plus: bool, length: usize, first: bool) -> Vec<u8> {
+    fn logical(&mut self, plus: bool, length: usize, higher: usize, first: bool) -> Vec<u8> {
         let audio = length - if self.config.text { TEXT_BYTES } else { 0 };
         let mut frame = if plus {
             if first {
-                let whole = self.superframe(plus, 2 * audio);
+                let whole = self.superframe(plus, 2 * audio, 0);
                 self.pending = whole[audio..].to_vec();
                 whole[..audio].to_vec()
             } else {
                 std::mem::take(&mut self.pending)
             }
         } else {
-            self.superframe(plus, audio)
+            self.superframe(plus, audio, higher)
         };
         if self.config.text {
             frame.extend_from_slice(&self.text_piece());
@@ -381,7 +390,7 @@ impl Transmitter {
         let mut lower = Vec::new();
         for (program, stream) in self.programs.iter_mut().zip(&self.multiplex.streams) {
             let length = usize::from(stream.higher + stream.lower);
-            let logical = program.logical(plus, length, first);
+            let logical = program.logical(plus, length, usize::from(stream.higher), first);
             higher.extend_from_slice(&logical[..usize::from(stream.higher)]);
             lower.extend_from_slice(&logical[usize::from(stream.higher)..]);
         }

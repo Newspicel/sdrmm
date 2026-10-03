@@ -7,6 +7,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, ensure};
 use clap::Args;
 use sdrmm_device::{DeviceDriver, RxSink, Sample};
+use sdrmm_device_ad936x::Ad936xDriver;
 use sdrmm_device_kiwisdr::KiwiSdrDriver;
 use sdrmm_device_spyserver::SpyServerDriver;
 use sdrmm_wire::{Agc, AgcSetting, Capabilities, DeviceSettings, GainValue};
@@ -15,6 +16,7 @@ use sdrmm_wire::{Agc, AgcSetting, Capabilities, DeviceSettings, GainValue};
 pub enum Driver {
     Kiwisdr,
     Spyserver,
+    Ad936x,
 }
 
 #[derive(Args)]
@@ -32,6 +34,8 @@ pub struct NetCapture {
     pub out: PathBuf,
     #[arg(long)]
     pub gain: Option<f64>,
+    #[arg(long, default_value_t = 0)]
+    pub stream: u32,
 }
 
 fn settings(args: &NetCapture, caps: &Capabilities) -> DeviceSettings {
@@ -56,6 +60,7 @@ fn tuning(args: &NetCapture, gain_stage: Option<&str>, has_agc: bool) -> DeviceS
     DeviceSettings {
         center_hz: Some(args.center),
         sample_rate: args.rate,
+        rx_streams: (args.stream > 0).then_some(args.stream + 1),
         agc: has_agc.then(|| AgcSetting::switched(args.gain.is_none())),
         gains,
         ..DeviceSettings::default()
@@ -66,6 +71,7 @@ fn driver(kind: Driver) -> Box<dyn DeviceDriver> {
     match kind {
         Driver::Kiwisdr => Box::new(KiwiSdrDriver::new()),
         Driver::Spyserver => Box::new(SpyServerDriver::new()),
+        Driver::Ad936x => Box::new(Ad936xDriver::searching([])),
     }
 }
 
@@ -84,17 +90,25 @@ pub fn run(args: &NetCapture) -> Result<()> {
         .with_context(|| format!("create {}", args.out.display()))?;
 
     let (tx, rx) = mpsc::channel::<Result<(u64, Vec<Sample>), String>>();
-    let fatal = tx.clone();
-    device
-        .rx_start(vec![RxSink::with_fatal_handler(
-            move |samples, index| {
-                let _ = tx.send(Ok((index, samples.to_vec())));
-            },
-            move |e| {
-                let _ = fatal.send(Err(e.to_string()));
-            },
-        )])
-        .map_err(|e| anyhow!("stream: {e}"))?;
+    let sinks = (0..=args.stream)
+        .map(|lane| {
+            let samples_to = tx.clone();
+            let fatal = tx.clone();
+            let recorded = lane == args.stream;
+            RxSink::with_fatal_handler(
+                move |samples, index| {
+                    if recorded {
+                        let _ = samples_to.send(Ok((index, samples.to_vec())));
+                    }
+                },
+                move |e| {
+                    let _ = fatal.send(Err(e.to_string()));
+                },
+            )
+        })
+        .collect();
+    drop(tx);
+    device.rx_start(sinks).map_err(|e| anyhow!("stream: {e}"))?;
 
     let want = (args.seconds * rate).round() as u64;
     let deadline = Instant::now() + Duration::from_secs_f64(args.seconds * 2.0 + 10.0);
@@ -146,6 +160,7 @@ mod tests {
             seconds: 1.0,
             out: PathBuf::from("capture"),
             gain,
+            stream: 0,
         }
     }
 

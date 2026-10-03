@@ -1308,7 +1308,7 @@ fn default_gnss_doppler_hz() -> u32 {
 }
 
 fn default_gnss_threshold() -> f32 {
-    2.5
+    4.0
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

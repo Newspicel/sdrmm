@@ -215,6 +215,24 @@ mod tests {
     }
 
     #[test]
+    fn noise_never_claims_a_freedv_signal() {
+        let noise = crate::testutil::complex_noise(29, 0.3, 8_000 * 60);
+        let mut channel = FreeDvChannel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(ChannelParams::Freedv(FreeDvParams::default())),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        for chunk in noise.chunks(1_000) {
+            channel.process(chunk, &mut out);
+        }
+        assert!(out.events.is_empty(), "{:?}", out.events.first());
+        assert!(out.audio_pcm.is_empty());
+    }
+
+    #[test]
     fn decodes_the_upstream_receive_recording() {
         const FIXTURE: &[u8] = include_bytes!("../../../../fixtures/freedv_1600_8k.sigmf-data");
         let iq: Vec<Complex<f32>> = FIXTURE

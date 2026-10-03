@@ -32,6 +32,10 @@ impl SyncTracker {
         self.lock != Lock::Search
     }
 
+    fn confirmed(&self) -> bool {
+        matches!(self.lock, Lock::Locked | Lock::Fading(_))
+    }
+
     pub(super) fn update(&mut self, sync_bit: bool) -> (bool, bool) {
         self.history = (self.history << 1 | u8::from(sync_bit)) & WORD_MASK;
         self.seen = (self.seen + 1).min(WORD_LEN);
@@ -39,7 +43,7 @@ impl SyncTracker {
         let reliable = complete && self.history == RELIABLE_WORD;
         let word = reliable || complete && self.history == INVERTED_WORD;
         self.lock = next(self.lock, word);
-        (self.locked(), reliable)
+        (self.confirmed(), reliable)
     }
 }
 
@@ -74,7 +78,8 @@ mod tests {
         let mut tracker = SyncTracker::new();
         let results = feed(&mut tracker, alternating(false, 6));
         assert!(results[..5].iter().all(|&(sync, _)| !sync));
-        assert_eq!(results[5], (true, true));
+        assert_eq!(results[5], (false, true));
+        assert!(tracker.locked());
         assert_eq!(tracker.lock, Lock::Tentative(0));
     }
 
@@ -89,8 +94,8 @@ mod tests {
     fn only_the_upright_word_is_reliable() {
         let mut tracker = SyncTracker::new();
         let results = feed(&mut tracker, alternating(true, 7));
-        assert_eq!(results[5], (true, false));
-        assert_eq!(results[6], (true, true));
+        assert_eq!(results[5], (false, false));
+        assert_eq!(results[6], (false, true));
     }
 
     #[test]
@@ -101,6 +106,14 @@ mod tests {
         let fade = feed(&mut tracker, std::iter::repeat_n(false, 51));
         assert!(fade[..50].iter().all(|&(sync, _)| sync));
         assert_eq!(fade[50], (false, false));
+    }
+
+    #[test]
+    fn only_a_confirmed_lock_is_reported_as_sync() {
+        let mut tracker = SyncTracker::new();
+        let results = feed(&mut tracker, alternating(false, 6 + 25));
+        assert!(results[..30].iter().all(|&(sync, _)| !sync));
+        assert!(results[30].0);
     }
 
     #[test]

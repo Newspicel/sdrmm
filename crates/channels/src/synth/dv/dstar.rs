@@ -1,5 +1,7 @@
 use num_complex::Complex;
 use sdrmm_dsp::crc16_x25;
+
+use crate::dv::dstar::SYNC;
 use sdrmm_modem::{
     cpm::{CpmMod, CpmParams, Mapping},
     pulse::{self, Norm},
@@ -9,7 +11,6 @@ const BAUD: f64 = 4_800.0;
 const DEVIATION_HZ: f64 = 1_200.0;
 const BT: f64 = 0.5;
 const PULSE_SPAN: usize = 3;
-const SYNC: u32 = 0x0055_2D16;
 const FRAME_BITS: usize = 96;
 const HEADER_BYTES: usize = 41;
 const SLOW_CYCLE: usize = 20;
@@ -86,7 +87,11 @@ fn gmsk(bits: &[bool], rate: f64) -> Vec<Complex<f32>> {
 }
 
 fn sync_data() -> [u8; 3] {
-    [(SYNC >> 16) as u8, (SYNC >> 8) as u8, SYNC as u8]
+    [
+        ((SYNC >> 16) as u8).reverse_bits(),
+        ((SYNC >> 8) as u8).reverse_bits(),
+        (SYNC as u8).reverse_bits(),
+    ]
 }
 
 fn scramble(data: [u8; 3]) -> [u8; 3] {
@@ -114,7 +119,7 @@ fn voice_frame(data: &[u8; 3], _seed: usize) -> Vec<bool> {
         }
     }
     for &byte in data {
-        for i in (0..8).rev() {
+        for i in 0..8 {
             bits.push(byte >> i & 1 == 1);
         }
     }

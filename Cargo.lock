@@ -9996,6 +9996,7 @@ dependencies = [
  "rustfft",
  "sdrmm-channels",
  "sdrmm-device",
+ "sdrmm-device-ad936x",
  "sdrmm-device-kiwisdr",
  "sdrmm-device-spyserver",
  "sdrmm-device-virtual",

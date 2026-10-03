@@ -42,7 +42,7 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 
 ## Committed fixtures
 
-These twenty-five pairs are not regenerated: twelve are recordings, two are frozen synthetic waveforms,
+These twenty-six pairs are not regenerated: thirteen are recordings, two are frozen synthetic waveforms,
 and eleven are reference waveforms from generators that are independent of the Rust modulators.
 They retain cases that the current generators do not reproduce.
 
@@ -68,6 +68,7 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `dsc_offair_8k` | 8 k | `dsc` @ 0 Hz | Lyngby Radio `002191000` acknowledging a test call from `231700000` |
 | `radio_clock_dcf77_offair_2k` | 2 k | `radio_clock` / DCF77 @ 0 Hz | 2026-10-03 22:04 CEST |
 | `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
+| `radio_clock_wwvb_offair_2k` | 2 k | `radio_clock` / WWVB @ 0 Hz | 2021-03-14 05:35 UTC |
 | `flex_p2000_offair_48k` | 48 k | `flex` @ 0 Hz | P2000 page to capcode 2029574, `A2 DP2 Leidschendam-Voorburg ...` |
 | `dvbt/qpsk_2k_reference` | 9.142857 M | `dvbt` @ 0 Hz | 2K QPSK, rate 1/2, guard 1/8, 1750 Hz offset; PID 0x123 packets, TPS cell 0x5a |
 | `dab/mode_ii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | Mode II frame: ensemble `0x4a2c`, service `0xc201`, no failed FIB CRCs |
@@ -215,6 +216,8 @@ on 2026-10-03. The SigMF metadata names the receiver and pins the source SHA-256
 - `radio_clock_dcf77_offair_2k`: 77.5 kHz near Hamburg, KiwiSDR AGC on, with fades between pulses.
   `radio_clock::tests::dcf77_off_air_with_agc_decodes`
 - `radio_clock_jjy_offair_2k`: 40 kHz, Chiba, manual gain. `radio_clock::tests::jjy_off_air_decodes`
+- `radio_clock_wwvb_offair_2k`: a public domain archive.org KiwiSDR recording, USB with AGC, carrier at
+  1 kHz. `radio_clock::tests::wwvb_off_air_through_receiver_agc_decodes`
 - `flex_p2000_offair_48k`: 169.650 MHz, Netherlands. FLEX sync reads the low tone as 1, the FIW
   and data the high tone. `flex::tests::decodes_a_p2000_page_off_air`
 

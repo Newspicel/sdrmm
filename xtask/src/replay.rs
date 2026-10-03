@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::Args;
 use num_complex::Complex;
 use sdrmm_channels::{ChannelCtx, ChannelOutputs};
@@ -40,11 +40,13 @@ pub fn run(args: &Replay) -> Result<()> {
     let device_rate = source.rate;
 
     let type_id = params.type_id().to_owned();
-    let descriptor = sdrmm_channels::descriptors()
-        .into_iter()
-        .find(|d| d.type_id == type_id)
-        .with_context(|| format!("no channel called {type_id}"))?;
-    let input_rate = descriptor.input_rate_hz;
+    ensure!(
+        sdrmm_channels::descriptors()
+            .iter()
+            .any(|d| d.type_id == type_id),
+        "no channel called {type_id}"
+    );
+    let input_rate = sdrmm_channels::input_rate(&params);
     let settings = ChannelSettings {
         frequency_hz: args.offset,
         squelch: sdrmm_wire::Squelch::Off,

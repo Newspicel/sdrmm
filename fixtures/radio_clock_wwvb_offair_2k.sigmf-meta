@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 2000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "KiwiSDR (archive.org recording)",
+    "core:description": "WWVB off air at 60 kHz through a KiwiSDR in USB, the carrier heard at 1 kHz: 2021-03-14 05:35 UTC"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1000.0,
+      "core:datetime": "2021-03-14T05:34:40Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "https://archive.org/download/WWVB053505382021Mar14 (KiwiSDR Newport OR, public domain); source SHA-256 0bd797b786164691bb8542966127f1013412ab6a282f513935699f2078276b69; samples 180000..1020000 at 12000 Hz",
+      "core:sample_count": 140000,
+      "core:sample_start": 0
+    }
+  ]
+}

@@ -662,7 +662,7 @@ function GnssChips({ params, limits, onParams }: Mode<"gnss">) {
       <NumberChip
         label="Acquire"
         title="Correlation peak-to-floor acquisition threshold"
-        value={settings.threshold ?? 2.5}
+        value={settings.threshold ?? 4}
         {...limitOf(limits, "threshold")}
         unit="× floor"
         onCommit={(threshold) => onParams({ type: "gnss", settings: { ...settings, threshold } })}

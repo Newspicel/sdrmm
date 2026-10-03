@@ -14,7 +14,7 @@ const CHANNEL_TAPS: usize = 257;
 const SECOND: u32 = RATE as u32;
 const BEAT_SLIP: u32 = SECOND / 20;
 const DEBOUNCE: u32 = SECOND / 50;
-const THRESHOLD: f32 = 0.25;
+const MIN_CONTRAST: f32 = 0.2;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "radio_clock".to_owned(),
@@ -43,6 +43,7 @@ pub struct RadioClockChannel {
     high: f32,
     last_active: bool,
     held: bool,
+    reduced: bool,
     disagreeing: u32,
     since_boundary: u32,
     have_boundary: bool,
@@ -88,6 +89,7 @@ impl ChannelRx for RadioClockChannel {
             high: 0.0,
             last_active: false,
             held: false,
+            reduced: false,
             disagreeing: 0,
             since_boundary: 0,
             have_boundary: false,
@@ -125,6 +127,7 @@ impl RadioClockChannel {
         self.high = 0.0;
         self.last_active = false;
         self.held = false;
+        self.reduced = false;
         self.disagreeing = 0;
         self.since_boundary = 0;
         self.have_boundary = false;
@@ -180,10 +183,22 @@ impl RadioClockChannel {
         } else {
             self.high + (magnitude - self.high) * 0.000_001
         };
-        let threshold = self.low + (self.high - self.low) * THRESHOLD;
+        let (enter, leave) = match self.standard {
+            RadioClockStandard::Jjy => (0.2, 0.35),
+            _ => (0.35, 0.6),
+        };
+        let span = self.high - self.low;
+        if span > self.high * MIN_CONTRAST {
+            let level = (magnitude - self.low) / span;
+            self.reduced = if self.reduced {
+                level < leave
+            } else {
+                level < enter
+            };
+        }
         let normally_active = match self.standard {
-            RadioClockStandard::Jjy => magnitude > threshold,
-            _ => magnitude < threshold,
+            RadioClockStandard::Jjy => !self.reduced,
+            _ => self.reduced,
         };
         let active = self.debounce(normally_active ^ self.invert);
 
@@ -1092,6 +1107,16 @@ mod tests {
         assert_eq!(frames.len(), 1, "{frames:?}");
         assert_eq!(frames[0].datetime, "2026-10-03T22:04:00+02:00");
         assert!(frames[0].dst);
+    }
+
+    #[test]
+    fn wwvb_off_air_through_receiver_agc_decodes() {
+        let iq = off_air(include_bytes!(
+            "../../../fixtures/radio_clock_wwvb_offair_2k.sigmf-data"
+        ));
+        let frames = decode(RadioClockStandard::Wwvb, &iq);
+        assert_eq!(frames.len(), 1, "{frames:?}");
+        assert_eq!(frames[0].datetime, "2021-03-14T05:35:00Z");
     }
 
     #[test]
