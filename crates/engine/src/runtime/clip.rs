@@ -13,26 +13,22 @@ pub(crate) struct ClipMeter {
     peak_bits: AtomicU32,
 }
 
-fn rail_peak(samples: &[Complex<f32>]) -> f32 {
-    samples
-        .iter()
-        .map(|sample| sample.re.abs().max(sample.im.abs()))
-        .fold(0.0, f32::max)
+fn clipped_and_peak(samples: &[Complex<f32>]) -> (u64, f32) {
+    samples.iter().fold((0, 0.0), |(clipped, peak), sample| {
+        let rail = sample.re.abs().max(sample.im.abs());
+        (clipped + u64::from(rail >= FULL_SCALE), peak.max(rail))
+    })
 }
 
 impl ClipMeter {
     pub(crate) fn measure(&self, samples: &[Complex<f32>]) {
-        let clipped = samples
-            .iter()
-            .filter(|sample| sample.re.abs() >= FULL_SCALE || sample.im.abs() >= FULL_SCALE)
-            .count() as u64;
+        let (clipped, peak) = clipped_and_peak(samples);
         if clipped > 0 {
             self.clipped.fetch_add(clipped, Ordering::Relaxed);
         }
         self.samples
             .fetch_add(samples.len() as u64, Ordering::Relaxed);
-        self.peak_bits
-            .fetch_max(rail_peak(samples).to_bits(), Ordering::Relaxed);
+        self.peak_bits.fetch_max(peak.to_bits(), Ordering::Relaxed);
     }
 
     pub(crate) fn take_peak_db(&self) -> f32 {

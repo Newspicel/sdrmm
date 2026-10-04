@@ -2,11 +2,10 @@ use num_complex::Complex;
 
 use crate::{
     ddc::STOPBAND_DB,
-    fir::{Accumulate, design_lowpass_kaiser},
+    fir::{StreamFir, design_lowpass_kaiser},
 };
 
 pub const DEFAULT_TAPS: usize = 131;
-const LANES: usize = 16;
 
 /// Turns the real samples a quadrature-sampling receiver delivers into the complex baseband the
 /// rest of the chain expects, at half the input rate.
@@ -16,9 +15,10 @@ const LANES: usize = 16;
 /// its mirror at the edge, where a half-band low-pass removes it on the way down by two.
 #[derive(Clone, Debug)]
 pub struct RealToIq {
-    even_taps: Vec<f32>,
+    filter: StreamFir<f32, f32>,
     centre_tap: f32,
     in_phase: Vec<f32>,
+    filtered: Vec<f32>,
     quadrature: Vec<f32>,
     quadrature_delay: usize,
     phase: u8,
@@ -38,10 +38,12 @@ impl RealToIq {
         );
         let lowpass = design_lowpass_kaiser(taps, 0.25, STOPBAND_DB);
         let centre = taps / 2;
+        let even_taps: Vec<f32> = lowpass.iter().step_by(2).copied().collect();
         let mut converter = Self {
-            even_taps: lowpass.iter().step_by(2).copied().collect(),
+            filter: StreamFir::new(&even_taps, 1),
             centre_tap: lowpass[centre],
             in_phase: Vec::new(),
+            filtered: Vec::new(),
             quadrature: Vec::new(),
             quadrature_delay: centre.div_ceil(2),
             phase: 0,
@@ -58,14 +60,15 @@ impl RealToIq {
     }
 
     pub fn reset(&mut self) {
+        self.filter.reset();
         self.in_phase.clear();
-        self.in_phase.resize(self.even_taps.len() - 1, 0.0);
         self.quadrature.clear();
         self.quadrature.resize(self.quadrature_delay, 0.0);
         self.phase = 0;
     }
 
     pub fn process(&mut self, input: &[f32], out: &mut Vec<Complex<f32>>) {
+        self.in_phase.clear();
         let lead = usize::from((4 - self.phase) & 3).min(input.len());
         let (head, aligned) = input.split_at(lead);
         let (quads, tail) = aligned.as_chunks::<4>();
@@ -76,25 +79,15 @@ impl RealToIq {
         for &sample in tail {
             self.rotate(sample);
         }
-        let ready = self.in_phase.len() + 1 - self.even_taps.len();
+        self.filter.process(&self.in_phase, &mut self.filtered);
+        let centre_tap = self.centre_tap;
         out.clear();
         out.extend(
-            self.quadrature[..ready]
+            self.filtered
                 .iter()
-                .map(|&q| Complex::new(0.0, self.centre_tap * q)),
+                .zip(&self.quadrature)
+                .map(|(&in_phase, &quadrature)| Complex::new(in_phase, centre_tap * quadrature)),
         );
-        let (blocks, tail) = out.as_chunks_mut::<LANES>();
-        for (index, block) in blocks.iter_mut().enumerate() {
-            let sums = in_phase_block(&self.in_phase[index * LANES..], &self.even_taps);
-            for (sample, sum) in block.iter_mut().zip(sums) {
-                sample.re = sum;
-            }
-        }
-        let done = blocks.len() * LANES;
-        for (index, sample) in tail.iter_mut().enumerate() {
-            sample.re = in_phase_at(&self.in_phase[done + index..], &self.even_taps);
-        }
-        self.in_phase.drain(..out.len());
         self.quadrature.drain(..out.len());
     }
 }
@@ -133,22 +126,6 @@ impl RealToIq {
             *pair = [sign * quad[1], -sign * quad[3]];
         }
     }
-}
-
-fn in_phase_block(history: &[f32], taps: &[f32]) -> [f32; LANES] {
-    let mut sums = [0.0; LANES];
-    for (offset, &tap) in taps.iter().enumerate() {
-        for (sum, &sample) in sums.iter_mut().zip(&history[offset..offset + LANES]) {
-            *sum = sum.add_product(sample, tap);
-        }
-    }
-    sums
-}
-
-fn in_phase_at(history: &[f32], taps: &[f32]) -> f32 {
-    taps.iter()
-        .zip(history)
-        .fold(0.0, |sum, (&tap, &sample)| sum.add_product(sample, tap))
 }
 
 impl Default for RealToIq {

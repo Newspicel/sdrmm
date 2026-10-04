@@ -98,6 +98,21 @@ jobs:
           --lib gpu::caf::tests::radar_matches_cpu_across_tiles_and_fractional_doppler
           -- --ignored --exact
 
+  simd:
+    name: x86 SIMD kernels under SDE (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust
+        with:
+          cache: simd
+          save: ${{ env.SAVE_CACHE }}
+      - uses: petarpetrovt/setup-sde@v6.0
+      - run: cargo test -p sdrmm-dsp --release --lib -- fir:: realiq resamp
+        env:
+          SDRMM_REQUIRE_AVX512: "1"
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: ${{ env.SDE_PATH }}/sde64 -spr --
+
   array-realtime:
     name: Array realtime (ubuntu arm64)
     runs-on: ubuntu-24.04-arm

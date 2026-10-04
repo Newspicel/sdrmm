@@ -133,6 +133,15 @@ fn real_to_iq(c: &mut Criterion) {
             black_box(&output);
         });
     });
+    let mut blocker = sdrmm_dsp::DcBlocker::new();
+    let mut block = input.clone();
+    group.bench_function("dc_block", |b| {
+        b.iter(|| {
+            block.copy_from_slice(&input);
+            blocker.process(black_box(&mut block));
+            black_box(&block);
+        });
+    });
     group.finish();
 }
 

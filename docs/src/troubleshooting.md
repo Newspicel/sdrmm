@@ -89,6 +89,8 @@ Drops damage audio, spectrum, recordings, and decoding.
 - Lower the sample rate and close channels and displays you do not need.
 - Use a release build.
 - On small computers, check for CPU throttling and heat.
+- On Linux, allow a higher thread priority: add `@audio - nice -10` to
+  `/etc/security/limits.conf` and join the `audio` group.
 - Use wired Ethernet for network radios.
 - Give fast USB radios their own USB bus. A HackRF at 20 MS/s nearly fills
   [USB 2](https://hackrf.readthedocs.io/en/stable/synchronization_checklist.html), and a shared

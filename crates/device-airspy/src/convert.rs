@@ -133,7 +133,13 @@ mod tests {
             got.extend_from_slice(split.convert(&bytes[at..end]));
             at = end;
         }
-        assert_eq!(expected, got);
+        assert_eq!(expected.len(), got.len());
+        let worst = expected
+            .iter()
+            .zip(&got)
+            .map(|(a, b)| (a - b).norm())
+            .fold(0.0f32, f32::max);
+        assert!(worst < 1e-5, "split output differs by {worst}");
     }
 
     #[test]

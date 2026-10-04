@@ -50,7 +50,63 @@ pub fn claim(latency: Latency) {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub fn claim(latency: Latency) {
+    use rustix::{process, thread};
+
+    let wanted = match latency {
+        Latency::Critical => -10,
+        Latency::Interactive => -5,
+    };
+    let tid = Some(thread::gettid());
+    let current = process::getpriority_process(tid).unwrap_or(0);
+    if current <= wanted {
+        return;
+    }
+    let reached = raise(wanted, nice_floor(), current, |nice| {
+        process::setpriority_process(tid, nice).is_ok()
+    });
+    if reached != Some(wanted) {
+        warn_once(latency, reached);
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn raise(wanted: i32, floor: i32, current: i32, mut set: impl FnMut(i32) -> bool) -> Option<i32> {
+    [wanted, wanted.max(floor)]
+        .into_iter()
+        .find(|&nice| nice < current && set(nice))
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn nice_floor() -> i32 {
+    match rustix::process::getrlimit(rustix::process::Resource::Nice).current {
+        Some(limit) => 20 - i32::try_from(limit.min(40)).unwrap_or(40),
+        None => -20,
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn warn_once(latency: Latency, reached: Option<i32>) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            ?latency,
+            nice = reached.unwrap_or(0),
+            thread = std::thread::current().name().unwrap_or("unnamed"),
+            "could not fully raise the thread's priority; allow it with RLIMIT_NICE or CAP_SYS_NICE, or audio may stutter under load"
+        );
+    }
+}
+
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "android"
+)))]
 pub fn claim(_latency: Latency) {}
 
 /// Holds off the throttling the OS applies to an app it thinks is idle.
@@ -140,6 +196,36 @@ mod tests {
         let inner = stay_awake("inner");
         drop(inner);
         drop(outer);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn raising_takes_the_wanted_nice_then_the_allowed_floor_then_gives_up() {
+        assert_eq!(raise(-10, -20, 0, |_| true), Some(-10));
+        assert_eq!(raise(-10, -4, 0, |nice| nice == -4), Some(-4));
+        assert_eq!(raise(-10, 20, 0, |nice| nice == -10), Some(-10));
+        assert_eq!(raise(-10, 20, 0, |nice| nice >= 0), None);
+        assert_eq!(raise(-10, -4, -6, |nice| nice == -4), None);
+        assert_eq!(raise(-10, 0, 0, |_| false), None);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn a_claimed_thread_never_ends_below_where_it_started() {
+        use rustix::{process, thread};
+
+        std::thread::spawn(|| {
+            let tid = Some(thread::gettid());
+            let before = process::getpriority_process(tid).expect("getpriority failed");
+            claim(Latency::Critical);
+            let after = process::getpriority_process(tid).expect("getpriority failed");
+            assert!(after <= before, "nice went from {before} to {after}");
+            if nice_floor() <= -10 {
+                assert_eq!(after, -10);
+            }
+        })
+        .join()
+        .expect("thread panicked");
     }
 
     #[cfg(target_os = "macos")]
