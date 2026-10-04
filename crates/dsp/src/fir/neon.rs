@@ -25,7 +25,7 @@ impl Isa {
         floats: &[f32],
         plan: &Plan<f32>,
     ) -> [f32; BLOCK_FLOATS] {
-        unsafe { real_block::<FOLD>(floats, plan) }
+        unsafe { real_sliding_block(floats, plan) }
     }
 
     pub(crate) fn complex_real_block<const FOLD: bool>(
@@ -128,30 +128,6 @@ unsafe fn samples<const FOLD: bool, C>(floats: *const f32, tap: &Tap<C>) -> Bloc
 }
 
 #[target_feature(enable = "neon")]
-fn real_block<const FOLD: bool>(floats: &[f32], plan: &Plan<f32>) -> [f32; BLOCK_FLOATS] {
-    let floats = floats[..plan.floats].as_ptr();
-    let mut sets = [zero(); SETS];
-    let (groups, rest) = plan.taps.as_chunks::<SETS>();
-    for group in groups {
-        for (set, tap) in sets.iter_mut().zip(group) {
-            *set = add_product(
-                *set,
-                unsafe { samples::<FOLD, f32>(floats, tap) },
-                tap.value,
-            );
-        }
-    }
-    for tap in rest {
-        sets[0] = add_product(
-            sets[0],
-            unsafe { samples::<FOLD, f32>(floats, tap) },
-            tap.value,
-        );
-    }
-    store(add(add(sets[0], sets[1]), add(sets[2], sets[3])))
-}
-
-#[target_feature(enable = "neon")]
 unsafe fn slid(window: Block, floats: *const f32, offset: usize) -> Block {
     [window[1], window[2], window[3], unsafe {
         vld1q_f32(floats.add(offset))
@@ -209,6 +185,42 @@ unsafe fn sliding_row(sums: &mut [Block; SETS], base: *const f32, taps: &[f32]) 
     if let Some(&tap) = rest.get(2) {
         even = unsafe { slid(even, base, at + 16) };
         sums[2] = add_product(sums[2], even, tap);
+    }
+}
+
+#[target_feature(enable = "neon")]
+fn real_sliding_block(floats: &[f32], plan: &Plan<f32>) -> [f32; BLOCK_FLOATS] {
+    let floats = floats[..plan.floats].as_ptr();
+    let mut sums = [zero(); SETS];
+    for row in &plan.rows {
+        let taps = &plan.row_taps[row.taps.clone()];
+        unsafe { real_sliding_row(&mut sums, floats.add(row.offset), taps) };
+    }
+    store(add(add(sums[0], sums[1]), add(sums[2], sums[3])))
+}
+
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn real_sliding_row(sums: &mut [Block; SETS], base: *const f32, taps: &[f32]) {
+    let mut windows = [zero(); SETS];
+    for (shift, window) in windows.iter_mut().enumerate().take(taps.len()) {
+        *window = unsafe { load_block(base, shift) };
+    }
+    let (quads, rest) = taps.as_chunks::<SETS>();
+    for (index, quad) in quads.iter().enumerate() {
+        for (shift, (window, sum)) in windows.iter_mut().zip(sums.iter_mut()).enumerate() {
+            if index > 0 {
+                *window = unsafe { slid(*window, base, SETS * index + shift + 12) };
+            }
+            *sum = add_product(*sum, *window, quad[shift]);
+        }
+    }
+    let at = SETS * quads.len();
+    for (shift, &tap) in rest.iter().enumerate() {
+        if !quads.is_empty() {
+            windows[shift] = unsafe { slid(windows[shift], base, at + shift + 12) };
+        }
+        sums[shift] = add_product(sums[shift], windows[shift], tap);
     }
 }
 
