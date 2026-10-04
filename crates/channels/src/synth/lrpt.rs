@@ -11,7 +11,7 @@ use crate::lrpt::{
     link::{
         ASM, CADU_BYTES, CODED_BYTES, FILL_VCID, IMAGE_VCID, INTERLEAVE, MPDU_DATA,
         NO_PACKET_START, PACKET_HEADER, PacketHeader, SEQUENCE_MODULO, VCDU_BYTES, VcduHeader,
-        conv_code, pn_sequence,
+        conv_code, pn_sequence, reed_solomon,
     },
 };
 
@@ -237,7 +237,7 @@ fn fill_cadu(counter: u32, code: &CcsdsReedSolomon, pn: &[u8]) -> Cadu {
 
 #[must_use]
 pub fn cadus(packets: &[Vec<u8>]) -> Vec<Cadu> {
-    let code = CcsdsReedSolomon::new();
+    let code = reed_solomon();
     let pn = pn_sequence();
     let mut stream = Vec::new();
     let mut starts = Vec::new();

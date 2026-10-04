@@ -2,7 +2,7 @@ use sdrmm_dsp::fec::{ccsds_rs::CcsdsReedSolomon, conv7::ViterbiK7};
 
 use super::link::{
     ASM_BYTES, ASM_CODED_BITS, AsmPattern, CODED_BITS, CODED_BYTES, INTERLEAVE, PairMap,
-    VCDU_BYTES, asm_patterns, conv_code, pn_sequence,
+    VCDU_BYTES, asm_patterns, conv_code, pn_sequence, reed_solomon,
 };
 
 const LEAD: usize = 96;
@@ -99,7 +99,7 @@ impl Deframer {
             decoded,
             cadu: [0; CODED_BYTES],
             pn: pn_sequence(),
-            rs: CcsdsReedSolomon::new(),
+            rs: reed_solomon(),
             confirmed: false,
         }
     }
@@ -179,14 +179,7 @@ impl Deframer {
             if filled < ASM_CODED_BITS {
                 continue;
             }
-            let best = self
-                .patterns
-                .iter()
-                .map(|pattern| (pattern.mismatches(window), pattern.map))
-                .min_by_key(|&(mismatches, _)| mismatches);
-            if let Some((mismatches, map)) = best
-                && mismatches <= SEARCH_MISMATCHES
-            {
+            if let Some(map) = self.matching_map(window) {
                 self.state = State::Track {
                     start: scan - ASM_CODED_BITS,
                     map,
@@ -204,19 +197,38 @@ impl Deframer {
         false
     }
 
-    fn asm_mismatches(&self, start: usize, map: PairMap) -> u32 {
-        let window = self.soft[start..start + ASM_CODED_BITS]
-            .iter()
-            .fold(0u64, |acc, &value| acc << 1 | u64::from(value > 0));
+    fn matching_map(&self, window: u64) -> Option<PairMap> {
         self.patterns
             .iter()
+            .map(|pattern| (pattern.mismatches(window), pattern.map))
+            .min_by_key(|&(mismatches, _)| mismatches)
+            .filter(|&(mismatches, _)| mismatches <= SEARCH_MISMATCHES)
+            .map(|(_, map)| map)
+    }
+
+    fn asm_window(&self, start: usize) -> u64 {
+        self.soft[start..start + ASM_CODED_BITS]
+            .iter()
+            .fold(0u64, |acc, &value| acc << 1 | u64::from(value > 0))
+    }
+
+    fn tracked_map(&self, start: usize, map: PairMap) -> Option<PairMap> {
+        let window = self.asm_window(start);
+        let holds = self
+            .patterns
+            .iter()
             .find(|pattern| pattern.map == map)
-            .map_or(u32::MAX, |pattern| pattern.mismatches(window))
+            .is_some_and(|pattern| pattern.mismatches(window) <= TRACK_MISMATCHES);
+        if holds {
+            Some(map)
+        } else {
+            self.matching_map(window)
+        }
     }
 
     fn track(&mut self, start: usize, map: PairMap, misses: u8) -> Option<FrameOutcome> {
         let next = start + CODED_BITS;
-        if self.asm_mismatches(start, map) <= TRACK_MISMATCHES {
+        if let Some(map) = self.tracked_map(start, map) {
             self.state = State::Track {
                 start: next,
                 map,

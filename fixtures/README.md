@@ -224,3 +224,9 @@ The first three seconds of the FreeDV GUI project's `wav/ve9qrp_1600.wav` receiv
 Signed 16-bit mono audio was converted to normalized `cf32_le` with zero quadrature. The SigMF
 annotation records the source SHA-256, pinned upstream commit, and LGPL-2.1 license.
 `dv::freedv::tests::decodes_the_upstream_receive_recording` reads it directly.
+
+### Meteor LRPT: `lrpt/meteor_m2_qpsk72_symbols.bin`
+
+Not IQ: 196,864 hard QPSK symbol bits, packed MSB first, from this receiver's demodulator on a
+2018 Meteor-M N2 pass on 137.9 MHz (72k QPSK). They hold VCDUs `09BF68` to `09BF73`: one full
+MCU row of APIDs 64, 65 and 68. `lrpt::tests::a_recorded_meteor_m2_row_decodes_cleanly` reads it.

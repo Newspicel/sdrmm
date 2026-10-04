@@ -3,7 +3,7 @@ use sdrmm_wire::{ChannelParams, LrptImage, LrptMode, LrptParams, NfmParams};
 
 use super::{
     frame::Deframer,
-    image::{BLUE_APID, RED_APID, WIDTH},
+    image::{BLUE_APID, Imagery, Placement, RED_APID, WIDTH},
     jpeg::{Block, MCU_PIXELS, MCUS_PER_PACKET, McuDecoder},
     link::{PairMap, VCDU_BYTES, VcduHeader, conv_code},
     *,
@@ -277,6 +277,101 @@ fn the_deframer_resolves_every_rotation_and_offset() {
             assert_eq!(deframer.vcdu().len(), VCDU_BYTES);
         }
     }
+}
+
+const RECORDED_SYMBOLS: &[u8] =
+    include_bytes!("../../../../fixtures/lrpt/meteor_m2_qpsk72_symbols.bin");
+const RECORDED_FIRST_COUNTER: u32 = 0x09_BF68;
+const RECORDED_FRAMES: usize = 12;
+const ROW_IMAGE_PACKETS: usize = 3 * image::MCUS_PER_ROW / MCUS_PER_PACKET;
+
+fn recorded_soft() -> Vec<i16> {
+    RECORDED_SYMBOLS
+        .iter()
+        .flat_map(|&byte| (0..8).rev().map(move |shift| byte >> shift & 1 == 1))
+        .map(|bit| if bit { 64 } else { -64 })
+        .collect()
+}
+
+#[test]
+fn a_recorded_meteor_m2_row_decodes_cleanly() {
+    let mut deframer = Deframer::new();
+    let mut depacketizer = Depacketizer::new();
+    let mut imagery = Imagery::new();
+    let mut counters = Vec::new();
+    let mut placed = Vec::new();
+    for chunk in recorded_soft().chunks(4_096) {
+        deframer.push(chunk);
+        while let Some(outcome) = deframer.next_frame() {
+            assert!(!outcome.failed, "frame {}", counters.len());
+            let header = VcduHeader::parse(deframer.vcdu());
+            assert_eq!(header.vcid, link::IMAGE_VCID);
+            counters.push(header.counter);
+            depacketizer.load(deframer.vcdu());
+            while let Some(packet) = depacketizer.next_packet() {
+                let header = PacketHeader::parse(packet);
+                let placement = imagery.place(packet, header.apid, header.sequence);
+                if placement != Placement::Ignored {
+                    placed.push((header.apid, placement));
+                }
+            }
+        }
+    }
+    let expected: Vec<u32> = (0..RECORDED_FRAMES as u32)
+        .map(|index| RECORDED_FIRST_COUNTER + index)
+        .collect();
+    assert_eq!(counters, expected);
+    assert!(placed.len() >= ROW_IMAGE_PACKETS);
+    assert!(
+        placed[..ROW_IMAGE_PACKETS]
+            .iter()
+            .all(|&(_, placement)| placement == Placement::Placed)
+    );
+    assert_eq!(imagery.apids(), vec![64, 65, 68]);
+    assert_eq!(imagery.packets_lost(), 0);
+    let row = &imagery.snapshot().luma[..8 * WIDTH];
+    let mean = row.iter().map(|&v| f64::from(v)).sum::<f64>() / row.len() as f64;
+    let spread = row
+        .iter()
+        .map(|&v| (f64::from(v) - mean).powi(2))
+        .sum::<f64>()
+        / row.len() as f64;
+    assert!((40.0..220.0).contains(&mean), "mean {mean}");
+    assert!(spread.sqrt() > 10.0, "spread {spread}");
+}
+
+#[test]
+fn a_quarter_turn_phase_slip_costs_one_frame() {
+    let (_, frames) = scene_cadus(&DEFAULT_APIDS, 1);
+    let soft = coded_soft(&frames);
+    let slip = link::CODED_BITS * 5 + link::CODED_BITS / 3;
+    let turned = PairMap {
+        swap: true,
+        negate_first: true,
+        negate_second: false,
+    };
+    let mut received = Vec::with_capacity(soft.len());
+    for (index, &[first, second]) in soft.as_chunks::<2>().0.iter().enumerate() {
+        let map = if 2 * index < slip {
+            PairMap::ALL[0]
+        } else {
+            turned
+        };
+        let (a, b) = map.apply(first, second);
+        received.push(a);
+        received.push(b);
+    }
+    let mut deframer = Deframer::new();
+    let mut outcomes = Vec::new();
+    for chunk in received.chunks(3_000) {
+        deframer.push(chunk);
+        while let Some(outcome) = deframer.next_frame() {
+            outcomes.push(outcome.failed);
+        }
+    }
+    assert_eq!(outcomes.len(), frames.len() - 1);
+    assert_eq!(outcomes.iter().filter(|&&failed| failed).count(), 1);
+    assert!(outcomes[5]);
 }
 
 #[test]

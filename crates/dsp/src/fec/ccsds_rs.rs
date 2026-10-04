@@ -17,6 +17,13 @@ pub struct InterleavedOutcome {
     pub failed: usize,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Basis {
+    #[default]
+    Dual,
+    Conventional,
+}
+
 #[derive(Clone, Debug)]
 pub struct CcsdsReedSolomon {
     code: ReedSolomon,
@@ -79,6 +86,10 @@ impl Field {
     }
 }
 
+fn identity() -> [u8; 256] {
+    std::array::from_fn(|index| index as u8)
+}
+
 fn dual_to_conventional() -> [u8; 256] {
     let mut table = [0u8; 256];
     for conventional in 0..=255u8 {
@@ -93,14 +104,22 @@ fn dual_to_conventional() -> [u8; 256] {
 impl CcsdsReedSolomon {
     #[must_use]
     pub fn new() -> Self {
+        Self::with_basis(Basis::Dual)
+    }
+
+    #[must_use]
+    pub fn with_basis(basis: Basis) -> Self {
         let conventional = Field::new(FIELD_POLY);
         let root_poly = conventional.minimal_polynomial(ROOT_STEP);
         let rooted = Field::new(root_poly);
-        let dual = dual_to_conventional();
+        let to_conventional = match basis {
+            Basis::Dual => dual_to_conventional(),
+            Basis::Conventional => identity(),
+        };
         let mut to_code = [0u8; 256];
         let mut from_code = [0u8; 256];
         for (symbol, slot) in to_code.iter_mut().enumerate() {
-            let value = dual[symbol];
+            let value = to_conventional[symbol];
             *slot = if value == 0 {
                 0
             } else {
@@ -258,6 +277,40 @@ mod tests {
         }
         assert_eq!(code.decode(&mut word), Some(16));
         assert_eq!(word, clean);
+    }
+
+    #[test]
+    fn the_conventional_basis_corrects_errors() {
+        let code = CcsdsReedSolomon::with_basis(Basis::Conventional);
+        let clean = codeword(&code, &message(17));
+        let mut word = clean;
+        for index in 0..16 {
+            word[index * 13 + 5] ^= 0x3C ^ index as u8;
+        }
+        assert_eq!(code.decode(&mut word), Some(16));
+        assert_eq!(word, clean);
+    }
+
+    #[test]
+    fn the_conventional_basis_skips_the_dual_basis_mapping() {
+        let dual = CcsdsReedSolomon::new();
+        let conventional = CcsdsReedSolomon::with_basis(Basis::Conventional);
+        let from_dual = dual_to_conventional();
+        let data = message(19);
+        let mut mapped = [0u8; CCSDS_DATA];
+        for (slot, &symbol) in mapped.iter_mut().zip(&data) {
+            *slot = from_dual
+                .iter()
+                .position(|&value| value == symbol)
+                .map_or(0, |index| index as u8);
+        }
+        let plain = codeword(&conventional, &data);
+        let berlekamp = codeword(&dual, &mapped);
+        for (&a, &b) in plain.iter().zip(&berlekamp) {
+            assert_eq!(from_dual[usize::from(b)], a);
+        }
+        let mut crossed = plain;
+        assert_eq!(dual.decode(&mut crossed), None);
     }
 
     #[test]
