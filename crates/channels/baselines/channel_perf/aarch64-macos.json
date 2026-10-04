@@ -253,8 +253,8 @@
   },
   {
     "bench": "gnss",
-    "msamples_per_s": 517.4303016583287,
-    "realtime_factor": 252.65151448160586,
+    "msamples_per_s": 20.15,
+    "realtime_factor": 9.8388671875,
     "config": "noise including deferred decode slots, 2048000 Hz, 2048 sample blocks",
     "host": "aarch64-macos"
   },

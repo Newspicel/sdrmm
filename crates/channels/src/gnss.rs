@@ -16,6 +16,7 @@ const DOPPLER_STEP_HZ: i32 = 500;
 const ACQUIRE_MS: usize = 16;
 const ACQUIRE_GAP_MS: u8 = 16;
 const CONFIRM_SAMPLES: usize = 2;
+const _: () = assert!(RATE as usize / SAMPLES_PER_MS == 2 * DOPPLER_STEP_HZ as usize);
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "gnss".to_owned(),
@@ -52,6 +53,7 @@ pub struct GnssChannel {
     code_fft: Vec<Complex<f32>>,
     samples: Vec<Complex<f32>>,
     fft_buf: Vec<Complex<f32>>,
+    spectra: Vec<Complex<f32>>,
     fft: FftPair,
     lock: Option<Lock>,
     acquisition_wait_ms: u8,
@@ -138,6 +140,7 @@ impl GnssChannel {
             code_fft,
             samples: Vec::with_capacity(SAMPLES_PER_MS),
             fft_buf: vec![Complex::default(); SAMPLES_PER_MS],
+            spectra: vec![Complex::default(); 2 * SAMPLES_PER_MS],
             powers: vec![0.0; doppler_bins(params.doppler_hz) * SAMPLES_PER_MS],
             summed_ms: 0,
             candidate: None,
@@ -198,11 +201,27 @@ impl GnssChannel {
         self.extract_nav(lock, out);
     }
 
-    fn correlate(&mut self, doppler: i32) {
-        wipe(&self.samples, doppler as f32, &mut self.fft_buf);
-        self.fft.forward(&mut self.fft_buf);
-        for (bin, code) in self.fft_buf.iter_mut().zip(&self.code_fft) {
-            *bin *= code.conj();
+    fn transform(&mut self) {
+        let lowest = -(self.params.doppler_hz as i32);
+        for (slot, spectrum) in self
+            .spectra
+            .as_chunks_mut::<SAMPLES_PER_MS>()
+            .0
+            .iter_mut()
+            .enumerate()
+        {
+            let doppler = lowest + slot as i32 * DOPPLER_STEP_HZ;
+            wipe(&self.samples, doppler as f32, spectrum);
+            self.fft.forward(spectrum);
+        }
+    }
+
+    fn correlate(&mut self, row: usize) {
+        let spectrum = &self.spectra[(row % 2) * SAMPLES_PER_MS..][..SAMPLES_PER_MS];
+        let (head, tail) = spectrum.split_at((row / 2) % SAMPLES_PER_MS);
+        let shifted = tail.iter().chain(head);
+        for ((bin, &value), code) in self.fft_buf.iter_mut().zip(shifted).zip(&self.code_fft) {
+            *bin = value * code.conj();
         }
         self.fft.inverse(&mut self.fft_buf);
     }
@@ -213,8 +232,9 @@ impl GnssChannel {
     }
 
     fn accumulate(&mut self) {
-        for (row, doppler) in self.dopplers().enumerate() {
-            self.correlate(doppler);
+        self.transform();
+        for row in 0..self.powers.len() / SAMPLES_PER_MS {
+            self.correlate(row);
             let powers = &mut self.powers[row * SAMPLES_PER_MS..(row + 1) * SAMPLES_PER_MS];
             for (sum, value) in powers.iter_mut().zip(&self.fft_buf) {
                 *sum += value.norm_sqr();
@@ -237,9 +257,10 @@ impl GnssChannel {
         if ratio < self.params.threshold {
             return None;
         }
-        let doppler = self.dopplers().nth(best / SAMPLES_PER_MS)?;
+        let row = best / SAMPLES_PER_MS;
+        let doppler = self.dopplers().nth(row)?;
         let phase = best % SAMPLES_PER_MS;
-        self.correlate(doppler);
+        self.correlate(row);
         Some(Lock {
             doppler_hz: doppler as f32,
             code_phase: (SAMPLES_PER_MS - phase) % SAMPLES_PER_MS,
@@ -553,6 +574,37 @@ mod tests {
         assert_eq!(lock.doppler_hz, doppler);
         assert_eq!(lock.code_phase, shift);
         assert!(lock.cn0_db_hz > 45.0);
+    }
+
+    #[test]
+    fn shifted_spectra_match_a_direct_doppler_wipe() {
+        let mut channel = GnssChannel::build(GnssParams {
+            prn: 3,
+            doppler_hz: 3_250,
+            ..GnssParams::default()
+        });
+        channel.samples = crate::testutil::complex_noise(9, 0.5, SAMPLES_PER_MS);
+        channel.transform();
+        let mut direct = vec![Complex::default(); SAMPLES_PER_MS];
+        for (row, doppler) in channel.dopplers().enumerate() {
+            channel.correlate(row);
+            wipe(&channel.samples, doppler as f32, &mut direct);
+            channel.fft.forward(&mut direct);
+            for (bin, code) in direct.iter_mut().zip(&channel.code_fft) {
+                *bin *= code.conj();
+            }
+            channel.fft.inverse(&mut direct);
+            let peak = direct.iter().map(|v| v.norm()).fold(0.0f32, f32::max);
+            let worst = direct
+                .iter()
+                .zip(&channel.fft_buf)
+                .map(|(a, b)| (a - b).norm())
+                .fold(0.0f32, f32::max);
+            assert!(
+                worst < 1e-3 * peak,
+                "{doppler} Hz differs by {worst} of {peak}"
+            );
+        }
     }
 
     #[test]
