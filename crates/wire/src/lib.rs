@@ -148,8 +148,8 @@ pub use network::{
     NetworkTransport,
 };
 pub use patch::{
-    ARRAY_LANE_PORT, ARRAY_PORT, BEAM_PORT, BeamformerNode, CONTROL_PORT, ChannelNode,
-    CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
+    ARRAY_LANE_PORT, ARRAY_PORT, AudioRecorderNode, BEAM_PORT, BeamformerNode, CONTROL_PORT,
+    ChannelNode, CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
     DEFAULT_SIGNAL_MAP_OFFSET_HZ, DV_DECODER_KIND, DeviceNode, DeviceRef, DfNode, DmrChannelEntry,
     DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol, EVENTS_PORT, HuntNode,
     MAX_DMR_CHANNEL_MAP, MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES, MAX_DMR_SEARCH_CANDIDATES,

@@ -608,7 +608,8 @@
       "default_body": {
         "kind": "audio_recorder",
         "data": {
-          "recording": false
+          "recording": false,
+          "skip_silence": false
         }
       }
     },

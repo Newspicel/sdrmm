@@ -172,12 +172,13 @@ impl Engine {
         ds: u32,
         ch: u32,
     ) -> Result<AudioRecordingStatus, EngineError> {
-        self.start_route_recording(&AudioRoute::channel(ds, ch))
+        self.start_route_recording(&AudioRoute::channel(ds, ch), false)
     }
 
     pub fn start_route_recording(
         &self,
         route: &AudioRoute,
+        skip_silence: bool,
     ) -> Result<AudioRecordingStatus, EngineError> {
         let (ds, ch) = (route.device_set, route.channel);
         if !route.fx.is_empty() {
@@ -239,7 +240,7 @@ impl Engine {
                 .and_then(|name| name.to_str())
                 .unwrap_or_default()
                 .to_owned();
-            let (tap, blocks, shared) = audio_recording::create_tap(device_rate);
+            let (tap, blocks, shared) = audio_recording::create_tap(device_rate, skip_silence);
             let thread = audio_recording::spawn_writer(writer, blocks, shared.clone())?;
             let fx_control = if route.fx.is_empty() {
                 None
@@ -328,6 +329,23 @@ impl Engine {
                 }
             }
         }
+    }
+
+    pub fn set_route_skip_silence(
+        &self,
+        route: &AudioRoute,
+        skip: bool,
+    ) -> Result<(), EngineError> {
+        let inner = self.lock();
+        let recording = inner
+            .device_sets
+            .get(&route.device_set)
+            .ok_or(EngineError::DeviceSetNotFound(route.device_set))?
+            .audio_recordings
+            .get(route)
+            .ok_or_else(|| EngineError::Recording("this audio is not recording".to_string()))?;
+        recording.shared.set_skip_silence(skip);
+        Ok(())
     }
 
     pub fn stop_channel_recording(

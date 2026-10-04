@@ -487,6 +487,13 @@ pub struct RecorderNode {
     pub recording: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct AudioRecorderNode {
+    pub recording: bool,
+    pub skip_silence: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct SignalMapNode {

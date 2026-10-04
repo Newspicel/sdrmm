@@ -161,8 +161,8 @@ async fn a_recording_through_audio_fx_holds_the_processed_audio() {
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
 
-    let started = engine.start_route_recording(&route).unwrap();
-    assert!(engine.start_route_recording(&route).is_err());
+    let started = engine.start_route_recording(&route, false).unwrap();
+    assert!(engine.start_route_recording(&route, false).is_err());
     let live = wait_for_frames(&engine, ds, ch, 9_600).await;
     let stopping = Instant::now();
     let done = engine.stop_route_recording(&route).unwrap();
@@ -190,7 +190,7 @@ async fn a_channel_records_raw_and_through_audio_fx_at_once() {
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
     let raw = engine.start_channel_recording(ds, ch).unwrap();
-    let cleaned = engine.start_route_recording(&processed).unwrap();
+    let cleaned = engine.start_route_recording(&processed, false).unwrap();
     assert_ne!(raw.file, cleaned.file);
     let statuses = engine
         .snapshot()
@@ -221,7 +221,7 @@ async fn a_recording_through_an_unknown_audio_fx_is_refused_and_leaves_no_file()
         fx: vec!["ghost".to_owned()],
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
-    assert!(engine.start_route_recording(&route).is_err());
+    assert!(engine.start_route_recording(&route, false).is_err());
     assert!(live_status(&engine, ds, ch).is_none());
     let left = std::fs::read_dir(engine.audio_recordings_dir().unwrap())
         .map(|entries| entries.count())
@@ -372,5 +372,31 @@ async fn recording_without_a_recordings_directory_is_refused() {
     assert!(engine.audio_recordings_dir().is_none());
     let err = engine.start_channel_recording(ds, ch).unwrap_err();
     assert!(err.to_string().contains("recordings directory"), "{err}");
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
+async fn skipping_silence_pauses_while_the_squelch_is_shut() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let engine = engine(dir.path());
+    let ds = set_at_test_rate(&engine);
+    let shut = ChannelSettings {
+        squelch: sdrmm_wire::Squelch::Manual { level_db: 50.0 },
+        ..settings(
+            ChannelParams::Nfm(NfmParams::default()),
+            NFM_CARRIER_OFFSET_HZ,
+        )
+    };
+    let ch = engine.add_channel(ds, 0, shut).unwrap();
+    let route = sdrmm_wire::AudioRoute::channel(ds, ch);
+
+    engine.start_route_recording(&route, true).unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(live_status(&engine, ds, ch).unwrap().frames, 0);
+
+    engine.set_route_skip_silence(&route, false).unwrap();
+    wait_for_frames(&engine, ds, ch, 4_800).await;
+    engine.stop_route_recording(&route).unwrap();
+    assert!(engine.set_route_skip_silence(&route, true).is_err());
     engine.remove_device_set(ds).unwrap();
 }

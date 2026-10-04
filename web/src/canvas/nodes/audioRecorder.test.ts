@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AudioRecordingStatus, ChannelInfo } from "../../lib/types";
-import { recordingFor } from "./audioRecorder";
+import type { AudioRecordingStatus, ChannelInfo, PatchNode } from "../../lib/types";
+import { recordingFor, withRecording, withSkipSilence } from "./audioRecorder";
 
 const status = (file: string, fx?: string[]): AudioRecordingStatus => ({
   file,
@@ -29,5 +29,29 @@ describe("recordingFor", () => {
     expect(recordingFor(wired, ["b", "a"])).toBeNull();
     expect(recordingFor(wired, [])).toBeNull();
     expect(recordingFor(channel(), [])).toBeNull();
+  });
+});
+
+const placed = { id: "rec", position: { x: 0, y: 0 } };
+
+describe("recorder edits", () => {
+  it("switching an audio recorder keeps its silence choice", () => {
+    const quiet: PatchNode = {
+      ...placed,
+      kind: "audio_recorder",
+      data: { recording: false, skip_silence: true },
+    };
+    expect(withRecording(quiet, true)).toMatchObject({
+      data: { recording: true, skip_silence: true },
+    });
+    expect(withSkipSilence(quiet, false)).toMatchObject({
+      data: { recording: false, skip_silence: false },
+    });
+  });
+
+  it("only audio recorders skip silence", () => {
+    const iq: PatchNode = { ...placed, kind: "recorder", data: { recording: false } };
+    expect(withSkipSilence(iq, true)).toBe(iq);
+    expect(withRecording(iq, true)).toMatchObject({ data: { recording: true } });
   });
 });

@@ -2213,7 +2213,7 @@ fn a_recorder_saved_before_it_had_a_switch_opens_idle() {
         bodies,
         vec![
             sdrmm_wire::NodeBody::Recorder(off),
-            sdrmm_wire::NodeBody::AudioRecorder(off),
+            sdrmm_wire::NodeBody::AudioRecorder(sdrmm_wire::AudioRecorderNode::default()),
             sdrmm_wire::NodeBody::BasebandRecorder(off),
         ]
     );

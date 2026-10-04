@@ -8226,6 +8226,19 @@
           }
         }
       },
+      "AudioRecorderNode": {
+        "type": "object",
+        "properties": {
+          "recording": {
+            "type": "boolean",
+            "default": false
+          },
+          "skip_silence": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
       "AudioRecordingInfo": {
         "type": "object",
         "required": [
@@ -20636,7 +20649,7 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/RecorderNode"
+                "$ref": "#/components/schemas/AudioRecorderNode"
               },
               "kind": {
                 "type": "string",

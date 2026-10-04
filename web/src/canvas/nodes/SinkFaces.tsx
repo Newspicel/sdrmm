@@ -12,6 +12,7 @@ import {
   toQuery,
   type WireScope,
 } from "../../components/decoderLog";
+import { Chips, ToggleChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { GainMeter, MeterRow } from "../../components/face/Meter";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -38,7 +39,7 @@ import { patchNode } from "../graph";
 import { huntSweepOf } from "../newNode";
 import { decoderOf, deviceSetOf } from "../workspaceDevice";
 import { AudioSpectrogramView } from "./AudioSpectrogramView";
-import { recordingFor } from "./audioRecorder";
+import { type RecorderNodeOf, recordingFor, withRecording, withSkipSilence } from "./audioRecorder";
 import { kindsOffered } from "./eventFilter";
 import { MapPlot } from "./MapPlot";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
@@ -357,23 +358,13 @@ export function ExportFace({ node }: { node: PatchNode }) {
   );
 }
 
-type RecorderNodeOf = PatchNodeOf<"recorder" | "audio_recorder" | "baseband_recorder">;
-
-function isRecorder(node: PatchNode): node is RecorderNodeOf {
-  return (
-    node.kind === "recorder" || node.kind === "audio_recorder" || node.kind === "baseband_recorder"
-  );
-}
-
 function RecorderSwitch({ node, title }: { node: RecorderNodeOf; title: string }) {
   const workspace = useWorkspaceContext();
   const recording = node.data?.recording ?? false;
   const switchTo = (next: boolean) => {
     workspace.edit((snapshot) => ({
       ...snapshot,
-      graph: patchNode(snapshot.graph, node.id, (current) =>
-        isRecorder(current) ? { ...current, data: { ...current.data, recording: next } } : current,
-      ),
+      graph: patchNode(snapshot.graph, node.id, (current) => withRecording(current, next)),
     }));
   };
   return (
@@ -505,6 +496,26 @@ function useInputName(): (input: Input) => string {
     input.channel.settings.params.type.toUpperCase();
 }
 
+function SkipSilenceChip({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
+  const workspace = useWorkspaceContext();
+  const switchTo = (skip_silence: boolean) => {
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      graph: patchNode(snapshot.graph, node.id, (current) =>
+        withSkipSilence(current, skip_silence),
+      ),
+    }));
+  };
+  return (
+    <ToggleChip
+      label="Skip silence"
+      title="Pause while the squelch is closed"
+      on={node.data?.skip_silence ?? false}
+      onChange={switchTo}
+    />
+  );
+}
+
 function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
   const inputs = useInputs(node.id, "audio");
   const nameOf = useInputName();
@@ -518,6 +529,9 @@ function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
           <FaceEmpty hint="Wire a channel's audio in" />
         ) : (
           <>
+            <Chips>
+              <SkipSilenceChip node={node} />
+            </Chips>
             <Readouts ruled={false}>
               {takes.map(({ input, status }) =>
                 status === null ? (

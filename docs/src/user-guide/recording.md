@@ -44,7 +44,7 @@ smaller than full Device IQ and can be played back like any other recording. Cha
 the Device rate starts a new file. Removing the channel ends it.
 
 **Audio recorder** keeps what reaches it, after squelch and any Audio FX it is wired behind.
-Closed squelch writes silence so timing stays intact. Mode and rate changes do not stop it. The
+Closed squelch writes silence so timing stays intact; **Skip silence** pauses instead. Mode and rate changes do not stop it. The
 file stays playable even if the server stops mid-recording.
 
 Both recorders take several channels and write one file per wired input.

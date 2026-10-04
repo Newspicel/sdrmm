@@ -2390,6 +2390,12 @@ export interface components {
             filter?: components["schemas"]["AudioFilterSettings"];
             notches?: components["schemas"]["NotchSettings"][];
         };
+        AudioRecorderNode: {
+            /** @default false */
+            recording: boolean;
+            /** @default false */
+            skip_silence: boolean;
+        };
         AudioRecordingInfo: {
             /** Format: int64 */
             bytes: number;
@@ -5706,7 +5712,7 @@ export interface components {
             /** @enum {string} */
             kind: "recorder";
         } | {
-            data: components["schemas"]["RecorderNode"];
+            data: components["schemas"]["AudioRecorderNode"];
             /** @enum {string} */
             kind: "audio_recorder";
         } | {
