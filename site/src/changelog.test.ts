@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fromGitHub, type GitHubRelease, newest, parseNotes, renderSummary } from "./changelog";
+import {
+  fromPublished,
+  newest,
+  type PublishedRelease,
+  parseNotes,
+  renderSummary,
+} from "./changelog";
 
 const NOTES = `### Features
 
@@ -20,19 +26,8 @@ Container image: \`docker pull ghcr.io/newspicel/sdrmm:1.10.0\`
 **Full Changelog**: https://github.com/Newspicel/sdrmm/compare/v1.9.0...v1.10.0
 `;
 
-function release(
-  tag: string,
-  body: string | null,
-  extra: Partial<GitHubRelease> = {},
-): GitHubRelease {
-  return {
-    tag_name: tag,
-    published_at: "2026-10-01T12:00:00Z",
-    draft: false,
-    prerelease: false,
-    body,
-    ...extra,
-  };
+function release(tag: string, body: string | null): PublishedRelease {
+  return { tag, published_at: "2026-10-01T12:00:00Z", body };
 }
 
 describe("parseNotes", () => {
@@ -53,11 +48,10 @@ describe("parseNotes", () => {
   });
 });
 
-describe("fromGitHub", () => {
-  it("keeps only published stable releases with notes", () => {
-    const all = fromGitHub([
-      release("nightly", NOTES, { prerelease: true }),
-      release("v1.11.0", NOTES, { draft: true, published_at: null }),
+describe("fromPublished", () => {
+  it("keeps only versioned releases with notes", () => {
+    const all = fromPublished([
+      release("nightly", NOTES),
       release("v1.10.0", NOTES),
       release("v1.9.0", "Container image: `docker pull x`"),
     ]);
@@ -68,7 +62,7 @@ describe("fromGitHub", () => {
 
 describe("newest", () => {
   it("takes the first items of the latest release", () => {
-    const latest = newest(fromGitHub([release("v1.10.0", NOTES)]), 2);
+    const latest = newest(fromPublished([release("v1.10.0", NOTES)]), 2);
     expect(latest?.version).toBe("1.10.0");
     expect(latest?.groups.flatMap((group) => group.items)).toHaveLength(2);
   });

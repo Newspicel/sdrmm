@@ -546,6 +546,9 @@ jobs:
           printf '%s\n' "$GITHUB_REF_NAME" > "$RUNNER_TEMP/latest"
           CACHE_CONTROL="public, max-age=300" scripts/r2-upload.sh releases \
             "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/latest.json" "$RUNNER_TEMP/latest"
+      - name: Publish changelog
+        if: github.ref_type == 'tag'
+        run: scripts/publish-changelog.sh "$GITHUB_REPOSITORY"
       - name: Remove previous nightly
         if: github.event_name == 'schedule'
         run: gh release delete nightly --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true

@@ -1,5 +1,3 @@
-import { REPOSITORY } from "./seo";
-
 const HEADINGS = ["Breaking changes", "Features", "Fixes"];
 
 export interface Group {
@@ -13,11 +11,9 @@ export interface Release {
   groups: Group[];
 }
 
-export interface GitHubRelease {
-  tag_name: string;
-  published_at: string | null;
-  draft: boolean;
-  prerelease: boolean;
+export interface PublishedRelease {
+  tag: string;
+  published_at: string;
   body: string | null;
 }
 
@@ -79,10 +75,10 @@ export function parseNotes(body: string): Group[] {
     .filter((group) => group.items.length > 0);
 }
 
-export function fromGitHub(all: readonly GitHubRelease[]): Release[] {
+export function fromPublished(all: readonly PublishedRelease[]): Release[] {
   return all.flatMap((release) => {
-    const version = release.tag_name.match(/^v(\d+\.\d+\.\d+)$/)?.[1];
-    if (version === undefined || release.draft || release.prerelease || !release.published_at) {
+    const version = release.tag.match(/^v(\d+\.\d+\.\d+)$/)?.[1];
+    if (version === undefined) {
       return [];
     }
     const groups = parseNotes(release.body ?? "");
@@ -106,21 +102,14 @@ export function newest(all: readonly Release[], count: number): Release | undefi
   return { ...latest, groups };
 }
 
-const API = REPOSITORY.replace("https://github.com/", "https://api.github.com/repos/");
+const CHANGELOG = "https://downloads.sdrmm.com/releases/changelog.json";
 
 async function fetchReleases(): Promise<Release[]> {
-  const token: string | undefined = import.meta.env.GITHUB_TOKEN;
-  const response = await fetch(`${API}/releases?per_page=30`, {
-    headers: {
-      accept: "application/vnd.github+json",
-      "user-agent": "sdrmm-site",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  const response = await fetch(CHANGELOG);
   if (!response.ok) {
-    throw new Error(`GitHub releases: ${response.status} ${response.statusText}`);
+    throw new Error(`${CHANGELOG}: ${response.status} ${response.statusText}`);
   }
-  return fromGitHub((await response.json()) as GitHubRelease[]);
+  return fromPublished((await response.json()) as PublishedRelease[]);
 }
 
 let cached: Promise<Release[]> | undefined;
