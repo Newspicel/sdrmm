@@ -19,7 +19,11 @@ object GuidanceText {
         val guidance = view?.guidance ?: return resources.getString(R.string.no_guidance)
         val distance = Format.distance(distanceM ?: guidance.distanceM, units)
         return when (guidance.kind) {
-            GuidanceKind.PROBE -> resources.getString(R.string.guidance_cross, Format.angle(guidance.headingTrueDeg), distance)
+            GuidanceKind.PROBE -> resources.getString(
+                R.string.guidance_cross,
+                guidance.headingRelDeg?.let { Format.side(it) } ?: Format.angle(guidance.headingTrueDeg),
+                distance,
+            )
             GuidanceKind.ESTIMATE -> resources.getString(R.string.guidance_approach, distance)
         }
     }
@@ -31,6 +35,7 @@ object GuidanceText {
         DfState.PHASE_UNKNOWN -> R.string.df_phase_unknown
         DfState.NO_HEADING -> R.string.df_no_heading
         DfState.SQUELCHED -> R.string.df_squelched
+        DfState.TURNING -> R.string.df_turning
         DfState.LIVE -> null
     }
 }

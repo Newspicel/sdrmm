@@ -66,7 +66,9 @@ A [Signal hunt](scanning.md#hunt-a-transmitter) with a phone sends bearings too.
 | Guidance | Where to drive next: `Drive across` or `Drive at it` |
 | Bearings | Bearings in use |
 
-The table lists each station's last bearing, its spread and age. **Fade** sets how fast old
+The table lists each station's last bearing, its spread, its learned heading offset and age.
+**Align** learns a constant heading offset per station, such as a turned array mount, once a loop
+or crossing pins it down. **Fade** sets how fast old
 bearings lose weight: **Auto** picks **Fixed** or **Moving** from the stations, **Set** takes your
 half life. **Min conf** refuses weak bearings and **Emitters** caps how many transmitters it
 finds. **Clear** throws away every bearing.
@@ -86,3 +88,7 @@ likely positions, the estimate and its ellipse. The first fix is an event that a
 Mount the array on the car, pair a [phone](phones.md) and wire its GPS to the Array with
 **Heading**. The phone's DF drive mission shows the bearing and guidance and starts navigation to
 the target.
+
+Bearings pause while the car turns fast; the phone shows **Turning**. Bearings taken when the
+signal suddenly drops, as behind a ridge where only an echo arrives, count less. Echoes still fool
+a single stretch of road: drive past from another side to confirm a fix.

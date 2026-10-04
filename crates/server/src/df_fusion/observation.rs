@@ -30,6 +30,7 @@ pub(crate) struct Observation {
     pub(crate) source: BearingSource,
     pub(crate) moving: bool,
     pub(crate) mirrored: bool,
+    pub(crate) snr_db: Option<f32>,
     pub(crate) bank: Box<Rings>,
 }
 
@@ -80,6 +81,7 @@ pub(crate) fn prepare(
         source: bearing.source,
         moving: bearing.moving,
         mirrored: bearing.mirror_deg.is_some_and(f32::is_finite),
+        snr_db: bearing.snr_db.filter(|snr| snr.is_finite()),
         bank,
     })
 }
@@ -208,6 +210,22 @@ fn from_bytes(bytes: &[u8]) -> Box<Rings> {
         }
     }
     bank
+}
+
+pub(crate) fn rotate(rings: &mut Rings, by_deg: f32) {
+    if by_deg == 0.0 || !by_deg.is_finite() {
+        return;
+    }
+    let mut source = [0.0f32; RING];
+    for ring in rings.iter_mut() {
+        source.copy_from_slice(ring);
+        for (index, value) in ring.iter_mut().enumerate() {
+            let at = (degree(index) - by_deg).rem_euclid(RING as f32);
+            let low = (at.floor() as usize) % RING;
+            let high = (low + 1) % RING;
+            *value = (source[high] - source[low]).mul_add(at - at.floor(), source[low]);
+        }
+    }
 }
 
 pub(crate) fn blur(input: &Ring, sigma_deg: f32, out: &mut Ring) {

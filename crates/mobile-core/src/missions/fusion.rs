@@ -140,6 +140,7 @@ pub(crate) mod tests {
                 sigma_deg: 3.0,
                 source: Default::default(),
                 moving: true,
+                align_deg: Some(4.5),
             }],
             samples: 12,
             half_life_s: 60,

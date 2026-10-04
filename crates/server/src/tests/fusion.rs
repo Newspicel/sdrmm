@@ -29,6 +29,7 @@ fn bearing(station: &str, from: LatLon, bearing_deg: f64) -> DfBearing {
         moving: false,
         others: Vec::new(),
         likelihood: Vec::new(),
+        snr_db: None,
     }
 }
 

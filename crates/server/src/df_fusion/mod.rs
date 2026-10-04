@@ -15,6 +15,7 @@ use sdrmm_wire::{
 
 use crate::{AppState, fusion_routes, rest::AppError};
 
+mod align;
 mod estimate;
 mod grid;
 mod nav;
@@ -41,6 +42,10 @@ pub(crate) const MAX_EMITTER_CANDIDATES: usize = 8;
 const MOVING_HOLD_S: f64 = 300.0;
 const MOVED_M: f64 = 50.0;
 const MOVED_WITHIN_S: f64 = 60.0;
+const SHADOW_FREE_DB: f32 = 4.0;
+const SHADOW_DB_PER_DECADE: f32 = 6.0;
+const PEAK_FADE_DB_PER_S: f64 = 0.1;
+const MIN_SHADOW_WEIGHT: f32 = 0.05;
 const REFRESH_S: f64 = 1.0;
 const RECENTRE_S: f64 = 5.0;
 const MIN_RECENTRE_KEYS: usize = 2;
@@ -104,6 +109,28 @@ struct StationTrack {
     row: DfStation,
     at_s: f64,
     position: LatLon,
+    peak_snr: Option<(f32, f64)>,
+}
+
+impl StationTrack {
+    fn shadow(&mut self, snr_db: Option<f32>, at_s: f64) -> f32 {
+        let Some(snr) = snr_db else {
+            return 1.0;
+        };
+        let held = self.peak_snr.map_or(snr, |(peak, since_s)| {
+            let faded = (at_s - since_s).max(0.0) * PEAK_FADE_DB_PER_S;
+            (peak - faded as f32).max(snr)
+        });
+        self.peak_snr = Some((held, at_s));
+        let drop = held - snr - SHADOW_FREE_DB;
+        if drop <= 0.0 {
+            1.0
+        } else {
+            10f32
+                .powf(-drop / SHADOW_DB_PER_DECADE)
+                .max(MIN_SHADOW_WEIGHT)
+        }
+    }
 }
 
 struct NodeFusion {
@@ -114,6 +141,9 @@ struct NodeFusion {
     stations: BTreeMap<String, StationTrack>,
     guided: Option<PositionFix>,
     newest_station: Option<(f64, f64)>,
+    aligns: align::Aligns,
+    aligned_s: Option<f64>,
+    align_turn: usize,
     clock: DecayClock,
     samples: u32,
     announced: bool,
@@ -143,6 +173,9 @@ impl NodeFusion {
             stations: BTreeMap::new(),
             guided: None,
             newest_station: None,
+            aligns: align::Aligns::new(),
+            aligned_s: None,
+            align_turn: 0,
             clock: DecayClock::default(),
             samples: 0,
             announced: false,
@@ -168,6 +201,9 @@ impl NodeFusion {
 
     fn configure(&mut self, params: &TriangulationParams) {
         let extent_changed = (params.extent_km - self.params.extent_km).abs() > f64::EPSILON;
+        if self.params.align && !params.align {
+            self.unalign();
+        }
         self.params = *params;
         self.nav.configure(params.nav, params.probe_km);
         if extent_changed && let Some(grid) = &self.grid {
@@ -186,6 +222,7 @@ impl NodeFusion {
         std::mem::swap(&mut fresh.nav, &mut self.nav);
         fresh.nav.clear();
         fresh.guided = self.guided.take();
+        fresh.aligns = std::mem::take(&mut self.aligns);
         fresh.frames = frames;
         *self = fresh;
         let mut outcome = self.settle(now_s, false);
@@ -218,13 +255,17 @@ impl NodeFusion {
                 },
                 at_s: f64::NEG_INFINITY,
                 position,
+                peak_snr: None,
             });
         let elapsed = observation.at_s - track.at_s;
-        let weight = if track.at_s.is_finite() {
-            (elapsed / CORRELATION_S).clamp(0.0, 1.0) as f32
-        } else {
-            1.0
-        };
+        let shadow = track.shadow(observation.snr_db, observation.at_s);
+        observation.confidence *= shadow;
+        let weight = shadow
+            * if track.at_s.is_finite() {
+                (elapsed / CORRELATION_S).clamp(0.0, 1.0) as f32
+            } else {
+                1.0
+            };
         if track.at_s.is_finite()
             && elapsed <= MOVED_WITHIN_S
             && geo::distance_m(track.position, position) > MOVED_M
@@ -257,6 +298,7 @@ impl NodeFusion {
                 return Err(refusal);
             }
         };
+        align::apply(&self.aligns, &mut observation);
         let weight = self.track_station(&mut observation, at);
         if observation.moving {
             self.moving_until_s = now_s + MOVING_HOLD_S;
@@ -399,6 +441,9 @@ impl NodeFusion {
         } else {
             self.recount();
         }
+        if self.align(now_s) {
+            self.estimate_now();
+        }
         let (nav, flags) = self
             .nav
             .update(self.guided.as_ref(), self.estimate.as_ref(), now_s);
@@ -428,14 +473,20 @@ impl NodeFusion {
         let mut candidates: Vec<Candidate> = Vec::new();
         self.votes
             .candidates(grid, MAX_EMITTER_CANDIDATES, &mut candidates);
-        self.emitters = estimate::emitters(
+        let crossed = global.as_ref().is_some_and(|located| {
+            self.votes
+                .crossed_at(located.east_m, located.north_m, grid.cell_m())
+        });
+        let found = estimate::emitters(
             grid,
             &candidates,
             global.as_ref(),
+            crossed,
             usize::from(self.params.max_emitters),
             context,
         );
-        self.estimate = global.map(|located| located.estimate);
+        self.emitters = found.list;
+        self.estimate = found.best;
     }
 
     fn recount(&mut self) {
@@ -492,7 +543,10 @@ impl NodeFusion {
             stations: self
                 .stations
                 .values()
-                .map(|track| track.row.clone())
+                .map(|track| DfStation {
+                    align_deg: self.aligns.get(&track.row.station_id).copied(),
+                    ..track.row.clone()
+                })
                 .collect(),
             samples: self.samples,
             half_life_s: self.half_life_s(now_s),

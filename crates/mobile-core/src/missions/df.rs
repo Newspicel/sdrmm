@@ -109,6 +109,7 @@ impl DfDrive {
         match &self.reading {
             None => DfState::Waiting,
             Some((_, at)) if now_ms - at > DF_STALE_MS => DfState::Waiting,
+            Some((reading, _)) if reading.rotating && reading.peaks.is_empty() => DfState::Turning,
             Some((reading, _)) if reading.squelched => DfState::Squelched,
             Some((reading, _)) if reading.azimuth_deg.is_none() => DfState::NoHeading,
             Some((reading, _)) => match reading.peaks.first().and_then(|peak| peak.true_deg) {
@@ -276,6 +277,12 @@ mod tests {
         let squelched = drive.view("df1", None, 0);
         assert_eq!(squelched.state, DfState::Squelched);
         assert_eq!(squelched.bearing_true_deg, None);
+        let mut turning = reading(None, false);
+        turning.azimuth_deg = Some(90.0);
+        turning.rotating = true;
+        turning.peaks.clear();
+        drive.reading(turning, None, 0);
+        assert_eq!(drive.view("df1", None, 0).state, DfState::Turning);
         drive.reading(reading(Some(10.0), false), None, 0);
         assert_eq!(
             drive.view("df1", None, DF_STALE_MS + 1).state,

@@ -138,6 +138,13 @@ export function stationBearing(station: DfStation): string {
   return deg === undefined || !Number.isFinite(deg) ? "-" : `${deg.toFixed(1)}°`;
 }
 
+export function stationAlign(station: DfStation): string {
+  const deg = station.align_deg;
+  return deg === undefined || deg === null || !Number.isFinite(deg)
+    ? "-"
+    : `${deg > 0 ? "+" : ""}${deg.toFixed(1)}°`;
+}
+
 export function stationSigma(station: DfStation): string {
   const sigma = station.sigma_deg;
   return sigma === undefined || !Number.isFinite(sigma) || sigma <= 0

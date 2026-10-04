@@ -1,6 +1,6 @@
 import { Button } from "../../components/BaseControls";
 import { BTN, TABLE_CELL, TABLE_HEAD } from "../../components/controls";
-import { Chips, ChoiceChip, NumberChip } from "../../components/face/Chips";
+import { Chips, ChoiceChip, NumberChip, ToggleChip } from "../../components/face/Chips";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatCount } from "../../components/format";
@@ -24,13 +24,14 @@ import {
   NO_SOURCES,
   spreadLabel,
   stationAge,
+  stationAlign,
   stationBearing,
   stationSigma,
   triangulationSettings,
 } from "./triangulation";
 
 const AGE_TICK_MS = 1_000;
-const STATION_HEADS = ["Station", "Last", "±", "Age"] as const;
+const STATION_HEADS = ["Station", "Last", "±", "Align", "Age"] as const;
 
 type Edit = (next: Partial<TriangulationParams>) => void;
 
@@ -167,6 +168,9 @@ function StationTable({ stations, now }: { stations: readonly DfStation[]; now: 
             </td>
             <td className={TABLE_CELL}>{stationBearing(station)}</td>
             <td className={TABLE_CELL}>{stationSigma(station)}</td>
+            <td className={TABLE_CELL} title="Heading offset learned from crossing bearings">
+              {stationAlign(station)}
+            </td>
             <td className={TABLE_CELL}>{stationAge(station, now)}</td>
           </tr>
         ))}
@@ -244,6 +248,12 @@ function TriangulationChips({
         max={FUSION_LIMITS.min_confidence.max}
         step={0.01}
         onCommit={(min_confidence) => edit({ min_confidence })}
+      />
+      <ToggleChip
+        label="Align"
+        on={settings.align}
+        title="Learn each station's heading offset from crossing bearings"
+        onChange={(align) => edit({ align })}
       />
       <NumberChip
         label="Emitters"

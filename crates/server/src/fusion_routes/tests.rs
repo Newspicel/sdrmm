@@ -107,6 +107,7 @@ fn bearing(station: &str, from: LatLon, bearing_deg: f32) -> DfBearing {
         moving: false,
         others: Vec::new(),
         likelihood: Vec::new(),
+        snr_db: None,
     }
 }
 
@@ -284,20 +285,28 @@ async fn the_triangulation_position_input_drives_the_nav_target() {
         time: jiff::Timestamp::now().to_string(),
         attitude: sdrmm_wire::Attitude::default(),
     };
-    let revision = nav.revision;
     let followed = fused(
         &mut events,
         "tri",
-        |fused| fused.nav.is_some_and(|nav| nav.revision > revision),
+        |fused| {
+            fused
+                .nav
+                .is_some_and(|nav| (nav.distance_m - 5_000.0).abs() > 50.0)
+        },
         || follow(&state, "gps", Some(&fix)),
     )
     .await;
     let target = followed.nav.expect("nav");
-    let from = LatLon {
+    assert_eq!(
+        target.revision, nav.revision,
+        "a short move keeps the target"
+    );
+    assert_eq!((target.lat, target.lon), (nav.lat, nav.lon));
+    let held = LatLon {
         lat: target.lat,
         lon: target.lon,
     };
-    assert!((geo::distance_m(moved, from) - 5_000.0).abs() < 1.0);
+    assert!((geo::distance_m(moved, held) - target.distance_m).abs() < 1.0);
 }
 
 fn identifier(letter: char) -> bool {

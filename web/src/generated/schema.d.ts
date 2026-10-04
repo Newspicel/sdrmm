@@ -4220,6 +4220,8 @@ export interface components {
             relative_deg?: number | null;
             /** Format: float */
             sigma_deg?: number;
+            /** Format: float */
+            snr_db?: number | null;
             source?: components["schemas"]["BearingSource"];
             station_id?: string | null;
         };
@@ -4409,6 +4411,8 @@ export interface components {
             table_out_of_range?: boolean;
         };
         DfStation: {
+            /** Format: float */
+            align_deg?: number | null;
             /** Format: int32 */
             bearings: number;
             /** Format: float */
@@ -7868,6 +7872,8 @@ export interface components {
             settings?: components["schemas"]["TriangulationParams"];
         };
         TriangulationParams: {
+            /** @default true */
+            align: boolean;
             /**
              * @default {
              *       "kind": "auto"

@@ -96,6 +96,7 @@ fn reserved_bearing(node_len: usize) -> DfBearing {
         moving: false,
         others: Vec::with_capacity(MAX_OTHERS),
         likelihood: Vec::with_capacity(DF_POINTS),
+        snr_db: None,
     }
 }
 
@@ -402,6 +403,7 @@ impl DfProcessor {
             };
             self.faults.push_capped(&mut bearing.others, other);
         }
+        bearing.snr_db = Some(self.estimate.snr_db);
         bearing.likelihood.clear();
         if outcome.likelihood {
             extend_capped(

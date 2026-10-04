@@ -72,7 +72,7 @@ class CarDfScreenTest {
         core.df.value = Samples.df()
         val info = template(controller()).navigationInfo as MessageInfo
         assertThat(info.title.toString()).isEqualTo("137°  62%")
-        assertThat(info.text.toString()).isEqualTo("Cross 215° · 1.2 km")
+        assertThat(info.text.toString()).isEqualTo("Cross 40° left · 1.2 km")
         assertThat(info.image).isNotNull()
     }
 

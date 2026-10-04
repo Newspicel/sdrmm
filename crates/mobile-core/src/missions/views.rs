@@ -120,6 +120,7 @@ pub enum DfState {
     PhaseUnknown,
     NoHeading,
     Squelched,
+    Turning,
     Live,
 }
 

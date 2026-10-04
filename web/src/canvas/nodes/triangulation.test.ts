@@ -18,6 +18,7 @@ import {
   NO_SOURCES,
   spreadLabel,
   stationAge,
+  stationAlign,
   stationBearing,
   stationSigma,
   triangulationSettings,
@@ -122,6 +123,9 @@ describe("stationAge", () => {
     expect(stationBearing(station(""))).toBe("-");
     expect(stationSigma(station("", { sigma_deg: 3.14 }))).toBe("3.1°");
     expect(stationSigma(station("", { sigma_deg: 0 }))).toBe("-");
+    expect(stationAlign(station("", { align_deg: 4.83 }))).toBe("+4.8°");
+    expect(stationAlign(station("", { align_deg: -2 }))).toBe("-2.0°");
+    expect(stationAlign(station(""))).toBe("-");
   });
 });
 

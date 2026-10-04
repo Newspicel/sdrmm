@@ -197,6 +197,7 @@ nonisolated enum DfText {
         case .phaseUnknown: "Phase unknown"
         case .noHeading: "No heading"
         case .squelched: "Squelched"
+        case .turning: "Turning"
         case .live: nil
         }
     }

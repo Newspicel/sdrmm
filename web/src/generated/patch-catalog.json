@@ -1161,7 +1161,8 @@
             "nav": "auto",
             "probe_km": 5.0,
             "min_confidence": 0.05,
-            "max_emitters": 3
+            "max_emitters": 3,
+            "align": true
           }
         }
       }

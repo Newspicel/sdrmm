@@ -224,6 +224,7 @@ impl SweepDf {
             moving: fix.speed_mps.is_some_and(|speed| speed > MOVING_MPS),
             others: Vec::new(),
             likelihood: estimate.likelihood,
+            snr_db: None,
         }
     }
 

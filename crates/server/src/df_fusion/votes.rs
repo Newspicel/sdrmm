@@ -1,6 +1,6 @@
 use super::{
     grid::{CELLS, LogGrid, SHIFT_STEP, Wedge, look},
-    observation::{BANKS, FLOOR, Observation, RING, Ring, Rings, blur},
+    observation::{BANKS, FLOOR, Observation, RING, Ring, Rings, blur, rotate},
 };
 
 pub(crate) const VOTE_CELLS: usize = CELLS / SHIFT_STEP;
@@ -13,8 +13,8 @@ pub(crate) const BIAS_SIGMA_DEG: f32 = 2.5;
 pub(crate) const MAX_POWER: f32 = 2.0;
 
 const VOTE_SEPARATION_CELLS: f64 = 4.0;
-const SUPPORTER: f32 = 0.5;
 const MIN_CROSS_DEG: f64 = 10.0;
+const SUPPORTER: f32 = 0.5;
 const TIE_BREAK: f32 = 1e-3;
 const PAINT_TOLERANCE: f32 = 5e-3;
 const POWER_TOLERANCE: f32 = 0.02;
@@ -66,6 +66,11 @@ impl VoteKey {
             heading_sigma_deg: 0.0,
             painted: None,
         }
+    }
+
+    pub(crate) fn rotate(&mut self, by_deg: f32) {
+        rotate(&mut self.evidence, by_deg);
+        rotate(&mut self.linear, by_deg);
     }
 
     pub(crate) fn weight_at(&self, clock: f64) -> f32 {
@@ -247,6 +252,10 @@ impl VoteMaps {
         Added { index, evicted }
     }
 
+    pub(crate) fn crossed_at(&self, east_m: f64, north_m: f64, cell_m: f64) -> bool {
+        crossed(&supports(&self.keys), east_m, north_m, cell_m)
+    }
+
     pub(crate) fn centroid(&self, clock: f64) -> Option<(f64, f64)> {
         let (east, north, weight) = self.keys.iter().fold((0.0, 0.0, 0.0), |sum, key| {
             let power = f64::from(key.power_at(clock));
@@ -285,15 +294,7 @@ impl VoteMaps {
         if self.keys.len() < 2 || max == 0 {
             return;
         }
-        let supports: Vec<(Box<Rings>, f32, &VoteKey)> = self
-            .keys
-            .iter()
-            .map(|key| {
-                let support = key.support();
-                let widest = widest_mean(&support);
-                (support, widest, key)
-            })
-            .collect();
+        let supports = supports(&self.keys);
         let vote_m = grid.cell_m() * SHIFT_STEP as f64;
         let (_, top) = grid.max();
         let mut totals = vec![0.0f32; VOTE_CELLS * VOTE_CELLS];
@@ -351,7 +352,19 @@ impl VoteMaps {
     }
 }
 
-fn crossed(supports: &[(Box<Rings>, f32, &VoteKey)], east: f64, north: f64, vote_m: f64) -> bool {
+type Support<'a> = (Box<Rings>, f32, &'a VoteKey);
+
+fn supports(keys: &[VoteKey]) -> Vec<Support<'_>> {
+    keys.iter()
+        .map(|key| {
+            let support = key.support();
+            let widest = widest_mean(&support);
+            (support, widest, key)
+        })
+        .collect()
+}
+
+fn crossed(supports: &[Support<'_>], east: f64, north: f64, cell_m: f64) -> bool {
     let bearings: Vec<f64> = supports
         .iter()
         .filter(|(support, widest, key)| {
@@ -359,7 +372,7 @@ fn crossed(supports: &[(Box<Rings>, f32, &VoteKey)], east: f64, north: f64, vote
                 east - key.east_m,
                 north - key.north_m,
                 key.accuracy_m,
-                vote_m,
+                cell_m,
             )
             .sample(support, *widest)
                 >= SUPPORTER
@@ -367,10 +380,9 @@ fn crossed(supports: &[(Box<Rings>, f32, &VoteKey)], east: f64, north: f64, vote
         .map(|(_, _, key)| (east - key.east_m).atan2(north - key.north_m).to_degrees())
         .collect();
     bearings.iter().enumerate().any(|(index, a)| {
-        bearings[index + 1..].iter().any(|b| {
-            (a - b + 540.0).rem_euclid(360.0) - 180.0 >= MIN_CROSS_DEG
-                || (b - a + 540.0).rem_euclid(360.0) - 180.0 >= MIN_CROSS_DEG
-        })
+        bearings[index + 1..]
+            .iter()
+            .any(|b| ((a - b + 540.0).rem_euclid(360.0) - 180.0).abs() >= MIN_CROSS_DEG)
     })
 }
 

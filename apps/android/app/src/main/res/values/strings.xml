@@ -96,6 +96,7 @@
     <string name="df_phase_unknown">Phase unknown</string>
     <string name="df_no_heading">No heading</string>
     <string name="df_squelched">Squelched</string>
+    <string name="df_turning">Turning</string>
     <string name="north_up">North up</string>
     <string name="guidance_cross">Cross %1$s · %2$s</string>
     <string name="guidance_approach">Approach %1$s</string>

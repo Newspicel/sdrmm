@@ -18,6 +18,7 @@ pub(crate) const CONCENTRATED_MAJOR_M: f64 = 2_000.0;
 pub(crate) const CONCENTRATED_SAMPLES: u32 = 6;
 pub(crate) const TO_ESTIMATE_S: f64 = 3.0;
 pub(crate) const TO_PROBE_S: f64 = 10.0;
+pub(crate) const JUMP_HOLD_S: f64 = 3.0;
 
 const MAX_RECENT: usize = 1_024;
 
@@ -46,6 +47,7 @@ pub(crate) struct Nav {
     concentrated_since_s: Option<f64>,
     loose_since_s: Option<f64>,
     revision: u32,
+    jumped_since_s: Option<f64>,
     recent: VecDeque<RecentBearing>,
 }
 
@@ -60,6 +62,7 @@ impl Nav {
             concentrated_since_s: None,
             loose_since_s: None,
             revision: 0,
+            jumped_since_s: None,
             recent: VecDeque::new(),
         }
     }
@@ -140,7 +143,7 @@ impl Nav {
             flags.no_bearings = true;
             return (self.publish(None), flags);
         };
-        let (revision, point) = self.revise(kind, point, here);
+        let (revision, point) = self.revise(kind, point, here, now_s);
         let target = NavTarget {
             lat: point.lat,
             lon: point.lon,
@@ -237,11 +240,31 @@ impl Nav {
         }
     }
 
-    fn revise(&mut self, kind: NavTargetKind, fresh: LatLon, here: LatLon) -> (u32, LatLon) {
+    fn settled_jump(&mut self, kind: NavTargetKind, stale: bool, now_s: f64) -> bool {
+        if !stale || kind != NavTargetKind::Estimate {
+            self.jumped_since_s = None;
+            return stale;
+        }
+        let since = *self.jumped_since_s.get_or_insert(now_s);
+        let settled = now_s - since >= JUMP_HOLD_S;
+        if settled {
+            self.jumped_since_s = None;
+        }
+        settled
+    }
+
+    fn revise(
+        &mut self,
+        kind: NavTargetKind,
+        fresh: LatLon,
+        here: LatLon,
+        now_s: f64,
+    ) -> (u32, LatLon) {
         let changed = match self.issued {
             None => self.published,
             Some((issued_kind, issued_at)) => {
-                issued_kind != kind || self.stale(kind, issued_at, fresh, here)
+                let stale = self.stale(kind, issued_at, fresh, here);
+                issued_kind != kind || self.settled_jump(kind, stale, now_s)
             }
         };
         if changed {

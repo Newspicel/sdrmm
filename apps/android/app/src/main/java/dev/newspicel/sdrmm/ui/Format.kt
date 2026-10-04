@@ -4,6 +4,7 @@ import android.icu.util.LocaleData
 import android.icu.util.ULocale
 import dev.newspicel.sdrmm.settings.Units
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -52,6 +53,16 @@ object Format {
         val whole = ((deg % 360 + 360) % 360).roundToInt() % 360
         return String.format(Locale.ROOT, "%03d°", whole)
     }
+
+    fun side(relative: Double): String {
+        if (!relative.isFinite()) return "-"
+        val turn = ((relative % 360 + 540) % 360) - 180
+        val whole = abs(turn).roundToInt()
+        if (whole <= AHEAD_DEG) return "ahead"
+        return "$whole° ${if (turn < 0) "left" else "right"}"
+    }
+
+    private const val AHEAD_DEG = 10
 
     fun db(db: Float?): String {
         if (db == null || !db.isFinite()) return "-"

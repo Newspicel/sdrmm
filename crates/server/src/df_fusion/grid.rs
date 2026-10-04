@@ -81,6 +81,19 @@ fn bank_for(spread_deg: f32) -> (usize, f32) {
 }
 
 impl Look {
+    pub(crate) fn turned(self, by_deg: i32) -> Self {
+        if self.centre {
+            return self;
+        }
+        let ring = RING as i32;
+        let bin = (self.bin as i32 + by_deg).rem_euclid(ring) as usize;
+        Self {
+            bin,
+            next: (bin + 1) % RING,
+            ..self
+        }
+    }
+
     pub(crate) fn sample(&self, rings: &Rings, centre_value: f32) -> f32 {
         if self.centre {
             return centre_value;

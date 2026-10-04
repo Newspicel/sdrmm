@@ -60,7 +60,7 @@ class DfScreenTest {
     fun guidance() {
         core.df.value = Samples.df()
         show()
-        compose.onNodeWithText("Cross 215° · 1.2 km").assertIsDisplayed()
+        compose.onNodeWithText("Cross 40° left · 1.2 km").assertIsDisplayed()
         compose.onNodeWithTag(MAP).assertExists()
         core.df.value = Samples.df(guidance = null, state = DfState.CALIBRATING)
         compose.waitForIdle()

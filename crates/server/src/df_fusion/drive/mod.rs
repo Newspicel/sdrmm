@@ -321,6 +321,7 @@ struct Step {
     nav: Option<NavTarget>,
     estimate: Option<DfEstimate>,
     emitters: Vec<DfEstimate>,
+    align_deg: Option<f32>,
 }
 
 struct Drive {
@@ -375,6 +376,11 @@ impl Drive {
                     nav: outcome.state.nav,
                     estimate: outcome.state.estimate,
                     emitters: outcome.state.emitters.clone(),
+                    align_deg: outcome
+                        .state
+                        .stations
+                        .first()
+                        .and_then(|station| station.align_deg),
                 });
             }
             at_s += BLOCK_S;

@@ -337,6 +337,7 @@ pub(crate) fn event_slot() -> DecoderEvent {
         moving: false,
         others: Vec::with_capacity(MAX_OTHERS),
         likelihood: Vec::with_capacity(DF_POINTS),
+        snr_db: None,
     })
 }
 

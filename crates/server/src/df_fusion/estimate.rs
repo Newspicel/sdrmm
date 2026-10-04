@@ -200,7 +200,11 @@ fn refine(grid: &LogGrid, window: &Window, mass: f32, context: Context) -> Optio
     locate(grid, &moments, window.centre, mass, context)
 }
 
-fn window_cells(grid: &LogGrid, centre: (f64, f64), reach: usize) -> impl Iterator<Item = usize> {
+pub(crate) fn window_cells(
+    grid: &LogGrid,
+    centre: (f64, f64),
+    reach: usize,
+) -> impl Iterator<Item = usize> {
     let (grid_east, grid_north) = grid.centre();
     let middle = (CELLS as f64 - 1.0) / 2.0;
     let col = ((centre.0 - grid_east) / grid.cell_m() + middle).round();
@@ -218,9 +222,10 @@ pub(crate) fn emitters(
     grid: &LogGrid,
     candidates: &[Candidate],
     global: Option<&Located>,
+    crossed: bool,
     max: usize,
     context: Context,
-) -> Vec<DfEstimate> {
+) -> Emitters {
     let windows = windows(candidates);
     let total: f32 = windows.iter().map(|window| window.votes).sum();
     let mut found: Vec<(Located, &Window)> = windows
@@ -244,21 +249,26 @@ pub(crate) fn emitters(
             unique.push((located, window));
         }
     }
-    let mut list: Vec<DfEstimate> = Vec::with_capacity(unique.len() + 1);
-    if let Some(global) = global {
-        let holder = unique.iter().position(|(_, window)| {
+    let mut list: Vec<DfEstimate> = Vec::with_capacity(unique.len());
+    let holder = global.and_then(|global| {
+        unique.iter().position(|(_, window)| {
             (global.east_m - window.centre.0).hypot(global.north_m - window.centre.1)
                 <= window.radius_m
-        });
-        match holder {
-            Some(index) => {
-                let (first, _) = unique.remove(index);
-                list.push(first.estimate);
-            }
-            None => list.push(global.estimate),
-        }
+        })
+    });
+    let trusted = global.filter(|_| crossed || holder.is_some());
+    match (holder, trusted) {
+        (Some(index), _) => list.push(unique.remove(index).0.estimate),
+        (None, Some(global)) => list.push(global.estimate),
+        (None, None) => {}
     }
     list.extend(unique.into_iter().map(|(located, _)| located.estimate));
     list.truncate(max);
-    list
+    let best = trusted.map_or_else(|| list.first().copied(), |global| Some(global.estimate));
+    Emitters { list, best }
+}
+
+pub(crate) struct Emitters {
+    pub(crate) list: Vec<DfEstimate>,
+    pub(crate) best: Option<DfEstimate>,
 }

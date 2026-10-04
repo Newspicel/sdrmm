@@ -15135,6 +15135,13 @@
             "type": "number",
             "format": "float"
           },
+          "snr_db": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
           "source": {
             "$ref": "#/components/schemas/BearingSource"
           },
@@ -15639,6 +15646,13 @@
           "last_seen"
         ],
         "properties": {
+          "align_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
           "bearings": {
             "type": "integer",
             "format": "int32",
@@ -28112,6 +28126,10 @@
       "TriangulationParams": {
         "type": "object",
         "properties": {
+          "align": {
+            "type": "boolean",
+            "default": true
+          },
           "decay": {
             "$ref": "#/components/schemas/FusionDecay",
             "default": {

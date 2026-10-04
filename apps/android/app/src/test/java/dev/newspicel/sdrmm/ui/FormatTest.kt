@@ -19,6 +19,15 @@ class FormatTest {
     }
 
     @Test
+    fun side() {
+        assertThat(Format.side(320.0)).isEqualTo("40° left")
+        assertThat(Format.side(40.0)).isEqualTo("40° right")
+        assertThat(Format.side(355.0)).isEqualTo("ahead")
+        assertThat(Format.side(-185.0)).isEqualTo("175° right")
+        assertThat(Format.side(Double.NaN)).isEqualTo("-")
+    }
+
+    @Test
     fun frequency_angle_db() {
         assertThat(Format.frequency(145_500_000.0)).isEqualTo("145.500 MHz")
         assertThat(Format.frequency(433.92e6)).isEqualTo("433.920 MHz")

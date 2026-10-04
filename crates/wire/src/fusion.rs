@@ -62,6 +62,8 @@ pub struct DfBearing {
     pub others: Vec<DfOtherPeak>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub likelihood: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snr_db: Option<f32>,
 }
 
 const fn default_bearing_sigma() -> f32 {
@@ -98,6 +100,7 @@ pub struct TriangulationParams {
     pub probe_km: f64,
     pub min_confidence: f32,
     pub max_emitters: u8,
+    pub align: bool,
 }
 
 impl Default for TriangulationParams {
@@ -109,6 +112,7 @@ impl Default for TriangulationParams {
             probe_km: 5.0,
             min_confidence: 0.05,
             max_emitters: 3,
+            align: true,
         }
     }
 }
@@ -193,6 +197,8 @@ pub struct DfStation {
     pub source: BearingSource,
     #[serde(default)]
     pub moving: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align_deg: Option<f32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -241,6 +247,7 @@ mod tests {
             moving: false,
             others: Vec::new(),
             likelihood: Vec::new(),
+            snr_db: None,
         }
     }
 
@@ -336,6 +343,7 @@ mod tests {
                 sigma_deg: 3.0,
                 source: BearingSource::Mark,
                 moving: false,
+                align_deg: Some(4.5),
             }],
             samples: 12,
             half_life_s: 60,

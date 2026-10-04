@@ -91,6 +91,7 @@ final class DfDriveModelTests: XCTestCase {
             (.phaseUnknown, "Phase unknown"),
             (.noHeading, "No heading"),
             (.squelched, "Squelched"),
+            (.turning, "Turning"),
             (.live, nil),
         ]
         let harness = DriveHarness()

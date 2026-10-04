@@ -43,6 +43,7 @@ fn aimed(station: &str, from: LatLon, bearing_deg: f64, sigma_deg: f32) -> DfBea
         moving: false,
         others: Vec::new(),
         likelihood: Vec::new(),
+        snr_db: None,
     }
 }
 
@@ -1033,4 +1034,35 @@ fn bearings_along_one_line_give_no_position_and_keep_the_grid_close() {
     let (_, north) = grid.centre();
     assert!(north > 0.0, "the grid followed the line");
     assert!(!grid.in_edge_band((0.0, 0.0)), "{north} m north");
+}
+
+#[test]
+fn switching_align_off_takes_the_learned_offset_back() {
+    let mut fusion = NodeFusion::new(&TriangulationParams::default());
+    let target = geo::destination(HOME, 45.0, 3_000.0);
+    see(&mut fusion, &toward("car", HOME, target, 2.0), 0.0);
+    let painted = |fusion: &NodeFusion| {
+        fusion.votes.keys[0]
+            .painted
+            .as_ref()
+            .map(|painted| painted.wedge.ring[0][45])
+            .expect("painted")
+    };
+    let before = painted(&fusion);
+    fusion.aligns.insert("car".to_owned(), 6.0);
+    fusion.turn_station("car", 6.0);
+    assert_ne!(painted(&fusion), before);
+    fusion.configure(&TriangulationParams {
+        align: false,
+        ..TriangulationParams::default()
+    });
+    assert!(fusion.aligns.is_empty());
+    assert!((painted(&fusion) - before).abs() < 1e-4);
+    let state = fusion.state(1.0);
+    assert!(
+        state
+            .stations
+            .iter()
+            .all(|station| station.align_deg.is_none())
+    );
 }

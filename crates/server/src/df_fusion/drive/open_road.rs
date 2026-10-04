@@ -1,6 +1,7 @@
 use sdrmm_wire::{NavTargetKind, TriangulationParams, geo};
 
 use super::*;
+use crate::df_fusion::nav;
 
 #[test]
 fn every_bearing_points_at_the_transmitter_while_driving() {
@@ -55,7 +56,8 @@ fn nav_settles_on_the_estimate_once_it_has_crossed_bearings() {
         lon: last.lon,
     };
     let miss = geo::distance_m(target, drive.emitter);
-    assert!(miss < 150.0, "target {miss:.0} m off");
+    let allowed = 150.0f64.max(nav::RETARGET_SHARE * last.distance_m);
+    assert!(miss < allowed, "target {miss:.0} m off");
 }
 
 #[test]
