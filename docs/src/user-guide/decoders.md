@@ -10,7 +10,7 @@ covers the modes that need more than a frequency.
 | Group | Tested on air | Fixture only | Experimental |
 |---|---|---|---|
 | Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
-| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, P25 Phase 1, M17 | NXDN, dPMR | |
+| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | | |
 | Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium) | VOR, ILS localizer / glideslope |
 | Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC | |
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
