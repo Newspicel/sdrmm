@@ -375,7 +375,6 @@ async fn a_phone_socket_moves_its_gps_node() {
 #[tokio::test(flavor = "multi_thread")]
 async fn pose_rate_is_limited_per_connection() {
     let (addr, state) = serve_phones(test_engine()).await;
-    state.gps.set_pose_interval(Duration::ZERO);
     let paired = pair_one(&state.phones);
     bind_gps(&state, "car", &paired.phone.id);
     let mut ws = dial_phone(addr, &paired.token).await;

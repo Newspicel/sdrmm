@@ -28,6 +28,16 @@ nonisolated struct RoutePlan: Identifiable, Equatable, Sendable {
     let steps: [PlanStep]
 }
 
+nonisolated extension RoutePlan {
+    func startBearingDeg(afterM: Double) -> Double? {
+        guard let first = points.first, points.count > 1 else {
+            return nil
+        }
+        let index = cumulativeM.firstIndex { $0 >= afterM } ?? points.count - 1
+        return geoBearingDeg(from: first, to: points[index])
+    }
+}
+
 nonisolated enum RoutePlanBuilder {
     private static let junctionM = 0.5
     private static let armM = 20.0

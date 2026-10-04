@@ -207,7 +207,9 @@ nonisolated enum DfText {
         }
         let distance = DistanceText.short(guidance.distanceM, units)
         switch guidance.kind {
-        case .probe: return "Cross \(AngleText.degrees(guidance.headingTrueDeg)) \u{00B7} \(distance)"
+        case .probe:
+            let way = guidance.headingRelDeg.map(AngleText.side) ?? AngleText.degrees(guidance.headingTrueDeg)
+            return "Cross \(way) \u{00B7} \(distance)"
         case .estimate: return "Approach \(distance)"
         }
     }

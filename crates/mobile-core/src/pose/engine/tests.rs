@@ -669,3 +669,33 @@ fn align_applies_the_offset_it_finds() {
     engine.tick(t + 3_000 + 120_000);
     assert!(matches!(engine.view(t).align, AlignState::Failed { .. }));
 }
+
+fn published_rates(engine: &mut PoseEngine, from: i64, samples: &[f64]) -> Vec<f64> {
+    samples
+        .iter()
+        .enumerate()
+        .filter_map(|(step, rate)| {
+            let at = from + (step as i64 + 1) * 20;
+            engine
+                .motion(gyro(at, *rate))
+                .publish
+                .and_then(|out| out.fix)
+                .and_then(|fix| fix.attitude.yaw_rate_dps)
+        })
+        .collect()
+}
+
+#[test]
+fn a_bump_is_not_published_as_a_turn_but_a_turn_is() {
+    let mut engine = PoseEngine::new(settings(HeadingMode::Auto, 0.0));
+    engine.demand(true, true, T0);
+    let t = drive(&mut engine, T0, 5, 10.0, 80.0);
+    let mut bump = vec![0.0; 50];
+    bump[10] = 60.0;
+    let calm = published_rates(&mut engine, t, &bump);
+    assert!(!calm.is_empty());
+    assert!(calm.iter().all(|rate| rate.abs() < 5.0), "{calm:?}");
+    let turning = published_rates(&mut engine, t + 1_000, &[30.0; 100]);
+    let last = turning.last().copied().unwrap_or_default();
+    assert!((last - 30.0).abs() < 2.0, "{turning:?}");
+}

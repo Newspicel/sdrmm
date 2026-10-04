@@ -315,6 +315,24 @@ fn a_noise_cal_keeps_the_antenna_term() {
 }
 
 #[test]
+fn a_turn_drops_the_bearings_heard_before_it() {
+    let mut rig = Rig::kraken(params(), &[tone(40.0, 0.0, OFFSET_HZ)]);
+    rig.run(5);
+    rig.pose = located(90.0);
+    rig.scene.sources[0].direction = Direction::horizon(-50.0);
+    rig.run(1);
+    let event = rig.seen.events.last().unwrap();
+    assert!(
+        error_deg(f64::from(event.bearing_deg), 40.0) < 1.0,
+        "{event:?}"
+    );
+    assert!(
+        event.heading_sigma_deg.unwrap_or(f32::NAN) < 1.0,
+        "{event:?}"
+    );
+}
+
+#[test]
 fn df_follow_mode_without_heading_keeps_relative_and_emits_nothing() {
     let mut rig = Rig::kraken(params(), &[tone(137.0, 0.0, OFFSET_HZ)]);
     rig.pose = Pose {

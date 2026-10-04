@@ -70,6 +70,8 @@ final class NavigationModel {
         static let qualifyingSpeedMps = 1.5
         static let arriveRemainingM = 30.0
         static let arriveTargetM = 40.0
+        static let onwardDeg = 90.0
+        static let onwardM = 30.0
     }
 
     private(set) var phase: Phase = .idle
@@ -465,12 +467,14 @@ extension NavigationModel {
         generation += 1
         let token = generation
         let from = LatLon(fix.coordinate)
+        let course = Self.courseDeg(fix)
         let routes = routes
         Log.nav.debug("route request \(String(describing: reason), privacy: .public)")
         inFlight = Task { [weak self] in
             let result: Result<[RoutePlan], RouteError>
             do throws(RouteError) {
-                result = .success(try await routes.routes(from: from, to: target.at, alternatives: false))
+                let plans = try await routes.routes(from: from, to: target.at, alternatives: true)
+                result = .success(Self.onward(plans, courseDeg: course).map { [$0] } ?? [])
             } catch {
                 result = .failure(error)
             }
@@ -539,6 +543,22 @@ extension NavigationModel {
             report(error)
         }
         schedule(at: clock.now().addingTimeInterval(Rule.failureRetryS), target, .retry)
+    }
+
+    static func courseDeg(_ fix: CLLocation) -> Double? {
+        fix.course >= 0 && fix.speed >= Rule.qualifyingSpeedMps ? fix.course : nil
+    }
+
+    static func onward(_ plans: [RoutePlan], courseDeg: Double?) -> RoutePlan? {
+        guard let courseDeg else {
+            return plans.first
+        }
+        let ahead = plans.first { plan in
+            plan.startBearingDeg(afterM: Rule.onwardM).map {
+                abs(RoutePlanBuilder.wrap180($0 - courseDeg)) <= Rule.onwardDeg
+            } ?? false
+        }
+        return ahead ?? plans.first
     }
 
     private func stopRequests() {

@@ -16,7 +16,11 @@ final class NavigationModelTests: XCTestCase {
         let errors: ErrorBox
 
         init(plan: RoutePlan) {
-            routes = FakeRouteProvider(plans: [plan])
+            self.init(plans: [plan])
+        }
+
+        init(plans: [RoutePlan]) {
+            routes = FakeRouteProvider(plans: plans)
             settings = SettingsStore(defaults: TestDefaults.make())
             settings.units = .metric
             let errors = ErrorBox()
@@ -56,6 +60,29 @@ final class NavigationModelTests: XCTestCase {
         XCTAssertEqual(rig.navigation.banner?.distance, "1.0 km")
         XCTAssertEqual(rig.navigation.summary?.remaining, "1.0 km")
         XCTAssertFalse(rig.navigation.isRerouting)
+    }
+
+    func testARouteThatStartsWithAUTurnIsPassedOver() async {
+        let back = Fixtures.offset(origin, 180, 1_000)
+        let uTurn = RoutePlanBuilder.plan(
+            name: "U-turn",
+            travelTimeS: 90,
+            steps: [
+                RawStep(instruction: "Head south", notice: nil, distanceM: 1_000, points: [origin, back]),
+                RawStep(instruction: "Arrive", notice: nil, distanceM: 0, points: [back]),
+            ]
+        )
+        let rig = Rig(plans: [uTurn, Fixtures.straightPlan()])
+        rig.at(origin)
+        rig.navigation.start(to: Fixtures.target(Fixtures.offset(origin, 0, 1_000)))
+        await rig.navigation.settled()
+        XCTAssertEqual(rig.navigation.activePlan?.name, "Straight")
+        rig.navigation.end()
+        rig.at(origin, speed: 0)
+        rig.clock.advance(by: 20)
+        rig.navigation.start(to: Fixtures.target(Fixtures.offset(origin, 0, 1_000)))
+        await rig.navigation.settled()
+        XCTAssertEqual(rig.navigation.activePlan?.name, "U-turn")
     }
 
     func testStartWaitsForAFix() async {

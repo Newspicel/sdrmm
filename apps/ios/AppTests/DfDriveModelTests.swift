@@ -106,6 +106,13 @@ final class DfDriveModelTests: XCTestCase {
         let model = harness.model.df
         model.apply(Fixtures.df(guidance: Fixtures.guidance(.probe)))
         XCTAssertEqual(model.guidanceText, "Cross 215\u{00B0} \u{00B7} 1.2 km")
+        let turned = { (relative: Double) in
+            GuidanceView(kind: .probe, headingTrueDeg: 215, headingRelDeg: relative, distanceM: 1_200)
+        }
+        model.apply(Fixtures.df(guidance: turned(320)))
+        XCTAssertEqual(model.guidanceText, "Cross 40\u{00B0} left \u{00B7} 1.2 km")
+        model.apply(Fixtures.df(guidance: turned(5)))
+        XCTAssertEqual(model.guidanceText, "Cross ahead \u{00B7} 1.2 km")
         model.apply(Fixtures.df(guidance: Fixtures.guidance(.estimate)))
         XCTAssertEqual(model.guidanceText, "Approach 1.2 km")
         model.apply(Fixtures.df(guidance: .some(nil)))

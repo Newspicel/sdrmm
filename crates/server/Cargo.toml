@@ -100,6 +100,7 @@ sdrmm-device-virtual.workspace = true
 sdrmm-device-recording.workspace = true
 sdrmm-device-siggen.workspace = true
 sdrmm-channels = { workspace = true, features = ["synth"] }
+sdrmm-dsp = { workspace = true, features = ["test-scene"] }
 tokio-tungstenite.workspace = true
 serialport.workspace = true
 num-complex.workspace = true

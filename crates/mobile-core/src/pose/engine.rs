@@ -150,7 +150,7 @@ pub struct PoseEngine {
     fix: Option<LocationSample>,
     clock_ms: i64,
     motion_ms: Option<i64>,
-    rate_cw: f64,
+    yaw_rate: f64,
     turn_rate: f64,
     up: Option<Vec3>,
     declination: Option<f64>,
@@ -180,7 +180,7 @@ impl PoseEngine {
             fix: None,
             clock_ms: 0,
             motion_ms: None,
-            rate_cw: 0.0,
+            yaw_rate: 0.0,
             turn_rate: 0.0,
             up: None,
             declination: None,
@@ -266,6 +266,7 @@ impl PoseEngine {
                 self.filter.predict_gyro(rate_cw, dt);
                 let alpha = 1.0 - (-dt / TURN_TAU_S).exp();
                 self.turn_rate = alpha.mul_add(rate_cw.abs() - self.turn_rate, self.turn_rate);
+                self.yaw_rate = alpha.mul_add(rate_cw - self.yaw_rate, self.yaw_rate);
             }
             Some(_) => {
                 self.filter.inflate(GAP_SIGMA_DEG);
@@ -276,7 +277,6 @@ impl PoseEngine {
         }
         self.motion_ms = Some(t);
         self.filter_ms = Some(t);
-        self.rate_cw = rate_cw;
         self.up = Some(up);
         self.attitude(t, attitude, &sample, up, &mut step);
         self.finish(step)
@@ -614,7 +614,7 @@ impl PoseEngine {
             } else {
                 self.source
             },
-            yaw_rate_dps: gyro.then_some(self.rate_cw),
+            yaw_rate_dps: gyro.then_some(self.yaw_rate),
         })
     }
 

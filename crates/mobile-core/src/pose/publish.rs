@@ -1,5 +1,5 @@
 use sdrmm_wire::{
-    geo::wrap_180,
+    geo::{self, wrap_180},
     phone::POSE_KEEPALIVE_MS,
     position::{Attitude, HeadingSource, MAX_YAW_RATE_DPS, PositionFix},
     ws::ClientCommand,
@@ -111,6 +111,7 @@ pub(crate) fn build_fix(
         fix.speed_mps
             .is_some_and(|speed| speed >= TRACK_MIN_SPEED_MPS)
     });
+
     let attitude = heading.map_or_else(Attitude::default, |heading| Attitude {
         heading_deg: Some(heading.deg),
         heading_accuracy_deg: Some(heading.sigma_deg.min(180.0)),
@@ -132,7 +133,21 @@ pub(crate) fn build_fix(
         attitude,
     };
     out.validate()?;
-    Ok(out)
+    Ok(carried(out, track_deg, fix.speed_mps, age_s))
+}
+
+fn carried(
+    mut out: PositionFix,
+    track_deg: Option<f64>,
+    speed_mps: Option<f64>,
+    age_s: f64,
+) -> PositionFix {
+    if let (Some(course), Some(speed)) = (track_deg, speed_mps) {
+        let at = geo::destination(out.at(), course, speed * age_s);
+        out.latitude = at.lat;
+        out.longitude = at.lon;
+    }
+    out
 }
 
 const fn wire_source(source: HeadingSourceKind) -> Option<HeadingSource> {
@@ -246,5 +261,23 @@ mod tests {
         let mut bad = fix(T0);
         bad.lat = 95.0;
         assert!(build_fix(&bad, T0, None, None).is_err());
+    }
+
+    #[test]
+    fn an_old_fix_is_carried_along_the_course_to_the_publish_time() {
+        let sample = fix(T0);
+        let from = geo::LatLon {
+            lat: sample.lat,
+            lon: sample.lon,
+        };
+        let out = build_fix(&sample, T0 + 1_000, None, None).expect("valid");
+        let to = geo::LatLon {
+            lat: out.latitude,
+            lon: out.longitude,
+        };
+        assert!((geo::distance_m(from, to) - 10.0).abs() < 0.01);
+        assert!((geo::bearing_deg(from, to) - 91.0).abs() < 0.01);
+        let now = build_fix(&sample, T0, None, None).expect("valid");
+        assert_eq!((now.latitude, now.longitude), (sample.lat, sample.lon));
     }
 }

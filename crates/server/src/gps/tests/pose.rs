@@ -104,7 +104,7 @@ fn a_pose_from_an_unbound_phone_changes_nothing() {
 }
 
 #[test]
-fn poses_faster_than_the_phone_limit_are_refused_but_repeats_are_free() {
+fn bursty_poses_are_all_taken() {
     let app = app();
     let phone = pair_one(&app.phones).phone.id;
     activate(&app, vec![phone_node("car", &phone)]);
@@ -121,12 +121,6 @@ fn poses_faster_than_the_phone_limit_are_refused_but_repeats_are_free() {
     assert_eq!(
         app.gps
             .publish_pose(&app, &phone, Some(pose(52.53, 88.0)), None),
-        Err("pose updates are limited to 20 Hz per phone".to_owned())
-    );
-    app.gps.set_pose_interval(Duration::ZERO);
-    assert_eq!(
-        app.gps
-            .publish_pose(&app, &phone, Some(pose(52.53, 88.0)), None),
         Ok(1)
     );
 }
@@ -136,7 +130,6 @@ fn a_pose_needs_a_valid_fix_or_an_error() {
     let app = app();
     let phone = pair_one(&app.phones).phone.id;
     activate(&app, vec![phone_node("car", &phone)]);
-    app.gps.set_pose_interval(Duration::ZERO);
     assert!(app.gps.publish_pose(&app, &phone, None, None).is_err());
     assert!(
         app.gps

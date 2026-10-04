@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         mpsc::{SyncSender, TrySendError},
     },
     time::Duration,
@@ -10,7 +10,7 @@ use std::{
 
 use sdrmm_wire::{
     NmeaDeviceInfo, NmeaDevicesResponse, NodeBody, PatchGraph, PositionFix, PositionSource,
-    ServerEvent, phone::POSE_MIN_INTERVAL_MS,
+    ServerEvent,
 };
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -79,10 +79,8 @@ pub(crate) struct GpsHub {
     route_worker: Option<std::thread::JoinHandle<()>>,
     clear_before_route: Arc<AtomicBool>,
     events: broadcast::Sender<ServerEvent>,
-    pose_at: Mutex<HashMap<String, tokio::time::Instant>>,
     pose_seen: Mutex<HashMap<String, tokio::time::Instant>>,
     online: Mutex<HashSet<String>>,
-    pose_interval_ms: AtomicU64,
 }
 
 impl Default for GpsHub {
@@ -122,10 +120,8 @@ impl Default for GpsHub {
             route_worker,
             clear_before_route,
             events: broadcast::channel(EVENT_CAPACITY).0,
-            pose_at: Mutex::new(HashMap::new()),
             pose_seen: Mutex::new(HashMap::new()),
             online: Mutex::new(HashSet::new()),
-            pose_interval_ms: AtomicU64::new(POSE_MIN_INTERVAL_MS),
         }
     }
 }

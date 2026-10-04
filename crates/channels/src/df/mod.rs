@@ -16,6 +16,7 @@ use sdrmm_dsp::doa::{
 };
 use sdrmm_dsp::linalg::CMat;
 use sdrmm_dsp::manifold::{AliasReport, ElevationSpan, Manifold, ManifoldError};
+use sdrmm_dsp::special::wrap_deg;
 use sdrmm_wire::array::{MAX_ARRAY_LANES, MIN_ARRAY_LANES};
 use sdrmm_wire::processor::df::DF_POINTS;
 use sdrmm_wire::{DfAlgorithm, DfParams, ProcessorParams, SourceRule, UlaSide};
@@ -29,6 +30,7 @@ use crate::array_processor::{
 use crate::band::LaneBand;
 
 const SQUELCH_HYSTERESIS_DB: f32 = 1.0;
+const MAX_SMEAR_DEG: f64 = 10.0;
 
 static DESCRIPTOR: ProcessorDescriptor = ProcessorDescriptor {
     type_id: "df",
@@ -258,8 +260,16 @@ impl DfProcessor {
             .is_some_and(|rate| rate.abs() > self.settings.yaw_gate_dps)
     }
 
+    fn turned_away(&self, pose: &Pose) -> bool {
+        match (self.heading.mean_deg(), pose.heading_deg) {
+            (Some(mean), Some(now)) => wrap_deg(now - mean).abs() > MAX_SMEAR_DEG,
+            _ => false,
+        }
+    }
+
     fn accumulate(&mut self, block: &ArrayBlock<'_>) {
         let rotating = self.rotating(&block.pose);
+        let turned = self.turned_away(&block.pose);
         let mut views: [&[Complex<f32>]; MAX_LANES] = [&[]; MAX_LANES];
         let len = self.band.process(block, &mut views);
         if rotating {
@@ -268,6 +278,10 @@ impl DfProcessor {
         }
         for view in &mut views[..self.lanes] {
             *view = &view[..len];
+        }
+        if turned {
+            self.covariance.reset();
+            self.heading.reset();
         }
         self.covariance.accumulate(&views[..self.lanes]);
         self.heading.add(&block.pose, block.len());

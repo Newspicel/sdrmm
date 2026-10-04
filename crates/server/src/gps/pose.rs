@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, MutexGuard, PoisonError, atomic::Ordering},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
 
@@ -13,7 +13,6 @@ use tokio::time::Instant;
 use super::{GpsHub, PositionState, RouteState, WAITING, limit_error};
 use crate::AppState;
 
-const TOO_FAST: &str = "pose updates are limited to 20 Hz per phone";
 const WATCH_EVERY: Duration = Duration::from_secs(1);
 const SILENT_AFTER: Duration = Duration::from_millis(POSE_SILENT_AFTER_MS);
 
@@ -51,39 +50,11 @@ impl GpsHub {
             error: error.map(limit_error),
         };
         let bound = self.bound_to(phone);
-        let now = Instant::now();
-        if !self.repeats(&bound, &next) {
-            let mut published = locked(&self.pose_at);
-            if published
-                .get(phone)
-                .is_some_and(|last| now.saturating_duration_since(*last) < self.pose_interval())
-            {
-                return Err(TOO_FAST.to_owned());
-            }
-            published.insert(phone.to_owned(), now);
-        }
-        locked(&self.pose_seen).insert(phone.to_owned(), now);
+        locked(&self.pose_seen).insert(phone.to_owned(), Instant::now());
         for node in &bound {
             self.publish_state(state, node, next.fix.clone(), next.error.clone());
         }
         Ok(bound.len())
-    }
-
-    fn repeats(&self, bound: &[String], next: &PositionState) -> bool {
-        let latest = locked(&self.latest);
-        !bound.is_empty() && bound.iter().all(|node| latest.get(node) == Some(next))
-    }
-
-    fn pose_interval(&self) -> Duration {
-        Duration::from_millis(self.pose_interval_ms.load(Ordering::Relaxed))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_pose_interval(&self, interval: Duration) {
-        self.pose_interval_ms.store(
-            u64::try_from(interval.as_millis()).unwrap_or(u64::MAX),
-            Ordering::Relaxed,
-        );
     }
 
     pub(crate) fn phone_online(&self, state: &AppState, phone: &str) {
@@ -113,7 +84,6 @@ impl GpsHub {
         }
         online.remove(phone);
         locked(&self.pose_seen).remove(phone);
-        locked(&self.pose_at).remove(phone);
         let standing = if state.phones.known(phone) {
             PHONE_OFFLINE
         } else {

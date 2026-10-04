@@ -404,7 +404,6 @@ async fn an_unwired_position_sends_no_pose() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_gps_wired_into_an_array_moves_its_pose() {
     let (app, state) = test_router_with_state();
-    state.gps.set_pose_interval(Duration::ZERO);
     let phone = crate::phones::tests::pair_one(&state.phones).phone.id;
     let graph = with_gps(
         kraken_graph(heading_array()),
@@ -456,7 +455,6 @@ async fn a_gps_wired_into_an_array_moves_its_pose() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_lost_pose_is_reported() {
     let (app, state) = test_router_with_state();
-    state.gps.set_pose_interval(Duration::ZERO);
     let phone = crate::phones::tests::pair_one(&state.phones).phone.id;
     let graph = with_gps(
         kraken_graph(heading_array()),

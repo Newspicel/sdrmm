@@ -606,8 +606,9 @@ fn nav_auto_probes_along_the_averaged_bearing_then_targets_the_estimate() {
     let probe = first.flatten().expect("a probe target");
     assert_eq!(probe.kind, NavTargetKind::Probe);
     assert!((probe.distance_m - 5_000.0).abs() < 1.0, "{probe:?}");
-    let averaged = fusion.nav_target.expect("target");
-    assert!((averaged.bearing_deg - 60.0).abs() < 0.2, "{averaged:?}");
+    let held = fusion.nav_target.expect("target");
+    assert_eq!(held.revision, probe.revision, "{held:?}");
+    assert!((held.bearing_deg - 60.0).abs() < 1.5, "{held:?}");
 
     let tower = around(target, 150.0, 5_000.0);
     let mut kinds = Vec::new();
@@ -645,7 +646,11 @@ fn nav_direct_targets_the_best_cell() {
     let nav = fusion.nav_target.expect("target");
     assert_eq!(nav.kind, NavTargetKind::Estimate);
     let found = estimate(&fusion);
-    assert_eq!((nav.lat, nav.lon), (found.lat, found.lon));
+    let aimed_at = LatLon {
+        lat: nav.lat,
+        lon: nav.lon,
+    };
+    assert!(geo::distance_m(aimed_at, place(&found)) <= nav::RETARGET_SHARE * nav.distance_m);
 }
 
 #[test]
@@ -661,8 +666,12 @@ fn nav_off_publishes_no_target() {
 #[test]
 fn nav_revision_moves_only_on_real_changes() {
     let mut nav = Nav::new(NavMode::Auto, 5.0);
-    let observation = prepare(&aimed("car", HOME, 60.0, 3.0), 0.0, 0.05).expect("accepted");
-    nav.remember(&observation);
+    let remember = |nav: &mut Nav, from: LatLon, bearing_deg: f64, at_s: f64| {
+        let observation =
+            prepare(&aimed("car", from, bearing_deg, 3.0), at_s, 0.05).expect("accepted");
+        nav.remember(&observation);
+    };
+    remember(&mut nav, HOME, 60.0, 0.0);
     let first = nav.update(Some(&fix_at(HOME)), None, 1.0).0.expect("probe");
     for (index, bearing) in [0.0, 90.0, 180.0, 270.0].into_iter().enumerate() {
         let jittered = geo::destination(HOME, bearing, 10.0);
@@ -671,20 +680,81 @@ fn nav_revision_moves_only_on_real_changes() {
             .0
             .expect("probe");
         assert_eq!(next.revision, first.revision);
+        assert_eq!((next.lat, next.lon), (first.lat, first.lon));
     }
-    let driven = geo::destination(HOME, 180.0, 120.0);
-    let moved = nav
-        .update(Some(&fix_at(driven)), None, 10.0)
+    let driven = geo::destination(HOME, 60.0, 1_000.0);
+    remember(&mut nav, driven, 61.0, 5.5);
+    let held = nav
+        .update(Some(&fix_at(driven)), None, 6.0)
         .0
         .expect("probe");
-    assert_eq!(moved.revision, first.revision + 1);
+    assert_eq!(held.revision, first.revision);
+    assert!((held.distance_m - 4_000.0).abs() < 5.0, "{held:?}");
+    for at_s in [7.0, 7.5, 8.0, 8.5] {
+        remember(&mut nav, HOME, 110.0, at_s);
+    }
+    let swung = nav.update(Some(&fix_at(HOME)), None, 9.0).0.expect("probe");
+    assert_eq!(swung.revision, first.revision + 1);
+    let near = geo::destination(HOME, swung.bearing_deg, 3_000.0);
+    remember(&mut nav, near, swung.bearing_deg, 9.5);
+    let pushed = nav
+        .update(Some(&fix_at(near)), None, 10.0)
+        .0
+        .expect("probe");
+    assert_eq!(pushed.revision, swung.revision + 1);
     let (gone, flags) = nav.update(None, None, 11.0);
     assert!(gone.is_none() && flags.no_guide_position);
     let back = nav
-        .update(Some(&fix_at(driven)), None, 12.0)
+        .update(Some(&fix_at(near)), None, 12.0)
         .0
         .expect("probe");
-    assert_eq!(back.revision, moved.revision + 1);
+    assert_eq!(back.revision, pushed.revision + 1);
+}
+
+#[test]
+fn nav_kind_needs_a_steady_estimate_not_a_burst_of_fixes() {
+    let target = geo::destination(HOME, 30.0, 3_000.0);
+    let mut nav = Nav::new(NavMode::Auto, 5.0);
+    let observation = prepare(&toward("car", HOME, target, 3.0), 0.0, 0.05).expect("accepted");
+    nav.remember(&observation);
+    let tight = DfEstimate {
+        lat: target.lat,
+        lon: target.lon,
+        ellipse_major_m: 300.0,
+        ellipse_minor_m: 100.0,
+        ellipse_bearing_deg: 0.0,
+        converged: true,
+        samples: 20,
+        mass: 0.9,
+    };
+    let loose = DfEstimate { mass: 0.1, ..tight };
+    let kind_at = |nav: &mut Nav, estimate: &DfEstimate, at_s: f64| {
+        nav.update(Some(&fix_at(HOME)), Some(estimate), at_s)
+            .0
+            .expect("target")
+            .kind
+    };
+    for tick in 0..20 {
+        let at_s = 1.0 + f64::from(tick) * 0.1;
+        assert_eq!(kind_at(&mut nav, &tight, at_s), NavTargetKind::Probe);
+    }
+    assert_eq!(kind_at(&mut nav, &tight, 4.5), NavTargetKind::Estimate);
+    for tick in 0..50 {
+        let at_s = 5.0 + f64::from(tick) * 0.1;
+        assert_eq!(kind_at(&mut nav, &loose, at_s), NavTargetKind::Estimate);
+    }
+    assert_eq!(kind_at(&mut nav, &loose, 16.0), NavTargetKind::Probe);
+}
+
+#[test]
+fn nav_probe_skips_bearings_with_a_mirror() {
+    let mut nav = Nav::new(NavMode::Auto, 5.0);
+    let mut ambiguous = aimed("car", HOME, 200.0, 3.0);
+    ambiguous.mirror_deg = Some(20.0);
+    nav.remember(&prepare(&ambiguous, 0.0, 0.05).expect("accepted"));
+    nav.remember(&prepare(&aimed("car", HOME, 20.0, 3.0), 0.5, 0.05).expect("accepted"));
+    let probe = nav.update(Some(&fix_at(HOME)), None, 1.0).0.expect("probe");
+    assert!((probe.bearing_deg - 20.0).abs() < 0.5, "{probe:?}");
 }
 
 #[test]

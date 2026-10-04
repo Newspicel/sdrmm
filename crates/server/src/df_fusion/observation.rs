@@ -29,6 +29,7 @@ pub(crate) struct Observation {
     pub(crate) heading_sigma_deg: f32,
     pub(crate) source: BearingSource,
     pub(crate) moving: bool,
+    pub(crate) mirrored: bool,
     pub(crate) bank: Box<Rings>,
 }
 
@@ -78,6 +79,7 @@ pub(crate) fn prepare(
         heading_sigma_deg,
         source: bearing.source,
         moving: bearing.moving,
+        mirrored: bearing.mirror_deg.is_some_and(f32::is_finite),
         bank,
     })
 }

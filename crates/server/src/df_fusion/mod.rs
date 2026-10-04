@@ -23,6 +23,9 @@ mod votes;
 mod worker;
 
 #[cfg(test)]
+mod drive;
+
+#[cfg(test)]
 mod tests;
 
 use estimate::Located;

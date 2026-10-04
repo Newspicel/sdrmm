@@ -87,6 +87,20 @@ nonisolated enum AngleText {
         let whole = Int((turn < 0 ? turn + 360 : turn).rounded()) % 360
         return String(format: "%03d\u{00B0}", whole)
     }
+
+    static func side(_ relative: Double) -> String {
+        guard relative.isFinite else {
+            return "-"
+        }
+        let turn = RoutePlanBuilder.wrap180(relative)
+        let whole = Int(abs(turn).rounded())
+        if whole <= aheadDeg {
+            return "ahead"
+        }
+        return "\(whole)\u{00B0} \(turn < 0 ? "left" : "right")"
+    }
+
+    private static let aheadDeg = 10
 }
 
 nonisolated enum DurationText {
