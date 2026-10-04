@@ -16,3 +16,7 @@ threads-required = "num-test-threads"
 [[profile.default.overrides]]
 filter = 'binary_id(/^sdrmm-engine::array_/) | (binary_id(sdrmm-engine) & test(=array::radar::tests::push_never_allocates_or_blocks))'
 threads-required = "num-test-threads"
+
+[[profile.default.overrides]]
+filter = 'binary_id(sdrmm-server) & test(=ws::tests::stress::simultaneous_socket_listeners_keep_audio_continuous_during_retunes)'
+threads-required = "num-test-threads"

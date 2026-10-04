@@ -66,7 +66,11 @@ async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
                         ServerEvent::PipelineHealth { queues, websocket } => {
                             diagnostics += 1;
                             assert_eq!(websocket.dropped, 0, "WebSocket queue lost frames");
-                            assert!(queues.iter().all(|queue| queue.health.dropped == 0));
+                            let lossy: Vec<_> = queues
+                                .iter()
+                                .filter(|queue| queue.health.dropped > 0)
+                                .collect();
+                            assert!(lossy.is_empty(), "queues lost frames: {lossy:?}");
                         }
                         ServerEvent::Error { message } => panic!("stream failed: {message}"),
                         ServerEvent::StreamStopped { .. } => panic!("stream stopped early"),
