@@ -47,19 +47,12 @@ const DENOISE_MODES: Options<DenoiseMode> = [
     label: "Spectral",
     title: "Light and fast, for steady hiss",
   },
-  { value: "rnnoise", label: "RNNoise", title: "Small speech model, runs anywhere" },
   { value: "neural", label: "DPDFNet", title: "Best speech model, downloaded once" },
 ];
 
 const DENOISE_MODELS: Options<DenoiseModel> = [
-  { value: "baseline", label: "Base", title: "Lightest" },
-  { value: "dpdfnet2", label: "DPDFNet 2", title: "Balanced" },
-  { value: "dpdfnet4", label: "DPDFNet 4", title: "Stronger, more CPU" },
-  { value: "dpdfnet8", label: "DPDFNet 8", title: "Best, most CPU" },
-  { value: "dpdfnet2_8khz", label: "DPDFNet 2 NB", title: "Narrowband voice, 8 kHz" },
-  { value: "dpdfnet8_8khz", label: "DPDFNet 8 NB", title: "Narrowband voice, 8 kHz, best" },
-  { value: "dpdfnet2_48khz_hr", label: "DPDFNet 2 HR", title: "Full band, 48 kHz" },
-  { value: "dpdfnet8_48khz_hr", label: "DPDFNet 8 HR", title: "Full band, 48 kHz, best, most CPU" },
+  { value: "dpdfnet2_8khz", label: "DPDFNet 2", title: "Light" },
+  { value: "dpdfnet8_8khz", label: "DPDFNet 8", title: "Best, more CPU" },
 ];
 
 type Edit = (patch: Partial<AudioProcessing>) => void;
@@ -168,7 +161,7 @@ function DenoiseChip({ audio, edit }: { audio: AudioProcessing; edit: Edit }) {
   const denoise = audio.denoise ?? {};
   const enabled = denoise.enabled ?? false;
   const mode = denoise.mode ?? "spectral";
-  const model = denoise.model ?? "dpdfnet2";
+  const model = denoise.model ?? "dpdfnet2_8khz";
   const strength = denoise.strength ?? AUDIO_DEFAULTS.denoiseStrength;
   const neural = mode === "neural";
   const models = useQuery(denoiseModelsQuery(enabled && neural));

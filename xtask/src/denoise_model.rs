@@ -4,8 +4,7 @@ use anyhow::{Context, Result, bail, ensure};
 use sdrmm_channels::neural::{
     Binary, ConvSpec, Graph, Net, Node, Op, Session, Unary, Value, Weights, f16_to_f32, f32_to_f16,
 };
-use sdrmm_server::denoise_models::{MODELS_PREFIX, artifact, file_name};
-use sdrmm_wire::DenoiseModel;
+use sdrmm_wire::{DENOISE_MODELS_PREFIX, DenoiseModel};
 use sha2::{Digest, Sha256};
 use tract_onnx::prelude::*;
 use tract_onnx::tract_core::internal::DimLike as _;
@@ -23,44 +22,16 @@ use tract_onnx::tract_core::ops::{
 };
 
 const SOURCE_BASE: &str = "https://huggingface.co/Ceva-IP/DPDFNet/resolve/main/onnx";
-const SOURCES: [(DenoiseModel, &str); 8] = [
-    (
-        DenoiseModel::Baseline,
-        "371d26182aff0e1e0d31354e24c81f79cd57458f5a7dd003fc10a7ebf64255e0",
-    ),
+const SOURCES: [(DenoiseModel, &str); 2] = [
     (
         DenoiseModel::Dpdfnet2,
-        "4f0ee28935b4a32abecc717d745416976565834d839601acf43031094b4dc94c",
-    ),
-    (
-        DenoiseModel::Dpdfnet4,
-        "42a386d3601922f474c4309927e1f471cce422e9bd8e3fd3967bb943bac36c01",
-    ),
-    (
-        DenoiseModel::Dpdfnet8,
-        "899d4f23f3ff86edbffa8c537e4bcbdc49da1b4e84e0ef390611e0604a3b26cb",
-    ),
-    (
-        DenoiseModel::Dpdfnet2Narrow,
         "6218f1dbd6e4bac5768c63b7d899fe7b84b3788f2a35c4e246d4ab0946165c5d",
     ),
     (
-        DenoiseModel::Dpdfnet8Narrow,
+        DenoiseModel::Dpdfnet8,
         "c061bcc56b803fa2fa97d448a45db6d966f7d17aff1304e464455d748745ea62",
     ),
-    (
-        DenoiseModel::Dpdfnet2Full,
-        "7f0575a5cec0ba4ffd8f8bd657e06d007e4ccdd955d76faab922b9d3291dc14b",
-    ),
-    (
-        DenoiseModel::Dpdfnet8Full,
-        "7b3afbb260a08fe9af3d16e3bda992971be1e7e951d1dee7c2d235f5c43f5631",
-    ),
 ];
-const FIXTURE: (DenoiseModel, &str) = (
-    DenoiseModel::Dpdfnet2,
-    "crates/channels/models/dpdfnet2.sdrmmnn",
-);
 const WEIGHT_MIN_LEN: usize = 256;
 const PARITY_FRAMES: usize = 64;
 const PARITY_TOLERANCE: f32 = 1e-2;
@@ -80,19 +51,16 @@ pub(crate) fn run(root: &Path) -> Result<()> {
         let bytes = graph.encode();
         let net = Arc::new(Net::load(&bytes)?);
         let report = parity(typed, &net)?;
-        let out = scratch.join(file_name(model));
+        let out = scratch.join(model.file_name());
         fs::write(&out, &bytes)?;
         let digest = hex(&Sha256::digest(&bytes));
-        let listed = artifact(model);
+        let listed = model.artifact();
         if listed.sha256 != digest || listed.bytes != bytes.len() as u64 {
             stale.push(format!(
                 "{}: {} bytes, sha256 {digest}",
                 model.name(),
                 bytes.len()
             ));
-        }
-        if model == FIXTURE.0 {
-            fs::write(root.join(FIXTURE.1), &bytes)?;
         }
         println!(
             "{:<16} {:>9} bytes  sha256 {}  error {:.1e}  {:.0} us/frame (tract {:.0})",
@@ -106,11 +74,11 @@ pub(crate) fn run(root: &Path) -> Result<()> {
     }
     ensure!(
         stale.is_empty(),
-        "update the catalog in crates/server/src/denoise_models.rs:\n{}",
+        "update the catalog in crates/wire/src/audio.rs:\n{}",
         stale.join("\n")
     );
     println!(
-        "upload with: scripts/r2-upload.sh {MODELS_PREFIX} {}/*.sdrmmnn",
+        "upload with: scripts/r2-upload.sh {DENOISE_MODELS_PREFIX} {}/*.sdrmmnn",
         scratch.display()
     );
     Ok(())

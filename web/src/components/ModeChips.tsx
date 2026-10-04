@@ -277,14 +277,23 @@ function SelcallChips({ params, onParams }: Mode<"selcall">) {
 }
 
 function AmChips({ params, onParams }: Mode<"am">) {
+  const settings = params.settings;
   return (
-    <BandwidthChip
-      valueHz={params.settings.bandwidth_hz ?? 10_000}
-      optionsHz={[5_000, 8_000, 10_000]}
-      onCommit={(bandwidth_hz) =>
-        onParams({ type: "am", settings: { ...params.settings, bandwidth_hz } })
-      }
-    />
+    <>
+      <BandwidthChip
+        valueHz={settings.bandwidth_hz ?? 10_000}
+        optionsHz={[5_000, 8_000, 10_000]}
+        onCommit={(bandwidth_hz) =>
+          onParams({ type: "am", settings: { ...settings, bandwidth_hz } })
+        }
+      />
+      <ToggleChip
+        label="Sync"
+        on={settings.sync ?? false}
+        title="Lock to the carrier; clearer under fading"
+        onChange={(sync) => onParams({ type: "am", settings: { ...settings, sync } })}
+      />
+    </>
   );
 }
 

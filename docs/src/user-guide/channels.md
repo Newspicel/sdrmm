@@ -107,15 +107,13 @@ default:
 | Passband | Cuts audio below and above two frequencies |
 | Notches | Removes up to four chosen tones, each with its own width |
 | Auto notch | Finds and removes steady tones |
-| Denoise | **Spectral** cuts noise by up to 20 dB, light on CPU. **RNNoise** is a small built-in speech model. **DPDFNet** is the strongest speech model, downloaded on first use. |
+| Denoise | **Spectral** cuts noise by up to 20 dB, light on CPU. **DPDFNet** is the strongest speech model, built for 8 kHz radio voice, downloaded on first use. |
 | AGC | Levels the volume: Slow, Med or Fast. AM and SSB channels already level their own. |
 
-RNNoise and DPDFNet are trained on speech. Leave them off for music, data tones and CW.
+DPDFNet is trained on speech. Leave it off for music, data tones and CW.
 
-Pick a DPDFNet model, then press the download button next to it. Base and DPDFNet 2 suit small
-machines; 4 and 8 sound better and cost more CPU. NB models suit 8 kHz narrowband voice such as
-SSB and NFM, HR models full 48 kHz audio such as broadcast speech. The button next to a downloaded
-model removes it.
+Pick a DPDFNet model, then press the download button next to it. DPDFNet 2 is light; 8 sounds
+better and costs more CPU. The button next to a downloaded model removes it.
 
 ## Filter events
 

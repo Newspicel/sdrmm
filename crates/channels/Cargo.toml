@@ -21,7 +21,6 @@ sdrmm-dsp.workspace = true
 sdrmm-modem.workspace = true
 num-complex.workspace = true
 realfft.workspace = true
-nnnoiseless.workspace = true
 rtrb.workspace = true
 thiserror.workspace = true
 blip25-vocoder.workspace = true
@@ -36,7 +35,7 @@ jiff.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-sdrmm-test-support.workspace = true
+sdrmm-test-support = { workspace = true, features = ["denoise-models"] }
 sdrmm-dsp = { workspace = true, features = ["test-scene"] }
 sdrmm-modem-test-support.workspace = true
 # The coded-baseline artifacts (tests/dmr_soft_gain.rs) bundle three labelled curves per

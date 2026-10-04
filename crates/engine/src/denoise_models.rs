@@ -114,11 +114,7 @@ mod tests {
     use super::*;
 
     fn fixture() -> Vec<u8> {
-        std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../channels/models/dpdfnet2.sdrmmnn"
-        ))
-        .expect("fixture is checked in")
+        sdrmm_test_support::denoise_model(DenoiseModel::Dpdfnet2).expect("model downloads")
     }
 
     #[test]
@@ -142,8 +138,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let models = DenoiseModels::default();
         models.set_dir(dir.path().to_path_buf());
-        assert!(models.install(DenoiseModel::Baseline, b"nonsense").is_err());
-        assert!(!models.installed(DenoiseModel::Baseline));
+        assert!(models.install(DenoiseModel::Dpdfnet8, b"nonsense").is_err());
+        assert!(!models.installed(DenoiseModel::Dpdfnet8));
     }
 
     #[test]

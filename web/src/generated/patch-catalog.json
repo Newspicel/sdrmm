@@ -513,7 +513,7 @@
             "denoise": {
               "enabled": false,
               "mode": "spectral",
-              "model": "dpdfnet2",
+              "model": "dpdfnet2_8khz",
               "strength": 0.5
             },
             "agc": "off"

@@ -19,6 +19,10 @@ describe("ModeChips", () => {
     expect(render({ type: "nfm", settings: {} })).toContain('aria-label="Channel bandwidth"');
   });
 
+  it("offers the AM sync detector", () => {
+    expect(render({ type: "am", settings: {} })).toContain("Sync");
+  });
+
   it("swaps DVB-S code rate for S2 settings", () => {
     expect(render({ type: "datv", settings: {} })).toContain('aria-label="DVB-S code rate"');
     const s2 = render({ type: "datv", settings: { standard: "dvb_s2" } });

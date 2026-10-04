@@ -14,6 +14,7 @@ use crate::{
 
 const AUDIO_TAPS: usize = 129;
 const CHANNEL_TAPS: usize = 129;
+const SYNC_LOOP_BW: f64 = 1e-3;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "am".to_owned(),
@@ -82,11 +83,18 @@ fn waveform(p: &AmParams) -> Result<AmWaveform, ChannelError> {
 }
 
 fn demodulator(p: &AmParams) -> Result<AmDemod, ChannelError> {
+    let detector = if p.sync {
+        AmDetector::Synchronous {
+            loop_bw: SYNC_LOOP_BW,
+        }
+    } else {
+        AmDetector::Envelope
+    };
     Ok(AmDemod::new(
         &waveform(p)?,
         &AmRx {
             predetection: false,
-            ..AmRx::new(AmDetector::Envelope)
+            ..AmRx::new(detector)
         },
     ))
 }
@@ -181,12 +189,14 @@ impl ChannelTx for AmTx {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::TAU;
+
     use sdrmm_wire::{NfmParams, WfmParams};
 
     use super::*;
     use crate::{
         synth::{burst, tone_audio},
-        testutil::{am_iq, dominant_tone, rms, run_ragged, settings},
+        testutil::{am_iq, dominant_tone, rms, run_ragged, settings, tone_power},
     };
 
     const RATE: f64 = 48_000.0;
@@ -203,6 +213,7 @@ mod tests {
     fn demodulates_1_khz_tone_over_ragged_blocks() {
         let mut chan = channel(AmParams {
             bandwidth_hz: 10_000.0,
+            ..AmParams::default()
         });
         let audio = run_ragged(&mut chan, &am_iq(RATE, 1_000.0, 0.5, 48_000));
         let window = &audio[4_000..16_000];
@@ -217,9 +228,11 @@ mod tests {
     fn apply_reconfigures_bandwidth() {
         let mut chan = channel(AmParams {
             bandwidth_hz: 10_000.0,
+            ..AmParams::default()
         });
         chan.apply(settings(ChannelParams::Am(AmParams {
             bandwidth_hz: 6_000.0,
+            ..AmParams::default()
         })))
         .unwrap();
         let audio = run_ragged(&mut chan, &am_iq(RATE, 1_000.0, 0.5, 48_000));
@@ -229,6 +242,41 @@ mod tests {
         assert!(ratio > 10.0, "tone-to-rest ratio {ratio}");
         let amplitude = rms(window);
         assert!((0.2..0.3).contains(&amplitude), "rms {amplitude}");
+    }
+
+    fn faded_carrier_iq(offset_hz: f64, len: usize) -> Vec<Complex<f32>> {
+        am_iq(RATE, 1_000.0, 0.8, len)
+            .into_iter()
+            .enumerate()
+            .map(|(k, s)| {
+                let carrier_loss = Complex::new(-0.7, 0.0);
+                let shift = Complex::from_polar(1.0, (TAU * offset_hz * k as f64 / RATE) as f32);
+                (s + carrier_loss) * shift
+            })
+            .collect()
+    }
+
+    fn harmonic_ratio(audio: &[f32]) -> f64 {
+        tone_power(audio, 2_000.0, RATE) / tone_power(audio, 1_000.0, RATE)
+    }
+
+    #[test]
+    fn sync_keeps_a_faded_carrier_undistorted_where_the_envelope_fails() {
+        let iq = faded_carrier_iq(150.0, 96_000);
+        let demod = |sync| {
+            let audio = run_ragged(
+                &mut channel(AmParams {
+                    sync,
+                    ..AmParams::default()
+                }),
+                &iq,
+            );
+            harmonic_ratio(&audio[48_000..])
+        };
+        let envelope = demod(false);
+        let sync = demod(true);
+        assert!(envelope > 0.05, "envelope distortion {envelope}");
+        assert!(sync < 0.01, "sync distortion {sync}");
     }
 
     #[test]
@@ -245,6 +293,7 @@ mod tests {
     fn tx_params() -> ChannelSettings {
         settings(ChannelParams::Am(AmParams {
             bandwidth_hz: 10_000.0,
+            ..AmParams::default()
         }))
     }
 

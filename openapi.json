@@ -6238,6 +6238,9 @@
           "bandwidth_hz": {
             "type": "number",
             "format": "double"
+          },
+          "sync": {
+            "type": "boolean"
           }
         }
       },
@@ -14447,21 +14450,14 @@
         "type": "string",
         "enum": [
           "spectral",
-          "rnnoise",
           "neural"
         ]
       },
       "DenoiseModel": {
         "type": "string",
         "enum": [
-          "baseline",
-          "dpdfnet2",
-          "dpdfnet4",
-          "dpdfnet8",
           "dpdfnet2_8khz",
-          "dpdfnet8_8khz",
-          "dpdfnet2_48khz_hr",
-          "dpdfnet8_48khz_hr"
+          "dpdfnet8_8khz"
         ]
       },
       "DenoiseModelState": {

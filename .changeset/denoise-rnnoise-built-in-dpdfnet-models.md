@@ -2,4 +2,4 @@
 bump: minor
 ---
 
-Denoise: RNNoise built in, eight DPDFNet models download on demand, smaller binary
+Denoise: DPDFNet 8 kHz radio voice models download on demand, smaller binary

@@ -18,7 +18,7 @@ function render(audio: AudioProcessing, models?: DenoiseModelsResponse): string 
 }
 
 const NEURAL: AudioProcessing = {
-  denoise: { enabled: true, mode: "neural", model: "dpdfnet4", strength: 0.5 },
+  denoise: { enabled: true, mode: "neural", model: "dpdfnet8_8khz", strength: 0.5 },
 };
 
 describe("AudioControls", () => {
@@ -43,14 +43,14 @@ describe("AudioControls", () => {
 
   it("flags a DPDFNet model that is not downloaded", () => {
     const html = render(NEURAL, {
-      models: [{ model: "dpdfnet4", bytes: 5_817_413, state: "missing" }],
+      models: [{ model: "dpdfnet8_8khz", bytes: 7_282_645, state: "missing" }],
     });
     expect(html).toContain("no model");
   });
 
   it("shows the strength once the model is here", () => {
     const html = render(NEURAL, {
-      models: [{ model: "dpdfnet4", bytes: 5_817_413, state: "ready" }],
+      models: [{ model: "dpdfnet8_8khz", bytes: 7_282_645, state: "ready" }],
     });
     expect(html).not.toContain("no model");
     expect(html).toContain("50%");

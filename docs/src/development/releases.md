@@ -130,7 +130,7 @@ After a release, the `linux-repo` workflow publishes the signed APT and RPM repo
 
 `scripts/r2-upload.sh <prefix> <file>...` uploads through `wrangler`. Denoise models live under
 `denoise/v1/`. `cargo xtask denoise-model` builds them into `target/denoise-model/` and fails until
-the catalog in `crates/server/src/denoise_models.rs` matches. Then upload:
+the catalog in `crates/wire/src/audio.rs` matches. Then upload:
 
 ```sh
 scripts/r2-upload.sh denoise/v1 target/denoise-model/*.sdrmmnn

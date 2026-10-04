@@ -4,7 +4,7 @@
 
 SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 
-## Rust crates (798)
+## Rust crates (793)
 
 | Component | Version | License |
 | --- | --- | --- |
@@ -20,10 +20,8 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [anstyle-query](https://github.com/rust-cli/anstyle.git) | 1.1.5 | MIT OR Apache-2.0 |
 | [anstyle-wincon](https://github.com/rust-cli/anstyle.git) | 3.0.11 | MIT OR Apache-2.0 |
 | [anyhow](https://github.com/dtolnay/anyhow) | 1.0.104 | MIT OR Apache-2.0 |
-| [anymap3](https://github.com/reivilibre/anymap3) | 1.1.0 | BlueOak-1.0.0 OR MIT OR Apache-2.0 |
 | [arbitrary](https://github.com/rust-fuzz/arbitrary/) | 1.4.2 | MIT OR Apache-2.0 |
 | [arc-swap](https://github.com/vorner/arc-swap) | 1.9.2 | MIT OR Apache-2.0 |
-| [array-init](https://github.com/Manishearth/array-init/) | 2.1.0 | MIT OR Apache-2.0 |
 | [arrayvec](https://github.com/bluss/arrayvec) | 0.7.8 | MIT OR Apache-2.0 |
 | [ash](https://github.com/ash-rs/ash) | 0.38.0+1.3.281 | MIT OR Apache-2.0 |
 | [askama](https://github.com/askama-rs/askama) | 0.16.1 | MIT OR Apache-2.0 |
@@ -170,7 +168,6 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [dtoa-short](https://github.com/upsuper/dtoa-short) | 0.3.5 | MPL-2.0 |
 | [dunce](https://gitlab.com/kornelski/dunce) | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | [dyn-clone](https://github.com/dtolnay/dyn-clone) | 1.0.20 | MIT OR Apache-2.0 |
-| [easyfft](https://github.com/WalterSmuts/easyfft) | 0.4.2 | MIT OR Apache-2.0 |
 | [either](https://github.com/rayon-rs/either) | 1.18.0 | MIT OR Apache-2.0 |
 | [embed-resource](https://github.com/nabijaczleweli/rust-embed-resource) | 3.0.11 | MIT |
 | [embed_plist](https://github.com/nvzqz/embed-plist-rs) | 1.2.2 | MIT OR Apache-2.0 |
@@ -223,7 +220,6 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [gdkx11](https://github.com/gtk-rs/gtk3-rs) | 0.18.2 | MIT |
 | [gdkx11-sys](https://github.com/gtk-rs/gtk3-rs) | 0.18.2 | MIT |
 | [generic-array](https://github.com/fizyk20/generic-array.git) | 0.14.7 | MIT |
-| [generic_singleton](https://github.com/WalterSmuts/generic_singleton) | 0.5.3 | MIT OR Apache-2.0 |
 | [gethostname](https://codeberg.org/swsnr/gethostname.rs.git) | 1.1.0 | Apache-2.0 |
 | [getifaddrs](https://github.com/mmastrac/getifaddrs) | 0.6.2 | MIT OR Apache-2.0 |
 | [getrandom](https://github.com/rust-random/getrandom) | 0.2.17 | MIT OR Apache-2.0 |
@@ -366,7 +362,6 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [nix](https://github.com/nix-rust/nix) | 0.26.4 | MIT |
 | [nix](https://github.com/nix-rust/nix) | 0.30.1 | MIT |
 | [nix](https://github.com/nix-rust/nix) | 0.31.3 | MIT |
-| [nnnoiseless](https://github.com/jneem/nnnoiseless) | 0.5.2 | BSD-3-Clause |
 | [nom](https://github.com/Geal/nom) | 7.1.3 | MIT |
 | [nu-ansi-term](https://github.com/nushell/nu-ansi-term) | 0.50.3 | MIT |
 | [num-bigint](https://github.com/rust-num/num-bigint) | 0.4.8 | MIT OR Apache-2.0 |

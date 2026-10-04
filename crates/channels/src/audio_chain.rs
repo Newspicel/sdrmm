@@ -6,7 +6,6 @@ use sdrmm_wire::{AudioProcessing, ChannelParams, DenoiseMode, DenoiseSettings, N
 use crate::{
     AUDIO_RATE,
     neural_denoise::{DenoiseNets, NeuralDenoiseError, NeuralDenoiser},
-    rnnoise::RnnoiseDenoiser,
 };
 
 const AGC_TARGET_RMS: f32 = 0.25;
@@ -145,7 +144,6 @@ impl AudioChain {
 
 enum Denoiser {
     Spectral(Box<SpectralDenoiser>),
-    Rnnoise(Box<RnnoiseDenoiser>),
     Neural(Box<NeuralDenoiser>, sdrmm_wire::DenoiseModel),
 }
 
@@ -157,9 +155,6 @@ impl Denoiser {
         Ok(match settings.mode {
             DenoiseMode::Spectral => {
                 Self::Spectral(Box::new(SpectralDenoiser::new(settings.strength)))
-            }
-            DenoiseMode::Rnnoise => {
-                Self::Rnnoise(Box::new(RnnoiseDenoiser::new(settings.strength)))
             }
             DenoiseMode::Neural => Self::Neural(
                 Box::new(NeuralDenoiser::new(
@@ -174,7 +169,6 @@ impl Denoiser {
     fn matches(&self, settings: &DenoiseSettings) -> bool {
         match self {
             Self::Spectral(_) => settings.mode == DenoiseMode::Spectral,
-            Self::Rnnoise(_) => settings.mode == DenoiseMode::Rnnoise,
             Self::Neural(_, model) => {
                 settings.mode == DenoiseMode::Neural && settings.model == *model
             }
@@ -184,7 +178,6 @@ impl Denoiser {
     fn set_strength(&mut self, strength: f32) {
         match self {
             Self::Spectral(denoiser) => denoiser.set_strength(strength),
-            Self::Rnnoise(denoiser) => denoiser.set_strength(strength),
             Self::Neural(denoiser, _) => denoiser.set_strength(strength),
         }
     }
@@ -192,7 +185,6 @@ impl Denoiser {
     fn reset(&mut self) {
         match self {
             Self::Spectral(denoiser) => denoiser.reset(),
-            Self::Rnnoise(denoiser) => denoiser.reset(),
             Self::Neural(denoiser, _) => denoiser.reset(),
         }
     }
@@ -200,10 +192,6 @@ impl Denoiser {
     fn process(&mut self, pcm: &mut [f32]) -> Result<(), NeuralDenoiseError> {
         match self {
             Self::Spectral(denoiser) => Ok(denoiser.process(pcm)?),
-            Self::Rnnoise(denoiser) => {
-                denoiser.process(pcm);
-                Ok(())
-            }
             Self::Neural(denoiser, _) => denoiser.process(pcm),
         }
     }
@@ -263,7 +251,8 @@ impl Plane {
         self.notches = settings.notches.iter().map(|n| notch(rate, n)).collect();
 
         if settings.auto_notch {
-            self.auto_notch.get_or_insert_with(AutoNotch::new);
+            self.auto_notch
+                .get_or_insert_with(|| AutoNotch::new(f64::from(AUDIO_RATE)));
         } else {
             self.auto_notch = None;
         }

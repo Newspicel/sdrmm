@@ -85,10 +85,10 @@ pub trait DenoiseNets: Send + Sync {
     fn net(&self, model: DenoiseModel) -> Result<Arc<Net>, NeuralDenoiseError>;
 }
 
-#[cfg(any(test, feature = "fixtures"))]
+#[cfg(test)]
 pub struct FixtureNets;
 
-#[cfg(any(test, feature = "fixtures"))]
+#[cfg(test)]
 impl DenoiseNets for FixtureNets {
     fn net(&self, model: DenoiseModel) -> Result<Arc<Net>, NeuralDenoiseError> {
         match model {
@@ -101,9 +101,11 @@ impl DenoiseNets for FixtureNets {
     }
 }
 
-#[cfg(any(test, feature = "fixtures"))]
-pub fn fixture_net() -> Result<Arc<Net>, NetError> {
-    Net::load(include_bytes!("../models/dpdfnet2.sdrmmnn")).map(Arc::new)
+#[cfg(test)]
+pub fn fixture_net() -> Result<Arc<Net>, NeuralDenoiseError> {
+    let bytes =
+        sdrmm_test_support::denoise_model(DenoiseModel::Dpdfnet2).map_err(NeuralDenoiseError)?;
+    Ok(Arc::new(Net::load(&bytes)?))
 }
 
 pub fn initial_state(net: &Net) -> Result<Vec<f32>, NeuralDenoiseError> {
@@ -160,7 +162,6 @@ impl NeuralDenoiser {
         let scratch_len = fft.get_scratch_len().max(ifft.get_scratch_len());
         let bins = window_len / 2 + 1;
         let taps = design_lowpass(TAPS_PER_FACTOR * factor, CUTOFF_PER_FACTOR / factor as f64);
-        let latency = window_len * factor;
         let mut denoiser = Self {
             session: Session::new(net),
             initial_state,
@@ -182,7 +183,7 @@ impl NeuralDenoiser {
             scratch: vec![Complex::new(0.0, 0.0); scratch_len],
             noisy: vec![vec![Complex::new(0.0, 0.0); bins]; MODEL_DELAY_FRAMES + 1],
             noisy_head: 0,
-            ready: std::collections::VecDeque::with_capacity(latency * 4),
+            ready: std::collections::VecDeque::with_capacity(window_len * factor * 4),
             dry_mix: 0.0,
         };
         denoiser.set_strength(strength);
@@ -202,7 +203,15 @@ impl NeuralDenoiser {
 
     #[must_use]
     pub fn latency(&self) -> usize {
-        self.window_len * self.factor
+        (self.window_len + MODEL_DELAY_FRAMES * self.hop) * self.factor + self.resampler_delay()
+    }
+
+    fn resampler_delay(&self) -> usize {
+        if self.factor == 1 {
+            0
+        } else {
+            TAPS_PER_FACTOR * self.factor - 1
+        }
     }
 
     pub fn reset(&mut self) {
@@ -217,7 +226,7 @@ impl NeuralDenoiser {
             frame.fill(Complex::new(0.0, 0.0));
         }
         self.ready.clear();
-        self.ready.resize(self.latency(), 0.0);
+        self.ready.resize(self.window_len * self.factor, 0.0);
     }
 
     pub fn process(&mut self, pcm: &mut [f32]) -> Result<(), NeuralDenoiseError> {
@@ -404,22 +413,28 @@ mod tests {
     }
 
     #[test]
-    fn zero_strength_hands_back_the_input_delayed() {
+    fn zero_strength_hands_back_the_input_delayed_by_its_latency() {
         let input = vowel(48_000);
         let mut denoiser =
             NeuralDenoiser::new(fixture_net().expect("model loads"), 0.0).expect("denoiser builds");
         let output = run(&mut denoiser, &input);
         let settled = 24_000;
+        let residual = |lag: usize| {
+            let err: f32 = output[settled..]
+                .iter()
+                .zip(&input[settled - lag..])
+                .map(|(a, b)| (a - b).powi(2))
+                .sum();
+            (err / (output.len() - settled) as f32).sqrt()
+        };
         let best = (0..6_000)
-            .map(|lag| {
-                let err: f32 = output[settled..]
-                    .iter()
-                    .zip(&input[settled - lag..])
-                    .map(|(a, b)| (a - b).powi(2))
-                    .sum();
-                (err / (output.len() - settled) as f32).sqrt()
-            })
-            .fold(f32::MAX, f32::min);
-        assert!(best < 0.05 * rms(&input), "residual {best}");
+            .min_by(|&a, &b| residual(a).total_cmp(&residual(b)))
+            .expect("lags to try");
+        assert_eq!(best, denoiser.latency());
+        assert!(
+            residual(best) < 0.05 * rms(&input),
+            "residual {}",
+            residual(best)
+        );
     }
 }

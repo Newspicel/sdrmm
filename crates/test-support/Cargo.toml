@@ -8,5 +8,13 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
+[features]
+denoise-models = ["dep:sdrmm-wire", "dep:reqwest", "dep:sha2"]
+
+[dependencies]
+sdrmm-wire = { workspace = true, optional = true }
+reqwest = { workspace = true, features = ["blocking"], optional = true }
+sha2 = { workspace = true, optional = true }
+
 [lints]
 workspace = true

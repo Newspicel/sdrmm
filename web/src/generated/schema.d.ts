@@ -1845,6 +1845,7 @@ export interface components {
         AmParams: {
             /** Format: double */
             bandwidth_hz?: number;
+            sync?: boolean;
         };
         AntennaDesign: {
             /** @enum {string} */
@@ -4062,9 +4063,9 @@ export interface components {
             deleted: number;
         };
         /** @enum {string} */
-        DenoiseMode: "spectral" | "rnnoise" | "neural";
+        DenoiseMode: "spectral" | "neural";
         /** @enum {string} */
-        DenoiseModel: "baseline" | "dpdfnet2" | "dpdfnet4" | "dpdfnet8" | "dpdfnet2_8khz" | "dpdfnet8_8khz" | "dpdfnet2_48khz_hr" | "dpdfnet8_48khz_hr";
+        DenoiseModel: "dpdfnet2_8khz" | "dpdfnet8_8khz";
         DenoiseModelsResponse: {
             models: components["schemas"]["DenoiseModelStatus"][];
         };

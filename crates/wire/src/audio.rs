@@ -12,6 +12,8 @@ pub const MAX_AUDIO_TONE_HZ: f64 = 20_000.0;
 pub const MIN_NOTCH_WIDTH_HZ: f64 = 10.0;
 pub const MAX_NOTCH_WIDTH_HZ: f64 = 2_000.0;
 pub const MAX_AUDIO_FX_CHAIN: usize = 16;
+pub const DENOISE_MODELS_PREFIX: &str = "denoise/v1";
+pub const DENOISE_MODELS_URL: &str = "https://downloads.sdrmm.com/denoise/v1";
 
 fn default_blanker_threshold() -> f32 {
     5.0
@@ -78,7 +80,6 @@ impl NoiseBlankerSettings {
 pub enum DenoiseMode {
     #[default]
     Spectral,
-    Rnnoise,
     Neural,
 }
 
@@ -97,48 +98,21 @@ pub enum DenoiseMode {
     ToSchema,
 )]
 pub enum DenoiseModel {
-    #[serde(rename = "baseline")]
-    Baseline,
     #[default]
-    #[serde(rename = "dpdfnet2")]
-    Dpdfnet2,
-    #[serde(rename = "dpdfnet4")]
-    Dpdfnet4,
-    #[serde(rename = "dpdfnet8")]
-    Dpdfnet8,
     #[serde(rename = "dpdfnet2_8khz")]
-    Dpdfnet2Narrow,
+    Dpdfnet2,
     #[serde(rename = "dpdfnet8_8khz")]
-    Dpdfnet8Narrow,
-    #[serde(rename = "dpdfnet2_48khz_hr")]
-    Dpdfnet2Full,
-    #[serde(rename = "dpdfnet8_48khz_hr")]
-    Dpdfnet8Full,
+    Dpdfnet8,
 }
 
 impl DenoiseModel {
-    pub const ALL: [Self; 8] = [
-        Self::Baseline,
-        Self::Dpdfnet2,
-        Self::Dpdfnet4,
-        Self::Dpdfnet8,
-        Self::Dpdfnet2Narrow,
-        Self::Dpdfnet8Narrow,
-        Self::Dpdfnet2Full,
-        Self::Dpdfnet8Full,
-    ];
+    pub const ALL: [Self; 2] = [Self::Dpdfnet2, Self::Dpdfnet8];
 
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
-            Self::Baseline => "baseline",
-            Self::Dpdfnet2 => "dpdfnet2",
-            Self::Dpdfnet4 => "dpdfnet4",
-            Self::Dpdfnet8 => "dpdfnet8",
-            Self::Dpdfnet2Narrow => "dpdfnet2_8khz",
-            Self::Dpdfnet8Narrow => "dpdfnet8_8khz",
-            Self::Dpdfnet2Full => "dpdfnet2_48khz_hr",
-            Self::Dpdfnet8Full => "dpdfnet8_48khz_hr",
+            Self::Dpdfnet2 => "dpdfnet2_8khz",
+            Self::Dpdfnet8 => "dpdfnet8_8khz",
         }
     }
 
@@ -146,6 +120,37 @@ impl DenoiseModel {
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|model| model.name() == name)
     }
+
+    #[must_use]
+    pub fn file_name(self) -> String {
+        format!("{}.sdrmmnn", self.name())
+    }
+
+    #[must_use]
+    pub fn url(self) -> String {
+        format!("{DENOISE_MODELS_URL}/{}", self.file_name())
+    }
+
+    #[must_use]
+    pub fn artifact(self) -> DenoiseArtifact {
+        let (bytes, sha256) = match self {
+            Self::Dpdfnet2 => (
+                5_090_797,
+                "a7863b2a439386e0aa888745b0da67c4571325346b810eb6251ae22d792b6e00",
+            ),
+            Self::Dpdfnet8 => (
+                7_282_645,
+                "9a9acae4e956ecf11e08b3aa961b1adede0ab7a3abe7c2343d27e024472d96f2",
+            ),
+        };
+        DenoiseArtifact { bytes, sha256 }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DenoiseArtifact {
+    pub bytes: u64,
+    pub sha256: &'static str,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -434,10 +439,17 @@ mod tests {
         let neural: DenoiseSettings = serde_json::from_str(r#"{"mode":"neural"}"#).expect("parses");
         assert_eq!(neural.mode, DenoiseMode::Neural);
         assert_eq!(neural.model, DenoiseModel::Dpdfnet2);
-        let light: DenoiseSettings =
-            serde_json::from_str(r#"{"mode":"rnnoise","model":"dpdfnet8_8khz"}"#).expect("parses");
-        assert_eq!(light.mode, DenoiseMode::Rnnoise);
-        assert_eq!(light.model, DenoiseModel::Dpdfnet8Narrow);
+        let best: DenoiseSettings =
+            serde_json::from_str(r#"{"mode":"neural","model":"dpdfnet8_8khz"}"#).expect("parses");
+        assert_eq!(best.model, DenoiseModel::Dpdfnet8);
+    }
+
+    #[test]
+    fn every_model_url_names_the_upload_prefix() {
+        for model in DenoiseModel::ALL {
+            assert!(model.url().starts_with(&format!("{DENOISE_MODELS_URL}/")));
+        }
+        assert!(DENOISE_MODELS_URL.ends_with(DENOISE_MODELS_PREFIX));
     }
 
     #[test]
@@ -452,13 +464,13 @@ mod tests {
     #[test]
     fn a_model_status_names_its_state_flat() {
         let status = DenoiseModelStatus {
-            model: DenoiseModel::Baseline,
+            model: DenoiseModel::Dpdfnet8,
             bytes: 10,
             state: DenoiseModelState::Downloading { received: 4 },
         };
         assert_eq!(
             serde_json::to_value(&status).expect("serializes"),
-            serde_json::json!({"model": "baseline", "bytes": 10, "state": "downloading", "received": 4})
+            serde_json::json!({"model": "dpdfnet8_8khz", "bytes": 10, "state": "downloading", "received": 4})
         );
     }
 

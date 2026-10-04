@@ -46,7 +46,6 @@ mod psk;
 mod radio_clock;
 mod radiosonde;
 mod rds;
-pub mod rnnoise;
 mod rtty;
 mod selcall;
 pub mod spatial_spectrum;
@@ -1139,6 +1138,7 @@ mod tests {
         assert_eq!(
             occupied_band(&ChannelParams::Am(AmParams {
                 bandwidth_hz: 8_000.0,
+                ..AmParams::default()
             })),
             (-4_000.0, 4_000.0)
         );
@@ -1203,7 +1203,10 @@ mod tests {
                 bandwidth_hz: f64::NAN,
                 ..NfmParams::default()
             }),
-            ChannelParams::Am(AmParams { bandwidth_hz: 0.0 }),
+            ChannelParams::Am(AmParams {
+                bandwidth_hz: 0.0,
+                ..AmParams::default()
+            }),
             ChannelParams::Ssb(SsbParams {
                 sideband: Sideband::Usb,
                 bandwidth_hz: 50.0,
