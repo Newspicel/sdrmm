@@ -1,26 +1,13 @@
 use super::{AudioConfig, AudioMode};
 use crate::drm::bits::{BitReader, BitWriter};
 
-const RATES: [u32; 8] = [
-    9_600, 12_000, 16_000, 19_200, 24_000, 32_000, 38_400, 48_000,
-];
 const USAC_INDEX: [u32; 8] = [0x1b, 0x09, 0x08, 0x17, 0x06, 0x05, 0x12, 0x03];
+const NEAREST_INDEX: [u32; 8] = [10, 9, 8, 7, 6, 5, 4, 3];
 const AOT_ESCAPE: u32 = 31;
 const AOT_USAC: u32 = 42;
 const ELEMENT_SCE: u32 = 0;
 const ELEMENT_CPE: u32 = 1;
 const ELEMENT_EXTENSION: u32 = 3;
-
-fn mpeg_index(rate: u32) -> Option<u32> {
-    Some(match rate {
-        48_000 => 3,
-        32_000 => 5,
-        24_000 => 6,
-        16_000 => 8,
-        12_000 => 9,
-        _ => return None,
-    })
-}
 
 fn read_escaped(reader: &mut BitReader<'_>, widths: [u32; 3]) -> Option<u32> {
     let mut value = reader.read(widths[0])?;
@@ -141,7 +128,7 @@ fn element(reader: &mut BitReader<'_>, stereo: bool, sbr_ratio: u32) -> Option<B
 #[must_use]
 pub fn audio_specific_config(config: &AudioConfig) -> Option<BitWriter> {
     let code = usize::from(config.rate_code);
-    let rate = *RATES.get(code)?;
+    let nearest = *NEAREST_INDEX.get(code)?;
     let stereo = match config.mode {
         AudioMode::Mono => false,
         AudioMode::Stereo => true,
@@ -152,13 +139,7 @@ pub fn audio_specific_config(config: &AudioConfig) -> Option<BitWriter> {
     let mut writer = BitWriter::with_capacity(32);
     writer.put(AOT_ESCAPE, 5);
     writer.put(AOT_USAC - 32, 6);
-    match mpeg_index(rate) {
-        Some(index) => writer.put(index, 4),
-        None => {
-            writer.put(15, 4);
-            writer.put(rate, 24);
-        }
-    }
+    writer.put(nearest, 4);
     writer.put(channels, 4);
     writer.put(USAC_INDEX[code], 5);
     let frame_length = reader.read(2)? + 1;
@@ -188,6 +169,10 @@ pub fn audio_specific_config(config: &AudioConfig) -> Option<BitWriter> {
 mod tests {
     use super::*;
     use crate::drm::aac::{Coding, MAX_CONFIG};
+
+    const RATES: [u32; 8] = [
+        9_600, 12_000, 16_000, 19_200, 24_000, 32_000, 38_400, 48_000,
+    ];
 
     fn config(mode: AudioMode, rate_code: u8, bytes: &[u8]) -> AudioConfig {
         let mut config = [0; MAX_CONFIG];
@@ -223,12 +208,13 @@ mod tests {
     }
 
     #[test]
-    fn odd_rates_are_spelled_out() {
+    fn odd_rates_use_the_nearest_standard_index() {
         let asc =
             audio_specific_config(&config(AudioMode::Mono, 6, &[0])).expect("a USAC configuration");
         let mut reader = BitReader::new(asc.bytes());
         reader.skip(11);
-        assert_eq!(reader.read(4), Some(15));
-        assert_eq!(reader.read(24), Some(38_400));
+        assert_eq!(reader.read(4), Some(4));
+        assert_eq!(reader.read(4), Some(1));
+        assert_eq!(reader.read(5), Some(0x12));
     }
 }

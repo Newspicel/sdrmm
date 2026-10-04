@@ -59,6 +59,11 @@ impl AudioConfig {
     }
 
     #[must_use]
+    pub const fn four_to_one_sbr(&self) -> bool {
+        matches!(self.coding, Coding::Xhe) && self.config_length > 0 && self.config[0] >> 6 == 3
+    }
+
+    #[must_use]
     pub const fn output_rate_hz(&self) -> u32 {
         if self.sbr {
             self.rate_hz * 2
@@ -85,26 +90,22 @@ impl AudioConfig {
 }
 
 pub fn latm(frame: &[u8], config: &AudioConfig) -> Result<Vec<u8>, String> {
-    match config.coding {
-        Coding::Aac => {
-            let block = standard(frame, config).map_err(str::to_owned)?;
-            let asc = aac_config(config).ok_or("Unsupported DRM AAC sampling rate")?;
-            Ok(crate::broadcast_media::latm::mux(
-                &block,
-                asc.bytes(),
-                asc.bit_len(),
-            ))
-        }
-        Coding::Xhe => {
-            let asc = usac::audio_specific_config(config)
-                .ok_or("Invalid xHE-AAC static configuration")?;
-            Ok(crate::broadcast_media::latm::mux(
-                frame,
-                asc.bytes(),
-                asc.bit_len(),
-            ))
-        }
+    if config.coding == Coding::Xhe {
+        return Err("xHE-AAC does not travel in LATM".to_owned());
     }
+    let block = standard(frame, config).map_err(str::to_owned)?;
+    let asc = aac_config(config).ok_or("Unsupported DRM AAC sampling rate")?;
+    Ok(crate::broadcast_media::latm::mux(
+        &block,
+        asc.bytes(),
+        asc.bit_len(),
+    ))
+}
+
+pub fn usac_config(config: &AudioConfig) -> Result<Vec<u8>, &'static str> {
+    usac::audio_specific_config(config)
+        .map(BitWriter::into_bytes)
+        .ok_or("Invalid xHE-AAC static configuration")
 }
 
 fn sample_index(rate_hz: u32) -> Option<u32> {

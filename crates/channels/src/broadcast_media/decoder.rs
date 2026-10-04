@@ -12,7 +12,7 @@ pub struct Decoder {
     kind: Kind,
     next_pts: Option<i64>,
     pending_bytes: usize,
-    parser: NonNull<ffi::AVCodecParserContext>,
+    parser: Option<NonNull<ffi::AVCodecParserContext>>,
     codec: codec::decoder::Opened,
     resampler: Option<software::resampling::Context>,
     scaler: Option<software::scaling::Context>,
@@ -31,13 +31,15 @@ fn silence_library_logging() {
 
 impl Decoder {
     pub fn recover(&mut self) -> Result<(), String> {
-        let raw: ffi::AVCodecID = self.kind.id().into();
-        let parser = NonNull::new(unsafe { ffi::av_parser_init(raw) })
-            .ok_or_else(|| "Could not reset broadcast parser".to_owned())?;
-        unsafe {
-            ffi::av_parser_close(self.parser.as_ptr());
+        if let Some(old) = self.parser {
+            let raw: ffi::AVCodecID = self.kind.id().into();
+            let parser = NonNull::new(unsafe { ffi::av_parser_init(raw) })
+                .ok_or_else(|| "Could not reset broadcast parser".to_owned())?;
+            unsafe {
+                ffi::av_parser_close(old.as_ptr());
+            }
+            self.parser = Some(parser);
         }
-        self.parser = parser;
         self.pending_bytes = 0;
         self.codec.flush();
         self.resampler = None;
@@ -51,31 +53,43 @@ impl Decoder {
         let id = kind.id();
         let codec =
             av::decoder::find(id).ok_or_else(|| format!("Decoder unavailable: {kind:?}"))?;
-        let mut context = codec::Context::new_with_codec(codec);
-        unsafe {
-            (*context.as_mut_ptr()).max_pixels = 4096 * 2160;
-            (*context.as_mut_ptr()).pkt_timebase = ffi::AVRational { num: 1, den: 90000 };
-        }
-        context.set_threading(av::threading::Config {
-            count: 1,
-            ..Default::default()
-        });
-        let decoder = context.decoder();
-        let opened = decoder.open_as(codec).map_err(|e| e.to_string())?;
+        let opened = open(codec, &[])?;
         let raw: ffi::AVCodecID = id.into();
         let parser = NonNull::new(unsafe { ffi::av_parser_init(raw) })
             .ok_or_else(|| format!("Parser unavailable: {kind:?}"))?;
-        Ok(Self {
+        Ok(Self::with(kind, Some(parser), opened))
+    }
+
+    pub fn usac(config: &[u8], four_to_one_sbr: bool) -> Result<Self, String> {
+        silence_library_logging();
+        let codec = match av::decoder::find_by_name("aac_at") {
+            Some(codec) => codec,
+            None if four_to_one_sbr => {
+                return Err("No decoder for 4:1 SBR".to_owned());
+            }
+            None => av::decoder::find(Kind::DrmXhe.id())
+                .ok_or_else(|| "Decoder unavailable: xHE-AAC".to_owned())?,
+        };
+        let opened = open(codec, config)?;
+        Ok(Self::with(Kind::DrmXhe, None, opened))
+    }
+
+    fn with(
+        kind: Kind,
+        parser: Option<NonNull<ffi::AVCodecParserContext>>,
+        codec: codec::decoder::Opened,
+    ) -> Self {
+        Self {
             kind,
             next_pts: None,
             pending_bytes: 0,
             parser,
-            codec: opened,
+            codec,
             resampler: None,
             scaler: None,
             audio_spec: None,
             video_spec: None,
-        })
+        }
     }
 
     pub fn push(
@@ -84,6 +98,12 @@ impl Decoder {
         pts: Option<i64>,
         out: &mut Vec<(Option<i64>, Payload)>,
     ) -> Result<(), String> {
+        let Some(parser) = self.parser else {
+            let mut packet = av::Packet::copy(bytes);
+            packet.set_pts(pts);
+            self.codec.send_packet(&packet).map_err(|e| e.to_string())?;
+            return self.receive(out);
+        };
         let mut padded =
             Vec::with_capacity(bytes.len() + ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize);
         padded.extend_from_slice(bytes);
@@ -94,7 +114,7 @@ impl Decoder {
             let mut packet_size = 0;
             let consumed = unsafe {
                 ffi::av_parser_parse2(
-                    self.parser.as_ptr(),
+                    parser.as_ptr(),
                     self.codec.as_mut_ptr(),
                     &mut packet_data,
                     &mut packet_size,
@@ -124,7 +144,7 @@ impl Decoder {
                 let mut packet = av::Packet::copy(unsafe {
                     std::slice::from_raw_parts(packet_data, packet_size as usize)
                 });
-                let parsed_pts = unsafe { self.parser.as_ref().pts };
+                let parsed_pts = unsafe { parser.as_ref().pts };
                 packet.set_pts((parsed_pts != ffi::AV_NOPTS_VALUE).then_some(parsed_pts));
                 self.codec.send_packet(&packet).map_err(|e| e.to_string())?;
                 self.receive(out)?;
@@ -138,18 +158,20 @@ impl Decoder {
     pub fn finish(&mut self, out: &mut Vec<(Option<i64>, Payload)>) -> Result<(), String> {
         let mut data = std::ptr::null_mut();
         let mut length = 0;
-        unsafe {
-            ffi::av_parser_parse2(
-                self.parser.as_ptr(),
-                self.codec.as_mut_ptr(),
-                &mut data,
-                &mut length,
-                std::ptr::null(),
-                0,
-                ffi::AV_NOPTS_VALUE,
-                ffi::AV_NOPTS_VALUE,
-                -1,
-            );
+        if let Some(parser) = self.parser {
+            unsafe {
+                ffi::av_parser_parse2(
+                    parser.as_ptr(),
+                    self.codec.as_mut_ptr(),
+                    &mut data,
+                    &mut length,
+                    std::ptr::null(),
+                    0,
+                    ffi::AV_NOPTS_VALUE,
+                    ffi::AV_NOPTS_VALUE,
+                    -1,
+                );
+            }
         }
         if length > 0 {
             let packet =
@@ -308,10 +330,36 @@ impl Decoder {
     }
 }
 
+fn open(codec: av::Codec, extradata: &[u8]) -> Result<codec::decoder::Opened, String> {
+    let mut context = codec::Context::new_with_codec(codec);
+    unsafe {
+        let raw = context.as_mut_ptr();
+        (*raw).max_pixels = 4096 * 2160;
+        (*raw).pkt_timebase = ffi::AVRational { num: 1, den: 90000 };
+        if !extradata.is_empty() {
+            let padded = extradata.len() + ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize;
+            let buffer = ffi::av_mallocz(padded).cast::<u8>();
+            if buffer.is_null() {
+                return Err("Decoder configuration allocation failed".to_owned());
+            }
+            std::ptr::copy_nonoverlapping(extradata.as_ptr(), buffer, extradata.len());
+            (*raw).extradata = buffer;
+            (*raw).extradata_size = extradata.len() as i32;
+        }
+    }
+    context.set_threading(av::threading::Config {
+        count: 1,
+        ..Default::default()
+    });
+    context.decoder().open_as(codec).map_err(|e| e.to_string())
+}
+
 impl Drop for Decoder {
     fn drop(&mut self) {
-        unsafe {
-            ffi::av_parser_close(self.parser.as_ptr());
+        if let Some(parser) = self.parser {
+            unsafe {
+                ffi::av_parser_close(parser.as_ptr());
+            }
         }
     }
 }

@@ -43,6 +43,7 @@ pub enum Kind {
     Aac,
     Latm,
     DrmAudio,
+    DrmXhe,
     Ac3,
     Mpeg2,
     H264,
@@ -55,7 +56,7 @@ impl Kind {
             Self::Mp2 => Id::MP2,
             Self::Eac3 => Id::EAC3,
             Self::DabPad | Self::DabPacket => Id::None,
-            Self::Aac => Id::AAC,
+            Self::Aac | Self::DrmXhe => Id::AAC,
             Self::Latm | Self::DrmAudio => Id::AAC_LATM,
             Self::Ac3 => Id::AC3,
             Self::Mpeg2 => Id::MPEG2VIDEO,
@@ -129,6 +130,16 @@ fn publish(output: &mut Producer<Output>, resident: &AtomicUsize, mut value: Out
         thread::sleep(Duration::from_millis(1));
     }
     true
+}
+
+fn open_decoder(key: (Kind, Option<DrmAudio>)) -> Result<decoder::Decoder, String> {
+    match key {
+        (Kind::DrmXhe, Some(config)) => decoder::Decoder::usac(
+            &crate::drm::aac::usac_config(&config)?,
+            config.four_to_one_sbr(),
+        ),
+        (kind, _) => decoder::Decoder::new(kind),
+    }
 }
 
 fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: Arc<AtomicUsize>) {
@@ -221,21 +232,25 @@ fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: Arc<A
         if matches!(item.kind, Kind::DabPad | Kind::DabPacket) {
             continue;
         }
-        let state: &mut Option<(Kind, decoder::Decoder)> = if item.kind.video() {
+        let key = (item.kind, item.drm.filter(|_| item.kind == Kind::DrmXhe));
+        let state: &mut Option<((Kind, Option<DrmAudio>), decoder::Decoder)> = if item.kind.video()
+        {
             &mut video
         } else {
             &mut audio
         };
         let result = (|| {
-            if state.as_ref().is_none_or(|(kind, _)| *kind != item.kind) {
-                *state = Some((item.kind, decoder::Decoder::new(item.kind)?));
+            if state.as_ref().is_none_or(|(current, _)| *current != key) {
+                *state = Some((key, open_decoder(key)?));
             }
             let Some((_, decoder)) = state else {
                 return Err("Broadcast decoder missing".to_owned());
             };
             let bytes = &item.bytes[..item.length];
             let latm;
-            let encoded = if let Some(format) = item.format {
+            let encoded = if item.kind == Kind::DrmXhe {
+                bytes
+            } else if let Some(format) = item.format {
                 latm = latm::wrap(bytes, format).map_err(str::to_owned)?;
                 &latm
             } else if let Some(config) = &item.drm {
@@ -410,7 +425,11 @@ impl BroadcastMedia {
     }
 
     pub fn push_drm(&mut self, frame: &[u8], config: DrmAudio) {
-        self.push_unit(Kind::DrmAudio, frame, None, None, Some(config));
+        let kind = match config.coding {
+            DrmCoding::Aac => Kind::DrmAudio,
+            DrmCoding::Xhe => Kind::DrmXhe,
+        };
+        self.push_unit(kind, frame, None, None, Some(config));
     }
 
     fn push_unit(

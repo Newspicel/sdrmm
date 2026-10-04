@@ -347,8 +347,6 @@ fn xhe_aac_reports_its_codec_on_failure() {
     let mut config = drm_config(false, 24_000);
     config.coding = DrmCoding::Xhe;
     config.rate_code = 4;
-    config.config[0] = 0b0010_0000;
-    config.config_length = 1;
     media.push_drm(&[0x80, 0x11, 0x22, 0x33], config);
     let mut out = ChannelOutputs::default();
     for _ in 0..2000 {
@@ -360,4 +358,26 @@ fn xhe_aac_reports_its_codec_on_failure() {
     }
     let error = media.audio_error.expect("an error");
     assert!(error.starts_with("xHE-AAC: "), "{error}");
+}
+
+#[test]
+fn xhe_aac_frames_at_an_odd_rate_decode_to_audio() {
+    let mut media = BroadcastMedia::new().expect("worker");
+    let mut config = drm_config(false, 38_400);
+    config.coding = DrmCoding::Xhe;
+    config.rate_code = 6;
+    config.config_length = 1;
+    for _ in 0..8 {
+        media.push_drm(&[0x8C, 0x80, 0x00], config);
+    }
+    let mut out = ChannelOutputs::default();
+    for _ in 0..2000 {
+        media.drain(&mut out);
+        if media.audio_frames >= 4 || media.audio_errors > 0 {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(media.audio_error, None);
+    assert!(media.audio_frames >= 4, "{}", media.audio_frames);
 }

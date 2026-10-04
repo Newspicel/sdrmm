@@ -538,13 +538,12 @@ impl Receiver {
         config: &AudioConfig,
         media: &mut BroadcastMedia,
     ) {
-        match self
-            .xhe
-            .push(superframe, |frame| media.push_drm(frame, *config))
-        {
-            Ok(0) => {}
-            Ok(errors) => media.audio_gap(errors, "xHE-AAC frame CRC failure"),
+        let pushed = self.xhe.push(superframe, |frame| match frame {
+            Ok(body) => media.push_drm(body, *config),
             Err(reason) => media.audio_gap(1, reason),
+        });
+        if let Err(reason) = pushed {
+            media.audio_gap(1, reason);
         }
     }
 }
