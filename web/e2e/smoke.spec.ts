@@ -468,6 +468,26 @@ test.describe("the workspace", () => {
     await expect(attribution.getByText("Stub basemap credits")).toBeVisible();
   });
 
+  test("switches the map style and keeps it", async ({ page }) => {
+    const styles: string[] = [];
+    await page.route("https://tiles.openfreemap.org/styles/*", (route) => {
+      styles.push(route.request().url());
+      return route.fulfill({ json: { version: 8, sources: {}, layers: [] } });
+    });
+    await page.goto("/");
+    await expect(page.locator('.react-flow__node[data-id="device"]')).toBeVisible();
+
+    const map = page.locator('.react-flow__node[data-id^="map:"]', { hasText: "Aircraft" });
+    await fitPatch(page);
+    await activate(map);
+    await map.getByRole("button", { name: "Map settings" }).click();
+    await page.getByRole("button", { name: "fiord", exact: true }).click();
+    await expect.poll(() => styles.at(-1)).toBe("https://tiles.openfreemap.org/styles/fiord");
+
+    await page.reload();
+    await expect.poll(() => styles.at(-1)).toBe("https://tiles.openfreemap.org/styles/fiord");
+  });
+
   test("configures NMEA, gpsd and fixed GPS sources", async ({ page }) => {
     await page.route("**/api/position/nmea-devices", (route) =>
       route.fulfill({

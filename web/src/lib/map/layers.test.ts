@@ -1,29 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type {
-  AdsbMessage,
-  AisMessage,
-  AprsPacket,
-  ChannelParams,
-  DecodedRecordOf,
-  RadiosondeFrame,
-} from "../types";
+import { emptyTrail, extendTrail, type Trail } from "../trails";
+import type { AdsbMessage, AisMessage, AprsPacket, ChannelParams, RadiosondeFrame } from "../types";
 import {
   isStale,
   layerId,
   MAP_KINDS,
   mapKindsOf,
-  radiosondeTracks,
   referenceCollection,
   referencePositions,
   sourceId,
   TARGET_MAX_AGE_MS,
   type Target,
-  TRACK_KINDS,
   targetCollection,
   targetDetail,
   targetFeature,
   targetHeading,
   targetLabel,
+  trackCollection,
   trackSourceId,
 } from "./layers";
 
@@ -69,19 +62,10 @@ function sonde(data: Partial<RadiosondeFrame>, over: Partial<Target> = {}): Targ
   );
 }
 
-function sondeRecord(
-  serial: string,
-  offsetMs: number,
-  lat: number | null,
-  lon: number | null,
-): DecodedRecordOf<"radiosonde"> {
-  return {
-    at: new Date(NOW + offsetMs).toISOString(),
-    device_set: 0,
-    channel: 0,
-    freq_hz: 403_000_000,
-    event: { kind: "radiosonde", data: { sonde: "rs41", serial, errors_corrected: 0, lat, lon } },
-  };
+function trailOf(...points: [number, number][]): Trail {
+  const trail = emptyTrail();
+  points.forEach((point, at) => extendTrail(trail, point, at));
+  return trail;
 }
 
 function station(event: Target["event"], over: Partial<Target>): Target {
@@ -109,24 +93,23 @@ describe("MAP_KINDS", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("gives track kinds their own source and layer", () => {
+  it("gives every kind its own track source and layer", () => {
     const ids = [
       ...MAP_KINDS.map(sourceId),
-      ...TRACK_KINDS.flatMap((kind) => [trackSourceId(kind), layerId(kind, "track")]),
+      ...MAP_KINDS.flatMap((kind) => [trackSourceId(kind), layerId(kind, "track")]),
     ];
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
 
-describe("radiosondeTracks", () => {
-  it("draws each sonde's positions oldest first", () => {
-    const records = [
-      sondeRecord("A", 2_000, 48.2, 11.2),
-      sondeRecord("B", 1_500, 50, 8),
-      sondeRecord("A", 1_000, null, null),
-      sondeRecord("A", 0, 48.1, 11.1),
-    ];
-    expect(radiosondeTracks(records, NOW + 2_000)).toEqual({
+describe("trackCollection", () => {
+  it("draws each live target's trail as a line", () => {
+    const trails = new Map([
+      ["A", trailOf([11.1, 48.1], [11.2, 48.3])],
+      ["B", trailOf([8, 50])],
+    ]);
+    const stations = [adsb({}, { id: "A" }), adsb({}, { id: "B" }), adsb({}, { id: "C" })];
+    expect(trackCollection(stations, trails, NOW)).toEqual({
       type: "FeatureCollection",
       features: [
         {
@@ -135,7 +118,7 @@ describe("radiosondeTracks", () => {
             type: "LineString",
             coordinates: [
               [11.1, 48.1],
-              [11.2, 48.2],
+              [11.2, 48.3],
             ],
           },
           properties: { id: "A" },
@@ -144,9 +127,10 @@ describe("radiosondeTracks", () => {
     });
   });
 
-  it("drops a sonde not heard within the horizon", () => {
-    const records = [sondeRecord("A", 1_000, 48.2, 11.2), sondeRecord("A", 0, 48.1, 11.1)];
-    expect(radiosondeTracks(records, NOW + TARGET_MAX_AGE_MS + 2_000).features).toEqual([]);
+  it("drops a target not heard within the horizon", () => {
+    const trails = new Map([["A", trailOf([11.1, 48.1], [11.2, 48.3])]]);
+    const stale = [ais({}, { id: "A", lastSeen: NOW - TARGET_MAX_AGE_MS - 1 })];
+    expect(trackCollection(stale, trails, NOW).features).toEqual([]);
   });
 });
 

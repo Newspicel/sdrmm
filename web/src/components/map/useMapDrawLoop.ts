@@ -7,13 +7,15 @@ import { advanceFixTrails, type DfOverlay, drawDfOverlay, type FixTrails } from 
 import { drawHeat, type HeatScratch } from "../../lib/map/heat";
 import {
   DRAW_TICK_MS,
+  MAP_KINDS,
   type MapKind,
-  radiosondeTracks,
   sourceId,
   type Target,
   type TargetDetail,
+  type TrackCollection,
   targetCollection,
   targetDetail,
+  trackCollection,
   trackSourceId,
 } from "../../lib/map/layers";
 import { POSITION_ROUTE_SOURCE, POSITION_SOURCE } from "../../lib/map/position";
@@ -29,7 +31,8 @@ import {
 } from "../../lib/map/sources";
 import { highlight } from "../../lib/map/targets";
 import { type PositionSample, usePositionStore } from "../../lib/position";
-import type { DecodedRecordOf, SurveyCell } from "../../lib/types";
+import { trailsOf } from "../../lib/trails";
+import type { SurveyCell } from "../../lib/types";
 import {
   type Counts,
   type MapCore,
@@ -43,12 +46,13 @@ import {
 const HEAT_COLORMAP = "inferno";
 const EMPTY_STATIONS: readonly Target[] = Object.freeze([]);
 const EMPTY_HISTORY: readonly PositionSample[] = Object.freeze([]);
-const EMPTY_FRAMES: readonly DecodedRecordOf<"radiosonde">[] = Object.freeze([]);
+const NO_TRACKS: TrackCollection = { type: "FeatureCollection", features: [] };
 
 interface Drawn {
   generation: number;
   targets: Partial<Record<MapKind, readonly Target[]>>;
-  sondeFrames: readonly DecodedRecordOf<"radiosonde">[] | null;
+  tracks: Partial<Record<MapKind, readonly Target[]>>;
+  tracksOn: boolean | null;
   position: string;
   signal: readonly SurveyCell[] | null;
   propagation: PropagationOverlay | null;
@@ -67,7 +71,8 @@ function freshDrawn(generation: number, counts: Counts, trails: FixTrails): Draw
   return {
     generation,
     targets: {},
-    sondeFrames: null,
+    tracks: {},
+    tracksOn: null,
     position: "",
     signal: null,
     propagation: null,
@@ -156,18 +161,30 @@ function drawTargets(core: MapCore, inputs: MapInputs, drawn: Drawn, sinks: MapS
 }
 
 function drawTracks(core: MapCore, inputs: MapInputs, drawn: Drawn): void {
-  if (!inputs.kinds.includes("radiosonde")) {
+  if (!inputs.tracks) {
+    if (drawn.tracksOn !== false) {
+      for (const kind of MAP_KINDS) {
+        setSourceData(core.map.getSource<GeoJSONSource>(trackSourceId(kind)), NO_TRACKS);
+      }
+      drawn.tracks = {};
+      drawn.tracksOn = false;
+    }
     return;
   }
-  const frames = useDecodedStore.getState().frames.radiosonde ?? EMPTY_FRAMES;
-  if (frames === drawn.sondeFrames) {
-    return;
+  drawn.tracksOn = true;
+  const stations = useDecodedStore.getState().stations;
+  const now = Date.now();
+  for (const kind of inputs.kinds) {
+    const rows = stations[kind] ?? EMPTY_STATIONS;
+    if (rows === drawn.tracks[kind]) {
+      continue;
+    }
+    drawn.tracks[kind] = rows;
+    setSourceData(
+      core.map.getSource<GeoJSONSource>(trackSourceId(kind)),
+      trackCollection(rows, trailsOf(kind), now),
+    );
   }
-  drawn.sondeFrames = frames;
-  setSourceData(
-    core.map.getSource<GeoJSONSource>(trackSourceId("radiosonde")),
-    radiosondeTracks(frames, Date.now()),
-  );
 }
 
 function followSelection(core: MapCore, inputs: MapInputs, sinks: MapSinks): void {

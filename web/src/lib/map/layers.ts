@@ -1,5 +1,6 @@
 import type { StationOf } from "../decoded";
-import type { ChannelParams, DecodedRecordOf, DecoderKind } from "../types";
+import { geoPosition, type Trail, trailLine } from "../trails";
+import type { ChannelParams, DecoderKind } from "../types";
 
 export const MAP_KINDS = [
   "adsb",
@@ -7,10 +8,6 @@ export const MAP_KINDS = [
   "aprs",
   "radiosonde",
 ] as const satisfies readonly DecoderKind[];
-
-export const TRACK_KINDS = ["radiosonde"] as const satisfies readonly MapKind[];
-
-export type TrackKind = (typeof TRACK_KINDS)[number];
 
 export type MapKind = (typeof MAP_KINDS)[number];
 export type Target = StationOf<MapKind>;
@@ -66,12 +63,8 @@ export function layerId(kind: MapKind, part: "dot" | "heading" | "label" | "trac
   return `targets-${kind}-${part}`;
 }
 
-export function trackSourceId(kind: TrackKind): string {
+export function trackSourceId(kind: MapKind): string {
   return `targets-${kind}-tracks`;
-}
-
-export function isTrackKind(kind: MapKind): kind is TrackKind {
-  return (TRACK_KINDS as readonly MapKind[]).includes(kind);
 }
 
 export interface TrackCollection {
@@ -83,33 +76,29 @@ export interface TrackCollection {
   }[];
 }
 
-export function radiosondeTracks(
-  records: readonly DecodedRecordOf<"radiosonde">[],
+export function trackCollection(
+  stations: readonly Target[],
+  trails: ReadonlyMap<string, Trail>,
   nowMs: number,
   maxAgeMs = TARGET_MAX_AGE_MS,
 ): TrackCollection {
-  const paths = new Map<string, { lastSeen: number; coordinates: [number, number][] }>();
-  for (const record of records.toReversed()) {
-    const position = geoPosition(record.event.data.lat, record.event.data.lon);
-    if (position === null) {
+  const features: TrackCollection["features"] = [];
+  for (const station of stations) {
+    const trail = trails.get(station.id);
+    if (
+      trail === undefined ||
+      trail.points.length < 2 ||
+      isStale(station.lastSeen, nowMs, maxAgeMs)
+    ) {
       continue;
     }
-    const serial = record.event.data.serial;
-    const path = paths.get(serial) ?? { lastSeen: 0, coordinates: [] };
-    path.coordinates.push(position);
-    path.lastSeen = Math.max(path.lastSeen, Date.parse(record.at));
-    paths.set(serial, path);
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: trailLine(trail) },
+      properties: { id: station.id },
+    });
   }
-  return {
-    type: "FeatureCollection",
-    features: [...paths]
-      .filter(([, path]) => path.coordinates.length > 1 && !isStale(path.lastSeen, nowMs, maxAgeMs))
-      .map(([id, path]) => ({
-        type: "Feature",
-        geometry: { type: "LineString", coordinates: path.coordinates },
-        properties: { id },
-      })),
-  };
+  return { type: "FeatureCollection", features };
 }
 
 export function isStale(lastSeen: number, nowMs: number, maxAgeMs = TARGET_MAX_AGE_MS): boolean {
@@ -145,19 +134,6 @@ export function targetFeature(station: Target): TargetFeature | null {
     properties.heading = heading;
   }
   return { type: "Feature", geometry: { type: "Point", coordinates }, properties };
-}
-
-export function geoPosition(
-  lat: number | null | undefined,
-  lon: number | null | undefined,
-): [number, number] | null {
-  if (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-    return null;
-  }
-  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-    return null;
-  }
-  return [lon, lat];
 }
 
 export function targetPosition(station: Target): [number, number] | null {

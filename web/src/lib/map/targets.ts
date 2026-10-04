@@ -1,16 +1,13 @@
 import type { Map as MapLibreMap, MapMouseEvent } from "maplibre-gl";
 import { recordEvent } from "../diagnostics";
 import {
-  isTrackKind,
   KIND_STYLE,
   layerId,
   MAP_KINDS,
   type MapKind,
   sourceId,
   type TargetCollection,
-  TRACK_KINDS,
   type TrackCollection,
-  type TrackKind,
   trackSourceId,
 } from "./layers";
 
@@ -71,8 +68,6 @@ function removeTargetLayers(map: MapLibreMap): void {
     if (map.getSource(sourceId(kind)) !== undefined) {
       map.removeSource(sourceId(kind));
     }
-  }
-  for (const kind of TRACK_KINDS) {
     if (map.getLayer(layerId(kind, "track")) !== undefined) {
       map.removeLayer(layerId(kind, "track"));
     }
@@ -82,7 +77,7 @@ function removeTargetLayers(map: MapLibreMap): void {
   }
 }
 
-function addTrackLayer(map: MapLibreMap, kind: TrackKind): void {
+function addTrackLayer(map: MapLibreMap, kind: MapKind): void {
   map.addSource(trackSourceId(kind), { type: "geojson", data: EMPTY_TRACKS });
   map.addLayer({
     id: layerId(kind, "track"),
@@ -147,9 +142,7 @@ export function installTargetLayers(
   removeTargetLayers(map);
   let headings = true;
   for (const kind of kinds) {
-    if (isTrackKind(kind)) {
-      addTrackLayer(map, kind);
-    }
+    addTrackLayer(map, kind);
   }
   for (const kind of kinds) {
     map.addSource(sourceId(kind), { type: "geojson", data: EMPTY_COLLECTION });

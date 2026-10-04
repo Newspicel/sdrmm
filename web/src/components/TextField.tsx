@@ -8,6 +8,7 @@ export function TextField({
   secret = false,
   placeholder,
   maxLength,
+  className = CONTROL_W,
   onCommit,
 }: {
   label: string;
@@ -15,6 +16,7 @@ export function TextField({
   secret?: boolean;
   placeholder?: string;
   maxLength?: number;
+  className?: string;
   onCommit: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -32,7 +34,7 @@ export function TextField({
   };
   return (
     <Input
-      className={`${FIELD} ${CONTROL_W}`}
+      className={`${FIELD} ${className}`}
       aria-label={label}
       type={secret ? "password" : "text"}
       autoComplete="off"

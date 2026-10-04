@@ -7,7 +7,12 @@ import {
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { describeError, recordEvent } from "../../lib/diagnostics";
-import { type BasemapKind, chooseBasemap, fetchOnlineStyle } from "../../lib/map/basemap";
+import {
+  type BasemapChoice,
+  type BasemapKind,
+  loadBasemap,
+  sameBasemap,
+} from "../../lib/map/basemap";
 import { installDfLayers } from "../../lib/map/df";
 import { installHeatLayer } from "../../lib/map/heat";
 import { type MapKind, mapKindsOf } from "../../lib/map/layers";
@@ -74,6 +79,7 @@ interface Built {
 
 async function buildCore(
   element: HTMLDivElement,
+  choice: BasemapChoice,
   inputs: () => MapInputs,
   sinks: MapSinks,
   select: (hit: Selection | null) => void,
@@ -81,11 +87,10 @@ async function buildCore(
 ): Promise<Built | null> {
   const edge = themeColor(element, "--color-bg", "#101113");
   const accent = themeColor(element, "--color-accent", "#76acfc");
-  const online = await fetchOnlineStyle();
+  const chosen = await loadBasemap(choice, edge);
   if (!alive()) {
     return null;
   }
-  const chosen = chooseBasemap(online, edge);
   const map = new MapLibreMap({
     container: element,
     style: chosen.style,
@@ -130,13 +135,17 @@ export function useMapInstance(
   containerRef: RefObject<HTMLDivElement | null>,
   inputsRef: RefObject<MapInputs>,
   sinks: MapSinks,
+  choice: BasemapChoice,
   onSelect: (hit: Selection | null) => void,
 ): { coreRef: RefObject<MapCore | null>; basemap: BasemapKind } {
   const coreRef = useRef<MapCore | null>(null);
   const selectRef = useRef(onSelect);
+  const choiceRef = useRef(choice);
+  const appliedRef = useRef<BasemapChoice | null>(null);
   const [basemap, setBasemap] = useState<BasemapKind>("pending");
   useEffect(() => {
     selectRef.current = onSelect;
+    choiceRef.current = choice;
   });
   useEffect(() => {
     const element = containerRef.current;
@@ -145,8 +154,10 @@ export function useMapInstance(
     }
     let alive = true;
     let built: MapCore | null = null;
+    const builtWith = choiceRef.current;
     buildCore(
       element,
+      builtWith,
       () => inputsRef.current,
       sinks,
       (hit) => selectRef.current(hit),
@@ -162,6 +173,7 @@ export function useMapInstance(
         }
         built = result.core;
         coreRef.current = result.core;
+        appliedRef.current = builtWith;
         setBasemap(result.basemap);
       })
       .catch((error: unknown) => recordEvent("error", "map", `map: ${describeError(error)}`));
@@ -169,9 +181,42 @@ export function useMapInstance(
       alive = false;
       built?.map.remove();
       coreRef.current = null;
+      appliedRef.current = null;
     };
   }, [containerRef, inputsRef, sinks]);
+  useBasemapSwitch(coreRef, appliedRef, choice, basemap !== "pending", setBasemap);
   return { coreRef, basemap };
+}
+
+function useBasemapSwitch(
+  coreRef: RefObject<MapCore | null>,
+  appliedRef: RefObject<BasemapChoice | null>,
+  choice: BasemapChoice,
+  built: boolean,
+  setBasemap: (kind: BasemapKind) => void,
+): void {
+  useEffect(() => {
+    const core = coreRef.current;
+    const applied = appliedRef.current;
+    if (!built || core === null || applied === null || sameBasemap(applied, choice)) {
+      return;
+    }
+    appliedRef.current = choice;
+    let alive = true;
+    loadBasemap(choice, core.edge)
+      .then((chosen) => {
+        if (!alive || coreRef.current !== core) {
+          return;
+        }
+        core.ready = false;
+        core.map.setStyle(chosen.style, { diff: false });
+        setBasemap(chosen.kind);
+      })
+      .catch((error: unknown) => recordEvent("error", "map", `basemap: ${describeError(error)}`));
+    return () => {
+      alive = false;
+    };
+  }, [coreRef, appliedRef, choice, built, setBasemap]);
 }
 
 export interface LayerKeys {

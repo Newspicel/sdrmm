@@ -116,6 +116,13 @@ sonde sends it, temperature, humidity and pressure. Wire it to **Map** for the f
 **Decoder log** or **Readout** for the readings. RS41 temperature and humidity appear once its
 calibration data has arrived, about a minute after first lock.
 
+## Map
+
+Wire ADS-B, AIS, APRS or Radiosonde `events` to **Map**. Each target draws its track. The gear at
+the bottom left picks the style, hides tracks, or takes a custom URL: an XYZ template
+(`https://…/{z}/{x}/{y}.png`) or a MapLibre style URL, with any API key in the URL. The choice is
+kept in this browser.
+
 ## APRS weather
 
 The APRS channel reads weather reports, positioned or positionless, into wind, gust, temperature,

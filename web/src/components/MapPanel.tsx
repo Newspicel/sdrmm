@@ -4,10 +4,12 @@ import { useDecodedStore } from "../lib/decoded";
 import type { FusionGridFrame } from "../lib/frame";
 import { type DfOverlay, overlayCounts } from "../lib/map/df";
 import { type MapKind, type TargetDetail, targetDetail } from "../lib/map/layers";
+import { useMapView } from "../lib/map/mapView";
 import type { PropagationOverlay } from "../lib/map/propagation";
 import { highlight, type Selection } from "../lib/map/targets";
 import type { SurveyCell } from "../lib/types";
 import { MapLegend } from "./map/MapLegend";
+import { MapSettings } from "./map/MapSettings";
 import { type Counts, type MapInputs, type MapSinks, ZERO_COUNTS } from "./map/mapState";
 import { TargetCard } from "./map/TargetCard";
 import { useMapDrawLoop } from "./map/useMapDrawLoop";
@@ -47,6 +49,7 @@ export function MapPanel({
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const view = useMapView();
   const inputsRef = useRef<MapInputs>({
     kinds,
     references,
@@ -56,6 +59,7 @@ export function MapPanel({
     df: df ?? null,
     heat: heat ?? null,
     heatEnabled: heat !== undefined,
+    tracks: view.tracks,
   });
   useLayoutEffect(() => {
     inputsRef.current = {
@@ -67,6 +71,7 @@ export function MapPanel({
       df: df ?? null,
       heat: heat ?? null,
       heatEnabled: heat !== undefined,
+      tracks: view.tracks,
     };
   });
   const [counts, setCounts] = useState<Counts>(ZERO_COUNTS);
@@ -77,7 +82,7 @@ export function MapPanel({
     () => ({ setCounts, setPositionCount, setDetail, setHeadings }),
     [],
   );
-  const { coreRef, basemap } = useMapInstance(containerRef, inputsRef, sinks, (hit) =>
+  const { coreRef, basemap } = useMapInstance(containerRef, inputsRef, sinks, view.basemap, (hit) =>
     setDetail(detailOf(hit)),
   );
   const close = () => {
@@ -118,6 +123,9 @@ export function MapPanel({
         headings={headings}
         basemap={basemap}
       />
+      <div className="absolute bottom-2 left-2 flex items-center rounded-[3px] bg-plot-bg/85 p-0.5">
+        <MapSettings />
+      </div>
       {detail !== null && <TargetCard detail={detail} onClose={close} />}
     </div>
   );

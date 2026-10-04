@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { clearTrails, dropTrail, recordTrail } from "./trails";
 import type {
   DecodedRecord,
   DecodedRecordOf,
@@ -109,6 +110,7 @@ export const useDecodedStore = create<DecodedState>((set) => ({
       for (const [id, station] of stations) {
         if (station.lastSeen < cutoff) {
           stations.delete(id);
+          dropTrail(kind, id);
           dropped = true;
         }
       }
@@ -156,6 +158,7 @@ export const useDecodedStore = create<DecodedState>((set) => ({
   clear: () => {
     pending.length = 0;
     stationIndex.clear();
+    clearTrails();
     cancelFlush();
     set({ frames: {}, stations: {}, lost: 0, received: 0 });
   },
@@ -225,27 +228,30 @@ function mergeStation(record: DecodedRecord): boolean {
     stationIndex.set(kind, stations);
   }
   const previous = stations.get(id);
+  const at = recordTime(record);
+  recordTrail(kind, id, record.event, at);
   stations.set(id, {
     kind,
     id,
     event: previous === undefined ? record.event : mergeForward(previous.event, record.event),
-    lastSeen: recordTime(record),
+    lastSeen: at,
     freqHz: record.freq_hz,
     deviceSet: record.device_set,
     channel: record.channel,
     frames: (previous?.frames ?? 0) + 1,
   });
-  evictOldest(stations);
+  evictOldest(kind, stations);
   return true;
 }
 
-function evictOldest(stations: Map<string, Station>): void {
+function evictOldest(kind: DecoderKind, stations: Map<string, Station>): void {
   if (stations.size <= STATION_CAPACITY) {
     return;
   }
   const byAge = [...stations.entries()].toSorted((a, b) => a[1].lastSeen - b[1].lastSeen);
   for (const [id] of byAge.slice(0, stations.size - STATION_CAPACITY)) {
     stations.delete(id);
+    dropTrail(kind, id);
   }
 }
 

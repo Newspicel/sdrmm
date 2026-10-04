@@ -19,6 +19,7 @@ export interface MapInputs {
   df: DfOverlay | null;
   heat: FusionGridFrame | null;
   heatEnabled: boolean;
+  tracks: boolean;
 }
 
 export interface FrameFlag {

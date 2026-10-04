@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FLUSH_MS, RING_CAPACITY, STATION_CAPACITY, useDecodedStore } from "./decoded";
+import { trailsOf } from "./trails";
 import type { AdsbMessage, DecodedRecord, RadiosondeFrame, RdsUpdate } from "./types";
 
 const T0 = Date.parse("2026-08-09T12:00:00Z");
@@ -210,6 +211,28 @@ describe("ageOut", () => {
     expect(stations).toHaveLength(1);
     expect(stations[0]?.frames).toBe(1);
     expect(stations[0]?.event.data.callsign).toBeUndefined();
+  });
+});
+
+describe("trails", () => {
+  it("follows each aircraft and forgets it with its station", () => {
+    push(
+      adsb({ icao: "a", lat: 48, lon: 11 }, 0),
+      adsb({ icao: "a", altitude_ft: 3_000 }, 500),
+      adsb({ icao: "a", lat: 48.1, lon: 11 }, 1_000),
+    );
+    expect(trailsOf("adsb").get("a")?.points).toEqual([
+      [11, 48],
+      [11, 48.1],
+    ]);
+    useDecodedStore.getState().ageOut(30_000, T0 + 60_000);
+    expect(trailsOf("adsb").has("a")).toBe(false);
+  });
+
+  it("clears with the store", () => {
+    push(adsb({ icao: "a", lat: 48, lon: 11 }));
+    useDecodedStore.getState().clear();
+    expect(trailsOf("adsb").size).toBe(0);
   });
 });
 
