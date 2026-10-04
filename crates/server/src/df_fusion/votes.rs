@@ -4,8 +4,8 @@ use super::{
 };
 
 pub(crate) const VOTE_CELLS: usize = CELLS / SHIFT_STEP;
-pub(crate) const MAX_KEYS: usize = 64;
-pub(crate) const KEY_BIN_M: f64 = 500.0;
+pub(crate) const MAX_KEYS: usize = 160;
+pub(crate) const KEY_BIN_M: f64 = 150.0;
 pub(crate) const VOTE_MIN: f32 = 1.6;
 pub(crate) const VOTE_SUPPORT: f32 = 0.2;
 pub(crate) const MIN_KEY_WEIGHT: f32 = 0.05;
@@ -13,6 +13,8 @@ pub(crate) const BIAS_SIGMA_DEG: f32 = 2.5;
 pub(crate) const MAX_POWER: f32 = 2.0;
 
 const VOTE_SEPARATION_CELLS: f64 = 4.0;
+const SUPPORTER: f32 = 0.5;
+const MIN_CROSS_DEG: f64 = 10.0;
 const TIE_BREAK: f32 = 1e-3;
 const PAINT_TOLERANCE: f32 = 5e-3;
 const POWER_TOLERANCE: f32 = 0.02;
@@ -245,6 +247,18 @@ impl VoteMaps {
         Added { index, evicted }
     }
 
+    pub(crate) fn centroid(&self, clock: f64) -> Option<(f64, f64)> {
+        let (east, north, weight) = self.keys.iter().fold((0.0, 0.0, 0.0), |sum, key| {
+            let power = f64::from(key.power_at(clock));
+            (
+                power.mul_add(key.east_m, sum.0),
+                power.mul_add(key.north_m, sum.1),
+                sum.2 + power,
+            )
+        });
+        (weight > 0.0).then(|| (east / weight, north / weight))
+    }
+
     fn weakest(&self, clock: f64) -> Option<usize> {
         self.keys
             .iter()
@@ -307,6 +321,10 @@ impl VoteMaps {
         }
         let mut peaks: Vec<(usize, f32)> = (0..VOTE_CELLS * VOTE_CELLS)
             .filter(|&index| totals[index] >= VOTE_MIN && is_local_max(&scores, index))
+            .filter(|&index| {
+                let (east, north) = vote_centre(grid, index / VOTE_CELLS, index % VOTE_CELLS);
+                crossed(&supports, east, north, vote_m)
+            })
             .map(|index| (index, scores[index]))
             .collect();
         peaks.sort_by(|a, b| b.1.total_cmp(&a.1));
@@ -331,6 +349,29 @@ impl VoteMaps {
             }
         }));
     }
+}
+
+fn crossed(supports: &[(Box<Rings>, f32, &VoteKey)], east: f64, north: f64, vote_m: f64) -> bool {
+    let bearings: Vec<f64> = supports
+        .iter()
+        .filter(|(support, widest, key)| {
+            look(
+                east - key.east_m,
+                north - key.north_m,
+                key.accuracy_m,
+                vote_m,
+            )
+            .sample(support, *widest)
+                >= SUPPORTER
+        })
+        .map(|(_, _, key)| (east - key.east_m).atan2(north - key.north_m).to_degrees())
+        .collect();
+    bearings.iter().enumerate().any(|(index, a)| {
+        bearings[index + 1..].iter().any(|b| {
+            (a - b + 540.0).rem_euclid(360.0) - 180.0 >= MIN_CROSS_DEG
+                || (b - a + 540.0).rem_euclid(360.0) - 180.0 >= MIN_CROSS_DEG
+        })
+    })
 }
 
 fn widest_mean(support: &Rings) -> f32 {

@@ -113,6 +113,7 @@ struct NodeFusion {
     nav: Nav,
     stations: BTreeMap<String, StationTrack>,
     guided: Option<PositionFix>,
+    newest_station: Option<(f64, f64)>,
     clock: DecayClock,
     samples: u32,
     announced: bool,
@@ -141,6 +142,7 @@ impl NodeFusion {
             nav: Nav::new(params.nav, params.probe_km),
             stations: BTreeMap::new(),
             guided: None,
+            newest_station: None,
             clock: DecayClock::default(),
             samples: 0,
             announced: false,
@@ -271,6 +273,7 @@ impl NodeFusion {
             .get_or_insert_with(|| LogGrid::new(place, extent_km))
             .enu()
             .to_enu(place);
+        self.newest_station = Some(at_enu);
         let added = self
             .votes
             .add(&observation, at_enu, weight, self.clock.half_lives);
@@ -369,8 +372,11 @@ impl NodeFusion {
                 lon: fix.longitude,
             })
         });
+        let keep = guided_at.or(self.newest_station);
         let target = match peak_at {
-            Some(peak) if grid.in_edge_band(peak) => Some(peak),
+            Some(peak) if grid.in_edge_band(peak) => {
+                Some(keep.map_or(peak, |keep| grid.keeping_inside(keep, peak)))
+            }
             _ => guided_at.filter(|guided| {
                 grid.in_edge_band(*guided)
                     && peak_at.is_none_or(|peak| {
@@ -414,7 +420,11 @@ impl NodeFusion {
             self.emitters.clear();
             return;
         };
-        let global: Option<Located> = estimate::global(grid, self.samples);
+        let context = estimate::Context {
+            samples: self.samples,
+            stations: self.votes.centroid(self.clock.half_lives),
+        };
+        let global: Option<Located> = estimate::global(grid, context);
         let mut candidates: Vec<Candidate> = Vec::new();
         self.votes
             .candidates(grid, MAX_EMITTER_CANDIDATES, &mut candidates);
@@ -423,7 +433,7 @@ impl NodeFusion {
             &candidates,
             global.as_ref(),
             usize::from(self.params.max_emitters),
-            self.samples,
+            context,
         );
         self.estimate = global.map(|located| located.estimate);
     }

@@ -4,15 +4,18 @@ use sdrmm_channels::array_processor::{
     ProcessorOutput, create_processor, geometry_of,
 };
 use sdrmm_dsp::manifold::Direction;
-use sdrmm_dsp::scene::{ArrayScene, HeadingTrack, SceneSignal, SceneSource};
+use sdrmm_dsp::scene::{ArrayScene, HeadingTrack, SceneCopy, SceneSignal, SceneSource};
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, Attitude, Coherence, DecoderEvent, DfBearing, DfEstimate,
-    DfParams, HeadingSource, NavTarget, NavTargetKind, PositionFix, ProcessorParams,
-    ProcessorReading, RdsUpdate, TriangulationParams, Winding,
-    geo::{self, LatLon},
+    DfParams, HeadingSource, NavTarget, PositionFix, ProcessorParams, ProcessorReading, RdsUpdate,
+    TriangulationParams, Winding,
+    geo::{self, Enu, LatLon},
 };
 
 use super::NodeFusion;
+
+mod open_road;
+mod terrain;
 
 const RATE: f64 = 48_000.0;
 const CENTER_HZ: f64 = 433.92e6;
@@ -24,6 +27,10 @@ const BLOCK: usize = 2_400;
 const BLOCK_S: f64 = BLOCK as f64 / RATE;
 const REPORT_MS: u32 = 500;
 const SNR_AT_KM_DB: f64 = 20.0;
+const MAX_SNR_DB: f64 = 40.0;
+const SILENT_DB: f32 = -200.0;
+const LIGHT_M_S: f64 = 299_792_458.0;
+const REFLECTION_PHASE_DEG: f64 = 180.0;
 const START_NS: u64 = 1_790_000_000_000_000_000;
 const AT: &str = "2026-01-01T00:00:00Z";
 const HOME: LatLon = LatLon {
@@ -77,6 +84,143 @@ const GOOD_COMPASS: Compass = Compass {
     sigma_deg: 2.0,
 };
 
+#[derive(Clone, Copy)]
+struct Reflector {
+    at: LatLon,
+    height_m: f64,
+    gain_db: f64,
+}
+
+#[derive(Clone, Copy)]
+struct Ridge {
+    from: LatLon,
+    to: LatLon,
+    loss_db: f64,
+}
+
+#[derive(Clone, Copy)]
+struct Bursts {
+    on_s: f64,
+    every_s: f64,
+}
+
+#[derive(Default)]
+struct World {
+    emitter_height_m: f64,
+    reflectors: Vec<Reflector>,
+    ridges: Vec<Ridge>,
+    bursts: Option<Bursts>,
+    gps_gaps: Vec<(f64, f64)>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Arrival {
+    azimuth_deg: f64,
+    elevation_deg: f64,
+    power_db: f64,
+    length_m: f64,
+    reflected: bool,
+}
+
+fn crosses(enu: &Enu, from: LatLon, to: LatLon, ridge: &Ridge) -> bool {
+    let (p, q) = (enu.to_enu(from), enu.to_enu(to));
+    let (a, b) = (enu.to_enu(ridge.from), enu.to_enu(ridge.to));
+    let side = |o: (f64, f64), u: (f64, f64), v: (f64, f64)| {
+        (u.0 - o.0) * (v.1 - o.1) - (u.1 - o.1) * (v.0 - o.0)
+    };
+    side(p, q, a) * side(p, q, b) < 0.0 && side(a, b, p) * side(a, b, q) < 0.0
+}
+
+impl World {
+    fn loss_db(&self, from: LatLon, to: LatLon) -> f64 {
+        let enu = Enu::new(HOME);
+        self.ridges
+            .iter()
+            .filter(|ridge| crosses(&enu, from, to, ridge))
+            .map(|ridge| ridge.loss_db)
+            .sum()
+    }
+
+    fn transmitting(&self, at_s: f64) -> bool {
+        self.bursts
+            .is_none_or(|bursts| at_s.rem_euclid(bursts.every_s) < bursts.on_s)
+    }
+
+    fn gps(&self, at_s: f64) -> bool {
+        !self
+            .gps_gaps
+            .iter()
+            .any(|(from, to)| (*from..*to).contains(&at_s))
+    }
+
+    fn arrivals(&self, car: LatLon, emitter: LatLon) -> Vec<Arrival> {
+        let direct_m = geo::distance_m(car, emitter);
+        let mut arrivals = vec![Arrival {
+            azimuth_deg: geo::bearing_deg(car, emitter),
+            elevation_deg: self.emitter_height_m.atan2(direct_m).to_degrees(),
+            power_db: path_db(direct_m) - self.loss_db(car, emitter),
+            length_m: direct_m.hypot(self.emitter_height_m),
+            reflected: false,
+        }];
+        for reflector in &self.reflectors {
+            let near_m = geo::distance_m(car, reflector.at);
+            let far_m = geo::distance_m(reflector.at, emitter);
+            let length_m = near_m.hypot(reflector.height_m)
+                + far_m.hypot(self.emitter_height_m - reflector.height_m);
+            arrivals.push(Arrival {
+                azimuth_deg: geo::bearing_deg(car, reflector.at),
+                elevation_deg: reflector.height_m.atan2(near_m).to_degrees(),
+                power_db: path_db(length_m) + reflector.gain_db
+                    - self.loss_db(car, reflector.at)
+                    - self.loss_db(reflector.at, emitter),
+                length_m,
+                reflected: true,
+            });
+        }
+        arrivals
+    }
+}
+
+fn path_db(length_m: f64) -> f64 {
+    (SNR_AT_KM_DB - 20.0 * (length_m / 1_000.0).max(0.05).log10()).min(MAX_SNR_DB)
+}
+
+fn tone() -> SceneSignal {
+    SceneSignal::Tone {
+        offset_hz: OFFSET_HZ,
+    }
+}
+
+fn sources(arrivals: &[Arrival], on: bool) -> Vec<SceneSource> {
+    let wavelength_m = LIGHT_M_S / (CENTER_HZ + OFFSET_HZ);
+    let Some(direct) = arrivals.first() else {
+        return Vec::new();
+    };
+    let direction = |arrival: &Arrival| Direction::new(arrival.azimuth_deg, arrival.elevation_deg);
+    let master_db = if on {
+        direct.power_db as f32
+    } else {
+        SILENT_DB
+    };
+    let mut out = vec![SceneSource::new(direction(direct), master_db, tone())];
+    for arrival in &arrivals[1..] {
+        let extra = (arrival.length_m - direct.length_m) / wavelength_m;
+        let flip = if arrival.reflected {
+            REFLECTION_PHASE_DEG
+        } else {
+            0.0
+        };
+        let mut copy = SceneSource::new(direction(arrival), master_db, tone());
+        copy.copy_of = Some(SceneCopy {
+            source: 0,
+            amplitude: 10f64.powf((arrival.power_db - direct.power_db) / 20.0) as f32,
+            phase_deg: (flip - 360.0 * extra.fract()) as f32,
+        });
+        out.push(copy);
+    }
+    out
+}
+
 struct Rig {
     centers: Vec<f64>,
     scene: ArrayScene,
@@ -101,14 +245,7 @@ impl Rig {
             RATE,
         )
         .with_noise_db(0.0)
-        .with_seed(11)
-        .with_source(SceneSource::new(
-            Direction::horizon(0.0),
-            0.0,
-            SceneSignal::Tone {
-                offset_hz: OFFSET_HZ,
-            },
-        ));
+        .with_seed(11);
         let df = DfParams {
             offset_hz: OFFSET_HZ,
             bandwidth_hz: BANDWIDTH_HZ,
@@ -141,11 +278,9 @@ impl Rig {
         }
     }
 
-    fn block(&mut self, emitter_deg: f64, snr_db: f64, pose: Pose) -> Vec<DfBearing> {
-        let heading = pose.heading_deg.unwrap_or(0.0);
-        self.scene.sources[0].direction = Direction::horizon(emitter_deg);
-        self.scene.sources[0].power_db = snr_db as f32;
-        self.scene.heading = HeadingTrack::Fixed(heading);
+    fn block(&mut self, sources: Vec<SceneSource>, heading_deg: f64, pose: Pose) -> Vec<DfBearing> {
+        self.scene.sources = sources;
+        self.scene.heading = HeadingTrack::Fixed(heading_deg);
         let rendered = self.scene.render(BLOCK).expect("a rendered block");
         let lanes: Vec<&[Complex<f32>]> = rendered.iter().map(Vec::as_slice).collect();
         let block = ArrayBlock {
@@ -185,6 +320,7 @@ struct Step {
     bearing: Option<DfBearing>,
     nav: Option<NavTarget>,
     estimate: Option<DfEstimate>,
+    emitters: Vec<DfEstimate>,
 }
 
 struct Drive {
@@ -192,9 +328,20 @@ struct Drive {
     emitter: LatLon,
     speed_mps: f64,
     compass: Compass,
+    world: World,
 }
 
 impl Drive {
+    fn new(route: Route, emitter: LatLon) -> Self {
+        Self {
+            route,
+            emitter,
+            speed_mps: 14.0,
+            compass: GOOD_COMPASS,
+            world: World::default(),
+        }
+    }
+
     fn run(&self, params: &TriangulationParams) -> Vec<Step> {
         let mut rig = Rig::kraken();
         let mut fusion = NodeFusion::new(params);
@@ -206,15 +353,15 @@ impl Drive {
             let along = at_s * self.speed_mps;
             let car = self.route.at(along);
             let heading_deg = self.route.heading_deg(along);
-            let truth_deg = geo::bearing_deg(car, self.emitter);
             let yaw_rate = previous_heading.map(|from| geo::wrap_180(heading_deg - from) / BLOCK_S);
             previous_heading = Some(heading_deg);
-            let pose = self.pose(car, heading_deg, yaw_rate);
-            let range_km = geo::distance_m(car, self.emitter) / 1_000.0;
-            let snr_db = (SNR_AT_KM_DB - 20.0 * range_km.max(0.05).log10()).clamp(-10.0, 40.0);
-            let bearings = rig.block(truth_deg, snr_db, pose);
-            let fix = self.fix(car, heading_deg);
-            let mut outcome = fusion.guide(Some(&fix), at_s);
+            let gps = self.world.gps(at_s);
+            let pose = self.pose(car, heading_deg, yaw_rate, gps);
+            let arrivals = self.world.arrivals(car, self.emitter);
+            let on = self.world.transmitting(at_s);
+            let bearings = rig.block(sources(&arrivals, on), heading_deg, pose);
+            let fix = gps.then(|| self.fix(car, heading_deg));
+            let mut outcome = fusion.guide(fix.as_ref(), at_s);
             for bearing in &bearings {
                 if let Ok(seen) = fusion.observe(bearing, at_s, AT) {
                     outcome = seen;
@@ -223,10 +370,11 @@ impl Drive {
             if !bearings.is_empty() {
                 steps.push(Step {
                     at_s,
-                    truth_deg,
+                    truth_deg: geo::bearing_deg(car, self.emitter),
                     bearing: bearings.last().cloned(),
                     nav: outcome.state.nav,
                     estimate: outcome.state.estimate,
+                    emitters: outcome.state.emitters.clone(),
                 });
             }
             at_s += BLOCK_S;
@@ -234,12 +382,12 @@ impl Drive {
         steps
     }
 
-    fn pose(&self, car: LatLon, heading_deg: f64, yaw_rate_dps: Option<f64>) -> Pose {
+    fn pose(&self, car: LatLon, heading_deg: f64, yaw_rate_dps: Option<f64>, gps: bool) -> Pose {
         Pose {
             heading_deg: Some(geo::wrap_360(heading_deg + self.compass.bias_deg)),
             heading_sigma_deg: self.compass.sigma_deg,
             yaw_rate_dps: yaw_rate_dps.map(|rate| rate as f32),
-            fix: Some(GeoFix {
+            fix: gps.then_some(GeoFix {
                 lat: car.lat,
                 lon: car.lon,
                 altitude_m: None,
@@ -271,14 +419,11 @@ impl Drive {
 }
 
 fn north_road(east_of_road_m: f64, ahead_m: f64, length_m: f64) -> Drive {
-    let end = geo::destination(HOME, 0.0, length_m);
     let abeam = geo::destination(HOME, 0.0, ahead_m);
-    Drive {
-        route: Route::new(vec![HOME, end]),
-        emitter: geo::destination(abeam, 90.0, east_of_road_m),
-        speed_mps: 14.0,
-        compass: GOOD_COMPASS,
-    }
+    Drive::new(
+        Route::new(vec![HOME, geo::destination(HOME, 0.0, length_m)]),
+        geo::destination(abeam, 90.0, east_of_road_m),
+    )
 }
 
 fn error_deg(got: f64, want: f64) -> f64 {
@@ -292,7 +437,7 @@ fn place(estimate: &DfEstimate) -> LatLon {
     }
 }
 
-fn worst_bearing_error(steps: &[Step]) -> f64 {
+fn bearing_errors(steps: &[Step]) -> Vec<f64> {
     steps
         .iter()
         .filter_map(|step| {
@@ -300,121 +445,17 @@ fn worst_bearing_error(steps: &[Step]) -> f64 {
                 .as_ref()
                 .map(|bearing| error_deg(f64::from(bearing.bearing_deg), step.truth_deg))
         })
-        .fold(0.0, f64::max)
+        .collect()
 }
 
-#[test]
-fn every_bearing_points_at_the_transmitter_while_driving() {
-    let steps = north_road(2_000.0, 3_000.0, 6_000.0).run(&TriangulationParams::default());
-    assert!(steps.len() > 500, "{}", steps.len());
-    let worst = worst_bearing_error(&steps);
-    assert!(worst < 3.0, "worst bearing error {worst:.1} deg");
+fn worst_bearing_error(steps: &[Step]) -> f64 {
+    bearing_errors(steps).into_iter().fold(0.0, f64::max)
 }
 
-#[test]
-fn driving_past_a_transmitter_locates_it() {
-    let drive = north_road(2_000.0, 3_000.0, 6_000.0);
-    let steps = drive.run(&TriangulationParams::default());
-    let last = steps.last().expect("steps");
-    let estimate = last.estimate.expect("an estimate");
-    let miss = geo::distance_m(place(&estimate), drive.emitter);
-    assert!(miss < 150.0, "missed by {miss:.0} m: {estimate:?}");
-    assert!(estimate.converged, "{estimate:?}");
-}
-
-#[test]
-fn nav_leads_toward_the_transmitter_and_never_behind() {
-    let drive = north_road(2_000.0, 3_000.0, 6_000.0);
-    let steps = drive.run(&TriangulationParams::default());
-    let mut wrong = Vec::new();
-    for step in &steps {
-        let Some(nav) = step.nav else {
-            continue;
-        };
-        let off = error_deg(nav.bearing_deg, step.truth_deg);
-        if off > 45.0 {
-            wrong.push((step.at_s, nav.kind, off));
-        }
-    }
-    assert!(
-        wrong.is_empty(),
-        "{} of {} targets point away: {:?}",
-        wrong.len(),
-        steps.len(),
-        &wrong[..wrong.len().min(8)]
-    );
-}
-
-#[test]
-fn nav_settles_on_the_estimate_once_it_has_crossed_bearings() {
-    let drive = north_road(2_000.0, 3_000.0, 6_000.0);
-    let steps = drive.run(&TriangulationParams::default());
-    let last = steps.last().and_then(|step| step.nav).expect("a target");
-    assert_eq!(last.kind, NavTargetKind::Estimate, "{last:?}");
-    let target = LatLon {
-        lat: last.lat,
-        lon: last.lon,
-    };
-    let miss = geo::distance_m(target, drive.emitter);
-    assert!(miss < 150.0, "target {miss:.0} m off");
-}
-
-#[test]
-fn nav_revisions_stay_rare_while_the_target_holds_still() {
-    let drive = north_road(2_000.0, 3_000.0, 6_000.0);
-    let steps = drive.run(&TriangulationParams::default());
-    let revisions: Vec<(f64, u32)> = steps
-        .iter()
-        .filter_map(|step| step.nav.map(|nav| (step.at_s, nav.revision)))
-        .collect();
-    let (first_s, first) = revisions.first().copied().expect("targets");
-    let (last_s, last) = revisions.last().copied().expect("targets");
-    let per_minute = f64::from(last - first) / ((last_s - first_s) / 60.0);
-    assert!(
-        per_minute < 6.0,
-        "{per_minute:.1} reroutes a minute over {:.0} s",
-        last_s - first_s
-    );
-}
-
-#[test]
-fn a_loop_with_turns_keeps_true_bearings_and_finds_the_transmitter() {
-    let corner = |east: f64, north: f64| geo::offset_m(HOME, east, north);
-    let emitter = corner(1_500.0, 2_500.0);
-    let drive = Drive {
-        route: Route::new(vec![
-            corner(0.0, 0.0),
-            corner(0.0, 4_000.0),
-            corner(3_000.0, 4_000.0),
-            corner(3_000.0, 0.0),
-            corner(0.0, 0.0),
-        ]),
-        emitter,
-        speed_mps: 12.0,
-        compass: GOOD_COMPASS,
-    };
-    let steps = drive.run(&TriangulationParams::default());
-    let worst = worst_bearing_error(&steps);
-    assert!(worst < 5.0, "worst bearing error {worst:.1} deg");
+fn final_miss_m(drive: &Drive, steps: &[Step]) -> f64 {
     let estimate = steps
         .last()
         .and_then(|step| step.estimate)
         .expect("an estimate");
-    let miss = geo::distance_m(place(&estimate), emitter);
-    assert!(miss < 100.0, "missed by {miss:.0} m: {estimate:?}");
-}
-
-#[test]
-fn driving_away_the_nav_turns_back_toward_the_transmitter() {
-    let drive = Drive {
-        route: Route::new(vec![HOME, geo::destination(HOME, 0.0, 3_000.0)]),
-        emitter: geo::offset_m(HOME, 1_500.0, -2_000.0),
-        speed_mps: 14.0,
-        compass: GOOD_COMPASS,
-    };
-    let steps = drive.run(&TriangulationParams::default());
-    let last = steps.last().expect("steps");
-    let nav = last.nav.expect("a target");
-    assert!(error_deg(nav.bearing_deg, last.truth_deg) < 20.0, "{nav:?}");
-    assert!(geo::wrap_180(nav.bearing_deg).abs() > 90.0, "{nav:?}");
+    geo::distance_m(place(&estimate), drive.emitter)
 }

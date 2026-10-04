@@ -536,7 +536,15 @@ fn the_ellipse_bearing_is_right_for_a_diagonal_spread() {
             grid.values_mut()[row * CELLS + col] = value as f32;
         }
     }
-    let found = estimate::global(&grid, 10).expect("estimate").estimate;
+    let found = estimate::global(
+        &grid,
+        estimate::Context {
+            samples: 10,
+            stations: None,
+        },
+    )
+    .expect("estimate")
+    .estimate;
     assert!((found.ellipse_bearing_deg - 45.0).abs() <= 5.0, "{found:?}");
     assert!(
         found.ellipse_major_m > 3.0 * found.ellipse_minor_m,
@@ -1007,4 +1015,22 @@ fn a_guide_walking_off_the_grid_moves_it_even_with_one_station() {
     let (east, north) = fusion.grid.as_ref().expect("grid").centre();
     assert!((east - 11_000.0).abs() < 300.0, "{east} m east");
     assert!(north.abs() < 300.0, "{north} m north");
+}
+
+#[test]
+fn bearings_along_one_line_give_no_position_and_keep_the_grid_close() {
+    let mut fusion = NodeFusion::new(&TriangulationParams::default());
+    fusion.guide(Some(&fix_at(HOME)), 0.0);
+    let ahead = geo::destination(HOME, 0.0, 300.0);
+    for tick in 0..60u32 {
+        let at_s = f64::from(tick);
+        see(&mut fusion, &aimed("a", HOME, 0.0, 2.0), at_s);
+        see(&mut fusion, &aimed("b", ahead, 0.0, 2.0), at_s + 0.5);
+    }
+    assert!(fusion.estimate.is_none(), "{:?}", fusion.estimate);
+    assert!(fusion.emitters.is_empty(), "{:?}", fusion.emitters);
+    let grid = fusion.grid.as_ref().expect("grid");
+    let (_, north) = grid.centre();
+    assert!(north > 0.0, "the grid followed the line");
+    assert!(!grid.in_edge_band((0.0, 0.0)), "{north} m north");
 }

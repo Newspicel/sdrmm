@@ -2,7 +2,7 @@ use sdrmm_wire::DfEstimate;
 
 use super::{
     grid::{CELLS, LogGrid, POSTERIOR_SPAN, SHIFT_STEP},
-    votes::Candidate,
+    votes::{BIAS_SIGMA_DEG, Candidate},
 };
 
 pub(crate) const BASIN_M: f64 = 3_000.0;
@@ -10,6 +10,12 @@ pub(crate) const CONVERGED_MAJOR_M: f64 = 400.0;
 pub(crate) const CONVERGED_MASS: f32 = 0.6;
 pub(crate) const CONVERGED_SAMPLES: u32 = 6;
 pub(crate) const MIN_ESTIMATE_SAMPLES: u32 = 2;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Context {
+    pub(crate) samples: u32,
+    pub(crate) stations: Option<(f64, f64)>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Located {
@@ -45,12 +51,30 @@ pub(crate) fn converged(estimate: &DfEstimate) -> bool {
         && estimate.samples >= CONVERGED_SAMPLES
 }
 
+fn shared_rotation(at: (f64, f64), stations: Option<(f64, f64)>) -> (f64, f64, f64) {
+    let Some(stations) = stations else {
+        return (0.0, 0.0, 0.0);
+    };
+    let (east, north) = (at.0 - stations.0, at.1 - stations.1);
+    let range = east.hypot(north);
+    if range <= f64::EPSILON {
+        return (0.0, 0.0, 0.0);
+    }
+    let spread = range * f64::from(BIAS_SIGMA_DEG).to_radians();
+    let (across_e, across_n) = (north / range, -east / range);
+    (
+        spread * spread * across_e * across_e,
+        spread * spread * across_n * across_n,
+        spread * spread * across_e * across_n,
+    )
+}
+
 fn locate(
     grid: &LogGrid,
     moments: &Moments,
     origin: (f64, f64),
     mass: f32,
-    samples: u32,
+    context: Context,
 ) -> Option<Located> {
     if moments.total.is_nan() || moments.total <= 0.0 {
         return None;
@@ -58,16 +82,17 @@ fn locate(
     let mean_east = moments.east / moments.total;
     let mean_north = moments.north / moments.total;
     let cell_variance = grid.cell_m() * grid.cell_m() / 12.0;
-    let cee = (moments.ee / moments.total - mean_east * mean_east).max(0.0) + cell_variance;
-    let cnn = (moments.nn / moments.total - mean_north * mean_north).max(0.0) + cell_variance;
-    let cen = moments.en / moments.total - mean_east * mean_north;
+    let east_m = origin.0 + mean_east;
+    let north_m = origin.1 + mean_north;
+    let (see, snn, sen) = shared_rotation((east_m, north_m), context.stations);
+    let cee = (moments.ee / moments.total - mean_east * mean_east).max(0.0) + cell_variance + see;
+    let cnn = (moments.nn / moments.total - mean_north * mean_north).max(0.0) + cell_variance + snn;
+    let cen = moments.en / moments.total - mean_east * mean_north + sen;
     let half_trace = (cee + cnn) / 2.0;
     let root = ((cee - cnn) / 2.0).hypot(cen);
     let major = 2.0 * (half_trace + root).max(0.0).sqrt();
     let minor = 2.0 * (half_trace - root).max(0.0).sqrt();
     let axis = (2.0 * cen).atan2(cee - cnn).to_degrees() / 2.0;
-    let east_m = origin.0 + mean_east;
-    let north_m = origin.1 + mean_north;
     let at = grid.enu().to_latlon(east_m, north_m);
     let mut estimate = DfEstimate {
         lat: at.lat,
@@ -76,7 +101,7 @@ fn locate(
         ellipse_minor_m: minor,
         ellipse_bearing_deg: (90.0 - axis).rem_euclid(180.0),
         converged: false,
-        samples,
+        samples: context.samples,
         mass: mass.clamp(0.0, 1.0),
     };
     estimate.converged = converged(&estimate);
@@ -87,12 +112,12 @@ fn locate(
     })
 }
 
-pub(crate) fn global(grid: &LogGrid, samples: u32) -> Option<Located> {
-    if samples < MIN_ESTIMATE_SAMPLES {
+pub(crate) fn global(grid: &LogGrid, context: Context) -> Option<Located> {
+    if context.samples < MIN_ESTIMATE_SAMPLES {
         return None;
     }
     let (peak, top) = grid.max();
-    if !top.is_finite() {
+    if !top.is_finite() || grid.on_border(peak) {
         return None;
     }
     let origin = grid.index_centre(peak);
@@ -111,7 +136,7 @@ pub(crate) fn global(grid: &LogGrid, samples: u32) -> Option<Located> {
         }
     }
     let mass = if all > 0.0 { basin.total / all } else { 0.0 };
-    locate(grid, &basin, origin, mass as f32, samples)
+    locate(grid, &basin, origin, mass as f32, context)
 }
 
 struct Window {
@@ -142,7 +167,7 @@ fn windows(candidates: &[Candidate]) -> Vec<Window> {
         .collect()
 }
 
-fn refine(grid: &LogGrid, window: &Window, mass: f32, samples: u32) -> Option<Located> {
+fn refine(grid: &LogGrid, window: &Window, mass: f32, context: Context) -> Option<Located> {
     let reach = (window.radius_m / grid.cell_m()).ceil() as usize + 1;
     let inside: Vec<(usize, f64, f64)> = window_cells(grid, window.centre, reach)
         .filter_map(|index| {
@@ -172,7 +197,7 @@ fn refine(grid: &LogGrid, window: &Window, mass: f32, samples: u32) -> Option<Lo
             );
         }
     }
-    locate(grid, &moments, window.centre, mass, samples)
+    locate(grid, &moments, window.centre, mass, context)
 }
 
 fn window_cells(grid: &LogGrid, centre: (f64, f64), reach: usize) -> impl Iterator<Item = usize> {
@@ -194,7 +219,7 @@ pub(crate) fn emitters(
     candidates: &[Candidate],
     global: Option<&Located>,
     max: usize,
-    samples: u32,
+    context: Context,
 ) -> Vec<DfEstimate> {
     let windows = windows(candidates);
     let total: f32 = windows.iter().map(|window| window.votes).sum();
@@ -206,7 +231,7 @@ pub(crate) fn emitters(
             } else {
                 0.0
             };
-            refine(grid, window, mass, samples).map(|located| (located, window))
+            refine(grid, window, mass, context).map(|located| (located, window))
         })
         .collect();
     found.sort_by(|a, b| b.0.estimate.mass.total_cmp(&a.0.estimate.mass));

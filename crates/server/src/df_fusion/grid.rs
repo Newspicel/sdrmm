@@ -202,9 +202,27 @@ impl LogGrid {
         CELLS as f64 / 2.0 * self.cell_m
     }
 
+    fn inner_m(&self) -> f64 {
+        self.half_width_m() - EDGE_BAND as f64 * self.cell_m
+    }
+
     pub(crate) fn in_edge_band_around(&self, centre: (f64, f64), point: (f64, f64)) -> bool {
-        let inner = self.half_width_m() - EDGE_BAND as f64 * self.cell_m;
+        let inner = self.inner_m();
         (point.0 - centre.0).abs() > inner || (point.1 - centre.1).abs() > inner
+    }
+
+    pub(crate) fn on_border(&self, index: usize) -> bool {
+        let (row, col) = (index / CELLS, index % CELLS);
+        let last = CELLS - 1 - SHIFT_STEP;
+        row < SHIFT_STEP || col < SHIFT_STEP || row > last || col > last
+    }
+
+    pub(crate) fn keeping_inside(&self, keep: (f64, f64), centre: (f64, f64)) -> (f64, f64) {
+        let reach = self.inner_m() - SHIFT_STEP as f64 * self.cell_m;
+        (
+            keep.0 + (centre.0 - keep.0).clamp(-reach, reach),
+            keep.1 + (centre.1 - keep.1).clamp(-reach, reach),
+        )
     }
 
     pub(crate) fn in_edge_band(&self, point: (f64, f64)) -> bool {

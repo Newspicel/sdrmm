@@ -24,8 +24,8 @@ pub use peaks::{
     Candidate, GridShape, MAX_CANDIDATES, apart_deg, local_maxima, mirror_deg, on_side, refine,
 };
 pub use quality::{
-    MAX_SIGMA_DEG, confidence, crb_sigma_rad, joint_fit, model_sigma_rad, quantize_likelihood,
-    rate_spread, temper_likelihood, total_sigma_deg,
+    MAX_SIGMA_DEG, confidence, crb_sigma_rad, joint_fit, mismatch_share, mismatch_sigma_deg,
+    model_sigma_rad, quantize_likelihood, rate_spread, temper_likelihood, total_sigma_deg,
 };
 pub use space::{
     ARRAY_CHANGED, ELEVATION_NEEDS_2D, ELEVATION_NEEDS_GRID, FB_NEEDS_SYMMETRY,
@@ -912,6 +912,11 @@ impl Doa {
             &mut self.solvers.fit_chol,
             &mut scratch,
         )?;
+        let share = mismatch_share(out.fit, r.trace_re(), stats.noise, n, count);
+        for peak in &mut out.peaks[..count] {
+            peak.sigma_deg = mismatch_sigma_deg(peak.sigma_deg, share);
+            peak.confidence = confidence(f64::from(peak.sigma_deg), peak.ambiguity);
+        }
         let noise = f64::from(stats.noise);
         out.snr_db = if count > 0 {
             decibels((signal / noise) as f32)
