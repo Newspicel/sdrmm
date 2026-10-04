@@ -42,6 +42,13 @@ describe("ModeChips", () => {
     expect(render({ type: "lrpt", settings: {} })).toContain("OQPSK 72k");
   });
 
+  it("offers the SSTV modulation", () => {
+    const sstv = render({ type: "sstv", settings: {} });
+    expect(sstv).toContain('aria-label="Modulation"');
+    expect(sstv).toContain("USB");
+    expect(render({ type: "sstv", settings: { modulation: "fm" } })).toContain("FM");
+  });
+
   it("shows the detected DAB mode next to Auto", () => {
     const params: ChannelParams = { type: "dab", settings: { transmission_mode: "auto" } };
     expect(render(params)).toContain("Auto");

@@ -7434,9 +7434,12 @@ export interface components {
         };
         /** @enum {string} */
         SstvMode: "robot36" | "robot72" | "martin_m1" | "martin_m2" | "scottie_s1" | "scottie_s2" | "scottie_dx" | "pd50" | "pd90" | "pd120" | "pd180" | "sc2180";
+        /** @enum {string} */
+        SstvModulation: "usb" | "lsb" | "fm" | "am";
         SstvParams: {
             keep_partial?: boolean;
             mode?: components["schemas"]["SstvMode"] | null;
+            modulation?: components["schemas"]["SstvModulation"];
             slant_correction?: boolean;
         };
         SstvPicture: {

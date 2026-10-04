@@ -52,6 +52,7 @@ import {
   SONDE_TYPES,
   SSTV_AUTO,
   SSTV_MODES,
+  SSTV_MODULATIONS,
   WEFAX_IOCS,
   WEFAX_LPMS,
 } from "./modeOptions";
@@ -844,6 +845,13 @@ function SstvChips({ params, onParams }: Mode<"sstv">) {
   const mode = settings.mode ?? SSTV_AUTO;
   return (
     <>
+      <ChoiceChip
+        label="Mod"
+        title="Modulation"
+        value={settings.modulation ?? "usb"}
+        options={SSTV_MODULATIONS}
+        onChange={(modulation) => onParams({ type: "sstv", settings: { ...settings, modulation } })}
+      />
       <ChoiceChip
         label="Mode"
         title="Scanning mode"

@@ -26533,6 +26533,15 @@
           "sc2180"
         ]
       },
+      "SstvModulation": {
+        "type": "string",
+        "enum": [
+          "usb",
+          "lsb",
+          "fm",
+          "am"
+        ]
+      },
       "SstvParams": {
         "type": "object",
         "properties": {
@@ -26548,6 +26557,9 @@
                 "type": "null"
               }
             ]
+          },
+          "modulation": {
+            "$ref": "#/components/schemas/SstvModulation"
           },
           "slant_correction": {
             "type": "boolean"

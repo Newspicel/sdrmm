@@ -152,6 +152,12 @@ export const DRM_MODES: Options<NonNullable<ChannelParamsOf<"drm">["mode"]>> = [
   { value: "drm30", label: "DRM30" },
   { value: "drm_plus", label: "DRM+" },
 ];
+export const SSTV_MODULATIONS: Options<NonNullable<ChannelParamsOf<"sstv">["modulation"]>> = [
+  { value: "usb", label: "USB" },
+  { value: "lsb", label: "LSB" },
+  { value: "fm", label: "FM" },
+  { value: "am", label: "AM" },
+];
 export const SSTV_AUTO = "auto";
 export const SSTV_MODES: Options<NonNullable<ChannelParamsOf<"sstv">["mode"]> | typeof SSTV_AUTO> =
   [

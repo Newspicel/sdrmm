@@ -1,15 +1,17 @@
+mod carrier;
 pub(crate) mod modes;
 
 use std::sync::LazyLock;
 
+use carrier::{Carrier, TONE_HIGH_HZ, TONE_LOW_HZ, band_filter};
 use modes::{
     LEADER_HZ, Part, SYNC_HZ, Scan, VIS_BIT_MS, VIS_ONE_HZ, VIS_ZERO_HZ, hz_to_level, timing,
 };
 use num_complex::Complex;
-use sdrmm_dsp::{FirC, FmDemod, design_lowpass};
+use sdrmm_dsp::FmDemod;
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, SstvMode,
-    SstvParams, SstvPicture,
+    SstvModulation, SstvParams, SstvPicture,
 };
 
 use crate::{
@@ -18,9 +20,6 @@ use crate::{
 };
 
 pub(crate) const INPUT_RATE_HZ: f64 = 16_000.0;
-const AUDIO_LOW_HZ: f64 = 1_000.0;
-const AUDIO_HIGH_HZ: f64 = 2_600.0;
-const FILTER_TAPS: usize = 255;
 
 const TRACK_CAPACITY: usize = 1 << 16;
 const WRITE_CHUNK: usize = TRACK_CAPACITY / 4;
@@ -52,7 +51,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "SSTV".to_owned(),
     summary: "Slow scan TV pictures".to_owned(),
     family: DecoderFamily::Video,
-    bandwidth_hz: AUDIO_HIGH_HZ - AUDIO_LOW_HZ,
+    bandwidth_hz: TONE_HIGH_HZ - TONE_LOW_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
@@ -60,16 +59,16 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-pub(crate) fn occupied_band(_p: &SstvParams) -> (f64, f64) {
-    (AUDIO_LOW_HZ, AUDIO_HIGH_HZ)
+pub(crate) fn occupied_band(p: &SstvParams) -> (f64, f64) {
+    carrier::occupied_band(p.modulation)
 }
 
-pub(crate) fn channel_filter(_p: &SstvParams) -> Result<ChannelFilter, ChannelError> {
-    let half = (AUDIO_HIGH_HZ - AUDIO_LOW_HZ) / 2.0 / INPUT_RATE_HZ;
-    let center = (AUDIO_HIGH_HZ + AUDIO_LOW_HZ) / 2.0 / INPUT_RATE_HZ;
-    Ok(ChannelFilter::Sideband(FirC::from_lowpass(
-        &design_lowpass(FILTER_TAPS, half),
-        center,
+pub(crate) fn channel_filter(p: &SstvParams) -> Result<ChannelFilter, ChannelError> {
+    let (low, high) = occupied_band(p);
+    Ok(ChannelFilter::Sideband(band_filter(
+        low,
+        high,
+        INPUT_RATE_HZ,
     )))
 }
 
@@ -363,6 +362,8 @@ fn ycrcb_to_rgb(y: u8, cr: u8, cb: u8) -> [u8; 3] {
 }
 
 pub struct SstvChannel {
+    carrier: Carrier,
+    modulation: SstvModulation,
     demod: FmDemod,
     freq: Vec<f32>,
     track: Track,
@@ -633,6 +634,8 @@ impl ChannelRx for SstvChannel {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = params(&settings)?;
         Ok(Self {
+            carrier: Carrier::new(p.modulation, ctx.input_rate),
+            modulation: p.modulation,
             demod: FmDemod::new(ctx.input_rate, 1.0),
             freq: Vec::new(),
             track: Track::new(),
@@ -654,6 +657,11 @@ impl ChannelRx for SstvChannel {
             self.picture.active = false;
             self.pending_vis = None;
         }
+        if p.modulation != self.modulation {
+            self.carrier = Carrier::new(p.modulation, self.rate);
+            self.modulation = p.modulation;
+            self.retuned();
+        }
         self.forced = p.mode;
         self.slant = p.slant_correction;
         self.keep_partial = p.keep_partial;
@@ -667,7 +675,8 @@ impl ChannelRx for SstvChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        self.demod.process(iq, &mut self.freq);
+        let tone = self.carrier.process(iq);
+        self.demod.process(tone, &mut self.freq);
         let mut at = 0;
         while at < self.freq.len() {
             let end = (at + WRITE_CHUNK).min(self.freq.len());
@@ -1103,6 +1112,101 @@ mod tests {
         assert!(chan.picture.active);
         chan.apply(settings(ChannelParams::Sstv(SstvParams {
             mode: Some(SstvMode::ScottieS1),
+            ..SstvParams::default()
+        })))
+        .expect("applies");
+        assert!(!chan.picture.active);
+    }
+
+    fn on_air(modulation: SstvModulation, audio: &[Complex<f32>]) -> Vec<Complex<f32>> {
+        let real: Vec<f32> = audio.iter().map(|s| s.re).collect();
+        match modulation {
+            SstvModulation::Usb => audio.to_vec(),
+            SstvModulation::Lsb => audio.iter().map(Complex::conj).collect(),
+            SstvModulation::Fm => synth::fm_modulate(&real, 5_000.0, RATE),
+            SstvModulation::Am => real
+                .iter()
+                .map(|&a| Complex::new(1.0 + 0.8 * a, 0.0))
+                .collect(),
+        }
+    }
+
+    fn receive(modulation: SstvModulation, iq: &[Complex<f32>]) -> Received {
+        let p = SstvParams {
+            modulation,
+            ..SstvParams::default()
+        };
+        let mut filter = channel_filter(&p).expect("filter builds");
+        let mut filtered = Vec::new();
+        filter.process(iq, &mut filtered);
+        run(&mut channel(p), &filtered, &BLOCKS)
+    }
+
+    const MODULATIONS: [SstvModulation; 4] = [
+        SstvModulation::Usb,
+        SstvModulation::Lsb,
+        SstvModulation::Fm,
+        SstvModulation::Am,
+    ];
+
+    #[test]
+    fn every_modulation_decodes_through_its_channel_filter() {
+        let mode = SstvMode::Robot36;
+        let sent = bars(mode);
+        let mut audio = transmission(mode, &sent, RATE);
+        audio.extend_from_slice(&tail(2_000.0));
+        for modulation in MODULATIONS {
+            let mut iq = on_air(modulation, &audio);
+            synth::add_noise(&mut iq, 3, 0.05);
+            let received = receive(modulation, &iq);
+            assert_eq!(
+                received.images.len(),
+                1,
+                "{modulation:?} produced no single image"
+            );
+            let image = &received.images[0];
+            assert!(image.complete, "{modulation:?} did not complete");
+            let error = interior_error(mode, &sent, &image.picture);
+            assert!(
+                error < 12.0,
+                "{modulation:?} mean interior error {error:.1}/255"
+            );
+        }
+    }
+
+    #[test]
+    fn a_sideband_receiver_ignores_the_opposite_sideband() {
+        let mode = SstvMode::Robot36;
+        let mut audio = transmission(mode, &bars(mode), RATE);
+        audio.extend_from_slice(&tail(2_000.0));
+        let lsb = on_air(SstvModulation::Lsb, &audio);
+        assert!(receive(SstvModulation::Usb, &lsb).images.is_empty());
+        let usb = on_air(SstvModulation::Usb, &audio);
+        assert!(receive(SstvModulation::Lsb, &usb).images.is_empty());
+    }
+
+    #[test]
+    fn each_modulation_occupies_its_own_band() {
+        for modulation in MODULATIONS {
+            let (low, high) = occupied_band(&SstvParams {
+                modulation,
+                ..SstvParams::default()
+            });
+            assert!(low < high, "{modulation:?}");
+            assert!(high <= RATE / 2.0 && low >= -RATE / 2.0, "{modulation:?}");
+        }
+    }
+
+    #[test]
+    fn changing_the_modulation_abandons_the_picture() {
+        let mode = SstvMode::MartinM1;
+        let iq = transmission(mode, &bars(mode), RATE);
+        let mut chan = channel(SstvParams::default());
+        let mut out = ChannelOutputs::default();
+        chan.process(&iq[..iq.len() / 4], &mut out);
+        assert!(chan.picture.active);
+        chan.apply(settings(ChannelParams::Sstv(SstvParams {
+            modulation: SstvModulation::Fm,
             ..SstvParams::default()
         })))
         .expect("applies");

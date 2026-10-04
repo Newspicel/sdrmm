@@ -813,8 +813,20 @@ impl SstvMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SstvModulation {
+    #[default]
+    Usb,
+    Lsb,
+    Fm,
+    Am,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SstvParams {
+    #[serde(default)]
+    pub modulation: SstvModulation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<SstvMode>,
     #[serde(default = "default_true")]
@@ -826,6 +838,7 @@ pub struct SstvParams {
 impl Default for SstvParams {
     fn default() -> Self {
         Self {
+            modulation: SstvModulation::default(),
             mode: None,
             slant_correction: true,
             keep_partial: true,
