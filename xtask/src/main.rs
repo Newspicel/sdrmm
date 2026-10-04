@@ -541,6 +541,10 @@ mod dev_command_tests {
             env.iter().any(|(key, _)| *key == "LD_LIBRARY_PATH"),
             cfg!(target_os = "linux")
         );
+        assert_eq!(
+            env.iter().any(|(key, _)| *key == "DYLD_LIBRARY_PATH"),
+            cfg!(target_os = "macos")
+        );
     }
 
     #[test]
@@ -1066,17 +1070,25 @@ fn run_against_media(args: &[&str], cwd: &Path, media: Option<&Path>) -> Result<
     })
 }
 
+const LIBRARY_PATH_VAR: Option<&str> = if cfg!(target_os = "linux") {
+    Some("LD_LIBRARY_PATH")
+} else if cfg!(target_os = "macos") {
+    Some("DYLD_LIBRARY_PATH")
+} else {
+    None
+};
+
 fn media_env(dir: &Path) -> Vec<(&'static str, String)> {
     let mut env = vec![("FFMPEG_DIR", dir.to_string_lossy().into_owned())];
-    if cfg!(target_os = "linux") {
-        env.push(("LD_LIBRARY_PATH", linux_library_path(dir)));
+    if let Some(var) = LIBRARY_PATH_VAR {
+        env.push((var, library_path(var, dir)));
     }
     env
 }
 
-fn linux_library_path(media: &Path) -> String {
+fn library_path(var: &str, media: &Path) -> String {
     let lib = media.join("lib").to_string_lossy().into_owned();
-    match std::env::var("LD_LIBRARY_PATH") {
+    match std::env::var(var) {
         Ok(existing) if !existing.is_empty() => format!("{lib}:{existing}"),
         _ => lib,
     }
