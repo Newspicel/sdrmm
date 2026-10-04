@@ -1,4 +1,7 @@
-use sdrmm_dsp::fec::conv7::ConvCode;
+use sdrmm_dsp::fec::{
+    ccsds_rs::{Basis, CcsdsReedSolomon},
+    conv7::ConvCode,
+};
 
 pub const ASM: u32 = 0x1ACF_FC1D;
 pub const ASM_BYTES: usize = 4;
@@ -29,6 +32,11 @@ const POLY_SECOND: u16 = 0o133;
 #[must_use]
 pub fn conv_code() -> ConvCode {
     ConvCode::new(&[POLY_FIRST, POLY_SECOND])
+}
+
+#[must_use]
+pub fn reed_solomon() -> CcsdsReedSolomon {
+    CcsdsReedSolomon::with_basis(Basis::Conventional)
 }
 
 #[must_use]
