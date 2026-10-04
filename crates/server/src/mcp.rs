@@ -544,8 +544,8 @@ impl SdrMcp {
     }
 
     #[tool(
-        description = "One spectrum frame from a device set, reduced to 128 power bins in \
-                       dBFS: enough to answer 'is anything on this band'.",
+        description = "One spectrum frame from a device set: its noise floor and 128 power bins \
+                       in dBFS, enough to answer 'is anything on this band'.",
         annotations(title = "Spectrum snapshot", read_only_hint = true)
     )]
     async fn spectrum_snapshot(
@@ -569,10 +569,15 @@ impl SdrMcp {
             })?
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         let mut bins = vec![0.0f32; SPECTRUM_BINS];
-        sdrmm_dsp::decimate_max(&snapshot.db, &mut bins);
+        let floor_db = sdrmm_dsp::SpanFloor::default().read(&snapshot.db);
+        let signal_db = floor_db.map_or(f32::NEG_INFINITY, |floor| {
+            floor + sdrmm_wire::SPECTRUM_SIGNAL_MARGIN_DB
+        });
+        sdrmm_dsp::decimate_signal(&snapshot.db, signal_db, &mut bins);
         structured(&serde_json::json!({
             "center_hz": snapshot.center_hz,
             "span_hz": snapshot.span_hz,
+            "floor_db": floor_db,
             "bins_db": bins,
         }))
     }

@@ -10,9 +10,17 @@ describe("VideoAverage", () => {
   it("starts from the first frame and moves a share of the way per frame", () => {
     const average = new VideoAverage();
     expect(average.apply(Float32Array.of(-80), 4)[0]).toBeCloseTo(-80);
-    const next = average.apply(Float32Array.of(-70), 4)[0] ?? 0;
-    const expected = 10 * Math.log10(10 ** -8 + (10 ** -7 - 10 ** -8) / 4);
-    expect(next).toBeCloseTo(expected, 4);
+    expect(average.apply(Float32Array.of(-70), 4)[0]).toBeCloseTo(-77.5, 4);
+  });
+
+  it("lets a carrier that keys off fall out within a few frames", () => {
+    const average = new VideoAverage();
+    average.apply(Float32Array.of(-20), 4);
+    let level = 0;
+    for (let i = 0; i < 12; i++) {
+      level = average.apply(Float32Array.of(-80), 4)[0] ?? 0;
+    }
+    expect(level).toBeLessThan(-77);
   });
 
   it("holds a steady level", () => {

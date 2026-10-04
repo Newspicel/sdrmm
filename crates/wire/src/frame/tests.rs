@@ -10,6 +10,7 @@ fn spectrum(bins: &[u8]) -> SpectrumFrame<'_> {
         span_hz: 2_400_000.0,
         db_min: -120.0,
         db_max: -20.0,
+        floor_db: -95.0,
         bins,
     }
 }
@@ -430,7 +431,7 @@ fn a_wrong_kind_is_refused() {
 fn a_bad_bytes16_length_is_length() {
     let bins = [1u8, 2, 3];
     let mut buf = spectrum(&bins).encode();
-    buf[36] = 9;
+    buf[40] = 9;
     assert_eq!(SpectrumFrame::decode(&buf), Err(FrameError::Length));
     let mut trailing = spectrum(&bins).encode();
     trailing.push(0);

@@ -1,3 +1,4 @@
+import { token } from "../lib/tokens";
 import { COLORMAP_GLSL, CUSTOM_STOPS, type Palette, paletteIndex, type Rgb } from "./colormap";
 import {
   backingPx,
@@ -8,6 +9,7 @@ import {
   seedPlacement,
   zoomOf,
 } from "./raster";
+import { timeTicks } from "./timeTicks";
 
 export { COLORMAPS, type Colormap, DEFAULT_COLORMAP, type Palette } from "./colormap";
 
@@ -28,7 +30,7 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uTex;
-uniform highp sampler2D uShift;
+uniform highp sampler2D uRow;
 uniform float uWrite;
 uniform float uHeight;
 uniform float uRows;
@@ -40,24 +42,34 @@ uniform int uMap;
 ${COLORMAP_GLSL}
 
 const int MAX_TAPS = 32;
+const float DB_TO_LOG2 = 0.33219281;
 
-float footprintPeak(float tx, int row) {
+float footprint(float tx, int row, vec4 level) {
   int bins = textureSize(uTex, 0).x;
   float left = tx * float(bins);
   float right = left + uViewWidth * float(bins) / max(uPixels, 1.0);
   int first = int(floor(left));
   int last = max(first, int(ceil(right)) - 1);
+  float scale = level.b * DB_TO_LOG2;
   float peak = 0.0;
+  float power = 0.0;
+  float taps = 0.0;
   for (int i = 0; i < MAX_TAPS; i++) {
     int x = first + i;
     if (x > last) {
       break;
     }
     if (x >= 0 && x < bins) {
-      peak = max(peak, texelFetch(uTex, ivec2(x, row), 0).r);
+      float v = texelFetch(uTex, ivec2(x, row), 0).r;
+      peak = max(peak, v);
+      power += exp2(v * scale);
+      taps += 1.0;
     }
   }
-  return peak;
+  if (peak >= level.g || scale <= 0.0 || taps == 0.0) {
+    return peak;
+  }
+  return log2(power / taps) / scale;
 }
 
 void main() {
@@ -68,19 +80,32 @@ void main() {
   float rowsBack = (1.0 - vUv.y) * (uRows - 1.0);
   float row = mod(uWrite - 1.0 - rowsBack, uHeight);
   float ty = (row + 0.5) / uHeight;
-  float tx = uViewStart + vUv.x * uViewWidth + texelFetch(uShift, ivec2(0, int(row)), 0).r;
+  vec4 level = texelFetch(uRow, ivec2(0, int(row)), 0);
+  float tx = uViewStart + vUv.x * uViewWidth + level.r;
   float perPixel = uViewWidth * float(textureSize(uTex, 0).x) / max(uPixels, 1.0);
   float v = (tx < 0.0 || tx > 1.0)
     ? 0.0
     : perPixel > 1.0
-      ? footprintPeak(tx, int(row))
+      ? footprint(tx, int(row), level)
       : texture(uTex, vec2(tx, ty)).r;
   fragColor = vec4(colormap(v), 1.0);
 }`;
 
+export interface RowLevel {
+  signal: number;
+  spanDb: number;
+  at: number;
+}
+
+const PLAIN_ROW: RowLevel = { signal: 0, spanDb: 0, at: Number.NaN };
+const ROW_FIELDS = 4;
+const TICK_GAP_PX = 48;
+const TICK_TOP_PX = 8;
+const TICK_FONT = '"JetBrains Mono Variable", ui-monospace, Menlo, monospace';
+
 export interface WaterfallView {
-  pushRow(bins: Uint8Array): void;
-  seed(rows: Uint8Array, count: number, bins: number): void;
+  pushRow(bins: Uint8Array, level?: RowLevel): void;
+  seed(rows: Uint8Array, count: number, bins: number, levels?: readonly RowLevel[]): void;
   shiftRows(delta: number): void;
   setWindow(start: number, width: number): void;
   setColormap(palette: Palette): void;
@@ -143,7 +168,7 @@ let recovering: Shared | null = null;
 interface Attachment {
   context: Shared;
   texture: WebGLTexture;
-  shiftTexture: WebGLTexture;
+  rowTexture: WebGLTexture;
 }
 
 class Plot implements WaterfallView {
@@ -152,8 +177,10 @@ class Plot implements WaterfallView {
   private live: Attachment | null = null;
   private bins = 0;
   private writeRow = 0;
-  private readonly shifts = new Float32Array(HISTORY_ROWS);
-  private shiftsDirty = true;
+  private readonly rowData = new Float32Array(HISTORY_ROWS * ROW_FIELDS);
+  private readonly times = new Float64Array(HISTORY_ROWS).fill(Number.NaN);
+  private rowsDirty = true;
+  private rows = 2;
   private windowStart = 0;
   private windowWidth = 1;
   private map = 0;
@@ -189,14 +216,14 @@ class Plot implements WaterfallView {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    const shiftTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, shiftTexture);
+    const rowTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, rowTexture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 1, HISTORY_ROWS, 0, gl.RED, gl.FLOAT, null);
-    this.live = { context, texture, shiftTexture };
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, HISTORY_ROWS, 0, gl.RGBA, gl.FLOAT, null);
+    this.live = { context, texture, rowTexture };
     this.allocate(1024);
     this.onStatus(null);
   }
@@ -212,7 +239,7 @@ class Plot implements WaterfallView {
     this.onStatus(error);
   }
 
-  pushRow(bins: Uint8Array): void {
+  pushRow(bins: Uint8Array, level: RowLevel = PLAIN_ROW): void {
     const live = this.live;
     if (live === null || bins.length === 0) {
       return;
@@ -221,10 +248,7 @@ class Plot implements WaterfallView {
     if (bins.length !== this.bins) {
       this.allocate(bins.length);
     }
-    if (this.shifts[this.writeRow] !== 0) {
-      this.shifts[this.writeRow] = 0;
-      this.shiftsDirty = true;
-    }
+    this.storeRow(this.writeRow, level);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, live.texture);
     gl.texSubImage2D(
@@ -242,7 +266,7 @@ class Plot implements WaterfallView {
     this.dirty = true;
   }
 
-  seed(rows: Uint8Array, count: number, bins: number): void {
+  seed(rows: Uint8Array, count: number, bins: number, levels: readonly RowLevel[] = []): void {
     const live = this.live;
     if (live === null || bins === 0) {
       return;
@@ -252,6 +276,9 @@ class Plot implements WaterfallView {
       return;
     }
     this.allocate(bins);
+    for (let row = 0; row < place.rows; row++) {
+      this.storeRow(row, levels[place.skip + row] ?? PLAIN_ROW);
+    }
     const gl = live.context.gl;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, live.texture);
@@ -274,10 +301,17 @@ class Plot implements WaterfallView {
       return;
     }
     for (let i = 0; i < HISTORY_ROWS; i++) {
-      this.shifts[i] = (this.shifts[i] ?? 0) + delta;
+      const at = i * ROW_FIELDS;
+      this.rowData[at] = (this.rowData[at] ?? 0) + delta;
     }
-    this.shiftsDirty = true;
+    this.rowsDirty = true;
     this.dirty = true;
+  }
+
+  private storeRow(row: number, level: RowLevel): void {
+    this.rowData.set([0, level.signal, level.spanDb, 0], row * ROW_FIELDS);
+    this.times[row] = level.at;
+    this.rowsDirty = true;
   }
 
   setWindow(start: number, width: number): void {
@@ -308,7 +342,7 @@ class Plot implements WaterfallView {
     const live = this.live;
     if (live !== null) {
       live.context.gl.deleteTexture(live.texture);
-      live.context.gl.deleteTexture(live.shiftTexture);
+      live.context.gl.deleteTexture(live.rowTexture);
       this.live = null;
     }
     if (plots.size === 0) {
@@ -357,16 +391,17 @@ class Plot implements WaterfallView {
     const { gl, canvas: buffer, uniforms } = live.context;
     gl.viewport(0, 0, w, h);
     gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, live.shiftTexture);
-    if (this.shiftsDirty) {
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1, HISTORY_ROWS, gl.RED, gl.FLOAT, this.shifts);
-      this.shiftsDirty = false;
+    gl.bindTexture(gl.TEXTURE_2D, live.rowTexture);
+    if (this.rowsDirty) {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1, HISTORY_ROWS, gl.RGBA, gl.FLOAT, this.rowData);
+      this.rowsDirty = false;
     }
+    this.rows = rowsForHeight(h, this.ratio, HISTORY_ROWS);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, live.texture);
     gl.uniform1f(uniforms.write, this.writeRow);
     gl.uniform1f(uniforms.height, HISTORY_ROWS);
-    gl.uniform1f(uniforms.rows, rowsForHeight(h, this.ratio, HISTORY_ROWS));
+    gl.uniform1f(uniforms.rows, this.rows);
     gl.uniform1f(uniforms.viewStart, this.windowStart);
     gl.uniform1f(uniforms.viewWidth, this.windowWidth);
     gl.uniform1f(uniforms.pixels, w);
@@ -374,7 +409,35 @@ class Plot implements WaterfallView {
     gl.uniform3fv(uniforms.custom, this.custom);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.ctx?.drawImage(buffer, 0, buffer.height - h, w, h, 0, 0, w, h);
+    this.drawTimeTicks(w, h);
     this.dirty = false;
+  }
+
+  private drawTimeTicks(w: number, h: number): void {
+    const ctx = this.ctx;
+    if (ctx === null) {
+      return;
+    }
+    const newest = this.writeRow - 1;
+    const timeAt = (back: number): number =>
+      this.times[(((newest - back) % HISTORY_ROWS) + HISTORY_ROWS) % HISTORY_ROWS] ?? Number.NaN;
+    const ratio = this.ratio;
+    const ticks = timeTicks(timeAt, this.rows, h, TICK_GAP_PX * ratio).filter(
+      (tick) => tick.y >= TICK_TOP_PX * ratio,
+    );
+    if (ticks.length === 0) {
+      return;
+    }
+    ctx.font = `${10 * ratio}px ${TICK_FONT}`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = token("plot-ink-dim");
+    ctx.globalAlpha = 0.8;
+    for (const tick of ticks) {
+      ctx.fillRect(w - 3 * ratio, tick.y, 3 * ratio, ratio);
+      ctx.fillText(tick.label, w - 5 * ratio, tick.y);
+    }
+    ctx.globalAlpha = 1;
   }
 
   private allocate(bins: number): void {
@@ -385,8 +448,9 @@ class Plot implements WaterfallView {
     const gl = live.context.gl;
     this.bins = Math.max(1, bins);
     this.writeRow = 0;
-    this.shifts.fill(0);
-    this.shiftsDirty = true;
+    this.rowData.fill(0);
+    this.times.fill(Number.NaN);
+    this.rowsDirty = true;
     this.dirty = true;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, live.texture);
@@ -488,7 +552,7 @@ function build(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): Shared {
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   gl.useProgram(program);
   gl.uniform1i(gl.getUniformLocation(program, "uTex"), 0);
-  gl.uniform1i(gl.getUniformLocation(program, "uShift"), 1);
+  gl.uniform1i(gl.getUniformLocation(program, "uRow"), 1);
   return {
     canvas,
     gl,

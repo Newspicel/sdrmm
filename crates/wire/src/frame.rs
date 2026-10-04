@@ -415,8 +415,10 @@ macro_rules! define_frame {
     };
 }
 
+pub const SPECTRUM_SIGNAL_MARGIN_DB: f32 = 10.0;
+
 define_frame!(SpectrumFrame, Spectrum, decode, {
-    center_hz: f64, span_hz: f32, db_min: f32, db_max: f32, bins: bytes16,
+    center_hz: f64, span_hz: f32, db_min: f32, db_max: f32, floor_db: f32, bins: bytes16,
 });
 define_frame!(AudioFrame, AudioOpus, decode, { ch_layout: u8, opus: bytes });
 define_frame!(IqFrame, IqF32, { center_hz: f64, sample_rate: f32, samples: floats });

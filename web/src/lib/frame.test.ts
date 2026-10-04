@@ -26,14 +26,15 @@ function header(buf: ArrayBuffer, kind: number, streamId: number, seq: number, t
 }
 
 function spectrumBuffer(bins: Uint8Array): ArrayBuffer {
-  const buf = new ArrayBuffer(16 + 22 + bins.length);
+  const buf = new ArrayBuffer(16 + 26 + bins.length);
   const view = header(buf, FRAME_KIND_SPECTRUM, 7, 42, 1_000_000n);
   view.setFloat64(16, 100_300_000, true);
   view.setFloat32(24, 2_400_000, true);
   view.setFloat32(28, -120, true);
   view.setFloat32(32, -20, true);
-  view.setUint16(36, bins.length, true);
-  new Uint8Array(buf, 38).set(bins);
+  view.setFloat32(36, -95, true);
+  view.setUint16(40, bins.length, true);
+  new Uint8Array(buf, 42).set(bins);
   return buf;
 }
 
@@ -85,6 +86,7 @@ describe("decodeSpectrum", () => {
     expect(frame?.spanHz).toBe(2_400_000);
     expect(frame?.dbMin).toBe(-120);
     expect(frame?.dbMax).toBe(-20);
+    expect(frame?.floorDb).toBe(-95);
     expect(Array.from(frame?.bins ?? [])).toEqual(Array.from(bins));
   });
 

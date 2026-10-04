@@ -13,12 +13,12 @@ use axum::{
     response::Response,
 };
 use futures::{SinkExt, StreamExt};
-use sdrmm_dsp::{DbWindowSmoother, adaptive_db_window, decimate_max, quantize_db};
+use sdrmm_dsp::{DbWindowSmoother, SpanFloor, adaptive_db_window, decimate_signal, quantize_db};
 use sdrmm_engine::{AudioPacket, Engine, IqBlock, SpectrumSnapshot, SymbolBlock, VideoPacket};
 use sdrmm_wire::{
-    API_PROTOCOL, AudioFrame, AudioRoute, ClientCommand, IqFrame, PositionFix, ServerEvent,
-    SpectrumFrame, StateScope, StreamKind, SymbolFrame, VideoData, VideoFrame, WS_CLOSE_REVOKED,
-    WS_SUBPROTOCOL,
+    API_PROTOCOL, AudioFrame, AudioRoute, ClientCommand, IqFrame, PositionFix,
+    SPECTRUM_SIGNAL_MARGIN_DB, ServerEvent, SpectrumFrame, StateScope, StreamKind, SymbolFrame,
+    VideoData, VideoFrame, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
     phone::{POSE_BURST, POSE_RATE_HZ},
 };
 use tokio::sync::{broadcast, watch};
@@ -852,6 +852,7 @@ fn spawn_spectrum(
         let mut quant = vec![0u8; bins];
         let mut window = Vec::with_capacity(bins);
         let mut smoother = DbWindowSmoother::default();
+        let mut span_floor = SpanFloor::default();
         let mut throttle = FrameThrottle::new(fps);
 
         loop {
@@ -868,7 +869,8 @@ fn spawn_spectrum(
                         continue;
                     }
 
-                    decimate_max(&snap.db, &mut dec);
+                    let floor_db = span_floor.read(&snap.db).unwrap_or(f32::NEG_INFINITY);
+                    decimate_signal(&snap.db, floor_db + SPECTRUM_SIGNAL_MARGIN_DB, &mut dec);
                     let (db_min, db_max) = smoother.follow(adaptive_db_window(&dec, &mut window));
                     quantize_db(&dec, db_min, db_max, &mut quant);
 
@@ -880,6 +882,7 @@ fn spawn_spectrum(
                         span_hz: snap.span_hz,
                         db_min,
                         db_max,
+                        floor_db,
                         bins: &quant,
                     }
                     .encode();

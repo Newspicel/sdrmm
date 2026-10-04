@@ -13,6 +13,7 @@ export interface DbWindow {
 export interface TraceState {
   peak: Float32Array;
   average: Float32Array;
+  power: Float32Array;
   min: Float32Array;
   frames: number;
 }
@@ -83,6 +84,7 @@ export function newTraceState(bins: number): TraceState {
   return {
     peak: new Float32Array(bins).fill(Number.NEGATIVE_INFINITY),
     average: new Float32Array(bins),
+    power: new Float32Array(bins),
     min: new Float32Array(bins).fill(Number.POSITIVE_INFINITY),
     frames: 0,
   };
@@ -100,9 +102,12 @@ export function accumulateTraces(state: TraceState | null, db: Float32Array): Tr
     if (level < (next.min[i] ?? Number.POSITIVE_INFINITY)) {
       next.min[i] = level;
     }
-    next.average[i] = first
-      ? level
-      : (next.average[i] ?? level) + alpha * (level - (next.average[i] ?? level));
+    const power = 10 ** (level / 10);
+    const held = first
+      ? power
+      : (next.power[i] ?? power) + alpha * (power - (next.power[i] ?? power));
+    next.power[i] = held;
+    next.average[i] = 10 * Math.log10(held);
   }
   next.frames += 1;
   return next;

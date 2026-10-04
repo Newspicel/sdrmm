@@ -1,3 +1,5 @@
+import type { RowLevel } from "../gl/waterfall";
+import { SPECTRUM_SIGNAL_MARGIN_DB } from "../lib/limits";
 import type { SpectrumHistory } from "../lib/spectrum";
 import { type DbWindow, requantize, requantizeHistory } from "./spectrumTraces";
 
@@ -88,4 +90,19 @@ export function alignHistory(
     }
   }
   return out;
+}
+
+export function rowLevel(window: DbWindow, floorDb: number, at: number): RowLevel {
+  const spanDb = window.max - window.min;
+  const signalDb = floorDb + SPECTRUM_SIGNAL_MARGIN_DB;
+  if (!(spanDb > 0) || !Number.isFinite(signalDb)) {
+    return { signal: 0, spanDb: 0, at };
+  }
+  return { signal: (signalDb - window.min) / spanDb, spanDb, at };
+}
+
+export function historyLevels(history: SpectrumHistory, held: DbWindow | null): RowLevel[] {
+  return history.meta.map((row) =>
+    rowLevel(held ?? { min: row.dbMin, max: row.dbMax }, row.floorDb, row.at),
+  );
 }

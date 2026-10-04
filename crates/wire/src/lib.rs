@@ -125,9 +125,10 @@ pub use filter::{
 };
 pub use frame::{
     AudioFrame, FrameError, FrameHeader, FrameKind, FusionGridFrame, FusionGridOwned, HEADER_LEN,
-    IqFrame, PROTOCOL_VERSION, RangeDopplerFrame, RangeDopplerOwned, SpatialSpectrumFrame,
-    SpatialSpectrumOwned, SpectrumFrame, SurfaceFrame, SymbolFrame, SymbolPlane, VideoData,
-    VideoFrame, VisibilityFrame, VisibilityOwned, peek_header, typescript_frames,
+    IqFrame, PROTOCOL_VERSION, RangeDopplerFrame, RangeDopplerOwned, SPECTRUM_SIGNAL_MARGIN_DB,
+    SpatialSpectrumFrame, SpatialSpectrumOwned, SpectrumFrame, SurfaceFrame, SymbolFrame,
+    SymbolPlane, VideoData, VideoFrame, VisibilityFrame, VisibilityOwned, peek_header,
+    typescript_frames,
 };
 pub use fusion::{
     BearingSource, DfBearing, DfEstimate, DfFusionState, DfOtherPeak, DfStation, FusionDecay,

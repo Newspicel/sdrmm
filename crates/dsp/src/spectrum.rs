@@ -19,8 +19,13 @@ pub struct SpectrumAnalyzer {
 impl SpectrumAnalyzer {
     #[must_use]
     pub fn new(size: usize) -> Self {
+        Self::with_window(hann(size))
+    }
+
+    #[must_use]
+    pub fn with_window(window: Vec<f32>) -> Self {
+        let size = window.len();
         let fft = Transform::forward(size.max(1));
-        let window = hann(size);
         let inv_gain = 1.0 / coherent_gain(&window).max(f32::MIN_POSITIVE);
         Self {
             fft,
@@ -144,7 +149,7 @@ impl NoiseFloor {
     }
 }
 
-pub fn decimate_max(db: &[f32], out: &mut [f32]) {
+pub fn decimate_signal(db: &[f32], signal_db: f32, out: &mut [f32]) {
     let bins = out.len();
     assert!(bins > 0, "need at least one output bin");
     if db.is_empty() {
@@ -161,11 +166,48 @@ pub fn decimate_max(db: &[f32], out: &mut [f32]) {
     for (i, slot) in out.iter_mut().enumerate() {
         let start = i * len / bins;
         let end = ((i + 1) * len / bins).max(start + 1).min(len);
-        let mut peak = f32::NEG_INFINITY;
-        for &v in &db[start..end] {
-            peak = peak.max(v);
+        *slot = group_level(&db[start..end], signal_db);
+    }
+}
+
+fn group_level(group: &[f32], signal_db: f32) -> f32 {
+    let mut peak = f32::NEG_INFINITY;
+    let mut power = 0.0f32;
+    for &v in group {
+        peak = peak.max(v);
+        power += fast_db_to_power(v);
+    }
+    if peak >= signal_db {
+        peak
+    } else {
+        fast_power_db(power / group.len() as f32 + POWER_EPSILON)
+    }
+}
+
+const SPAN_FLOOR_HALF_BINS: usize = 48;
+const SPAN_FLOOR_STRIDE_BINS: usize = 8;
+const SPAN_FLOOR_PERCENTILE: f32 = 0.2;
+
+pub struct SpanFloor {
+    local: NoiseFloor,
+    curve: Vec<f32>,
+    scratch: Vec<f32>,
+}
+
+impl Default for SpanFloor {
+    fn default() -> Self {
+        Self {
+            local: NoiseFloor::new(SPAN_FLOOR_HALF_BINS, SPAN_FLOOR_STRIDE_BINS),
+            curve: Vec::new(),
+            scratch: Vec::new(),
         }
-        *slot = peak;
+    }
+}
+
+impl SpanFloor {
+    pub fn read(&mut self, db: &[f32]) -> Option<f32> {
+        self.local.estimate(db, &mut self.curve);
+        percentile(&self.curve, &mut self.scratch, SPAN_FLOOR_PERCENTILE)
     }
 }
 
@@ -313,12 +355,43 @@ mod tests {
     }
 
     #[test]
-    fn decimate_max_preserves_peaks() {
+    fn decimation_keeps_a_carrier_peak() {
         let mut db = vec![-100.0f32; 100];
         db[37] = -3.0;
         let mut out = vec![0.0f32; 10];
-        decimate_max(&db, &mut out);
+        decimate_signal(&db, -90.0, &mut out);
         assert_eq!(out[3], -3.0);
+    }
+
+    #[test]
+    fn decimation_keeps_the_noise_floor_where_it_was() {
+        let noise = exponential_power_db(4_096, -80.0, 0xD1CE);
+        let floor = SpanFloor::default().read(&noise).unwrap();
+        let mut out = vec![0.0f32; 256];
+        decimate_signal(&noise, floor + 10.0, &mut out);
+        let mean = out.iter().sum::<f32>() / out.len() as f32;
+        assert!((mean - -80.0).abs() < 1.0, "decimated floor read {mean}");
+    }
+
+    #[test]
+    fn the_floor_reads_mean_noise_beside_busy_channels() {
+        let mut db = exponential_power_db(4_096, -90.0, 0xF00D);
+        for cell in db.iter_mut().step_by(10) {
+            *cell = -30.0;
+        }
+        let floor = SpanFloor::default().read(&db).unwrap();
+        assert!((floor - -90.0).abs() < 1.5, "floor read {floor}");
+        assert_eq!(SpanFloor::default().read(&[f32::NEG_INFINITY; 4]), None);
+    }
+
+    #[test]
+    fn the_floor_looks_past_a_skirt_over_most_of_the_span() {
+        let mut db = exponential_power_db(4_096, -100.0, 0x5C1A);
+        for cell in &mut db[800..3_300] {
+            *cell += 8.0;
+        }
+        let floor = SpanFloor::default().read(&db).unwrap();
+        assert!((floor - -100.0).abs() < 1.5, "floor read {floor}");
     }
 
     fn position(db: f32, window: (f32, f32)) -> f32 {

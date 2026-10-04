@@ -1,6 +1,7 @@
 {
   "light_speed_m_s": 299792458.0,
   "band_seed_hz": 200000.0,
+  "spectrum_signal_margin_db": 10.0,
   "array": {
     "lanes": {
       "min": 2,

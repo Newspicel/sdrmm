@@ -12,7 +12,7 @@ use std::{
 use bytemuck::{Pod, Zeroable};
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
-use sdrmm_dsp::{coherent_gain, hann};
+use sdrmm_dsp::coherent_gain;
 use wgpu::util::DeviceExt;
 
 use crate::spectrum::SpectrumFrame;
@@ -190,7 +190,7 @@ struct Processor {
 impl Processor {
     fn new(context: Arc<Context>, size: usize) -> Result<Self, String> {
         let (size_u32, complex_bytes, power_bytes, limits) = validate_shape(&context, size)?;
-        let window = hann(size);
+        let window = crate::spectrum::display_window(size);
         let inv_gain = 1.0 / coherent_gain(&window).max(f32::MIN_POSITIVE);
         let (bits, bit_reversed, twiddles) = fft_tables(size);
         let data = buffer(
@@ -715,7 +715,7 @@ pub(crate) fn spectrum_is_faster(context: Arc<Context>, size: usize) -> bool {
 
 fn measure_spectrum(context: Arc<Context>, size: usize) -> Result<(Duration, Duration), String> {
     let mut gpu = Processor::new(context, size)?;
-    let mut cpu = sdrmm_dsp::SpectrumAnalyzer::new(size);
+    let mut cpu = crate::spectrum::cpu_analyzer(size);
     let input: Vec<_> = (0..size)
         .map(|index| {
             Complex::new(

@@ -5,7 +5,6 @@ export type AverageFrames = (typeof AVERAGE_CHOICES)[number];
 export const DEFAULT_AVERAGE: AverageFrames = 4;
 
 export class VideoAverage {
-  private power = new Float32Array(0);
   private out = new Float32Array(0);
   private primed = false;
 
@@ -18,17 +17,15 @@ export class VideoAverage {
       this.primed = false;
       return db;
     }
-    if (db.length !== this.power.length) {
-      this.power = new Float32Array(db.length);
+    if (db.length !== this.out.length) {
       this.out = new Float32Array(db.length);
       this.primed = false;
     }
     const weight = this.primed ? 1 / frames : 1;
     for (let i = 0; i < db.length; i++) {
-      const level = 10 ** ((db[i] ?? 0) / 10);
-      const held = (this.power[i] ?? 0) + (level - (this.power[i] ?? 0)) * weight;
-      this.power[i] = held;
-      this.out[i] = 10 * Math.log10(held + 1e-30);
+      const level = db[i] ?? 0;
+      const held = this.out[i] ?? level;
+      this.out[i] = held + (level - held) * weight;
     }
     this.primed = true;
     return this.out;

@@ -22,7 +22,9 @@ import { ReadoutHold } from "../../components/readoutHold";
 import {
   alignHistory,
   type FrameKey,
+  historyLevels,
   retuneAction,
+  rowLevel,
   seedRows,
 } from "../../components/spectrumAlign";
 import {
@@ -61,6 +63,7 @@ import { attachWaterfall, GRAPHICS_HELP, type WaterfallView } from "../../gl/wat
 import { bookmarksQuery } from "../../lib/api";
 import type { SpectrumFrame } from "../../lib/frame";
 import { heardHz, type SetLevels, useLevelStore } from "../../lib/levels";
+import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
 import { SPECTRUM_MAX_BINS, spectrumHub } from "../../lib/spectrum";
 import type { Bookmark, ChannelInfo, ChannelParams, DeviceSet, PatchNode } from "../../lib/types";
 import { useArrayTune } from "../../lib/useArrayTune";
@@ -127,6 +130,7 @@ interface FrameMeta {
   spanHz: number;
   dbMin: number;
   dbMax: number;
+  floorDb: number;
 }
 
 interface Gesture {
@@ -427,6 +431,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
         seedRows(past, frameRef.current, rangeRef.current),
         past.count,
         past.bins,
+        historyLevels(past, rangeRef.current),
       );
     }
     keyRef.current = frameRef.current === null ? null : frameKeyOf(frameRef.current);
@@ -460,6 +465,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
               alignHistory(rows, { centerHz: frame.centerHz, spanHz: frame.spanHz }, held),
               rows.count,
               rows.bins,
+              historyLevels(rows, held),
             );
             seeded = true;
           }
@@ -467,7 +473,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
       }
       if (!seeded) {
         rowRef.current = waterfallRow(frame, db, liveDbRef.current, held, rowRef.current);
-        rendererRef.current?.pushRow(rowRef.current);
+        rendererRef.current?.pushRow(rowRef.current, rowLevel(window, frame.floorDb, Date.now()));
       }
       tracesRef.current = accumulateTraces(tracesRef.current, db);
       densityRef.current?.add(db, viewRef.current, window);
@@ -567,7 +573,12 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     if (past.count === 0) {
       return;
     }
-    rendererRef.current?.seed(seedRows(past, frameRef.current, held), past.count, past.bins);
+    rendererRef.current?.seed(
+      seedRows(past, frameRef.current, held),
+      past.count,
+      past.bins,
+      historyLevels(past, held),
+    );
   };
 
   const scheduleReseed = (): void => {
@@ -834,7 +845,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
         style={{ top: bandRuler && plan !== null ? BAND_RULER_H : 0 }}
       >
         <span className="legend self-end font-mono text-[10.5px] text-right whitespace-pre text-plot-ink-dim">
-          {meta !== null && `${formatCentre(meta, view)}${formatRange(shownRange)}`}
+          {meta !== null && `${formatCentre(meta, view)}${formatFloor(meta.floorDb)}`}
           {range !== null && " · manual"}
         </span>
         <div
@@ -1256,6 +1267,7 @@ function metaOf(frame: SpectrumFrame): FrameMeta {
     spanHz: frame.spanHz,
     dbMin: frame.dbMin,
     dbMax: frame.dbMax,
+    floorDb: frame.floorDb,
   };
 }
 
@@ -1289,8 +1301,8 @@ function formatCentre(meta: FrameMeta, view: SpectrumView): string {
   return `${(centre / 1e6).toFixed(4)} MHz   ${span}`;
 }
 
-function formatRange(window: DbWindow): string {
-  return `   ${window.min.toFixed(0)}…${window.max.toFixed(0)} dBFS`;
+function formatFloor(floorDb: number): string {
+  return Number.isFinite(floorDb) ? `   floor ${floorDb.toFixed(0)} dBFS` : "";
 }
 
 function displayWindow(meta: FrameMeta | null, held: DbWindow | null): DbWindow {
@@ -1309,7 +1321,12 @@ function plotSource(
     return { frame: null, window: held ?? EMPTY_WINDOW };
   }
   return {
-    frame: { centerHz: frame.centerHz, spanHz: frame.spanHz, db: liveDb },
+    frame: {
+      centerHz: frame.centerHz,
+      spanHz: frame.spanHz,
+      signalDb: frame.floorDb + SPECTRUM_SIGNAL_MARGIN_DB,
+      db: liveDb,
+    },
     window: held ?? frameWindow(frame),
   };
 }

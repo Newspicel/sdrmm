@@ -43,6 +43,7 @@ function fakeSocket() {
         centerHz: 100e6,
         spanHz: 2e6,
         dbMin: window.dbMin,
+        floorDb: window.dbMin + 10,
         dbMax: window.dbMax,
         bins: Uint8Array.from(bins),
       }),

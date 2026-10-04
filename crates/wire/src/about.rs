@@ -32,7 +32,7 @@ pub struct Attribution {
     pub texts: Vec<String>,
 }
 
-pub const API_PROTOCOL: u32 = 1;
+pub const API_PROTOCOL: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AboutResponse {

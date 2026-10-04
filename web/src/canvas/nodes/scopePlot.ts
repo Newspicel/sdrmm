@@ -41,6 +41,7 @@ export interface PlotTrace {
 export interface PlotFrame {
   centerHz: number;
   spanHz: number;
+  signalDb: number;
   db: Float32Array;
 }
 
@@ -202,11 +203,11 @@ export function drawPlot(canvas: HTMLCanvasElement | null, options: PlotOptions)
   for (const trace of options.traces) {
     ctx.strokeStyle = token(TRACE_INK[trace.mode]);
     ctx.lineWidth = 1;
-    peakPath(ctx, tracePoints(trace.db, view, width, scratch), plotH, dbWindow);
+    linePath(ctx, tracePoints(trace.db, view, width, frame.signalDb, scratch), plotH, dbWindow);
     ctx.stroke();
   }
 
-  const points = tracePoints(frame.db, view, width, scratch);
+  const points = tracePoints(frame.db, view, width, frame.signalDb, scratch);
   const ink = token("plot-trace");
   ctx.fillStyle = ink;
   ctx.globalAlpha = BAND_FILL_ALPHA;
@@ -215,7 +216,7 @@ export function drawPlot(canvas: HTMLCanvasElement | null, options: PlotOptions)
   ctx.strokeStyle = ink;
   ctx.lineWidth = 1.25;
   ctx.globalAlpha = 1;
-  peakPath(ctx, points, plotH, dbWindow);
+  linePath(ctx, points, plotH, dbWindow);
   ctx.stroke();
   ctx.lineTo(width, plotH);
   ctx.lineTo(0, plotH);
@@ -277,16 +278,15 @@ function drawGrid(
 ): void {
   ctx.strokeStyle = token("plot-grid");
   ctx.fillStyle = token("plot-ink-dim");
-  ctx.textAlign = "left";
-  for (const db of decibelTicks(dbWindow.min, dbWindow.max, 4)) {
-    const y = Math.round(plotH * (1 - traceUnit(db, dbWindow))) + 0.5;
+  const levels = decibelTicks(dbWindow.min, dbWindow.max, 4).map((db) => ({
+    db,
+    y: Math.round(plotH * (1 - traceUnit(db, dbWindow))) + 0.5,
+  }));
+  for (const { y } of levels) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(width, y);
     ctx.stroke();
-    if (y > (offsetAxis ? 24 : 12) && y < plotH - 4) {
-      ctx.fillText(db.toFixed(0), 4, y - 7);
-    }
   }
 
   const visible = frame.spanHz * viewWidth(view);
@@ -306,9 +306,17 @@ function drawGrid(
     const label = offsetAxis
       ? formatOffset(tick.hz - frame.centerHz)
       : formatTick(tick.hz, visible);
-    ctx.fillText(label, x, height - AXIS_H / 2);
+    const half = ctx.measureText(label).width / 2;
+    if (x - half >= 2 && x + half <= width - 2) {
+      ctx.fillText(label, x, height - AXIS_H / 2);
+    }
   }
   ctx.textAlign = "left";
+  for (const { db, y } of levels) {
+    if (y > (offsetAxis ? 24 : 12) && y < plotH - 4) {
+      backedLabel(ctx, db.toFixed(0), 4, y - 7);
+    }
+  }
   if (offsetAxis) {
     ctx.fillText("dBFS", 4, 8);
     ctx.textAlign = "right";
@@ -335,6 +343,7 @@ export interface TracePoints {
   xs: Float32Array;
   low: Float32Array;
   high: Float32Array;
+  line: Float32Array;
   count: number;
 }
 
@@ -343,6 +352,7 @@ export function emptyPoints(): TracePoints {
     xs: new Float32Array(0),
     low: new Float32Array(0),
     high: new Float32Array(0),
+    line: new Float32Array(0),
     count: 0,
   };
 }
@@ -352,6 +362,7 @@ function ensure(points: TracePoints, size: number): void {
     points.xs = new Float32Array(size);
     points.low = new Float32Array(size);
     points.high = new Float32Array(size);
+    points.line = new Float32Array(size);
   }
 }
 
@@ -359,6 +370,7 @@ export function tracePoints(
   db: Float32Array,
   view: SpectrumView,
   width: number,
+  signalDb: number,
   points: TracePoints = emptyPoints(),
 ): TracePoints {
   const n = db.length;
@@ -371,7 +383,7 @@ export function tracePoints(
   if (last - first < width) {
     binPoints(db, first, last, width, points);
   } else {
-    pixelPoints(db, first, last, width, points);
+    pixelPoints(db, first, last, width, signalDb, points);
   }
   return points;
 }
@@ -392,6 +404,7 @@ function binPoints(
     points.xs[count] = ((i - first) / (last - first)) * width;
     points.low[count] = value;
     points.high[count] = value;
+    points.line[count] = value;
     count += 1;
   }
   points.count = count;
@@ -402,6 +415,7 @@ function pixelPoints(
   first: number,
   last: number,
   width: number,
+  signalDb: number,
   points: TracePoints,
 ): void {
   const n = db.length;
@@ -414,6 +428,7 @@ function pixelPoints(
     const hi = Math.min(n - 1, Math.max(lo, Math.ceil(to) - 1));
     let low = Number.POSITIVE_INFINITY;
     let high = Number.NEGATIVE_INFINITY;
+    let power = 0;
     for (let i = lo; i <= hi; i++) {
       const value = db[i] ?? Number.NEGATIVE_INFINITY;
       if (value < low) {
@@ -422,10 +437,12 @@ function pixelPoints(
       if (value > high) {
         high = value;
       }
+      power += 10 ** (value / 10);
     }
     points.xs[x] = x + 0.5;
     points.low[x] = low;
     points.high[x] = high;
+    points.line[x] = high >= signalDb ? high : 10 * Math.log10(power / (hi - lo + 1));
   }
   points.count = columns;
 }
@@ -434,16 +451,17 @@ function levelY(db: number, height: number, dbWindow: DbWindow): number {
   return (1 - traceUnit(db, dbWindow)) * height;
 }
 
-function peakPath(
+function linePath(
   ctx: CanvasRenderingContext2D,
   points: TracePoints,
   height: number,
   dbWindow: DbWindow,
+  levels: Float32Array = points.line,
 ): void {
   ctx.beginPath();
   for (let i = 0; i < points.count; i++) {
     const x = points.xs[i] ?? 0;
-    const y = levelY(points.high[i] ?? Number.NEGATIVE_INFINITY, height, dbWindow);
+    const y = levelY(levels[i] ?? Number.NEGATIVE_INFINITY, height, dbWindow);
     if (i === 0) {
       ctx.moveTo(x, y);
     } else {
@@ -458,12 +476,22 @@ function bandPath(
   height: number,
   dbWindow: DbWindow,
 ): void {
-  peakPath(ctx, points, height, dbWindow);
+  linePath(ctx, points, height, dbWindow, points.high);
   for (let i = points.count - 1; i >= 0; i--) {
     const x = points.xs[i] ?? 0;
     ctx.lineTo(x, levelY(points.low[i] ?? Number.NEGATIVE_INFINITY, height, dbWindow));
   }
   ctx.closePath();
+}
+
+function backedLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number): void {
+  const ink = ctx.fillStyle;
+  ctx.fillStyle = token("plot-bg");
+  ctx.globalAlpha = 0.85;
+  ctx.fillRect(x - 2, y - 6, ctx.measureText(text).width + 4, 12);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = ink;
+  ctx.fillText(text, x, y);
 }
 
 function formatOffset(hz: number): string {

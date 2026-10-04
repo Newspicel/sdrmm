@@ -12,7 +12,6 @@ use std::{
 use arc_swap::ArcSwap;
 use num_complex::Complex;
 use sdrmm_device::{DeviceError, MarkPoster, RxSink, SdrDevice, SinkItem, SweepPlan, SweepSink};
-use sdrmm_dsp::SpectrumAnalyzer as CpuSpectrumAnalyzer;
 use sdrmm_wire::{DeviceSettings, MAX_STREAMS, StreamScope, array::MAX_VIRTUAL_LANES};
 use tokio::sync::broadcast;
 
@@ -26,7 +25,7 @@ use crate::{
     array::{TapPort, TapWriter},
     capture_ring::{CaptureConsumer, CaptureProducer, capture_ring},
     publishing::spectrum::SpectrumPublisher,
-    spectrum::{SpectrumAnalyzer, SpectrumFrame, SpectrumPlan},
+    spectrum::{SpectrumAnalyzer, SpectrumFrame, SpectrumPlan, cpu_analyzer},
 };
 
 pub(crate) const RING_SECONDS: f64 = 0.1;
@@ -633,7 +632,7 @@ fn sweep_sink(
 ) -> Result<SweepSink, DeviceError> {
     let mut publisher = SpectrumPublisher::new(tx, FFT_SIZE)
         .map_err(|error| DeviceError::Io(format!("start sweep publisher: {error}")))?;
-    let mut analyzer = CpuSpectrumAnalyzer::new(FFT_SIZE);
+    let mut analyzer = cpu_analyzer(FFT_SIZE);
     let mut db = vec![0.0f32; FFT_SIZE];
     let mut seq = 0u32;
     let mut timestamp = 0u64;

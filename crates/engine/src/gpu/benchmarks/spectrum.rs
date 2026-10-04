@@ -16,7 +16,7 @@ impl Spectrum {
         let input = storage(&context, size * batches * 2);
         let data = storage(&context, size * batches * 2);
         let output = storage(&context, size * batches);
-        let window = hann(size);
+        let window = crate::spectrum::display_window(size);
         let inv_gain = 1.0 / coherent_gain(&window).max(f32::MIN_POSITIVE);
         let window = initialized(&context, &window);
         let params = initialized(

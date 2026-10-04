@@ -480,7 +480,12 @@ function draw(
     }
     const top = Math.ceil(peak / 10) * 10;
     drawPlot(canvas, {
-      frame: { centerHz: frame.centerHz, spanHz: frame.sampleRate, db },
+      frame: {
+        centerHz: frame.centerHz,
+        spanHz: frame.sampleRate,
+        signalDb: Number.NEGATIVE_INFINITY,
+        db,
+      },
       view: FULL_VIEW,
       window: { min: top - SPECTRUM_RANGE_DB, max: top },
       traces: [],

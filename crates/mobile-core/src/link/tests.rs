@@ -860,6 +860,7 @@ async fn an_unknown_frame_kind_is_noticed_once() {
         span_hz: 1e3,
         db_min: -100.0,
         db_max: 0.0,
+        floor_db: -90.0,
         bins: &[1, 2, 3],
     }
     .encode();

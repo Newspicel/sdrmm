@@ -16,6 +16,7 @@ pub(crate) fn frames() -> Vec<(&'static str, Vec<u8>)> {
                 span_hz: 48_000.0,
                 db_min: -120.0,
                 db_max: 0.0,
+                floor_db: -90.0,
                 bins: &[0, 127, 255],
             }
             .encode(),

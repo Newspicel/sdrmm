@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RowMeta, SpectrumHistory } from "../lib/spectrum";
-import { alignHistory, binShift, retuneAction } from "./spectrumAlign";
+import { alignHistory, binShift, historyLevels, retuneAction, rowLevel } from "./spectrumAlign";
 
 function history(rows: number[][], meta: Partial<RowMeta>[]): SpectrumHistory {
   const bins = rows[0]?.length ?? 0;
@@ -15,6 +15,7 @@ function history(rows: number[][], meta: Partial<RowMeta>[]): SpectrumHistory {
       spanHz: 2e6,
       dbMin: -100,
       dbMax: -20,
+      floorDb: -90,
       at: 0,
       ...m,
     })),
@@ -109,5 +110,23 @@ describe("alignHistory", () => {
     const past = { ...history([[9, 9, 9, 9]], []), meta: [] };
     const aligned = alignHistory(past, { centerHz: 100e6, spanHz: 2e6 }, null);
     expect([...aligned]).toEqual([9, 9, 9, 9]);
+  });
+});
+
+describe("rowLevel", () => {
+  it("places the signal threshold on the row's own scale", () => {
+    expect(rowLevel({ min: -100, max: -20 }, -90, 5)).toEqual({ signal: 0.25, spanDb: 80, at: 5 });
+  });
+
+  it("falls back to peaks without a floor", () => {
+    expect(rowLevel({ min: -100, max: -20 }, Number.NEGATIVE_INFINITY, 1).signal).toBe(0);
+  });
+
+  it("reads history rows against a held window", () => {
+    const levels = historyLevels(history([[1, 2]], [{ floorDb: -60, at: 9 }]), {
+      min: -80,
+      max: 0,
+    });
+    expect(levels).toEqual([{ signal: 0.375, spanDb: 80, at: 9 }]);
   });
 });

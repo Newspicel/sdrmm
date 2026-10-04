@@ -66,6 +66,7 @@ export interface RowMeta {
   spanHz: number;
   dbMin: number;
   dbMax: number;
+  floorDb: number;
   at: number;
 }
 
@@ -110,6 +111,7 @@ class History {
       spanHz: frame.spanHz,
       dbMin: frame.dbMin,
       dbMax: frame.dbMax,
+      floorDb: frame.floorDb,
       at: Date.now(),
     };
     this.write = (this.write + 1) % SPECTRUM_HISTORY_ROWS;

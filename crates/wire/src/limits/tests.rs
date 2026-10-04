@@ -107,6 +107,7 @@ fn only_an_open_bound_names_itself() {
     assert_eq!(json["spatial"]["band"]["bandwidth_hz"]["min"], 1000.0);
     assert_eq!(json["beamformer"]["nulls"], 3);
     assert_eq!(json["band_seed_hz"], 200_000.0);
+    assert_eq!(json["spectrum_signal_margin_db"], 10.0);
 }
 
 #[test]

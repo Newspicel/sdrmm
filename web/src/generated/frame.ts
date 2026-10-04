@@ -67,6 +67,7 @@ centerHz: number;
 spanHz: number;
 dbMin: number;
 dbMax: number;
+floorDb: number;
 bins: Uint8Array;
 }
 export function decodeSpectrum(buffer: ArrayBuffer): SpectrumFrame | null {
@@ -79,9 +80,10 @@ const centerHz = reader.f64();
 const spanHz = reader.f32();
 const dbMin = reader.f32();
 const dbMax = reader.f32();
+const floorDb = reader.f32();
 const bins = reader.bytes(reader.u16());
 if (!reader.complete) return null;
-return { streamId, seq, timestamp, centerHz, spanHz, dbMin, dbMax, bins };
+return { streamId, seq, timestamp, centerHz, spanHz, dbMin, dbMax, floorDb, bins };
 }
 export interface AudioFrame {
  streamId: number; seq: number; timestamp: bigint;

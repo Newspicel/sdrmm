@@ -76,6 +76,7 @@ impl<T: Copy + PartialOrd> Bounds<T> {
 pub struct Limits {
     pub light_speed_m_s: f64,
     pub band_seed_hz: f64,
+    pub spectrum_signal_margin_db: f32,
     pub array: ArrayLimits,
     pub fusion: FusionLimits,
     pub radar: RadarLimits,
@@ -366,6 +367,7 @@ pub const HUNT_LIMITS: HuntLimits = HuntLimits {
 pub const LIMITS: Limits = Limits {
     light_speed_m_s: LIGHT_SPEED_M_S,
     band_seed_hz: DEFAULT_BAND_HZ,
+    spectrum_signal_margin_db: crate::frame::SPECTRUM_SIGNAL_MARGIN_DB,
     array: ARRAY_LIMITS,
     fusion: FUSION_LIMITS,
     radar: RADAR_LIMITS,

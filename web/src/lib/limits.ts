@@ -13,6 +13,7 @@ export interface BandLimits {
 
 export const LIGHT_SPEED_M_S = limits.light_speed_m_s;
 export const BAND_SEED_HZ = limits.band_seed_hz;
+export const SPECTRUM_SIGNAL_MARGIN_DB = limits.spectrum_signal_margin_db;
 export const ARRAY_LIMITS = limits.array;
 export const FUSION_LIMITS = limits.fusion;
 export const RADAR_LIMITS = limits.radar;
