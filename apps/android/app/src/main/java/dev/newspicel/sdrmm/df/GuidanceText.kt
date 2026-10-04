@@ -24,6 +24,7 @@ object GuidanceText {
                 guidance.headingRelDeg?.let { Format.side(it) } ?: Format.angle(guidance.headingTrueDeg),
                 distance,
             )
+
             GuidanceKind.ESTIMATE -> resources.getString(R.string.guidance_approach, distance)
         }
     }
