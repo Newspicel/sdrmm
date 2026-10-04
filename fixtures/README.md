@@ -232,4 +232,5 @@ annotation records the source SHA-256, pinned upstream commit, and LGPL-2.1 lice
 
 Not IQ: 196,864 hard QPSK symbol bits, packed MSB first, from this receiver's demodulator on a
 2018 Meteor-M N2 pass on 137.9 MHz (72k QPSK). They hold VCDUs `09BF68` to `09BF73`: one full
-MCU row of APIDs 64, 65 and 68. `lrpt::tests::a_recorded_meteor_m2_row_decodes_cleanly` reads it.
+MCU row of APIDs 64, 65 and 68. The source IQ is sigidwiki's LRPT sample
+(`LRPT_16-29-02_137900kHz.wav`), which states no license. `lrpt::tests::a_recorded_meteor_m2_row_decodes_cleanly` reads it.

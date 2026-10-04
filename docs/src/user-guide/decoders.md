@@ -16,7 +16,7 @@ covers the modes that need more than a frequency.
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
 | Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager | |
 | Pictures and video | [SSTV](#sstv) | ATV | |
-| Weather and satellites | [WEFAX](#wefax), [NOAA APT](#weather-satellites), [Radiosonde](#radiosondes) | [Meteor LRPT](#weather-satellites) | |
+| Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
 | Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect) | | GNSS lab (GPS L1 C/A) |
 
