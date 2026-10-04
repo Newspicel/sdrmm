@@ -1,4 +1,3 @@
-import { Minus, Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { rxStreamCount, streamLabel } from "../canvas/graph";
 import { agcDelta, agcGainDb, agcModeDelta, laneAgc, radioAgc } from "../canvas/nodes/deviceNode";
@@ -6,7 +5,7 @@ import { useLevelStore } from "../lib/levels";
 import type { Capabilities, DeviceSet, ExtraSetting, GainStage, Range } from "../lib/types";
 import { forStream, useDevicePatch } from "../lib/useDevicePatch";
 import { AgcAuto, AutoToggle, agcTip } from "./AgcAuto";
-import { Button, Input } from "./BaseControls";
+import { Input } from "./BaseControls";
 import { Checkbox } from "./Checkbox";
 import {
   AUTO_FILTER,
@@ -29,27 +28,29 @@ import {
   spanOf,
   stageSettings,
 } from "./capabilities";
-import { FIELD, ICON_BTN_SM } from "./controls";
+import { FIELD } from "./controls";
 import { meterTone } from "./dbfs";
 import { isTunable, tuningRange } from "./dial";
 import { ChipField, Chips, ReadoutChip, SettingChip, ToggleChip } from "./face/Chips";
 import { GainMeter, MeterRow } from "./face/Meter";
 import { formatHz, formatSampleRate } from "./format";
-import { Icon } from "./Icon";
 import {
   allLanesGain,
+  inputOptions,
   laneGain,
   laneGains,
+  laneInputName,
   laneLayout,
   meterStage,
+  pickedInputs,
   rxStages,
   spreadOf,
-  steppedLanes,
   txStages,
 } from "./laneRows";
 import { NumberField } from "./NumberField";
 import { LOOP_SETTING } from "./playback";
 import { SearchableSelect } from "./SearchableSelect";
+import { SegmentedToggles } from "./Segmented";
 import { Select } from "./Select";
 import { Slider } from "./Slider";
 import { withCurrent } from "./selectOptions";
@@ -617,12 +618,22 @@ function GainLanes({
   const peaks = useLevelStore((state) => state.lanesByDeviceSet[active.id]);
   const clipping = new Set(active.clipping ?? []);
   const transmit = txStages(caps);
-  if (stages.length === 0 && transmit.length === 0 && !layout.stepper && laneLeads === undefined) {
+  if (stages.length === 0 && transmit.length === 0 && !layout.inputs && laneLeads === undefined) {
     return null;
   }
   const lanes = Array.from({ length: layout.lanes }, (_, stream) => stream);
   return (
     <div className="flex flex-col gap-px">
+      {layout.inputs && (
+        <span title="Receivers streamed. One gets the whole link" className="pb-1">
+          <SegmentedToggles
+            label="RX inputs"
+            values={pickedInputs(active.settings)}
+            options={inputOptions(caps)}
+            onChange={(rx_inputs) => patch({ rx_inputs })}
+          />
+        </span>
+      )}
       {layout.master && metered !== undefined && (
         <MasterRow
           active={active}
@@ -649,7 +660,11 @@ function GainLanes({
             heldBy={heldBy.get(stream)}
             lead={laneLeads?.[stream]}
             port={ports?.[stream]}
-            laneName={layout.perLane ? streamLabel("iq", stream, layout.lanes) : undefined}
+            laneName={
+              layout.perLane
+                ? (laneInputName(active, stream) ?? streamLabel("iq", stream, layout.lanes))
+                : undefined
+            }
             patch={patch}
           />
         ))}
@@ -784,13 +799,7 @@ function MasterRow({
   };
   return (
     <StageRow
-      label={
-        layout.stepper ? (
-          <LaneStepper caps={caps} patch={patch} />
-        ) : (
-          <span className="legend">All</span>
-        )
-      }
+      label={<span className="legend">All</span>}
       stage={stage}
       value={spread.mean}
       readout={spread.uniform ? undefined : "mixed"}
@@ -815,43 +824,6 @@ function MasterRow({
         patch(allLanesGain(caps, stage, value_db));
       }}
     />
-  );
-}
-
-function LaneStepper({ caps, patch }: { caps: Capabilities; patch: Patch }) {
-  const choices = caps.rx_stream_choices ?? [];
-  const current = caps.rx_streams ?? 1;
-  const step = (direction: number): void =>
-    patch({ rx_streams: steppedLanes(choices, current, direction) });
-  const first = Math.min(...choices);
-  const last = Math.max(...choices);
-  return (
-    <span
-      role="group"
-      aria-label="Lane count"
-      title="Receive lanes streamed. Fewer lanes get more rate each"
-      className="inline-flex h-5.5 items-center rounded-[3px] border border-line bg-well"
-    >
-      <Button
-        type="button"
-        className={ICON_BTN_SM}
-        aria-label="Fewer lanes"
-        disabled={current <= first}
-        onClick={() => step(-1)}
-      >
-        <Icon glyph={Minus} size={12} />
-      </Button>
-      <b className="min-w-4 text-center font-mono text-xs font-medium tabular-nums">{current}</b>
-      <Button
-        type="button"
-        className={ICON_BTN_SM}
-        aria-label="More lanes"
-        disabled={current >= last}
-        onClick={() => step(1)}
-      >
-        <Icon glyph={Plus} size={12} />
-      </Button>
-    </span>
   );
 }
 

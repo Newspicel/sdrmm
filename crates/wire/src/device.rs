@@ -806,7 +806,7 @@ pub struct Capabilities {
     #[serde(default)]
     pub retune_keeps_phase: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub rx_stream_choices: Vec<u32>,
+    pub rx_inputs: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, ToSchema)]
@@ -922,6 +922,15 @@ impl Capabilities {
     }
 
     #[must_use]
+    pub fn admits_rx_inputs(&self, inputs: &[u32]) -> bool {
+        !inputs.is_empty()
+            && inputs.windows(2).all(|pair| pair[0] < pair[1])
+            && inputs
+                .iter()
+                .all(|input| (*input as usize) < self.rx_inputs.len())
+    }
+
+    #[must_use]
     pub fn profile(&self) -> DeviceProfile {
         DeviceProfile {
             freq_ranges: self.freq_ranges.clone(),
@@ -1011,7 +1020,7 @@ pub struct DeviceSettings {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub streams: Vec<StreamSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rx_streams: Option<u32>,
+    pub rx_inputs: Option<Vec<u32>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -1098,8 +1107,8 @@ impl DeviceSettings {
         if delta.agc.is_some() {
             self.agc.clone_from(&delta.agc);
         }
-        if delta.rx_streams.is_some() {
-            self.rx_streams = delta.rx_streams;
+        if delta.rx_inputs.is_some() {
+            self.rx_inputs.clone_from(&delta.rx_inputs);
         }
         merge_gains(&mut self.gains, &delta.gains);
         for extra in &delta.extra {
@@ -1189,9 +1198,10 @@ impl DeviceSettings {
                         || stream.agc.is_some()
                 })
                 .collect(),
-            rx_streams: self
-                .rx_streams
-                .filter(|lanes| capabilities.rx_stream_choices.contains(lanes)),
+            rx_inputs: self
+                .rx_inputs
+                .clone()
+                .filter(|inputs| capabilities.admits_rx_inputs(inputs)),
         }
     }
 
@@ -1354,7 +1364,7 @@ mod tests {
             coherence: Coherence::None,
             noise_source: NoiseSource::None,
             retune_keeps_phase: false,
-            rx_stream_choices: Vec::new(),
+            rx_inputs: Vec::new(),
         }
     }
 
@@ -1927,17 +1937,17 @@ mod tests {
     }
 
     #[test]
-    fn a_lane_count_and_each_lanes_own_agc_survive_replay() {
+    fn the_picked_inputs_and_each_lanes_own_agc_survive_replay() {
         let mut capabilities = tuner(70e6, 6e9);
         capabilities.agc = Agc::Switch;
         capabilities.rx_streams = 2;
-        capabilities.rx_stream_choices = vec![1, 2];
+        capabilities.rx_inputs = vec!["RX1".to_string(), "RX2".to_string()];
         capabilities.per_stream = StreamScope {
             agc: true,
             ..StreamScope::default()
         };
         let stored = DeviceSettings {
-            rx_streams: Some(1),
+            rx_inputs: Some(vec![1]),
             streams: vec![StreamSettings {
                 stream: 1,
                 agc: Some(AgcSetting::off()),
@@ -1946,15 +1956,27 @@ mod tests {
             ..DeviceSettings::default()
         };
         let replayed = stored.supported_by(&capabilities);
-        assert_eq!(replayed.rx_streams, Some(1));
+        assert_eq!(replayed.rx_inputs, Some(vec![1]));
         assert_eq!(replayed.streams, stored.streams);
 
-        capabilities.rx_stream_choices.clear();
+        capabilities.rx_inputs.clear();
         assert_eq!(
-            stored.supported_by(&capabilities).rx_streams,
+            stored.supported_by(&capabilities).rx_inputs,
             None,
-            "a radio with a fixed lane count takes none"
+            "a radio with fixed inputs takes none"
         );
+    }
+
+    #[test]
+    fn a_pick_names_inputs_the_radio_has_once_each_in_order() {
+        let mut capabilities = tuner(70e6, 6e9);
+        capabilities.rx_inputs = vec!["RX1".to_string(), "RX2".to_string()];
+        assert!(capabilities.admits_rx_inputs(&[1]));
+        assert!(capabilities.admits_rx_inputs(&[0, 1]));
+        assert!(!capabilities.admits_rx_inputs(&[]));
+        assert!(!capabilities.admits_rx_inputs(&[1, 0]));
+        assert!(!capabilities.admits_rx_inputs(&[1, 1]));
+        assert!(!capabilities.admits_rx_inputs(&[2]));
     }
 
     #[test]

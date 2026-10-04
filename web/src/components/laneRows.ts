@@ -2,19 +2,20 @@ import { rxStreamCount } from "../canvas/graph";
 import type { Capabilities, DeviceSet, DeviceSettings, GainStage } from "../lib/types";
 import { forStream } from "../lib/useDevicePatch";
 import { agcStageIndex, isSwitch } from "./capabilities";
+import type { Options } from "./controls";
 
 export interface LaneLayout {
   lanes: number;
   perLane: boolean;
   master: boolean;
-  stepper: boolean;
+  inputs: boolean;
 }
 
 export function laneLayout(caps: Capabilities): LaneLayout {
   const streams = rxStreamCount(caps);
   const perLane = caps.per_stream?.gain === true && streams > 1;
-  const stepper = (caps.rx_stream_choices?.length ?? 0) > 1;
-  return { lanes: perLane ? streams : 1, perLane, master: perLane || stepper, stepper };
+  const inputs = (caps.rx_inputs?.length ?? 0) > 1;
+  return { lanes: perLane ? streams : 1, perLane, master: perLane, inputs };
 }
 
 export function rxStages(caps: Capabilities): GainStage[] {
@@ -83,13 +84,15 @@ export function laneGain(
   return { streams: [{ stream, gains: [{ stage: stage.name, value_db }] }] };
 }
 
-export function steppedLanes(
-  choices: readonly number[],
-  current: number,
-  direction: number,
-): number {
-  const sorted = choices.toSorted((a, b) => a - b);
-  const at = Math.max(0, sorted.indexOf(current));
-  const next = Math.min(sorted.length - 1, Math.max(0, at + direction));
-  return sorted[next] ?? current;
+export function inputOptions(caps: Capabilities): Options<number> {
+  return (caps.rx_inputs ?? []).map((name, input) => ({ value: input, label: name }));
+}
+
+export function pickedInputs(settings: DeviceSettings): number[] {
+  return settings.rx_inputs ?? [0];
+}
+
+export function laneInputName(set: DeviceSet, stream: number): string | undefined {
+  const input = set.settings.rx_inputs?.[stream];
+  return input === undefined ? undefined : set.capabilities.rx_inputs?.[input];
 }

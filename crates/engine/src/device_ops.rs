@@ -822,12 +822,12 @@ impl Engine {
                 "the radio is sweeping in firmware; stop the scan first".to_string(),
             ));
         }
-        if delta.rx_streams.is_some() && !self.arrays_on(ds).is_empty() {
+        if delta.rx_inputs.is_some() && !self.arrays_on(ds).is_empty() {
             return Err(EngineError::Device(DeviceError::InUse(
                 "an Array holds this radio's lanes; remove it first".to_string(),
             )));
         }
-        let lanes_before = self.lanes_of(ds);
+        let receivers_before = self.receivers_of(ds);
         let (runtime, hardware, _rate_guard) = {
             let mut inner = self.lock();
             let state = inner
@@ -955,7 +955,7 @@ impl Engine {
         for handle in dead {
             handle.shutdown();
         }
-        if self.lanes_of(ds) != lanes_before
+        if self.receivers_of(ds) != receivers_before
             && let Err(error) = self.restart_lanes(ds)
         {
             self.mark_device_fault(ds, DeviceError::Io(format!("lane restart: {error}")));
@@ -966,11 +966,13 @@ impl Engine {
         Ok(patched)
     }
 
-    fn lanes_of(&self, ds: u32) -> Option<u32> {
-        self.lock()
-            .device_sets
-            .get(&ds)
-            .map(|state| state.capabilities.rx_streams)
+    fn receivers_of(&self, ds: u32) -> Option<(u32, Option<Vec<u32>>)> {
+        self.lock().device_sets.get(&ds).map(|state| {
+            (
+                state.capabilities.rx_streams,
+                state.settings.rx_inputs.clone(),
+            )
+        })
     }
 
     fn note_refusal(&self, ds: u32, hardware: &DeviceSettings, error: Option<&DeviceError>) {
@@ -1002,11 +1004,8 @@ impl DeviceSetState {
         delta: &DeviceSettings,
     ) -> Result<(DeviceSettings, bool), EngineError> {
         let hardware = delta.to_hardware();
-        if let Some(lanes) = delta
-            .rx_streams
-            .filter(|lanes| *lanes != self.capabilities.rx_streams)
-        {
-            self.validate_lane_change(lanes)?;
+        if let Some(inputs) = &delta.rx_inputs {
+            self.validate_inputs(inputs)?;
         }
         validate_streams(&self.hardware_capabilities(), &hardware)?;
         let rate_change = delta
@@ -1018,13 +1017,14 @@ impl DeviceSetState {
         Ok((hardware, rate_change))
     }
 
-    fn validate_lane_change(&self, lanes: u32) -> Result<(), EngineError> {
-        if !self.capabilities.rx_stream_choices.contains(&lanes) {
+    fn validate_inputs(&self, inputs: &[u32]) -> Result<(), EngineError> {
+        if !self.capabilities.admits_rx_inputs(inputs) {
             return Err(EngineError::Device(DeviceError::Unsupported(format!(
-                "this radio streams {:?} lanes, got {lanes}",
-                self.capabilities.rx_stream_choices
+                "this radio receives on {:?}, got inputs {inputs:?}",
+                self.capabilities.rx_inputs
             ))));
         }
+        let lanes = inputs.len() as u32;
         let busy = self
             .channels
             .iter()

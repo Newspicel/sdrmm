@@ -94,7 +94,7 @@ fn empty_capabilities() -> Capabilities {
         coherence: sdrmm_wire::Coherence::None,
         noise_source: sdrmm_wire::NoiseSource::None,
         retune_keeps_phase: false,
-        rx_stream_choices: Vec::new(),
+        rx_inputs: Vec::new(),
     }
 }
 
@@ -572,7 +572,7 @@ impl DeviceDriver for RefusedSweepDriver {
                 hardware_sweep: true,
                 coherence: sdrmm_wire::Coherence::None,
                 noise_source: sdrmm_wire::NoiseSource::None,
-                rx_stream_choices: Vec::new(),
+                rx_inputs: Vec::new(),
                 ..empty_capabilities()
             },
             settings: DeviceSettings {
@@ -1143,7 +1143,7 @@ fn managed_caps() -> Capabilities {
         hardware_sweep: false,
         coherence: sdrmm_wire::Coherence::None,
         noise_source: sdrmm_wire::NoiseSource::None,
-        rx_stream_choices: Vec::new(),
+        rx_inputs: Vec::new(),
         ..tuner_caps()
     }
 }

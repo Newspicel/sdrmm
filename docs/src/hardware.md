@@ -222,7 +222,8 @@ Empty Device nodes look for a board at `ant.local`, `192.168.1.10`, `pluto.local
 `192.168.2.1`; enter any other address in the **Network** tab. If nothing is found,
 `ping 192.168.1.10`: no answer means the cable or the computer's address.
 
-Ethernet carries far more than USB 2.0, and two lanes split the link. The E310 locks its antenna
+Ethernet carries far more than USB 2.0, and two lanes split the link. The **RX1** and **RX2**
+toggles pick which receivers stream, one or both. The E310 locks its antenna
 and TX ports in firmware, so those menus are hidden. The other controls are the
 [AD936x ones](#plutosdr-and-other-ad936x-boards).
 

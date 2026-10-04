@@ -730,7 +730,7 @@ mod tests {
             coherence: crate::device::Coherence::None,
             noise_source: crate::device::NoiseSource::None,
             retune_keeps_phase: false,
-            rx_stream_choices: Vec::new(),
+            rx_inputs: Vec::new(),
         }
         .profile()
     }

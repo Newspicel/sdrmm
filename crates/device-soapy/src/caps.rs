@@ -239,7 +239,7 @@ pub(crate) fn capabilities(directional: DirectionalCapabilities) -> Capabilities
         coherence,
         noise_source: sdrmm_wire::NoiseSource::None,
         retune_keeps_phase: false,
-        rx_stream_choices: Vec::new(),
+        rx_inputs: Vec::new(),
     }
 }
 

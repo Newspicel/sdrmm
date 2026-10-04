@@ -256,8 +256,7 @@ impl Ad936xDevice {
             capabilities.duplex = Duplex::Half;
         }
         let mut settings = apply::read_settings(&client, &capabilities, &front, &layout);
-        settings.rx_streams =
-            (!capabilities.rx_stream_choices.is_empty()).then_some(capabilities.rx_streams);
+        settings.rx_inputs = (!capabilities.rx_inputs.is_empty()).then(|| vec![0]);
         tracing::info!(
             radio = context
                 .attribute("hw_model")
@@ -282,8 +281,8 @@ impl Ad936xDevice {
     }
 
     fn apply_all(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
-        if let Some(lanes) = settings.rx_streams {
-            self.stream_lanes(lanes)?;
+        if let Some(inputs) = &settings.rx_inputs {
+            self.receive_on(inputs)?;
         }
         let (front, gains) = split_gains(settings);
         self.apply_planned(&front)?;
@@ -360,22 +359,25 @@ impl Ad936xDevice {
             .ok_or_else(|| DeviceError::Io(format!("{port} gain reads {text:?}")))
     }
 
-    fn stream_lanes(&mut self, lanes: u32) -> Result<(), DeviceError> {
-        if lanes == self.capabilities.rx_streams {
+    fn receive_on(&mut self, inputs: &[u32]) -> Result<(), DeviceError> {
+        if self.settings.rx_inputs.as_deref() == Some(inputs) {
             return Ok(());
         }
-        if !self.capabilities.rx_stream_choices.contains(&lanes) {
+        let first = inputs.first().copied().unwrap_or_default();
+        let contiguous = inputs
+            .iter()
+            .copied()
+            .eq(first..first + inputs.len() as u32);
+        if !self.capabilities.admits_rx_inputs(inputs) || !contiguous {
             return Err(DeviceError::Unsupported(format!(
-                "this radio streams {:?} lanes, got {lanes}",
-                self.capabilities.rx_stream_choices
+                "this radio receives on {:?}, got inputs {inputs:?}",
+                self.capabilities.rx_inputs
             )));
         }
-        caps::stream_lanes(
-            &mut self.capabilities,
-            lanes,
-            self.layout.tx_streams() as u32,
-        );
-        self.settings.rx_streams = Some(lanes);
+        let lanes = inputs.len() as u32;
+        caps::stream_lanes(&mut self.capabilities, lanes, &self.layout);
+        self.layout.rx_input = first as usize;
+        self.settings.rx_inputs = Some(inputs.to_vec());
         self.settings.streams.retain(|lane| lane.stream < lanes);
         self.reread();
         Ok(())
@@ -448,6 +450,7 @@ impl SdrDevice for Ad936xDevice {
         let radio = Arc::new(RxRadio::new(
             self.source.clone(),
             stream,
+            self.layout.rx_input,
             lanes,
             self.rate.clone(),
         ));

@@ -2766,7 +2766,7 @@ export interface components {
             per_stream?: components["schemas"]["StreamScope"];
             ppm?: boolean;
             retune_keeps_phase?: boolean;
-            rx_stream_choices?: number[];
+            rx_inputs?: string[];
             /** Format: int32 */
             rx_streams?: number;
             /**
@@ -4182,8 +4182,7 @@ export interface components {
             offset_hz?: number | null;
             /** Format: double */
             ppm?: number | null;
-            /** Format: int32 */
-            rx_streams?: number | null;
+            rx_inputs?: number[] | null;
             /** Format: double */
             sample_rate?: number | null;
             streams?: components["schemas"]["StreamSettings"][];

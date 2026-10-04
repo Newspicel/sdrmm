@@ -30,6 +30,7 @@ pub(crate) struct Layout {
     pub(crate) tx: Option<Stream>,
     pub(crate) rx_ports: Vec<String>,
     pub(crate) tx_ports: Vec<String>,
+    pub(crate) rx_input: usize,
 }
 
 /// One direction's sample buffer: the device that carries it and the shape of its scan elements.
@@ -47,11 +48,12 @@ impl Stream {
         self.channels.len() / 2
     }
 
-    /// The scan elements of the first `lanes` lanes, which is what the enabled mask is built from.
-    pub(crate) fn elements(&self, lanes: usize) -> Vec<u32> {
+    /// The scan elements the enabled mask is built from.
+    pub(crate) fn elements(&self, first: usize, lanes: usize) -> Vec<u32> {
         self.channels
             .iter()
             .copied()
+            .skip(first.saturating_mul(2))
             .take(lanes.saturating_mul(2))
             .collect()
     }
@@ -79,6 +81,7 @@ impl Layout {
             tx: stream(context, true),
             rx_ports: ports(phy, false),
             tx_ports: ports(phy, true),
+            rx_input: 0,
         };
         if layout.rx_streams() == 0 {
             return Err(DeviceError::Unsupported(format!(
@@ -97,9 +100,20 @@ impl Layout {
         lanes(self.tx.as_ref(), &self.tx_ports)
     }
 
-    /// The transceiver channel that carries one lane's gain, port and squelch settings.
+    /// The transceiver channel that carries one lane's gain and gain mode.
     pub(crate) fn port(&self, output: bool, stream: usize) -> Option<&str> {
-        self.ports(output).get(stream).map(String::as_str)
+        let ports = self.ports(output);
+        if stream >= ports.len() {
+            return None;
+        }
+        let shift = if output { 0 } else { self.rx_input };
+        ports
+            .get((stream + shift) % ports.len())
+            .map(String::as_str)
+    }
+
+    pub(crate) fn shared_port(&self, output: bool) -> Option<&str> {
+        self.ports(output).first().map(String::as_str)
     }
 
     /// The transceiver channels of one direction, in lane order.
@@ -273,6 +287,21 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_lane_on_the_second_input_is_carried_by_the_second_receiver() {
+        let mut layout = Layout::read(&two_by_two()).expect("layout");
+        layout.rx_input = 1;
+        assert_eq!(layout.port(false, 0), Some("voltage1"));
+        assert_eq!(layout.port(false, 1), Some("voltage0"));
+        assert_eq!(layout.port(false, 2), None);
+        assert_eq!(
+            layout.port(true, 0),
+            Some("voltage0"),
+            "transmit lanes stay put"
+        );
+        assert_eq!(layout.shared_port(false), Some("voltage0"));
+    }
+
+    #[test]
     fn the_aux_converters_are_not_mistaken_for_lanes() {
         let layout = Layout::read(&two_by_two()).expect("layout");
         assert!(
@@ -297,8 +326,9 @@ pub(crate) mod tests {
         assert_eq!(rx.device, "cf-ad9361-lpc");
         assert_eq!(rx.lanes(), 2);
         assert_eq!(rx.scan_total, 4);
-        assert_eq!(rx.elements(1), vec![0, 1]);
-        assert_eq!(rx.elements(2), vec![0, 1, 2, 3]);
+        assert_eq!(rx.elements(0, 1), vec![0, 1]);
+        assert_eq!(rx.elements(1, 1), vec![2, 3]);
+        assert_eq!(rx.elements(0, 2), vec![0, 1, 2, 3]);
         assert_eq!(rx.sample_bytes(1), 4);
         assert_eq!(rx.sample_bytes(2), 8);
         assert_eq!(rx.format.bits, 12);

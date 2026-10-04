@@ -60,7 +60,7 @@ fn tuning(args: &NetCapture, gain_stage: Option<&str>, has_agc: bool) -> DeviceS
     DeviceSettings {
         center_hz: Some(args.center),
         sample_rate: args.rate,
-        rx_streams: (args.stream > 0).then_some(args.stream + 1),
+        rx_inputs: (args.stream > 0).then(|| (0..=args.stream).collect()),
         agc: has_agc.then(|| AgcSetting::switched(args.gain.is_none())),
         gains,
         ..DeviceSettings::default()

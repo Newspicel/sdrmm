@@ -9499,12 +9499,10 @@
           "retune_keeps_phase": {
             "type": "boolean"
           },
-          "rx_stream_choices": {
+          "rx_inputs": {
             "type": "array",
             "items": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
+              "type": "string"
             }
           },
           "rx_streams": {
@@ -14982,13 +14980,16 @@
             ],
             "format": "double"
           },
-          "rx_streams": {
+          "rx_inputs": {
             "type": [
-              "integer",
+              "array",
               "null"
             ],
-            "format": "int32",
-            "minimum": 0
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
           },
           "sample_rate": {
             "type": [

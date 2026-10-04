@@ -56,6 +56,7 @@ const fn gcd(a: usize, b: usize) -> usize {
 pub(crate) struct RxRadio {
     source: Source,
     stream: Stream,
+    first: usize,
     lanes: usize,
     samples: usize,
     rate: LiveRate,
@@ -73,11 +74,18 @@ impl std::fmt::Debug for RxRadio {
 }
 
 impl RxRadio {
-    pub(crate) fn new(source: Source, stream: Stream, lanes: usize, rate: LiveRate) -> Self {
+    pub(crate) fn new(
+        source: Source,
+        stream: Stream,
+        first: usize,
+        lanes: usize,
+        rate: LiveRate,
+    ) -> Self {
         let samples = buffer_samples(rate.get(), stream.sample_bytes(lanes));
         Self {
             source,
             stream,
+            first,
             lanes,
             samples,
             rate,
@@ -98,12 +106,13 @@ impl CaptureRadio for RxRadio {
         let mut link = Link::new(self.source.open()?);
         let stopper = link.stopper();
         set_remote_timeout(&mut link, REMOTE_TIMEOUT)?;
-        let elements = self.stream.elements(self.lanes);
+        let elements = self.stream.elements(self.first, self.lanes);
         let mask = mask(&elements, self.stream.scan_total);
         open_buffer(&mut link, &self.stream.device, self.samples, &mask)?;
         *lock(&self.armed) = Some(stopper.clone());
         tracing::debug!(
             device = self.stream.device,
+            first = self.first,
             lanes = self.lanes,
             samples = self.samples,
             "ad936x receive buffer opened"

@@ -171,7 +171,7 @@ fn plan_rate(
             "sample_rate {rate} Hz is outside what this radio converts"
         )));
     }
-    let port = rx_port(layout, 0)?;
+    let port = shared_rx_port(layout)?;
     writes.push(Write::channel(
         false,
         port,
@@ -216,7 +216,7 @@ fn plan_bandwidth(
     }
     writes.push(Write::channel(
         false,
-        rx_port(layout, 0)?,
+        shared_rx_port(layout)?,
         RF_BANDWIDTH,
         whole(hz),
     ));
@@ -337,7 +337,7 @@ fn plan_antenna(
     }
     writes.push(Write::channel(
         false,
-        rx_port(layout, 0)?,
+        shared_rx_port(layout)?,
         RF_PORT_SELECT,
         antenna.to_string(),
     ));
@@ -412,7 +412,7 @@ fn plan_extra(
             QUADRATURE | RF_DC | BB_DC => {
                 writes.push(Write::channel(
                     false,
-                    rx_port(layout, 0)?,
+                    shared_rx_port(layout)?,
                     tracking_attr(&extra.name),
                     u8::from(flag(extra)?).to_string(),
                 ));
@@ -472,6 +472,12 @@ fn rx_port(layout: &Layout, lane: usize) -> Result<&str, DeviceError> {
         .ok_or_else(|| DeviceError::Unsupported(format!("this radio has no receive lane {lane}")))
 }
 
+fn shared_rx_port(layout: &Layout) -> Result<&str, DeviceError> {
+    layout
+        .shared_port(false)
+        .ok_or_else(|| DeviceError::Unsupported("this radio has no receive port".to_string()))
+}
+
 fn snapped(gains: &[GainValue], capabilities: &Capabilities) -> Vec<GainValue> {
     gains
         .iter()
@@ -507,7 +513,7 @@ pub(crate) fn read_settings(
     layout: &Layout,
 ) -> DeviceSettings {
     let phy = layout.phy.as_str();
-    let rx = layout.port(false, 0);
+    let rx = layout.shared_port(false);
     let read = |direction, channel: &str, attr: &str| {
         client
             .read_channel_attr(phy, direction, channel, attr)
@@ -625,7 +631,7 @@ fn read_extra(
     layout: &Layout,
     read: &dyn Fn(Direction, &str, &str) -> Option<String>,
 ) -> Vec<ExtraValue> {
-    let rx = layout.port(false, 0);
+    let rx = layout.shared_port(false);
     capabilities
         .extra
         .iter()
@@ -672,7 +678,7 @@ mod tests {
 
     fn both_lanes(front: &crate::caps::Front, layout: &crate::layout::Layout) -> Capabilities {
         let mut capabilities = capabilities(front, layout);
-        stream_lanes(&mut capabilities, 2, 2);
+        stream_lanes(&mut capabilities, 2, layout);
         capabilities
     }
 
@@ -829,6 +835,46 @@ mod tests {
                 ..DeviceSettings::default()
             })
             .contains("share one antenna")
+        );
+    }
+
+    #[test]
+    fn the_second_input_takes_lane_gains_and_leaves_shared_settings_on_the_first() {
+        let mut layout = crate::layout::tests::two_by_two_layout();
+        layout.rx_input = 1;
+        let front = front();
+        let capabilities = capabilities(&front, &layout);
+        let delta = DeviceSettings {
+            antenna: Some("B_BALANCED".to_string()),
+            agc: Some(AgcSetting::off()),
+            ..DeviceSettings::default()
+        };
+        let (_, writes) = plan(
+            &delta,
+            &capabilities,
+            &front,
+            &layout,
+            &DeviceSettings::default(),
+        )
+        .expect("planned");
+        assert_eq!(
+            writes,
+            vec![
+                channel(false, "voltage0", RF_PORT_SELECT, "B_BALANCED"),
+                channel(false, "voltage1", GAIN_CONTROL_MODE, "manual"),
+                channel(false, "voltage0", GAIN_CONTROL_MODE, "manual"),
+            ]
+        );
+        let read = |_: Direction, channel: &str, attr: &str| match attr {
+            HARDWAREGAIN => Some(format!(
+                "{}.000000 dB",
+                if channel == "voltage1" { 20 } else { 40 }
+            )),
+            _ => None,
+        };
+        assert_eq!(
+            read_lane_gains(&capabilities, &layout, 0, &read)[0].value_db,
+            20.0
         );
     }
 

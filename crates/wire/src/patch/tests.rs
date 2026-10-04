@@ -62,7 +62,7 @@ fn capabilities(duplex: Duplex, rx_streams: u32, tx_streams: u32) -> Capabilitie
         coherence: crate::device::Coherence::None,
         noise_source: crate::device::NoiseSource::None,
         retune_keeps_phase: false,
-        rx_stream_choices: Vec::new(),
+        rx_inputs: Vec::new(),
     }
 }
 

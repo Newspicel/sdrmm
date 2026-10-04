@@ -75,7 +75,7 @@ pub(crate) fn capabilities() -> Capabilities {
         coherence: Coherence::None,
         noise_source: sdrmm_wire::NoiseSource::None,
         retune_keeps_phase: false,
-        rx_stream_choices: Vec::new(),
+        rx_inputs: Vec::new(),
     }
 }
 
@@ -209,7 +209,7 @@ pub(crate) fn settings_from_config(config: &Config) -> DeviceSettings {
         ],
         extra: Vec::new(),
         streams: Vec::new(),
-        rx_streams: None,
+        rx_inputs: None,
     }
 }
 

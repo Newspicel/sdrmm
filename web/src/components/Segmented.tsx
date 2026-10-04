@@ -59,3 +59,61 @@ export function Segmented<T extends string | number>({
     </ToggleGroup>
   );
 }
+
+export function SegmentedToggles<T extends string | number>({
+  label,
+  values,
+  options,
+  onChange,
+}: {
+  label: string;
+  values: readonly T[];
+  options: Options<T>;
+  onChange: (values: T[]) => void;
+}) {
+  return (
+    <ToggleGroup
+      multiple
+      data-hotkeys="off"
+      aria-label={label}
+      className={`${WELL} w-fit`}
+      value={values.map(String)}
+      onValueChange={(next) => {
+        const picked = keptOn(options, next);
+        if (picked.length > 0) {
+          onChange(picked);
+        }
+      }}
+    >
+      {options.map((option) => {
+        const last = isLastOn(values, option.value);
+        return (
+          <Toggle
+            key={String(option.value)}
+            value={String(option.value)}
+            title={last ? "Last one stays on" : option.title}
+            disabled={option.disabled === true || last}
+            className={(state) =>
+              `${segment(state.pressed)} tabular-nums ${last ? "cursor-default" : ""}`
+            }
+          >
+            {option.label}
+          </Toggle>
+        );
+      })}
+    </ToggleGroup>
+  );
+}
+
+export function keptOn<T extends string | number>(
+  options: Options<T>,
+  pressed: readonly unknown[],
+): T[] {
+  return options
+    .filter((option) => option.disabled !== true && pressed.includes(String(option.value)))
+    .map((option) => option.value);
+}
+
+export function isLastOn<T extends string | number>(values: readonly T[], value: T): boolean {
+  return values.length === 1 && values[0] === value;
+}

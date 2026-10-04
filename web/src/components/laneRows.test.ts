@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { Capabilities, DeviceSet, GainStage } from "../lib/types";
 import {
   allLanesGain,
+  inputOptions,
   laneGain,
   laneGains,
+  laneInputName,
   laneLayout,
   meterStage,
+  pickedInputs,
   rxStages,
   spreadOf,
-  steppedLanes,
   txStages,
 } from "./laneRows";
 
@@ -52,7 +54,7 @@ describe("laneLayout", () => {
       lanes: 1,
       perLane: false,
       master: false,
-      stepper: false,
+      inputs: false,
     });
   });
 
@@ -61,7 +63,7 @@ describe("laneLayout", () => {
       lanes: 5,
       perLane: true,
       master: true,
-      stepper: false,
+      inputs: false,
     });
   });
 
@@ -69,11 +71,11 @@ describe("laneLayout", () => {
     expect(laneLayout(capabilities({ rx_streams: 4 })).lanes).toBe(1);
   });
 
-  it("adds a lane stepper when the radio offers a choice", () => {
+  it("offers input tabs when the radio lets you pick receivers", () => {
     const layout = laneLayout(
-      capabilities({ rx_streams: 1, rx_stream_choices: [1, 2], per_stream: { gain: true } }),
+      capabilities({ rx_streams: 1, rx_inputs: ["RX1", "RX2"], per_stream: { gain: true } }),
     );
-    expect(layout).toEqual({ lanes: 1, perLane: false, master: true, stepper: true });
+    expect(layout).toEqual({ lanes: 1, perLane: false, master: false, inputs: true });
   });
 });
 
@@ -121,11 +123,25 @@ describe("lane gains", () => {
   });
 });
 
-describe("steppedLanes", () => {
-  it("walks the offered counts and stops at the ends", () => {
-    expect(steppedLanes([1, 2, 4], 2, 1)).toBe(4);
-    expect(steppedLanes([4, 1, 2], 4, 1)).toBe(4);
-    expect(steppedLanes([1, 2, 4], 1, -1)).toBe(1);
-    expect(steppedLanes([1, 2, 4], 3, 1)).toBe(2);
+describe("rx inputs", () => {
+  const caps = capabilities({ rx_streams: 1, rx_inputs: ["RX1", "RX2"] });
+
+  it("offers each receiver as its own toggle", () => {
+    expect(inputOptions(caps)).toEqual([
+      { value: 0, label: "RX1" },
+      { value: 1, label: "RX2" },
+    ]);
+    expect(inputOptions(capabilities())).toEqual([]);
+  });
+
+  it("reads the pick back with the first receiver as the default", () => {
+    expect(pickedInputs({})).toEqual([0]);
+    expect(pickedInputs({ rx_inputs: [0, 1] })).toEqual([0, 1]);
+  });
+
+  it("names each lane after the receiver it carries", () => {
+    const set = deviceSet(caps, { rx_inputs: [1] });
+    expect(laneInputName(set, 0)).toBe("RX2");
+    expect(laneInputName(deviceSet(capabilities()), 0)).toBeUndefined();
   });
 });

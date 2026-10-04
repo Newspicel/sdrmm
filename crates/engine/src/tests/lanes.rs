@@ -24,12 +24,12 @@ impl DeviceDriver for LanesDriver {
                     gain: true,
                     ..StreamScope::default()
                 },
-                rx_stream_choices: vec![1, 2],
+                rx_inputs: vec!["RX1".to_string(), "RX2".to_string()],
                 ..empty_capabilities()
             },
             settings: DeviceSettings {
                 center_hz: Some(TEST_CENTER_HZ),
-                rx_streams: Some(2),
+                rx_inputs: Some(vec![0, 1]),
                 ..mock_settings()
             },
             started: self.0.clone(),
@@ -53,8 +53,8 @@ impl SdrDevice for LanesDevice {
     }
 
     fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
-        if let Some(lanes) = settings.rx_streams {
-            self.capabilities.rx_streams = lanes;
+        if let Some(inputs) = &settings.rx_inputs {
+            self.capabilities.rx_streams = inputs.len() as u32;
         }
         self.settings.merge_from(settings);
         Ok(())
@@ -80,21 +80,23 @@ fn lanes_engine() -> (Arc<Engine>, Started) {
     (Engine::with_registry(registry, None), started)
 }
 
-fn lanes(count: u32) -> DeviceSettings {
+fn inputs(picked: &[u32]) -> DeviceSettings {
     DeviceSettings {
-        rx_streams: Some(count),
+        rx_inputs: Some(picked.to_vec()),
         ..DeviceSettings::default()
     }
 }
 
 #[tokio::test]
-async fn fewer_lanes_restart_the_capture_with_only_those_lanes() {
+async fn a_new_pick_of_inputs_restarts_the_capture_with_only_those_lanes() {
     let (engine, started) = lanes_engine();
     let ds = engine.create_device_set("mock:lanes").unwrap();
-    engine.patch_device(ds, lanes(1)).expect("one lane");
+    engine.patch_device(ds, inputs(&[0])).expect("RX1");
     assert_eq!(engine.snapshot().device_sets[0].capabilities.rx_streams, 1);
-    engine.patch_device(ds, lanes(2)).expect("two lanes");
-    assert_eq!(*lock(&started.0), vec![2, 1, 2]);
+    engine.patch_device(ds, inputs(&[1])).expect("RX2");
+    engine.patch_device(ds, inputs(&[1])).expect("RX2 again");
+    engine.patch_device(ds, inputs(&[0, 1])).expect("both");
+    assert_eq!(*lock(&started.0), vec![2, 1, 1, 2]);
     engine.remove_device_set(ds).unwrap();
 }
 
@@ -106,13 +108,13 @@ async fn a_lane_that_is_wired_is_not_switched_off() {
     engine
         .add_channel(ds, 1, nfm_settings(0.0))
         .expect("a decoder on iq2");
-    let refused = engine.patch_device(ds, lanes(1)).unwrap_err();
+    let refused = engine.patch_device(ds, inputs(&[1])).unwrap_err();
     assert!(refused.to_string().contains("iq2"), "{refused}");
     assert_eq!(engine.snapshot().device_sets[0].capabilities.rx_streams, 2);
     assert_eq!(*lock(&started.0), vec![2]);
     assert!(
-        engine.patch_device(ds, lanes(3)).is_err(),
-        "a count the radio does not offer"
+        engine.patch_device(ds, inputs(&[0, 2])).is_err(),
+        "an input the radio does not have"
     );
     engine.remove_device_set(ds).unwrap();
 }
@@ -130,7 +132,7 @@ async fn drops_counted_before_a_lane_restart_do_not_upset_the_next_poll() {
         std::thread::sleep(Duration::from_millis(20));
     }
     engine.hotplug_tick_for_test(&mut known, &mut missing_once);
-    engine.patch_device(ds, lanes(1)).expect("one lane");
+    engine.patch_device(ds, inputs(&[0])).expect("one lane");
     std::thread::sleep(Duration::from_millis(50));
     engine.hotplug_tick_for_test(&mut known, &mut missing_once);
     let set = &engine.snapshot().device_sets[0];

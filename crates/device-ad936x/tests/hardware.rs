@@ -38,7 +38,7 @@ impl Drop for Radio {
             center_hz: held.center_hz,
             sample_rate: held.sample_rate,
             bandwidth: held.bandwidth,
-            rx_streams: held.rx_streams,
+            rx_inputs: held.rx_inputs.clone(),
             antenna: held.antenna.clone(),
             gains: held.gains.clone(),
             agc: held.agc.clone(),
@@ -215,13 +215,13 @@ fn a_real_radio_faster_than_its_link_reports_the_samples_it_lost() {
 #[ignore = "needs an AD936x radio at SDRMM_AD936X"]
 fn a_real_radio_gives_one_lane_the_whole_link() {
     let mut device = open();
-    if device.capabilities().rx_stream_choices.is_empty() {
+    if device.capabilities().rx_inputs.is_empty() {
         return;
     }
     let rate = 15e6;
     device
         .apply(&DeviceSettings {
-            rx_streams: Some(1),
+            rx_inputs: Some(vec![0]),
             sample_rate: Some(rate),
             ..DeviceSettings::default()
         })

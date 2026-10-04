@@ -208,7 +208,7 @@ fn band_capabilities() -> Capabilities {
         hardware_sweep: true,
         coherence: sdrmm_wire::Coherence::None,
         noise_source: sdrmm_wire::NoiseSource::None,
-        rx_stream_choices: Vec::new(),
+        rx_inputs: Vec::new(),
         retune_keeps_phase: false,
     }
 }
@@ -436,7 +436,7 @@ fn marker_capabilities(shape: &MarkerShape) -> Capabilities {
         per_stream: shape.per_stream,
         coherence: shape.coherence,
         noise_source: sdrmm_wire::NoiseSource::None,
-        rx_stream_choices: Vec::new(),
+        rx_inputs: Vec::new(),
         extra: Vec::new(),
         hardware_sweep: false,
         ..band_capabilities()

@@ -973,7 +973,7 @@ impl sdrmm_device::DeviceDriver for FaultingDriver {
                 coherence: sdrmm_wire::Coherence::None,
                 noise_source: sdrmm_wire::NoiseSource::None,
                 retune_keeps_phase: false,
-                rx_stream_choices: Vec::new(),
+                rx_inputs: Vec::new(),
             },
             settings: sdrmm_wire::DeviceSettings {
                 sample_rate: Some(2_048_000.0),

@@ -35,8 +35,8 @@ export function mergeSettings(current: DeviceSettings, delta: DeviceSettings): D
   if (delta.bias_tee != null) {
     next.bias_tee = delta.bias_tee;
   }
-  if (delta.rx_streams != null) {
-    next.rx_streams = delta.rx_streams;
+  if (delta.rx_inputs != null) {
+    next.rx_inputs = delta.rx_inputs;
   }
   if (delta.agc != null) {
     next.agc = delta.agc;

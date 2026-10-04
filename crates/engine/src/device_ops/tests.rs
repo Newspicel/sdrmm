@@ -88,7 +88,7 @@ fn capabilities(per_stream: StreamScope) -> Capabilities {
         coherence: Coherence::TimeSync,
         noise_source: NoiseSource::None,
         retune_keeps_phase: false,
-        rx_stream_choices: Vec::new(),
+        rx_inputs: Vec::new(),
     }
 }
 
