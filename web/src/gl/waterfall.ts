@@ -1,4 +1,4 @@
-import { COLORMAP_GLSL, COLORMAPS, type Colormap } from "./colormap";
+import { COLORMAP_GLSL, CUSTOM_STOPS, type Palette, paletteIndex, type Rgb } from "./colormap";
 import {
   backingPx,
   fitExtent,
@@ -9,7 +9,7 @@ import {
   zoomOf,
 } from "./raster";
 
-export { COLORMAPS, type Colormap, DEFAULT_COLORMAP } from "./colormap";
+export { COLORMAPS, type Colormap, DEFAULT_COLORMAP, type Palette } from "./colormap";
 
 const HISTORY_ROWS = 1024;
 
@@ -83,7 +83,7 @@ export interface WaterfallView {
   seed(rows: Uint8Array, count: number, bins: number): void;
   shiftRows(delta: number): void;
   setWindow(start: number, width: number): void;
-  setColormap(name: Colormap): void;
+  setColormap(palette: Palette): void;
   dispose(): void;
 }
 
@@ -122,6 +122,7 @@ interface Uniforms {
   viewWidth: WebGLUniformLocation | null;
   pixels: WebGLUniformLocation | null;
   map: WebGLUniformLocation | null;
+  custom: WebGLUniformLocation | null;
 }
 
 interface Shared {
@@ -156,6 +157,7 @@ class Plot implements WaterfallView {
   private windowStart = 0;
   private windowWidth = 1;
   private map = 0;
+  private readonly custom = new Float32Array(CUSTOM_STOPS * 3);
   private ratio = 1;
   private onScreen = false;
   private dirty = true;
@@ -284,10 +286,20 @@ class Plot implements WaterfallView {
     this.windowWidth = width;
   }
 
-  setColormap(name: Colormap): void {
-    const map = COLORMAPS.indexOf(name);
+  setColormap(palette: Palette): void {
+    const map = paletteIndex(palette);
     this.dirty ||= this.map !== map;
     this.map = map;
+    if (typeof palette !== "string") {
+      this.dirty ||= this.storeCustom(palette);
+    }
+  }
+
+  private storeCustom(stops: readonly Rgb[]): boolean {
+    const flat = stops.slice(0, CUSTOM_STOPS).flat();
+    const changed = flat.some((value, i) => this.custom[i] !== Math.fround(value));
+    this.custom.set(flat);
+    return changed;
   }
 
   dispose(): void {
@@ -359,6 +371,7 @@ class Plot implements WaterfallView {
     gl.uniform1f(uniforms.viewWidth, this.windowWidth);
     gl.uniform1f(uniforms.pixels, w);
     gl.uniform1i(uniforms.map, this.map);
+    gl.uniform3fv(uniforms.custom, this.custom);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.ctx?.drawImage(buffer, 0, buffer.height - h, w, h, 0, 0, w, h);
     this.dirty = false;
@@ -490,6 +503,7 @@ function build(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext): Shared {
       viewWidth: gl.getUniformLocation(program, "uViewWidth"),
       pixels: gl.getUniformLocation(program, "uPixels"),
       map: gl.getUniformLocation(program, "uMap"),
+      custom: gl.getUniformLocation(program, "uCustom"),
     },
   };
 }

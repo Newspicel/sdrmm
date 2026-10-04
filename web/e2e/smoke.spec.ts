@@ -332,6 +332,15 @@ test.describe("the workspace", () => {
     await peak.click();
     await expect(peak).toHaveAttribute("aria-pressed", "false");
 
+    const custom = settings.getByRole("button", { name: /^custom$/i });
+    await custom.click();
+    await expect(custom).toHaveAttribute("aria-pressed", "true");
+    const peakColour = settings.getByLabel("Custom peak colour");
+    await peakColour.fill("#ff0000");
+    await expect(peakColour).toHaveValue("#ff0000");
+    await settings.getByRole("button", { name: /^classic$/i }).click();
+    await expect(peakColour).toBeHidden();
+
     const floor = settings.getByRole("slider", { name: /waterfall dBFS floor/i });
     const ceiling = settings.getByRole("slider", { name: /waterfall dBFS ceiling/i });
     const auto = settings.getByRole("switch", { name: "Automatic levels" });

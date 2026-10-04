@@ -18,7 +18,7 @@ import {
   viewToSpan,
   viewWidth,
 } from "../../components/spectrumView";
-import type { Colormap } from "../../gl/colormap";
+import type { Palette } from "../../gl/colormap";
 import { pixelRatio, zoomOf } from "../../gl/raster";
 import { token } from "../../lib/tokens";
 
@@ -113,14 +113,14 @@ export class GridBitmap {
 export class DensityLayer {
   readonly grid: DensityGrid = createDensity();
   private readonly bitmap: GridBitmap;
-  private colormap: Colormap;
+  private colormap: Palette;
 
-  constructor(colormap: Colormap) {
+  constructor(colormap: Palette) {
     this.colormap = colormap;
     this.bitmap = new GridBitmap(this.grid.width, this.grid.height);
   }
 
-  setColormap(name: Colormap): void {
+  setColormap(name: Palette): void {
     if (name !== this.colormap) {
       this.colormap = name;
       this.bitmap.invalidate();

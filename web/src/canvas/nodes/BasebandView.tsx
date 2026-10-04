@@ -28,7 +28,7 @@ import { Segmented } from "../../components/Segmented";
 import { SettingsPanel, SettingsSection } from "../../components/SettingsPanel";
 import { Switch } from "../../components/Switch";
 import { FULL_VIEW } from "../../components/spectrumView";
-import type { Colormap } from "../../gl/colormap";
+import type { Palette } from "../../gl/colormap";
 import { SpectrumAnalyzer } from "../../lib/dsp/fft";
 import type { IqFrame, SymbolFrame } from "../../lib/frame";
 import { iqHub } from "../../lib/iq";
@@ -82,7 +82,7 @@ export function BasebandView({
 }: {
   deviceSet: number;
   channel: ChannelInfo;
-  colormap: Colormap;
+  colormap: Palette;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [frame, setFrame] = useState<IqFrame | null>(() => iqHub.latest(deviceSet, channel.id));
@@ -423,7 +423,7 @@ function draw(
   settings: { view: BasebandView; eyeComponent: EyeComponent; symbolRate: number },
   scatter: Scatter,
   bitmapRef: { current: GridBitmap | null },
-  colormap: Colormap,
+  colormap: Palette,
   analyzerRef: { current: SpectrumAnalyzer | null },
   dbRef: { current: Float32Array | null },
   trends: Trends,
@@ -554,7 +554,7 @@ function drawScatter(
   canvas: HTMLCanvasElement,
   { grid, scale }: Scatter,
   bitmapRef: { current: GridBitmap | null },
-  colormap: Colormap,
+  colormap: Palette,
   view: BasebandView,
   eyeComponent: EyeComponent,
 ): void {
@@ -619,7 +619,7 @@ export function tickLabel(value: number): string {
   return Number(value.toPrecision(2)).toString();
 }
 
-function recolour(grid: BasebandGrid, colormap: Colormap, out: Uint8ClampedArray): void {
+function recolour(grid: BasebandGrid, colormap: Palette, out: Uint8ClampedArray): void {
   const lut = colormapLut(colormap);
   for (let i = 0; i < grid.cells.length; i++) {
     const value = grid.cells[i] ?? 0;

@@ -1,4 +1,4 @@
-import { type Colormap, sampleColormap } from "../gl/colormap";
+import { type Colormap, type Palette, type Rgb, samplePalette } from "../gl/colormap";
 import { type DbWindow, traceUnit } from "./spectrumTraces";
 
 export const DENSITY_WIDTH = 480;
@@ -94,7 +94,7 @@ export function addDensity(
 
 export function densityToImage(
   grid: DensityGrid,
-  colormap: Colormap,
+  colormap: Palette,
   out: Uint8ClampedArray,
   lut = colormapLut(colormap),
 ): void {
@@ -114,20 +114,30 @@ export function densityToImage(
   }
 }
 
-const luts = new Map<Colormap, Uint8Array>();
+const namedLuts = new Map<Colormap, Uint8Array>();
+const customLuts = new WeakMap<readonly Rgb[], Uint8Array>();
 
-export function colormapLut(map: Colormap): Uint8Array {
-  const cached = luts.get(map);
+export function colormapLut(palette: Palette): Uint8Array {
+  const cached = typeof palette === "string" ? namedLuts.get(palette) : customLuts.get(palette);
   if (cached !== undefined) {
     return cached;
   }
+  const lut = buildLut(palette);
+  if (typeof palette === "string") {
+    namedLuts.set(palette, lut);
+  } else {
+    customLuts.set(palette, lut);
+  }
+  return lut;
+}
+
+function buildLut(palette: Palette): Uint8Array {
   const lut = new Uint8Array(256 * 3);
   for (let i = 0; i < 256; i++) {
-    const [r, g, b] = sampleColormap(map, i / 255);
+    const [r, g, b] = samplePalette(palette, i / 255);
     lut[i * 3] = Math.round(r * 255);
     lut[i * 3 + 1] = Math.round(g * 255);
     lut[i * 3 + 2] = Math.round(b * 255);
   }
-  luts.set(map, lut);
   return lut;
 }

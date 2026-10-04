@@ -133,4 +133,15 @@ describe("colormapLut", () => {
     expect([lut[0], lut[1], lut[2]]).toEqual([0, 0, 0]);
     expect([lut[765], lut[766], lut[767]]).toEqual([255, 255, 255]);
   });
+
+  it("caches custom stops by identity", () => {
+    const stops = [
+      [1, 0, 0],
+      [0, 0, 1],
+    ] as const;
+    const lut = colormapLut(stops);
+    expect(colormapLut(stops)).toBe(lut);
+    expect([lut[0], lut[1], lut[2]]).toEqual([255, 0, 0]);
+    expect([lut[765], lut[766], lut[767]]).toEqual([0, 0, 255]);
+  });
 });

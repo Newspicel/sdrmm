@@ -56,14 +56,8 @@ import {
   quantizeDb,
   VideoAverage,
 } from "../../components/videoAverage";
-import {
-  attachWaterfall,
-  COLORMAPS,
-  type Colormap,
-  DEFAULT_COLORMAP,
-  GRAPHICS_HELP,
-  type WaterfallView,
-} from "../../gl/waterfall";
+import type { Rgb } from "../../gl/colormap";
+import { attachWaterfall, GRAPHICS_HELP, type WaterfallView } from "../../gl/waterfall";
 import { bookmarksQuery } from "../../lib/api";
 import type { SpectrumFrame } from "../../lib/frame";
 import { heardHz, type SetLevels, useLevelStore } from "../../lib/levels";
@@ -96,6 +90,14 @@ import { FaceBody, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
 import { ScopeMenu, type ScopeMenuAt } from "./ScopeMenu";
 import { ScopeSettings } from "./ScopeSettings";
 import {
+  type PaletteChoice,
+  paletteOf,
+  readChoice,
+  readCustom,
+  storeChoice,
+  storeCustom,
+} from "./scopePalette";
+import {
   bookmarkDraft,
   channelTypeAt,
   dragTuneHz,
@@ -114,7 +116,6 @@ const TUNE_THROTTLE_MS = 150;
 const NO_CHANNELS: readonly ChannelInfo[] = [];
 
 const NO_OWNERS: ReadonlyMap<number, TrunkChannelOwner> = new Map();
-const COLORMAP_KEY = "sdrmm.colormap";
 const AVERAGE_KEY = "sdrmm.scopeAverage";
 const TRACE_MIN = 0.15;
 const TRACE_MAX = 0.75;
@@ -220,7 +221,12 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
   const [average, setAverage] = useState<AverageFrames>(readAverage);
   const [range, setRange] = useState<DbWindow | null>(null);
   const [waterfall, setWaterfall] = useState({ top: 0, height: 0, width: 0 });
-  const [colormap, setColormap] = useState<Colormap>(readColormap);
+  const [paletteChoice, setPaletteChoice] = useState<PaletteChoice>(readChoice);
+  const [customStops, setCustomStops] = useState<readonly Rgb[]>(readCustom);
+  const colormap = useMemo(
+    () => paletteOf(paletteChoice, customStops),
+    [paletteChoice, customStops],
+  );
   const [traceFraction, setTraceFraction] = useState(0.32);
   const [preview, setPreview] = useState<{
     channel: number;
@@ -543,11 +549,14 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     ),
   );
 
-  const chooseColormap = (next: Colormap): void => {
-    setColormap(next);
-    try {
-      localStorage.setItem(COLORMAP_KEY, next);
-    } catch {}
+  const chooseColormap = (next: PaletteChoice): void => {
+    setPaletteChoice(next);
+    storeChoice(next);
+  };
+
+  const chooseCustom = (stops: readonly Rgb[]): void => {
+    setCustomStops(stops);
+    storeCustom(stops);
   };
 
   const reseed = (held: DbWindow | null): void => {
@@ -833,8 +842,10 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
           className="pointer-events-auto flex items-center gap-1 self-start rounded-[3px] bg-plot-bg/85 p-0.5"
         >
           <ScopeSettings
-            colormap={colormap}
+            colormap={paletteChoice}
             onColormap={chooseColormap}
+            custom={customStops}
+            onCustom={chooseCustom}
             average={average}
             onAverage={chooseAverage}
             traces={traceModes}
@@ -1267,15 +1278,6 @@ function readAverage(): AverageFrames {
     return AVERAGE_CHOICES.find((frames) => frames === stored) ?? DEFAULT_AVERAGE;
   } catch {
     return DEFAULT_AVERAGE;
-  }
-}
-
-export function readColormap(): Colormap {
-  try {
-    const stored = localStorage.getItem(COLORMAP_KEY);
-    return COLORMAPS.find((name) => name === stored) ?? DEFAULT_COLORMAP;
-  } catch {
-    return DEFAULT_COLORMAP;
   }
 }
 

@@ -5,6 +5,16 @@ export const DEFAULT_COLORMAP: Colormap = "classic";
 
 export type Rgb = readonly [number, number, number];
 
+export type Palette = Colormap | readonly Rgb[];
+
+export const CUSTOM_STOPS = 3;
+
+export const DEFAULT_CUSTOM: readonly Rgb[] = [
+  [0.0, 0.0, 0.12549],
+  [0.11765, 0.56471, 1.0],
+  [1.0, 1.0, 0.0],
+];
+
 const CLASSIC_STOPS: readonly Rgb[] = [
   [0.0, 0.0, 0.12549],
   [0.0, 0.0, 0.18824],
@@ -62,14 +72,22 @@ const POLYNOMIALS: Readonly<Partial<Record<Colormap, readonly Rgb[]>>> = {
   ],
 };
 
+export function samplePalette(palette: Palette, t: number): Rgb {
+  return typeof palette === "string" ? sampleColormap(palette, t) : sampleStops(palette, unit(t));
+}
+
+export function paletteIndex(palette: Palette): number {
+  return typeof palette === "string" ? COLORMAPS.indexOf(palette) : COLORMAPS.length;
+}
+
 export function sampleColormap(map: Colormap, t: number): Rgb {
-  const x = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
+  const x = unit(t);
   if (map === "gray") {
     return [x, x, x];
   }
   const poly = POLYNOMIALS[map];
   if (poly === undefined) {
-    return sampleClassic(x);
+    return sampleStops(CLASSIC_STOPS, x);
   }
   const out: [number, number, number] = [0, 0, 0];
   for (let c = 0; c < 3; c++) {
@@ -82,13 +100,34 @@ export function sampleColormap(map: Colormap, t: number): Rgb {
   return out;
 }
 
-function sampleClassic(t: number): Rgb {
-  const x = t * (CLASSIC_STOPS.length - 1);
-  const i = Math.min(Math.floor(x), CLASSIC_STOPS.length - 2);
-  const lo = CLASSIC_STOPS[i] ?? [0, 0, 0];
-  const hi = CLASSIC_STOPS[i + 1] ?? lo;
+function unit(t: number): number {
+  return Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0));
+}
+
+function sampleStops(stops: readonly Rgb[], t: number): Rgb {
+  const x = t * Math.max(0, stops.length - 1);
+  const i = Math.max(0, Math.min(Math.floor(x), stops.length - 2));
+  const lo = stops[i] ?? [0, 0, 0];
+  const hi = stops[i + 1] ?? lo;
   const f = x - i;
   return [lo[0] + (hi[0] - lo[0]) * f, lo[1] + (hi[1] - lo[1]) * f, lo[2] + (hi[2] - lo[2]) * f];
+}
+
+export function hexToRgb(hex: string): Rgb | null {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (match === null) {
+    return null;
+  }
+  const [, r = "", g = "", b = ""] = match;
+  return [Number.parseInt(r, 16) / 255, Number.parseInt(g, 16) / 255, Number.parseInt(b, 16) / 255];
+}
+
+export function rgbToHex(rgb: Rgb): string {
+  return `#${rgb.map((channel) => byte(channel).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function byte(channel: number): number {
+  return Math.round(unit(channel) * 255);
 }
 
 function glslVec3([r, g, b]: Rgb): string {
@@ -118,8 +157,17 @@ vec3 classic(float t) {
   return mix(CLASSIC[i], CLASSIC[i + 1], x - float(i));
 }
 
+uniform vec3 uCustom[${CUSTOM_STOPS}];
+
+vec3 custom(float t) {
+  float x = t * ${(CUSTOM_STOPS - 1).toFixed(1)};
+  int i = min(int(floor(x)), ${CUSTOM_STOPS - 2});
+  return mix(uCustom[i], uCustom[i + 1], x - float(i));
+}
+
 vec3 colormap(float t) {
   t = clamp(t, 0.0, 1.0);
+  if (uMap == ${COLORMAPS.length}) { return custom(t); }
 ${(["magma", "inferno", "plasma", "viridis"] as const).map((name) => glslPoly(name, COLORMAPS.indexOf(name))).join("\n")}
   if (uMap == ${COLORMAPS.indexOf("gray")}) { return vec3(t); }
   return classic(t);

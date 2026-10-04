@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button } from "../../components/BaseControls";
+import { Button, Input } from "../../components/BaseControls";
 import { DB_LIMIT, DB_STEP, withCeiling, withFloor } from "../../components/dbRange";
 import { PlotSettings, Swatch } from "../../components/PlotSettings";
 import { Segmented } from "../../components/Segmented";
@@ -12,11 +12,20 @@ import {
   type AverageFrames,
   DEFAULT_AVERAGE,
 } from "../../components/videoAverage";
-import { type Colormap, sampleColormap } from "../../gl/colormap";
-import { COLORMAPS } from "../../gl/waterfall";
+import {
+  COLORMAPS,
+  hexToRgb,
+  type Palette,
+  type Rgb,
+  rgbToHex,
+  samplePalette,
+} from "../../gl/colormap";
+import { CUSTOM, type PaletteChoice, paletteOf } from "./scopePalette";
 import { TRACE_INK } from "./scopePlot";
 
 const GRADIENT_STOPS = 8;
+
+const STOP_NAMES = ["floor", "middle", "peak"];
 
 const TRACE_LABEL: Record<TraceMode, string> = {
   peak: "peak hold",
@@ -30,8 +39,10 @@ const AVERAGE_OPTIONS = AVERAGE_CHOICES.map((frames) => ({
 }));
 
 export interface ScopeSettingsProps {
-  colormap: Colormap;
-  onColormap: (name: Colormap) => void;
+  colormap: PaletteChoice;
+  onColormap: (choice: PaletteChoice) => void;
+  custom: readonly Rgb[];
+  onCustom: (stops: readonly Rgb[]) => void;
   average: AverageFrames;
   onAverage: (frames: AverageFrames) => void;
   traces: readonly TraceMode[];
@@ -47,6 +58,7 @@ export interface ScopeSettingsProps {
 }
 
 export function ScopeSettings(props: ScopeSettingsProps) {
+  const palette = paletteOf(props.colormap, props.custom);
   const changed =
     props.average !== DEFAULT_AVERAGE || props.traces.length > 0 || props.phosphor || props.manual;
   return (
@@ -62,7 +74,16 @@ export function ScopeSettings(props: ScopeSettingsProps) {
               onClick={() => props.onColormap(name)}
             />
           ))}
+          <Swatch
+            name={CUSTOM}
+            fill={gradient(props.custom, "to right")}
+            on={props.colormap === CUSTOM}
+            onClick={() => props.onColormap(CUSTOM)}
+          />
         </div>
+        {props.colormap === CUSTOM && (
+          <CustomStops stops={props.custom} onChange={props.onCustom} />
+        )}
       </SettingsSection>
       <SettingsSection name="Average" hint="Frames blended into the trace and waterfall">
         <Segmented
@@ -94,7 +115,7 @@ export function ScopeSettings(props: ScopeSettingsProps) {
             <TraceSample>
               <span
                 className="-mx-0.5 h-full w-[calc(100%+4px)]"
-                style={{ background: gradient(props.colormap, "to top") }}
+                style={{ background: gradient(palette, "to top") }}
               />
             </TraceSample>
           </TraceToggle>
@@ -136,9 +157,42 @@ export function ScopeSettings(props: ScopeSettingsProps) {
   );
 }
 
-function gradient(map: Colormap, direction: string): string {
+function CustomStops({
+  stops,
+  onChange,
+}: {
+  stops: readonly Rgb[];
+  onChange: (stops: readonly Rgb[]) => void;
+}) {
+  const pick = (index: number, hex: string): void => {
+    const rgb = hexToRgb(hex);
+    if (rgb !== null) {
+      onChange(stops.with(index, rgb));
+    }
+  };
+  return (
+    <div className="grid grid-cols-3 gap-1.5">
+      {stops.map((stop, index) => {
+        const name = STOP_NAMES[index] ?? "";
+        return (
+          <Input
+            key={name}
+            type="color"
+            aria-label={`Custom ${name} colour`}
+            title={name}
+            value={rgbToHex(stop)}
+            onChange={(event) => pick(index, event.target.value)}
+            className="h-6 w-full cursor-pointer rounded-[3px] border border-line bg-well p-0.5"
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function gradient(palette: Palette, direction: string): string {
   const stops = Array.from({ length: GRADIENT_STOPS }, (_, index) => {
-    const [r, g, b] = sampleColormap(map, index / (GRADIENT_STOPS - 1));
+    const [r, g, b] = samplePalette(palette, index / (GRADIENT_STOPS - 1));
     return `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)})`;
   });
   return `linear-gradient(${direction}, ${stops.join(", ")})`;

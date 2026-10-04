@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { COLORMAP_GLSL, COLORMAPS, sampleColormap } from "./colormap";
+import {
+  COLORMAP_GLSL,
+  COLORMAPS,
+  DEFAULT_CUSTOM,
+  hexToRgb,
+  paletteIndex,
+  rgbToHex,
+  sampleColormap,
+  samplePalette,
+} from "./colormap";
 
 describe("sampleColormap", () => {
   it("stays inside the unit cube across every ramp", () => {
@@ -52,5 +61,45 @@ describe("COLORMAP_GLSL", () => {
   it("declares one array entry per classic stop", () => {
     expect(COLORMAP_GLSL).toContain("const vec3 CLASSIC[15] = vec3[15](");
     expect(COLORMAP_GLSL).toContain("vec3(0.00000000, 0.00000000, 0.12549000)");
+  });
+});
+
+describe("samplePalette", () => {
+  it("reads a named ramp like sampleColormap", () => {
+    expect(samplePalette("viridis", 0.3)).toEqual(sampleColormap("viridis", 0.3));
+  });
+
+  it("blends custom stops linearly", () => {
+    const stops = [
+      [0, 0, 0],
+      [1, 0, 0],
+      [1, 1, 1],
+    ] as const;
+    expect(samplePalette(stops, 0)).toEqual([0, 0, 0]);
+    expect(samplePalette(stops, 0.25)).toEqual([0.5, 0, 0]);
+    expect(samplePalette(stops, 0.5)).toEqual([1, 0, 0]);
+    expect(samplePalette(stops, 2)).toEqual([1, 1, 1]);
+  });
+
+  it("gives custom stops the index after every named ramp", () => {
+    expect(paletteIndex(DEFAULT_CUSTOM)).toBe(COLORMAPS.length);
+    expect(paletteIndex("gray")).toBe(COLORMAPS.indexOf("gray"));
+    expect(COLORMAP_GLSL).toContain(`if (uMap == ${COLORMAPS.length}) { return custom(t); }`);
+  });
+});
+
+describe("hex colours", () => {
+  it("round-trips through rgb", () => {
+    for (const hex of ["#000000", "#ffffff", "#1e90ff", "#c60000"]) {
+      const rgb = hexToRgb(hex);
+      expect(rgb).not.toBeNull();
+      expect(rgb !== null && rgbToHex(rgb)).toBe(hex);
+    }
+  });
+
+  it("rejects anything but #rrggbb", () => {
+    expect(hexToRgb("#fff")).toBeNull();
+    expect(hexToRgb("1e90ff")).toBeNull();
+    expect(hexToRgb("#1e90fg")).toBeNull();
   });
 });

@@ -1,12 +1,14 @@
+import { useState } from "react";
 import type { PatchNode } from "../../lib/types";
 import { basebandSourceOf } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { BasebandView } from "./BasebandView";
 import { FaceBody, NodeShell } from "./NodeShell";
-import { readColormap } from "./ScopeFace";
+import { readPalette } from "./scopePalette";
 
 export function BasebandScopeFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
+  const [palette] = useState(readPalette);
   const tap = basebandSourceOf(
     workspace.graph,
     node.id,
@@ -26,7 +28,7 @@ export function BasebandScopeFace({ node }: { node: PatchNode }) {
             key={`${tap.deviceSet}:${tap.channel.id}`}
             deviceSet={tap.deviceSet}
             channel={tap.channel}
-            colormap={readColormap()}
+            colormap={palette}
           />
         )}
       </FaceBody>
