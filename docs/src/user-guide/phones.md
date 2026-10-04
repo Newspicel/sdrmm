@@ -91,9 +91,7 @@ refused: keep the app on screen.
 **CarPlay** and **Android Auto** show the DF drive map, a **Missions** list, and a DF panel with
 the bearing, guidance, **Calibrate** and **Clear**. **Navigate** starts navigation.
 
-CarPlay in a car needs a build signed with Apple's CarPlay navigation entitlement; the simulator
-works without it. Android Auto hides sideloaded apps: in Android Auto, tap **Version** ten times,
-then turn on **Unknown sources** in **Developer settings**.
+Android Auto hides sideloaded apps: in Android Auto, tap **Version** ten times, then turn on **Unknown sources** in **Developer settings**.
 
 ## Android chips
 

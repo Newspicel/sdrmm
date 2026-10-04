@@ -43,9 +43,6 @@ Locally, use the signed-in Xcode account or set
 `APP_STORE_CONNECT_KEY_PATH`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID`.
 `SDRMM_IOS_BUILD_NUMBER` overrides the default build number before archiving.
 
-Device builds leave CarPlay off until Apple approves the Navigation entitlement. Once approved,
-set `SDRMM_CARPLAY = YES` in `Config/Local.xcconfig` and regenerate the provisioning profile.
-
 ## Android
 
 The app lives in `apps/android`: Kotlin, Jetpack Compose, Gradle 9.8, API 29 and up. Gradle

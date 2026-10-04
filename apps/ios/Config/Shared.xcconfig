@@ -17,8 +17,6 @@ CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = -
 CODE_SIGN_STYLE[sdk=iphonesimulator*] = Manual
 DEVELOPMENT_TEAM[sdk=iphonesimulator*] =
 PROVISIONING_PROFILE_SPECIFIER[sdk=iphonesimulator*] =
-SDRMM_CARPLAY = NO
-SDRMM_CARPLAY[sdk=iphonesimulator*] = YES
 EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64
 #include "Version.xcconfig"
 #include? "Local.xcconfig"
