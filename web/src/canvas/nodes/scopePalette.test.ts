@@ -11,10 +11,12 @@ import {
   storeCustom,
 } from "./scopePalette";
 
-const RED_GREEN_BLUE = [
+const RAINBOW = [
   [1, 0, 0],
+  [1, 1, 0],
   [0, 1, 0],
   [0, 0, 1],
+  [1, 0, 1],
 ] as const;
 
 afterEach(() => localStorage.clear());
@@ -27,22 +29,22 @@ describe("scope palette", () => {
 
   it("round-trips the choice and custom stops", () => {
     storeChoice(CUSTOM);
-    storeCustom(RED_GREEN_BLUE);
+    storeCustom(RAINBOW);
     expect(readChoice()).toBe(CUSTOM);
-    expect(readCustom()).toEqual(RED_GREEN_BLUE);
-    expect(readPalette()).toEqual(RED_GREEN_BLUE);
+    expect(readCustom()).toEqual(RAINBOW);
+    expect(readPalette()).toEqual(RAINBOW);
   });
 
   it("uses the named ramp unless custom is chosen", () => {
-    expect(paletteOf("magma", RED_GREEN_BLUE)).toBe("magma");
-    expect(paletteOf(CUSTOM, RED_GREEN_BLUE)).toBe(RED_GREEN_BLUE);
+    expect(paletteOf("magma", RAINBOW)).toBe("magma");
+    expect(paletteOf(CUSTOM, RAINBOW)).toBe(RAINBOW);
   });
 
   it("rejects malformed stored stops", () => {
     expect(parseCustom(null)).toBeNull();
     expect(parseCustom("not json")).toBeNull();
-    expect(parseCustom('["#000000","#ffffff"]')).toBeNull();
-    expect(parseCustom('["#000000","#ffffff",3]')).toBeNull();
-    expect(parseCustom('["#000000","#ffffff","#zzzzzz"]')).toBeNull();
+    expect(parseCustom('["#000000","#ffffff","#000000"]')).toBeNull();
+    expect(parseCustom('["#000000","#ffffff","#000000","#ffffff",3]')).toBeNull();
+    expect(parseCustom('["#000000","#ffffff","#000000","#ffffff","#zzzzzz"]')).toBeNull();
   });
 });

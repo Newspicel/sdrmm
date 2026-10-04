@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { Button, Input } from "../../components/BaseControls";
+import { Button } from "../../components/BaseControls";
 import { DB_LIMIT, DB_STEP, withCeiling, withFloor } from "../../components/dbRange";
+import { GradientEditor } from "../../components/GradientEditor";
 import { PlotSettings, Swatch } from "../../components/PlotSettings";
 import { Segmented } from "../../components/Segmented";
 import { SettingsSection } from "../../components/SettingsPanel";
@@ -12,20 +13,11 @@ import {
   type AverageFrames,
   DEFAULT_AVERAGE,
 } from "../../components/videoAverage";
-import {
-  COLORMAPS,
-  hexToRgb,
-  type Palette,
-  type Rgb,
-  rgbToHex,
-  samplePalette,
-} from "../../gl/colormap";
+import { COLORMAPS, type Palette, type Rgb, samplePalette } from "../../gl/colormap";
 import { CUSTOM, type PaletteChoice, paletteOf } from "./scopePalette";
 import { TRACE_INK } from "./scopePlot";
 
 const GRADIENT_STOPS = 8;
-
-const STOP_NAMES = ["floor", "middle", "peak"];
 
 const TRACE_LABEL: Record<TraceMode, string> = {
   peak: "peak hold",
@@ -82,7 +74,7 @@ export function ScopeSettings(props: ScopeSettingsProps) {
           />
         </div>
         {props.colormap === CUSTOM && (
-          <CustomStops stops={props.custom} onChange={props.onCustom} />
+          <GradientEditor stops={props.custom} onChange={props.onCustom} />
         )}
       </SettingsSection>
       <SettingsSection name="Average" hint="Frames blended into the trace and waterfall">
@@ -154,39 +146,6 @@ export function ScopeSettings(props: ScopeSettingsProps) {
         />
       </SettingsSection>
     </PlotSettings>
-  );
-}
-
-function CustomStops({
-  stops,
-  onChange,
-}: {
-  stops: readonly Rgb[];
-  onChange: (stops: readonly Rgb[]) => void;
-}) {
-  const pick = (index: number, hex: string): void => {
-    const rgb = hexToRgb(hex);
-    if (rgb !== null) {
-      onChange(stops.with(index, rgb));
-    }
-  };
-  return (
-    <div className="grid grid-cols-3 gap-1.5">
-      {stops.map((stop, index) => {
-        const name = STOP_NAMES[index] ?? "";
-        return (
-          <Input
-            key={name}
-            type="color"
-            aria-label={`Custom ${name} colour`}
-            title={name}
-            value={rgbToHex(stop)}
-            onChange={(event) => pick(index, event.target.value)}
-            className="h-6 w-full cursor-pointer rounded-[3px] border border-line bg-well p-0.5"
-          />
-        );
-      })}
-    </div>
   );
 }
 

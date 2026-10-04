@@ -7,12 +7,14 @@ export type Rgb = readonly [number, number, number];
 
 export type Palette = Colormap | readonly Rgb[];
 
-export const CUSTOM_STOPS = 3;
+export const CUSTOM_STOPS = 5;
 
 export const DEFAULT_CUSTOM: readonly Rgb[] = [
   [0.0, 0.0, 0.12549],
+  [0.0, 0.0, 0.56863],
   [0.11765, 0.56471, 1.0],
   [1.0, 1.0, 0.0],
+  [1.0, 0.0, 0.0],
 ];
 
 const CLASSIC_STOPS: readonly Rgb[] = [

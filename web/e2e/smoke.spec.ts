@@ -335,11 +335,16 @@ test.describe("the workspace", () => {
     const custom = settings.getByRole("button", { name: /^custom$/i });
     await custom.click();
     await expect(custom).toHaveAttribute("aria-pressed", "true");
-    const peakColour = settings.getByLabel("Custom peak colour");
-    await peakColour.fill("#ff0000");
-    await expect(peakColour).toHaveValue("#ff0000");
+    const stop = settings.getByRole("button", { name: "Colour stop 2" });
+    await stop.click();
+    await expect(stop).toHaveAttribute("aria-pressed", "true");
+    const hex = settings.getByLabel("Colour stop 2 hex");
+    await hex.fill("#ff0000");
+    await expect(hex).toHaveValue("#ff0000");
+    await settings.getByRole("slider", { name: "Colour stop 2 hue" }).press("ArrowRight");
+    await expect(hex).not.toHaveValue("#ff0000");
     await settings.getByRole("button", { name: /^classic$/i }).click();
-    await expect(peakColour).toBeHidden();
+    await expect(hex).toBeHidden();
 
     const floor = settings.getByRole("slider", { name: /waterfall dBFS floor/i });
     const ceiling = settings.getByRole("slider", { name: /waterfall dBFS ceiling/i });
