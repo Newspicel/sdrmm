@@ -53,6 +53,29 @@ pub fn addressed_transmission(
     c4fm(&symbols, rate, shape.baud, shape.deviation_hz, RRC_ALPHA)
 }
 
+#[must_use]
+pub fn aliased_transmission(shape: &Shape, ran: u8, alias: &str, rate: f64) -> Vec<Complex<f32>> {
+    let mut text = [0u8; 16];
+    for (slot, byte) in text.iter_mut().zip(alias.bytes()) {
+        *slot = byte;
+    }
+    let mut symbols = dibits(&filler(400, 53));
+    for (index, chunk) in text.chunks(4).enumerate() {
+        let mut message = [false; 80];
+        put_bits(&mut message, 0, 32, 0x3F68_8204);
+        put_bits(&mut message, 32, 8, (index as u32 + 1) << 4 | 4);
+        for (i, &byte) in chunk.iter().enumerate() {
+            put_bits(&mut message, 40 + i * 8, 8, u32::from(byte));
+        }
+        for quarter in 0..4 {
+            symbols.extend(addressed_frame(2, ran, &message, Some(quarter), false));
+        }
+    }
+    symbols.extend(frame(1, 1, true, None));
+    symbols.extend(dibits(&filler(200, 59)));
+    c4fm(&symbols, rate, shape.baud, shape.deviation_hz, RRC_ALPHA)
+}
+
 fn addressed_frame(
     functional: u8,
     ran: u8,
@@ -64,8 +87,7 @@ fn addressed_frame(
     lich.extend(bits(u64::from(functional), 2));
     lich.extend(bits(if facch { 0 } else { 3 }, 2));
     lich.push(true);
-    let ones = lich.iter().filter(|b| **b).count();
-    lich.push(ones % 2 == 0);
+    lich.push(lich_parity(&lich));
 
     let out = dibits(&bits(FSW, 20));
     let mut post: Vec<u8> = lich.into_iter().map(|bit| u8::from(bit) << 1).collect();
@@ -82,6 +104,10 @@ fn addressed_frame(
         post.extend(dibits(&filler(288, 79 + u32::from(functional))));
     }
     finish_frame(out, post)
+}
+
+fn lich_parity(lich: &[bool]) -> bool {
+    lich[..4].iter().fold(false, |parity, &bit| parity ^ bit)
 }
 
 fn layer3(message_type: u8, source: u16, destination: u16, group: bool) -> [bool; 80] {
@@ -189,8 +215,7 @@ fn frame(
     lich.extend(bits(u64::from(functional) & 0x03, 2));
     lich.extend(bits(3, 2));
     lich.push(outbound);
-    let ones = lich.iter().filter(|b| **b).count();
-    lich.push(ones % 2 == 0);
+    lich.push(lich_parity(&lich));
     let out = dibits(&bits(FSW, 20));
     let mut post: Vec<u8> = lich.into_iter().map(|bit| u8::from(bit) << 1).collect();
     post.extend(dibits(&filler(60, 61 + u32::from(functional))));

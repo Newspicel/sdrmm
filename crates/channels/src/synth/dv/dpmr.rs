@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::ParityCode;
 
 use super::{bits, c4fm, dibits, filler};
 
@@ -10,8 +11,19 @@ const FS1: u64 = 0x57FF_5F75_D577;
 const FS2: u64 = 0x5F_F77D;
 const FS3: u64 = 0x7D_DFF5;
 
+const CHANNEL_CODES: [u32; 64] = [
+    0x57_5F77, 0x57_7577, 0x57_DD75, 0x57_F775, 0x55_577D, 0x55_7D7D, 0x55_D57F, 0x55_FF7F,
+    0x5F_555F, 0x5F_7F5F, 0x5F_D75D, 0x5F_FD5D, 0x5D_5D55, 0x5D_7755, 0x5D_DF57, 0x5D_F557,
+    0x77_5DD7, 0x77_77D7, 0x77_DFD5, 0x77_F5D5, 0x75_55DD, 0x75_7FDD, 0x75_D7DF, 0x75_FDDF,
+    0x7F_57FF, 0x7F_7DFF, 0x7F_D5FD, 0x7F_FFFD, 0x7D_5FF5, 0x7D_75F5, 0x7D_DDF7, 0x7D_F7F7,
+    0xD7_55F7, 0xD7_7FF7, 0xD7_D7F5, 0xD7_FDF5, 0xD5_5DFD, 0xD5_77FD, 0xD5_DFFF, 0xD5_F5FF,
+    0xDF_5FDF, 0xDF_75DF, 0xDF_DDDD, 0xDF_F7DD, 0xDD_57D5, 0xDD_7DD5, 0xDD_D5D7, 0xDD_FFD7,
+    0xF7_5757, 0xF7_7D57, 0xF7_D555, 0xF7_FF55, 0xF5_5F5D, 0xF5_755D, 0xF5_DD5F, 0xF5_F75F,
+    0xFF_5D7F, 0xFF_777F, 0xFF_DF7D, 0xFF_F57D, 0xFD_5575, 0xFD_7F75, 0xFD_D777, 0xFD_FD77,
+];
+
 pub struct Call {
-    pub colour_code: u16,
+    pub channel_code: u8,
     pub called: u32,
     pub own: u32,
     pub mode: u8,
@@ -20,7 +32,7 @@ pub struct Call {
 impl Default for Call {
     fn default() -> Self {
         Self {
-            colour_code: 0x0A5,
+            channel_code: 37,
             called: 0x00_FFFF,
             own: 0x12_3456,
             mode: 1,
@@ -38,19 +50,19 @@ pub fn transmission_with_voice(call: &Call, voice: &[[bool; 72]], rate: f64) -> 
     let mut symbols = dibits(&filler(400, 67));
     symbols.extend(dibits(&bits(FS1, 48)));
     symbols.extend(dibits(&header_info(call)));
-    symbols.extend(dibits(&colour_code(call.colour_code)));
+    symbols.extend(dibits(&channel_code(call.channel_code)));
     symbols.extend(dibits(&header_info(call)));
 
     for frames in voice.chunks(16) {
         symbols.extend(dibits(&bits(FS2, 24)));
-        symbols.extend(superframe(frames));
+        symbols.extend(superframe(frames, call.channel_code));
     }
     symbols.extend(dibits(&bits(FS3, 24)));
     symbols.extend(dibits(&filler(400, 73)));
     c4fm(&symbols, rate, BAUD, DEVIATION_HZ, RRC_ALPHA)
 }
 
-fn superframe(frames: &[[bool; 72]]) -> Vec<u8> {
+fn superframe(frames: &[[bool; 72]], code: u8) -> Vec<u8> {
     let mut padded = [[false; 72]; 16];
     padded[..frames.len()].copy_from_slice(frames);
     let mut out = Vec::with_capacity(756);
@@ -62,20 +74,15 @@ fn superframe(frames: &[[bool; 72]]) -> Vec<u8> {
         if section == 1 {
             out.extend(dibits(&bits(FS2, 24)));
         } else if section != 3 {
-            out.extend(dibits(&colour_code(0)));
+            out.extend(dibits(&channel_code(code)));
         }
     }
     debug_assert_eq!(out.len(), 756);
     out
 }
 
-fn colour_code(value: u16) -> Vec<bool> {
-    let mut out = Vec::with_capacity(24);
-    for i in (0..12).rev() {
-        out.push(value >> i & 1 == 1);
-        out.push(true);
-    }
-    out
+fn channel_code(number: u8) -> Vec<bool> {
+    bits(u64::from(CHANNEL_CODES[usize::from(number & 0x3F)]), 24)
 }
 
 fn header_info(call: &Call) -> Vec<bool> {
@@ -95,8 +102,10 @@ fn header_info(call: &Call) -> Vec<bool> {
 
     let mut blocks = Vec::with_capacity(120);
     for &byte in &bytes {
-        blocks.extend(bits(u64::from(byte), 8));
-        blocks.extend(hamming_parity(byte));
+        let mut word = [false; 12];
+        word[..8].copy_from_slice(&bits(u64::from(byte), 8));
+        ParityCode::HAMMING_12_8.encode(&mut word);
+        blocks.extend(word);
     }
     let mut interleaved = vec![false; 120];
     for r in 0..12 {
@@ -104,26 +113,15 @@ fn header_info(call: &Call) -> Vec<bool> {
             interleaved[r * 10 + c] = blocks[c * 12 + r];
         }
     }
-    let mut register = 0x1FFu16;
+    let mut sequence = [true; 120];
+    for i in 9..sequence.len() {
+        sequence[i] = sequence[i - 9] ^ sequence[i - 5];
+    }
     interleaved
         .into_iter()
-        .map(|bit| {
-            let feedback = (register >> 8 ^ register >> 4) & 1;
-            register = (register << 1 | feedback) & 0x1FF;
-            bit ^ (feedback == 1)
-        })
+        .zip(sequence)
+        .map(|(bit, key)| bit ^ key)
         .collect()
-}
-
-fn hamming_parity(byte: u8) -> Vec<bool> {
-    let bit = |i: u8| byte >> (7 - i) & 1 == 1;
-    let sum = |taps: &[u8]| taps.iter().fold(false, |acc, &t| acc ^ bit(t));
-    vec![
-        sum(&[0, 1, 2, 3]),
-        sum(&[1, 2, 3, 4]),
-        sum(&[0, 1, 2, 4]),
-        sum(&[0, 2, 3, 4]),
-    ]
 }
 
 fn crc8(data: &[u8]) -> u8 {

@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 
 use num_complex::Complex;
+use sdrmm_dsp::ParityCode;
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, DpmrParams,
@@ -8,7 +9,8 @@ use sdrmm_wire::{
 };
 
 use super::{
-    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, tap_c4fm,
+    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, invert_dibits, inverted,
+    tap_c4fm,
     vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors},
 };
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -26,6 +28,13 @@ pub(crate) const LONG_SYNC_BITS: u32 = 48;
 const SHORT_SYNC_BITS: u32 = 24;
 pub(crate) const LONG_TOLERANCE: u32 = 4;
 const SHORT_TOLERANCE: u32 = 2;
+
+const CHANNEL_CODE_ZERO: u32 = 0x57_5F77;
+const CHANNEL_CODE_ROWS: [u32; 6] = [
+    0x57_7577, 0x57_DD75, 0x55_577D, 0x5F_555F, 0x77_5DD7, 0xD7_55F7,
+];
+const CHANNEL_CODE_TOLERANCE: u32 = 1;
+const HAMMING_WORD_BITS: usize = 12;
 
 const HI_BITS: usize = 72;
 const HI_CODED_BITS: usize = 120;
@@ -116,12 +125,13 @@ struct Decoder {
     bits: Vec<bool>,
     in_call: bool,
     voice_call: bool,
+    inverted: bool,
     vocoder: MbeDecoder,
 }
 
 #[derive(Clone, Copy)]
 enum Pending {
-    Header { packet: bool },
+    Header { fs4: bool },
     Superframe,
 }
 
@@ -134,6 +144,7 @@ impl Decoder {
             bits: Vec::with_capacity(SUPERFRAME_SYMBOLS * 2),
             in_call: false,
             voice_call: false,
+            inverted: false,
             vocoder: MbeDecoder::half_rate(),
         }
     }
@@ -144,6 +155,7 @@ impl Decoder {
         self.pending = None;
         self.in_call = false;
         self.voice_call = false;
+        self.inverted = false;
         self.vocoder.reset();
     }
 
@@ -153,8 +165,8 @@ impl Decoder {
             self.countdown -= 1;
             if self.countdown == 0 {
                 match self.pending.take() {
-                    Some(Pending::Header { packet }) => {
-                        if let Some((frame, voice_call)) = self.header(packet) {
+                    Some(Pending::Header { fs4 }) => {
+                        if let Some((frame, voice_call)) = self.header(fs4) {
                             self.in_call = true;
                             self.voice_call = voice_call;
                             out.events.push(DecoderEvent::Dv(frame));
@@ -169,10 +181,10 @@ impl Decoder {
         if self.pending.is_some() {
             return;
         }
-        for (sync, packet) in [(FS1, false), (FS4, true)] {
+        for (sync, fs4) in [(FS1, false), (FS4, true)] {
             if self.window.sync_distance(sync, LONG_SYNC_BITS) <= LONG_TOLERANCE {
                 self.window.anchor(sync, LONG_SYNC_BITS);
-                self.pending = Some(Pending::Header { packet });
+                self.pending = Some(Pending::Header { fs4 });
                 self.countdown = HEADER_SYMBOLS;
                 return;
             }
@@ -180,14 +192,16 @@ impl Decoder {
         if !self.in_call {
             return;
         }
-        if self.window.sync_distance(FS2, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
-            self.window.anchor(FS2, SHORT_SYNC_BITS);
+        let fs2 = self.observed(FS2);
+        if self.window.sync_distance(fs2, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
+            self.window.anchor(fs2, SHORT_SYNC_BITS);
             self.pending = Some(Pending::Superframe);
             self.countdown = SUPERFRAME_SYMBOLS;
             return;
         }
-        if self.window.sync_distance(FS3, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
-            self.window.anchor(FS3, SHORT_SYNC_BITS);
+        let fs3 = self.observed(FS3);
+        if self.window.sync_distance(fs3, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
+            self.window.anchor(fs3, SHORT_SYNC_BITS);
             self.in_call = false;
             self.voice_call = false;
             out.events.push(DecoderEvent::Dv(DvFrame::new(
@@ -197,12 +211,31 @@ impl Decoder {
         }
     }
 
-    fn header(&mut self, packet: bool) -> Option<(DvFrame, bool)> {
-        self.window.bits(0, HEADER_SYMBOLS, &mut self.bits);
-        let colour = colour_code(&self.bits[HI_CODED_BITS..HI_CODED_BITS + CC_SYMBOLS * 2]);
-        let hi = header_info(&self.bits[..HI_CODED_BITS])
-            .or_else(|| header_info(&self.bits[HI_CODED_BITS + CC_SYMBOLS * 2..]))?;
+    fn observed(&self, sync: u64) -> u64 {
+        if self.inverted {
+            inverted(sync, SHORT_SYNC_BITS)
+        } else {
+            sync
+        }
+    }
 
+    fn header(&mut self, fs4: bool) -> Option<(DvFrame, bool)> {
+        self.window.bits(0, HEADER_SYMBOLS, &mut self.bits);
+        for inverted in [false, true] {
+            if inverted {
+                invert_dibits(&mut self.bits);
+            }
+            let hi = header_info(&self.bits[..HI_CODED_BITS])
+                .or_else(|| header_info(&self.bits[HI_CODED_BITS + CC_SYMBOLS * 2..]));
+            if let Some(hi) = hi {
+                self.inverted = inverted;
+                return Some(self.header_frame(&hi, fs4 != inverted));
+            }
+        }
+        None
+    }
+
+    fn header_frame(&self, hi: &[bool], packet: bool) -> (DvFrame, bool) {
         let mut frame = DvFrame::new(
             DvMode::Dpmr,
             if packet {
@@ -211,12 +244,12 @@ impl Decoder {
                 DvFrameKind::Header
             },
         );
-        frame.color_code = colour;
-        frame.destination = Some(bits_to_u32(&hi, 4, 24));
-        frame.source = Some(bits_to_u32(&hi, 28, 24));
-        let mode = bits_to_u32(&hi, 52, 3);
-        frame.group_call = Some(mode != 0);
-        Some((frame, matches!(mode, 0 | 1 | 5)))
+        frame.color_code =
+            channel_code_number(bits_to_u32(&self.bits, HI_CODED_BITS, CC_SYMBOLS * 2));
+        frame.destination = Some(bits_to_u32(hi, 4, 24));
+        frame.source = Some(bits_to_u32(hi, 28, 24));
+        let mode = bits_to_u32(hi, 52, 3);
+        (frame, matches!(mode, 0 | 1 | 5))
     }
 
     fn superframe(&mut self, out: &mut ChannelOutputs) {
@@ -224,6 +257,9 @@ impl Decoder {
             return;
         }
         self.window.bits(0, SUPERFRAME_SYMBOLS, &mut self.bits);
+        if self.inverted {
+            invert_dibits(&mut self.bits);
+        }
         for start in TCH_STARTS {
             for frame_start in (start..start + TCH_SYMBOLS).step_by(AMBE_SYMBOLS) {
                 let mut frame = [false; 72];
@@ -238,36 +274,47 @@ impl Decoder {
     }
 }
 
-fn colour_code(bits: &[bool]) -> Option<u16> {
-    let mut value = 0;
-    for &[first, second] in bits.as_chunks::<2>().0 {
-        if !second {
-            return None;
-        }
-        value = value << 1 | u16::from(first);
+fn channel_code(number: u8) -> u32 {
+    CHANNEL_CODE_ROWS
+        .iter()
+        .enumerate()
+        .filter(|(bit, _)| number >> bit & 1 == 1)
+        .fold(CHANNEL_CODE_ZERO, |code, (_, &row)| {
+            code ^ row ^ CHANNEL_CODE_ZERO
+        })
+}
+
+fn channel_code_number(received: u32) -> Option<u16> {
+    (0..64u8)
+        .find(|&number| (channel_code(number) ^ received).count_ones() <= CHANNEL_CODE_TOLERANCE)
+        .map(u16::from)
+}
+
+fn scramble(bits: &mut [bool]) {
+    let mut register = 0x1FFu16;
+    for bit in bits {
+        *bit ^= register & 1 == 1;
+        let feedback = (register ^ register >> 4) & 1;
+        register = register >> 1 | feedback << 8;
     }
-    Some(value)
 }
 
 fn header_info(coded: &[bool]) -> Option<Vec<bool>> {
     let mut descrambled = [false; HI_CODED_BITS];
-    let mut register = 0x1FFu16;
-    for (i, slot) in descrambled.iter_mut().enumerate() {
-        let feedback = (register >> 8 ^ register >> 4) & 1;
-        register = (register << 1 | feedback) & 0x1FF;
-        *slot = coded[i] ^ (feedback == 1);
-    }
+    descrambled.copy_from_slice(coded);
+    scramble(&mut descrambled);
     let mut blocks = [false; HI_CODED_BITS];
-    for r in 0..12 {
+    for r in 0..HAMMING_WORD_BITS {
         for c in 0..HI_BLOCKS {
-            blocks[c * 12 + r] = descrambled[r * HI_BLOCKS + c];
+            blocks[c * HAMMING_WORD_BITS + r] = descrambled[r * HI_BLOCKS + c];
         }
     }
     let mut bytes = [0u8; HI_BLOCKS];
     let mut info = Vec::with_capacity(HI_BITS);
     for (block, byte) in bytes.iter_mut().enumerate() {
-        for bit in 0..8 {
-            let value = blocks[block * 12 + bit];
+        let word = &mut blocks[block * HAMMING_WORD_BITS..(block + 1) * HAMMING_WORD_BITS];
+        ParityCode::HAMMING_12_8.decode(word)?;
+        for (bit, &value) in word[..8].iter().enumerate() {
             *byte = *byte << 1 | u8::from(value);
             if block * 8 + bit < HI_BITS {
                 info.push(value);
@@ -323,10 +370,9 @@ mod tests {
         let header = frames.first().expect("a decoded frame");
         assert_eq!(header.mode, DvMode::Dpmr);
         assert_eq!(header.kind, DvFrameKind::Header);
-        assert_eq!(header.color_code, Some(call.colour_code));
+        assert_eq!(header.color_code, Some(u16::from(call.channel_code)));
         assert_eq!(header.destination, Some(call.called));
         assert_eq!(header.source, Some(call.own));
-        assert_eq!(header.group_call, Some(true));
         assert!(
             frames.iter().any(|f| f.kind == DvFrameKind::Terminator),
             "no end frame: {frames:?}"
@@ -334,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_an_individual_call() {
+    fn decodes_a_voice_only_call() {
         let call = tx::Call {
             mode: 0,
             called: 0x00_00FF,
@@ -343,8 +389,49 @@ mod tests {
         let iq = tx::transmission(&call, INPUT_RATE_HZ);
         let frames = decode(&mut channel(), &iq);
         let header = frames.first().expect("a decoded frame");
-        assert_eq!(header.group_call, Some(false));
+        assert_eq!(header.group_call, None);
         assert_eq!(header.destination, Some(call.called));
+    }
+
+    #[test]
+    fn decodes_inverted_polarity() {
+        let call = tx::Call::default();
+        let iq: Vec<Complex<f32>> = tx::transmission(&call, INPUT_RATE_HZ)
+            .iter()
+            .map(Complex::conj)
+            .collect();
+        let frames = decode(&mut channel(), &iq);
+        let header = frames.first().expect("a decoded frame");
+        assert_eq!(header.kind, DvFrameKind::Header);
+        assert_eq!(header.source, Some(call.own));
+        assert!(
+            frames.iter().any(|f| f.kind == DvFrameKind::Terminator),
+            "{frames:?}"
+        );
+    }
+
+    #[test]
+    fn channel_codes_match_the_spec_table() {
+        for (number, code) in [
+            (0, 0x57_5F77),
+            (2, 0x57_DD75),
+            (48, 0xF7_5757),
+            (63, 0xFD_FD77),
+        ] {
+            assert_eq!(channel_code(number), code);
+            assert_eq!(channel_code_number(code ^ 0x80), Some(u16::from(number)));
+        }
+    }
+
+    #[test]
+    fn scrambler_starts_with_the_all_ones_preset() {
+        let mut sequence = [false; 18];
+        scramble(&mut sequence);
+        assert_eq!(&sequence[..9], &[true; 9]);
+        assert_eq!(
+            &sequence[9..],
+            &[false, false, false, false, false, true, true, true, true]
+        );
     }
 
     #[test]
