@@ -377,7 +377,9 @@ impl Drop for RxStream {
     fn drop(&mut self) {
         let inner = &mut *lock(&self.inner);
         inner.pending = None;
-        close_buffer(&mut inner.link, &self.device);
+        if !self.stopper.is_stopped() {
+            close_buffer(&mut inner.link, &self.device);
+        }
         inner.link.close();
     }
 }
@@ -595,6 +597,15 @@ mod tests {
             b"READBUF cf-ad9361-lpc 8\r\nREADBUF cf-ad9361-lpc 8\r\n",
             "the radio fills the next buffer while this one is converted"
         );
+    }
+
+    #[test]
+    fn a_stopped_stream_leaves_the_buffer_to_the_closed_connection() {
+        let transport = Scripted::with(&[]);
+        let stream = stream(&transport, 8);
+        sdrmm_device::StopHandle::stop(&stream.stop_handle());
+        drop(stream);
+        assert!(lock(&transport.sent).is_empty());
     }
 
     #[test]
