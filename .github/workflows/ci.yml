@@ -108,7 +108,7 @@ jobs:
           cache: simd
           save: ${{ env.SAVE_CACHE }}
       - uses: petarpetrovt/setup-sde@v6.0
-      - run: cargo test -p sdrmm-dsp --release --lib -- fir:: realiq resamp
+      - run: "cargo test -p sdrmm-dsp --release --lib -- fir:: realiq resamp"
         env:
           SDRMM_REQUIRE_AVX512: "1"
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: ${{ env.SDE_PATH }}/sde64 -spr --
