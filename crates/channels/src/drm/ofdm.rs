@@ -3,7 +3,7 @@ use std::f64::consts::TAU;
 use num_complex::Complex;
 use sdrmm_dsp::fft::Transform;
 
-use super::{estimate::Estimator, mode::Robustness};
+use super::{estimate::Estimator, framing::Framing, mode::Robustness};
 
 pub const ACQUIRE_SAMPLES: usize = 19_200;
 const MIN_COHERENCE: f32 = 0.3;
@@ -15,10 +15,7 @@ const SEARCH_HZ: f64 = 2_000.0;
 const FREQUENCY_GAIN: f64 = 0.05;
 const TIMING_WINDOW: usize = 8;
 const TIMING_SMOOTHING: f32 = 0.9;
-const MAX_SPACING: i32 = 2;
 const PEAK_RATIO: f32 = 1.4;
-const EMPTY_PENALTY: f32 = 0.25;
-const OCCUPIED: f32 = 0.1;
 
 pub struct Probe {
     pub mode: Robustness,
@@ -139,13 +136,10 @@ pub struct Demodulator {
     theta: f64,
     window: Vec<Complex<f32>>,
     bins: Vec<Complex<f32>>,
-    pairs: Vec<(usize, usize, Complex<f32>)>,
-    mean_power: f32,
+    framing: Framing,
     sync: Sync,
     symbol: usize,
     misses: u32,
-    scores: Vec<f32>,
-    searched: usize,
     timing: Vec<f32>,
     estimator: Estimator,
     pub lost: bool,
@@ -158,20 +152,6 @@ impl Demodulator {
         let mode = acquired.mode;
         let (low, high) = mode.span();
         let width = (high - low + 1) as usize;
-        let refs = mode.time_refs();
-        let pairs = refs
-            .windows(2)
-            .filter(|pair| pair[1].0 - pair[0].0 <= MAX_SPACING)
-            .map(|pair| {
-                let a = Complex::from_polar(1.0, TAU as f32 * f32::from(pair[0].1) / 1024.0);
-                let b = Complex::from_polar(1.0, TAU as f32 * f32::from(pair[1].1) / 1024.0);
-                (
-                    (pair[0].0 - low) as usize,
-                    (pair[1].0 - low) as usize,
-                    (a * b.conj()).conj(),
-                )
-            })
-            .collect();
         Self {
             mode,
             fft: Transform::forward(mode.useful()),
@@ -182,16 +162,10 @@ impl Demodulator {
             theta: 0.0,
             window: vec![Complex::default(); mode.useful()],
             bins: vec![Complex::default(); width],
-            pairs,
-            mean_power: 0.0,
+            framing: Framing::new(mode, (SEARCH_HZ / mode.spacing_hz()).ceil() as i32),
             sync: Sync::Searching,
             symbol: 0,
             misses: 0,
-            scores: vec![
-                0.0;
-                mode.symbols() * (2 * (SEARCH_HZ / mode.spacing_hz()).ceil() as usize + 1)
-            ],
-            searched: 0,
             timing: vec![0.0; 2 * TIMING_WINDOW + 1],
             estimator: Estimator::new(mode, occupancy),
             lost: false,
@@ -243,7 +217,12 @@ impl Demodulator {
         let drop = (self.next_symbol - self.buffer_start).saturating_sub(TIMING_WINDOW as u64 + 1);
         self.buffer.drain(..drop as usize);
         self.buffer_start += drop;
-        Some(self.advance())
+        let ready = self.advance();
+        self.framing.store(&self.bins);
+        if adjust != 0 {
+            self.framing.realign(adjust);
+        }
+        Some(ready)
     }
 
     fn cp_correlation(&self, start: usize) -> Complex<f32> {
@@ -314,71 +293,15 @@ impl Demodulator {
             );
             *bin = self.window[fft_index] * correction;
         }
-        let mean = self.bins.iter().map(|bin| bin.norm_sqr()).sum::<f32>() / self.bins.len() as f32;
-        let (power, count) = self
-            .bins
-            .iter()
-            .map(|bin| bin.norm_sqr())
-            .filter(|&power| power > OCCUPIED * mean)
-            .fold((0.0f32, 0usize), |(sum, count), power| {
-                (sum + power, count + 1)
-            });
-        self.mean_power = power / count.max(1) as f32;
-    }
-
-    fn reference_metric(&self, shift: i32) -> f32 {
-        let mut sum = Complex::<f32>::default();
-        let mut norm = 0.0f32;
-        let width = self.bins.len() as i32;
-        for &(a, b, reference) in &self.pairs {
-            let (ia, ib) = (a as i32 + shift, b as i32 + shift);
-            if ia < 0 || ib < 0 || ia >= width || ib >= width {
-                return 0.0;
-            }
-            let product = self.bins[ia as usize] * self.bins[ib as usize].conj() * reference;
-            sum += product;
-            norm += product.norm();
-        }
-        let floor = EMPTY_PENALTY * self.pairs.len() as f32 * self.mean_power;
-        sum.norm() / (norm + floor).max(f32::EPSILON)
-    }
-
-    fn reach(&self) -> i32 {
-        (SEARCH_HZ / self.mode.spacing_hz()).ceil() as i32
     }
 
     fn search(&mut self) -> Option<i32> {
-        let reach = self.reach();
-        let shifts = (2 * reach + 1) as usize;
-        let symbols = self.mode.symbols();
-        let row = self.searched % symbols;
-        let settled = self.searched >= symbols;
-        self.searched += 1;
-        let mut best = (0, 0.0f32);
-        for (index, shift) in (-reach..=reach).enumerate() {
-            let metric = self.reference_metric(shift);
-            let score = &mut self.scores[row * shifts + index];
-            *score = if settled {
-                0.5 * (*score + metric)
-            } else {
-                metric
-            };
-            if *score > best.1 {
-                best = (shift, *score);
-            }
-        }
-        if !settled || best.1 < SYNC_METRIC {
-            return None;
-        }
-        let candidate = row * shifts + (best.0 + reach) as usize;
-        let runner_up = self
-            .scores
-            .iter()
-            .enumerate()
-            .filter(|&(index, _)| index != candidate)
-            .map(|(_, &score)| score)
-            .fold(0.0f32, f32::max);
-        (best.1 > PEAK_RATIO * runner_up).then_some(best.0)
+        let row = self.framing.measure_all(&self.bins)?;
+        let best = self.framing.best()?;
+        (best.start == row
+            && best.metric >= SYNC_METRIC
+            && best.metric > PEAK_RATIO * best.runner_up)
+            .then_some(best.shift)
     }
 
     fn shift_bins(&mut self, shift: i32) {
@@ -398,6 +321,9 @@ impl Demodulator {
                 };
                 self.cycles_per_sample += f64::from(shift) / self.mode.useful() as f64;
                 self.shift_bins(shift);
+                self.framing.shift(shift);
+                self.framing.restart();
+                self.framing.measure(&self.bins, 0);
                 self.sync = Sync::Confirming { symbols: 0 };
                 self.symbol = 0;
                 self.estimator.reset();
@@ -406,14 +332,15 @@ impl Demodulator {
             }
             Sync::Confirming { symbols } => {
                 self.symbol = (self.symbol + 1) % self.mode.symbols();
+                self.framing.measure(&self.bins, self.symbol);
                 if self.symbol == 0 {
-                    if self.reference_metric(0) > SYNC_METRIC {
+                    if self.framing.frame_metric() > SYNC_METRIC {
                         self.sync = Sync::Locked;
                         self.misses = 0;
                         self.frame_start = true;
                     } else {
                         self.sync = Sync::Searching;
-                        self.searched = 0;
+                        self.framing.restart();
                         return false;
                     }
                 } else {
@@ -425,9 +352,10 @@ impl Demodulator {
             }
             Sync::Locked => {
                 self.symbol = (self.symbol + 1) % self.mode.symbols();
+                self.framing.measure(&self.bins, self.symbol);
                 if self.symbol == 0 {
                     self.frame_start = true;
-                    if self.reference_metric(0) > KEEP_METRIC {
+                    if self.framing.frame_metric() > KEEP_METRIC {
                         self.misses = 0;
                     } else {
                         self.misses += 1;

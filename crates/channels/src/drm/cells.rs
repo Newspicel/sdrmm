@@ -38,9 +38,8 @@ fn pilot(mode: Robustness, occupancy: u8, frame: usize, symbol: usize, k: i32) -
         } else {
             SQRT_2
         };
-        let phase = fixed.unwrap_or_else(|| mode.gain_phase(symbol, k));
         return Some(Cell::Pilot {
-            value: unit(phase, amplitude),
+            value: unit(mode.pilot_phase(symbol, k), amplitude),
             gain: true,
         });
     }
