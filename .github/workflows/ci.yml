@@ -62,6 +62,7 @@ jobs:
           - label: macos-arm64
             runner: macos-15
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/node
