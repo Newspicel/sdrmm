@@ -4,6 +4,6 @@
     "lib": ["ESNext"],
     "types": []
   },
-  "include": ["**/*.ts", "../src/contact.ts"],
+  "include": ["**/*.ts", "../src/contact.ts", "../src/recordings.ts"],
   "exclude": []
 }

@@ -6,7 +6,7 @@ export const SHARE_IMAGE = { path: "/og.png", width: 1200, height: 630 } as cons
 
 export const DOCS = "/docs/";
 
-const UNLISTED = new Set(["demo"]);
+const UNLISTED = new Set(["demo", "recordings"]);
 
 export function canonical(pathname: string): URL {
   return new URL(pathname.replace(/\.html$/, "").replace(/(^|\/)index$/, "$1"), SITE);

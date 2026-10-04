@@ -9,9 +9,10 @@ interface Props {
   description: string;
   summary: string;
   structured?: unknown;
+  noindex?: boolean;
 }
 
-const { title, description, summary, structured } = Astro.props;
+const { title, description, summary, structured, noindex = false } = Astro.props;
 const url = canonical(Astro.url.pathname);
 const image = canonical(SHARE_IMAGE.path);
 ---
@@ -25,6 +26,7 @@ const image = canonical(SHARE_IMAGE.path);
     <meta name="theme-color" content="#0d0f10" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

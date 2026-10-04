@@ -13,16 +13,23 @@
     "not_found_handling": "none"
   },
   "send_email": [{ "name": "EMAIL" }],
+  "r2_buckets": [{ "binding": "PRIVATE", "bucket_name": "sdrmm-private" }],
   "ratelimits": [
     {
       "name": "CONTACT_LIMIT",
       "namespace_id": "1001",
       "simple": { "limit": 3, "period": 60 }
+    },
+    {
+      "name": "UPLOAD_LIMIT",
+      "namespace_id": "1002",
+      "simple": { "limit": 5, "period": 60 }
     }
   ],
   "vars": {
     "CONTACT_TO": "hi@jhaag.me",
-    "CONTACT_FROM": "contact@sdrmm.com"
+    "CONTACT_FROM": "contact@sdrmm.com",
+    "RECORDINGS_TO": "contact@sdrmm.com"
   },
   "observability": { "enabled": true }
 }

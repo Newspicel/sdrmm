@@ -78,6 +78,10 @@ export const privacy: LegalEntry[] = [
     body: "When you use the contact form or write an email, the data you send (name, email address, message) is processed solely to handle your request. Form messages are delivered to my inbox by Cloudflare Email Routing and are not stored on the site. Legal basis: Art. 6 (1) (b) GDPR for contract-related requests, otherwise Art. 6 (1) (f) GDPR. The data is deleted once it is no longer needed and no statutory retention obligations apply.",
   },
   {
+    title: "Recording donations",
+    body: "Recordings you upload, with the signal description, notes and optional email address you enter, are stored in a private Cloudflare R2 bucket, and I get an email with these details. They are used only to build and test SDR-- decoders and are never published. Legal basis: Art. 6 (1) (a) GDPR (your consent by uploading). Email contact@sdrmm.com to have a donation deleted.",
+  },
+  {
     title: "iPhone app",
     body: "The app only talks to SDR-- servers you pair with. I receive no data from it, and it contains no analytics or advertising code. Pairing credentials stay in the iOS Keychain, settings stay on the device. Forgetting a server in Settings removes its credentials. If you opted in on your device, Apple shares anonymous crash reports and usage statistics with me.",
   },

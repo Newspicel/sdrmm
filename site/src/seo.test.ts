@@ -24,11 +24,9 @@ describe("canonical", () => {
 });
 
 describe("sitePages", () => {
-  it("lists every page but the demo", () => {
-    expect(sitePages(["./index.astro", "./download.astro", "./demo.astro"])).toEqual([
-      `${SITE}/`,
-      `${SITE}/download`,
-    ]);
+  it("lists every page but the unlisted ones", () => {
+    const pages = ["./index.astro", "./download.astro", "./demo.astro", "./recordings.astro"];
+    expect(sitePages(pages)).toEqual([`${SITE}/`, `${SITE}/download`]);
   });
 });
 
