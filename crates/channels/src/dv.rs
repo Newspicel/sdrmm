@@ -323,7 +323,7 @@ pub(crate) static MODE_SIGNATURES: LazyLock<Vec<ModeSignature>> = LazyLock::new(
             Framing {
                 bits: nxdn::FSW_BITS,
                 tolerance: IDENT_SHORT_SYNC_TOLERANCE,
-                patterns: vec![nxdn::FSW],
+                patterns: nxdn::FSWS.to_vec(),
                 min_hits: 2,
             },
         ),
@@ -339,7 +339,7 @@ pub(crate) static MODE_SIGNATURES: LazyLock<Vec<ModeSignature>> = LazyLock::new(
             Framing {
                 bits: nxdn::FSW_BITS,
                 tolerance: IDENT_SHORT_SYNC_TOLERANCE,
-                patterns: vec![nxdn::FSW],
+                patterns: nxdn::FSWS.to_vec(),
                 min_hits: 2,
             },
         ),
@@ -390,6 +390,16 @@ pub(crate) static MODE_SIGNATURES: LazyLock<Vec<ModeSignature>> = LazyLock::new(
         },
     ]
 });
+
+pub(crate) const fn inverted(pattern: u64, bits: u32) -> u64 {
+    pattern ^ (0xAAAA_AAAA_AAAA_AAAA >> (64 - bits))
+}
+
+pub(crate) fn invert_dibits(bits: &mut [bool]) {
+    for bit in bits.iter_mut().step_by(2) {
+        *bit = !*bit;
+    }
+}
 
 pub(crate) fn bits_to_u32(bits: &[bool], offset: usize, len: usize) -> u32 {
     bits[offset..offset + len]

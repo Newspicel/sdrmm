@@ -12,13 +12,14 @@ use sdrmm_wire::{
 };
 
 use super::{
-    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, tap_c4fm,
+    INPUT_RATE_HZ, SymbolWindow, bits_to_u32, c4fm_demod, c4fm_params, inverted, tap_c4fm,
     vocoder::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors},
 };
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
 
 pub(crate) const FSW: u64 = 0x000C_DF59;
 pub(crate) const FSW_BITS: u32 = 20;
+pub(crate) const FSWS: [u64; 2] = [FSW, inverted(FSW, FSW_BITS)];
 pub(crate) const SYNC_TOLERANCE: u32 = 2;
 
 const LICH_BITS: usize = 8;
@@ -44,6 +45,10 @@ const FACCH_PUNCTURES: [usize; 48] = [
 
 const L3_VOICE_CALL: u32 = 0x01;
 const L3_TX_RELEASE: u32 = 0x08;
+const L3_PROPRIETARY: u32 = 0x3F;
+const KENWOOD_ALIAS: u32 = 0x68_8204;
+const ALIAS_SEGMENTS: usize = 4;
+const ALIAS_CRC_BYTES: usize = 2;
 
 pub(crate) const RRC_ALPHA: f64 = 0.2;
 
@@ -154,6 +159,8 @@ struct Decoder {
     viterbi: Viterbi5,
     soft: Vec<i16>,
     sacch: SacchAssembler,
+    alias: AliasAssembler,
+    inverted: bool,
 }
 
 struct Held {
@@ -177,6 +184,8 @@ impl Decoder {
             viterbi: Viterbi5::new(),
             soft: Vec::with_capacity(POST_FSW_SYMBOLS * 2),
             sacch: SacchAssembler::default(),
+            alias: AliasAssembler::default(),
+            inverted: false,
         }
     }
 
@@ -190,6 +199,8 @@ impl Decoder {
         self.sync_at = 0;
         self.vocoder.reset();
         self.sacch.reset();
+        self.alias = AliasAssembler::default();
+        self.inverted = false;
     }
 
     fn push(&mut self, symbol: f32, out: &mut ChannelOutputs) {
@@ -207,35 +218,46 @@ impl Decoder {
             }
             return;
         }
-        if self.hunting && self.window.sync_distance(FSW, FSW_BITS) <= SYNC_TOLERANCE {
-            if let Some(held) = &self.held
-                && self.clock < held.at + FRAME_SYMBOLS - 1
-            {
-                return;
-            }
-            if let Some(held) = self.held.take()
-                && on_cadence(self.clock - held.at)
-            {
-                self.emit(held.frame, out);
-                for frame in held.voice {
-                    self.vocoder.decode_half_code_vectors(
-                        half_rate_code_vectors(&frame, &AMBE_3600_INTERLEAVE),
-                        false,
-                        out,
-                    );
-                }
-            }
-            self.window.anchor(FSW, FSW_BITS);
-            self.hunting = false;
-            self.sync_at = self.clock;
-            self.countdown = POST_FSW_SYMBOLS;
+        let Some(fsw) = self.hunting_sync() else {
+            return;
+        };
+        if let Some(held) = &self.held
+            && self.clock < held.at + FRAME_SYMBOLS - 1
+        {
+            return;
         }
+        if let Some(held) = self.held.take()
+            && on_cadence(self.clock - held.at)
+        {
+            self.emit(held.frame, out);
+            for frame in held.voice {
+                self.vocoder.decode_half_code_vectors(
+                    half_rate_code_vectors(&frame, &AMBE_3600_INTERLEAVE),
+                    false,
+                    out,
+                );
+            }
+        }
+        self.window.anchor(fsw, FSW_BITS);
+        self.inverted = fsw != FSW;
+        self.hunting = false;
+        self.sync_at = self.clock;
+        self.countdown = POST_FSW_SYMBOLS;
+    }
+
+    fn hunting_sync(&self) -> Option<u64> {
+        if !self.hunting {
+            return None;
+        }
+        FSWS.into_iter()
+            .find(|&fsw| self.window.sync_distance(fsw, FSW_BITS) <= SYNC_TOLERANCE)
     }
 
     fn emit(&mut self, frame: DvFrame, out: &mut ChannelOutputs) {
         if frame.kind == DvFrameKind::Voice
             && self.last_kind == Some(DvFrameKind::Voice)
             && frame.source.is_none()
+            && frame.talker_alias.is_none()
         {
             return;
         }
@@ -250,14 +272,14 @@ impl Decoder {
             let pn = register & 1 != 0;
             let feedback = (register ^ (register >> 4)) & 1;
             register = register >> 1 | feedback << 8;
-            if pn {
+            if pn != self.inverted {
                 self.soft[symbol * 2] = -self.soft[symbol * 2];
             }
         }
         self.bits.clear();
         self.bits.extend(self.soft.iter().map(|&bit| bit > 0));
         let information: Vec<bool> = (0..LICH_SYMBOLS).map(|i| self.bits[i * 2]).collect();
-        if information.iter().filter(|b| **b).count() % 2 == 0 {
+        if !lich_parity_holds(&information) {
             return None;
         }
         let rf_channel = bits_to_u32(&information, 0, 2);
@@ -284,7 +306,7 @@ impl Decoder {
         ) {
             frame.color_code = Some(u16::from(sacch.ran));
             if let Some(layer3) = self.sacch.push(sacch) {
-                apply_layer3(&mut frame, &layer3);
+                self.apply_layer3(&mut frame, &layer3);
             }
         }
         let facch_ranges: &[(usize, usize)] = match option {
@@ -298,7 +320,7 @@ impl Decoder {
         };
         for &(start, end) in facch_ranges {
             if let Some(layer3) = decode_facch(&self.soft[start..end], &mut self.viterbi) {
-                apply_layer3(&mut frame, &layer3);
+                self.apply_layer3(&mut frame, &layer3);
                 break;
             }
         }
@@ -320,6 +342,21 @@ impl Decoder {
         }
         Some((frame, voice))
     }
+
+    fn apply_layer3(&mut self, frame: &mut DvFrame, layer3: &[bool]) {
+        if let Some(segment) = alias_segment(layer3) {
+            frame.talker_alias = self.alias.push(segment);
+        } else {
+            apply_call(frame, layer3);
+        }
+    }
+}
+
+fn lich_parity_holds(information: &[bool]) -> bool {
+    information[..4]
+        .iter()
+        .fold(false, |parity, &bit| parity ^ bit)
+        == information[7]
 }
 
 #[derive(Clone, Copy)]
@@ -434,7 +471,60 @@ fn crc_msb(poly: u32, init: u32, bits: &[bool]) -> u32 {
     })
 }
 
-fn apply_layer3(frame: &mut DvFrame, layer3: &[bool]) {
+struct AliasSegment {
+    index: usize,
+    total: usize,
+    bytes: [u8; 4],
+}
+
+#[derive(Default)]
+struct AliasAssembler {
+    bytes: [u8; ALIAS_SEGMENTS * 4],
+    total: usize,
+    received: u8,
+}
+
+impl AliasAssembler {
+    fn push(&mut self, segment: AliasSegment) -> Option<String> {
+        if segment.total != self.total {
+            *self = Self {
+                total: segment.total,
+                ..Self::default()
+            };
+        }
+        self.bytes[segment.index * 4..segment.index * 4 + 4].copy_from_slice(&segment.bytes);
+        self.received |= 1 << segment.index;
+        if self.received != (1 << self.total) - 1 {
+            return None;
+        }
+        let text: String = self.bytes[..self.total * 4 - ALIAS_CRC_BYTES]
+            .iter()
+            .take_while(|&&byte| byte != 0)
+            .map(|&byte| char::from(byte))
+            .filter(|c| c.is_ascii_graphic() || *c == ' ')
+            .collect();
+        let text = text.trim();
+        (!text.is_empty()).then(|| text.to_owned())
+    }
+}
+
+fn alias_segment(layer3: &[bool]) -> Option<AliasSegment> {
+    if bits_to_u32(layer3, 2, 6) != L3_PROPRIETARY || bits_to_u32(layer3, 8, 24) != KENWOOD_ALIAS {
+        return None;
+    }
+    let index = bits_to_u32(layer3, 32, 4) as usize;
+    let total = bits_to_u32(layer3, 36, 4) as usize;
+    if index == 0 || index > total || total > ALIAS_SEGMENTS {
+        return None;
+    }
+    Some(AliasSegment {
+        index: index - 1,
+        total,
+        bytes: std::array::from_fn(|i| bits_to_u32(layer3, 40 + i * 8, 8) as u8),
+    })
+}
+
+fn apply_call(frame: &mut DvFrame, layer3: &[bool]) {
     let message_type = bits_to_u32(layer3, 2, 6);
     frame.kind = match message_type {
         L3_VOICE_CALL => frame.kind,
@@ -591,6 +681,55 @@ mod tests {
         assert_eq!(addressed.color_code, Some(17));
         assert_eq!(addressed.destination, Some(234));
         assert_eq!(addressed.group_call, Some(true));
+    }
+
+    #[test]
+    fn lich_parity_covers_only_the_channel_type_bits() {
+        let octet_bits =
+            |octet: u8| -> Vec<bool> { (0..8).rev().map(|i| octet >> i & 1 == 1).collect() };
+        for octet in [0x02, 0x41, 0xA0, 0xAC, 0xAE, 0x6C] {
+            assert!(lich_parity_holds(&octet_bits(octet)), "{octet:#04x}");
+            assert!(!lich_parity_holds(&octet_bits(octet ^ 1)), "{octet:#04x}");
+        }
+    }
+
+    #[test]
+    fn decodes_inbound_frames() {
+        let iq = tx::transmission(&tx::Shape::default(), 1, false, INPUT_RATE_HZ);
+        let frames = decode(&mut channel(NxdnBandwidth::Narrow), &iq);
+        assert_eq!(
+            frames.first().and_then(|f| f.opcode.as_deref()),
+            Some("traffic channel inbound"),
+            "{frames:?}"
+        );
+    }
+
+    #[test]
+    fn decodes_inverted_polarity() {
+        let iq: Vec<Complex<f32>> =
+            tx::addressed_transmission(&tx::Shape::default(), 1, 901, 0, true, INPUT_RATE_HZ)
+                .iter()
+                .map(Complex::conj)
+                .collect();
+        let frames = decode(&mut channel(NxdnBandwidth::Narrow), &iq);
+        let call = frames
+            .iter()
+            .find(|frame| frame.source == Some(901))
+            .expect("inverted call addressing");
+        assert_eq!(call.color_code, Some(1));
+        assert_eq!(call.destination, Some(0));
+    }
+
+    #[test]
+    fn assembles_the_kenwood_talker_alias() {
+        let iq = tx::aliased_transmission(&tx::Shape::default(), 1, "REPEATER", INPUT_RATE_HZ);
+        let frames = decode(&mut channel(NxdnBandwidth::Narrow), &iq);
+        assert!(
+            frames
+                .iter()
+                .any(|frame| frame.talker_alias.as_deref() == Some("REPEATER")),
+            "{frames:?}"
+        );
     }
 
     #[test]
