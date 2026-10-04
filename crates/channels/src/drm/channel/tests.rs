@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    f32::consts::TAU,
+    time::{Duration, Instant},
+};
 
 use sdrmm_wire::{ChannelParams, DrmMode};
 
@@ -151,6 +154,56 @@ fn mode_a_survives_noise_offset_and_echoes_with_unequal_protection() {
     );
     assert!(status.audio_frames_ok > 5, "{status:?}");
     assert_eq!(status.audio_frames_bad, 0, "{status:?}");
+}
+
+fn displace_time_references(iq: &mut [Complex<f32>], mode: Robustness) {
+    let oversample = (synth::drm::RATE_HZ / mode.rate_hz()) as usize;
+    let (size, guard) = (mode.useful() * oversample, mode.guard() * oversample);
+    let frame = mode.symbols() * (size + guard);
+    let mut forward = sdrmm_dsp::fft::Transform::forward(size);
+    let mut inverse = sdrmm_dsp::fft::Transform::inverse(size);
+    let refs = mode.time_refs();
+    for start in (0..iq.len() / frame).map(|index| index * frame) {
+        let symbol = &mut iq[start..start + size + guard];
+        let mut bins = symbol[guard..].to_vec();
+        forward.process(&mut bins);
+        bins.iter_mut().for_each(|bin| *bin /= size as f32);
+        for (pair, &(k, _)) in refs.windows(2).zip(&refs[1..]) {
+            if mode.frequency_phase(0, k).is_none() {
+                let bin = &mut bins[k.rem_euclid(size as i32) as usize];
+                let phase = TAU * f32::from(pair[0].1) / 1024.0;
+                *bin = Complex::from_polar(bin.norm(), phase);
+            }
+        }
+        inverse.process(&mut bins);
+        symbol[guard..].copy_from_slice(&bins);
+        symbol.copy_within(size..size + guard, 0);
+    }
+}
+
+#[test]
+fn mode_d_locks_when_time_references_stray_from_the_table() {
+    let config = Config {
+        sdc_robust: true,
+        ..defaults(Robustness::D)
+    };
+    let mut clean = synth::drm::signal(config, 6);
+    displace_time_references(&mut clean, Robustness::D);
+    let mut echoed = multipath(
+        &clean,
+        &[
+            (0.0, Complex::new(1.0, 0.0)),
+            (0.0024, Complex::new(-0.3, 0.5)),
+        ],
+    );
+    synth::shift(&mut echoed, -420.0, INPUT_RATE_HZ);
+    let iq = at_snr(&echoed, 24.0, 3);
+    let mut channel = channel(DrmMode::Drm30, None);
+    let out = run(&mut channel, &iq);
+    let status = status(&out);
+    assert!(status.locked, "{status:?}");
+    assert_eq!(status.label.as_deref(), Some("Rust Wave"));
+    assert!(status.audio_frames_ok > 0, "{status:?}");
 }
 
 #[test]

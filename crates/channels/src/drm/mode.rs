@@ -583,6 +583,13 @@ impl Robustness {
     }
 
     #[must_use]
+    pub fn pilot_phase(self, symbol: usize, k: i32) -> u16 {
+        self.frequency_phase(symbol, k)
+            .or_else(|| (symbol == 0).then(|| self.time_phase(k)).flatten())
+            .unwrap_or_else(|| self.gain_phase(symbol, k))
+    }
+
+    #[must_use]
     pub fn afs_phase(self, frame: usize, symbol: usize, k: i32) -> Option<u16> {
         if self != Self::E || (k + 106) % 4 != 0 || !(-106..=106).contains(&k) {
             return None;

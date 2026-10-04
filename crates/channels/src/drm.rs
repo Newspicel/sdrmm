@@ -6,6 +6,7 @@ mod channel;
 pub(crate) mod coding;
 mod estimate;
 pub(crate) mod fac;
+mod framing;
 pub(crate) mod mlc;
 pub(crate) mod mode;
 pub(crate) mod msc;

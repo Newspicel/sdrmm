@@ -37,10 +37,7 @@ fn reference(mode: Robustness, occupancy: u8, symbol: usize, k: i32) -> Complex<
     } else {
         SQRT_2
     };
-    let phase = mode
-        .frequency_phase(symbol, k)
-        .or_else(|| (symbol == 0).then(|| mode.time_phase(k)).flatten())
-        .unwrap_or_else(|| mode.gain_phase(symbol, k));
+    let phase = mode.pilot_phase(symbol, k);
     Complex::from_polar(amplitude, 2.0 * PI * f32::from(phase) / 1024.0)
 }
 
