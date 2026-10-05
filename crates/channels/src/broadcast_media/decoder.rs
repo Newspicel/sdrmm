@@ -60,16 +60,10 @@ impl Decoder {
         Ok(Self::with(kind, Some(parser), opened))
     }
 
-    pub fn usac(config: &[u8], four_to_one_sbr: bool) -> Result<Self, String> {
+    pub fn usac(config: &[u8]) -> Result<Self, String> {
         silence_library_logging();
-        let codec = match av::decoder::find_by_name("aac_at") {
-            Some(codec) => codec,
-            None if four_to_one_sbr => {
-                return Err("No decoder for 4:1 SBR".to_owned());
-            }
-            None => av::decoder::find(Kind::DrmXhe.id())
-                .ok_or_else(|| "Decoder unavailable: xHE-AAC".to_owned())?,
-        };
+        let codec = av::decoder::find_by_name("libfdk_aac")
+            .ok_or_else(|| "Decoder unavailable: xHE-AAC".to_owned())?;
         let opened = open(codec, config)?;
         Ok(Self::with(Kind::DrmXhe, None, opened))
     }

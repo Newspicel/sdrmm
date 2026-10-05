@@ -59,11 +59,6 @@ impl AudioConfig {
     }
 
     #[must_use]
-    pub const fn four_to_one_sbr(&self) -> bool {
-        matches!(self.coding, Coding::Xhe) && self.config_length > 0 && self.config[0] >> 6 == 3
-    }
-
-    #[must_use]
     pub const fn output_rate_hz(&self) -> u32 {
         if self.sbr {
             self.rate_hz * 2

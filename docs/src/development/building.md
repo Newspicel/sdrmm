@@ -34,11 +34,11 @@ cargo run -p sdrmm
 
 Open <http://localhost:8080>.
 
-The media script builds the few FFmpeg 9.0.2 codecs SDR-- needs, from checksummed source, into
-`.media/<target>` as shared libraries. Keep `FFMPEG_DIR` set for every Cargo command. To run
+The media script builds the few FFmpeg 9.0.2 codecs SDR-- needs, plus fdk-aac 2.0.3 for xHE-AAC,
+from checksummed source into `.media/<target>` as shared libraries. Keep `FFMPEG_DIR` set for every Cargo command. To run
 binaries and tests, CI also adds `$FFMPEG_DIR/lib` to `LD_LIBRARY_PATH` on Linux and
 `DYLD_LIBRARY_PATH` on macOS. A system FFmpeg older than 9 does not compile. For cross builds,
-pass `--target <triple>` to the script. Nix uses its own FFmpeg.
+pass `--target <triple>` to the script. Nix uses its own FFmpeg with fdk-aac.
 
 The server embeds `web/dist`, so build the frontend first. Without it, the server shows a
 placeholder page.

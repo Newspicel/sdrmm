@@ -36,10 +36,16 @@ const NATIVE: &[Native] = &[
         files: &[],
     },
     Native {
-        name: "FFmpeg 9.0.1",
+        name: "FFmpeg 9.0.2",
         license: "LGPL-2.1-or-later",
         url: "https://ffmpeg.org/",
         files: &["FFmpeg-LGPL-2.1.txt"],
+    },
+    Native {
+        name: "Fraunhofer FDK AAC 2.0.3",
+        license: "FDK-AAC",
+        url: "https://github.com/mstorsjo/fdk-aac",
+        files: &["fdk-aac-NOTICE.txt"],
     },
     Native {
         name: "SoapySDR",

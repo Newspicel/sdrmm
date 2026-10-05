@@ -876,14 +876,15 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [use-sync-external-store](https://github.com/react/react#readme) | 1.7.0 | MIT |
 | [zustand](https://github.com/pmndrs/zustand) | 4.5.7, 5.0.15 | MIT |
 
-## Hardware libraries (11)
+## Hardware libraries (12)
 
 | Component | Version | License |
 | --- | --- | --- |
 | [codec2 FDMDV modem](https://github.com/drowe67/codec2) | - | LGPL-2.1-only |
 | [dmrconfig](https://github.com/OpenRTX/dmrconfig) | - | BSD-3-Clause |
 | [DPDFNet](https://github.com/ceva-ip/DPDFNet) | - | Apache-2.0 |
-| [FFmpeg 9.0.1](https://ffmpeg.org/) | - | LGPL-2.1-or-later |
+| [FFmpeg 9.0.2](https://ffmpeg.org/) | - | LGPL-2.1-or-later |
+| [Fraunhofer FDK AAC 2.0.3](https://github.com/mstorsjo/fdk-aac) | - | FDK-AAC |
 | [hackrf-nusb 0.3.0](https://github.com/bastibl/hackrf-nusb) | - | MIT OR Apache-2.0 |
 | [hackrf.h (libhackrf API)](https://github.com/greatscottgadgets/hackrf) | - | BSD-3-Clause |
 | [libairspy](https://github.com/airspy/airspyone_host) | - | BSD-3-Clause |

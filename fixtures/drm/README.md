@@ -44,6 +44,18 @@ references bit-exactly for both AAC-LC files, and within 0.0014 for HE-AAC:
 /tmp/drm-audio-reference drm fixtures/drm/drm_he_mono_24k 2100
 ```
 
-The hex argument is the SDC audio information from the audio coding field on. FDK is a
-fixture tool only, not a product dependency. The tones and fixtures are original project work
-under AGPL-3.0-or-later.
+The hex argument is the SDC audio information from the audio coding field on. The tones and
+fixtures above are original project work under AGPL-3.0-or-later.
+
+## xHE-AAC
+
+`xhe_4to1_pvc_38k` is the first 16 access units of `eSbr_1_c4_Pvc_0x12.mp4` from the
+ISO/IEC 23003-3 conformance sequences: mono, 38.4 kHz, 4:1 SBR with PVC, the mode DRM uses at
+low rates. `.asc` is its UsacConfig, `.aus` the access units as above. `.pcm` is the ISO
+reference decode, cut to 65536 samples and resampled to 48 kHz mono float32:
+
+```sh
+ffmpeg -i eSbr_1_c4_Pvc_0x12.wav -af atrim=end_sample=65536,aresample=48000 -f f32le xhe_4to1_pvc_38k_48k.pcm
+```
+
+The stream starts with 10496 samples of priming (its MP4 edit list) that the reference omits.

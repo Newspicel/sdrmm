@@ -134,10 +134,9 @@ fn publish(output: &mut Producer<Output>, resident: &AtomicUsize, mut value: Out
 
 fn open_decoder(key: (Kind, Option<DrmAudio>)) -> Result<decoder::Decoder, String> {
     match key {
-        (Kind::DrmXhe, Some(config)) => decoder::Decoder::usac(
-            &crate::drm::aac::usac_config(&config)?,
-            config.four_to_one_sbr(),
-        ),
+        (Kind::DrmXhe, Some(config)) => {
+            decoder::Decoder::usac(&crate::drm::aac::usac_config(&config)?)
+        }
         (kind, _) => decoder::Decoder::new(kind),
     }
 }

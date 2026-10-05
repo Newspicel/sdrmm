@@ -85,7 +85,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
     gtk3
     libayatana-appindicator
     libopus
-    ffmpeg
+    (ffmpeg.override {
+      withGPL = false;
+      withVersion3 = false;
+      withFdkAac = true;
+    })
     librsvg
     libsoup_3
     openssl

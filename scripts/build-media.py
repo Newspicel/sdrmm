@@ -11,6 +11,8 @@ import urllib.request
 
 VERSION = "9.0.2"
 SHA256 = "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e"
+FDK_VERSION = "2.0.3"
+FDK_SHA256 = "e25671cd96b10bad896aa42ab91a695a9e573395262baed4e4a2ff178d6a3a78"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -60,30 +62,76 @@ def require_msys_shell(env):
         raise RuntimeError("Cygwin bash cannot build FFmpeg for clang-cl, put MSYS2 usr\\bin in MEDIA_SHELL_BIN")
 
 
-def prepare_source(work, archive):
-    if archive is None:
-        archive = work / f"ffmpeg-{VERSION}.tar.xz"
-        if not archive.exists():
-            with urllib.request.urlopen(f"https://ffmpeg.org/releases/ffmpeg-{VERSION}.tar.xz") as response:
-                archive.write_bytes(response.read())
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != SHA256:
-        raise RuntimeError("FFmpeg source checksum mismatch")
-    source = work / f"ffmpeg-{VERSION}"
+def unpack(work, archive, url, sha256, name):
+    if not archive.exists():
+        with urllib.request.urlopen(url) as response:
+            archive.write_bytes(response.read())
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != sha256:
+        raise RuntimeError(f"{name} source checksum mismatch")
+    source = work / name
     if not source.exists():
         with tarfile.open(archive) as source_archive:
             source_archive.extractall(work, filter="data")
     return source
 
 
-def configure(source, prefix, target, env):
+def prepare_source(work, archive):
+    return unpack(
+        work, archive or work / f"ffmpeg-{VERSION}.tar.xz",
+        f"https://ffmpeg.org/releases/ffmpeg-{VERSION}.tar.xz", SHA256, f"ffmpeg-{VERSION}",
+    )
+
+
+def prepare_fdk(work):
+    return unpack(
+        work, work / f"fdk-aac-{FDK_VERSION}.tar.gz",
+        f"https://github.com/mstorsjo/fdk-aac/archive/refs/tags/v{FDK_VERSION}.tar.gz", FDK_SHA256,
+        f"fdk-aac-{FDK_VERSION}",
+    )
+
+
+def fdk_toolchain(target):
+    arch = target.split("-", 1)[0]
+    if "windows-msvc" in target:
+        return [
+            "-G", "NMake Makefiles", "-DCMAKE_C_COMPILER=clang-cl", "-DCMAKE_CXX_COMPILER=clang-cl",
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded",
+        ]
+    if "apple-darwin" in target:
+        return [f"-DCMAKE_OSX_ARCHITECTURES={'arm64' if arch == 'aarch64' else arch}"]
+    if target != target_name():
+        return [
+            "-DCMAKE_SYSTEM_NAME=Linux", f"-DCMAKE_SYSTEM_PROCESSOR={arch}",
+            f"-DCMAKE_C_COMPILER={arch}-linux-gnu-gcc", f"-DCMAKE_CXX_COMPILER={arch}-linux-gnu-g++",
+        ]
+    return []
+
+
+def build_fdk(source, prefix, target, env):
+    build = source.parent / "fdk-build"
+    cmake = tool("cmake", env)
+    run([
+        cmake, "-S", str(source), "-B", str(build), "-DCMAKE_BUILD_TYPE=Release",
+        "-DBUILD_SHARED_LIBS=OFF", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+        "-DFDK_AAC_INSTALL_CMAKE_CONFIG_MODULE=OFF", "-DCMAKE_INSTALL_LIBDIR=lib",
+        f"-DCMAKE_INSTALL_PREFIX={prefix.as_posix()}",
+        *fdk_toolchain(target),
+    ], source.parent, env)
+    run([cmake, "--build", str(build), "--parallel", str(os.cpu_count() or 2)], source.parent, env)
+    run([cmake, "--install", str(build)], source.parent, env)
+
+
+def configure(source, prefix, fdk, target, env):
     args = [
         tool("bash", env), str(source / "configure"), f"--prefix={prefix.as_posix()}",
         "--disable-autodetect", "--disable-everything", "--disable-network",
         "--disable-programs", "--disable-doc", "--disable-debug", "--enable-shared",
         "--disable-static", "--enable-pic", "--disable-avdevice", "--disable-avfilter",
         "--enable-avcodec", "--enable-avformat", "--enable-swresample", "--enable-swscale",
-        "--enable-decoder=aac,aac_latm,ac3,eac3,mp2,mpeg2video,h264,hevc",
+        "--enable-decoder=aac,aac_latm,ac3,eac3,mp2,mpeg2video,h264,hevc,libfdk_aac",
         "--enable-parser=aac,aac_latm,ac3,mpegaudio,mpegvideo,h264,hevc",
+        "--enable-libfdk-aac", f"--extra-cflags=-I{(fdk / 'include').as_posix()}",
+        f"--extra-ldflags=-L{(fdk / 'lib').as_posix()}",
     ]
     arch = target.split("-", 1)[0]
     args.append(f"--arch={arch}")
@@ -138,8 +186,11 @@ def main():
     env = shell_env()
     if "windows-msvc" in args.target:
         require_msys_shell(env)
+    fdk = work / "fdk-aac"
+    build_fdk(prepare_fdk(work), fdk, args.target, env)
+    env["PKG_CONFIG_PATH"] = os.pathsep.join([str(fdk / "lib" / "pkgconfig"), env.get("PKG_CONFIG_PATH", "")])
     source = prepare_source(work, args.archive)
-    run(configure(source, prefix, args.target, env), work, env)
+    run(configure(source, prefix, fdk, args.target, env), work, env)
     run([tool("make", env), "-j", str(os.cpu_count() or 2)], work, env)
     shutil.rmtree(prefix, ignore_errors=True)
     run([tool("make", env), "install"], work, env)

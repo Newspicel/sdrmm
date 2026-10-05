@@ -148,9 +148,7 @@ Wire `audio` to a Speaker. **Mode** picks DRM30 (robustness A to D), DRM+ (E) or
 covers the DRM+ width. **BW** sets the DRM30 channel, 4.5 to 20 kHz; tune to the DRM reference
 frequency. **Service** picks one of up to four services; Auto plays the first playable one.
 
-AAC, HE-AAC and HE-AAC v2 play. xHE-AAC plays via AudioToolbox on macOS, elsewhere via FFmpeg,
-which lacks 4:1 SBR (low rates, e.g. BBC WS) and reports an error. The dynamic label shows the
-text message. SDC and text CRC failures count as data failures, broken audio frames as audio
+AAC, HE-AAC, HE-AAC v2 and xHE-AAC play. The dynamic label shows the text message. SDC and text CRC failures count as data failures, broken audio frames as audio
 failures.
 
 ## DVB

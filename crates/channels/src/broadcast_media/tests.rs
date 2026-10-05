@@ -381,3 +381,46 @@ fn xhe_aac_frames_at_an_odd_rate_decode_to_audio() {
     assert_eq!(media.audio_error, None);
     assert!(media.audio_frames >= 4, "{}", media.audio_frames);
 }
+
+#[test]
+fn xhe_aac_with_four_to_one_sbr_and_pvc_matches_the_reference_decoder() {
+    let mut decoder = decoder::Decoder::usac(include_bytes!(
+        "../../../../fixtures/drm/xhe_4to1_pvc_38k.asc"
+    ))
+    .expect("decoder");
+    let mut out = Vec::new();
+    for unit in access_units(include_bytes!(
+        "../../../../fixtures/drm/xhe_4to1_pvc_38k.aus"
+    )) {
+        decoder.push(unit, None, &mut out).expect("decode");
+    }
+    decoder.finish(&mut out).expect("flush");
+    let left: Vec<f32> = out
+        .into_iter()
+        .flat_map(|(_, payload)| match payload {
+            Payload::Audio(pcm) => pcm,
+            _ => panic!("audio"),
+        })
+        .step_by(2)
+        .collect();
+    let reference: Vec<f32> = include_bytes!("../../../../fixtures/drm/xhe_4to1_pvc_38k_48k.pcm")
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|bytes| f32::from_le_bytes(*bytes))
+        .collect();
+    let priming = 10_496 * AUDIO_RATE as usize / 38_400;
+    let best = (priming - 64..=priming + 64)
+        .map(|lag| {
+            let mut error = 0.0;
+            let mut power = 0.0;
+            for (actual, target) in left[lag..].iter().zip(&reference[..reference.len() - 256]) {
+                let target = target * std::f32::consts::FRAC_1_SQRT_2;
+                error += f64::from(actual - target).powi(2);
+                power += f64::from(target).powi(2);
+            }
+            error / power
+        })
+        .fold(f64::MAX, f64::min);
+    assert!(best < 0.0001, "relative error {best}");
+}
