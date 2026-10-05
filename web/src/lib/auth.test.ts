@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  adoptUrlToken,
   getToken,
   loginRedirect,
   onTokenRejected,
@@ -114,5 +115,34 @@ describe("loginRedirect", () => {
     expect(loginRedirect({ token_required: true }, false)).toBeNull();
     expect(loginRedirect({ token_required: false, login_url: login }, false)).toBeNull();
     expect(loginRedirect(undefined, false)).toBeNull();
+  });
+});
+
+function page(href: string) {
+  const location = { href } as Location;
+  const history = {
+    state: { tab: 1 },
+    replaceState(state: unknown, _unused: string, url: URL) {
+      location.href = url.href;
+      expect(state).toEqual({ tab: 1 });
+    },
+  } as unknown as History;
+  return { location, history };
+}
+
+describe("adoptUrlToken", () => {
+  it("keeps the token from the address and removes it there", () => {
+    const { location, history } = page("https://abc.sdrmm.link/view?token=t0k%2Bn&tab=2#map");
+    adoptUrlToken(location, history);
+    expect(getToken()).toBe("t0k+n");
+    expect(location.href).toBe("https://abc.sdrmm.link/view?tab=2#map");
+  });
+
+  it("leaves a stored token alone without one in the address", () => {
+    setToken("saved");
+    const { location, history } = page("https://abc.sdrmm.link/");
+    adoptUrlToken(location, history);
+    expect(getToken()).toBe("saved");
+    expect(location.href).toBe("https://abc.sdrmm.link/");
   });
 });

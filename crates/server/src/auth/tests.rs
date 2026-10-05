@@ -608,8 +608,12 @@ async fn dev_cors_lets_a_foreign_page_in() {
 }
 
 async fn relayed_with(app: &Router, user: &str, headers: &[(&str, &str)]) -> StatusCode {
+    call_relayed(app, "/api/state", user, headers).await
+}
+
+async fn call_relayed(app: &Router, uri: &str, user: &str, headers: &[(&str, &str)]) -> StatusCode {
     let mut request = HttpRequest::builder()
-        .uri("/api/state")
+        .uri(uri)
         .extension(sdrmm_tunnel::Relayed {
             user: user.to_owned(),
         });
@@ -633,7 +637,10 @@ async fn a_signed_in_relay_reaches_an_open_loopback_server() {
         ("origin", "https://abc.sdrmm.link"),
     ];
     assert_eq!(relayed_with(&app, "user-1", &relay).await, StatusCode::OK);
-    assert_eq!(relayed_with(&app, "", &relay).await, StatusCode::FORBIDDEN);
+    assert_eq!(
+        relayed_with(&app, "", &relay).await,
+        StatusCode::UNAUTHORIZED
+    );
     assert_eq!(
         relayed_with(
             &app,
@@ -651,6 +658,24 @@ async fn a_signed_in_relay_reaches_an_open_loopback_server() {
             .await
             .status,
         StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn an_anonymous_relay_reads_auth_on_an_open_loopback_server() {
+    let mut local = gate(ListenerRole::Main, false, None, &phones());
+    local.local_hosts_only = true;
+    let app = app(local);
+    let answer = call_relayed(&app, "/api/auth", "", &[("host", "abc.sdrmm.link")]).await;
+    assert_eq!(answer, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn an_anonymous_relay_cannot_reach_an_open_server() {
+    let app = main_app(None);
+    assert_eq!(
+        relayed(&app, "/api/state", "").await.status,
+        StatusCode::UNAUTHORIZED
     );
 }
 

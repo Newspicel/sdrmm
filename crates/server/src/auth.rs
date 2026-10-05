@@ -112,7 +112,7 @@ impl AuthGate {
 
     fn admits(&self, request: &Request) -> Result<(), Refusal> {
         let (headers, uri) = (request.headers(), request.uri());
-        if self.local_hosts_only && !relayed_user(request) && !local_host(headers, uri) {
+        if self.local_hosts_only && relayed_user(request).is_none() && !local_host(headers, uri) {
             return Err(forbidden("Host not allowed"));
         }
         if !self.dev_cors && !same_origin(headers, uri) {
@@ -257,8 +257,10 @@ impl AuthGate {
         if is_public(path) {
             return Claim::Decided(Ok(Identity::Anonymous));
         }
-        if relayed_user(request) {
-            return Claim::Decided(Ok(Identity::Operator));
+        match relayed_user(request) {
+            Some("") => return Claim::Decided(Err(unauthorized("Token required"))),
+            Some(_) => return Claim::Decided(Ok(Identity::Operator)),
+            None => {}
         }
         Claim::Decided(match credential(request, self.role) {
             Some(Credential::Malformed) => Err(unauthorized("Bad credentials")),
@@ -319,11 +321,11 @@ impl AuthGate {
     }
 }
 
-fn relayed_user(request: &Request) -> bool {
+fn relayed_user(request: &Request) -> Option<&str> {
     request
         .extensions()
         .get::<sdrmm_tunnel::Relayed>()
-        .is_some_and(|relayed| !relayed.user.is_empty())
+        .map(|relayed| relayed.user.as_str())
 }
 
 fn is_public(path: &str) -> bool {

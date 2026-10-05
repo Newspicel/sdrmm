@@ -30,6 +30,33 @@ async fn auth_reports_not_required_by_default() {
     assert!(!info.token_required);
 }
 
+async fn relayed_auth(app: Router, user: &str) -> sdrmm_wire::AuthInfo {
+    let request = Request::builder()
+        .uri("/api/auth")
+        .extension(sdrmm_tunnel::Relayed {
+            user: user.to_owned(),
+        })
+        .body(Body::empty())
+        .expect("request");
+    let response = app.oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 1 << 16)
+        .await
+        .expect("body");
+    serde_json::from_slice(&body).expect("json")
+}
+
+#[tokio::test]
+async fn auth_tells_a_relay_whether_its_visitor_still_needs_a_login() {
+    let guarded = test_router_with_options(&ServerOptions {
+        dev_cors: false,
+        token: Some("s3cret".to_string()),
+        ..ServerOptions::default()
+    });
+    assert!(!relayed_auth(guarded, "user-1").await.token_required);
+    assert!(relayed_auth(test_router(), "").await.token_required);
+}
+
 #[tokio::test]
 async fn mcp_is_mounted_and_shares_the_token_gate() {
     let app = test_router_with_options(&ServerOptions {

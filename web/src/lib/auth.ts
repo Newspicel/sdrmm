@@ -39,6 +39,17 @@ export function setToken(token: string | null): void {
   }
 }
 
+export function adoptUrlToken(location: Location, history: History): void {
+  const url = new URL(location.href);
+  const token = url.searchParams.get("token");
+  if (token === null) {
+    return;
+  }
+  setToken(token);
+  url.searchParams.delete("token");
+  history.replaceState(history.state, "", url);
+}
+
 export function withToken(url: string): string {
   const token = getToken();
   if (token === null) {
