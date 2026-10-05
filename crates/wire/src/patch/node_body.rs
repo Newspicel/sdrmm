@@ -75,7 +75,7 @@ macro_rules! define_node_body {
             SignalMap(SignalMapNode),
             Propagation(PropagationNode),
             Readout,
-            DecoderLog,
+            DecoderLog(DecoderLogNode),
             DmrTrunk(DmrTrunkNode),
             SpectrumMonitor(crate::SpectrumMonitorNode),
             EventOutput(EventOutputNode),
@@ -115,7 +115,7 @@ macro_rules! define_node_body {
                     Self::SignalMap(_) => "signal_map",
                     Self::Propagation(_) => "propagation",
                     Self::Readout => "readout",
-                    Self::DecoderLog => "decoder_log",
+                    Self::DecoderLog(_) => "decoder_log",
                     Self::DmrTrunk(_) => "dmr_trunk",
                     Self::SpectrumMonitor(_) => "spectrum_monitor",
                     Self::EventOutput(_) => "event_output",
@@ -159,7 +159,7 @@ macro_rules! define_node_body {
                     | Self::SignalMap(_)
                     | Self::Propagation(_)
                     | Self::Readout
-                    | Self::DecoderLog
+                    | Self::DecoderLog(_)
                     | Self::Video
                     | Self::Speaker
                     | Self::Recorder(_)
@@ -216,7 +216,7 @@ macro_rules! define_node_body {
                     "signal_map" => Self::SignalMap(SignalMapNode::default()),
                     "propagation" => Self::Propagation(PropagationNode::default()),
                     "readout" => Self::Readout,
-                    "decoder_log" => Self::DecoderLog,
+                    "decoder_log" => Self::DecoderLog(DecoderLogNode::default()),
                     "dmr_trunk" => Self::DmrTrunk(DmrTrunkNode::default()),
                     "spectrum_monitor" => {
                         Self::SpectrumMonitor(crate::SpectrumMonitorNode::default())

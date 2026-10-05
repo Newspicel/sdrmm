@@ -378,7 +378,8 @@
       ],
       "needs_channel_type": false,
       "default_body": {
-        "kind": "decoder_log"
+        "kind": "decoder_log",
+        "data": {}
       }
     },
     {

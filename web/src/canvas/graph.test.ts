@@ -512,7 +512,7 @@ const driving = (edges: PatchGraph["edges"]): WorkspaceSnapshot => ({
   graph: {
     nodes: [
       ...workspace().nodes,
-      node("scan", { kind: "scanner" }),
+      node("scan", { kind: "scanner", data: {} }),
       node("walk", { kind: "hunt", data: {} }),
       node("am", { kind: "channel", data: { channel_type: "am" } }),
       node("dev2", { kind: "device", data: {} }),
@@ -605,6 +605,22 @@ describe("editing", () => {
       { from: { node: "scan", port: "control" }, to: { node: "nfm", port: "control" } },
     ]);
     expect(migrateSnapshot(current)).toBe(current);
+  });
+
+  it("gives a scanner or decoder log saved without settings an empty body", () => {
+    const stored: WorkspaceSnapshot = {
+      version: 1,
+      graph: {
+        nodes: [
+          { id: "scan", kind: "scanner", position: { x: 0, y: 0 } } as PatchNode,
+          { id: "log", kind: "decoder_log", position: { x: 0, y: 0 } } as PatchNode,
+        ],
+        edges: [],
+      },
+    };
+    const migrated = migrateSnapshot(stored);
+    expect(migrated.graph.nodes.map((n) => (n as { data?: unknown }).data)).toEqual([{}, {}]);
+    expect(migrateSnapshot(migrated)).toBe(migrated);
   });
 
   it("compares graphs structurally so an echo of our own write is not re-applied", () => {

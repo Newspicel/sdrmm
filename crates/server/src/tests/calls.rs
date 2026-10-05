@@ -39,7 +39,7 @@ async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
         virtual_snapshot(&format!("file:{}", stem.display()), &[("dmr", "dmr", "iq")]);
     snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
         id: "log".to_owned(),
-        body: sdrmm_wire::NodeBody::DecoderLog,
+        body: sdrmm_wire::NodeBody::DecoderLog(Default::default()),
         position: sdrmm_wire::Position { x: 0.0, y: 0.0 },
         size: None,
         label: None,

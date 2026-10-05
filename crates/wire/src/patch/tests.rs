@@ -558,7 +558,7 @@ fn a_dmr_trunk_system_takes_a_radio_and_hands_out_events() {
         nodes: vec![
             node("radio", NodeBody::Device(DeviceNode::default())),
             node("system", NodeBody::DmrTrunk(DmrTrunkNode::default())),
-            node("log", NodeBody::DecoderLog),
+            node("log", NodeBody::DecoderLog(Default::default())),
         ],
         edges: vec![
             edge(("radio", "iq"), ("system", "iq")),
@@ -888,6 +888,23 @@ fn a_scanner_keeps_its_settings() {
     assert_eq!(
         serde_json::from_str::<NodeBody>(&json).expect("round trip"),
         kept
+    );
+}
+
+#[test]
+fn a_decoder_log_keeps_its_grouping() {
+    let body: NodeBody =
+        serde_json::from_str(r#"{"kind":"decoder_log","data":{}}"#).expect("a plain log");
+    assert_eq!(body, NodeBody::DecoderLog(DecoderLogNode::default()));
+
+    let grouped: NodeBody =
+        serde_json::from_str(r#"{"kind":"decoder_log","data":{"group":"station"}}"#)
+            .expect("a grouped log");
+    assert_eq!(
+        grouped,
+        NodeBody::DecoderLog(DecoderLogNode {
+            group: Some(crate::LogGroupKey::Station)
+        })
     );
 }
 
@@ -1888,7 +1905,7 @@ fn spectrum_monitor_has_only_iq_input_and_event_output() {
         nodes: vec![
             node("radio", NodeBody::Device(DeviceNode::default())),
             node("monitor", monitor),
-            node("log", NodeBody::DecoderLog),
+            node("log", NodeBody::DecoderLog(Default::default())),
         ],
         edges: vec![
             edge(("radio", "iq"), ("monitor", "iq")),

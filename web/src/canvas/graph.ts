@@ -448,7 +448,7 @@ export function migrateSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot 
 const port = (reference: PortRef): string => `${reference.node}.${reference.port}`;
 
 function migrateGraph(graph: PatchGraph): PatchGraph {
-  return idleBareRecorders(repointControlWires(flipScannerInputs(graph)));
+  return fillBareNodes(idleBareRecorders(repointControlWires(flipScannerInputs(graph))));
 }
 
 const bare = (node: PatchNode): boolean =>
@@ -465,6 +465,22 @@ function idleBareRecorders(graph: PatchGraph): PatchGraph {
     ...graph,
     nodes: graph.nodes.map((node) =>
       bare(node) ? ({ ...node, data: { recording: false } } as PatchNode) : node,
+    ),
+  };
+}
+
+const dataless = (node: PatchNode): boolean =>
+  (node.kind === "scanner" || node.kind === "decoder_log") &&
+  (node as { data?: unknown }).data === undefined;
+
+function fillBareNodes(graph: PatchGraph): PatchGraph {
+  if (!graph.nodes.some(dataless)) {
+    return graph;
+  }
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) =>
+      dataless(node) ? ({ ...node, data: {} } as PatchNode) : node,
     ),
   };
 }

@@ -612,6 +612,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/decoderlog/groups/{by}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["group_decoder_log"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/denoise-models": {
         parameters: {
             query?: never;
@@ -3975,6 +3991,28 @@ export interface components {
             station?: string | null;
             summary: string;
         };
+        DecoderLogGroup: {
+            /**
+             * Format: int64
+             * @description Summed length of the calls and transmissions in the group.
+             */
+            airtime_ms?: number | null;
+            /** Format: int64 */
+            count: number;
+            first_at: string;
+            last_at: string;
+            latest: components["schemas"]["DecoderLogEntry"];
+        };
+        DecoderLogGroupsResponse: {
+            /** Format: int64 */
+            dropped: number;
+            groups: components["schemas"]["DecoderLogGroup"][];
+            /** Format: int64 */
+            total: number;
+        };
+        DecoderLogNode: {
+            group?: components["schemas"]["LogGroupKey"] | null;
+        };
         DecoderLogResponse: {
             /** Format: int64 */
             dropped: number;
@@ -5199,6 +5237,11 @@ export interface components {
             id: string;
             text: string;
         };
+        /**
+         * @description What a grouped decoder log keeps one row for.
+         * @enum {string}
+         */
+        LogGroupKey: "frequency" | "station";
         /** @enum {string} */
         LogLevel: "error" | "warn" | "info" | "debug" | "trace";
         LogLine: {
@@ -5691,6 +5734,7 @@ export interface components {
             /** @enum {string} */
             kind: "readout";
         } | {
+            data: components["schemas"]["DecoderLogNode"];
             /** @enum {string} */
             kind: "decoder_log";
         } | {
@@ -9844,6 +9888,49 @@ export interface operations {
                 };
             };
             /** @description Unknown format or malformed filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    group_decoder_log: {
+        parameters: {
+            query?: {
+                device_set?: number;
+                kind?: string;
+                kinds?: string;
+                limit?: number;
+                nodes?: string;
+                q?: string;
+                since?: string;
+                sink?: string;
+                sources?: string;
+                until?: string;
+            };
+            header?: never;
+            path: {
+                /** @description What each row stands for */
+                by: components["schemas"]["LogGroupKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One row per frequency or station, most recently heard first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecoderLogGroupsResponse"];
+                };
+            };
+            /** @description Unknown grouping or malformed filter */
             400: {
                 headers: {
                     [name: string]: unknown;

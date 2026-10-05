@@ -229,7 +229,10 @@ mod tests {
     #[test]
     fn a_direct_wire_carries_no_filter() {
         let graph = PatchGraph {
-            nodes: vec![channel("dmr"), node("chat", NodeBody::DecoderLog)],
+            nodes: vec![
+                channel("dmr"),
+                node("chat", NodeBody::DecoderLog(Default::default())),
+            ],
             edges: vec![edge("dmr", "chat")],
         };
 
@@ -247,7 +250,7 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![edge("dmr", "only-calls"), edge("only-calls", "chat")],
         };
@@ -273,7 +276,7 @@ mod tests {
                 channel("dmr"),
                 filter("kind", only("call")),
                 filter("group", strict),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "kind"),
@@ -296,7 +299,7 @@ mod tests {
                 channel("dmr"),
                 channel("p25"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "only-calls"),
@@ -320,7 +323,7 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "only-calls"),
@@ -379,7 +382,7 @@ mod tests {
     #[test]
     fn a_sink_with_nothing_wired_in_has_no_path() {
         let graph = PatchGraph {
-            nodes: vec![node("chat", NodeBody::DecoderLog)],
+            nodes: vec![node("chat", NodeBody::DecoderLog(Default::default()))],
             edges: Vec::new(),
         };
         assert!(paths_into(&graph, "chat").is_empty());
@@ -391,7 +394,7 @@ mod tests {
             nodes: vec![
                 filter("a", EventFilterNode::default()),
                 filter("b", EventFilterNode::default()),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![edge("a", "b"), edge("b", "a"), edge("b", "chat")],
         };
@@ -426,9 +429,9 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
                 node("export", NodeBody::Export),
-                node("idle", NodeBody::DecoderLog),
+                node("idle", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "only-calls"),
@@ -451,7 +454,7 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
                 node("export", NodeBody::Export),
             ],
             edges: vec![
@@ -482,7 +485,7 @@ mod tests {
                         ..EventFilterNode::default()
                     },
                 ),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![edge("dmr", "no-cq"), edge("no-cq", "chat")],
         };
@@ -501,7 +504,10 @@ mod tests {
     #[test]
     fn a_record_from_an_unbound_channel_reaches_nothing() {
         let graph = PatchGraph {
-            nodes: vec![channel("dmr"), node("chat", NodeBody::DecoderLog)],
+            nodes: vec![
+                channel("dmr"),
+                node("chat", NodeBody::DecoderLog(Default::default())),
+            ],
             edges: vec![edge("dmr", "chat")],
         };
         let routes = routes_over(&graph);
@@ -544,7 +550,7 @@ mod tests {
                     "radar",
                     NodeBody::PassiveRadar(sdrmm_wire::PassiveRadarNode::default()),
                 ),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 into_truth("wired"),
@@ -590,7 +596,7 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "only-calls"),

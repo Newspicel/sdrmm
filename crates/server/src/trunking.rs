@@ -275,7 +275,7 @@ mod tests {
         if wired {
             snapshot.graph.nodes.push(PatchNode {
                 id: "log".to_owned(),
-                body: NodeBody::DecoderLog,
+                body: NodeBody::DecoderLog(Default::default()),
                 position: Position { x: 0.0, y: 0.0 },
                 size: None,
                 label: None,

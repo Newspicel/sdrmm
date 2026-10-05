@@ -475,7 +475,7 @@ fn graph(wiring: Wiring) -> PatchGraph {
                     settings: wiring.params,
                 }),
             ),
-            node("log", NodeBody::DecoderLog),
+            node("log", NodeBody::DecoderLog(Default::default())),
         ],
         edges: (0..5)
             .map(|lane| {

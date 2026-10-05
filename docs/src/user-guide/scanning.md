@@ -48,6 +48,20 @@ The decoder reads the station, not the scanner. To list every DAB ensemble:
 3. Press **Start scan**. Each busy block is visited once and the log fills with what the DAB
    channel decodes there.
 
+### Read back a scan
+
+Wire the scanned channel's `events` to a **Decoder log** and set its **Group**:
+
+| Group | One row per |
+|---|---|
+| List | Decoded frame, newest first |
+| Frequency | Frequency, with hits, airtime and the latest decode |
+| Station | Station: a plane's ICAO address, a ship's MMSI, a callsign |
+
+An analog channel logs each squelch opening as a call, so **Frequency** shows how often and how
+long each frequency was busy. Click **Frequency**, **Hits** or **Last** to sort, and a row to play
+its latest call. The log node keeps its grouping.
+
 Radios that support it sweep in firmware, shown as **Firmware sweep** (on by default). Other
 channels on that radio pause while it runs. The **Sweep** readout shows `the radio's own` or
 `by retuning`.

@@ -2233,6 +2233,19 @@ fn a_scanner_saved_before_it_kept_settings_opens_with_the_defaults() {
 }
 
 #[test]
+fn a_decoder_log_saved_before_it_grouped_opens_as_a_list() {
+    let mut value = serde_json::to_value(WorkspaceSnapshot::empty()).expect("encode");
+    value["graph"]["nodes"] = serde_json::json!([
+        { "id": "log", "kind": "decoder_log", "position": { "x": 0.0, "y": 0.0 } }
+    ]);
+    let migrated = parse_workspace_snapshot(&value.to_string()).expect("migrated");
+    assert_eq!(
+        migrated.graph.nodes[0].body,
+        sdrmm_wire::NodeBody::DecoderLog(sdrmm_wire::DecoderLogNode::default())
+    );
+}
+
+#[test]
 fn a_stored_retired_decoder_leaves_the_workspace_and_its_wires() {
     let mut value = serde_json::to_value(WorkspaceSnapshot::starter()).expect("snapshot");
     value["graph"]["nodes"]

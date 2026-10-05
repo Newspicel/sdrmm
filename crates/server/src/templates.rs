@@ -37,7 +37,7 @@ impl Sink {
             Self::Speaker => NodeBody::Speaker,
             Self::Video => NodeBody::Video,
             Self::Map => NodeBody::Map,
-            Self::Log => NodeBody::DecoderLog,
+            Self::Log => NodeBody::DecoderLog(sdrmm_wire::DecoderLogNode { group: None }),
         }
     }
 

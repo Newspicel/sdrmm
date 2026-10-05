@@ -543,6 +543,12 @@ impl Default for HuntNode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DecoderLogNode {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<crate::LogGroupKey>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScannerNode {
     #[serde(default)]

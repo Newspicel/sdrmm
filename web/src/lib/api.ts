@@ -31,6 +31,7 @@ import type {
   CpsWriteRequest,
   CreateBookmarkRequest,
   DecoderLogFilter,
+  DecoderLogGroupsResponse,
   DecoderLogResponse,
   DenoiseModel,
   DenoiseModelsResponse,
@@ -45,6 +46,7 @@ import type {
   HuntStatus,
   IonosondeReport,
   LicenseTextResponse,
+  LogGroupKey,
   NetworkExportAction,
   NetworkExportSettings,
   NetworkExportStatus,
@@ -952,6 +954,15 @@ export function decoderLogQuery(filter: DecoderLogFilter) {
     queryKey: [...DECODER_LOG_KEY, query] as const,
     queryFn: async (): Promise<DecoderLogResponse> =>
       unwrap(await client.GET("/api/decoderlog", { params: { query } })),
+  });
+}
+
+export function decoderLogGroupsQuery(filter: DecoderLogFilter, by: LogGroupKey) {
+  const query = normalizeFilter(filter);
+  return queryOptions({
+    queryKey: [...DECODER_LOG_KEY, "groups", by, query] as const,
+    queryFn: async (): Promise<DecoderLogGroupsResponse> =>
+      unwrap(await client.GET("/api/decoderlog/groups/{by}", { params: { path: { by }, query } })),
   });
 }
 

@@ -1,13 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
-import { callAudioUrl, clearDecoderLog, DECODER_LOG_KEY, decoderLogQuery } from "../lib/api";
+import {
+  clearDecoderLog,
+  DECODER_LOG_KEY,
+  decoderLogGroupsQuery,
+  decoderLogQuery,
+} from "../lib/api";
 import { useDecodedStore } from "../lib/decoded";
+import type { LogGroupKey } from "../lib/types";
 import { Button, Input } from "./BaseControls";
-import { BroadcastDataView } from "./BroadcastDataView";
 import { BTN, FIELD, TABLE_CELL, TABLE_HEAD } from "./controls";
+import { DecoderLogGroups } from "./DecoderLogGroups";
 import { DownloadMenu } from "./DownloadMenu";
-import { eventDetail } from "./decoderDetail";
 import {
   buildRows,
   COLUMN_STEP,
@@ -36,6 +41,8 @@ import { ChoiceChip } from "./face/Chips";
 import { FaceFault } from "./face/Fault";
 import { FaceStats, Stat } from "./face/Stats";
 import { formatMhz } from "./format";
+import { RowDetail } from "./LogRowDetail";
+import { groupOf, groupRows, VIEW_CHOICES, viewOf } from "./logGroups";
 
 const SEARCH_DEBOUNCE_MS = 250;
 const CLEAR_ARM_MS = 3000;
@@ -44,14 +51,21 @@ const NO_FRAMES = {};
 
 const LIMIT_CHOICES = LIMIT_OPTIONS.map((n) => ({ value: n, label: String(n) }));
 
-export function DecoderLogPanel({ wires }: { wires: WireScope }) {
+export function DecoderLogPanel({
+  wires,
+  group,
+  onGroup,
+}: {
+  wires: WireScope;
+  group: LogGroupKey | null;
+  onGroup: (group: LogGroupKey | null) => void;
+}) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<LogFilter>(DEFAULT_LOG_FILTER);
   const [search, setSearch] = useState(DEFAULT_LOG_FILTER.q);
   const [armed, setArmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cleared, setCleared] = useState<number | null>(null);
-  const [opened, setOpened] = useState<string | null>(null);
   const [widths, setWidths] = useState<ColumnWidths>(readColumnWidths);
   const commit = (): void => writeColumnWidths(widths);
 
@@ -75,7 +89,15 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
   }, [armed]);
 
   const query = toQuery(filter, wires);
-  const log = useQuery(decoderLogQuery(query));
+  const log = useQuery({ ...decoderLogQuery(query), enabled: group === null });
+  const grouped = useQuery({
+    ...decoderLogGroupsQuery(query, group ?? "frequency"),
+    enabled: group !== null,
+  });
+  const groups = useMemo(
+    () => (group === null ? [] : groupRows(grouped.data?.groups ?? [], group)),
+    [grouped.data, group],
+  );
   const frames = useDecodedStore((s) => (wires.wired ? s.frames : NO_FRAMES));
   const lost = useDecodedStore((s) => s.lost);
 
@@ -106,9 +128,11 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
     setFilter((f) => ({ ...f, ...next }));
   };
 
-  const droppedRows = log.data?.dropped ?? 0;
+  const source = group === null ? log : grouped;
+  const droppedRows = source.data?.dropped ?? 0;
   const dropped = droppedNotice(lost, droppedRows);
-  const total = log.data?.total ?? 0;
+  const total = source.data?.total ?? 0;
+  const shown = group === null ? rows.length : groups.length;
 
   return (
     <>
@@ -123,6 +147,13 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
               aria-label="Search decoder log"
             />
             <ChoiceChip
+              label="Group"
+              title="One row per frequency or station"
+              value={viewOf(group)}
+              options={VIEW_CHOICES}
+              onChange={(view) => onGroup(groupOf(view))}
+            />
+            <ChoiceChip
               label="Rows"
               title="Row limit"
               value={filter.limit}
@@ -132,58 +163,15 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
           </div>
 
           <div className="min-h-0 flex-1 overflow-auto rounded border border-line">
-            <table
-              className="table-fixed border-collapse font-mono text-xs"
-              style={{ width: totalColumnWidth(widths), minWidth: "100%" }}
-            >
-              <colgroup>
-                {LOG_COLUMNS.map((column) => (
-                  <col
-                    key={column.key}
-                    style={column.key === FLEX_COLUMN ? undefined : { width: widths[column.key] }}
-                  />
-                ))}
-              </colgroup>
-              <thead className="sticky top-0 bg-panel">
-                <tr className="border-b border-line">
-                  {LOG_COLUMNS.map((column) => {
-                    const last = column.key === FLEX_COLUMN;
-                    return (
-                      <th
-                        key={column.key}
-                        className={`${TABLE_HEAD} relative ${last ? "" : "border-r border-line"} ${
-                          column.key === "freq" ? "text-right" : ""
-                        }`}
-                      >
-                        <span className="block truncate">{column.label}</span>
-                        {!last && (
-                          <ColumnHandle
-                            label={column.label}
-                            width={widths[column.key]}
-                            onResize={(px) => setWidths((w) => resizeColumn(w, column.key, px))}
-                            onCommit={commit}
-                          />
-                        )}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <LogRows
-                    key={row.key}
-                    row={row}
-                    open={opened === row.key}
-                    onToggle={() => setOpened(opened === row.key ? null : row.key)}
-                  />
-                ))}
-              </tbody>
-            </table>
+            {group === null ? (
+              <LogTable rows={rows} widths={widths} setWidths={setWidths} commit={commit} />
+            ) : (
+              <DecoderLogGroups rows={groups} by={group} />
+            )}
 
-            {rows.length === 0 && (
+            {shown === 0 && (
               <div className="px-3 py-2 text-sm text-ink-dim">
-                {log.isPending
+                {source.isPending
                   ? "Loading…"
                   : isFiltered(filter)
                     ? "No rows match this filter."
@@ -193,14 +181,17 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
           </div>
         </div>
         {error !== null && <FaceFault message={`Rejected: ${error}`} />}
-        {log.isError && <FaceFault message={`Log unavailable: ${log.error.message}`} />}
+        {source.isError && <FaceFault message={`Log unavailable: ${source.error.message}`} />}
       </FaceBody>
       <FaceFooter>
         <FaceStats>
           <Stat label="Shown" title="Rows in this view">
-            {rows.length}
+            {shown}
           </Stat>
-          <Stat label="Stored" title="Rows stored for this node">
+          <Stat
+            label={group === null ? "Stored" : "Groups"}
+            title={group === null ? "Rows stored for this node" : "Groups in the stored rows"}
+          >
             {total}
           </Stat>
           {cleared !== null && (
@@ -228,6 +219,70 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
         </Button>
       </FaceFooter>
     </>
+  );
+}
+
+function LogTable({
+  rows,
+  widths,
+  setWidths,
+  commit,
+}: {
+  rows: readonly LogRow[];
+  widths: ColumnWidths;
+  setWidths: (update: (widths: ColumnWidths) => ColumnWidths) => void;
+  commit: () => void;
+}) {
+  const [opened, setOpened] = useState<string | null>(null);
+  return (
+    <table
+      className="table-fixed border-collapse font-mono text-xs"
+      style={{ width: totalColumnWidth(widths), minWidth: "100%" }}
+    >
+      <colgroup>
+        {LOG_COLUMNS.map((column) => (
+          <col
+            key={column.key}
+            style={column.key === FLEX_COLUMN ? undefined : { width: widths[column.key] }}
+          />
+        ))}
+      </colgroup>
+      <thead className="sticky top-0 bg-panel">
+        <tr className="border-b border-line">
+          {LOG_COLUMNS.map((column) => {
+            const last = column.key === FLEX_COLUMN;
+            return (
+              <th
+                key={column.key}
+                className={`${TABLE_HEAD} relative ${last ? "" : "border-r border-line"} ${
+                  column.key === "freq" ? "text-right" : ""
+                }`}
+              >
+                <span className="block truncate">{column.label}</span>
+                {!last && (
+                  <ColumnHandle
+                    label={column.label}
+                    width={widths[column.key]}
+                    onResize={(px) => setWidths((w) => resizeColumn(w, column.key, px))}
+                    onCommit={commit}
+                  />
+                )}
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <LogRows
+            key={row.key}
+            row={row}
+            open={opened === row.key}
+            onToggle={() => setOpened(opened === row.key ? null : row.key)}
+          />
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -291,42 +346,6 @@ function ColumnHandle({
         }`}
       />
     </span>
-  );
-}
-
-function RowDetail({ row }: { row: LogRow }) {
-  const detail = eventDetail(row.event);
-  return (
-    <div className="flex flex-col gap-2">
-      {(row.event.kind === "call" || row.event.kind === "transmission") &&
-        row.event.data.audio != null && (
-          <audio
-            className="h-8 w-full min-w-0"
-            controls
-            preload="none"
-            src={callAudioUrl(row.event.data.audio.url)}
-          />
-        )}
-      {row.event.kind === "broadcast_data" && <BroadcastDataView data={row.event.data} />}
-      {detail.fields.length > 0 && (
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
-          {detail.fields.map(([label, value]) => (
-            <Fragment key={label}>
-              <dt className="text-ink-dim">{label}</dt>
-              <dd className="min-w-0 break-all text-ink">{value}</dd>
-            </Fragment>
-          ))}
-        </dl>
-      )}
-      {detail.body !== null && (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded border border-line bg-panel px-2 py-1.5 text-ink">
-          {detail.body}
-        </pre>
-      )}
-      {detail.fields.length === 0 && detail.body === null && (
-        <span className="text-ink-dim">This frame carried nothing beyond its summary.</span>
-      )}
-    </div>
   );
 }
 

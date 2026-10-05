@@ -1982,6 +1982,128 @@
         }
       }
     },
+    "/api/decoderlog/groups/{by}": {
+      "get": {
+        "operationId": "group_decoder_log",
+        "parameters": [
+          {
+            "name": "by",
+            "in": "path",
+            "description": "What each row stands for",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/LogGroupKey"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kinds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "device_set",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "nodes",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sources",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sink",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One row per frequency or station, most recently heard first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecoderLogGroupsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown grouping or malformed filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/denoise-models": {
       "get": {
         "operationId": "list_denoise_models",
@@ -14051,6 +14173,81 @@
           }
         }
       },
+      "DecoderLogGroup": {
+        "type": "object",
+        "required": [
+          "count",
+          "first_at",
+          "last_at",
+          "latest"
+        ],
+        "properties": {
+          "airtime_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Summed length of the calls and transmissions in the group.",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "first_at": {
+            "type": "string"
+          },
+          "last_at": {
+            "type": "string"
+          },
+          "latest": {
+            "$ref": "#/components/schemas/DecoderLogEntry"
+          }
+        }
+      },
+      "DecoderLogGroupsResponse": {
+        "type": "object",
+        "required": [
+          "groups",
+          "total",
+          "dropped"
+        ],
+        "properties": {
+          "dropped": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecoderLogGroup"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "DecoderLogNode": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LogGroupKey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "DecoderLogResponse": {
         "type": "object",
         "required": [
@@ -18461,6 +18658,14 @@
           }
         }
       },
+      "LogGroupKey": {
+        "type": "string",
+        "description": "What a grouped decoder log keeps one row for.",
+        "enum": [
+          "frequency",
+          "station"
+        ]
+      },
       "LogLevel": {
         "type": "string",
         "enum": [
@@ -20545,9 +20750,13 @@
           {
             "type": "object",
             "required": [
+              "data",
               "kind"
             ],
             "properties": {
+              "data": {
+                "$ref": "#/components/schemas/DecoderLogNode"
+              },
               "kind": {
                 "type": "string",
                 "enum": [

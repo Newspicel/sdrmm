@@ -34,6 +34,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
           id: nodeIds.log,
           kind: "decoder_log",
           position: { x: 760, y: 0 },
+          data: {},
           size: { w: 620, h: 430 },
         },
         { id: nodeIds.export, kind: "export", position: { x: 380, y: 360 } },

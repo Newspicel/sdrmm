@@ -31,7 +31,13 @@ import { SAMPLE_RATE as AUDIO_RATE_HZ } from "../../lib/audio/worklet";
 import { overlaySourcesOf } from "../../lib/dfOverlay";
 import { mapKindsOf } from "../../lib/map/layers";
 import { positionSourcesOf } from "../../lib/position";
-import type { PatchNode, PatchNodeOf, RecordingStatus, ScanSettings } from "../../lib/types";
+import type {
+  LogGroupKey,
+  PatchNode,
+  PatchNodeOf,
+  RecordingStatus,
+  ScanSettings,
+} from "../../lib/types";
 import { useNow } from "../../lib/useNow";
 import { eventSourcesOf, hasWire, type Input, inputsOf, wiredSourcesOf } from "../binding";
 import { useWorkspaceContext } from "../context";
@@ -247,6 +253,7 @@ export function MapFace({ node }: { node: PatchNode }) {
 
 export function ReadoutFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
+  const [group, setGroup] = useState<LogGroupKey | null>(null);
   const inputs = useInputs(node.id, "events");
   const readable = useWiredDecoders(inputs).filter((wired) => hasDecoderView(wired.kind));
   const wires = useWireScope(node.id);
@@ -258,7 +265,7 @@ export function ReadoutFace({ node }: { node: PatchNode }) {
   if (monitor) {
     return (
       <NodeShell node={node} title="Readout" category="output">
-        <DecoderLogPanel wires={wires} />
+        <DecoderLogPanel wires={wires} group={group} onGroup={setGroup} />
       </NodeShell>
     );
   }
@@ -333,10 +340,22 @@ export function VideoFace({ node }: { node: PatchNode }) {
 }
 
 export function DecoderLogFace({ node }: { node: PatchNode }) {
+  const workspace = useWorkspaceContext();
   const wires = useWireScope(node.id);
+  const group = node.kind === "decoder_log" ? (node.data?.group ?? null) : null;
+  const remember = (next: LogGroupKey | null): void => {
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      graph: patchNode(snapshot.graph, node.id, (current) =>
+        current.kind === "decoder_log"
+          ? { ...current, data: { ...current.data, group: next } }
+          : current,
+      ),
+    }));
+  };
   return (
     <NodeShell node={node} title="Decoder log" category="output">
-      <DecoderLogPanel wires={wires} />
+      <DecoderLogPanel wires={wires} group={group} onGroup={remember} />
     </NodeShell>
   );
 }

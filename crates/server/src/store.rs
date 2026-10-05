@@ -1641,7 +1641,7 @@ fn migrate_dataless_nodes(snapshot: &mut serde_json::Value) {
     {
         let gained_data = matches!(
             node_kind(node),
-            Some("recorder" | "audio_recorder" | "baseband_recorder" | "scanner")
+            Some("recorder" | "audio_recorder" | "baseband_recorder" | "scanner" | "decoder_log")
         );
         if gained_data && node.get("data").is_none() {
             node["data"] = serde_json::json!({});
@@ -1998,19 +1998,30 @@ struct DecoderLogRow {
     event: String,
 }
 
+const LOG_COLUMNS: &str = "decoder_log.id, decoder_log.at, decoder_log.device_set, \
+     decoder_log.channel, decoder_log.node, decoder_log.kind, decoder_log.freq_hz, \
+     decoder_log.station, decoder_log.summary, decoder_log.event, decoder_log.origin";
+
 fn select_decoder_log(
     conn: &Connection,
     predicate: &DecoderLogPredicate,
     limit: u32,
 ) -> Result<Vec<DecoderLogEntry>, StoreError> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT decoder_log.id, decoder_log.at, decoder_log.device_set, decoder_log.channel, \
-         decoder_log.node, decoder_log.kind, decoder_log.freq_hz, decoder_log.station, \
-         decoder_log.summary, decoder_log.event, decoder_log.origin FROM {}{} ORDER BY {} LIMIT ?",
+    let sql = format!(
+        "SELECT {LOG_COLUMNS} FROM {}{} ORDER BY {} LIMIT ?",
         predicate.from, predicate.clause, predicate.order
-    ))?;
+    );
     let mut params = predicate.params.clone();
     params.push(Value::Integer(i64::from(limit)));
+    read_log_entries(conn, &sql, params)
+}
+
+fn read_log_entries(
+    conn: &Connection,
+    sql: &str,
+    params: Vec<Value>,
+) -> Result<Vec<DecoderLogEntry>, StoreError> {
+    let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map(params_from_iter(params), |row| {
         Ok(DecoderLogRow {
             id: row.get(0)?,
@@ -2247,6 +2258,7 @@ mod arrays;
 mod audio_fx_lift;
 mod coherent_break;
 mod cps;
+mod log_groups;
 mod phones;
 mod remote;
 

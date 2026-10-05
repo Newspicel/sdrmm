@@ -62,6 +62,7 @@ pub(crate) fn upgrade_export(export: &mut Value) -> Broken {
     let Some(snapshot) = export.get_mut("snapshot") else {
         return Broken::default();
     };
+    super::migrate_dataless_nodes(snapshot);
     let broken = upgrade_snapshot(snapshot);
     if let Some(state) = export.get_mut("state") {
         prune_state(state, &broken.dropped_ids());

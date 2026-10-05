@@ -177,7 +177,10 @@ mod tests {
                 ..EventFilterNode::default()
             }),
         ));
-        snapshot.graph.nodes.push(node("log", NodeBody::DecoderLog));
+        snapshot
+            .graph
+            .nodes
+            .push(node("log", NodeBody::DecoderLog(Default::default())));
         snapshot.graph.nodes.push(node("export", NodeBody::Export));
         snapshot
             .graph

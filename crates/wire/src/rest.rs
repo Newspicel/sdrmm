@@ -404,6 +404,34 @@ pub struct DecoderLogResponse {
     pub dropped: u64,
 }
 
+/// What a grouped decoder log keeps one row for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LogGroupKey {
+    /// One row per frequency, to the nearest 100 Hz.
+    Frequency,
+    /// One row per station and kind: a plane's ICAO address, a ship's MMSI, a callsign.
+    Station,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct DecoderLogGroup {
+    pub count: u64,
+    pub first_at: String,
+    pub last_at: String,
+    /// Summed length of the calls and transmissions in the group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub airtime_ms: Option<u64>,
+    pub latest: DecoderLogEntry,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct DecoderLogGroupsResponse {
+    pub groups: Vec<DecoderLogGroup>,
+    pub total: u64,
+    pub dropped: u64,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {

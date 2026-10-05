@@ -19,20 +19,21 @@ use sdrmm_wire::{
     ChannelNetworkExportRequest, ChannelSettings, ChannelTypesResponse, ClientCommand,
     ClientsResponse, CreateBookmarkRequest, CreateChannelRequest, CreateDeviceSetRequest,
     CreatePresetRequest, CreateWorkspaceRequest, CreatedId, CreatedRowId, DecoderLogEntry,
-    DecoderLogQuery, DecoderLogResponse, DeletedCount, DeviceInfo, DeviceSettings, DevicesResponse,
-    DfFusionState, DiagnosticsReport, DoctorReport, ErrorCode, ExportFormat, HuntAction,
-    HuntRequest, HuntSettings, HuntStatus, IonosondeReport, LicenseTextResponse, LocateQuery,
-    MAX_RECORDING_UPLOAD_BYTES, MAX_SATELLITE_QUERY_LEN, NetworkExportAction, NetworkExportRequest,
-    NetworkExportStatus, NmeaDevicesResponse, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION,
-    PatchApplyReport, PatchBinding, PatchCatalog, PatchGraph, PatchRefusal, PlaybackRequest,
-    PlaybackStatus, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
-    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
-    SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScanAction,
-    ScanRequest, ScanSettings, ScannerStatus, ServerEvent, ServerStatus, StateScope, StateSnapshot,
-    TemplateInfo, TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus,
-    ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest,
-    VoiceCallsResponse, WorkspaceDetail, WorkspaceExport, WorkspaceInfo, WorkspaceSnapshot,
-    WorkspaceState, WorkspacesResponse, WriteSerialRequest, WrittenSerial,
+    DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount, DeviceInfo,
+    DeviceSettings, DevicesResponse, DfFusionState, DiagnosticsReport, DoctorReport, ErrorCode,
+    ExportFormat, HuntAction, HuntRequest, HuntSettings, HuntStatus, IonosondeReport,
+    LicenseTextResponse, LocateQuery, LogGroupKey, MAX_RECORDING_UPLOAD_BYTES,
+    MAX_SATELLITE_QUERY_LEN, NetworkExportAction, NetworkExportRequest, NetworkExportStatus,
+    NmeaDevicesResponse, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport,
+    PatchBinding, PatchCatalog, PatchGraph, PatchRefusal, PlaybackRequest, PlaybackStatus,
+    PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery,
+    RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse, SatelliteCatalogQuery,
+    SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScanAction, ScanRequest, ScanSettings,
+    ScannerStatus, ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo,
+    TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus, ToolRequest,
+    ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest, VoiceCallsResponse,
+    WorkspaceDetail, WorkspaceExport, WorkspaceInfo, WorkspaceSnapshot, WorkspaceState,
+    WorkspacesResponse, WriteSerialRequest, WrittenSerial,
 };
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -337,6 +338,7 @@ pub(crate) fn reconcile_recordings(dir: &std::path::Path, store: &Store) -> Resu
         ClientCommand,
         PresetSnapshot,
         ExportFormat,
+        LogGroupKey,
         RecordingFormat,
         TemplateInfo,
         ScannerStatus,
@@ -391,6 +393,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(download_recording))
         .routes(routes!(list_decoder_log, clear_decoder_log))
         .routes(routes!(export_decoder_log))
+        .routes(routes!(group_decoder_log))
         .routes(routes!(scan_channel))
         .routes(routes!(hunt_channel))
         .routes(routes!(search_satellites))
