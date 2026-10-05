@@ -14,24 +14,39 @@ hour.
 ## Scan
 
 A **Scanner** drives one channel, never the radio. On auto tuning the radio follows the channel.
-Tuned by hand, the radio stays put and the scan skips targets outside its window.
+Tuned by hand, the radio stays put and the scan skips targets outside its window. The Scanner
+keeps its settings, lockouts and priority frequencies.
 
 1. Add a channel in the mode you want to hear and wire it to a Speaker.
 2. Add **Scanner** and wire its `control` to the channel's `control`.
-3. Set each range's **From**, **To** and **Step**. **Add range** adds another.
+3. Pick a **Band**, or set each range's **From**, **To** and **Step**. **Add range** adds another.
 4. Pick what to **Find** and press **Start scan**.
 
-| Find | Stops on |
+| Find | Does |
 |---|---|
-| Listed | A listed frequency above **Threshold** (default -55 dB) |
-| Strongest | The strongest carrier at least **Over noise** above the noise floor (default 12 dB) |
+| Listed | Stops on the first busy frequency until it goes quiet |
+| Strongest | Stops on the strongest signal anywhere in the span |
+| All | Visits every busy frequency once for **Hold**, then reads `done` |
 
-Match the step to the service's channel spacing. The scanner measures each target over the
-channel's own bandwidth, so a narrow channel scans selectively and a wide one forgivingly.
+Busy means at least **Over noise** above the noise floor (default 12 dB), measured over the
+channel's own bandwidth. Match the step to the service's channel spacing.
+
+**Band** lists the bands of the band plan region that have a channel raster. Bands with named
+channels, such as DAB blocks 5A to 12D or PMR446, scan exactly those channels.
 
 On a hit the channel parks there so you hear it. The scan resumes after 1.5 s of quiet. **Skip**
-leaves the current frequency and ignores it for the rest of this scan. The channel's dial is locked
-while scanning, and stays on the last frequency after **Stop scan**.
+leaves the current frequency and adds it to **Lockouts**. **Priority** frequencies are checked
+every 2 s and win over anything else, also during a hold when the radio's window covers them. The
+channel's dial is locked while scanning, and stays on the last frequency after **Stop scan**.
+
+### List every station
+
+The decoder reads the station, not the scanner. To list every DAB ensemble:
+
+1. Wire **Scanner → DAB channel → Decoder log**.
+2. Pick the **Band** with the DAB blocks, **Find** `All`, **Hold** 5 s.
+3. Press **Start scan**. Each busy block is visited once and the log fills with what the DAB
+   channel decodes there.
 
 Radios that support it sweep in firmware, shown as **Firmware sweep** (on by default). Other
 channels on that radio pause while it runs. The **Sweep** readout shows `the radio's own` or

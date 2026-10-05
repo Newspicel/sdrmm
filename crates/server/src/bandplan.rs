@@ -1,8 +1,9 @@
 use std::sync::LazyLock;
 
 use sdrmm_wire::{
-    BandAllocation, BandBlock, BandLane, BandLayerInfo, BandLayerKind, BandPlan, BandProvision,
-    BandRegion, BandRegionMatch, BandRegionsResponse, BandService, ChannelParams, ItuRegion,
+    BandAllocation, BandBlock, BandChannel, BandLane, BandLayerInfo, BandLayerKind, BandPlan,
+    BandProvision, BandRegion, BandRegionMatch, BandRegionsResponse, BandService, ChannelParams,
+    ItuRegion,
 };
 use serde::Deserialize;
 
@@ -26,6 +27,8 @@ pub(crate) struct Entry {
     pub suggested: Option<ChannelParams>,
     #[serde(default)]
     pub channel_step_hz: Option<f64>,
+    #[serde(default)]
+    pub channels: Vec<BandChannel>,
     #[serde(default)]
     pub notes: Option<String>,
     #[serde(default)]
@@ -84,9 +87,13 @@ pub(crate) struct Annotation {
     #[serde(default)]
     pub channel_step_hz: Option<f64>,
     #[serde(default)]
+    pub channels: Vec<BandChannel>,
+    #[serde(default)]
     pub notes: Option<String>,
     #[serde(default)]
     pub service: Option<BandService>,
+    #[serde(default)]
+    pub itu_regions: Vec<ItuRegion>,
 }
 
 static LAYER_DOCS: &[(&str, &[u8])] = &[
@@ -120,7 +127,7 @@ static LAYERS: LazyLock<Vec<Layer>> = LazyLock::new(|| {
             let raw = inflate(doc).unwrap_or_else(|e| panic!("{id}.json: {e}"));
             let mut layer: Layer =
                 serde_json::from_slice(&raw).unwrap_or_else(|e| panic!("{id}.json: {e}"));
-            layer.entries = annotate(layer.entries, &ANNOTATIONS);
+            layer.entries = annotate(layer.entries, &annotations_for(layer_itu(id)));
             layer
                 .entries
                 .sort_by(|a, b| a.start_hz.total_cmp(&b.start_hz));
@@ -128,6 +135,23 @@ static LAYERS: LazyLock<Vec<Layer>> = LazyLock::new(|| {
         })
         .collect()
 });
+
+fn layer_itu(layer: &str) -> Option<ItuRegion> {
+    let mut found = REGIONS
+        .iter()
+        .filter(|region| region.layers.contains(&layer))
+        .map(|region| region.itu);
+    let first = found.next()?;
+    found.all(|itu| itu == first).then_some(first)
+}
+
+fn annotations_for(itu: Option<ItuRegion>) -> Vec<Annotation> {
+    ANNOTATIONS
+        .iter()
+        .filter(|a| a.itu_regions.is_empty() || itu.is_some_and(|itu| a.itu_regions.contains(&itu)))
+        .cloned()
+        .collect()
+}
 
 fn annotate(entries: Vec<Entry>, annotations: &[Annotation]) -> Vec<Entry> {
     let mut out = Vec::with_capacity(entries.len());
@@ -164,11 +188,22 @@ fn annotate(entries: Vec<Entry>, annotations: &[Annotation]) -> Vec<Entry> {
                 }
                 piece.suggested = piece.suggested.or_else(|| annotation.suggested.clone());
                 piece.channel_step_hz = piece.channel_step_hz.or(annotation.channel_step_hz);
+                if piece.channels.is_empty() {
+                    piece.channels = channels_within(&annotation.channels, start, stop);
+                }
             }
             out.push(piece);
         }
     }
     out
+}
+
+fn channels_within(channels: &[BandChannel], start_hz: f64, stop_hz: f64) -> Vec<BandChannel> {
+    channels
+        .iter()
+        .filter(|channel| channel.hz >= start_hz && channel.hz <= stop_hz)
+        .cloned()
+        .collect()
 }
 
 struct Bbox {
@@ -580,6 +615,7 @@ fn allocation(layer: &Layer, entry: &Entry) -> BandAllocation {
         aliases: entry.aliases.clone(),
         suggested: entry.suggested.clone(),
         channel_step_hz: entry.channel_step_hz,
+        channels: entry.channels.clone(),
         notes: entry.notes.clone(),
         provisions: entry.provisions.clone(),
     }
@@ -664,6 +700,65 @@ mod tests {
         assert_eq!(
             out[0].notes, None,
             "nor does it describe a row it does not name"
+        );
+    }
+
+    #[test]
+    fn a_piece_keeps_only_the_named_channels_inside_it() {
+        let entries: Vec<Entry> = serde_json::from_str(
+            r#"[{"start_hz": 100, "stop_hz": 300, "service": "broadcast", "name": "BAND"}]"#,
+        )
+        .expect("entries");
+        let annotations: Vec<Annotation> = serde_json::from_str(
+            r#"[{"start_hz": 100, "stop_hz": 200, "name": "Blocks",
+                 "channels": [{"name": "A", "hz": 150}, {"name": "B", "hz": 250}]}]"#,
+        )
+        .expect("annotations");
+
+        let out = annotate(entries, &annotations);
+        let names: Vec<&str> = out[0].channels.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["A"]);
+        assert!(out[1].channels.is_empty());
+    }
+
+    #[test]
+    fn dab_band_iii_carries_its_block_raster() {
+        let plan = PLANS
+            .iter()
+            .find(|plan| plan.region.id == "de")
+            .expect("a German plan");
+        let block = plan
+            .allocations
+            .iter()
+            .flat_map(|allocation| &allocation.channels)
+            .find(|channel| channel.name == "12C")
+            .expect("block 12C");
+        assert_eq!(block.hz, 227_360_000.0);
+        let blocks: std::collections::HashSet<&str> = plan
+            .allocations
+            .iter()
+            .filter(|allocation| allocation.name.contains("DAB"))
+            .flat_map(|allocation| &allocation.channels)
+            .map(|channel| channel.name.as_str())
+            .collect();
+        assert_eq!(blocks.len(), 32, "every block from 5A to 12D");
+    }
+
+    #[test]
+    fn a_region_two_annotation_stays_out_of_region_one() {
+        assert_eq!(layer_itu("de"), Some(ItuRegion::R1));
+        assert_eq!(layer_itu("us"), Some(ItuRegion::R2));
+        assert_eq!(layer_itu("world"), None);
+        let tv = |itu| {
+            annotations_for(itu)
+                .iter()
+                .any(|a| a.name == "VHF television: channels 7–13")
+        };
+        assert!(tv(Some(ItuRegion::R2)));
+        assert!(!tv(Some(ItuRegion::R1)));
+        assert!(
+            !tv(None),
+            "the shared world layer takes only what fits everywhere"
         );
     }
 

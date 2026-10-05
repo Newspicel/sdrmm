@@ -2435,6 +2435,7 @@ export interface components {
             aliases?: string[];
             /** Format: double */
             channel_step_hz?: number | null;
+            channels?: components["schemas"]["BandChannel"][];
             id: string;
             layer: string;
             name: string;
@@ -2458,6 +2459,11 @@ export interface components {
             start_hz: number;
             /** Format: double */
             stop_hz: number;
+        };
+        BandChannel: {
+            /** Format: double */
+            hz: number;
+            name: string;
         };
         BandLane: {
             blocks: components["schemas"]["BandBlock"][];
@@ -5734,6 +5740,7 @@ export interface components {
             /** @enum {string} */
             kind: "export";
         } | {
+            data: components["schemas"]["ScannerNode"];
             /** @enum {string} */
             kind: "scanner";
         } | {
@@ -6988,15 +6995,19 @@ export interface components {
             secondary?: components["schemas"]["ScanTarget"] | null;
         };
         /**
-         * @description What a scan is looking for.
+         * @description What a scan is looking for. Every mode calls a frequency busy once it stands `margin_db` over
+         *     the noise floor.
          * @enum {string}
          */
-        ScanMode: "targets" | "close_call";
+        ScanMode: "targets" | "close_call" | "all";
+        ScannerNode: {
+            settings?: components["schemas"]["ScanSettings"];
+        };
         ScannerStatus: {
-            /** Format: float */
-            current_db?: number | null;
             /** Format: double */
             current_hz: number;
+            /** Format: float */
+            current_snr_db?: number | null;
             error?: string | null;
             /** Format: double */
             first_hz?: number;
@@ -7044,9 +7055,13 @@ export interface components {
              *     retune for every step either way.
              */
             hardware_sweep?: boolean;
+            /** Format: int32 */
+            hold_ms?: number;
+            /** @description Frequencies the scan steps over without ever holding on them. */
+            lockouts?: number[];
             /**
              * Format: float
-             * @description How far over the noise floor a carrier has to stand to be called, in close-call mode.
+             * @description How far over the noise floor a frequency has to stand to count as busy.
              */
             margin_db?: number;
             /**
@@ -7055,16 +7070,13 @@ export interface components {
              */
             measure_bw_hz?: number | null;
             mode?: components["schemas"]["ScanMode"];
+            priority?: number[];
             ranges?: components["schemas"]["ScanRange"][];
             /** Format: int32 */
             resume_ms?: number;
-            /** @description Frequencies the scan steps over without ever holding on them. */
-            skip?: number[];
-            /** Format: float */
-            threshold_db?: number;
         };
         /** @enum {string} */
-        ScanState: "scanning" | "holding";
+        ScanState: "scanning" | "holding" | "done";
         ScanTarget: {
             /** @enum {string} */
             target: "selected";

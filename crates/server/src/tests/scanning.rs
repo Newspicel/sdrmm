@@ -65,7 +65,7 @@ async fn scanner_start_stop_and_error_mapping_over_http() {
     );
 
     let start = format!(
-        r#"{{"action":"start","settings":{{"channel":{ch},"ranges":[{{"start_hz":99000000.0,"stop_hz":101000000.0,"step_hz":100000.0}}],"threshold_db":100.0,"dwell_ms":40,"hardware_sweep":false}}}}"#
+        r#"{{"action":"start","settings":{{"channel":{ch},"ranges":[{{"start_hz":99000000.0,"stop_hz":101000000.0,"step_hz":100000.0}}],"margin_db":200.0,"dwell_ms":40,"hardware_sweep":false}}}}"#
     );
     let (status, body) = request(
         app.clone(),

@@ -88,7 +88,7 @@ macro_rules! define_node_body {
             TimeMachine(TimeMachineNode),
             NetworkExport(NetworkExportNode),
             Export,
-            Scanner,
+            Scanner(ScannerNode),
             Hunt(HuntNode),
             Satellite(SatelliteNode),
             $(
@@ -128,7 +128,7 @@ macro_rules! define_node_body {
                     Self::TimeMachine(_) => "time_machine",
                     Self::NetworkExport(_) => "network_export",
                     Self::Export => "export",
-                    Self::Scanner => "scanner",
+                    Self::Scanner(_) => "scanner",
                     Self::Hunt(_) => "hunt",
                     Self::Satellite(_) => "satellite",
                     $(Self::$variant(_) => $type_id,)*
@@ -144,7 +144,7 @@ macro_rules! define_node_body {
                     }
                     Self::Channel(_) => NodeCategory::Channel,
                     Self::Array(_)
-                    | Self::Scanner
+                    | Self::Scanner(_)
                     | Self::Hunt(_)
                     | Self::Satellite(_)
                     | Self::SpectrumMonitor(_)
@@ -231,7 +231,7 @@ macro_rules! define_node_body {
                     "time_machine" => Self::TimeMachine(TimeMachineNode::default()),
                     "network_export" => Self::NetworkExport(NetworkExportNode::default()),
                     "export" => Self::Export,
-                    "scanner" => Self::Scanner,
+                    "scanner" => Self::Scanner(ScannerNode::default()),
                     "hunt" => Self::Hunt(HuntNode::default()),
                     "satellite" => Self::Satellite(SatelliteNode::default()),
                     $($type_id => Self::$variant($node::default()),)*

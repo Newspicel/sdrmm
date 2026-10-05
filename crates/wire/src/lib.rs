@@ -59,8 +59,9 @@ pub use audio::{
     MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, NoiseBlankerSettings, NotchSettings,
 };
 pub use bandplan::{
-    BandAllocation, BandBlock, BandLane, BandLayerInfo, BandLayerKind, BandPlan, BandProvision,
-    BandRegion, BandRegionMatch, BandRegionsResponse, BandService, ItuRegion, LocateQuery,
+    BandAllocation, BandBlock, BandChannel, BandLane, BandLayerInfo, BandLayerKind, BandPlan,
+    BandProvision, BandRegion, BandRegionMatch, BandRegionsResponse, BandService, ItuRegion,
+    LocateQuery,
 };
 pub use channel::{
     AcarsParams, AdsbParams, AeroChannel, AisChannel, AisParams, AmParams, AprsMode, AprsParams,
@@ -161,7 +162,7 @@ pub use patch::{
     PortSpec, PortType, Position, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT,
     REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_SHARED_CLOCK, REFUSAL_STEER,
     REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, RackCell, RackLayout, RackSlot, RecorderNode,
-    RecordingNode, STEER_PORT, STITCH_WIDE_PORT, SignalGenNode, SignalMapNode, Size,
+    RecordingNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalGenNode, SignalMapNode, Size,
     SpatialSpectrumNode, StitchNode, TriangulationNode, port_stream, siggen_key, stream_port,
 };
 #[cfg(feature = "pin")]
@@ -227,8 +228,8 @@ pub use satellite::{
     TRANSMITTER_SOURCE, TRANSMITTER_URL, Transmitter, TransmittersResponse,
 };
 pub use scan::{
-    MAX_SCAN_TARGETS, ScanAction, ScanMode, ScanRange, ScanRequest, ScanSettings, ScanState,
-    ScannerStatus,
+    MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanRequest,
+    ScanSettings, ScanState, ScannerStatus,
 };
 pub use state::{
     AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, LaneLevel,
@@ -1243,7 +1244,7 @@ mod contract_tests {
             first_hz: 144_000_000.0,
             last_hz: 146_000_000.0,
             current_hz: 145_500_000.0,
-            current_db: Some(-31.5),
+            current_snr_db: Some(21.5),
             sweeps: 4,
             hits: 9,
             hardware_sweep: false,
@@ -1273,11 +1274,12 @@ mod contract_tests {
                 ..scan::ScanSettings::for_channel(3)
             }
         );
-        assert_eq!(settings.threshold_db, -55.0);
         assert_eq!(settings.dwell_ms, 250);
         assert_eq!(settings.resume_ms, 1_500);
+        assert_eq!(settings.hold_ms, 5_000);
         assert_eq!(settings.measure_bw_hz, None);
-        assert!(settings.skip.is_empty());
+        assert!(settings.lockouts.is_empty());
+        assert!(settings.priority.is_empty());
         assert!(
             serde_json::from_str::<scan::ScanSettings>(r#"{"frequencies":[162550000.0]}"#).is_err(),
             "a scan without a decoder to feed is refused"
@@ -1300,6 +1302,15 @@ mod contract_tests {
 
         let stop: scan::ScanRequest = serde_json::from_str(r#"{"action":"stop"}"#).unwrap();
         assert_eq!(stop.settings, None);
+    }
+
+    #[test]
+    fn an_older_skip_list_still_locks_frequencies_out() {
+        let settings: scan::ScanSettings =
+            serde_json::from_str(r#"{"channel":1,"skip":[145500000.0],"threshold_db":-55}"#)
+                .unwrap();
+        assert_eq!(settings.lockouts, vec![145_500_000.0]);
+        assert_eq!(serde_json::to_value(scan::ScanMode::All).unwrap(), "all");
     }
 
     #[test]
@@ -1371,7 +1382,7 @@ mod contract_tests {
                 first_hz: 446_000_000.0,
                 last_hz: 446_000_000.0,
                 current_hz: 446_000_000.0,
-                current_db: None,
+                current_snr_db: None,
                 sweeps: 0,
                 hits: 0,
                 hardware_sweep: false,

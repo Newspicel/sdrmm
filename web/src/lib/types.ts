@@ -183,6 +183,7 @@ export type BandPlan = components["schemas"]["BandPlan"];
 export type BandLane = components["schemas"]["BandLane"];
 export type BandBlock = components["schemas"]["BandBlock"];
 export type BandAllocation = components["schemas"]["BandAllocation"];
+export type BandChannel = components["schemas"]["BandChannel"];
 export type BandLayerInfo = components["schemas"]["BandLayerInfo"];
 export type BandRegion = components["schemas"]["BandRegion"];
 export type BandRegionsResponse = components["schemas"]["BandRegionsResponse"];

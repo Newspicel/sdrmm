@@ -31,12 +31,12 @@ import { SAMPLE_RATE as AUDIO_RATE_HZ } from "../../lib/audio/worklet";
 import { overlaySourcesOf } from "../../lib/dfOverlay";
 import { mapKindsOf } from "../../lib/map/layers";
 import { positionSourcesOf } from "../../lib/position";
-import type { PatchNode, PatchNodeOf, RecordingStatus } from "../../lib/types";
+import type { PatchNode, PatchNodeOf, RecordingStatus, ScanSettings } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
 import { eventSourcesOf, hasWire, type Input, inputsOf, wiredSourcesOf } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { huntSweepOf } from "../newNode";
+import { defaultScannerSettings, huntSweepOf } from "../newNode";
 import { decoderOf, deviceSetOf } from "../workspaceDevice";
 import { AudioSpectrogramView } from "./AudioSpectrogramView";
 import { type RecorderNodeOf, recordingFor, withRecording, withSkipSilence } from "./audioRecorder";
@@ -672,15 +672,34 @@ function HuntNodeFace({ node }: { node: PatchNodeOf<"hunt"> }) {
 }
 
 export function ScannerFace({ node }: { node: PatchNode }) {
+  if (node.kind !== "scanner") {
+    return null;
+  }
+  return <ScannerNodeFace node={node} />;
+}
+
+function ScannerNodeFace({ node }: { node: PatchNodeOf<"scanner"> }) {
   const workspace = useWorkspaceContext();
   const decoder = decoderOf(workspace, node.id);
-  const set = decoder?.set ?? null;
+  const settings = node.data?.settings ?? defaultScannerSettings(workspace.context.catalog);
+  const remember = (next: ScanSettings): void => {
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      graph: patchNode(snapshot.graph, node.id, (current) =>
+        current.kind === "scanner"
+          ? { ...current, data: { ...current.data, settings: next } }
+          : current,
+      ),
+    }));
+  };
   return (
     <NodeShell node={node} title="Scanner" category="tool">
       <ScannerPanel
-        active={set}
+        active={decoder?.set ?? null}
         channel={decoder?.channel ?? null}
         hint="Wire this node's control out to a decoder"
+        settings={settings}
+        onSettings={remember}
       />
     </NodeShell>
   );

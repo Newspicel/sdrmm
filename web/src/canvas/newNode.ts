@@ -6,6 +6,7 @@ import type {
   PatchCatalog,
   PatchNodeOf,
   ProcessorKind,
+  ScanSettings,
 } from "../lib/types";
 
 export interface NewNodeSeed {
@@ -78,4 +79,10 @@ export function huntSweepOf(
   }
   const body = defaultBody(catalog, "hunt");
   return body?.kind === "hunt" ? (body.data?.sweep ?? null) : null;
+}
+
+export function defaultScannerSettings(catalog: PatchCatalog): ScanSettings {
+  const body = defaultBody(catalog, "scanner");
+  const settings = body?.kind === "scanner" ? body.data?.settings : undefined;
+  return settings ?? { channel: 0, ranges: [] };
 }

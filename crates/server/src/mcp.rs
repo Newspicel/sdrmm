@@ -148,7 +148,7 @@ struct StartScanRequest {
     channel: u32,
     ranges: Vec<[f64; 3]>,
     frequencies: Option<Vec<f64>>,
-    threshold_db: Option<f32>,
+    margin_db: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -437,7 +437,7 @@ impl SdrMcp {
 
     #[tool(
         description = "Step the named decoder across frequency ranges and park it on anything \
-                       above the threshold. The radio follows the decoder through auto tuning \
+                       margin_db (default 12) over the noise floor. The radio follows the decoder through auto tuning \
                        and is never tuned by the scan itself.",
         annotations(title = "Start scan")
     )]
@@ -458,9 +458,9 @@ impl SdrMcp {
             frequencies: req.frequencies.unwrap_or_default(),
             ..ScanSettings::for_channel(req.channel)
         };
-        let settings = match req.threshold_db {
-            Some(threshold_db) => ScanSettings {
-                threshold_db,
+        let settings = match req.margin_db {
+            Some(margin_db) => ScanSettings {
+                margin_db,
                 ..settings
             },
             None => settings,

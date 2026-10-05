@@ -66,10 +66,18 @@ pub struct BandAllocation {
     pub suggested: Option<ChannelParams>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_step_hz: Option<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub channels: Vec<BandChannel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub provisions: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct BandChannel {
+    pub name: String,
+    pub hz: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

@@ -872,9 +872,31 @@ fn only_a_radio_that_can_transmit_shows_a_transmit_input() {
 }
 
 #[test]
+fn a_scanner_keeps_its_settings() {
+    let body: NodeBody =
+        serde_json::from_str(r#"{"kind":"scanner","data":{}}"#).expect("an empty scanner");
+    assert_eq!(body, NodeBody::Scanner(ScannerNode::default()));
+
+    let kept = NodeBody::Scanner(ScannerNode {
+        settings: crate::ScanSettings {
+            mode: crate::ScanMode::All,
+            lockouts: vec![227_360_000.0],
+            ..crate::ScanSettings::default()
+        },
+    });
+    let json = serde_json::to_string(&kept).expect("serialize");
+    assert_eq!(
+        serde_json::from_str::<NodeBody>(&json).expect("round trip"),
+        kept
+    );
+}
+
+#[test]
 fn a_scanner_owns_the_one_decoder_its_wire_runs_into() {
     let mut driven = workspace();
-    driven.nodes.push(node("scan", NodeBody::Scanner));
+    driven
+        .nodes
+        .push(node("scan", NodeBody::Scanner(ScannerNode::default())));
     driven
         .edges
         .push(edge(("scan", "control"), ("ch", "control")));
@@ -920,7 +942,9 @@ fn a_scanner_owns_the_one_decoder_its_wire_runs_into() {
     );
 
     let mut two_scanners = driven.clone();
-    two_scanners.nodes.push(node("scan2", NodeBody::Scanner));
+    two_scanners
+        .nodes
+        .push(node("scan2", NodeBody::Scanner(ScannerNode::default())));
     two_scanners
         .edges
         .push(edge(("scan2", "control"), ("ch", "control")));
@@ -1920,7 +1944,7 @@ fn a_satellite_drives_many_decoders_but_a_decoder_answers_to_one_controller() {
     let mut graph = PatchGraph {
         nodes: vec![
             node("sat", NodeBody::Satellite(crate::SatelliteNode::default())),
-            node("scan", NodeBody::Scanner),
+            node("scan", NodeBody::Scanner(ScannerNode::default())),
             decoder("voice"),
             decoder("telemetry"),
         ],

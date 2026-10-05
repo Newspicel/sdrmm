@@ -543,6 +543,12 @@ impl Default for HuntNode {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ScannerNode {
+    #[serde(default)]
+    pub settings: crate::ScanSettings,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct TriangulationNode {
     #[serde(default)]

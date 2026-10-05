@@ -723,7 +723,26 @@
       ],
       "needs_channel_type": false,
       "default_body": {
-        "kind": "scanner"
+        "kind": "scanner",
+        "data": {
+          "settings": {
+            "channel": 0,
+            "mode": "targets",
+            "ranges": [
+              {
+                "start_hz": 145600000.0,
+                "stop_hz": 145800000.0,
+                "step_hz": 12500.0
+              }
+            ],
+            "frequencies": [],
+            "dwell_ms": 250,
+            "resume_ms": 1500,
+            "hold_ms": 5000,
+            "hardware_sweep": true,
+            "margin_db": 12.0
+          }
+        }
       }
     },
     {

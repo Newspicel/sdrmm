@@ -192,6 +192,9 @@
     "stop_hz": 1705000.0,
     "name": "Medium-wave broadcast (Region 2)",
     "service": "broadcast",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "mw",
       "am broadcast",
@@ -262,6 +265,9 @@
     "stop_hz": 2000000.0,
     "name": "160 m amateur (Region 1)",
     "service": "amateur",
+    "itu_regions": [
+      "r1"
+    ],
     "aliases": [
       "160 m",
       "top band"
@@ -407,6 +413,9 @@
     "stop_hz": 3800000.0,
     "name": "80 m amateur (Region 1)",
     "service": "amateur",
+    "itu_regions": [
+      "r1"
+    ],
     "aliases": [
       "80 m",
       "3.5 mhz"
@@ -437,6 +446,9 @@
     "stop_hz": 3900000.0,
     "name": "80 m amateur (Region 3)",
     "service": "amateur",
+    "itu_regions": [
+      "r3"
+    ],
     "aliases": [
       "80 m"
     ],
@@ -454,6 +466,9 @@
     "stop_hz": 4000000.0,
     "name": "80/75 m amateur (Region 2)",
     "service": "amateur",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "80 m",
       "75 m"
@@ -716,6 +731,9 @@
     "stop_hz": 7300000.0,
     "name": "40 m amateur (Region 2 extension)",
     "service": "amateur",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "40 m"
     ],
@@ -1666,6 +1684,9 @@
     "stop_hz": 52000000.0,
     "name": "6 m amateur (Region 1)",
     "service": "amateur",
+    "itu_regions": [
+      "r1"
+    ],
     "aliases": [
       "6 m",
       "50 mhz",
@@ -1686,6 +1707,9 @@
     "stop_hz": 54000000.0,
     "name": "6 m amateur (Region 2)",
     "service": "amateur",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "6 m",
       "magic band"
@@ -1704,6 +1728,9 @@
     "stop_hz": 54000000.0,
     "name": "6 m amateur (Region 3)",
     "service": "amateur",
+    "itu_regions": [
+      "r3"
+    ],
     "aliases": [
       "6 m",
       "magic band"
@@ -2005,6 +2032,9 @@
     "stop_hz": 148000000.0,
     "name": "2 m amateur (Region 2 extension)",
     "service": "amateur",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "2 m"
     ],
@@ -2021,6 +2051,9 @@
     "stop_hz": 148000000.0,
     "name": "2 m amateur (Region 3 extension)",
     "service": "amateur",
+    "itu_regions": [
+      "r3"
+    ],
     "aliases": [
       "2 m"
     ],
@@ -2105,6 +2138,9 @@
     "stop_hz": 162550000.0,
     "name": "NOAA Weather Radio",
     "service": "broadcast",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "noaa weather",
       "weather radio",
@@ -2145,6 +2181,9 @@
     "stop_hz": 216000000.0,
     "name": "VHF television: channels 7–13",
     "service": "broadcast",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "vhf tv",
       "atsc",
@@ -2163,6 +2202,136 @@
       "dab",
       "dab+",
       "digital radio"
+    ],
+    "channels": [
+      {
+        "name": "5A",
+        "hz": 174928000.0
+      },
+      {
+        "name": "5B",
+        "hz": 176640000.0
+      },
+      {
+        "name": "5C",
+        "hz": 178352000.0
+      },
+      {
+        "name": "5D",
+        "hz": 180064000.0
+      },
+      {
+        "name": "6A",
+        "hz": 181936000.0
+      },
+      {
+        "name": "6B",
+        "hz": 183648000.0
+      },
+      {
+        "name": "6C",
+        "hz": 185360000.0
+      },
+      {
+        "name": "6D",
+        "hz": 187072000.0
+      },
+      {
+        "name": "7A",
+        "hz": 188928000.0
+      },
+      {
+        "name": "7B",
+        "hz": 190640000.0
+      },
+      {
+        "name": "7C",
+        "hz": 192352000.0
+      },
+      {
+        "name": "7D",
+        "hz": 194064000.0
+      },
+      {
+        "name": "8A",
+        "hz": 195936000.0
+      },
+      {
+        "name": "8B",
+        "hz": 197648000.0
+      },
+      {
+        "name": "8C",
+        "hz": 199360000.0
+      },
+      {
+        "name": "8D",
+        "hz": 201072000.0
+      },
+      {
+        "name": "9A",
+        "hz": 202928000.0
+      },
+      {
+        "name": "9B",
+        "hz": 204640000.0
+      },
+      {
+        "name": "9C",
+        "hz": 206352000.0
+      },
+      {
+        "name": "9D",
+        "hz": 208064000.0
+      },
+      {
+        "name": "10A",
+        "hz": 209936000.0
+      },
+      {
+        "name": "10B",
+        "hz": 211648000.0
+      },
+      {
+        "name": "10C",
+        "hz": 213360000.0
+      },
+      {
+        "name": "10D",
+        "hz": 215072000.0
+      },
+      {
+        "name": "11A",
+        "hz": 216928000.0
+      },
+      {
+        "name": "11B",
+        "hz": 218640000.0
+      },
+      {
+        "name": "11C",
+        "hz": 220352000.0
+      },
+      {
+        "name": "11D",
+        "hz": 222064000.0
+      },
+      {
+        "name": "12A",
+        "hz": 223936000.0
+      },
+      {
+        "name": "12B",
+        "hz": 225648000.0
+      },
+      {
+        "name": "12C",
+        "hz": 227360000.0
+      },
+      {
+        "name": "12D",
+        "hz": 229072000.0
+      }
     ],
     "notes": "DAB+ ensembles occupy 1.536 MHz each on the 5A–13F block raster in Region 1; Region 2 uses the band for television channels 7–13."
   },
@@ -2332,6 +2501,9 @@
     "stop_hz": 430000000.0,
     "name": "70 cm amateur (Region 2, lower)",
     "service": "amateur",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "70 cm",
       "440"
@@ -2348,6 +2520,9 @@
     "stop_hz": 430000000.0,
     "name": "70 cm amateur (Region 3, lower)",
     "service": "amateur",
+    "itu_regions": [
+      "r3"
+    ],
     "aliases": [
       "70 cm"
     ],
@@ -2396,6 +2571,9 @@
     "stop_hz": 450000000.0,
     "name": "70 cm amateur (Region 2, upper)",
     "service": "amateur",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "70 cm",
       "440"
@@ -2413,6 +2591,9 @@
     "stop_hz": 450000000.0,
     "name": "70 cm amateur (Region 3, upper)",
     "service": "amateur",
+    "itu_regions": [
+      "r3"
+    ],
     "aliases": [
       "70 cm"
     ],
@@ -2441,6 +2622,91 @@
     }
   },
   {
+    "start_hz": 446000000.0,
+    "stop_hz": 446200000.0,
+    "name": "PMR446",
+    "service": "mobile",
+    "aliases": [
+      "pmr446",
+      "pmr 446",
+      "walkie-talkie"
+    ],
+    "suggested": {
+      "settings": {
+        "bandwidth_hz": 12500.0
+      },
+      "type": "nfm"
+    },
+    "channel_step_hz": 12500.0,
+    "channels": [
+      {
+        "name": "1",
+        "hz": 446006250.0
+      },
+      {
+        "name": "2",
+        "hz": 446018750.0
+      },
+      {
+        "name": "3",
+        "hz": 446031250.0
+      },
+      {
+        "name": "4",
+        "hz": 446043750.0
+      },
+      {
+        "name": "5",
+        "hz": 446056250.0
+      },
+      {
+        "name": "6",
+        "hz": 446068750.0
+      },
+      {
+        "name": "7",
+        "hz": 446081250.0
+      },
+      {
+        "name": "8",
+        "hz": 446093750.0
+      },
+      {
+        "name": "9",
+        "hz": 446106250.0
+      },
+      {
+        "name": "10",
+        "hz": 446118750.0
+      },
+      {
+        "name": "11",
+        "hz": 446131250.0
+      },
+      {
+        "name": "12",
+        "hz": 446143750.0
+      },
+      {
+        "name": "13",
+        "hz": 446156250.0
+      },
+      {
+        "name": "14",
+        "hz": 446168750.0
+      },
+      {
+        "name": "15",
+        "hz": 446181250.0
+      },
+      {
+        "name": "16",
+        "hz": 446193750.0
+      }
+    ],
+    "notes": "Licence-free walkie-talkies. Channels 1 to 8 are the original analogue set."
+  },
+  {
     "start_hz": 457500000.0,
     "stop_hz": 464000000.0,
     "name": "Business radio: simple UK and simple light",
@@ -2464,6 +2730,9 @@
     "stop_hz": 462737500.0,
     "name": "FRS and GMRS: 462 MHz",
     "service": "mobile",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "frs",
       "gmrs",
@@ -2484,6 +2753,9 @@
     "stop_hz": 467737500.0,
     "name": "FRS and GMRS: 467 MHz",
     "service": "mobile",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "frs",
       "gmrs",
@@ -2504,6 +2776,9 @@
     "stop_hz": 608000000.0,
     "name": "UHF television (Region 2)",
     "service": "broadcast",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "uhf tv",
       "atsc"
@@ -2543,6 +2818,9 @@
     "stop_hz": 698000000.0,
     "name": "UHF television (Region 2, upper)",
     "service": "broadcast",
+    "itu_regions": [
+      "r2"
+    ],
     "aliases": [
       "uhf tv",
       "atsc"
@@ -2852,6 +3130,9 @@
     "stop_hz": 2400000000.0,
     "name": "13 cm amateur (Region 1)",
     "service": "amateur",
+    "itu_regions": [
+      "r1"
+    ],
     "aliases": [
       "13 cm",
       "2.3 ghz"

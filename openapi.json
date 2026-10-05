@@ -8395,6 +8395,12 @@
             ],
             "format": "double"
           },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BandChannel"
+            }
+          },
           "id": {
             "type": "string"
           },
@@ -8479,6 +8485,22 @@
           "stop_hz": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "BandChannel": {
+        "type": "object",
+        "required": [
+          "name",
+          "hz"
+        ],
+        "properties": {
+          "hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -20745,9 +20767,13 @@
           {
             "type": "object",
             "required": [
+              "data",
               "kind"
             ],
             "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ScannerNode"
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -25044,10 +25070,11 @@
       },
       "ScanMode": {
         "type": "string",
-        "description": "What a scan is looking for.",
+        "description": "What a scan is looking for. Every mode calls a frequency busy once it stands `margin_db` over\nthe noise floor.",
         "enum": [
           "targets",
-          "close_call"
+          "close_call",
+          "all"
         ]
       },
       "ScanRange": {
@@ -25131,10 +25158,23 @@
             "type": "boolean",
             "description": "Whether to let a radio that sweeps in its own firmware do the sweeping. Radios without one\nretune for every step either way."
           },
+          "hold_ms": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "lockouts": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "description": "Frequencies the scan steps over without ever holding on them."
+          },
           "margin_db": {
             "type": "number",
             "format": "float",
-            "description": "How far over the noise floor a carrier has to stand to be called, in close-call mode."
+            "description": "How far over the noise floor a frequency has to stand to count as busy."
           },
           "measure_bw_hz": {
             "type": [
@@ -25147,6 +25187,13 @@
           "mode": {
             "$ref": "#/components/schemas/ScanMode"
           },
+          "priority": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
           "ranges": {
             "type": "array",
             "items": {
@@ -25157,18 +25204,6 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
-          },
-          "skip": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "double"
-            },
-            "description": "Frequencies the scan steps over without ever holding on them."
-          },
-          "threshold_db": {
-            "type": "number",
-            "format": "float"
           }
         }
       },
@@ -25176,7 +25211,8 @@
         "type": "string",
         "enum": [
           "scanning",
-          "holding"
+          "holding",
+          "done"
         ]
       },
       "ScanTarget": {
@@ -25215,6 +25251,14 @@
           }
         ]
       },
+      "ScannerNode": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/ScanSettings"
+          }
+        }
+      },
       "ScannerStatus": {
         "type": "object",
         "required": [
@@ -25226,16 +25270,16 @@
           "hits"
         ],
         "properties": {
-          "current_db": {
+          "current_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "current_snr_db": {
             "type": [
               "number",
               "null"
             ],
             "format": "float"
-          },
-          "current_hz": {
-            "type": "number",
-            "format": "double"
           },
           "error": {
             "type": [

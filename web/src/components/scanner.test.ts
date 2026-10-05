@@ -1,68 +1,150 @@
 import { describe, expect, it } from "vitest";
-import type { DeviceSet, ScannerStatus, TemplateInfo } from "../lib/types";
+import type {
+  BandAllocation,
+  BandPlan,
+  DeviceSet,
+  ScannerStatus,
+  ScanSettings,
+  TemplateInfo,
+} from "../lib/types";
 import { rankDevices } from "./devices";
 import {
+  applyPreset,
+  channelName,
   formatDb,
   formatMhz,
   liveStatus,
-  newRange,
-  parseRanges,
+  presetIn,
+  rangeProblem,
+  scanPresets,
+  stateLabel,
   sweepKind,
   targetCount,
+  withHz,
+  withoutHz,
 } from "./scanner";
 import { supports, templatesHint } from "./templates";
 
-describe("parseRanges", () => {
-  it("converts the MHz/kHz the editor holds into whole wire Hz", () => {
-    expect(parseRanges([{ startMhz: 145.6, stopMhz: 145.8, stepKhz: 12.5 }])).toEqual({
-      ranges: [{ start_hz: 145_600_000, stop_hz: 145_800_000, step_hz: 12_500 }],
-    });
-    const odd = parseRanges([{ startMhz: 433.075, stopMhz: 434.79, stepKhz: 8.33 }]);
-    expect(odd).toEqual({
-      ranges: [{ start_hz: 433_075_000, stop_hz: 434_790_000, step_hz: 8_330 }],
-    });
+const SETTINGS: ScanSettings = {
+  channel: 1,
+  ranges: [{ start_hz: 145_600_000, stop_hz: 145_800_000, step_hz: 12_500 }],
+};
+
+describe("rangeProblem", () => {
+  it("accepts a forward range or a channel list", () => {
+    expect(rangeProblem(SETTINGS)).toBeNull();
+    expect(rangeProblem({ channel: 1, ranges: [], frequencies: [227_360_000] })).toBeNull();
   });
 
-  it("refuses what no single field can catch", () => {
-    expect(parseRanges([{ startMhz: 146, stopMhz: 145, stepKhz: 12.5 }])).toMatch(
-      /below the start/,
+  it("names the reversed line when there is more than one", () => {
+    const reversed = { start_hz: 2, stop_hz: 1, step_hz: 1 };
+    expect(rangeProblem({ channel: 1, ranges: [reversed] })).toMatch(/^the stop frequency/);
+    expect(rangeProblem({ channel: 1, ranges: [...(SETTINGS.ranges ?? []), reversed] })).toMatch(
+      /^range 2: /,
     );
-    expect(parseRanges([])).toMatch(/at least one range/);
-  });
-
-  it("names the offending line when there is more than one", () => {
-    const parsed = parseRanges([
-      { startMhz: 145.6, stopMhz: 145.8, stepKhz: 12.5 },
-      { startMhz: 2, stopMhz: 1, stepKhz: 25 },
-    ]);
-    expect(parsed).toMatch(/^range 2: /);
-  });
-});
-
-describe("newRange", () => {
-  it("hands every row its own identity, so a removal cannot slide a draft onto its neighbour", () => {
-    const rows = [newRange(), newRange(), newRange()];
-    expect(new Set(rows.map((row) => row.id)).size).toBe(3);
-    expect(rows[0]).toMatchObject({ startMhz: rows[1]?.startMhz, stopMhz: rows[1]?.stopMhz });
-  });
-
-  it("stays parseable: the id is editor state, not wire state", () => {
-    expect(parseRanges([newRange()])).toEqual({
-      ranges: [{ start_hz: 145_600_000, stop_hz: 145_800_000, step_hz: 12_500 }],
-    });
+    expect(rangeProblem({ channel: 1, ranges: [] })).toMatch(/add a range/);
   });
 });
 
 describe("targetCount", () => {
-  it("counts inclusively, matching the server's expansion", () => {
-    expect(targetCount([{ start_hz: 100, stop_hz: 200, step_hz: 50 }])).toBe(3);
-    expect(targetCount([{ start_hz: 100, stop_hz: 249, step_hz: 50 }])).toBe(3);
+  it("counts inclusively, matching the server's expansion, plus listed channels", () => {
     expect(
-      targetCount([
-        { start_hz: 100, stop_hz: 200, step_hz: 50 },
-        { start_hz: 0, stop_hz: 0, step_hz: 10 },
-      ]),
-    ).toBe(4);
+      targetCount({ channel: 1, ranges: [{ start_hz: 100, stop_hz: 200, step_hz: 50 }] }),
+    ).toBe(3);
+    expect(
+      targetCount({ channel: 1, ranges: [{ start_hz: 100, stop_hz: 249, step_hz: 50 }] }),
+    ).toBe(3);
+    expect(
+      targetCount({
+        channel: 1,
+        ranges: [{ start_hz: 100, stop_hz: 200, step_hz: 50 }],
+        frequencies: [300, 400],
+      }),
+    ).toBe(5);
+  });
+});
+
+function allocation(overrides: Partial<BandAllocation>): BandAllocation {
+  return {
+    id: "a",
+    layer: "world",
+    start_hz: 0,
+    stop_hz: 1,
+    service: "broadcast",
+    name: "Band",
+    official_name: "BAND",
+    aliases: ["band"],
+    ...overrides,
+  };
+}
+
+function plan(allocations: BandAllocation[]): BandPlan {
+  return {
+    region: { id: "de", name: "Germany", itu_region: "r1", layers: [] },
+    layers: [],
+    allocations,
+    lanes: [],
+  };
+}
+
+describe("scanPresets", () => {
+  const dab = allocation({
+    id: "dab",
+    name: "VHF Band III: DAB",
+    start_hz: 174e6,
+    stop_hz: 230e6,
+    channels: [
+      { name: "5C", hz: 178_352_000 },
+      { name: "5A", hz: 174_928_000 },
+    ],
+  });
+  const fm = allocation({
+    id: "fm",
+    name: "FM broadcast",
+    start_hz: 87.5e6,
+    stop_hz: 108e6,
+    channel_step_hz: 100_000,
+  });
+
+  it("offers named bands that carry a raster, lowest first", () => {
+    const presets = scanPresets(
+      plan([dab, fm, allocation({ id: "x", aliases: [], channel_step_hz: 1 })]),
+    );
+    expect(presets.map((preset) => preset.name)).toEqual(["FM broadcast", "VHF Band III: DAB"]);
+    expect(presets[0]?.ranges).toEqual([{ start_hz: 87.5e6, stop_hz: 108e6, step_hz: 100_000 }]);
+    expect(presets[1]?.frequencies).toEqual([174_928_000, 178_352_000]);
+    expect(presets[1]?.ranges).toEqual([]);
+  });
+
+  it("merges the pieces a band plan splits one band into", () => {
+    const low = allocation({ ...fm, id: "fm1", stop_hz: 100e6 });
+    const high = allocation({ ...fm, id: "fm2", start_hz: 100e6 });
+    expect(scanPresets(plan([low, high]))[0]?.ranges[0]).toMatchObject({
+      start_hz: 87.5e6,
+      stop_hz: 108e6,
+    });
+  });
+
+  it("recognises the preset a scan was filled from", () => {
+    const presets = scanPresets(plan([dab, fm]));
+    const dabPreset = presets[1];
+    if (dabPreset === undefined) {
+      throw new Error("no DAB preset");
+    }
+    const filled = applyPreset(SETTINGS, dabPreset);
+    expect(presetIn(filled, presets)?.name).toBe("VHF Band III: DAB");
+    expect(presetIn(SETTINGS, presets)).toBeNull();
+    expect(channelName(plan([dab]), 178_352_000)).toBe("5C");
+    expect(channelName(plan([dab]), 178_000_000)).toBeNull();
+  });
+});
+
+describe("frequency lists", () => {
+  it("adds once, in order, and removes", () => {
+    expect(withHz([300, 100], 200)).toEqual([100, 200, 300]);
+    expect(withHz([100], 100)).toEqual([100]);
+    expect(withoutHz([100, 200], 100)).toEqual([200]);
+    expect(withoutHz(undefined, 100)).toEqual([]);
   });
 });
 
@@ -72,7 +154,6 @@ const STATUS: ScannerStatus = {
     channel: 1,
     ranges: [],
     frequencies: [],
-    threshold_db: -55,
     dwell_ms: 250,
     resume_ms: 1500,
   },
@@ -115,6 +196,16 @@ describe("liveStatus", () => {
     expect(liveStatus(deviceSet({ scanners: [STATUS] }), 2, STATUS)).toBeNull();
     expect(liveStatus(deviceSet(), 1, STATUS)).toBeNull();
     expect(liveStatus(null, 1, STATUS)).toBeNull();
+  });
+});
+
+describe("stateLabel", () => {
+  it("calls an All scan's hold a visit and says when it is done", () => {
+    expect(stateLabel(STATUS)).toBe("scanning");
+    expect(stateLabel({ ...STATUS, state: "holding" })).toBe("holding");
+    const all = { ...STATUS, settings: { ...STATUS.settings, mode: "all" as const } };
+    expect(stateLabel({ ...all, state: "holding" })).toBe("visiting");
+    expect(stateLabel({ ...all, state: "done" })).toBe("done");
   });
 });
 

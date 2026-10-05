@@ -1499,7 +1499,7 @@ fn parse_workspace_snapshot(json: &str) -> Result<WorkspaceSnapshot, serde_json:
     migrate_device_locks(&mut value);
     migrate_signal_finders(&mut value);
     migrate_baseband_scopes(&mut value);
-    migrate_recorders(&mut value);
+    migrate_dataless_nodes(&mut value);
     let snapshot: WorkspaceSnapshot = crate::json::from_value(&value)?;
     if snapshot.version != WORKSPACE_SNAPSHOT_VERSION {
         return Err(serde::de::Error::custom(WorkspaceError::Version(
@@ -1631,7 +1631,7 @@ fn migrate_baseband_scopes(snapshot: &mut serde_json::Value) {
     }
 }
 
-fn migrate_recorders(snapshot: &mut serde_json::Value) {
+fn migrate_dataless_nodes(snapshot: &mut serde_json::Value) {
     for node in snapshot
         .get_mut("graph")
         .and_then(|graph| graph.get_mut("nodes"))
@@ -1639,11 +1639,11 @@ fn migrate_recorders(snapshot: &mut serde_json::Value) {
         .into_iter()
         .flatten()
     {
-        let recorder = matches!(
+        let gained_data = matches!(
             node_kind(node),
-            Some("recorder" | "audio_recorder" | "baseband_recorder")
+            Some("recorder" | "audio_recorder" | "baseband_recorder" | "scanner")
         );
-        if recorder && node.get("data").is_none() {
+        if gained_data && node.get("data").is_none() {
             node["data"] = serde_json::json!({});
         }
     }
