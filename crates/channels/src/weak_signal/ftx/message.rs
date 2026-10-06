@@ -119,6 +119,12 @@ impl Reader {
     }
 }
 
+pub(crate) fn is_plain_standard(bits: u128) -> bool {
+    let first_suffix = PAYLOAD_BITS - 29;
+    let second_suffix = PAYLOAD_BITS - 58;
+    bits & 7 == 1 && (bits >> first_suffix) & 1 == 0 && (bits >> second_suffix) & 1 == 0
+}
+
 pub(crate) fn unpack(bits: u128, book: &mut CallBook) -> Option<String> {
     let i3 = (bits & 7) as u32;
     let n3 = ((bits >> 3) & 7) as u32;
@@ -485,5 +491,21 @@ mod tests {
     fn a_call_too_long_to_hash_has_no_hash() {
         assert!(hash22("K1ABC").is_some_and(|hash| hash < 1 << 22));
         assert_eq!(hash22("TOO-LONG-CALL"), None);
+    }
+
+    #[test]
+    fn plain_standard_messages_carry_no_suffix_flags() {
+        for text in ["CQ K1ABC FN42", "K1ABC W9XYZ -12", "K1ABC W9XYZ RR73"] {
+            assert!(is_plain_standard(pack(text).unwrap()), "{text}");
+        }
+        for text in [
+            "K1ABC/R W9XYZ EN37",
+            "K1ABC W9XYZ/R EN37",
+            "G4ABC/P PA9XYZ JO22",
+            "CQ PJ4/K1ABC",
+            "TNX BOB 73 GL",
+        ] {
+            assert!(!is_plain_standard(pack(text).unwrap()), "{text}");
+        }
     }
 }

@@ -45,16 +45,12 @@ impl FtxDecoder {
         };
         let book = &mut self.book;
         self.engine.decode(samples, &search, &mut |payload, osd| {
-            if osd && !is_everyday(payload) {
+            if osd && !message::is_plain_standard(payload) {
                 return None;
             }
             message::unpack(payload, book)
         })
     }
-}
-
-fn is_everyday(payload: u128) -> bool {
-    matches!(payload & 7, 1 | 2 | 4)
 }
 
 #[cfg(any(test, feature = "synth"))]

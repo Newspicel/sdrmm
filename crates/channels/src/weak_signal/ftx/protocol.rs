@@ -26,6 +26,8 @@ pub(crate) struct Protocol {
     pub(crate) full_time_search: bool,
     pub(crate) spectral_candidates: bool,
     pub(crate) osd_min_presence: f32,
+    pub(crate) osd_max_snr_db: f32,
+    pub(crate) assume_cq: bool,
 }
 
 const FT8_COSTAS: &[u8] = &[3, 1, 4, 0, 6, 5, 2];
@@ -52,6 +54,8 @@ pub(crate) const FT8: Protocol = Protocol {
     full_time_search: false,
     spectral_candidates: true,
     osd_min_presence: 0.0,
+    osd_max_snr_db: -14.0,
+    assume_cq: true,
 };
 
 pub(crate) const FT4: Protocol = Protocol {
@@ -80,6 +84,8 @@ pub(crate) const FT4: Protocol = Protocol {
     full_time_search: true,
     spectral_candidates: true,
     osd_min_presence: 1.16,
+    osd_max_snr_db: f32::INFINITY,
+    assume_cq: false,
 };
 
 impl Protocol {

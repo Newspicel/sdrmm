@@ -6,6 +6,7 @@ use sdrmm_dsp::fft::Transform;
 
 use super::{
     ldpc,
+    message::PAYLOAD_BITS,
     protocol::{BASEBAND_SYMBOL, MAX_SYMBOLS, MAX_TONES, Protocol, SAMPLE_RATE},
     synth,
 };
@@ -19,6 +20,9 @@ const JOINT_TIME_SEARCH: isize = 8;
 const JOINT_FREQUENCY_STEPS: i32 = 3;
 const FREQUENCY_STEPS: i32 = 8;
 const LLR_SCALE: f32 = 2.83;
+const AP_STRENGTH: f32 = 1.01;
+const CQ_MASK: u128 = (((1 << 29) - 1) << 48) | 7;
+const CQ_BITS: u128 = (2 << 49) | 1;
 const BP_ITERATIONS: usize = 30;
 const SYNC_SYMBOL_SHARE: usize = 3;
 const OSD_DISTANCE_FLOOR: f32 = 0.045;
@@ -144,11 +148,17 @@ impl Engine {
         let mut audio = samples.to_vec();
         audio.resize(self.protocol.slot_samples, 0.0);
         let mut found: Vec<Found> = Vec::new();
+        let mut tried: Vec<Candidate> = Vec::new();
+        let mut subtracted = 0..0;
         for pass in 0..search.passes {
             let candidates = self.candidates(&audio, search);
             self.transform(&audio);
             let fresh_from = found.len();
             for candidate in candidates {
+                if pass > 0 && self.unchanged(candidate, &tried, &found[subtracted.clone()]) {
+                    continue;
+                }
+                tried.push(candidate);
                 if let Some(result) = self.attempt(candidate, search, accept, &found) {
                     found.push(result);
                 }
@@ -159,8 +169,22 @@ impl Engine {
             for result in &found[fresh_from..] {
                 self.subtract(&mut audio, result);
             }
+            subtracted = fresh_from..found.len();
         }
         found
+    }
+
+    fn unchanged(&self, candidate: Candidate, tried: &[Candidate], subtracted: &[Found]) -> bool {
+        let spacing = self.protocol.tone_spacing_hz();
+        let reach = (self.protocol.tones + 1) as f32 * spacing;
+        let frequency = candidate.bin as f32 * spacing / 2.0;
+        let near_change = subtracted
+            .iter()
+            .any(|result| (result.frequency_hz - frequency).abs() < reach);
+        !near_change
+            && tried.iter().any(|earlier| {
+                earlier.bin == candidate.bin && (earlier.frame - candidate.frame).abs() <= 1
+            })
     }
 
     fn candidates(&mut self, audio: &[f32], search: &Search) -> Vec<Candidate> {
@@ -681,10 +705,13 @@ impl Engine {
         } else {
             0.0
         };
-        let (payload, text, hard_errors) = decoded.or_else(|| {
-            self.decode_spectra(&spectra, search.osd_order, osd_distance, accept, found)
-        })?;
+        let (payload, text, hard_errors) = decoded
+            .or_else(|| {
+                self.decode_spectra(&spectra, search.osd_order, osd_distance, accept, found)
+            })
+            .or_else(|| self.decode_cq(&spectra, accept, found))?;
         let tones = protocol.tones_for(payload);
+        let snr_db = self.snr(&spectra, &tones);
         let lead = synth::lead_samples(protocol) as f32;
         let coarse = fine.start * protocol.decimation() as f32 - lead;
         let (start, drift_hz) = self.pinpoint(&tones, coarse.round() as isize);
@@ -693,7 +720,7 @@ impl Engine {
             text,
             frequency_hz: (fine.frequency_hz + drift_hz) as f32,
             start_s: start as f32 / SAMPLE_RATE,
-            snr_db: self.snr(&spectra, &tones),
+            snr_db,
             hard_errors,
         })
     }
@@ -707,6 +734,20 @@ impl Engine {
         found: &[Found],
     ) -> Option<(u128, String, u32)> {
         let protocol = self.protocol;
+        let sets = self.llr_sets(spectra);
+        if osd_order == 0 {
+            return sets
+                .iter()
+                .find_map(|llr| self.try_decode(llr, spectra, 0, 0.0, accept, found));
+        }
+        let spans = protocol.coherent_spans.len();
+        (0..spans).rev().chain([spans]).find_map(|set| {
+            self.try_decode(&sets[set], spectra, osd_order, osd_distance, accept, found)
+        })
+    }
+
+    fn llr_sets(&self, spectra: &Spectra) -> Vec<[f32; ldpc::N]> {
+        let protocol = self.protocol;
         let mut sets = Vec::with_capacity(protocol.coherent_spans.len() + 1);
         let mut single = None;
         for (index, &span) in protocol.coherent_spans.iter().enumerate() {
@@ -715,21 +756,43 @@ impl Engine {
             single.get_or_insert(normalised);
         }
         sets.extend(single);
-        if osd_order == 0 {
-            return sets
-                .iter()
-                .find_map(|llr| self.try_decode(llr, 0, 0.0, accept, found));
+        sets
+    }
+
+    fn decode_cq(
+        &mut self,
+        spectra: &Spectra,
+        accept: &mut dyn FnMut(u128, bool) -> Option<String>,
+        found: &[Found],
+    ) -> Option<(u128, String, u32)> {
+        let protocol = self.protocol;
+        if !protocol.assume_cq {
+            return None;
         }
-        let spans = protocol.coherent_spans.len();
-        (0..spans)
-            .rev()
-            .chain([spans])
-            .find_map(|set| self.try_decode(&sets[set], osd_order, osd_distance, accept, found))
+        let mut sets = self.llr_sets(spectra);
+        for llr in &mut sets {
+            assume_cq(llr, protocol.scramble);
+            let Some(decoded) = self.ldpc.decode(llr, BP_ITERATIONS, 0) else {
+                continue;
+            };
+            let payload = decoded.payload ^ protocol.scramble;
+            if payload & CQ_MASK != CQ_BITS
+                || found.iter().any(|known| known.payload == payload)
+                || self.too_clear_for_osd(spectra, payload)
+            {
+                continue;
+            }
+            if let Some(text) = accept(payload, true) {
+                return Some((payload, text, decoded.hard_errors));
+            }
+        }
+        None
     }
 
     fn try_decode(
         &mut self,
         llr: &[f32; ldpc::N],
+        spectra: &Spectra,
         osd_order: usize,
         osd_distance: f32,
         accept: &mut dyn FnMut(u128, bool) -> Option<String>,
@@ -752,8 +815,16 @@ impl Engine {
         if found.iter().any(|known| known.payload == payload) {
             return None;
         }
+        if decoded.osd && self.too_clear_for_osd(spectra, payload) {
+            return None;
+        }
         let text = accept(payload, decoded.osd)?;
         Some((payload, text, decoded.hard_errors))
+    }
+
+    fn too_clear_for_osd(&self, spectra: &Spectra, payload: u128) -> bool {
+        let tones = self.protocol.tones_for(payload);
+        self.snr(spectra, &tones) > self.protocol.osd_max_snr_db
     }
 
     fn llrs(
@@ -962,6 +1033,22 @@ fn remember_peak(peaks: &mut Vec<(isize, f32, f32)>, peak: (isize, f32, f32), me
     peaks.truncate(WHOLE_WINDOW_PEAKS);
 }
 
+fn assume_cq(llr: &mut [f32; ldpc::N], scramble: u128) {
+    let strength = llr.iter().fold(0.0f32, |top, value| top.max(value.abs())) * AP_STRENGTH;
+    let target = (CQ_BITS ^ scramble) & CQ_MASK;
+    let last = PAYLOAD_BITS as usize - 1;
+    for (index, value) in llr.iter_mut().take(PAYLOAD_BITS as usize).enumerate() {
+        let bit = last - index;
+        if (CQ_MASK >> bit) & 1 == 1 {
+            *value = if (target >> bit) & 1 == 1 {
+                strength
+            } else {
+                -strength
+            };
+        }
+    }
+}
+
 fn box_average(input: &[Complex<f64>], half: usize, out: &mut Vec<Complex<f64>>) {
     let mut prefix = Vec::with_capacity(input.len() + 1);
     prefix.push(Complex::<f64>::default());
@@ -1064,6 +1151,16 @@ mod tests {
         let low = ((centre_hz - 10.0) / resolution) as usize;
         let high = ((centre_hz + 60.0) / resolution) as usize;
         output[low..high].iter().map(|bin| bin.norm_sqr()).sum()
+    }
+
+    #[test]
+    fn the_cq_mask_matches_packed_cq_calls() {
+        for text in ["CQ K1ABC FN42", "CQ DL1ABC JO62"] {
+            let payload = super::super::message::pack(text).unwrap();
+            assert_eq!(payload & CQ_MASK, CQ_BITS, "{text}");
+        }
+        let reply = super::super::message::pack("K1ABC W9XYZ -12").unwrap();
+        assert_ne!(reply & CQ_MASK, CQ_BITS);
     }
 
     #[test]

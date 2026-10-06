@@ -676,31 +676,93 @@ mod tests {
         iq
     }
 
+    fn decode_ft8(iq: &[Complex<f32>]) -> Vec<String> {
+        let mut channel = Ft8Channel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(ChannelParams::Ft8(WsjtParams::default())),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        for block in iq.chunks(4_096) {
+            channel.process(block, &mut out);
+        }
+        channel.settle(&mut out);
+        out.events
+            .into_iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Ft8(message) => Some(message.text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn with_noise(iq: &[Complex<f32>], snr_db: f32, mut state: u64) -> Vec<Complex<f32>> {
+        let power = iq.iter().map(|s| s.re * s.re).sum::<f32>() / iq.len() as f32;
+        let sigma = (power / 10f32.powf(snr_db / 10.0)).sqrt();
+        let mut gaussian = || {
+            (0..12)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    (state >> 40) as f32 / (1u64 << 24) as f32
+                })
+                .sum::<f32>()
+                - 6.0
+        };
+        iq.iter()
+            .map(|s| Complex::new(s.re + sigma * gaussian(), 0.0))
+            .collect()
+    }
+
+    #[test]
+    fn noise_on_a_busy_band_invents_no_messages() {
+        let heard: Vec<&str> = PUBLISHED
+            .iter()
+            .copied()
+            .chain(["OT4B <...> -19", "WB2QJ ES3AT KO18"])
+            .collect();
+        let slot = busy_slot_with_quiet_tail();
+        for (snr_db, seed) in [(0.0, 1), (0.0, 2), (-5.0, 3), (-5.0, 4)] {
+            let texts = decode_ft8(&with_noise(&slot, snr_db, seed));
+            let invented: Vec<&String> = texts
+                .iter()
+                .filter(|text| !heard.contains(&text.as_str()))
+                .collect();
+            assert!(
+                invented.is_empty(),
+                "{snr_db} dB, seed {seed}: {invented:?}"
+            );
+        }
+    }
+
+    const PUBLISHED: [&str; 20] = [
+        "VK4BLE OH8JK R-17",
+        "RK6AH JH1AJT -05",
+        "PA3EPP SP8NFO KN09",
+        "RV6K RU3XL -13",
+        "SQ8OHR UA9LL MO27",
+        "ET3RFG/R IN3ADG -23",
+        "CQ F4FSY JN25",
+        "JR5MJS OH8NW 73",
+        "SV1GN RK6AUV LN05",
+        "PB5DX EI3CTB IO63",
+        "CQ IZ1ANK JN33",
+        "NT6Q OH8GDU -17",
+        "CQ DL1UDO JO31",
+        "VK4BLE OH1EDK -20",
+        "CQ JA OH1LWZ KP11",
+        "<...> ON7EE JO10",
+        "CQ DG0OFT JO50",
+        "CQ UB3AQS KO85",
+        "G1XJM HA7JIV JN97",
+        "SP7XIF JA2GQT -15",
+    ];
+
     #[test]
     fn a_recorded_slot_reads_the_band_the_reference_decoder_published() {
-        const PUBLISHED: [&str; 20] = [
-            "VK4BLE OH8JK R-17",
-            "RK6AH JH1AJT -05",
-            "PA3EPP SP8NFO KN09",
-            "RV6K RU3XL -13",
-            "SQ8OHR UA9LL MO27",
-            "ET3RFG/R IN3ADG -23",
-            "CQ F4FSY JN25",
-            "JR5MJS OH8NW 73",
-            "SV1GN RK6AUV LN05",
-            "PB5DX EI3CTB IO63",
-            "CQ IZ1ANK JN33",
-            "NT6Q OH8GDU -17",
-            "CQ DL1UDO JO31",
-            "VK4BLE OH1EDK -20",
-            "CQ JA OH1LWZ KP11",
-            "<...> ON7EE JO10",
-            "CQ DG0OFT JO50",
-            "CQ UB3AQS KO85",
-            "G1XJM HA7JIV JN97",
-            "SP7XIF JA2GQT -15",
-        ];
-
         let mut channel = Ft8Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
