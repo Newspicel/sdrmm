@@ -96,6 +96,39 @@ pub fn dsd_fme(text: &str) -> Vec<String> {
         .collect()
 }
 
+pub fn multimon_flex(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.strip_prefix("FLEX_NEXT|")?.split('|').collect();
+            let capcode = fields.get(3)?;
+            let message = fields.last()?;
+            Some(format!("{capcode} {message}"))
+        })
+        .collect()
+}
+
+pub fn multimon_ccir(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.strip_prefix("CCIR: "))
+        .map(|code| code.trim().to_owned())
+        .collect()
+}
+
+pub fn dsd_fme_nxdn(text: &str) -> Vec<String> {
+    strip_ansi(text)
+        .lines()
+        .filter(|line| line.contains("Src=") && line.contains("Dst/TG="))
+        .map(|line| line.trim().to_owned())
+        .collect()
+}
+
+pub fn dsd_fme_ysf(text: &str) -> Vec<String> {
+    strip_ansi(text)
+        .lines()
+        .filter_map(|line| word_after(line, "SRC:"))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,5 +201,31 @@ mod tests {
             dsd_fme(out),
             ["SLOT 1 TGT=12345678 SRC=12345678 Group Call"]
         );
+    }
+
+    #[test]
+    fn multimon_flex_keys_capcode_and_text() {
+        let out = "FLEX_NEXT|2026-10-06 19:07:20+02:00|1600/2|00.072.A|0002029574|T|ALN|K.0/3|A2 DP2 Voorburg\nFLEX: noise\n";
+        assert_eq!(multimon_flex(out), ["0002029574 A2 DP2 Voorburg"]);
+    }
+
+    #[test]
+    fn multimon_ccir_keeps_the_code() {
+        assert_eq!(multimon_ccir("CCIR: 12E34\nZVEI1: A1ED0\n"), ["12E34"]);
+    }
+
+    #[test]
+    fn dsd_fme_nxdn_keeps_addressed_lines() {
+        let out = "Sync: NXDN48 RTCH Voice\n Broadcast Call - Src=12345 - Dst/TG=234 \n";
+        assert_eq!(
+            dsd_fme_nxdn(out),
+            ["Broadcast Call - Src=12345 - Dst/TG=234"]
+        );
+    }
+
+    #[test]
+    fn dsd_fme_ysf_keeps_source_calls() {
+        let out = "Sync: +YSF FN: 2/6 SRC: DL1ABC    \nSync: +YSF FN: 1/6 DST: ALL SRC: DL1ABC U/L: DB0ABC\n";
+        assert_eq!(dsd_fme_ysf(out), ["DL1ABC", "DL1ABC"]);
     }
 }

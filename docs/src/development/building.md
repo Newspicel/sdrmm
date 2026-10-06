@@ -149,7 +149,7 @@ them, and `cargo xtask test` regenerates them.
 | `cargo xtask replay` | Runs a capture through one channel; `--images` saves pictures |
 | `cargo xtask ber <entry>` | Bit error rate curves into `target/ber` |
 | `cargo xtask ident-matrix` | Signal identifier against the fixtures |
-| `cargo xtask compare <dsp\|decoders\|apps>` | Compares with other SDR software; `--ours` measures SDR-- alone |
+| `cargo xtask compare <dsp\|decoders\|apps>` | Compares with other SDR software; `--ours` measures SDR-- alone, `decoders --signal <id>` one signal |
 
 ## Desktop app
 

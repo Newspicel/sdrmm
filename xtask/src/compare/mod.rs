@@ -11,7 +11,7 @@ mod report;
 #[derive(Subcommand)]
 pub enum Compare {
     Dsp(Scope),
-    Decoders(Scope),
+    Decoders(decoders::Scope),
     Apps(apps::Apps),
 }
 
@@ -24,7 +24,7 @@ pub struct Scope {
 pub fn run(root: &Path, suite: &Compare) -> Result<()> {
     match suite {
         Compare::Dsp(scope) => dsp::run(root, scope.ours),
-        Compare::Decoders(scope) => decoders::run(root, scope.ours),
+        Compare::Decoders(scope) => decoders::run(root, scope),
         Compare::Apps(args) => apps::run(root, args),
     }
 }

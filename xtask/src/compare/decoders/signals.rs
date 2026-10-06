@@ -2,6 +2,7 @@ use sdrmm_wire::DecoderEvent;
 
 use super::{
     convert::{Audio, Container, Demod, Format},
+    noise::Ladder,
     parse,
     programs::{
         ACARSDEC, AIS_CATCHER, DIREWOLF, DSD_FME, DUMP1090, FT8_LIB, MULTIMON, Program, READSB,
@@ -20,6 +21,7 @@ pub struct Signal {
     pub unique: bool,
     pub decodes: Show,
     pub speed: Show,
+    pub noise: Ladder,
     pub key: fn(&DecoderEvent) -> Option<String>,
     pub references: &'static [Reference],
 }
@@ -73,6 +75,10 @@ pub const SIGNALS: &[Signal] = &[
         unique: true,
         decodes: Show::Hidden,
         speed: Show::Plain,
+        noise: Ladder {
+            high_db: 20.0,
+            low_db: -5.0,
+        },
         key: adsb,
         references: &[
             Reference {
@@ -121,6 +127,10 @@ pub const SIGNALS: &[Signal] = &[
         unique: true,
         decodes: Show::Hidden,
         speed: Show::Plain,
+        noise: Ladder {
+            high_db: -2.0,
+            low_db: -12.0,
+        },
         key: ais,
         references: &[Reference {
             program: &AIS_CATCHER,
@@ -143,6 +153,10 @@ pub const SIGNALS: &[Signal] = &[
         unique: true,
         decodes: Show::Hidden,
         speed: Show::Noted(FROM_FM),
+        noise: Ladder {
+            high_db: 5.0,
+            low_db: -10.0,
+        },
         key: aprs,
         references: &[
             Reference {
@@ -175,6 +189,10 @@ pub const SIGNALS: &[Signal] = &[
         unique: true,
         decodes: Show::Hidden,
         speed: Show::Noted(FROM_FM),
+        noise: Ladder {
+            high_db: 5.0,
+            low_db: -20.0,
+        },
         key: pocsag,
         references: &[Reference {
             program: &MULTIMON,
@@ -183,6 +201,58 @@ pub const SIGNALS: &[Signal] = &[
             exit_codes: &[0],
             tail: true,
             keys: parse::multimon_pocsag,
+        }],
+    },
+    Signal {
+        id: "flex",
+        name: "FLEX",
+        fixture: "flex_p2000_offair_48k",
+        channel: "flex",
+        offset_hz: 0.0,
+        speed_seconds: 300.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: true,
+        decodes: Show::Hidden,
+        speed: Show::Noted(FROM_FM),
+        noise: Ladder {
+            high_db: 45.0,
+            low_db: 20.0,
+        },
+        key: flex,
+        references: &[Reference {
+            program: &MULTIMON,
+            format: fm(4_800.0, 22_050, Container::Raw),
+            args: &["-q", "-a", "FLEX_NEXT", "-t", "raw", INPUT],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::multimon_flex,
+        }],
+    },
+    Signal {
+        id: "selcall",
+        name: "Selcall",
+        fixture: "selcall_ccir1_48k",
+        channel: "selcall",
+        offset_hz: 5_000.0,
+        speed_seconds: 300.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: true,
+        decodes: Show::Hidden,
+        speed: Show::Noted(FROM_FM),
+        noise: Ladder {
+            high_db: 5.0,
+            low_db: -10.0,
+        },
+        key: selcall,
+        references: &[Reference {
+            program: &MULTIMON,
+            format: fm(2_500.0, 22_050, Container::Raw),
+            args: &["-q", "-a", "CCIR", "-t", "raw", INPUT],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::multimon_ccir,
         }],
     },
     Signal {
@@ -197,6 +267,10 @@ pub const SIGNALS: &[Signal] = &[
         unique: true,
         decodes: Show::Plain,
         speed: Show::Noted("acarsdec starts from AM audio, SDR-- from IQ."),
+        noise: Ladder {
+            high_db: 30.0,
+            low_db: 5.0,
+        },
         key: acars,
         references: &[Reference {
             program: &ACARSDEC,
@@ -223,6 +297,10 @@ pub const SIGNALS: &[Signal] = &[
         unique: true,
         decodes: Show::Noted("Two SDR-- decodes are unconfirmed."),
         speed: Show::Noted("SDR-- re-decodes overlapping windows."),
+        noise: Ladder {
+            high_db: 20.0,
+            low_db: -5.0,
+        },
         key: ft8,
         references: &[Reference {
             program: &FT8_LIB,
@@ -249,7 +327,11 @@ pub const SIGNALS: &[Signal] = &[
         unique: false,
         decodes: Show::Noted("Counts frames carrying the call's addresses."),
         speed: Show::Noted(FROM_FM),
-        key: dmr,
+        noise: Ladder {
+            high_db: 20.0,
+            low_db: 0.0,
+        },
+        key: addresses,
         references: &[Reference {
             program: &DSD_FME,
             format: fm(2_400.0, 48_000, Container::Wav),
@@ -257,6 +339,58 @@ pub const SIGNALS: &[Signal] = &[
             exit_codes: &[0],
             tail: true,
             keys: parse::dsd_fme,
+        }],
+    },
+    Signal {
+        id: "nxdn",
+        name: "NXDN",
+        fixture: "nxdn_addressed_48k",
+        channel: "nxdn",
+        offset_hz: 0.0,
+        speed_seconds: 30.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: false,
+        decodes: Show::Hidden,
+        speed: Show::Noted(FROM_FM),
+        noise: Ladder {
+            high_db: 15.0,
+            low_db: -10.0,
+        },
+        key: addresses,
+        references: &[Reference {
+            program: &DSD_FME,
+            format: fm(2_400.0, 48_000, Container::Wav),
+            args: &["-fi", "-i", INPUT, "-o", "null"],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::dsd_fme_nxdn,
+        }],
+    },
+    Signal {
+        id: "ysf",
+        name: "YSF",
+        fixture: "ysf_callsigns_48k",
+        channel: "ysf",
+        offset_hz: 0.0,
+        speed_seconds: 30.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: false,
+        decodes: Show::Hidden,
+        speed: Show::Noted(FROM_FM),
+        noise: Ladder {
+            high_db: 25.0,
+            low_db: 0.0,
+        },
+        key: callsign,
+        references: &[Reference {
+            program: &DSD_FME,
+            format: fm(2_400.0, 48_000, Container::Wav),
+            args: &["-fy", "-i", INPUT, "-o", "null"],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::dsd_fme_ysf,
         }],
     },
 ];
@@ -289,6 +423,20 @@ fn pocsag(event: &DecoderEvent) -> Option<String> {
     }
 }
 
+fn flex(event: &DecoderEvent) -> Option<String> {
+    match event {
+        DecoderEvent::Flex(message) => Some(format!("{} {}", message.address, message.text)),
+        _ => None,
+    }
+}
+
+fn selcall(event: &DecoderEvent) -> Option<String> {
+    match event {
+        DecoderEvent::Selcall(sequence) => Some(sequence.code.clone()),
+        _ => None,
+    }
+}
+
 fn acars(event: &DecoderEvent) -> Option<String> {
     match event {
         DecoderEvent::Acars(message) => Some(format!(
@@ -306,12 +454,19 @@ fn ft8(event: &DecoderEvent) -> Option<String> {
     }
 }
 
-fn dmr(event: &DecoderEvent) -> Option<String> {
+fn addresses(event: &DecoderEvent) -> Option<String> {
     match event {
         DecoderEvent::Dv(frame) => {
             let (source, destination) = (frame.source?, frame.destination?);
             Some(format!("{source} {destination}"))
         }
+        _ => None,
+    }
+}
+
+fn callsign(event: &DecoderEvent) -> Option<String> {
+    match event {
+        DecoderEvent::Dv(frame) => frame.source_call.clone(),
         _ => None,
     }
 }
@@ -326,6 +481,13 @@ mod tests {
         assert_eq!(SIGNALS[0].loops(30.0), 1);
         let ft8 = SIGNALS.iter().find(|s| s.id == "ft8").expect("ft8");
         assert_eq!(ft8.loops(15.0), 1);
+    }
+
+    #[test]
+    fn every_ladder_steps_into_more_noise() {
+        for signal in SIGNALS {
+            assert!(signal.noise.high_db > signal.noise.low_db, "{}", signal.id);
+        }
     }
 
     #[test]

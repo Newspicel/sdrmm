@@ -1,7 +1,7 @@
 use std::{thread, time::Duration};
 
 use anyhow::{Context, Result, anyhow, bail};
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, ChannelRx};
+use sdrmm_channels::{ChannelCtx, ChannelFilter, ChannelOutputs, ChannelRx};
 use sdrmm_dsp::Ddc;
 use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 
@@ -16,25 +16,52 @@ pub struct Decoded {
     pub cpu_seconds: f64,
 }
 
+pub struct FrontEnd {
+    pub settings: ChannelSettings,
+    pub input_rate: f64,
+}
+
+impl FrontEnd {
+    pub fn new(signal: &Signal) -> Result<Self> {
+        let params: ChannelParams =
+            serde_json::from_value(serde_json::json!({ "type": signal.channel, "settings": {} }))
+                .with_context(|| format!("default settings for {}", signal.channel))?;
+        let input_rate = sdrmm_channels::descriptors()
+            .into_iter()
+            .find(|d| d.type_id == signal.channel)
+            .with_context(|| format!("no channel called {}", signal.channel))?
+            .input_rate_hz;
+        Ok(Self {
+            settings: ChannelSettings {
+                frequency_hz: signal.offset_hz,
+                squelch: Squelch::Off,
+                params,
+                blanker: Default::default(),
+            },
+            input_rate,
+        })
+    }
+
+    pub fn ddc(&self, fixture_rate: f64) -> Result<Ddc> {
+        Ddc::new(fixture_rate, self.input_rate, self.settings.frequency_hz)
+            .map_err(|e| anyhow!("{e}"))
+    }
+
+    pub fn filter(&self) -> Result<ChannelFilter> {
+        Ok(sdrmm_channels::channel_filter(&self.settings.params)?)
+    }
+}
+
 pub fn decode(fixture: &Fixture, signal: &Signal, loops: usize) -> Result<Decoded> {
-    let params: ChannelParams =
-        serde_json::from_value(serde_json::json!({ "type": signal.channel, "settings": {} }))
-            .with_context(|| format!("default settings for {}", signal.channel))?;
-    let input_rate = sdrmm_channels::descriptors()
-        .into_iter()
-        .find(|d| d.type_id == signal.channel)
-        .with_context(|| format!("no channel called {}", signal.channel))?
-        .input_rate_hz;
-    let settings = ChannelSettings {
-        frequency_hz: signal.offset_hz,
-        squelch: Squelch::Off,
-        params,
-        blanker: Default::default(),
-    };
-    let mut ddc =
-        Ddc::new(fixture.rate, input_rate, signal.offset_hz).map_err(|e| anyhow!("{e}"))?;
-    let mut filter = sdrmm_channels::channel_filter(&settings.params)?;
-    let mut channel = sdrmm_channels::create(ChannelCtx { input_rate }, &settings)?;
+    let front = FrontEnd::new(signal)?;
+    let mut ddc = front.ddc(fixture.rate)?;
+    let mut filter = front.filter()?;
+    let mut channel = sdrmm_channels::create(
+        ChannelCtx {
+            input_rate: front.input_rate,
+        },
+        &front.settings,
+    )?;
     let mut tuned = Vec::new();
     let mut filtered = Vec::new();
     let mut out = ChannelOutputs::default();

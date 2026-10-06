@@ -4,15 +4,21 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Context, Result, ensure};
 use num_complex::Complex;
 use rustfft::FftPlanner;
+use sdrmm_channels::ChannelFilter;
 use sdrmm_dsp::{Ddc, FmDemod, FracResampler};
 
+use super::{
+    noise::{self, Run},
+    ours::FrontEnd,
+};
+
 const BLOCK: usize = 65_536;
-const AUDIO_RATE: f64 = 48_000.0;
 const AUDIO_GAIN: f32 = 0.5;
 
+#[derive(Clone)]
 pub struct Fixture {
     pub iq: Vec<Complex<f32>>,
     pub rate: f64,
@@ -129,6 +135,18 @@ impl Fixture {
         })
     }
 
+    pub fn active_power(&self) -> f64 {
+        noise::active_power(&self.iq, self.rate)
+    }
+
+    pub fn with_noise(&self, power: f64, run: Run) -> Self {
+        Self {
+            iq: noise::add(&self.iq, power, run),
+            rate: self.rate,
+            zeros: self.zeros.clone(),
+        }
+    }
+
     fn mean_magnitude(&self) -> f32 {
         self.iq.iter().map(|s| s.norm()).sum::<f32>() / self.iq.len().max(1) as f32
     }
@@ -153,7 +171,7 @@ impl Format {
 
 pub fn write(
     fixture: &Fixture,
-    offset_hz: f64,
+    front: &FrontEnd,
     format: Format,
     loops: usize,
     tail_s: f64,
@@ -170,7 +188,7 @@ pub fn write(
             }
             Ok(())
         })?,
-        Format::Audio(audio) => write_audio(fixture, offset_hz, audio, loops, tail_s, &mut sink)?,
+        Format::Audio(audio) => write_audio(fixture, front, audio, loops, tail_s, &mut sink)?,
     }
     sink.flush()?;
     Ok(())
@@ -228,40 +246,40 @@ fn pcm(value: f32) -> i16 {
 
 struct AudioChain {
     ddc: Option<Ddc>,
+    filter: Option<ChannelFilter>,
     demod: Demod,
     fm: Option<FmDemod>,
     carrier: f32,
     resampler: Option<FracResampler>,
     tuned: Vec<Complex<f32>>,
+    filtered: Vec<Complex<f32>>,
     audio: Vec<f32>,
     lifted: Vec<Complex<f32>>,
     resampled: Vec<Complex<f32>>,
 }
 
 impl AudioChain {
-    fn new(fixture: &Fixture, offset_hz: f64, demod: Demod, rate: u32) -> Result<Self> {
-        let source_rate = match demod {
-            Demod::Real => fixture.rate,
-            Demod::Fm { .. } | Demod::Am => AUDIO_RATE,
-        };
-        let ddc = match demod {
-            Demod::Real => None,
-            Demod::Fm { .. } | Demod::Am => Some(
-                Ddc::new(fixture.rate, AUDIO_RATE, offset_hz).map_err(|err| anyhow!("{err}"))?,
-            ),
+    fn new(fixture: &Fixture, front: &FrontEnd, demod: Demod, rate: u32) -> Result<Self> {
+        let tuned = !matches!(demod, Demod::Real);
+        let source_rate = if tuned {
+            front.input_rate
+        } else {
+            fixture.rate
         };
         let fm = match demod {
-            Demod::Fm { deviation_hz } => Some(FmDemod::new(AUDIO_RATE, deviation_hz)),
+            Demod::Fm { deviation_hz } => Some(FmDemod::new(front.input_rate, deviation_hz)),
             Demod::Am | Demod::Real => None,
         };
         let ratio = f64::from(rate) / source_rate;
         Ok(Self {
-            ddc,
+            ddc: tuned.then(|| front.ddc(fixture.rate)).transpose()?,
+            filter: tuned.then(|| front.filter()).transpose()?,
             demod,
             fm,
             carrier: fixture.mean_magnitude().max(f32::MIN_POSITIVE),
             resampler: ((ratio - 1.0).abs() > 1e-9).then(|| FracResampler::new(ratio)),
             tuned: Vec::new(),
+            filtered: Vec::new(),
             audio: Vec::new(),
             lifted: Vec::new(),
             resampled: Vec::new(),
@@ -269,12 +287,13 @@ impl AudioChain {
     }
 
     fn process(&mut self, block: &[Complex<f32>]) -> &[f32] {
-        let tuned = match &mut self.ddc {
-            Some(ddc) => {
+        let tuned = match (&mut self.ddc, &mut self.filter) {
+            (Some(ddc), Some(filter)) => {
                 ddc.process(block, &mut self.tuned);
-                self.tuned.as_slice()
+                filter.process(&self.tuned, &mut self.filtered);
+                self.filtered.as_slice()
             }
-            None => block,
+            _ => block,
         };
         self.audio.clear();
         match (self.demod, &mut self.fm) {
@@ -304,13 +323,13 @@ impl AudioChain {
 
 fn write_audio<W: Write + Seek>(
     fixture: &Fixture,
-    offset_hz: f64,
+    front: &FrontEnd,
     audio: Audio,
     loops: usize,
     tail_s: f64,
     sink: &mut W,
 ) -> Result<()> {
-    let mut chain = AudioChain::new(fixture, offset_hz, audio.demod, audio.rate)?;
+    let mut chain = AudioChain::new(fixture, front, audio.demod, audio.rate)?;
     if let Container::Wav = audio.container {
         sink.write_all(&wav_header(audio.rate, 0))?;
     }
@@ -426,7 +445,12 @@ mod tests {
             rate: 12_000,
             container: Container::Wav,
         });
-        write(&signal, 0.0, format, 1, 0.0, &path).expect("write");
+        let ft8 = super::super::signals::SIGNALS
+            .iter()
+            .find(|s| s.id == "ft8")
+            .expect("ft8");
+        let front = FrontEnd::new(ft8).expect("front end");
+        write(&signal, &front, format, 1, 0.0, &path).expect("write");
         let bytes = std::fs::read(&path).expect("read");
         assert_eq!(bytes.len(), 48);
         assert_eq!(&bytes[44..46], &16_384i16.to_le_bytes());
