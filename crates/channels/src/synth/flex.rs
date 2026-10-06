@@ -79,6 +79,14 @@ fn text_words(text: &str) -> Vec<u32> {
         .collect()
 }
 
+fn alpha_header(header: u32, text: &[u32]) -> u32 {
+    let sum = std::iter::once(header)
+        .chain(text.iter().copied())
+        .map(|word| (word & 0xFF) + (word >> 8 & 0xFF) + (word >> 16 & 0x1F))
+        .sum::<u32>();
+    header | !sum & 0x3FF
+}
+
 fn frame_words(page: &Page) -> [u32; WORDS] {
     let mut words = [0u32; WORDS];
     let text = text_words(&page.text);
@@ -87,7 +95,7 @@ fn frame_words(page: &Page) -> [u32; WORDS] {
     words[0] = checksum(2 << 10);
     words[1] = page.address + 0x8000;
     words[2] = checksum((5 << 4) | (message_start as u32) << 7 | (message_len as u32) << 14);
-    words[message_start] = 3 << 11 | 1 << 19;
+    words[message_start] = alpha_header(3 << 11 | 1 << 19, &text);
     for (slot, word) in words[message_start + 1..].iter_mut().zip(text) {
         *slot = word;
     }
