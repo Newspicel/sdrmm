@@ -5,7 +5,7 @@ use std::{f64::consts::TAU, sync::LazyLock};
 use num_complex::Complex;
 use sdrmm_dsp::{
     BitSync, DcBlocker, Decimator, Descrambler, FmDemod, HdlcDeframer, NrziDecoder, RealDecimator,
-    Scrambler, ToneCorrelator, crc16_x25, design_lowpass, hdlc_repair,
+    Scrambler, ToneCorrelator, crc16_x25, design_bandpass, design_lowpass, hdlc_repair,
 };
 use sdrmm_wire::{
     AprsMode, AprsPacket, AprsParams, ChannelDescriptor, ChannelParams, ChannelSettings,
@@ -64,7 +64,12 @@ pub struct AprsChannel {
     clock: u64,
 }
 
-const TWIST_GAINS: [f32; 5] = [0.5, 0.71, 1.0, 1.41, 2.0];
+const TWIST_LANES: usize = 9;
+const TWIST_SPAN_DB: f32 = 6.0;
+const AFSK_CLIP: f32 = 1.2;
+const AFSK_BAND_TAPS: usize = 31;
+const AFSK_BAND_LOW_HZ: f64 = 700.0;
+const AFSK_BAND_HIGH_HZ: f64 = 2_400.0;
 
 const DEDUP_SAMPLES: u64 = 48_000;
 
@@ -98,85 +103,110 @@ impl Lane {
     }
 }
 
+fn twist_gains() -> impl Iterator<Item = f32> {
+    let step = 2.0 * TWIST_SPAN_DB / (TWIST_LANES - 1) as f32;
+    (0..TWIST_LANES).map(move |k| 10f32.powf((k as f32 * step - TWIST_SPAN_DB) / 20.0))
+}
+
+struct Afsk {
+    audio: RealDecimator,
+    band: RealDecimator,
+    decimated: Vec<f32>,
+    filtered: Vec<f32>,
+    mark: ToneCorrelator,
+    space: ToneCorrelator,
+    lanes: Vec<Lane>,
+}
+
+impl Afsk {
+    fn new(rate: f64) -> Self {
+        let audio_rate = rate / AFSK_DECIMATION as f64;
+        let window = (audio_rate / (AFSK_SPACE_HZ - AFSK_MARK_HZ)).round() as usize;
+        Self {
+            audio: RealDecimator::new(
+                &design_lowpass(AFSK_TAPS, AFSK_CUTOFF_HZ / rate),
+                AFSK_DECIMATION,
+            ),
+            band: RealDecimator::new(
+                &design_bandpass(
+                    AFSK_BAND_TAPS,
+                    AFSK_BAND_LOW_HZ / audio_rate,
+                    AFSK_BAND_HIGH_HZ / audio_rate,
+                ),
+                1,
+            ),
+            decimated: Vec::new(),
+            filtered: Vec::new(),
+            mark: ToneCorrelator::new(audio_rate, AFSK_MARK_HZ, window),
+            space: ToneCorrelator::new(audio_rate, AFSK_SPACE_HZ, window),
+            lanes: twist_gains()
+                .map(|gain| Lane::new(audio_rate, AFSK_BAUD, gain))
+                .collect(),
+        }
+    }
+
+    fn frames(&mut self, discriminated: &mut [f32], out: &mut Vec<Vec<u8>>) {
+        discriminated
+            .iter_mut()
+            .for_each(|v| *v = v.clamp(-AFSK_CLIP, AFSK_CLIP));
+        self.audio.process(discriminated, &mut self.decimated);
+        self.band.process(&self.decimated, &mut self.filtered);
+        for &s in &self.filtered {
+            let (m, sp) = (self.mark.push(s), self.space.push(s));
+            for lane in &mut self.lanes {
+                lane.push(m - lane.space_gain * sp, out);
+            }
+        }
+    }
+}
+
+struct G3ruh {
+    lowpass: RealDecimator,
+    dc: DcBlocker,
+    filtered: Vec<f32>,
+    lane: Lane,
+    descrambler: Descrambler,
+}
+
+impl G3ruh {
+    fn new(rate: f64) -> Self {
+        Self {
+            lowpass: RealDecimator::new(&design_lowpass(G3RUH_TAPS, G3RUH_CUTOFF_HZ / rate), 1),
+            dc: DcBlocker::new(),
+            filtered: Vec::new(),
+            lane: Lane::new(rate, G3RUH_BAUD, 1.0),
+            descrambler: Descrambler::g3ruh(),
+        }
+    }
+
+    fn frames(&mut self, discriminated: &[f32], out: &mut Vec<Vec<u8>>) {
+        self.lowpass.process(discriminated, &mut self.filtered);
+        self.dc.process(&mut self.filtered);
+        for &s in &self.filtered {
+            if let Some(level) = self.lane.sync.push(s) {
+                self.lane.push_level(self.descrambler.push(level), out);
+            }
+        }
+    }
+}
+
 enum Slicer {
-    Afsk {
-        audio: RealDecimator,
-        decimated: Vec<f32>,
-        mark: ToneCorrelator,
-        space: ToneCorrelator,
-        lanes: Vec<Lane>,
-    },
-    G3ruh {
-        lowpass: RealDecimator,
-        dc: DcBlocker,
-        filtered: Vec<f32>,
-        lane: Lane,
-        descrambler: Descrambler,
-    },
+    Afsk(Box<Afsk>),
+    G3ruh(Box<G3ruh>),
 }
 
 impl Slicer {
     fn new(mode: AprsMode, rate: f64) -> Self {
         match mode {
-            AprsMode::Afsk1200 => {
-                let audio_rate = rate / AFSK_DECIMATION as f64;
-                let window = (audio_rate / (AFSK_SPACE_HZ - AFSK_MARK_HZ)).round() as usize;
-                Self::Afsk {
-                    audio: RealDecimator::new(
-                        &design_lowpass(AFSK_TAPS, AFSK_CUTOFF_HZ / rate),
-                        AFSK_DECIMATION,
-                    ),
-                    decimated: Vec::new(),
-                    mark: ToneCorrelator::new(audio_rate, AFSK_MARK_HZ, window),
-                    space: ToneCorrelator::new(audio_rate, AFSK_SPACE_HZ, window),
-                    lanes: TWIST_GAINS
-                        .iter()
-                        .map(|&gain| Lane::new(audio_rate, AFSK_BAUD, gain))
-                        .collect(),
-                }
-            }
-            AprsMode::G3ruh9600 => Self::G3ruh {
-                lowpass: RealDecimator::new(&design_lowpass(G3RUH_TAPS, G3RUH_CUTOFF_HZ / rate), 1),
-                dc: DcBlocker::new(),
-                filtered: Vec::new(),
-                lane: Lane::new(rate, G3RUH_BAUD, 1.0),
-                descrambler: Descrambler::g3ruh(),
-            },
+            AprsMode::Afsk1200 => Self::Afsk(Box::new(Afsk::new(rate))),
+            AprsMode::G3ruh9600 => Self::G3ruh(Box::new(G3ruh::new(rate))),
         }
     }
 
-    fn frames(&mut self, discriminated: &[f32], out: &mut Vec<Vec<u8>>) {
+    fn frames(&mut self, discriminated: &mut [f32], out: &mut Vec<Vec<u8>>) {
         match self {
-            Self::Afsk {
-                audio,
-                decimated,
-                mark,
-                space,
-                lanes,
-            } => {
-                audio.process(discriminated, decimated);
-                for &s in decimated.iter() {
-                    let (m, sp) = (mark.push(s), space.push(s));
-                    for lane in lanes.iter_mut() {
-                        lane.push(m - lane.space_gain * sp, out);
-                    }
-                }
-            }
-            Self::G3ruh {
-                lowpass,
-                dc,
-                filtered,
-                lane,
-                descrambler,
-            } => {
-                lowpass.process(discriminated, filtered);
-                dc.process(filtered);
-                for &s in filtered.iter() {
-                    if let Some(level) = lane.sync.push(s) {
-                        lane.push_level(descrambler.push(level), out);
-                    }
-                }
-            }
+            Self::Afsk(afsk) => afsk.frames(discriminated, out),
+            Self::G3ruh(g3ruh) => g3ruh.frames(discriminated, out),
         }
     }
 }
@@ -252,7 +282,8 @@ impl ChannelRx for AprsChannel {
         self.demod.process(iq, &mut self.discriminated);
         self.clock += iq.len() as u64;
         self.frames.clear();
-        self.slicer.frames(&self.discriminated, &mut self.frames);
+        self.slicer
+            .frames(&mut self.discriminated, &mut self.frames);
         let clock = self.clock;
         self.recent
             .retain(|(seen, _)| clock.saturating_sub(*seen) < DEDUP_SAMPLES);
@@ -1967,6 +1998,11 @@ mod tests {
     fn weak_twisted_packets_still_decode() {
         assert!(decoded_out_of(40, -6.0, 0.6) >= 18);
         assert!(decoded_out_of(40, 6.0, 0.55) >= 20);
+    }
+
+    #[test]
+    fn packets_below_the_fm_threshold_survive_clicks() {
+        assert!(decoded_out_of(40, 0.0, 0.7) >= 24);
     }
 
     #[test]
