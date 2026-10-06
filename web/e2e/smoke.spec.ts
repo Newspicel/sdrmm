@@ -1035,7 +1035,7 @@ test.describe("the workspace", () => {
                   data: { channel_type: "nfm" },
                 },
                 { id: "spk", kind: "speaker", position: { x: 900, y: 0 } },
-                { id: "log", kind: "decoder_log", position: { x: 900, y: 240 } },
+                { id: "log", kind: "decoder_log", position: { x: 900, y: 240 }, data: {} },
               ],
               edges: [
                 { from: { node: "dev", port: "iq" }, to: { node: "voice", port: "iq" } },

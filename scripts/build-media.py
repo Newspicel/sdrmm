@@ -121,6 +121,10 @@ def build_fdk(source, prefix, target, env):
     run([cmake, "--install", str(build)], source.parent, env)
 
 
+def library_path_flag(target):
+    return "-libpath:" if "windows-msvc" in target else "-L"
+
+
 def configure(source, prefix, fdk, target, env):
     args = [
         tool("bash", env), str(source / "configure"), f"--prefix={prefix.as_posix()}",
@@ -131,7 +135,7 @@ def configure(source, prefix, fdk, target, env):
         "--enable-decoder=aac,aac_latm,ac3,eac3,mp2,mpeg2video,h264,hevc,libfdk_aac",
         "--enable-parser=aac,aac_latm,ac3,mpegaudio,mpegvideo,h264,hevc",
         "--enable-libfdk-aac", f"--extra-cflags=-I{(fdk / 'include').as_posix()}",
-        f"--extra-ldflags=-L{(fdk / 'lib').as_posix()}",
+        f"--extra-ldflags={library_path_flag(target)}{(fdk / 'lib').as_posix()}",
     ]
     arch = target.split("-", 1)[0]
     args.append(f"--arch={arch}")
@@ -156,6 +160,16 @@ def configure(source, prefix, fdk, target, env):
     elif target != target_name():
         args.extend(["--enable-cross-compile", "--target-os=linux", f"--cross-prefix={arch}-linux-gnu-"])
     return args
+
+
+def run_configure(args, work, env):
+    try:
+        run(args, work, env)
+    except subprocess.CalledProcessError:
+        log = work / "ffbuild" / "config.log"
+        if log.exists():
+            print("".join(log.read_text(errors="replace").splitlines(keepends=True)[-80:]))
+        raise
 
 
 def move_import_libraries(prefix):
@@ -190,7 +204,7 @@ def main():
     build_fdk(prepare_fdk(work), fdk, args.target, env)
     env["PKG_CONFIG_PATH"] = os.pathsep.join([str(fdk / "lib" / "pkgconfig"), env.get("PKG_CONFIG_PATH", "")])
     source = prepare_source(work, args.archive)
-    run(configure(source, prefix, fdk, args.target, env), work, env)
+    run_configure(configure(source, prefix, fdk, args.target, env), work, env)
     run([tool("make", env), "-j", str(os.cpu_count() or 2)], work, env)
     shutil.rmtree(prefix, ignore_errors=True)
     run([tool("make", env), "install"], work, env)

@@ -217,7 +217,7 @@ const adsb: Scene = {
           channel("ch", "adsb", { x: 540, y: 0, w: 420, h: 141 }),
           node("scope", { kind: "scope" }, { x: 0, y: 181, w: 960, h: 819 }),
           node("map", { kind: "map" }, { x: 1100, y: 0, w: 800, h: 560 }),
-          node("log", { kind: "decoder_log" }, { x: 1100, y: 600, w: 800, h: 400 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 600, w: 800, h: 400 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -256,7 +256,7 @@ const ais: Scene = {
           channel("ch", "ais", { x: 540, y: 0, w: 420, h: 153 }),
           node("scope", { kind: "scope" }, { x: 0, y: 193, w: 960, h: 807 }),
           node("map", { kind: "map" }, { x: 1100, y: 0, w: 800, h: 760 }),
-          node("log", { kind: "decoder_log" }, { x: 1100, y: 800, w: 800, h: 200 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 800, w: 800, h: 200 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -292,7 +292,7 @@ const sstv: Scene = {
           channel("ch", "sstv", { x: 540, y: 0, w: 420, h: 218 }),
           node("scope", { kind: "scope" }, { x: 0, y: 258, w: 960, h: 582 }),
           node("readout", { kind: "readout" }, { x: 1100, y: 0, w: 800, h: 530 }),
-          node("log", { kind: "decoder_log" }, { x: 1100, y: 570, w: 800, h: 270 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 570, w: 800, h: 270 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -341,7 +341,7 @@ const pocsag: Scene = {
             { x: 1100, y: 803, w: 280, h: 197 },
           ),
           node("scope", { kind: "scope" }, { x: 0, y: 257, w: 960, h: 743 }),
-          node("log", { kind: "decoder_log" }, { x: 1100, y: 0, w: 800, h: 763 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 0, w: 800, h: 763 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -376,7 +376,7 @@ const ft8: Scene = {
           node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
           channel("ch", "ft8", { x: 540, y: 0, w: 420, h: 229 }),
           node("scope", { kind: "scope" }, { x: 0, y: 269, w: 960, h: 731 }),
-          node("log", { kind: "decoder_log" }, { x: 1100, y: 0, w: 800, h: 1000 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 0, w: 800, h: 1000 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -409,7 +409,7 @@ const rds: Scene = {
           node("scope", { kind: "scope" }, { x: 0, y: 295, w: 1000, h: 705 }),
           node("speaker", { kind: "speaker" }, { x: 1140, y: 0, w: 280, h: 204 }),
           node("readout", { kind: "readout" }, { x: 1140, y: 244, w: 760, h: 220 }),
-          node("log", { kind: "decoder_log" }, { x: 1140, y: 504, w: 760, h: 496 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1140, y: 504, w: 760, h: 496 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -446,7 +446,7 @@ const ident: Scene = {
           channel("ch", "ident", { x: 540, y: 0, w: 420, h: 229 }),
           node("scope", { kind: "scope" }, { x: 0, y: 269, w: 960, h: 731 }),
           node("readout", { kind: "readout" }, { x: 1100, y: 0, w: 800, h: 560 }),
-          node("log", { kind: "decoder_log" }, { x: 1100, y: 600, w: 800, h: 400 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 600, w: 800, h: 400 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -537,7 +537,7 @@ const rack: Scene = {
           channel("ch_sstv", "sstv", { x: 440, y: 680, w: 440, h: 300 }),
           node("scope", { kind: "scope" }, { x: 940, y: 0, w: 700, h: 300 }),
           node("map", { kind: "map" }, { x: 940, y: 340, w: 700, h: 300 }),
-          node("log", { kind: "decoder_log" }, { x: 940, y: 680, w: 700, h: 300 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 940, y: 680, w: 700, h: 300 }),
           node("readout", { kind: "readout" }, { x: 1700, y: 0, w: 700, h: 300 }),
         ],
         edges: [
