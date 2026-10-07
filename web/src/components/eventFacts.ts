@@ -1,4 +1,4 @@
-import type { DecoderEvent } from "../lib/types";
+import type { DecoderEvent, HotCommand } from "../lib/types";
 import {
   callMode,
   candidateScore,
@@ -100,6 +100,32 @@ function callSummary(c: EventData<"call">): string {
   ]);
 }
 
+export const HOT_COMMAND_LABELS: Record<HotCommand, string> = {
+  status_request: "status request",
+  emergency: "EMERGENCY",
+  other: "command",
+};
+
+export function hotCommand(request: { command: HotCommand; code: number }): string {
+  const label = HOT_COMMAND_LABELS[request.command];
+  return request.command === "other"
+    ? `${label} 0x${request.code.toString(16).padStart(2, "0")}`
+    : label;
+}
+
+function eotSummary(m: EventData<"eot">): string {
+  const r = m.report;
+  if (r.unit === "head") {
+    return join([`HOT ${m.unit_address}`, hotCommand(r)]);
+  }
+  return join([
+    `EOT ${m.unit_address}`,
+    `${r.pressure_psig} psig`,
+    r.motion ? "moving" : "stopped",
+    r.arming === "normal" ? null : r.arming,
+  ]);
+}
+
 function dvSummary(f: EventData<"dv">): string {
   return join([
     dvMode(f),
@@ -165,6 +191,8 @@ export function eventSummary(event: DecoderEvent): string {
       const p = event.data;
       return p.text === "" ? `${p.local_address} · ${p.payload}` : `${p.local_address}: ${p.text}`;
     }
+    case "eot":
+      return eotSummary(event.data);
     case "adsb": {
       const a = event.data;
       return join([
@@ -409,6 +437,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return String(event.data.address);
     case "ermes":
       return String(event.data.local_address);
+    case "eot":
+      return String(event.data.unit_address);
     case "rds":
       return event.data.pi ?? null;
     case "navtex":

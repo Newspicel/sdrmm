@@ -14,7 +14,7 @@ covers the modes that need more than a frequency.
 | Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium) | VOR, ILS localizer / glideslope |
 | Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC | |
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
-| Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager | |
+| Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager, [End-of-Train](#end-of-train) | |
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
@@ -68,6 +68,13 @@ radio running at that sample rate, using the middle 80%.
 Some German POCSAG networks send umlauts as `{ | } [ \ ] ~`. SDR-- converts them inside
 lowercase words only: `M}nchen` becomes `München`, `Stra~e` becomes `Straße`. `[ALARM]` and
 all-caps messages stay as sent.
+
+## End-of-Train
+
+The End-of-Train channel reads railroad telemetry. Tune 457.9375 MHz for the rear unit: brake pipe
+pressure, motion, marker light, battery and arming. Tune 452.9375 MHz for the locomotive: status
+requests and emergency brake commands. Australia uses 477.7 MHz, New Zealand 450.2625 MHz. Only
+frames whose BCH check passes are logged; **Rejected** counts the ones that failed.
 
 ## SSTV
 

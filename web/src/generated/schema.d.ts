@@ -3031,6 +3031,10 @@ export interface components {
             /** @enum {string} */
             type: "ermes";
         } | {
+            settings: components["schemas"]["EotParams"];
+            /** @enum {string} */
+            type: "eot";
+        } | {
             settings: components["schemas"]["AdsbParams"];
             /** @enum {string} */
             type: "adsb";
@@ -3815,6 +3819,10 @@ export interface components {
             data: components["schemas"]["ErmesMessage"];
             /** @enum {string} */
             kind: "ermes";
+        } | {
+            data: components["schemas"]["EotMessage"];
+            /** @enum {string} */
+            kind: "eot";
         } | {
             data: components["schemas"]["AdsbMessage"];
             /** @enum {string} */
@@ -4682,6 +4690,49 @@ export interface components {
         };
         /** @enum {string} */
         DvTrunkProtocol: "capacity_plus" | "hytera_xpt" | "tier_three";
+        /** @enum {string} */
+        EotArming: "normal" | "arming" | "armed";
+        /** @enum {string} */
+        EotBattery: "not_monitored" | "very_low" | "low" | "ok";
+        EotMessage: {
+            /** Format: int32 */
+            errors_corrected: number;
+            /** Format: int32 */
+            rejected: number;
+            report: components["schemas"]["EotReport"];
+            /** Format: int32 */
+            unit_address: number;
+        };
+        EotParams: {
+            /** Format: double */
+            bandwidth_hz?: number;
+        };
+        EotReport: (components["schemas"]["EotStatus"] & {
+            /** @enum {string} */
+            unit: "rear";
+        }) | (components["schemas"]["HotRequest"] & {
+            /** @enum {string} */
+            unit: "head";
+        });
+        EotStatus: {
+            arming: components["schemas"]["EotArming"];
+            battery: components["schemas"]["EotBattery"];
+            /** Format: int32 */
+            battery_charge_pct: number;
+            /** Format: int32 */
+            chaining: number;
+            confirmed: boolean;
+            discretionary: boolean;
+            marker_battery_low: boolean;
+            marker_light: boolean;
+            /** Format: int32 */
+            message_type: number;
+            motion: boolean;
+            /** Format: int32 */
+            pressure_psig: number;
+            turbine: boolean;
+            valve_ok: boolean;
+        };
         ErmesMessage: {
             /** Format: int32 */
             alert: number;
@@ -4968,6 +5019,15 @@ export interface components {
             stream: number;
         };
         HfdlParams: Record<string, never>;
+        /** @enum {string} */
+        HotCommand: "status_request" | "emergency" | "other";
+        HotRequest: {
+            /** Format: int32 */
+            code: number;
+            command: components["schemas"]["HotCommand"];
+            /** Format: int32 */
+            copies: number;
+        };
         /** @enum {string} */
         HuntAction: "start" | "stop" | "sweep" | "mark";
         HuntMission: {

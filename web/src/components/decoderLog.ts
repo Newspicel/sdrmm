@@ -21,6 +21,7 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   pocsag: "POCSAG",
   flex: "FLEX",
   ermes: "ERMES",
+  eot: "End-of-Train",
   rds: "RDS",
   rtty: "RTTY",
   morse: "Morse",
