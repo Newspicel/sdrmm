@@ -2,6 +2,7 @@ pub mod agc;
 pub mod array_sync;
 pub mod beamform;
 pub mod bits;
+pub mod channelizer;
 pub mod compander;
 pub mod correlator;
 pub mod covariance;
@@ -49,6 +50,7 @@ pub use bits::{
     Descrambler, DifferentialDecoder, HdlcDeframer, NrziDecoder, Scrambler, SyncDetector, bits_be,
     hamming_distance, manchester_decode, pack_lsb, pack_msb, reverse_byte,
 };
+pub use channelizer::{Channelizer, ChannelizerError};
 pub use compander::Compander;
 pub use ddc::{Ddc, DdcError, flat_bandwidth_hz};
 pub use decim::{Decimator, RealDecimator};

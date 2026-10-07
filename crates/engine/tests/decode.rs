@@ -11,13 +11,14 @@ use sdrmm_recorder::SigmfWriter;
 use sdrmm_wire::{
     AcarsParams, AdsbParams, AisChannel, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
     BroadcastSystem, ChannelParams, ChannelSettings, CwSkimmerParams, DabParams, DatvParams,
-    DatvStandard, DecodedRecord, DecoderEvent, DectCapability, DectCipherState, DectParams,
-    DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode, EotArming, EotBattery, EotParams,
-    EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams, GnssParams, IdentParams,
-    LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation, MorseParams, NavtexParams,
-    NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams, PskBaud, PskParams,
-    RadiosondeParams, RdsUpdate, RttyParams, SelcallParams, SelcallSystem, SondeType, SymbolPlane,
-    VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+    DatvStandard, DecodedRecord, DecoderEvent, DectBand, DectCapability, DectCipherState,
+    DectParams, DectSpan, DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode, EotArming,
+    EotBattery, EotParams, EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams, GnssParams,
+    IdentParams, LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation, MorseParams,
+    NavtexParams, NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams, PskBaud,
+    PskParams, RadiosondeParams, RdsUpdate, RttyParams, SelcallParams, SelcallSystem, SondeType,
+    SymbolPlane, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams, WsprParams,
+    YsfParams,
 };
 use tempfile::TempDir;
 
@@ -30,6 +31,7 @@ const AUDIO_DEVICE_RATE: f64 = 48_000.0;
 const ADSB_DEVICE_RATE: f64 = 2_000_000.0;
 const GNSS_DEVICE_RATE: f64 = 2_048_000.0;
 const DECT_DEVICE_RATE: f64 = 2_304_000.0;
+const HACKRF_DEVICE_RATE: f64 = 20_000_000.0;
 const CENTER_HZ: f64 = 145_000_000.0;
 fn aprs_burst(frame: Vec<u8>) -> Vec<Complex<f32>> {
     let mut tx = AprsTx::new(
@@ -66,13 +68,23 @@ fn accelerated_engine_for(dir: &Path) -> Arc<Engine> {
     Engine::with_registry(registry, Some(dir.to_path_buf()))
 }
 
-fn plant(dir: &Path, stem: &str, mut iq: Vec<Complex<f32>>, rate: f64) -> String {
+fn plant(dir: &Path, stem: &str, iq: Vec<Complex<f32>>, rate: f64) -> String {
+    plant_at(dir, stem, iq, rate, CENTER_HZ)
+}
+
+fn plant_at(
+    dir: &Path,
+    stem: &str,
+    mut iq: Vec<Complex<f32>>,
+    rate: f64,
+    center_hz: f64,
+) -> String {
     let min_len = rate as usize;
     if iq.len() < min_len {
         iq.extend(synth::silence(min_len - iq.len()));
     }
     let path = dir.join(stem);
-    let mut writer = SigmfWriter::create(&path, rate, CENTER_HZ, "decoder fixture").unwrap();
+    let mut writer = SigmfWriter::create(&path, rate, center_hz, "decoder fixture").unwrap();
     writer.write_block(&iq).unwrap();
     writer.finalize().unwrap();
     format!("recording:{}", path.file_name().unwrap().display())
@@ -1576,6 +1588,74 @@ async fn a_dect_base_station_survives_the_ddc_and_reports_its_identity_and_secur
     assert_eq!(identity.rfpi, "01234D5E6D");
     assert_eq!(identity.emc, Some(0x1234));
     assert_eq!(frame.crc_errors, 0);
+}
+
+#[tokio::test]
+async fn a_twenty_megasample_capture_carries_a_call_on_one_of_ten_dect_carriers() {
+    const FRAMES: usize = 80;
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let band = DectBand::Eu;
+    let base = synth::dect::tone(1_000.0, 0.3, FRAMES * 80);
+    let handset = vec![0i16; FRAMES * 80];
+    let mut air = synth::dect::Air::band(band, FRAMES);
+    synth::dect::Call {
+        station: synth::dect::Station {
+            rfpi: 0x0001_234D_5E6D,
+            carrier: 6,
+            slot: 4,
+            ..synth::dect::Station::default()
+        },
+        pmid: 0x1_2345,
+        first_frame: 0,
+        base: &base,
+        handset: &handset,
+        grant_at: None,
+    }
+    .transmit(&mut air, FRAMES);
+    for carrier in [0u8, 9] {
+        air.dummy_bearer(
+            &synth::dect::Station {
+                rfpi: 0x0055_5555_5550 + u64::from(carrier),
+                carrier,
+                slot: 9,
+                ..synth::dect::Station::default()
+            },
+            FRAMES,
+        );
+    }
+    let mut ddc = sdrmm_dsp::Ddc::new(air.rate(), HACKRF_DEVICE_RATE, 0.0).unwrap();
+    let mut iq = Vec::new();
+    ddc.process(&air.into_iq(), &mut iq);
+
+    let device = plant_at(
+        dir.path(),
+        "dect_band",
+        iq,
+        HACKRF_DEVICE_RATE,
+        band.center_hz(),
+    );
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: band.center_hz(),
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Dect(DectParams {
+                span: DectSpan::Band,
+                ..DectParams::default()
+            }),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Dect(f) if f.voice.is_some_and(|voice| voice.playing)),
+    )
+    .await;
+
+    let DecoderEvent::Dect(frame) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(frame.carrier, Some(6));
+    assert_eq!(frame.voice.map(|voice| voice.x_crc_errors), Some(0));
 }
 
 #[tokio::test]

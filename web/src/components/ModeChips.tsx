@@ -29,6 +29,7 @@ import {
   DCS_OPTIONS,
   DECT_BANDS,
   DECT_SIDES,
+  DECT_SPANS,
   DEEMPHASIS_US,
   DMR_SLOTS,
   DRM_MODES,
@@ -1232,6 +1233,13 @@ function DectChips({ params, onParams }: Mode<"dect">) {
         value={settings.band ?? "eu"}
         options={DECT_BANDS}
         onChange={(band) => onParams({ type: "dect", settings: { ...settings, band } })}
+      />
+      <ChoiceChip
+        label="Span"
+        title="DECT span"
+        value={settings.span ?? "carrier"}
+        options={DECT_SPANS}
+        onChange={(span) => onParams({ type: "dect", settings: { ...settings, span } })}
       />
       <ChoiceChip
         label="Side"

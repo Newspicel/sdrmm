@@ -181,8 +181,8 @@ scrambling, or turn on **Code search** to find them on a clean signal.
 
 ## DECT
 
-The DECT channel surveys base stations: identity, capabilities, and security. It reads signalling
-only, never call audio.
+The DECT channel surveys base stations (identity, capabilities, security) and plays unencrypted
+calls.
 
 It needs a radio that reaches 1.9 GHz and is wider than one 1.728 MHz carrier. HackRF and SDRplay
 work, RTL-SDR does not.
@@ -190,15 +190,26 @@ work, RTL-SDR does not.
 | Setting | Choice |
 |---|---|
 | Band | EU 1880 to 1900 MHz, or US 1920 to 1930 MHz |
+| Span | Carrier: one carrier at 2.304 MS/s. Band: every carrier at once |
 | Side | Base, Handset, or Both |
 
 Carriers are 1.728 MHz apart. EU carrier 0 is 1897.344 MHz and the numbers count down. US
 carriers count up from 1921.536 MHz.
 
+For **Band**, tune the channel to the band centre: 1889.568 MHz (EU) or 1924.992 MHz (US). The
+radio needs 20 MS/s for all ten EU carriers and 10 MS/s for the five US ones. Off centre, the
+channel reads the carriers the radio reaches.
+
 Each record lists the base identity (RFPI), system information, capabilities, advertised and
-observed security, and handset IDs seen during encryption setup. Encryption is marked active only
+observed security, and handset IDs seen during encryption setup. Capabilities include the extended
+messages (Q header 4, C and E); DSAA2 and DSC2 come from part 2. Encryption is marked active only
 after a grant is seen. Advertised support does not prove a call was encrypted, and missing
 signalling does not prove it was not.
+
+Calls use 32 kbit/s ADPCM (G.726). The channel plays both directions of the first clear call it
+hears and holds it until it goes quiet. Encrypted bearers stay muted. Voice before the first
+multiframe marker cannot be descrambled; those frames, X-CRC errors, and late frames are counted
+in the record.
 
 ## LoRa
 

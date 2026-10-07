@@ -418,6 +418,36 @@ describe("eventDetail", () => {
     expect(detail.body).toContain("standard ciphering (DSC)");
   });
 
+  it("shows DSAA2, DSC2 and the voice counters of a DECT bearer", () => {
+    const detail = eventDetail({
+      kind: "dect",
+      data: {
+        side: "rfp",
+        update: "voice",
+        capabilities: ["dsaa2", "dsc2", "ule_phase1_revised"],
+        security: {
+          cipher_state: "clear",
+          encryption_events: 0,
+          dsaa2_supported: true,
+          dsc2_supported: false,
+        },
+        voice: { frames: 120, playing: true, x_crc_errors: 3, unsynced: 0, encrypted: 0, late: 0 },
+        extended_carriers: false,
+        bursts: 140,
+        crc_errors: 0,
+        level_dbfs: -40,
+      },
+    });
+    const shown = Object.fromEntries(detail.fields);
+    expect(shown.DSAA2).toBe("yes");
+    expect(shown.DSC2).toBe("no");
+    expect(shown.Voice).toBe("playing");
+    expect(shown["Voice frames"]).toBe("120");
+    expect(shown["Voice X-CRC errors"]).toBe("3");
+    expect(shown["Voice before sync"]).toBeUndefined();
+    expect(detail.body).toBe("DSAA2 authentication\nDSC2 ciphering\nULE phase 1 v1.2");
+  });
+
   it("shows weak-signal timing and link measurements", () => {
     const detail = eventDetail({
       kind: "wspr",

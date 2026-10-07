@@ -66,11 +66,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - ISM remotes and sensors (OOK/FSK)
 - BLE advertisements, 2.4 GHz survey, Wi-Fi channel occupancy (energy only)
 
-### DECT
-- B-field voice (ADPCM/G.726 on unencrypted bearers)
-- Extended fixed part capability messages (QH = 4, C, E) with DSAA2/DSC2 bits
-- All ten carriers from one wideband capture
-
 ### Other
 - STANAG modem identification
 

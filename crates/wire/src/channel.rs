@@ -1434,6 +1434,7 @@ pub enum DectBand {
 }
 
 pub const DECT_CARRIER_SPACING_HZ: f64 = 1_728_000.0;
+const DECT_CARRIER_TOLERANCE_HZ: f64 = 50_000.0;
 
 impl DectBand {
     #[must_use]
@@ -1453,6 +1454,23 @@ impl DectBand {
         Some(match self {
             Self::Eu => 1_897_344_000.0 - step,
             Self::Us => 1_921_536_000.0 + step,
+        })
+    }
+
+    #[must_use]
+    pub fn center_hz(self) -> f64 {
+        let last = self.carriers() - 1;
+        match (self.carrier_hz(0), self.carrier_hz(last)) {
+            (Some(first), Some(last)) => (first + last) / 2.0,
+            _ => 0.0,
+        }
+    }
+
+    #[must_use]
+    pub fn carrier_at(self, hz: f64) -> Option<u8> {
+        (0..self.carriers()).find(|&carrier| {
+            self.carrier_hz(carrier)
+                .is_some_and(|center| (center - hz).abs() <= DECT_CARRIER_TOLERANCE_HZ)
         })
     }
 
@@ -1487,11 +1505,21 @@ impl DectSides {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DectSpan {
+    #[default]
+    Carrier,
+    Band,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DectParams {
     #[serde(default)]
     pub band: DectBand,
     #[serde(default)]
     pub sides: DectSides,
+    #[serde(default)]
+    pub span: DectSpan,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -1953,6 +1981,35 @@ mod dvbt_tests {
         assert_eq!(legacy.standard, DvbtStandard::DvbT);
         assert_eq!(legacy.sample_rate_hz(), 1_700_000.0 * 8.0 / 7.0);
         assert!(serde_json::from_str::<DvbtParams>(r#"{"plp":256}"#).is_err());
+    }
+}
+
+#[cfg(test)]
+mod dect_tests {
+    use super::*;
+
+    #[test]
+    fn dect_span_defaults_to_one_carrier_and_older_settings_still_load() {
+        let legacy: ChannelParams =
+            serde_json::from_str(r#"{"type":"dect","settings":{"band":"us","sides":"rfp"}}"#)
+                .unwrap();
+        let ChannelParams::Dect(params) = legacy else {
+            panic!("dect params");
+        };
+        assert_eq!(params.span, DectSpan::Carrier);
+        assert_eq!(params.band, DectBand::Us);
+        assert_eq!(serde_json::to_value(DectSpan::Band).unwrap(), "band");
+    }
+
+    #[test]
+    fn dect_band_centres_and_carrier_lookup_follow_the_band_plan() {
+        assert_eq!(DectBand::Eu.center_hz(), 1_889_568_000.0);
+        assert_eq!(DectBand::Us.center_hz(), 1_924_992_000.0);
+        assert_eq!(DectBand::Eu.carrier_at(1_897_344_000.0), Some(0));
+        assert_eq!(DectBand::Eu.carrier_at(1_881_800_000.0), Some(9));
+        assert_eq!(DectBand::Eu.carrier_at(1_889_568_000.0), None);
+        assert_eq!(DectBand::Us.carrier_at(1_928_448_000.0), Some(4));
+        assert_eq!(DectBand::Us.carrier_at(1_897_344_000.0), None);
     }
 }
 

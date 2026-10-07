@@ -206,7 +206,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Vdl2(_) => vdl2::occupied_band(),
         ChannelParams::Hfdl(_) => hfdl::occupied_band(),
         ChannelParams::Iridium(p) => iridium::occupied_band(p),
-        ChannelParams::Dect(_) => dect::occupied_band(),
+        ChannelParams::Dect(p) => dect::occupied_band(p),
         ChannelParams::Apt(p) => apt::occupied_band(p),
         ChannelParams::Lrpt(p) => lrpt::occupied_band(p),
         ChannelParams::Wefax(p) => wefax::occupied_band(p),
@@ -290,7 +290,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Vdl2(_) => Ok(vdl2::channel_filter()),
         ChannelParams::Hfdl(_) => Ok(hfdl::channel_filter()),
         ChannelParams::Iridium(p) => Ok(iridium::channel_filter(p)),
-        ChannelParams::Dect(_) => Ok(dect::channel_filter()),
+        ChannelParams::Dect(p) => Ok(dect::channel_filter(p)),
         ChannelParams::Apt(p) => apt::channel_filter(p),
         ChannelParams::Lrpt(p) => lrpt::channel_filter(p),
         ChannelParams::Wefax(p) => wefax::channel_filter(p),
@@ -760,6 +760,7 @@ pub fn input_rate(params: &ChannelParams) -> f64 {
         ChannelParams::Datv(p) => datv::input_rate_hz(p),
         ChannelParams::Dvbt(p) => p.sample_rate_hz(),
         ChannelParams::Iridium(p) => iridium::input_rate(p),
+        ChannelParams::Dect(p) => dect::input_rate(p),
         ChannelParams::Lora(p) => lora::input_rate(p),
         other => descriptor_of(other.type_id()).map_or(0.0, |d| d.input_rate_hz),
     }
@@ -1043,6 +1044,7 @@ mod tests {
                         | "dpmr"
                         | "m17"
                         | "freedv"
+                        | "dect"
                 ),
                 "{} audio flag does not match its mode class",
                 d.type_id
