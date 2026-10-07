@@ -256,3 +256,9 @@ Not IQ: 196,864 hard QPSK symbol bits, packed MSB first, from this receiver's de
 2018 Meteor-M N2 pass on 137.9 MHz (72k QPSK). They hold VCDUs `09BF68` to `09BF73`: one full
 MCU row of APIDs 64, 65 and 68. The source IQ is sigidwiki's LRPT sample
 (`LRPT_16-29-02_137900kHz.wav`), which states no license. `lrpt::tests::a_recorded_meteor_m2_row_decodes_cleanly` reads it.
+
+### End-of-Train: `eot/pyeot_demo3_48k.wav`
+
+Not IQ: PyEOT's `demo3eot.wav`, unmodified, 2.6 s of FM-discriminator audio from 457.9375 MHz
+with three rear-unit packets. GPL-3.0, see `eot/README.md`. The test FM-modulates it at ±3 kHz.
+`eot::tests::decodes_three_rear_units_from_an_off_air_recording` reads it.

@@ -114,6 +114,8 @@ export function ModeChips({
     case "flex":
     case "ermes":
       return <PagerChips params={params} {...mode} />;
+    case "eot":
+      return <EotChips params={params} {...mode} />;
     case "adsb":
       return <AdsbChips params={params} {...mode} />;
     case "ais":
@@ -399,6 +401,19 @@ function PagerChips({ params, onParams }: Mode<"flex" | "ermes">) {
         onChange={(invert) => onParams({ type, settings: { ...settings, invert } })}
       />
     </>
+  );
+}
+
+function EotChips({ params, onParams }: Mode<"eot">) {
+  const { settings } = params;
+  return (
+    <BandwidthChip
+      valueHz={settings.bandwidth_hz ?? 12_500}
+      optionsHz={[12_500, 25_000]}
+      onCommit={(bandwidth_hz) =>
+        onParams({ type: "eot", settings: { ...settings, bandwidth_hz } })
+      }
+    />
   );
 }
 

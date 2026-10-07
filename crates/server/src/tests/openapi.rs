@@ -84,6 +84,8 @@ fn openapi_registers_paths_and_ws_schemas() {
         "DecoderEvent",
         "FlexMessage",
         "ErmesMessage",
+        "EotMessage",
+        "EotParams",
         "CwSkimmerSpot",
         "SelcallSequence",
         "LoraParams",

@@ -85,6 +85,97 @@ pub struct ErmesMessage {
     pub errors_corrected: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EotBattery {
+    NotMonitored,
+    VeryLow,
+    Low,
+    Ok,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EotArming {
+    Normal,
+    Arming,
+    Armed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HotCommand {
+    StatusRequest,
+    Emergency,
+    Other,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct EotStatus {
+    pub message_type: u8,
+    pub arming: EotArming,
+    pub pressure_psig: u8,
+    pub battery: EotBattery,
+    pub battery_charge_pct: u8,
+    pub valve_ok: bool,
+    pub confirmed: bool,
+    pub turbine: bool,
+    pub motion: bool,
+    pub marker_light: bool,
+    pub marker_battery_low: bool,
+    pub discretionary: bool,
+    pub chaining: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HotRequest {
+    pub command: HotCommand,
+    pub code: u8,
+    pub copies: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "unit", rename_all = "snake_case")]
+pub enum EotReport {
+    Rear(EotStatus),
+    Head(HotRequest),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct EotMessage {
+    pub unit_address: u32,
+    pub report: EotReport,
+    pub errors_corrected: u32,
+    pub rejected: u32,
+}
+
+impl EotMessage {
+    #[must_use]
+    pub fn summary(&self) -> String {
+        match &self.report {
+            EotReport::Rear(s) => {
+                let mut parts = vec![
+                    format!("EOT {}", self.unit_address),
+                    format!("{} psig", s.pressure_psig),
+                    if s.motion { "moving" } else { "stopped" }.to_owned(),
+                ];
+                if s.arming != EotArming::Normal {
+                    parts.push(format!("{:?}", s.arming).to_lowercase());
+                }
+                parts.join(" · ")
+            }
+            EotReport::Head(h) => {
+                let command = match h.command {
+                    HotCommand::StatusRequest => "status request".to_owned(),
+                    HotCommand::Emergency => "EMERGENCY".to_owned(),
+                    HotCommand::Other => format!("command {:#04x}", h.code),
+                };
+                format!("HOT {} · {command}", self.unit_address)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AdsbMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1158,6 +1249,7 @@ pub enum DecoderEvent {
     Pocsag(PocsagMessage),
     Flex(FlexMessage),
     Ermes(ErmesMessage),
+    Eot(EotMessage),
     Adsb(AdsbMessage),
     Ais(AisMessage),
     Aprs(AprsPacket),
@@ -1400,6 +1492,7 @@ impl DecoderEvent {
             Self::Pocsag(_) => "pocsag",
             Self::Flex(_) => "flex",
             Self::Ermes(_) => "ermes",
+            Self::Eot(_) => "eot",
             Self::Adsb(_) => "adsb",
             Self::Ais(_) => "ais",
             Self::Aprs(_) => "aprs",
@@ -1469,6 +1562,7 @@ impl DecoderEvent {
                     format!("{}: {}", p.local_address, p.text)
                 }
             }
+            Self::Eot(m) => m.summary(),
             Self::Adsb(a) => {
                 let mut parts = vec![a.icao.clone()];
                 if let Some(cs) = &a.callsign {
@@ -1686,6 +1780,7 @@ impl DecoderEvent {
             Self::Pocsag(p) => Some(p.address.to_string()),
             Self::Flex(p) => Some(p.address.to_string()),
             Self::Ermes(p) => Some(p.local_address.to_string()),
+            Self::Eot(m) => Some(m.unit_address.to_string()),
             Self::Adsb(a) => Some(a.icao.clone()),
             Self::Ais(m) => Some(m.mmsi.to_string()),
             Self::Aprs(p) => Some(p.source.clone()),
@@ -1804,6 +1899,26 @@ mod tests {
     }
 
     #[test]
+    fn eot_reports_carry_the_unit_as_a_tag() {
+        let message = EotMessage {
+            unit_address: 4_242,
+            report: EotReport::Head(HotRequest {
+                command: HotCommand::StatusRequest,
+                code: 0x55,
+                copies: 3,
+            }),
+            errors_corrected: 0,
+            rejected: 0,
+        };
+        let json = serde_json::to_value(&message).unwrap();
+        assert_eq!(json["report"]["unit"], "head");
+        assert_eq!(json["report"]["command"], "status_request");
+        assert_eq!(message.summary(), "HOT 4242 · status request");
+        let back: EotMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(back, message);
+    }
+
+    #[test]
     fn kind_matches_the_serialized_tag() {
         let link = || DataLinkMessage {
             message_type: "test".to_owned(),
@@ -1847,6 +1962,16 @@ mod tests {
                 urgent: false,
                 alert: 0,
                 errors_corrected: 0,
+            }),
+            DecoderEvent::Eot(EotMessage {
+                unit_address: 1,
+                report: EotReport::Head(HotRequest {
+                    command: HotCommand::Emergency,
+                    code: 0xAA,
+                    copies: 3,
+                }),
+                errors_corrected: 0,
+                rejected: 0,
             }),
             DecoderEvent::Adsb(AdsbMessage::default()),
             DecoderEvent::Ais(AisMessage::default()),

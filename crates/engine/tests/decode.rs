@@ -12,12 +12,12 @@ use sdrmm_wire::{
     AcarsParams, AdsbParams, AisChannel, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
     BroadcastSystem, ChannelParams, ChannelSettings, CwSkimmerParams, DabParams, DatvParams,
     DatvStandard, DecodedRecord, DecoderEvent, DectCapability, DectCipherState, DectParams,
-    DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode, ErmesParams, FlexParams, FreeDvParams,
-    GnssParams, IdentParams, LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation,
-    MorseParams, NavtexParams, NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams,
-    PskBaud, PskParams, RadiosondeParams, RdsUpdate, RttyParams, SelcallParams, SelcallSystem,
-    SondeType, SymbolPlane, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams,
-    WsprParams, YsfParams,
+    DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode, EotArming, EotBattery, EotParams,
+    EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams, GnssParams, IdentParams,
+    LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation, MorseParams, NavtexParams,
+    NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams, PskBaud, PskParams,
+    RadiosondeParams, RdsUpdate, RttyParams, SelcallParams, SelcallSystem, SondeType, SymbolPlane,
+    VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -233,6 +233,52 @@ async fn ermes_page_survives_the_ddc_and_reaches_the_decoded_stream() {
     assert_eq!(message.text, "ERMES ENGINE E2E");
     assert!(message.urgent);
     assert_eq!(message.alert, 4);
+}
+
+#[tokio::test]
+async fn eot_telemetry_survives_the_ddc_and_reaches_the_decoded_stream() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let offset_hz = 25_000.0;
+    let status = EotStatus {
+        message_type: 1,
+        arming: EotArming::Normal,
+        pressure_psig: 72,
+        battery: EotBattery::Low,
+        battery_charge_pct: 41,
+        valve_ok: true,
+        confirmed: false,
+        turbine: false,
+        motion: false,
+        marker_light: true,
+        marker_battery_low: true,
+        discretionary: false,
+        chaining: 3,
+    };
+    let rear = synth::eot::Rear {
+        unit_address: 31_337,
+        status: status.clone(),
+    };
+    let mut iq = synth::eot::rear_transmission(&rear, NARROW_DEVICE_RATE);
+    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    let device = plant(dir.path(), "eot", iq, NARROW_DEVICE_RATE);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ + offset_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Eot(EotParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Eot(_)),
+    )
+    .await;
+    let DecoderEvent::Eot(message) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(message.unit_address, 31_337);
+    assert_eq!(message.report, EotReport::Rear(status));
 }
 
 #[tokio::test]

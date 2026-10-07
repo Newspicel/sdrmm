@@ -6,6 +6,7 @@ pub mod conv7;
 pub mod conv_soft;
 pub mod prbs;
 pub mod rs256;
+pub mod syndrome;
 
 const CCITT_POLY_REFLECTED: u16 = 0x8408;
 

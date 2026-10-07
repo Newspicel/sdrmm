@@ -1065,6 +1065,7 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   pocsag: null,
   flex: null,
   ermes: null,
+  eot: null,
   navtex: null,
   acars: null,
   dv: null,

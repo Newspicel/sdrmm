@@ -10471,6 +10471,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/EotParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "eot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/AdsbParams"
               },
               "type": {
@@ -13401,6 +13419,24 @@
                 "type": "string",
                 "enum": [
                   "ermes"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/EotMessage"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "eot"
                 ]
               }
             }
@@ -16750,6 +16786,174 @@
           "dvb_t2"
         ]
       },
+      "EotArming": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "arming",
+          "armed"
+        ]
+      },
+      "EotBattery": {
+        "type": "string",
+        "enum": [
+          "not_monitored",
+          "very_low",
+          "low",
+          "ok"
+        ]
+      },
+      "EotMessage": {
+        "type": "object",
+        "required": [
+          "unit_address",
+          "report",
+          "errors_corrected",
+          "rejected"
+        ],
+        "properties": {
+          "errors_corrected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "report": {
+            "$ref": "#/components/schemas/EotReport"
+          },
+          "unit_address": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "EotParams": {
+        "type": "object",
+        "properties": {
+          "bandwidth_hz": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "EotReport": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EotStatus"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "unit"
+                ],
+                "properties": {
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "rear"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HotRequest"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "unit"
+                ],
+                "properties": {
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "head"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "EotStatus": {
+        "type": "object",
+        "required": [
+          "message_type",
+          "arming",
+          "pressure_psig",
+          "battery",
+          "battery_charge_pct",
+          "valve_ok",
+          "confirmed",
+          "turbine",
+          "motion",
+          "marker_light",
+          "marker_battery_low",
+          "discretionary",
+          "chaining"
+        ],
+        "properties": {
+          "arming": {
+            "$ref": "#/components/schemas/EotArming"
+          },
+          "battery": {
+            "$ref": "#/components/schemas/EotBattery"
+          },
+          "battery_charge_pct": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "chaining": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "discretionary": {
+            "type": "boolean"
+          },
+          "marker_battery_low": {
+            "type": "boolean"
+          },
+          "marker_light": {
+            "type": "boolean"
+          },
+          "message_type": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "motion": {
+            "type": "boolean"
+          },
+          "pressure_psig": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "turbine": {
+            "type": "boolean"
+          },
+          "valve_ok": {
+            "type": "boolean"
+          }
+        }
+      },
       "ErmesMessage": {
         "type": "object",
         "required": [
@@ -17851,6 +18055,37 @@
       },
       "HfdlParams": {
         "type": "object"
+      },
+      "HotCommand": {
+        "type": "string",
+        "enum": [
+          "status_request",
+          "emergency",
+          "other"
+        ]
+      },
+      "HotRequest": {
+        "type": "object",
+        "required": [
+          "command",
+          "code",
+          "copies"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "command": {
+            "$ref": "#/components/schemas/HotCommand"
+          },
+          "copies": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "HuntAction": {
         "type": "string",

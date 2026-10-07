@@ -423,6 +423,45 @@ describe("eventSummary", () => {
     expect(eventStation(ermes)).toBe("45678");
   });
 
+  it("renders End-of-Train telemetry and head-end commands", () => {
+    const rear: DecoderEvent = {
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: {
+          unit: "rear",
+          message_type: 7,
+          arming: "armed",
+          pressure_psig: 87,
+          battery: "ok",
+          battery_charge_pct: 80,
+          valve_ok: true,
+          confirmed: true,
+          turbine: false,
+          motion: false,
+          marker_light: true,
+          marker_battery_low: false,
+          discretionary: false,
+          chaining: 3,
+        },
+        errors_corrected: 0,
+        rejected: 0,
+      },
+    };
+    const head: DecoderEvent = {
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: { unit: "head", command: "emergency", code: 0xaa, copies: 3 },
+        errors_corrected: 0,
+        rejected: 0,
+      },
+    };
+    expect(eventSummary(rear)).toBe("EOT 23456 · 87 psig · stopped · armed");
+    expect(eventSummary(head)).toBe("HOT 23456 · EMERGENCY");
+    expect(eventStation(head)).toBe("23456");
+  });
+
   it("renders each CW skimmer signal with its passband offset and speed", () => {
     const spot: DecoderEvent = {
       kind: "cw_skimmer",

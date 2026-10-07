@@ -129,6 +129,30 @@ describe("eventDetail", () => {
           errors_corrected: 0,
         },
       },
+      eot: {
+        kind: "eot",
+        data: {
+          unit_address: 23456,
+          report: {
+            unit: "rear",
+            message_type: 0,
+            arming: "normal",
+            pressure_psig: 87,
+            battery: "low",
+            battery_charge_pct: 63,
+            valve_ok: true,
+            confirmed: false,
+            turbine: true,
+            motion: true,
+            marker_light: true,
+            marker_battery_low: false,
+            discretionary: false,
+            chaining: 3,
+          },
+          errors_corrected: 1,
+          rejected: 2,
+        },
+      },
       adsb: { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } },
       ais: { kind: "ais", data: { mmsi: 1, msg_type: 1, ais_channel: "A", nmea: "!AIVDM" } },
       aprs: { kind: "aprs", data: { source: "A", destination: "B", info: "", tnc2: "A>B:" } },
@@ -418,6 +442,49 @@ describe("eventDetail", () => {
       Drift: "-0.2 Hz",
     });
     expect(detail.body).toBe("K1ABC FN42 37");
+  });
+
+  it("reads an EOT rear unit and a HOT command", () => {
+    const rear = fieldsOf({
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: {
+          unit: "rear",
+          message_type: 0,
+          arming: "normal",
+          pressure_psig: 87,
+          battery: "low",
+          battery_charge_pct: 63,
+          valve_ok: true,
+          confirmed: false,
+          turbine: true,
+          motion: true,
+          marker_light: true,
+          marker_battery_low: false,
+          discretionary: false,
+          chaining: 3,
+        },
+        errors_corrected: 1,
+        rejected: 2,
+      },
+    });
+    expect(rear["Brake pipe"]).toBe("87 psig");
+    expect(rear.Battery).toBe("low");
+    expect(rear.Repaired).toBe("1");
+    expect(rear.Rejected).toBe("2");
+    const head = fieldsOf({
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: { unit: "head", command: "other", code: 0x3c, copies: 2 },
+        errors_corrected: 0,
+        rejected: 0,
+      },
+    });
+    expect(head.Command).toBe("command 0x3c");
+    expect(head.Copies).toBe("2/3");
+    expect(head.Repaired).toBeUndefined();
   });
 
   it("shows the Selcall plan, expanded code, and measured duration", () => {
