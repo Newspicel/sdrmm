@@ -277,6 +277,24 @@ pub static SIGNALS: &[Signal] = &[
         render: dect,
     },
     Signal {
+        id: "meshtastic",
+        label: "Meshtastic LongFast",
+        rate_hz: 500_000.0,
+        render: meshtastic,
+    },
+    Signal {
+        id: "meshcore",
+        label: "MeshCore EU",
+        rate_hz: 250_000.0,
+        render: meshcore,
+    },
+    Signal {
+        id: "lorawan",
+        label: "LoRaWAN uplinks",
+        rate_hz: 250_000.0,
+        render: lorawan,
+    },
+    Signal {
         id: "gnss",
         label: "GPS L1 C/A",
         rate_hz: 2_048_000.0,
@@ -716,6 +734,18 @@ fn ysf() -> Vec<Complex<f32>> {
         &dv::ysf::Call::default(),
         AUDIO,
     )
+}
+
+fn meshtastic() -> Vec<Complex<f32>> {
+    synth::lora::meshtastic_scene(500_000.0)
+}
+
+fn meshcore() -> Vec<Complex<f32>> {
+    synth::lora::meshcore_scene(250_000.0)
+}
+
+fn lorawan() -> Vec<Complex<f32>> {
+    synth::lora::lorawan_scene(250_000.0)
 }
 
 fn dect() -> Vec<Complex<f32>> {

@@ -1,4 +1,5 @@
 import type { StationOf } from "../lib/decoded";
+import { loraMessage, loraName, loraProtocol, loraStation } from "../lib/lora";
 import type {
   AdsbMessage,
   AisMessage,
@@ -160,6 +161,38 @@ export function radiosondeLog(
   limit: number,
 ): DecodedRecordOf<"radiosonde">[] {
   return records.filter((record) => record.event.data.serial === serial).slice(0, limit);
+}
+
+export interface LoraStation {
+  key: string;
+  protocol: string;
+  name: string | null;
+  message: string;
+  snrDb: number;
+  frames: number;
+  at: string;
+}
+
+export function loraStations(records: readonly DecodedRecordOf<"lora">[]): LoraStation[] {
+  const stations = new Map<string, LoraStation>();
+  for (const record of chronological(records)) {
+    const frame = record.event.data;
+    const key = loraStation(frame);
+    if (key === null) {
+      continue;
+    }
+    const previous = stations.get(key);
+    stations.set(key, {
+      key,
+      protocol: loraProtocol(frame),
+      name: loraName(frame) ?? previous?.name ?? null,
+      message: loraMessage(frame),
+      snrDb: frame.snr_db,
+      frames: (previous?.frames ?? 0) + 1,
+      at: record.at,
+    });
+  }
+  return [...stations.values()].toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
 
 export interface AprsWeatherStation {

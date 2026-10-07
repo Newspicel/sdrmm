@@ -1,4 +1,5 @@
 import type { StationOf } from "../decoded";
+import { loraName, loraPosition, loraProtocol } from "../lora";
 import { geoPosition, type Trail, trailLine } from "../trails";
 import type { ChannelParams, DecoderKind } from "../types";
 
@@ -7,6 +8,7 @@ export const MAP_KINDS = [
   "ais",
   "aprs",
   "radiosonde",
+  "lora",
 ] as const satisfies readonly DecoderKind[];
 
 export type MapKind = (typeof MAP_KINDS)[number];
@@ -17,6 +19,7 @@ export const KIND_STYLE: Record<MapKind, { title: string; color: string }> = {
   ais: { title: "Ships", color: "#e0a458" },
   aprs: { title: "APRS", color: "#b07de0" },
   radiosonde: { title: "Sondes", color: "#e06c6c" },
+  lora: { title: "LoRa", color: "#6cc070" },
 };
 
 export const TARGET_MAX_AGE_MS = 5 * 60_000;
@@ -137,8 +140,12 @@ export function targetFeature(station: Target): TargetFeature | null {
 }
 
 export function targetPosition(station: Target): [number, number] | null {
-  const { lat, lon } = station.event.data;
-  return geoPosition(lat, lon);
+  const event = station.event;
+  if (event.kind === "lora") {
+    const position = loraPosition(event.data);
+    return geoPosition(position?.lat, position?.lon);
+  }
+  return geoPosition(event.data.lat, event.data.lon);
 }
 
 export function referencePositions(params: readonly ChannelParams[]): [number, number][] {
@@ -191,6 +198,8 @@ export function targetLabel(station: Target): string {
       return event.data.source;
     case "radiosonde":
       return event.data.serial;
+    case "lora":
+      return loraName(event.data) ?? station.id;
   }
 }
 
@@ -205,6 +214,8 @@ export function targetHeading(station: Target): number | null {
       return bearing(event.data.course_deg);
     case "radiosonde":
       return bearing(event.data.heading_deg);
+    case "lora":
+      return null;
   }
 }
 
@@ -276,6 +287,15 @@ function detailRows(station: Target): (readonly [string, string])[] {
         ["Temp", scalar(d.temperature_c, 1, " °C")],
         ["Humidity", scalar(d.humidity_pct, 0, "%")],
         ["Pressure", scalar(d.pressure_hpa, 1, " hPa")],
+      ]);
+    }
+    case "lora": {
+      const d = event.data;
+      return kept([
+        ["Node", station.id],
+        ["Protocol", loraProtocol(d)],
+        ["Position", fix],
+        ["SNR", scalar(d.snr_db, 1, " dB")],
       ]);
     }
   }

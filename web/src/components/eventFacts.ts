@@ -1,3 +1,4 @@
+import { loraPosition, loraStation, loraSummary } from "../lib/lora";
 import type { DecoderEvent } from "../lib/types";
 import {
   callMode,
@@ -55,6 +56,9 @@ function position(lat: number | null | undefined, lon: number | null | undefined
 }
 
 export function hasPosition(event: DecoderEvent): boolean {
+  if (event.kind === "lora") {
+    return loraPosition(event.data) !== null;
+  }
   const data = event.data as { lat?: number | null; lon?: number | null } | undefined;
   return data?.lat != null && data?.lon != null;
 }
@@ -365,6 +369,8 @@ export function eventSummary(event: DecoderEvent): string {
       ]);
     case "radiosonde":
       return radiosondeSummary(event.data);
+    case "lora":
+      return loraSummary(event.data);
   }
 }
 
@@ -449,6 +455,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return event.data.identity?.rfpi ?? null;
     case "radiosonde":
       return event.data.serial;
+    case "lora":
+      return loraStation(event.data);
     case "apt":
       return "APT";
     case "lrpt":

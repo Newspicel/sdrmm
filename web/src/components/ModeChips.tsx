@@ -10,6 +10,7 @@ import {
   ToggleChip,
 } from "./face/Chips";
 import { formatHz } from "./format";
+import { LoraKeysChip } from "./LoraKeysChip";
 import {
   AERO_CHANNELS,
   AIS_CHANNELS,
@@ -36,7 +37,15 @@ import {
   ILS_COMPONENTS,
   INVERSION_DEFAULT_HZ,
   IRIDIUM_SPANS,
+  LORA_BANDWIDTHS,
+  LORA_CODING_RATES,
+  LORA_CUSTOM,
+  LORA_IQ,
+  LORA_PRESET_OPTIONS,
+  LORA_PROTOCOLS,
+  LORA_SPREADING_FACTORS,
   LRPT_MODES,
+  loraPresetOf,
   NFM_SCRAMBLER_MODES,
   NFM_TONE_MODES,
   NXDN_WIDTHS,
@@ -55,6 +64,7 @@ import {
   SSTV_MODULATIONS,
   WEFAX_IOCS,
   WEFAX_LPMS,
+  withLoraPreset,
 } from "./modeOptions";
 import { NumberField } from "./NumberField";
 import { Segmented } from "./Segmented";
@@ -168,6 +178,8 @@ export function ModeChips({
       return <WefaxChips params={params} {...mode} />;
     case "radiosonde":
       return <RadiosondeChips params={params} {...mode} />;
+    case "lora":
+      return <LoraChips params={params} {...mode} />;
     case "dstar":
     case "ysf":
     case "p25":
@@ -1290,6 +1302,96 @@ function RadiosondeChips({ params, onParams }: Mode<"radiosonde">) {
         })
       }
     />
+  );
+}
+
+function LoraChips({ params, onParams }: Mode<"lora">) {
+  const settings = params.settings;
+  const set = (next: typeof settings) => onParams({ type: "lora", settings: next });
+  const preset = loraPresetOf(settings);
+  const spreadingFactor = settings.spreading_factor ?? "all";
+  const protocol = settings.protocol ?? "auto";
+  const header = settings.implicit_header ?? null;
+  return (
+    <>
+      <ChoiceChip
+        label="Preset"
+        title="Modem preset; frequency stays as tuned"
+        value={preset}
+        options={LORA_PRESET_OPTIONS}
+        quiet={preset === LORA_CUSTOM}
+        onChange={(id) => set(withLoraPreset(settings, id))}
+      />
+      <ChoiceChip
+        label="BW"
+        title="LoRa bandwidth"
+        value={settings.bandwidth ?? "khz125"}
+        options={LORA_BANDWIDTHS}
+        onChange={(bandwidth) => set({ ...settings, bandwidth })}
+      />
+      <ChoiceChip
+        label="SF"
+        title="Spreading factor"
+        value={spreadingFactor}
+        options={LORA_SPREADING_FACTORS}
+        quiet={spreadingFactor === "all"}
+        onChange={(spreading_factor) => set({ ...settings, spreading_factor })}
+      />
+      <ChoiceChip
+        label="IQ"
+        title="Chirp direction"
+        value={settings.iq ?? "normal"}
+        options={LORA_IQ}
+        onChange={(iq) => set({ ...settings, iq })}
+      />
+      <ChoiceChip
+        label="Protocol"
+        title="Payload protocol"
+        value={protocol}
+        options={LORA_PROTOCOLS}
+        quiet={protocol === "auto"}
+        onChange={(next) => set({ ...settings, protocol: next })}
+      />
+      <LoraKeysChip keys={settings.keys ?? []} onChange={(keys) => set({ ...settings, keys })} />
+      <OptionalNumberChip
+        label="Implicit"
+        title="Implicit header payload length, empty for explicit headers"
+        placeholder="off"
+        value={header?.length ?? null}
+        min={1}
+        max={255}
+        step={1}
+        unit="B"
+        onCommit={(length) =>
+          set({
+            ...settings,
+            implicit_header:
+              length === null
+                ? null
+                : { coding_rate: "4/5", crc: true, ...header, length: Math.round(length) },
+          })
+        }
+      />
+      {header !== null && (
+        <>
+          <ChoiceChip
+            label="CR"
+            title="Implicit header coding rate"
+            value={header.coding_rate ?? "4/5"}
+            options={LORA_CODING_RATES}
+            onChange={(coding_rate) =>
+              set({ ...settings, implicit_header: { ...header, coding_rate } })
+            }
+          />
+          <ToggleChip
+            label="CRC"
+            title="Implicit header payload carries a CRC"
+            on={header.crc ?? true}
+            onChange={(crc) => set({ ...settings, implicit_header: { ...header, crc } })}
+          />
+        </>
+      )}
+    </>
   );
 }
 

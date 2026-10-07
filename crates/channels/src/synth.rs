@@ -16,6 +16,7 @@ pub mod flex;
 pub mod gnss;
 #[cfg(any(test, feature = "fixtures"))]
 pub mod ident_fixtures;
+pub mod lora;
 pub mod lrpt;
 pub mod morse;
 pub mod navtex;

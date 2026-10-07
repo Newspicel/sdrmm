@@ -27,8 +27,10 @@ import {
   identOverview,
   inScope,
   isAtBottom,
+  type LoraStation,
   latestVorReadings,
   latestWpm,
+  loraStations,
   modulationLabel,
   multiVorFix,
   ptyLabel,
@@ -613,6 +615,61 @@ function DectView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
+function LoraRow({ station, now }: { station: LoraStation; now: number }) {
+  const ageMs = now - Date.parse(station.at);
+  return (
+    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <td className={`${TABLE_CELL} font-mono`}>{station.key}</td>
+      <td className={TABLE_CELL}>{station.name ?? "-"}</td>
+      <td className={TABLE_CELL}>{station.protocol}</td>
+      <td className={`${TABLE_CELL} max-w-64 truncate`} title={station.message}>
+        {station.message}
+      </td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{station.snrDb.toFixed(1)}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{station.frames}</td>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+    </tr>
+  );
+}
+
+function LoraView({ scope = {} }: { scope?: DecoderScope }) {
+  const now = useNow();
+  const stations = loraStations(recordsInScope(useDecodedKind("lora"), scope));
+  if (stations.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No LoRa nodes heard yet.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Node</th>
+              <th className={TABLE_HEAD}>Name</th>
+              <th className={TABLE_HEAD}>Protocol</th>
+              <th className={TABLE_HEAD}>Last</th>
+              <th className={TABLE_HEAD}>
+                SNR <Unit symbol="dB" />
+              </th>
+              <th className={TABLE_HEAD}>Frames</th>
+              <th className={TABLE_HEAD}>Heard</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stations.map((station) => (
+              <LoraRow key={station.key} station={station} now={now} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function RadiosondeRow({
   sonde,
   now,
@@ -1035,6 +1092,7 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   hfdl: null,
   iridium: null,
   dect: (scope) => <DectView scope={scope} />,
+  lora: (scope) => <LoraView scope={scope} />,
 };
 
 function isDecoderKind(kind: string): kind is DecoderKind {

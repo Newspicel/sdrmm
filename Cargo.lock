@@ -5869,6 +5869,7 @@ dependencies = [
  "sdrmm-wire",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "symphonia-bundle-mp3",
  "symphonia-core",
  "thiserror 2.0.21",
