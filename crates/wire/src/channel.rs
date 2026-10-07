@@ -424,6 +424,24 @@ impl Default for ErmesParams {
     }
 }
 
+fn default_eot_bandwidth_hz() -> f64 {
+    12_500.0
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct EotParams {
+    #[serde(default = "default_eot_bandwidth_hz")]
+    pub bandwidth_hz: f64,
+}
+
+impl Default for EotParams {
+    fn default() -> Self {
+        Self {
+            bandwidth_hz: default_eot_bandwidth_hz(),
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -1567,6 +1585,7 @@ pub enum ChannelParams {
     Pocsag(PocsagParams),
     Flex(FlexParams),
     Ermes(ErmesParams),
+    Eot(EotParams),
     Adsb(AdsbParams),
     Ais(AisParams),
     Aprs(AprsParams),
@@ -1609,6 +1628,7 @@ pub enum ChannelParams {
     Lrpt(crate::weather::LrptParams),
     Wefax(crate::weather::WefaxParams),
     Radiosonde(crate::weather::RadiosondeParams),
+    Lora(crate::lora::LoraParams),
 }
 
 impl ChannelParams {
@@ -1623,6 +1643,7 @@ impl ChannelParams {
             Self::Pocsag(_) => "pocsag",
             Self::Flex(_) => "flex",
             Self::Ermes(_) => "ermes",
+            Self::Eot(_) => "eot",
             Self::Adsb(_) => "adsb",
             Self::Ais(_) => "ais",
             Self::Aprs(_) => "aprs",
@@ -1665,6 +1686,7 @@ impl ChannelParams {
             Self::Lrpt(_) => "lrpt",
             Self::Wefax(_) => "wefax",
             Self::Radiosonde(_) => "radiosonde",
+            Self::Lora(_) => "lora",
         }
     }
 }

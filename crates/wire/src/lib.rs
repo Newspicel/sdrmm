@@ -20,6 +20,7 @@ pub use pipeline::{PipelineQueue, PipelineStage, QueueHealth};
 pub mod hunt;
 pub mod labels;
 pub mod limits;
+pub mod lora;
 pub mod mission;
 pub mod network;
 pub mod patch;
@@ -69,7 +70,7 @@ pub use channel::{
     ChannelSettings, CwSkimmerParams, DECT_CARRIER_SPACING_HZ, DEFAULT_FREQUENCY_HZ, DabMode,
     DabParams, DabTransmissionMode, DatvCodeRate, DatvParams, DatvRollOff, DatvStandard,
     DecoderFamily, DectBand, DectParams, DectSides, DectSpan, DmrParams, DmrSlots, DpmrParams,
-    DrmMode, DrmParams, DscParams, DstarParams, DvbtBandwidth, DvbtParams, DvbtStandard,
+    DrmMode, DrmParams, DscParams, DstarParams, DvbtBandwidth, DvbtParams, DvbtStandard, EotParams,
     ErmesParams, FlexParams, FreeDvMode, FreeDvParams, GnssParams, HfdlParams, IdentParams,
     IlsComponent, IlsParams, InmarsatAeroParams, InmarsatStdcParams, IridiumParams, IridiumSpan,
     M17Params, MAX_DATV_SYMBOL_RATE, MAX_IDENT_BANDWIDTH_HZ, MAX_IDENT_INTERVAL_MS,
@@ -99,7 +100,8 @@ pub use decode::{
     BroadcastServiceKind, BroadcastStatus, BroadcastSystem, CwSkimmerSpot, DataLinkMessage,
     DecodedRecord, DecoderEvent, DectArc, DectCapability, DectCipherState, DectFrame, DectIdentity,
     DectSecurity, DectSide, DectUpdate, DectVoice, DvChannelDefinition, DvFrame, DvFrameKind,
-    DvMode, DvSlotActivity, DvTrunkProtocol, ErmesMessage, FlexMessage, GnssFrame, IdentFeatures,
+    DvMode, DvSlotActivity, DvTrunkProtocol, EotArming, EotBattery, EotMessage, EotReport,
+    EotStatus, ErmesMessage, FlexMessage, GnssFrame, HotCommand, HotRequest, IdentFeatures,
     IdentReport, IdentSignal, IlsReading, Modulation, MorseText, NO_CHANNEL, NavtexMessage,
     PagerPayload, PocsagMessage, PocsagPayload, ProtocolMatch, PskText, RadioClockFrame, RdsUpdate,
     RttyText, ScramblerStatus, SelcallSequence, SstvPicture, SuperframeStatus, ToneSquelchStatus,
@@ -138,6 +140,13 @@ pub use fusion::{
 pub use geo::LatLon;
 pub use hunt::{
     HuntAction, HuntRequest, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState,
+};
+pub use lora::{
+    LoraBandwidth, LoraCodingRate, LoraFrame, LoraImplicitHeader, LoraIntegrity, LoraIq, LoraKey,
+    LoraParams, LoraPayload, LoraProtocol, LoraSpreadingFactor, LorawanFrame, LorawanMessageType,
+    MAX_LORA_KEY_NAME_LEN, MAX_LORA_KEY_TEXT_LEN, MAX_LORA_KEYS, MeshcoreContent, MeshcoreNodeType,
+    MeshcorePacket, MeshcorePayloadType, MeshcoreRoute, MeshtasticContent, MeshtasticEncryption,
+    MeshtasticMetric, MeshtasticNeighbor, MeshtasticPacket,
 };
 pub use mission::{
     ChannelTarget, DfMission, HuntMission, Mission, MissionAction, MissionActionResponse,

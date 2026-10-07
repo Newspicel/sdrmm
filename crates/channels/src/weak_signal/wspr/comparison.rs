@@ -2,10 +2,7 @@
 
 use std::{collections::BTreeSet, time::Instant};
 
-use mfsk_core::wspr::{
-    decode::{WsprCallsignTable, decode_scan_with_table},
-    search::SearchParams,
-};
+use mfsk_core::wspr::{DecodeRequest, WsprCallsignTable};
 
 use super::{SAMPLE_RATE, SLOT_SAMPLES, WsprDecoder, waveform};
 
@@ -57,13 +54,9 @@ fn slot(snr_db: f32, noise: &mut Noise, messages: &[String]) -> Vec<f32> {
 }
 
 fn reference(samples: &[f32], table: &mut WsprCallsignTable) -> BTreeSet<String> {
-    let params = SearchParams {
-        freq_min_hz: 1_400.0,
-        freq_max_hz: 1_600.0,
-        max_candidates: 200,
-        ..SearchParams::default()
-    };
-    decode_scan_with_table(samples, SAMPLE_RATE as u32, 0, &params, table)
+    DecodeRequest::new(samples, SAMPLE_RATE as u32)
+        .table(table)
+        .decode()
         .into_iter()
         .map(|result| result.message.to_string())
         .collect()

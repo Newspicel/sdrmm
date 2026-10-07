@@ -10471,6 +10471,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/EotParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "eot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/AdsbParams"
               },
               "type": {
@@ -11215,6 +11233,24 @@
                 "type": "string",
                 "enum": [
                   "radiosonde"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/LoraParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "lora"
                 ]
               }
             }
@@ -13395,6 +13431,24 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/EotMessage"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "eot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
                 "$ref": "#/components/schemas/AdsbMessage"
               },
               "kind": {
@@ -14085,6 +14139,24 @@
                 "type": "string",
                 "enum": [
                   "radiosonde"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/LoraFrame"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lora"
                 ]
               }
             }
@@ -16857,6 +16929,174 @@
           "dvb_t2"
         ]
       },
+      "EotArming": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "arming",
+          "armed"
+        ]
+      },
+      "EotBattery": {
+        "type": "string",
+        "enum": [
+          "not_monitored",
+          "very_low",
+          "low",
+          "ok"
+        ]
+      },
+      "EotMessage": {
+        "type": "object",
+        "required": [
+          "unit_address",
+          "report",
+          "errors_corrected",
+          "rejected"
+        ],
+        "properties": {
+          "errors_corrected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "report": {
+            "$ref": "#/components/schemas/EotReport"
+          },
+          "unit_address": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "EotParams": {
+        "type": "object",
+        "properties": {
+          "bandwidth_hz": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "EotReport": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EotStatus"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "unit"
+                ],
+                "properties": {
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "rear"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HotRequest"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "unit"
+                ],
+                "properties": {
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "head"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "EotStatus": {
+        "type": "object",
+        "required": [
+          "message_type",
+          "arming",
+          "pressure_psig",
+          "battery",
+          "battery_charge_pct",
+          "valve_ok",
+          "confirmed",
+          "turbine",
+          "motion",
+          "marker_light",
+          "marker_battery_low",
+          "discretionary",
+          "chaining"
+        ],
+        "properties": {
+          "arming": {
+            "$ref": "#/components/schemas/EotArming"
+          },
+          "battery": {
+            "$ref": "#/components/schemas/EotBattery"
+          },
+          "battery_charge_pct": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "chaining": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "discretionary": {
+            "type": "boolean"
+          },
+          "marker_battery_low": {
+            "type": "boolean"
+          },
+          "marker_light": {
+            "type": "boolean"
+          },
+          "message_type": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "motion": {
+            "type": "boolean"
+          },
+          "pressure_psig": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "turbine": {
+            "type": "boolean"
+          },
+          "valve_ok": {
+            "type": "boolean"
+          }
+        }
+      },
       "ErmesMessage": {
         "type": "object",
         "required": [
@@ -17959,6 +18199,37 @@
       "HfdlParams": {
         "type": "object"
       },
+      "HotCommand": {
+        "type": "string",
+        "enum": [
+          "status_request",
+          "emergency",
+          "other"
+        ]
+      },
+      "HotRequest": {
+        "type": "object",
+        "required": [
+          "command",
+          "code",
+          "copies"
+        ],
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "command": {
+            "$ref": "#/components/schemas/HotCommand"
+          },
+          "copies": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "HuntAction": {
         "type": "string",
         "enum": [
@@ -18842,6 +19113,523 @@
           }
         }
       },
+      "LoraBandwidth": {
+        "type": "string",
+        "enum": [
+          "khz7_8",
+          "khz10_4",
+          "khz15_6",
+          "khz20_8",
+          "khz31_25",
+          "khz41_7",
+          "khz62_5",
+          "khz125",
+          "khz250",
+          "khz500"
+        ]
+      },
+      "LoraCodingRate": {
+        "type": "string",
+        "enum": [
+          "4/5",
+          "4/6",
+          "4/7",
+          "4/8"
+        ]
+      },
+      "LoraFrame": {
+        "type": "object",
+        "required": [
+          "spreading_factor",
+          "bandwidth_hz",
+          "coding_rate",
+          "sync_word",
+          "implicit_header",
+          "low_data_rate",
+          "inverted_iq",
+          "integrity",
+          "fec_corrected",
+          "snr_db",
+          "frequency_error_hz",
+          "payload"
+        ],
+        "properties": {
+          "bandwidth_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "coding_rate": {
+            "$ref": "#/components/schemas/LoraCodingRate"
+          },
+          "decoded": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LoraPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fec_corrected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "frequency_error_hz": {
+            "type": "number",
+            "format": "float"
+          },
+          "implicit_header": {
+            "type": "boolean"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/LoraIntegrity"
+          },
+          "inverted_iq": {
+            "type": "boolean"
+          },
+          "low_data_rate": {
+            "type": "boolean"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "snr_db": {
+            "type": "number",
+            "format": "float"
+          },
+          "spreading_factor": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sync_word": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "LoraImplicitHeader": {
+        "type": "object",
+        "required": [
+          "length"
+        ],
+        "properties": {
+          "coding_rate": {
+            "$ref": "#/components/schemas/LoraCodingRate"
+          },
+          "crc": {
+            "type": "boolean"
+          },
+          "length": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "LoraIntegrity": {
+        "type": "string",
+        "enum": [
+          "crc_ok",
+          "crc_failed",
+          "no_crc",
+          "header_failed"
+        ]
+      },
+      "LoraIq": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "inverted",
+          "both"
+        ]
+      },
+      "LoraKey": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "psk",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meshtastic_channel"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "psk": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "secret",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meshcore_channel"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "secret": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "dev_addr",
+              "nwk_s_key",
+              "app_s_key",
+              "kind"
+            ],
+            "properties": {
+              "app_s_key": {
+                "type": "string"
+              },
+              "dev_addr": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lorawan_session"
+                ]
+              },
+              "nwk_s_key": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "app_key",
+              "kind"
+            ],
+            "properties": {
+              "app_key": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lorawan_app_key"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LoraParams": {
+        "type": "object",
+        "properties": {
+          "bandwidth": {
+            "$ref": "#/components/schemas/LoraBandwidth"
+          },
+          "implicit_header": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LoraImplicitHeader"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "iq": {
+            "$ref": "#/components/schemas/LoraIq"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LoraKey"
+            }
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/LoraProtocol"
+          },
+          "spreading_factor": {
+            "$ref": "#/components/schemas/LoraSpreadingFactor"
+          }
+        }
+      },
+      "LoraPayload": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LorawanFrame"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "protocol"
+                ],
+                "properties": {
+                  "protocol": {
+                    "type": "string",
+                    "enum": [
+                      "lorawan"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeshtasticPacket"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "protocol"
+                ],
+                "properties": {
+                  "protocol": {
+                    "type": "string",
+                    "enum": [
+                      "meshtastic"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeshcorePacket"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "protocol"
+                ],
+                "properties": {
+                  "protocol": {
+                    "type": "string",
+                    "enum": [
+                      "meshcore"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "LoraProtocol": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "raw",
+          "lorawan",
+          "meshtastic",
+          "meshcore"
+        ]
+      },
+      "LoraSpreadingFactor": {
+        "type": "string",
+        "enum": [
+          "all",
+          "sf7",
+          "sf8",
+          "sf9",
+          "sf10",
+          "sf11",
+          "sf12"
+        ]
+      },
+      "LorawanFrame": {
+        "type": "object",
+        "required": [
+          "message_type",
+          "major",
+          "mic"
+        ],
+        "properties": {
+          "ack": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "adr": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "adr_ack_req": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cf_list_hz": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "decrypted": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dev_addr": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dev_eui": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dev_nonce": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "f_cnt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "f_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "frm_payload": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "join_eui": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "join_nonce": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "mac_commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "major": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "message_type": {
+            "$ref": "#/components/schemas/LorawanMessageType"
+          },
+          "mic": {
+            "type": "string"
+          },
+          "mic_ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "net_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending_or_class_b": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "rx1_dr_offset": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "rx2_data_rate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "rx_delay_s": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "LorawanMessageType": {
+        "type": "string",
+        "enum": [
+          "join_request",
+          "join_accept",
+          "unconfirmed_up",
+          "unconfirmed_down",
+          "confirmed_up",
+          "confirmed_down",
+          "rejoin_request",
+          "proprietary"
+        ]
+      },
       "LrptImage": {
         "type": "object",
         "required": [
@@ -19006,6 +19794,961 @@
           "radio_ids",
           "settings"
         ]
+      },
+      "MeshcoreContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "public_key",
+              "timestamp",
+              "node_type",
+              "signature_ok",
+              "type"
+            ],
+            "properties": {
+              "lat": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "lon": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "node_type": {
+                "$ref": "#/components/schemas/MeshcoreNodeType"
+              },
+              "public_key": {
+                "type": "string"
+              },
+              "signature_ok": {
+                "type": "boolean"
+              },
+              "timestamp": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "advert"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "channel_hash",
+              "type"
+            ],
+            "properties": {
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "channel_hash": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "sender": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "timestamp": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group_text"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "channel_hash",
+              "type"
+            ],
+            "properties": {
+              "channel": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "channel_hash": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "data": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "data_type": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group_data"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "destination",
+              "source",
+              "mac",
+              "type"
+            ],
+            "properties": {
+              "destination": {
+                "type": "string"
+              },
+              "mac": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "encrypted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "destination",
+              "public_key",
+              "type"
+            ],
+            "properties": {
+              "destination": {
+                "type": "string"
+              },
+              "public_key": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "anon_request"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "checksum",
+              "type"
+            ],
+            "properties": {
+              "checksum": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ack"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "tag",
+              "auth_code",
+              "flags",
+              "hops",
+              "type"
+            ],
+            "properties": {
+              "auth_code": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "flags": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "hops": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tag": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "trace"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "subtype",
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "string"
+              },
+              "subtype": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "control"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "remaining",
+              "inner_type",
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "string"
+              },
+              "inner_type": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "remaining": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "multipart"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "raw"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "MeshcoreNodeType": {
+        "type": "string",
+        "enum": [
+          "none",
+          "chat",
+          "repeater",
+          "room",
+          "sensor",
+          "other"
+        ]
+      },
+      "MeshcorePacket": {
+        "type": "object",
+        "required": [
+          "route",
+          "payload_type",
+          "version",
+          "content"
+        ],
+        "properties": {
+          "content": {
+            "$ref": "#/components/schemas/MeshcoreContent"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "payload_type": {
+            "$ref": "#/components/schemas/MeshcorePayloadType"
+          },
+          "route": {
+            "$ref": "#/components/schemas/MeshcoreRoute"
+          },
+          "transport_codes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "MeshcorePayloadType": {
+        "type": "string",
+        "enum": [
+          "request",
+          "response",
+          "text",
+          "ack",
+          "advert",
+          "group_text",
+          "group_data",
+          "anon_request",
+          "path",
+          "trace",
+          "multipart",
+          "control",
+          "reserved",
+          "raw_custom"
+        ]
+      },
+      "MeshcoreRoute": {
+        "type": "string",
+        "enum": [
+          "transport_flood",
+          "flood",
+          "direct",
+          "transport_direct"
+        ]
+      },
+      "MeshtasticContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "text",
+              "type"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "altitude_m": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32"
+              },
+              "ground_speed_kmh": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "lat": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "lon": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "precision_bits": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "satellites": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "time": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "position"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "long_name",
+              "short_name",
+              "licensed",
+              "type"
+            ],
+            "properties": {
+              "hw_model": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "id": {
+                "type": "string"
+              },
+              "licensed": {
+                "type": "boolean"
+              },
+              "long_name": {
+                "type": "string"
+              },
+              "public_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "short_name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "node_info"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "metrics",
+              "type"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "metrics": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MeshtasticMetric"
+                }
+              },
+              "time": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "telemetry"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "route": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "routing"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "route",
+              "snr_towards_db",
+              "route_back",
+              "snr_back_db",
+              "type"
+            ],
+            "properties": {
+              "route": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              },
+              "route_back": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              },
+              "snr_back_db": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "float"
+                }
+              },
+              "snr_towards_db": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "float"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "traceroute"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "node",
+              "neighbors",
+              "type"
+            ],
+            "properties": {
+              "neighbors": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MeshtasticNeighbor"
+                }
+              },
+              "node": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "neighbor_info"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "description",
+              "type"
+            ],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "expire": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "id": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "lat": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "lon": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "waypoint"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "long_name",
+              "short_name",
+              "firmware_version",
+              "type"
+            ],
+            "properties": {
+              "altitude_m": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32"
+              },
+              "firmware_version": {
+                "type": "string"
+              },
+              "lat": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "lon": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              },
+              "long_name": {
+                "type": "string"
+              },
+              "online_nodes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "short_name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "map_report"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "bytes",
+              "type"
+            ],
+            "properties": {
+              "bytes": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "data"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "MeshtasticEncryption": {
+        "type": "string",
+        "enum": [
+          "open",
+          "channel",
+          "pki",
+          "unknown"
+        ]
+      },
+      "MeshtasticMetric": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "MeshtasticNeighbor": {
+        "type": "object",
+        "required": [
+          "node",
+          "snr_db"
+        ],
+        "properties": {
+          "node": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "snr_db": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "MeshtasticPacket": {
+        "type": "object",
+        "required": [
+          "to",
+          "from",
+          "id",
+          "hop_limit",
+          "hop_start",
+          "want_ack",
+          "via_mqtt",
+          "channel_hash",
+          "next_hop",
+          "relay_node",
+          "encryption"
+        ],
+        "properties": {
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel_hash": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "content": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MeshtasticContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "encryption": {
+            "$ref": "#/components/schemas/MeshtasticEncryption"
+          },
+          "from": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "hop_limit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "hop_start": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "next_hop": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "port_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relay_node": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "reply_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "request_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "to": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "via_mqtt": {
+            "type": "boolean"
+          },
+          "want_ack": {
+            "type": "boolean"
+          }
+        }
       },
       "Mission": {
         "allOf": [

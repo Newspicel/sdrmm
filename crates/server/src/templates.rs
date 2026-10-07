@@ -4,11 +4,11 @@ mod array;
 
 use sdrmm_wire::{
     AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, ChannelNode,
-    ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams, ErmesParams,
-    FlexParams, GnssParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NodeBody,
-    PatchEdge, PatchGraph, PatchNode, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
-    RadiosondeParams, RttyParams, Squelch, SsbParams, SstvParams, TemplateInfo, WefaxParams,
-    WfmParams, WsjtParams, WsprParams, YsfParams,
+    ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams, EotParams,
+    ErmesParams, FlexParams, GnssParams, LrptParams, M17Params, MorseParams, NavtexParams,
+    NfmParams, NodeBody, PatchEdge, PatchGraph, PatchNode, PocsagParams, PortRef, Position,
+    PskParams, RadioClockParams, RadiosondeParams, RttyParams, Squelch, SsbParams, SstvParams,
+    TemplateInfo, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -311,6 +311,22 @@ static TEMPLATES: &[Entry] = &[
                 LOG,
             ),
         ],
+    },
+    Entry {
+        id: "railroad-eot",
+        name: "Railroad EOT",
+        description: "End-of-Train brake pressure, motion and marker light.",
+        explainer: "North American freight trains carry an End-of-Train unit that reports \
+                    rear brake pipe pressure, motion and battery on 457.9375 MHz. The \
+                    locomotive answers and sends emergency commands on 452.9375 MHz; \
+                    retune the channel there to log them.",
+        center_hz: 457_700_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[Channel::at(
+            457_937_500.0,
+            || ChannelParams::Eot(EotParams::default()),
+            LOG_READ,
+        )],
     },
     Entry {
         id: "radio-clock",

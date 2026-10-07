@@ -231,6 +231,15 @@ describe("channelWidthHz", () => {
     ).toBe(8_000);
   });
 
+  it("reads a LoRa bandwidth step", () => {
+    expect(
+      channelWidthHz(
+        { type: "lora", settings: { bandwidth: "khz250" } },
+        descriptor({ bandwidth_hz: 125_000 }),
+      ),
+    ).toBe(250_000);
+  });
+
   it("falls back to the channel type width", () => {
     expect(channelWidthHz(undefined, descriptor({ bandwidth_hz: 12_500 }))).toBe(12_500);
   });

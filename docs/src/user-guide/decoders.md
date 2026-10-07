@@ -14,11 +14,11 @@ covers the modes that need more than a frequency.
 | Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium) | VOR, ILS localizer / glideslope |
 | Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC | |
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
-| Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager | |
+| Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager, [End-of-Train](#end-of-train) | |
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect) | | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora) | [LoRaWAN, Meshtastic, MeshCore](#lora) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -69,6 +69,13 @@ Some German POCSAG networks send umlauts as `{ | } [ \ ] ~`. SDR-- converts them
 lowercase words only: `M}nchen` becomes `München`, `Stra~e` becomes `Straße`. `[ALARM]` and
 all-caps messages stay as sent.
 
+## End-of-Train
+
+The End-of-Train channel reads railroad telemetry. Tune 457.9375 MHz for the rear unit: brake pipe
+pressure, motion, marker light, battery and arming. Tune 452.9375 MHz for the locomotive: status
+requests and emergency brake commands. Australia uses 477.7 MHz, New Zealand 450.2625 MHz. Only
+frames whose BCH check passes are logged; **Rejected** counts the ones that failed.
+
 ## SSTV
 
 Tune SSTV to the USB dial frequency. A picture takes from 36 seconds to four and a half minutes.
@@ -118,8 +125,8 @@ calibration data has arrived, about a minute after first lock.
 
 ## Map
 
-Wire ADS-B, AIS, APRS or Radiosonde `events` to **Map**. Each target draws its track. The gear at
-the bottom left picks the style, hides tracks, or takes a custom URL: an XYZ template
+Wire ADS-B, AIS, APRS, Radiosonde or LoRa `events` to **Map**. Each target draws its track. The
+gear at the bottom left picks the style, hides tracks, or takes a custom URL: an XYZ template
 (`https://…/{z}/{x}/{y}.png`) or a MapLibre style URL, with any API key in the URL. The choice is
 kept in this browser.
 
@@ -203,3 +210,34 @@ Calls use 32 kbit/s ADPCM (G.726). The channel plays both directions of the firs
 hears and holds it until it goes quiet. Encrypted bearers stay muted. Voice before the first
 multiframe marker cannot be descrambled; those frames, X-CRC errors, and late frames are counted
 in the record.
+
+## LoRa
+
+The LoRa channel reads LoRa packets and decodes LoRaWAN, Meshtastic and MeshCore inside them.
+Tune to the centre of the LoRa channel.
+
+| Setting | Does |
+|---|---|
+| Preset | Sets BW, SF, IQ and Protocol for a Meshtastic modem preset, MeshCore EU or US, or LoRaWAN. The frequency stays as tuned. |
+| BW | 7.8 to 500 kHz |
+| SF | One spreading factor, or **All** for SF7 to SF12 at once |
+| IQ | **Inverted** hears LoRaWAN downlinks, **Both** hears both directions |
+| Protocol | **Auto** picks by sync word. **LoRa** shows bytes only. |
+| Keys | Extra channel and session keys |
+| Implicit | Payload length for packets sent without a header, then **CR** and **CRC** |
+
+Meshtastic's default key on every preset channel name and the MeshCore **Public** channel are
+built in. Add others under **Keys**:
+
+| Key | Fields |
+|---|---|
+| Meshtastic | Channel name and base64 PSK. An empty PSK is an open channel. |
+| MeshCore | Channel name and base64 or hex secret. A `#tag` name needs no secret. |
+| ABP | LoRaWAN DevAddr, NwkSKey and AppSKey: checks the MIC and decrypts the payload |
+| OTAA | LoRaWAN AppKey: checks join requests and opens join accepts |
+
+The LoRa readout lists each node heard, keyed by Meshtastic node ID, MeshCore name or LoRaWAN
+DevAddr. Meshtastic positions, waypoints and map reports and MeshCore adverts with a location
+appear on **Map**. Meshtastic direct messages and MeshCore private messages are end-to-end
+encrypted and show as such. The signal generator sends Meshtastic, MeshCore and LoRaWAN test
+packets.

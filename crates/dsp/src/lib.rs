@@ -71,6 +71,7 @@ pub use fec::{
     rds_check_block, rds_correct_block, rds_encode_block, rds_syndrome, rs64_decode, rs64_encode,
     rs129_parity,
     rs256::{DVB_PRIMITIVE, ReedSolomon},
+    syndrome::SyndromeDecoder,
 };
 pub use fir::{
     design_bandpass, design_gaussian, design_lowpass, design_rds_biphase, design_rds_shaping,

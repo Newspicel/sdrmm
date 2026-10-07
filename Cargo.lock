@@ -3696,13 +3696,14 @@ dependencies = [
 
 [[package]]
 name = "mfsk-core"
-version = "0.11.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0362a646d5ab7a8f693996765ae11807610dbe3ec04210e43c987bcd0392120"
+checksum = "5b9f91cc9210710dbb21644d6ceedceaae68c9c21e5150fd15fe5280e1f33a86"
 dependencies = [
  "crc",
  "num-complex",
  "num-traits",
+ "realfft",
  "rustfft",
 ]
 
@@ -5869,6 +5870,7 @@ dependencies = [
  "sdrmm-wire",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "symphonia-bundle-mp3",
  "symphonia-core",
  "thiserror 2.0.21",

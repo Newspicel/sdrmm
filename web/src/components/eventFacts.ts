@@ -1,4 +1,5 @@
-import type { DecoderEvent } from "../lib/types";
+import { loraPosition, loraStation, loraSummary } from "../lib/lora";
+import type { DecoderEvent, HotCommand } from "../lib/types";
 import {
   callMode,
   candidateScore,
@@ -55,6 +56,9 @@ function position(lat: number | null | undefined, lon: number | null | undefined
 }
 
 export function hasPosition(event: DecoderEvent): boolean {
+  if (event.kind === "lora") {
+    return loraPosition(event.data) !== null;
+  }
   const data = event.data as { lat?: number | null; lon?: number | null } | undefined;
   return data?.lat != null && data?.lon != null;
 }
@@ -97,6 +101,32 @@ function callSummary(c: EventData<"call">): string {
     `${(c.duration_ms / 1000).toFixed(1)} s`,
     c.emergency ? "emergency" : null,
     c.encrypted ? "encrypted" : null,
+  ]);
+}
+
+export const HOT_COMMAND_LABELS: Record<HotCommand, string> = {
+  status_request: "status request",
+  emergency: "EMERGENCY",
+  other: "command",
+};
+
+export function hotCommand(request: { command: HotCommand; code: number }): string {
+  const label = HOT_COMMAND_LABELS[request.command];
+  return request.command === "other"
+    ? `${label} 0x${request.code.toString(16).padStart(2, "0")}`
+    : label;
+}
+
+function eotSummary(m: EventData<"eot">): string {
+  const r = m.report;
+  if (r.unit === "head") {
+    return join([`HOT ${m.unit_address}`, hotCommand(r)]);
+  }
+  return join([
+    `EOT ${m.unit_address}`,
+    `${r.pressure_psig} psig`,
+    r.motion ? "moving" : "stopped",
+    r.arming === "normal" ? null : r.arming,
   ]);
 }
 
@@ -165,6 +195,8 @@ export function eventSummary(event: DecoderEvent): string {
       const p = event.data;
       return p.text === "" ? `${p.local_address} · ${p.payload}` : `${p.local_address}: ${p.text}`;
     }
+    case "eot":
+      return eotSummary(event.data);
     case "adsb": {
       const a = event.data;
       return join([
@@ -365,6 +397,8 @@ export function eventSummary(event: DecoderEvent): string {
       ]);
     case "radiosonde":
       return radiosondeSummary(event.data);
+    case "lora":
+      return loraSummary(event.data);
   }
 }
 
@@ -409,6 +443,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return String(event.data.address);
     case "ermes":
       return String(event.data.local_address);
+    case "eot":
+      return String(event.data.unit_address);
     case "rds":
       return event.data.pi ?? null;
     case "navtex":
@@ -449,6 +485,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return event.data.identity?.rfpi ?? null;
     case "radiosonde":
       return event.data.serial;
+    case "lora":
+      return loraStation(event.data);
     case "apt":
       return "APT";
     case "lrpt":

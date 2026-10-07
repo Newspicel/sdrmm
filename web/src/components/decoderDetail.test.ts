@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DecoderEvent, DecoderKind } from "../lib/types";
+import type { DecoderEvent, DecoderKind, LoraFrame } from "../lib/types";
 import { eventDetail } from "./decoderDetail";
 import { DECODER_KINDS } from "./decoderLog";
 
@@ -13,6 +13,27 @@ function dataLink(
   return {
     kind,
     data: { message_type: "test", crc_ok: true, details: {} },
+  };
+}
+
+function lora(decoded: LoraFrame["decoded"]): DecoderEvent {
+  return {
+    kind: "lora",
+    data: {
+      spreading_factor: 11,
+      bandwidth_hz: 250_000,
+      coding_rate: "4/5",
+      sync_word: 0x2b,
+      implicit_header: false,
+      low_data_rate: false,
+      inverted_iq: false,
+      integrity: "crc_ok",
+      fec_corrected: 2,
+      snr_db: -7.5,
+      frequency_error_hz: -1_210,
+      payload: "ffffffff",
+      decoded,
+    },
   };
 }
 
@@ -106,6 +127,30 @@ describe("eventDetail", () => {
           urgent: false,
           alert: 0,
           errors_corrected: 0,
+        },
+      },
+      eot: {
+        kind: "eot",
+        data: {
+          unit_address: 23456,
+          report: {
+            unit: "rear",
+            message_type: 0,
+            arming: "normal",
+            pressure_psig: 87,
+            battery: "low",
+            battery_charge_pct: 63,
+            valve_ok: true,
+            confirmed: false,
+            turbine: true,
+            motion: true,
+            marker_light: true,
+            marker_battery_low: false,
+            discretionary: false,
+            chaining: 3,
+          },
+          errors_corrected: 1,
+          rejected: 2,
         },
       },
       adsb: { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } },
@@ -319,6 +364,7 @@ describe("eventDetail", () => {
         kind: "radiosonde",
         data: { sonde: "rs41", serial: "S1234567", errors_corrected: 0 },
       },
+      lora: lora(null),
     };
     for (const kind of DECODER_KINDS) {
       expect(() => eventDetail(sample[kind]), kind).not.toThrow();
@@ -426,6 +472,49 @@ describe("eventDetail", () => {
       Drift: "-0.2 Hz",
     });
     expect(detail.body).toBe("K1ABC FN42 37");
+  });
+
+  it("reads an EOT rear unit and a HOT command", () => {
+    const rear = fieldsOf({
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: {
+          unit: "rear",
+          message_type: 0,
+          arming: "normal",
+          pressure_psig: 87,
+          battery: "low",
+          battery_charge_pct: 63,
+          valve_ok: true,
+          confirmed: false,
+          turbine: true,
+          motion: true,
+          marker_light: true,
+          marker_battery_low: false,
+          discretionary: false,
+          chaining: 3,
+        },
+        errors_corrected: 1,
+        rejected: 2,
+      },
+    });
+    expect(rear["Brake pipe"]).toBe("87 psig");
+    expect(rear.Battery).toBe("low");
+    expect(rear.Repaired).toBe("1");
+    expect(rear.Rejected).toBe("2");
+    const head = fieldsOf({
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: { unit: "head", command: "other", code: 0x3c, copies: 2 },
+        errors_corrected: 0,
+        rejected: 0,
+      },
+    });
+    expect(head.Command).toBe("command 0x3c");
+    expect(head.Copies).toBe("2/3");
+    expect(head.Repaired).toBeUndefined();
   });
 
   it("shows the Selcall plan, expanded code, and measured duration", () => {
@@ -898,6 +987,142 @@ describe("eventDetail", () => {
       Battery: "2.90 V",
       Repaired: "3",
       "Frames lost": "2",
+    });
+  });
+
+  it("shows a raw LoRa frame's modem and payload", () => {
+    expect(fieldsOf(lora(null))).toEqual({
+      "Spreading factor": "SF11",
+      Bandwidth: "250 kHz",
+      "Coding rate": "4/5",
+      "Sync word": "0x2B",
+      Header: "explicit",
+      IQ: "normal",
+      Integrity: "CRC ok",
+      "FEC repaired": "2",
+      SNR: "-7.5 dB",
+      "Frequency error": "-1210 Hz",
+      Payload: "ffffffff",
+    });
+  });
+
+  it("breaks a Meshtastic text into nodes, channel and hops", () => {
+    const event = lora({
+      protocol: "meshtastic",
+      to: 0xffff_ffff,
+      from: 0xa1b2c3d4,
+      id: 0x1234,
+      hop_limit: 1,
+      hop_start: 3,
+      want_ack: false,
+      via_mqtt: false,
+      channel_hash: 8,
+      next_hop: 0,
+      relay_node: 0xd4,
+      encryption: "channel",
+      channel: "LongFast",
+      port: 1,
+      port_name: "TEXT_MESSAGE_APP",
+      content: { type: "text", text: "hello mesh" },
+    });
+    expect(fieldsOf(event)).toMatchObject({
+      Protocol: "Meshtastic",
+      From: "!a1b2c3d4",
+      To: "^all",
+      "Packet ID": "0x00001234",
+      Channel: "LongFast",
+      Port: "TEXT_MESSAGE_APP",
+      Hops: "2 of 3",
+      Relay: "0xD4",
+    });
+    expect(eventDetail(event).body).toBe("hello mesh");
+  });
+
+  it("lists Meshtastic positions and telemetry", () => {
+    const position = lora({
+      protocol: "meshtastic",
+      to: 0xffff_ffff,
+      from: 1,
+      id: 1,
+      hop_limit: 3,
+      hop_start: 3,
+      want_ack: false,
+      via_mqtt: false,
+      channel_hash: 8,
+      next_hop: 0,
+      relay_node: 0,
+      encryption: "channel",
+      content: { type: "position", lat: 47.5, lon: 8.25, altitude_m: 410, satellites: 9 },
+    });
+    expect(fieldsOf(position)).toMatchObject({
+      From: "!00000001",
+      Channel: "0x08",
+      Hops: "0 of 3",
+      Position: "47.50000, 8.25000",
+      Altitude: "410 m",
+      Satellites: "9",
+    });
+  });
+
+  it("shows LoRaWAN header, counters and MIC check", () => {
+    const fields = fieldsOf(
+      lora({
+        protocol: "lorawan",
+        message_type: "confirmed_up",
+        major: 0,
+        mic: "a1b2c3d4",
+        mic_ok: true,
+        dev_addr: "26011BDA",
+        adr: true,
+        f_cnt: 42,
+        f_port: 10,
+        mac_commands: ["LinkCheckReq"],
+        decrypted: "0102",
+      }),
+    );
+    expect(fields).toMatchObject({
+      Protocol: "LoRaWAN",
+      Type: "Confirmed uplink",
+      DevAddr: "26011BDA",
+      FCnt: "42",
+      FPort: "10",
+      MIC: "a1b2c3d4 ok",
+      ADR: "yes",
+      "MAC commands": "LinkCheckReq",
+      Decrypted: "0102",
+    });
+  });
+
+  it("shows a MeshCore advert with its place and signature", () => {
+    const fields = fieldsOf(
+      lora({
+        protocol: "meshcore",
+        route: "flood",
+        payload_type: "advert",
+        version: 1,
+        path: ["a1", "b2"],
+        content: {
+          type: "advert",
+          public_key: "00112233",
+          timestamp: 1_700_000_000,
+          node_type: "repeater",
+          name: "Hilltop",
+          lat: 51.5,
+          lon: -0.12,
+          signature_ok: true,
+        },
+      }),
+    );
+    expect(fields).toMatchObject({
+      Protocol: "MeshCore",
+      Route: "flood",
+      Type: "Advert",
+      Path: "a1 → b2",
+      Name: "Hilltop",
+      "Node type": "repeater",
+      Position: "51.50000, -0.12000",
+      Advertised: "2023-11-14T22:13:20Z",
+      Signature: "verified",
     });
   });
 

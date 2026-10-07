@@ -21,6 +21,7 @@ pub mod df;
 mod drm;
 mod dsc;
 mod dv;
+mod eot;
 mod ermes;
 mod flex;
 mod gnss;
@@ -31,6 +32,7 @@ mod ils;
 mod inmarsat_aero;
 mod inmarsat_stdc;
 mod iridium;
+mod lora;
 mod lrpt;
 pub mod monitor;
 mod morse;
@@ -93,6 +95,7 @@ pub use dv::{
     DmrChannel, DpmrChannel, DstarChannel, FreeDvChannel, M17Channel, NxdnChannel, P25Channel,
     YsfChannel,
 };
+pub use eot::EotChannel;
 pub use ermes::ErmesChannel;
 pub use flex::FlexChannel;
 pub use gnss::GnssChannel;
@@ -102,6 +105,7 @@ pub use ils::IlsChannel;
 pub use inmarsat_aero::InmarsatAeroChannel;
 pub use inmarsat_stdc::InmarsatStdcChannel;
 pub use iridium::IridiumChannel;
+pub use lora::LoraChannel;
 pub use lrpt::LrptChannel;
 pub use morse::MorseChannel;
 pub use navtex::NavtexChannel;
@@ -164,6 +168,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Pocsag(p) => pocsag::occupied_band(p),
         ChannelParams::Flex(p) => flex::occupied_band(p),
         ChannelParams::Ermes(p) => ermes::occupied_band(p),
+        ChannelParams::Eot(p) => eot::occupied_band(p),
         ChannelParams::Adsb(_) => adsb::occupied_band(),
         ChannelParams::Ais(p) => ais::occupied_band(p),
         ChannelParams::Aprs(p) => aprs::occupied_band(p),
@@ -206,6 +211,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Lrpt(p) => lrpt::occupied_band(p),
         ChannelParams::Wefax(p) => wefax::occupied_band(p),
         ChannelParams::Radiosonde(p) => radiosonde::occupied_band(p),
+        ChannelParams::Lora(p) => lora::occupied_band(p),
     }
 }
 
@@ -246,6 +252,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Pocsag(p) => pocsag::channel_filter(p),
         ChannelParams::Flex(p) => flex::channel_filter(p),
         ChannelParams::Ermes(p) => ermes::channel_filter(p),
+        ChannelParams::Eot(p) => eot::channel_filter(p),
         ChannelParams::Adsb(_) => Ok(adsb::channel_filter()),
         ChannelParams::Ais(p) => ais::channel_filter(p),
         ChannelParams::Aprs(p) => aprs::channel_filter(p),
@@ -288,6 +295,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Lrpt(p) => lrpt::channel_filter(p),
         ChannelParams::Wefax(p) => wefax::channel_filter(p),
         ChannelParams::Radiosonde(p) => radiosonde::channel_filter(p),
+        ChannelParams::Lora(p) => Ok(lora::channel_filter(p)),
     }
 }
 
@@ -461,6 +469,11 @@ const REGISTRY: &[Registration] = &[
     Registration {
         descriptor: ErmesChannel::descriptor,
         create: boxed::<ErmesChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: EotChannel::descriptor,
+        create: boxed::<EotChannel>,
         create_tx: None,
     },
     Registration {
@@ -673,6 +686,11 @@ const REGISTRY: &[Registration] = &[
         create: boxed::<RadiosondeChannel>,
         create_tx: None,
     },
+    Registration {
+        descriptor: LoraChannel::descriptor,
+        create: boxed::<LoraChannel>,
+        create_tx: None,
+    },
 ];
 
 static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::LazyLock::new(|| {
@@ -743,6 +761,7 @@ pub fn input_rate(params: &ChannelParams) -> f64 {
         ChannelParams::Dvbt(p) => p.sample_rate_hz(),
         ChannelParams::Iridium(p) => iridium::input_rate(p),
         ChannelParams::Dect(p) => dect::input_rate(p),
+        ChannelParams::Lora(p) => lora::input_rate(p),
         other => descriptor_of(other.type_id()).map_or(0.0, |d| d.input_rate_hz),
     }
 }
@@ -776,12 +795,12 @@ mod tests {
     use sdrmm_wire::{
         AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, AtvColor, AtvParams,
         ChannelParams, CwSkimmerParams, DabParams, DatvParams, DectParams, DmrParams, DpmrParams,
-        DrmParams, DscParams, DstarParams, ErmesParams, FlexParams, FreeDvParams, GnssParams,
-        HfdlParams, IdentParams, IlsParams, InmarsatAeroParams, InmarsatStdcParams, IridiumParams,
-        LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NxdnParams, P25Params,
-        PocsagParams, PskParams, RadioClockParams, RadiosondeParams, RttyParams, SelcallParams,
-        SsbParams, SstvParams, Vdl2Params, VorParams, WefaxParams, WfmParams, WsjtParams,
-        WsprParams, YsfParams,
+        DrmParams, DscParams, DstarParams, EotParams, ErmesParams, FlexParams, FreeDvParams,
+        GnssParams, HfdlParams, IdentParams, IlsParams, InmarsatAeroParams, InmarsatStdcParams,
+        IridiumParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NxdnParams,
+        P25Params, PocsagParams, PskParams, RadioClockParams, RadiosondeParams, RttyParams,
+        SelcallParams, SsbParams, SstvParams, Vdl2Params, VorParams, WefaxParams, WfmParams,
+        WsjtParams, WsprParams, YsfParams,
     };
 
     use super::*;
@@ -797,6 +816,7 @@ mod tests {
             "pocsag" => ChannelParams::Pocsag(PocsagParams::default()),
             "flex" => ChannelParams::Flex(FlexParams::default()),
             "ermes" => ChannelParams::Ermes(ErmesParams::default()),
+            "eot" => ChannelParams::Eot(EotParams::default()),
             "adsb" => ChannelParams::Adsb(AdsbParams::default()),
             "ais" => ChannelParams::Ais(AisParams::default()),
             "aprs" => ChannelParams::Aprs(AprsParams::default()),
@@ -839,6 +859,7 @@ mod tests {
             "lrpt" => ChannelParams::Lrpt(LrptParams::default()),
             "wefax" => ChannelParams::Wefax(WefaxParams::default()),
             "radiosonde" => ChannelParams::Radiosonde(RadiosondeParams::default()),
+            "lora" => ChannelParams::Lora(sdrmm_wire::LoraParams::default()),
             other => panic!("unexpected type id {other}"),
         }
     }
@@ -887,7 +908,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 50);
+        assert_eq!(all.len(), 52);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -900,6 +921,7 @@ mod tests {
                 "pocsag",
                 "flex",
                 "ermes",
+                "eot",
                 "adsb",
                 "ais",
                 "aprs",
@@ -942,6 +964,7 @@ mod tests {
                 "lrpt",
                 "wefax",
                 "radiosonde",
+                "lora",
             ])
         );
         for d in &all {
@@ -952,7 +975,7 @@ mod tests {
                 "ssb" => (3_000.0, 48_000.0),
                 "wfm" => (200_000.0, 240_000.0),
                 "pocsag" => (12_500.0, 24_000.0),
-                "flex" | "ermes" => (12_500.0, 48_000.0),
+                "flex" | "ermes" | "eot" => (12_500.0, 48_000.0),
                 "adsb" => (2_000_000.0, 2_400_000.0),
                 "ais" => (25_000.0, 48_000.0),
                 "aprs" => (12_500.0, 48_000.0),
@@ -989,6 +1012,7 @@ mod tests {
                 "lrpt" => (140_000.0, 288_000.0),
                 "wefax" => (1_600.0, 12_000.0),
                 "radiosonde" => (20_000.0, 48_000.0),
+                "lora" => (125_000.0, 250_000.0),
                 other => panic!("unexpected type id {other}"),
             };
             assert_eq!(d.bandwidth_hz, bandwidth, "{}", d.type_id);

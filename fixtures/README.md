@@ -43,8 +43,8 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 
 ## Committed fixtures
 
-These twenty-six pairs are not regenerated: thirteen are recordings, two are frozen synthetic waveforms,
-and eleven are reference waveforms from generators that are independent of the Rust modulators.
+These thirty-three pairs are not regenerated: nineteen are recordings, two are frozen synthetic waveforms,
+and twelve are reference waveforms from generators that are independent of the Rust modulators.
 They retain cases that the current generators do not reproduce.
 
 `cargo xtask excerpt` trims a SigMF pair, WAV, or raw `cu8`/`cs8`/`cs16`/`cf32` capture. It shifts
@@ -66,6 +66,13 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `inmarsat_stdc_egc_24k` | 24 k | `inmarsat_stdc` @ +216 Hz | NCS bulletin board for frame 5987 (LES 144), an LES 104 announcement, the signalling channel |
 | `inmarsat_aero_offair_48k` | 48 k | `inmarsat_aero` @ 0 Hz | 600 bps P channel, `HL8217` `[_d]` |
 | `iridium_prbs15_250k` | 250 k | `iridium` @ 0 Hz | one downlink burst whose payload holds the PRBS15 recurrence bit for bit |
+| `lora_rn2483_sf7_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | two RN2483 frames, SF7 CR 4/8, payload `deadbeef`, CRC ok |
+| `lora_epfl_sf7_strong_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0000967`, 32 dB |
+| `lora_epfl_sf7_offgrid_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0000158`, 34 dB |
+| `lora_epfl_sf7_weak_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0001413`, −6 dB |
+| `lora_epfl_sf10_500k` | 500 k | `lora` @ 0 Hz, 250 kHz | SF10 CR 4/5, 19 bytes from a drone, 6 dB |
+| `lora_epfl_sf10_weak_500k` | 500 k | `lora` @ 0 Hz, 250 kHz | SF10 CR 4/5, 19 bytes from a drone, −14 dB |
+| `lora_grlorasdr_sf7_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | gr-lora_sdr transmitter, SF7 sync 0x12, `sdrflex lora fixture` twice |
 | `dsc_offair_8k` | 8 k | `dsc` @ 0 Hz | Lyngby Radio `002191000` acknowledging a test call from `231700000` |
 | `radio_clock_dcf77_offair_2k` | 2 k | `radio_clock` / DCF77 @ 0 Hz | 2026-10-03 22:04 CEST |
 | `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
@@ -207,6 +214,21 @@ test data), as vendored by xng: downconverted to 250 kHz and trimmed to 32 ms. T
 IQ was scaled to `cf32_le`; the annotation pins the source SHA-256.
 `iridium::tests::demodulates_the_gr_iridium_reference_burst` reads it directly.
 
+### LoRa: `lora_rn2483_sf7_250k`
+
+Two frames from a Microchip RN2483 in gr-lora's example trace
+(`usrp-868.1-sf7-cr4-bw125-crc-0`, CC0), shifted from 868.0 to 868.1 MHz and resampled from
+1 MHz to 250 kHz. The annotation pins the source SHA-256.
+`lora::tests::a_real_rn2483_capture_decodes_both_frames` reads it directly.
+
+`lora_epfl_*` are single frames from the EPFL LoRaIQ dataset (CC BY 4.0,
+zenodo.org/records/17708397), recorded by USRP-2920 rooftop receivers at 862.5 MHz with the
+transmitted payload known. The SF10 frames are trimmed around the frame. They cover cases real
+transmitters exposed: a one bin one chip offset after coarse sync, a half bin bias from folded sync
+symbols, and timing over a long frame. `lora::tests::real_epfl_frames_decode_from_strong_to_near_the_sensitivity_limit`
+reads them directly. `lora_grlorasdr_sf7_250k` is gr-lora_sdr's own transmitter output from the
+sdr-flex repository (CC0), so the encoder is independent of ours.
+
 ### Public receivers: `dsc_offair_8k`, `radio_clock_*_offair_2k`, `flex_p2000_offair_48k`
 
 Excerpts of `cargo xtask net-capture` recordings from public KiwiSDRs and a public SpyServer, made
@@ -235,3 +257,9 @@ Not IQ: 196,864 hard QPSK symbol bits, packed MSB first, from this receiver's de
 2018 Meteor-M N2 pass on 137.9 MHz (72k QPSK). They hold VCDUs `09BF68` to `09BF73`: one full
 MCU row of APIDs 64, 65 and 68. The source IQ is sigidwiki's LRPT sample
 (`LRPT_16-29-02_137900kHz.wav`), which states no license. `lrpt::tests::a_recorded_meteor_m2_row_decodes_cleanly` reads it.
+
+### End-of-Train: `eot/pyeot_demo3_48k.wav`
+
+Not IQ: PyEOT's `demo3eot.wav`, unmodified, 2.6 s of FM-discriminator audio from 457.9375 MHz
+with three rear-unit packets. GPL-3.0, see `eot/README.md`. The test FM-modulates it at ±3 kHz.
+`eot::tests::decodes_three_rear_units_from_an_off_air_recording` reads it.

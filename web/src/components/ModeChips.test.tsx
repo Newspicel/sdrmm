@@ -1,7 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ChannelParams } from "../lib/types";
+import { loraKeysShown } from "./LoraKeysChip";
 import { bandwidthOptions, ModeChips, serviceOptions } from "./ModeChips";
+import {
+  blankLoraKey,
+  LORA_CUSTOM,
+  loraKeyComplete,
+  loraPresetOf,
+  withLoraKeyText,
+  withLoraPreset,
+} from "./modeOptions";
 
 function render(params: ChannelParams): string {
   return renderToStaticMarkup(<ModeChips params={params} limits={[]} onParams={() => undefined} />);
@@ -73,6 +82,31 @@ describe("ModeChips", () => {
     expect(render({ type: "drm", settings: {} })).toContain("Service");
   });
 
+  it("shows the LoRa modem, keys and a matching preset", () => {
+    const html = render({ type: "lora", settings: {} });
+    expect(html).toContain('aria-label="LoRa bandwidth"');
+    expect(html).toContain("125 kHz");
+    expect(html).toContain('aria-label="Spreading factor"');
+    expect(html).toContain("built-in");
+    expect(html).toContain("Custom");
+    expect(html).not.toContain('aria-label="Implicit header coding rate"');
+    const fast = render({
+      type: "lora",
+      settings: { bandwidth: "khz250", spreading_factor: "sf11", protocol: "meshtastic" },
+    });
+    expect(fast).toContain("LongFast");
+  });
+
+  it("adds coding rate and CRC chips for an implicit header", () => {
+    const html = render({
+      type: "lora",
+      settings: { implicit_header: { length: 12, coding_rate: "4/8", crc: false } },
+    });
+    expect(html).toContain('aria-label="Implicit header coding rate"');
+    expect(html).toContain("4/8");
+    expect(html).toContain('aria-label="Implicit header payload carries a CRC"');
+  });
+
   it("renders nothing for modes without settings", () => {
     expect(render({ type: "m17", settings: {} })).toBe("");
   });
@@ -104,5 +138,45 @@ describe("serviceOptions", () => {
 
   it("keeps an unknown chosen service", () => {
     expect(serviceOptions(status, 9).at(-1)).toEqual({ value: "9", label: "9" });
+  });
+});
+
+describe("LoRa presets", () => {
+  it("sets modem and protocol but keeps keys", () => {
+    const keys = [blankLoraKey("lorawan_app_key")];
+    const next = withLoraPreset({ keys }, "meshcore_EU");
+    expect(next).toEqual({
+      keys,
+      bandwidth: "khz62_5",
+      spreading_factor: "sf8",
+      protocol: "meshcore",
+      iq: "normal",
+    });
+    expect(loraPresetOf(next)).toBe("meshcore_EU");
+    expect(loraPresetOf({ ...next, iq: "both" })).toBe(LORA_CUSTOM);
+    expect(withLoraPreset(next, "unknown")).toBe(next);
+  });
+});
+
+describe("LoRa keys", () => {
+  it("counts only what was added", () => {
+    expect(loraKeysShown([])).toBe("built-in");
+    expect(loraKeysShown([blankLoraKey("meshtastic_channel")])).toBe("+1");
+  });
+
+  it("needs the fields the decoder cannot do without", () => {
+    const open = withLoraKeyText(blankLoraKey("meshtastic_channel"), "name", "Hike");
+    expect(loraKeyComplete(open)).toBe(true);
+    const tag = blankLoraKey("meshcore_channel");
+    expect(loraKeyComplete(withLoraKeyText(tag, "name", "#"))).toBe(false);
+    expect(loraKeyComplete(withLoraKeyText(tag, "name", "#ham"))).toBe(true);
+    expect(loraKeyComplete(withLoraKeyText(tag, "name", "Club"))).toBe(false);
+    const session = withLoraKeyText(blankLoraKey("lorawan_session"), "dev_addr", "26011BDA");
+    expect(loraKeyComplete(session)).toBe(false);
+    expect(
+      loraKeyComplete(
+        withLoraKeyText(withLoraKeyText(session, "nwk_s_key", "00"), "app_s_key", "11"),
+      ),
+    ).toBe(true);
   });
 });

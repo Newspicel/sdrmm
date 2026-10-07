@@ -1,3 +1,10 @@
+import {
+  LORA_INTEGRITY_LABELS,
+  LORA_PROTOCOL_LABELS,
+  LORAWAN_TYPE_LABELS,
+  MESHCORE_TYPE_LABELS,
+  meshtasticNode,
+} from "../lib/lora";
 import type {
   AprsPacket,
   DataLinkMessage,
@@ -5,6 +12,13 @@ import type {
   DecoderKind,
   DectFrame,
   DvFrame,
+  EotBattery,
+  LoraFrame,
+  LorawanFrame,
+  MeshcoreContent,
+  MeshcorePacket,
+  MeshtasticContent,
+  MeshtasticPacket,
 } from "../lib/types";
 import { hex5 } from "./decoderLog";
 import {
@@ -20,7 +34,7 @@ import {
   modulationLabel,
   signalFrequency,
 } from "./decoderViews";
-import { DECT_CIPHER_LABELS } from "./eventFacts";
+import { DECT_CIPHER_LABELS, hotCommand } from "./eventFacts";
 import { formatHz } from "./format";
 import { SSTV_MODE_LABELS } from "./sstvModes";
 import {
@@ -123,6 +137,37 @@ const DETAIL: {
       ["Repaired", p.errors_corrected > 0 ? String(p.errors_corrected) : undefined],
     ]),
     body: p.text || null,
+  }),
+
+  eot: (m) => ({
+    fields: fields(
+      m.report.unit === "head"
+        ? [
+            ["Unit", "Head (HOT)"],
+            ["Address", String(m.unit_address)],
+            ["Command", hotCommand(m.report)],
+            ["Copies", `${m.report.copies}/3`],
+            ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
+            ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
+          ]
+        : [
+            ["Unit", "Rear (EOT)"],
+            ["Address", String(m.unit_address)],
+            ["Brake pipe", `${m.report.pressure_psig} psig`],
+            ["Motion", flag(m.report.motion)],
+            ["Marker light", m.report.marker_light ? "on" : "off"],
+            ["Marker battery", m.report.marker_battery_low ? "low" : "ok"],
+            ["Battery", EOT_BATTERY_LABELS[m.report.battery]],
+            ["Charge", `${m.report.battery_charge_pct}%`],
+            ["Valve circuit", m.report.valve_ok ? "ok" : "fail"],
+            ["Turbine", flag(m.report.turbine)],
+            ["Arming", m.report.arming],
+            ["Message type", String(m.report.message_type)],
+            ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
+            ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
+          ],
+    ),
+    body: null,
   }),
 
   adsb: (a) => ({
@@ -520,6 +565,7 @@ const DETAIL: {
   hfdl: dataLinkDetail,
   iridium: dataLinkDetail,
   dect: dectDetail,
+  lora: loraDetail,
   apt: (p) => ({
     fields: fields([
       ["Channels", avhrrChannels(p)],
@@ -870,6 +916,251 @@ function count(value: number | undefined): string | undefined {
   return value ? String(value) : undefined;
 }
 
+type Rows = (readonly [string, string | null | undefined])[];
+
+const MESHCORE_ROUTES: Record<MeshcorePacket["route"], string> = {
+  transport_flood: "flood with transport codes",
+  flood: "flood",
+  direct: "direct",
+  transport_direct: "direct with transport codes",
+};
+
+function loraDetail(frame: LoraFrame): EventDetail {
+  const decoded = frame.decoded;
+  const rows: Rows = [
+    ["Protocol", decoded == null ? undefined : LORA_PROTOCOL_LABELS[decoded.protocol]],
+    ["Spreading factor", `SF${frame.spreading_factor}`],
+    ["Bandwidth", formatHz(frame.bandwidth_hz)],
+    ["Coding rate", frame.coding_rate],
+    ["Sync word", hex(frame.sync_word, 2)],
+    ["Header", frame.implicit_header ? "implicit" : "explicit"],
+    ["Low data rate", frame.low_data_rate ? "on" : undefined],
+    ["IQ", frame.inverted_iq ? "inverted" : "normal"],
+    ["Integrity", LORA_INTEGRITY_LABELS[frame.integrity]],
+    ["FEC repaired", frame.fec_corrected > 0 ? String(frame.fec_corrected) : undefined],
+    ["SNR", `${signed(frame.snr_db, 1)} dB`],
+    ["Frequency error", `${signed(frame.frequency_error_hz, 0)} Hz`],
+  ];
+  let body: string | null = null;
+  if (decoded?.protocol === "lorawan") {
+    rows.push(...lorawanRows(decoded));
+  } else if (decoded?.protocol === "meshtastic") {
+    rows.push(...meshtasticRows(decoded));
+    body = decoded.content?.type === "text" ? decoded.content.text : null;
+  } else if (decoded?.protocol === "meshcore") {
+    rows.push(...meshcoreRows(decoded));
+    body = decoded.content.type === "group_text" ? (decoded.content.text ?? null) : null;
+  }
+  rows.push(["Payload", frame.payload]);
+  return { fields: fields(rows), body: body || null };
+}
+
+function lorawanRows(frame: LorawanFrame): Rows {
+  return [
+    ["Type", LORAWAN_TYPE_LABELS[frame.message_type]],
+    ["DevAddr", frame.dev_addr],
+    ["DevEUI", frame.dev_eui],
+    ["JoinEUI", frame.join_eui],
+    ["FCnt", frame.f_cnt == null ? undefined : String(frame.f_cnt)],
+    ["FPort", frame.f_port == null ? undefined : String(frame.f_port)],
+    ["MIC", frame.mic_ok == null ? frame.mic : `${frame.mic} ${frame.mic_ok ? "ok" : "failed"}`],
+    ["ADR", flag(frame.adr)],
+    ["ADR ack request", flag(frame.adr_ack_req)],
+    ["Ack", flag(frame.ack)],
+    ["Pending", flag(frame.pending_or_class_b)],
+    ["MAC commands", (frame.mac_commands ?? []).join(", ")],
+    ["FRMPayload", frame.frm_payload],
+    ["Decrypted", frame.decrypted],
+    ["DevNonce", frame.dev_nonce == null ? undefined : String(frame.dev_nonce)],
+    ["JoinNonce", frame.join_nonce == null ? undefined : String(frame.join_nonce)],
+    ["NetID", frame.net_id],
+    ["RX1 DR offset", frame.rx1_dr_offset == null ? undefined : String(frame.rx1_dr_offset)],
+    ["RX2 data rate", frame.rx2_data_rate == null ? undefined : `DR${frame.rx2_data_rate}`],
+    ["RX delay", frame.rx_delay_s == null ? undefined : `${frame.rx_delay_s} s`],
+    ["Channels", (frame.cf_list_hz ?? []).map(formatHz).join(", ")],
+  ];
+}
+
+function meshtasticRows(packet: MeshtasticPacket): Rows {
+  return [
+    ["From", meshtasticNode(packet.from)],
+    ["To", meshtasticNode(packet.to)],
+    ["Packet ID", hex(packet.id, 8)],
+    ["Channel", packet.channel ?? hex(packet.channel_hash, 2)],
+    ["Encryption", packet.encryption],
+    ["Port", packet.port_name ?? (packet.port == null ? undefined : String(packet.port))],
+    ["Hops", `${packet.hop_start - packet.hop_limit} of ${packet.hop_start}`],
+    ["Want ack", packet.want_ack ? "yes" : undefined],
+    ["Via MQTT", packet.via_mqtt ? "yes" : undefined],
+    ["Next hop", packet.next_hop === 0 ? undefined : hex(packet.next_hop, 2)],
+    ["Relay", packet.relay_node === 0 ? undefined : hex(packet.relay_node, 2)],
+    ["Request", packet.request_id == null ? undefined : hex(packet.request_id, 8)],
+    ["Reply to", packet.reply_id == null ? undefined : hex(packet.reply_id, 8)],
+    ...(packet.content == null ? [] : meshtasticContentRows(packet.content)),
+  ];
+}
+
+function meshtasticContentRows(content: MeshtasticContent): Rows {
+  switch (content.type) {
+    case "text":
+      return [];
+    case "position":
+      return [
+        ["Position", position(content.lat, content.lon)],
+        ["Altitude", content.altitude_m == null ? undefined : `${content.altitude_m} m`],
+        ["Satellites", content.satellites == null ? undefined : String(content.satellites)],
+        [
+          "Ground speed",
+          content.ground_speed_kmh == null ? undefined : `${content.ground_speed_kmh} km/h`,
+        ],
+        ["Fix time", unixTime(content.time)],
+        [
+          "Precision",
+          content.precision_bits == null ? undefined : `${content.precision_bits} bits`,
+        ],
+      ];
+    case "node_info":
+      return [
+        ["Node", content.id],
+        ["Long name", content.long_name],
+        ["Short name", content.short_name],
+        ["Hardware", content.hw_model == null ? undefined : String(content.hw_model)],
+        ["Role", content.role == null ? undefined : String(content.role)],
+        ["Licensed", content.licensed ? "yes" : undefined],
+        ["Public key", content.public_key],
+      ];
+    case "telemetry":
+      return [
+        ["Telemetry", content.kind],
+        ["Time", unixTime(content.time)],
+        ...content.metrics.map((metric) => [metric.name, String(metric.value)] as const),
+      ];
+    case "routing":
+      return [
+        ["Routing", content.error ?? "ack"],
+        ["Route", (content.route ?? []).map(meshtasticNode).join(" → ")],
+      ];
+    case "traceroute":
+      return [
+        ["Route", hopsWithSnr(content.route, content.snr_towards_db)],
+        ["Route back", hopsWithSnr(content.route_back, content.snr_back_db)],
+      ];
+    case "neighbor_info":
+      return [
+        ["Node", meshtasticNode(content.node)],
+        [
+          "Neighbors",
+          content.neighbors
+            .map((neighbor) => `${meshtasticNode(neighbor.node)} ${signed(neighbor.snr_db, 1)} dB`)
+            .join(", "),
+        ],
+      ];
+    case "waypoint":
+      return [
+        ["Waypoint", content.name],
+        ["Description", content.description],
+        ["Position", position(content.lat, content.lon)],
+        ["Expires", unixTime(content.expire)],
+      ];
+    case "map_report":
+      return [
+        ["Long name", content.long_name],
+        ["Short name", content.short_name],
+        ["Firmware", content.firmware_version],
+        ["Position", position(content.lat, content.lon)],
+        ["Altitude", content.altitude_m == null ? undefined : `${content.altitude_m} m`],
+        ["Online nodes", content.online_nodes == null ? undefined : String(content.online_nodes)],
+      ];
+    case "data":
+      return [["Data", content.bytes]];
+  }
+}
+
+function hopsWithSnr(route: readonly number[], snrDb: readonly number[]): string {
+  return route
+    .map((node, index) => {
+      const snr = snrDb[index];
+      return snr == null ? meshtasticNode(node) : `${meshtasticNode(node)} (${signed(snr, 1)} dB)`;
+    })
+    .join(" → ");
+}
+
+function meshcoreRows(packet: MeshcorePacket): Rows {
+  return [
+    ["Route", MESHCORE_ROUTES[packet.route]],
+    ["Type", MESHCORE_TYPE_LABELS[packet.payload_type]],
+    ["Version", String(packet.version)],
+    ["Transport codes", (packet.transport_codes ?? []).map((code) => hex(code, 4)).join(", ")],
+    ["Path", (packet.path ?? []).join(" → ")],
+    ...meshcoreContentRows(packet.content),
+  ];
+}
+
+function meshcoreContentRows(content: MeshcoreContent): Rows {
+  switch (content.type) {
+    case "advert":
+      return [
+        ["Name", content.name],
+        ["Node type", content.node_type],
+        ["Position", position(content.lat, content.lon)],
+        ["Advertised", unixTime(content.timestamp)],
+        ["Public key", content.public_key],
+        ["Signature", content.signature_ok ? "verified" : "failed"],
+      ];
+    case "group_text":
+      return [
+        ["Channel", content.channel ?? hex(content.channel_hash, 2)],
+        ["Sender", content.sender],
+        ["Sent", unixTime(content.timestamp)],
+      ];
+    case "group_data":
+      return [
+        ["Channel", content.channel ?? hex(content.channel_hash, 2)],
+        ["Data type", content.data_type == null ? undefined : hex(content.data_type, 4)],
+        ["Data", content.data],
+      ];
+    case "encrypted":
+      return [
+        ["Source", content.source],
+        ["Destination", content.destination],
+        ["MAC", content.mac],
+      ];
+    case "anon_request":
+      return [
+        ["Destination", content.destination],
+        ["Public key", content.public_key],
+      ];
+    case "ack":
+      return [["Checksum", hex(content.checksum, 8)]];
+    case "trace":
+      return [
+        ["Tag", hex(content.tag, 8)],
+        ["Auth code", hex(content.auth_code, 8)],
+        ["Flags", hex(content.flags, 2)],
+        ["Hops", content.hops.join(" → ")],
+      ];
+    case "control":
+      return [
+        ["Subtype", hex(content.subtype, 2)],
+        ["Data", content.data],
+      ];
+    case "multipart":
+      return [
+        ["Remaining", String(content.remaining)],
+        ["Inner type", hex(content.inner_type, 2)],
+        ["Data", content.data],
+      ];
+    case "raw":
+      return [["Data", content.data]];
+  }
+}
+
+function unixTime(epochS: number | null | undefined): string | undefined {
+  return epochS == null || epochS === 0
+    ? undefined
+    : new Date(epochS * 1000).toISOString().replace(".000Z", "Z");
+}
+
 function hex4(value: number): string {
   return value.toString(16).toUpperCase().padStart(4, "0");
 }
@@ -883,6 +1174,13 @@ function fields(rows: readonly (readonly [string, string | null | undefined])[])
 function signed(value: number, digits: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
+
+const EOT_BATTERY_LABELS: Record<EotBattery, string> = {
+  not_monitored: "not monitored",
+  very_low: "very low",
+  low: "low",
+  ok: "ok",
+};
 
 function flag(value: boolean | null | undefined): string | undefined {
   return value == null ? undefined : value ? "yes" : "no";

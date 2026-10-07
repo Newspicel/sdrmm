@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { emptyTrail, extendTrail, type Trail } from "../trails";
-import type { AdsbMessage, AisMessage, AprsPacket, ChannelParams, RadiosondeFrame } from "../types";
+import type {
+  AdsbMessage,
+  AisMessage,
+  AprsPacket,
+  ChannelParams,
+  LoraFrame,
+  RadiosondeFrame,
+} from "../types";
 import {
   isStale,
   layerId,
@@ -60,6 +67,40 @@ function sonde(data: Partial<RadiosondeFrame>, over: Partial<Target> = {}): Targ
     },
     over,
   );
+}
+
+function meshcore(name: string | null, lat: number | null): Target {
+  const data: LoraFrame = {
+    spreading_factor: 8,
+    bandwidth_hz: 62_500,
+    coding_rate: "4/8",
+    sync_word: 0x12,
+    implicit_header: false,
+    low_data_rate: false,
+    inverted_iq: false,
+    integrity: "crc_ok",
+    fec_corrected: 0,
+    snr_db: 6.5,
+    frequency_error_hz: 0,
+    payload: "11",
+    decoded: {
+      protocol: "meshcore",
+      route: "flood",
+      payload_type: "advert",
+      version: 1,
+      content: {
+        type: "advert",
+        public_key: "0011223344",
+        timestamp: 1,
+        node_type: "repeater",
+        name,
+        lat,
+        lon: 8.25,
+        signature_ok: true,
+      },
+    },
+  };
+  return station({ kind: "lora", data }, { id: name ?? "00112233" });
 }
 
 function trailOf(...points: [number, number][]): Trail {
@@ -172,6 +213,20 @@ describe("targetFeature", () => {
   it("drops out-of-range sentinel positions", () => {
     expect(targetFeature(ais({ lat: 91, lon: 181 }))).toBeNull();
     expect(targetFeature(ais({ lat: 0, lon: 0 }))).not.toBeNull();
+  });
+});
+
+describe("LoRa targets", () => {
+  it("places a MeshCore advert by its name", () => {
+    expect(targetFeature(meshcore("Hilltop", 47.5))).toEqual({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [8.25, 47.5] },
+      properties: { id: "Hilltop", label: "Hilltop" },
+    });
+    expect(targetFeature(meshcore("Hilltop", null))).toBeNull();
+    expect(targetLabel(meshcore(null, 47.5))).toBe("00112233");
+    expect(mapKindsOf(["lora", "dect"])).toEqual(["lora"]);
+    expect(targetDetail(meshcore("Hilltop", 47.5)).rows).toContainEqual(["Protocol", "MeshCore"]);
   });
 });
 
