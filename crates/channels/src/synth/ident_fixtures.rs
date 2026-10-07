@@ -279,6 +279,14 @@ pub const FIXTURES: &[Fixture] = &[
         ANY,
     ),
     named(
+        "dect_call_2m304",
+        2_304_000.0,
+        0.0,
+        1_897_344_000.0,
+        "dect",
+        ANY,
+    ),
+    named(
         "sstv_robot36_48k",
         48_000.0,
         4_000.0,

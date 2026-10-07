@@ -16,6 +16,14 @@ export const DECT_BANDS: Options<NonNullable<ChannelParamsOf<"dect">["band"]>> =
   { value: "eu", label: "EU" },
   { value: "us", label: "US" },
 ];
+export const DECT_SPANS: Options<NonNullable<ChannelParamsOf<"dect">["span"]>> = [
+  { value: "carrier", label: "Carrier", title: "One carrier at 2.304 MS/s" },
+  {
+    value: "band",
+    label: "Band",
+    title: "Every carrier at once. Tune to the band centre, radio at 20 MS/s (EU) or 10 MS/s (US)",
+  },
+];
 export const DECT_SIDES: Options<NonNullable<ChannelParamsOf<"dect">["sides"]>> = [
   { value: "both", label: "Both" },
   { value: "rfp", label: "Base" },

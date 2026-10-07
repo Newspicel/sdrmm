@@ -933,6 +933,7 @@ pub enum DectUpdate {
     Encryption,
     Paging,
     Bearer,
+    Voice,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -996,6 +997,79 @@ pub enum DectCapability {
     AccessRightsRequests,
     ExternalHandover,
     ConnectionHandover,
+    CrfpEncryption,
+    RelayV2,
+    ProlongedPreamble,
+    FrequencyReplacement,
+    MacSuspendResume,
+    IpqService,
+    ExtendedFpInfo2,
+    FMmsInterworking,
+    BasicOdap,
+    GmeTransport,
+    IpRoaming,
+    Ethernet,
+    TokenRing,
+    Ip,
+    Ppp,
+    V24,
+    RapPart1,
+    IsdnIntermediateSystem,
+    GpsSynchronized,
+    TpuiRegistration,
+    EmergencyCall,
+    AsymmetricBearers,
+    Lrms,
+    DataServiceProfileD,
+    DprsClass3Or4,
+    DprsClass2,
+    IsdnDataServices,
+    LongSlot640,
+    LongSlot672,
+    EuMux,
+    IpfAdvanced,
+    SipfChannel,
+    GfChannel,
+    UleWrsDelayedPaging,
+    ExtendedFpInfo3,
+    NoEmissionAnyCarrier,
+    WidebandVoice,
+    PacketData1,
+    PacketData2,
+    PacketData3,
+    PacketData4,
+    PacketData5,
+    ExtendedWidebandVoice,
+    PermanentClir,
+    ThirdPartyConference,
+    IntrusionCall,
+    CallDeflection,
+    MultipleLines,
+    NoEmission,
+    NgDect5,
+    UNemo,
+    UNemoOpportunistic,
+    UlePhase1,
+    UlePhase1Revised,
+    UlePhase2,
+    UlePhase3,
+    ReKeying,
+    Dsaa2,
+    Dsc2,
+    LightData,
+    HalfSlotSecondHalf,
+    ModulationBpsk,
+    ModulationQpsk,
+    Modulation8psk,
+    Modulation16qam,
+    Modulation64qam,
+    HighLevelAField,
+    WirelessMicrophone,
+    AudioMicrophone,
+    AudioLowLatencyMicrophone,
+    AudioSpeaker,
+    AudioHighResolution,
+    AudioGamingHeadset,
 }
 
 impl DectCapability {
@@ -1036,6 +1110,79 @@ impl DectCapability {
             Self::AccessRightsRequests => "access rights requests",
             Self::ExternalHandover => "external handover",
             Self::ConnectionHandover => "connection handover",
+            Self::CrfpEncryption => "CRFP encryption",
+            Self::RelayV2 => "relay stations V2",
+            Self::ProlongedPreamble => "prolonged preamble",
+            Self::FrequencyReplacement => "frequency replacement",
+            Self::MacSuspendResume => "MAC suspend and resume",
+            Self::IpqService => "IPQ service",
+            Self::ExtendedFpInfo2 => "extended FP info part 2",
+            Self::FMmsInterworking => "F-MMS interworking",
+            Self::BasicOdap => "basic ODAP",
+            Self::GmeTransport => "DPRS media encapsulation",
+            Self::IpRoaming => "IP roaming",
+            Self::Ethernet => "Ethernet",
+            Self::TokenRing => "Token Ring",
+            Self::Ip => "IP",
+            Self::Ppp => "PPP",
+            Self::V24 => "V.24",
+            Self::RapPart1 => "RAP part 1",
+            Self::IsdnIntermediateSystem => "ISDN intermediate system",
+            Self::GpsSynchronized => "GPS synchronized",
+            Self::TpuiRegistration => "location registration with TPUI",
+            Self::EmergencyCall => "emergency call",
+            Self::AsymmetricBearers => "asymmetric bearers",
+            Self::Lrms => "LRMS",
+            Self::DataServiceProfileD => "data service profile D",
+            Self::DprsClass3Or4 => "DPRS class 3 or 4",
+            Self::DprsClass2 => "DPRS class 2",
+            Self::IsdnDataServices => "ISDN data services",
+            Self::LongSlot640 => "long slot 640",
+            Self::LongSlot672 => "long slot 672",
+            Self::EuMux => "E+U-type mux",
+            Self::IpfAdvanced => "IPF advanced",
+            Self::SipfChannel => "SIPF channel",
+            Self::GfChannel => "GF channel",
+            Self::UleWrsDelayedPaging => "ULE relay delayed paging",
+            Self::ExtendedFpInfo3 => "extended FP info part 3",
+            Self::NoEmissionAnyCarrier => "no-emission on any carrier",
+            Self::WidebandVoice => "NG-DECT wideband voice",
+            Self::PacketData1 => "packet data category 1",
+            Self::PacketData2 => "packet data category 2",
+            Self::PacketData3 => "packet data category 3",
+            Self::PacketData4 => "packet data category 4",
+            Self::PacketData5 => "packet data category 5",
+            Self::ExtendedWidebandVoice => "extended wideband voice",
+            Self::PermanentClir => "permanent CLIR",
+            Self::ThirdPartyConference => "third party conference",
+            Self::IntrusionCall => "intrusion call",
+            Self::CallDeflection => "call deflection",
+            Self::MultipleLines => "multiple lines",
+            Self::NoEmission => "no-emission mode",
+            Self::NgDect5 => "NG-DECT part 5",
+            Self::UNemo => "U-NEMo",
+            Self::UNemoOpportunistic => "U-NEMo opportunistic transfer",
+            Self::UlePhase1 => "ULE phase 1",
+            Self::UlePhase1Revised => "ULE phase 1 v1.2",
+            Self::UlePhase2 => "ULE phase 2",
+            Self::UlePhase3 => "ULE phase 3",
+            Self::ReKeying => "re-keying and early encryption",
+            Self::Dsaa2 => "DSAA2 authentication",
+            Self::Dsc2 => "DSC2 ciphering",
+            Self::LightData => "light data services",
+            Self::HalfSlotSecondHalf => "half slot setup on second half",
+            Self::ModulationBpsk => "BPSK",
+            Self::ModulationQpsk => "up to QPSK",
+            Self::Modulation8psk => "up to 8PSK",
+            Self::Modulation16qam => "up to 16QAM",
+            Self::Modulation64qam => "up to 64QAM",
+            Self::HighLevelAField => "high level modulation in A-field",
+            Self::WirelessMicrophone => "wireless microphone profile 1",
+            Self::AudioMicrophone => "advanced audio microphone",
+            Self::AudioLowLatencyMicrophone => "advanced audio low latency microphone",
+            Self::AudioSpeaker => "advanced audio speaker or headphone",
+            Self::AudioHighResolution => "advanced audio high resolution headphone",
+            Self::AudioGamingHeadset => "advanced audio gaming headset",
         }
     }
 }
@@ -1082,6 +1229,24 @@ pub struct DectSecurity {
     pub last_command: Option<String>,
     #[serde(default)]
     pub encryption_events: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dsaa2_supported: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dsc2_supported: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DectVoice {
+    pub frames: u32,
+    pub playing: bool,
+    #[serde(default)]
+    pub x_crc_errors: u32,
+    #[serde(default)]
+    pub unsynced: u32,
+    #[serde(default)]
+    pub encrypted: u32,
+    #[serde(default)]
+    pub late: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -1115,6 +1280,8 @@ pub struct DectFrame {
     pub pmid: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub handsets: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<DectVoice>,
     pub bursts: u32,
     pub crc_errors: u32,
     pub level_dbfs: f32,
@@ -1223,8 +1390,26 @@ fn dect_summary(f: &DectFrame) -> String {
             if cipher { "yes" } else { "no" }
         ));
     }
+    if f.security.dsaa2_supported == Some(true) || f.security.dsc2_supported == Some(true) {
+        parts.push(format!(
+            "DSAA2 {} · DSC2 {}",
+            if f.security.dsaa2_supported == Some(true) {
+                "yes"
+            } else {
+                "no"
+            },
+            if f.security.dsc2_supported == Some(true) {
+                "yes"
+            } else {
+                "no"
+            }
+        ));
+    }
     if f.security.cipher_state != DectCipherState::Clear {
         parts.push(f.security.cipher_state.label().to_owned());
+    }
+    if f.voice.is_some_and(|voice| voice.playing) {
+        parts.push("voice".to_owned());
     }
     parts.join(" · ")
 }

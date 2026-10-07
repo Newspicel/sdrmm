@@ -14330,7 +14330,80 @@
           "coms_service",
           "access_rights_requests",
           "external_handover",
-          "connection_handover"
+          "connection_handover",
+          "crfp_encryption",
+          "relay_v2",
+          "prolonged_preamble",
+          "frequency_replacement",
+          "mac_suspend_resume",
+          "ipq_service",
+          "extended_fp_info2",
+          "f_mms_interworking",
+          "basic_odap",
+          "gme_transport",
+          "ip_roaming",
+          "ethernet",
+          "token_ring",
+          "ip",
+          "ppp",
+          "v24",
+          "rap_part1",
+          "isdn_intermediate_system",
+          "gps_synchronized",
+          "tpui_registration",
+          "emergency_call",
+          "asymmetric_bearers",
+          "lrms",
+          "data_service_profile_d",
+          "dprs_class3_or4",
+          "dprs_class2",
+          "isdn_data_services",
+          "long_slot640",
+          "long_slot672",
+          "eu_mux",
+          "ipf_advanced",
+          "sipf_channel",
+          "gf_channel",
+          "ule_wrs_delayed_paging",
+          "extended_fp_info3",
+          "no_emission_any_carrier",
+          "wideband_voice",
+          "packet_data1",
+          "packet_data2",
+          "packet_data3",
+          "packet_data4",
+          "packet_data5",
+          "extended_wideband_voice",
+          "permanent_clir",
+          "third_party_conference",
+          "intrusion_call",
+          "call_deflection",
+          "multiple_lines",
+          "no_emission",
+          "ng_dect5",
+          "u_nemo",
+          "u_nemo_opportunistic",
+          "ule_phase1",
+          "ule_phase1_revised",
+          "ule_phase2",
+          "ule_phase3",
+          "re_keying",
+          "dsaa2",
+          "dsc2",
+          "light_data",
+          "half_slot_second_half",
+          "modulation_bpsk",
+          "modulation_qpsk",
+          "modulation8psk",
+          "modulation16qam",
+          "modulation64qam",
+          "high_level_a_field",
+          "wireless_microphone",
+          "audio_microphone",
+          "audio_low_latency_microphone",
+          "audio_speaker",
+          "audio_high_resolution",
+          "audio_gaming_headset"
         ]
       },
       "DectCipherState": {
@@ -14474,6 +14547,16 @@
           },
           "update": {
             "$ref": "#/components/schemas/DectUpdate"
+          },
+          "voice": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DectVoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -14592,6 +14675,9 @@
           },
           "sides": {
             "$ref": "#/components/schemas/DectSides"
+          },
+          "span": {
+            "$ref": "#/components/schemas/DectSpan"
           }
         }
       },
@@ -14619,6 +14705,18 @@
             "$ref": "#/components/schemas/DectCipherState"
           },
           "ciphering_supported": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "dsaa2_supported": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "dsc2_supported": {
             "type": [
               "boolean",
               "null"
@@ -14652,6 +14750,13 @@
           "pp"
         ]
       },
+      "DectSpan": {
+        "type": "string",
+        "enum": [
+          "carrier",
+          "band"
+        ]
+      },
       "DectUpdate": {
         "type": "string",
         "enum": [
@@ -14660,8 +14765,46 @@
           "capabilities",
           "encryption",
           "paging",
-          "bearer"
+          "bearer",
+          "voice"
         ]
+      },
+      "DectVoice": {
+        "type": "object",
+        "required": [
+          "frames",
+          "playing"
+        ],
+        "properties": {
+          "encrypted": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "frames": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "late": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "playing": {
+            "type": "boolean"
+          },
+          "unsynced": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "x_crc_errors": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "DeletedCount": {
         "type": "object",

@@ -39,6 +39,7 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 | `dcf77_2026_2k` | 2 k | `radio_clock` / DCF77 @ 0 Hz | 2026-08-15 12:34 CET, valid parity |
 | `gps_l1_ca_prn7_2m048` | 2.048 M | `gnss` / PRN 7 @ 0 Hz | +1 kHz Doppler, 158.3-chip code phase |
 | `dect_base_2m304` | 2.304 M | `dect` @ 0 Hz | RFPI `01234D5E6D`, class A, carrier 4, standard authentication and ciphering advertised |
+| `dect_call_2m304` | 2.304 M | `dect` @ 0 Hz | clear call on RFPI `01234D5E6D`: 1 kHz from the base, 600 Hz from the handset |
 
 ## Committed fixtures
 

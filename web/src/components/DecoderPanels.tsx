@@ -541,8 +541,9 @@ const DECT_CIPHER_STATE: Record<string, string> = {
   stopped: "encryption stopped",
 };
 
-function dectSupport(value: boolean | null): string {
-  return value === null ? "-" : value ? "yes" : "no";
+function dectSupport(value: boolean | null, second: boolean | null, name: string): string {
+  const base = value === null ? "-" : value ? "yes" : "no";
+  return second ? `${base} · ${name}` : base;
 }
 
 function DectRow({ station }: { station: DectStation }) {
@@ -558,12 +559,13 @@ function DectRow({ station }: { station: DectStation }) {
             : `${station.carrier} · ${formatHz(station.carrierHz)}`}
       </td>
       <td className={TABLE_CELL}>{station.slotPair === null ? "-" : String(station.slotPair)}</td>
-      <td className={TABLE_CELL}>{dectSupport(station.authentication)}</td>
-      <td className={TABLE_CELL}>{dectSupport(station.ciphering)}</td>
+      <td className={TABLE_CELL}>{dectSupport(station.authentication, station.dsaa2, "DSAA2")}</td>
+      <td className={TABLE_CELL}>{dectSupport(station.ciphering, station.dsc2, "DSC2")}</td>
       <td className={TABLE_CELL}>
         {DECT_CIPHER_STATE[station.cipherState] ?? station.cipherState}
       </td>
       <td className={TABLE_CELL}>{station.handsets === 0 ? "-" : String(station.handsets)}</td>
+      <td className={TABLE_CELL}>{station.voice ?? "-"}</td>
       <td className={TABLE_CELL}>{station.levelDbfs.toFixed(1)}</td>
       <td className={TABLE_CELL}>
         {station.bursts}
@@ -596,6 +598,7 @@ function DectView({ scope = {} }: { scope?: DecoderScope }) {
               <th className={TABLE_HEAD}>Cipher</th>
               <th className={TABLE_HEAD}>State</th>
               <th className={TABLE_HEAD}>Handsets</th>
+              <th className={TABLE_HEAD}>Voice</th>
               <th className={TABLE_HEAD}>
                 <Unit symbol="dBFS" />
               </th>

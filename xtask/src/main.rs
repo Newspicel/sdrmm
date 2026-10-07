@@ -1932,6 +1932,32 @@ fn wideband_fixtures(out: &mut Vec<Fixture>) {
             .to_string(),
     });
 
+    const DECT_CALL_FRAMES: usize = 100;
+    let base = synth::dect::tone(1_000.0, 0.3, DECT_CALL_FRAMES * 80);
+    let handset = synth::dect::tone(600.0, 0.3, DECT_CALL_FRAMES * 80);
+    let mut air = synth::dect::Air::carrier(DECT_CALL_FRAMES);
+    synth::dect::Call {
+        station: synth::dect::Station {
+            rfpi: 0x0001_234D_5E6D,
+            carrier: 4,
+            slot: 2,
+            ..synth::dect::Station::default()
+        },
+        pmid: 0x1_2345,
+        first_frame: 0,
+        base: &base,
+        handset: &handset,
+        grant_at: None,
+    }
+    .transmit(&mut air, DECT_CALL_FRAMES);
+    out.push(Fixture {
+        stem: "dect_call_2m304".to_string(),
+        iq: air.into_iq(),
+        rate: DECT_RATE,
+        note: "dect channel -> clear call on RFPI 01234D5E6D, 1 kHz from the base, 600 Hz from the handset"
+            .to_string(),
+    });
+
     const ATV_RATE: f64 = 2_400_000.0;
     let atv_params = sdrmm_wire::AtvParams::default();
     out.push(Fixture {

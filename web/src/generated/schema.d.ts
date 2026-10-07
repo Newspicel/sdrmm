@@ -4025,7 +4025,7 @@ export interface components {
         /** @enum {string} */
         DectBand: "eu" | "us";
         /** @enum {string} */
-        DectCapability: "extended_fp_info" | "double_duplex_bearer" | "double_slot" | "half_slot" | "full_slot" | "frequency_control" | "page_repetition" | "co_setup_on_dummy" | "cl_uplink" | "cl_downlink" | "basic_a_field_setup" | "advanced_a_field_setup" | "b_field_setup" | "cf_messages" | "in_minimum_delay" | "in_normal_delay" | "ip_error_detection" | "ip_error_correction" | "multibearer_connections" | "adpcm" | "gap_basic_speech" | "non_voice_circuit_switched" | "non_voice_packet_switched" | "standard_authentication" | "standard_ciphering" | "location_registration" | "sim_services" | "non_static_fixed_part" | "ciss_services" | "clms_service" | "coms_service" | "access_rights_requests" | "external_handover" | "connection_handover";
+        DectCapability: "extended_fp_info" | "double_duplex_bearer" | "double_slot" | "half_slot" | "full_slot" | "frequency_control" | "page_repetition" | "co_setup_on_dummy" | "cl_uplink" | "cl_downlink" | "basic_a_field_setup" | "advanced_a_field_setup" | "b_field_setup" | "cf_messages" | "in_minimum_delay" | "in_normal_delay" | "ip_error_detection" | "ip_error_correction" | "multibearer_connections" | "adpcm" | "gap_basic_speech" | "non_voice_circuit_switched" | "non_voice_packet_switched" | "standard_authentication" | "standard_ciphering" | "location_registration" | "sim_services" | "non_static_fixed_part" | "ciss_services" | "clms_service" | "coms_service" | "access_rights_requests" | "external_handover" | "connection_handover" | "crfp_encryption" | "relay_v2" | "prolonged_preamble" | "frequency_replacement" | "mac_suspend_resume" | "ipq_service" | "extended_fp_info2" | "f_mms_interworking" | "basic_odap" | "gme_transport" | "ip_roaming" | "ethernet" | "token_ring" | "ip" | "ppp" | "v24" | "rap_part1" | "isdn_intermediate_system" | "gps_synchronized" | "tpui_registration" | "emergency_call" | "asymmetric_bearers" | "lrms" | "data_service_profile_d" | "dprs_class3_or4" | "dprs_class2" | "isdn_data_services" | "long_slot640" | "long_slot672" | "eu_mux" | "ipf_advanced" | "sipf_channel" | "gf_channel" | "ule_wrs_delayed_paging" | "extended_fp_info3" | "no_emission_any_carrier" | "wideband_voice" | "packet_data1" | "packet_data2" | "packet_data3" | "packet_data4" | "packet_data5" | "extended_wideband_voice" | "permanent_clir" | "third_party_conference" | "intrusion_call" | "call_deflection" | "multiple_lines" | "no_emission" | "ng_dect5" | "u_nemo" | "u_nemo_opportunistic" | "ule_phase1" | "ule_phase1_revised" | "ule_phase2" | "ule_phase3" | "re_keying" | "dsaa2" | "dsc2" | "light_data" | "half_slot_second_half" | "modulation_bpsk" | "modulation_qpsk" | "modulation8psk" | "modulation16qam" | "modulation64qam" | "high_level_a_field" | "wireless_microphone" | "audio_microphone" | "audio_low_latency_microphone" | "audio_speaker" | "audio_high_resolution" | "audio_gaming_headset";
         /** @enum {string} */
         DectCipherState: "clear" | "requested" | "confirmed" | "active" | "stopped";
         DectFrame: {
@@ -4060,6 +4060,7 @@ export interface components {
             /** Format: int32 */
             transceivers?: number | null;
             update: components["schemas"]["DectUpdate"];
+            voice?: components["schemas"]["DectVoice"] | null;
         };
         DectIdentity: {
             arc: components["schemas"]["DectArc"];
@@ -4091,6 +4092,7 @@ export interface components {
         DectParams: {
             band?: components["schemas"]["DectBand"];
             sides?: components["schemas"]["DectSides"];
+            span?: components["schemas"]["DectSpan"];
         };
         DectSecurity: {
             authentication_supported?: boolean | null;
@@ -4098,6 +4100,8 @@ export interface components {
             cipher_key_index?: number | null;
             cipher_state: components["schemas"]["DectCipherState"];
             ciphering_supported?: boolean | null;
+            dsaa2_supported?: boolean | null;
+            dsc2_supported?: boolean | null;
             /** Format: int32 */
             encryption_events?: number;
             last_command?: string | null;
@@ -4107,7 +4111,22 @@ export interface components {
         /** @enum {string} */
         DectSides: "both" | "rfp" | "pp";
         /** @enum {string} */
-        DectUpdate: "identity" | "system_info" | "capabilities" | "encryption" | "paging" | "bearer";
+        DectSpan: "carrier" | "band";
+        /** @enum {string} */
+        DectUpdate: "identity" | "system_info" | "capabilities" | "encryption" | "paging" | "bearer" | "voice";
+        DectVoice: {
+            /** Format: int32 */
+            encrypted?: number;
+            /** Format: int32 */
+            frames: number;
+            /** Format: int32 */
+            late?: number;
+            playing: boolean;
+            /** Format: int32 */
+            unsynced?: number;
+            /** Format: int32 */
+            x_crc_errors?: number;
+        };
         DeletedCount: {
             /** Format: int64 */
             deleted: number;

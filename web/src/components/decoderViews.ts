@@ -60,7 +60,10 @@ export interface DectStation {
   slotPair: number | null;
   authentication: boolean | null;
   ciphering: boolean | null;
+  dsaa2: boolean | null;
+  dsc2: boolean | null;
   cipherState: string;
+  voice: "playing" | "muted" | null;
   handsets: number;
   bursts: number;
   crcErrors: number;
@@ -77,6 +80,11 @@ export function dectStations(records: readonly DecodedRecordOf<"dect">[]): DectS
     if (previous !== undefined && Date.parse(record.at) <= Date.parse(previous.at)) {
       continue;
     }
+    const voice = frame.voice ? (frame.voice.playing ? "playing" : "muted") : null;
+    if (previous !== undefined && frame.side === "pp") {
+      latest.set(key, { ...previous, voice: voice ?? previous.voice, at: record.at });
+      continue;
+    }
     latest.set(key, {
       key,
       rfpi: frame.identity?.rfpi ?? null,
@@ -86,7 +94,10 @@ export function dectStations(records: readonly DecodedRecordOf<"dect">[]): DectS
       slotPair: frame.slot_pair ?? null,
       authentication: frame.security.authentication_supported ?? null,
       ciphering: frame.security.ciphering_supported ?? null,
+      dsaa2: frame.security.dsaa2_supported ?? null,
+      dsc2: frame.security.dsc2_supported ?? null,
       cipherState: frame.security.cipher_state,
+      voice: voice ?? previous?.voice ?? null,
       handsets: (frame.handsets ?? []).length,
       bursts: frame.bursts,
       crcErrors: frame.crc_errors,
