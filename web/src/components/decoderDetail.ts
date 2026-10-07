@@ -5,6 +5,7 @@ import type {
   DecoderKind,
   DectFrame,
   DvFrame,
+  EotBattery,
 } from "../lib/types";
 import { hex5 } from "./decoderLog";
 import {
@@ -20,7 +21,7 @@ import {
   modulationLabel,
   signalFrequency,
 } from "./decoderViews";
-import { DECT_CIPHER_LABELS } from "./eventFacts";
+import { DECT_CIPHER_LABELS, hotCommand } from "./eventFacts";
 import { formatHz } from "./format";
 import { SSTV_MODE_LABELS } from "./sstvModes";
 import {
@@ -123,6 +124,37 @@ const DETAIL: {
       ["Repaired", p.errors_corrected > 0 ? String(p.errors_corrected) : undefined],
     ]),
     body: p.text || null,
+  }),
+
+  eot: (m) => ({
+    fields: fields(
+      m.report.unit === "head"
+        ? [
+            ["Unit", "Head (HOT)"],
+            ["Address", String(m.unit_address)],
+            ["Command", hotCommand(m.report)],
+            ["Copies", `${m.report.copies}/3`],
+            ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
+            ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
+          ]
+        : [
+            ["Unit", "Rear (EOT)"],
+            ["Address", String(m.unit_address)],
+            ["Brake pipe", `${m.report.pressure_psig} psig`],
+            ["Motion", flag(m.report.motion)],
+            ["Marker light", m.report.marker_light ? "on" : "off"],
+            ["Marker battery", m.report.marker_battery_low ? "low" : "ok"],
+            ["Battery", EOT_BATTERY_LABELS[m.report.battery]],
+            ["Charge", `${m.report.battery_charge_pct}%`],
+            ["Valve circuit", m.report.valve_ok ? "ok" : "fail"],
+            ["Turbine", flag(m.report.turbine)],
+            ["Arming", m.report.arming],
+            ["Message type", String(m.report.message_type)],
+            ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
+            ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
+          ],
+    ),
+    body: null,
   }),
 
   adsb: (a) => ({
@@ -798,6 +830,13 @@ function fields(rows: readonly (readonly [string, string | null | undefined])[])
 function signed(value: number, digits: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
+
+const EOT_BATTERY_LABELS: Record<EotBattery, string> = {
+  not_monitored: "not monitored",
+  very_low: "very low",
+  low: "low",
+  ok: "ok",
+};
 
 function flag(value: boolean | null | undefined): string | undefined {
   return value == null ? undefined : value ? "yes" : "no";

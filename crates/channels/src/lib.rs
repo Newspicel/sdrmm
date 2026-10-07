@@ -21,6 +21,7 @@ pub mod df;
 mod drm;
 mod dsc;
 mod dv;
+mod eot;
 mod ermes;
 mod flex;
 mod gnss;
@@ -93,6 +94,7 @@ pub use dv::{
     DmrChannel, DpmrChannel, DstarChannel, FreeDvChannel, M17Channel, NxdnChannel, P25Channel,
     YsfChannel,
 };
+pub use eot::EotChannel;
 pub use ermes::ErmesChannel;
 pub use flex::FlexChannel;
 pub use gnss::GnssChannel;
@@ -164,6 +166,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Pocsag(p) => pocsag::occupied_band(p),
         ChannelParams::Flex(p) => flex::occupied_band(p),
         ChannelParams::Ermes(p) => ermes::occupied_band(p),
+        ChannelParams::Eot(p) => eot::occupied_band(p),
         ChannelParams::Adsb(_) => adsb::occupied_band(),
         ChannelParams::Ais(p) => ais::occupied_band(p),
         ChannelParams::Aprs(p) => aprs::occupied_band(p),
@@ -246,6 +249,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Pocsag(p) => pocsag::channel_filter(p),
         ChannelParams::Flex(p) => flex::channel_filter(p),
         ChannelParams::Ermes(p) => ermes::channel_filter(p),
+        ChannelParams::Eot(p) => eot::channel_filter(p),
         ChannelParams::Adsb(_) => Ok(adsb::channel_filter()),
         ChannelParams::Ais(p) => ais::channel_filter(p),
         ChannelParams::Aprs(p) => aprs::channel_filter(p),
@@ -461,6 +465,11 @@ const REGISTRY: &[Registration] = &[
     Registration {
         descriptor: ErmesChannel::descriptor,
         create: boxed::<ErmesChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: EotChannel::descriptor,
+        create: boxed::<EotChannel>,
         create_tx: None,
     },
     Registration {
@@ -775,12 +784,12 @@ mod tests {
     use sdrmm_wire::{
         AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, AtvColor, AtvParams,
         ChannelParams, CwSkimmerParams, DabParams, DatvParams, DectParams, DmrParams, DpmrParams,
-        DrmParams, DscParams, DstarParams, ErmesParams, FlexParams, FreeDvParams, GnssParams,
-        HfdlParams, IdentParams, IlsParams, InmarsatAeroParams, InmarsatStdcParams, IridiumParams,
-        LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NxdnParams, P25Params,
-        PocsagParams, PskParams, RadioClockParams, RadiosondeParams, RttyParams, SelcallParams,
-        SsbParams, SstvParams, Vdl2Params, VorParams, WefaxParams, WfmParams, WsjtParams,
-        WsprParams, YsfParams,
+        DrmParams, DscParams, DstarParams, EotParams, ErmesParams, FlexParams, FreeDvParams,
+        GnssParams, HfdlParams, IdentParams, IlsParams, InmarsatAeroParams, InmarsatStdcParams,
+        IridiumParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NxdnParams,
+        P25Params, PocsagParams, PskParams, RadioClockParams, RadiosondeParams, RttyParams,
+        SelcallParams, SsbParams, SstvParams, Vdl2Params, VorParams, WefaxParams, WfmParams,
+        WsjtParams, WsprParams, YsfParams,
     };
 
     use super::*;
@@ -796,6 +805,7 @@ mod tests {
             "pocsag" => ChannelParams::Pocsag(PocsagParams::default()),
             "flex" => ChannelParams::Flex(FlexParams::default()),
             "ermes" => ChannelParams::Ermes(ErmesParams::default()),
+            "eot" => ChannelParams::Eot(EotParams::default()),
             "adsb" => ChannelParams::Adsb(AdsbParams::default()),
             "ais" => ChannelParams::Ais(AisParams::default()),
             "aprs" => ChannelParams::Aprs(AprsParams::default()),
@@ -886,7 +896,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 50);
+        assert_eq!(all.len(), 51);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -899,6 +909,7 @@ mod tests {
                 "pocsag",
                 "flex",
                 "ermes",
+                "eot",
                 "adsb",
                 "ais",
                 "aprs",
@@ -951,7 +962,7 @@ mod tests {
                 "ssb" => (3_000.0, 48_000.0),
                 "wfm" => (200_000.0, 240_000.0),
                 "pocsag" => (12_500.0, 24_000.0),
-                "flex" | "ermes" => (12_500.0, 48_000.0),
+                "flex" | "ermes" | "eot" => (12_500.0, 48_000.0),
                 "adsb" => (2_000_000.0, 2_400_000.0),
                 "ais" => (25_000.0, 48_000.0),
                 "aprs" => (12_500.0, 48_000.0),

@@ -5,8 +5,8 @@ use sdrmm_channels::{
 };
 use sdrmm_wire::{
     AmParams, ArgumentOption, AtvModulation, AtvParams, AtvStandard, AvhrrChannel, ChannelParams,
-    ChannelSettings, DabTransmissionMode, LrptMode, PskBaud, SelcallSystem, Sideband, SondeType,
-    Squelch, SsbParams, SstvMode, WefaxIoc, WefaxLpm,
+    ChannelSettings, DabTransmissionMode, EotArming, EotBattery, EotStatus, LrptMode, PskBaud,
+    SelcallSystem, Sideband, SondeType, Squelch, SsbParams, SstvMode, WefaxIoc, WefaxLpm,
 };
 
 pub struct Signal {
@@ -107,6 +107,12 @@ pub static SIGNALS: &[Signal] = &[
         label: "ERMES",
         rate_hz: NARROW,
         render: ermes,
+    },
+    Signal {
+        id: "eot",
+        label: "End-of-Train",
+        rate_hz: NARROW,
+        render: eot,
     },
     Signal {
         id: "acars",
@@ -515,6 +521,36 @@ fn ermes() -> Vec<Complex<f32>> {
         alert: 1,
     };
     synth::ermes::transmission(&page, NARROW)
+}
+
+fn eot() -> Vec<Complex<f32>> {
+    let rear = synth::eot::Rear {
+        unit_address: 24_680,
+        status: EotStatus {
+            message_type: 0,
+            arming: EotArming::Normal,
+            pressure_psig: 90,
+            battery: EotBattery::Ok,
+            battery_charge_pct: 76,
+            valve_ok: true,
+            confirmed: false,
+            turbine: true,
+            motion: true,
+            marker_light: true,
+            marker_battery_low: false,
+            discretionary: false,
+            chaining: 3,
+        },
+    };
+    let mut iq = synth::eot::rear_transmission(&rear, NARROW);
+    iq.extend(synth::eot::head_transmission(
+        synth::eot::Head {
+            unit_address: 24_680,
+            code: 0x55,
+        },
+        NARROW,
+    ));
+    iq
 }
 
 fn acars() -> Vec<Complex<f32>> {

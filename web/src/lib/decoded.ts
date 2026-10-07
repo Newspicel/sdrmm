@@ -271,6 +271,8 @@ function stationId(event: DecoderEvent): string | null {
       return String(event.data.address);
     case "ermes":
       return String(event.data.local_address);
+    case "eot":
+      return String(event.data.unit_address);
     case "rds":
       return event.data.pi ?? null;
     case "transmission":

@@ -11,6 +11,7 @@ pub mod dect;
 pub mod drm;
 pub mod dv;
 pub mod dvbt;
+pub mod eot;
 pub mod ermes;
 pub mod flex;
 pub mod gnss;

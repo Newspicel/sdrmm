@@ -157,6 +157,12 @@ const AIS_CHANNELS: &[Range] = &[spot_khz(161_975.0, 12.5), spot_khz(162_025.0, 
 const ACARS_VHF: &[Range] = &[mhz(129.0, 137.0)];
 const VDL2_CHANNELS: &[Range] = &[mhz(136.7, 137.0)];
 const APRS_CHANNELS: &[Range] = &[mhz(144.3, 145.2)];
+const EOT_CHANNELS: &[Range] = &[
+    spot_khz(452_937.5, 6.25),
+    spot_khz(457_937.5, 6.25),
+    spot_khz(450_262.5, 6.25),
+    spot_khz(477_700.0, 6.25),
+];
 const ISM: &[Range] = &[
     mhz(314.5, 315.5),
     mhz(433.05, 434.79),
@@ -510,6 +516,18 @@ const SIGNATURES: &[Signature] = &[
             &[Modulation::Fm, Modulation::Fsk2],
             range(6_000.0, 20_000.0),
             "audio tones inside an FM channel, at packet speed",
+        )
+    },
+    Signature {
+        symbol_rate_hz: Some(about(1_200.0, 0.06)),
+        deviation_hz: Some(range(1_500.0, 5_000.0)),
+        frequencies: EOT_CHANNELS,
+        ..signature(
+            "End-of-Train (FFSK over FM)",
+            Some("eot"),
+            &[Modulation::Fm, Modulation::Fsk2],
+            range(6_000.0, 20_000.0),
+            "1200 baud tones inside an FM channel on a railroad telemetry frequency",
         )
     },
     Signature {
