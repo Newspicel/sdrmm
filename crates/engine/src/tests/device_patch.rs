@@ -227,6 +227,35 @@ async fn a_snapped_rate_is_what_channels_are_rebuilt_on() {
 }
 
 #[tokio::test]
+async fn raising_the_rate_grows_the_capture_ring_to_hold_a_block_at_the_new_rate() {
+    const FAST_RATE: f64 = 64_000_000.0 / 7.0;
+    let sink = Arc::new(Mutex::new(None));
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(HeldSinkDriver { sink: sink.clone() }));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("mock:held").unwrap();
+    engine
+        .patch_device(
+            ds,
+            DeviceSettings {
+                sample_rate: Some(FAST_RATE),
+                ..DeviceSettings::default()
+            },
+        )
+        .unwrap();
+
+    let burst = ring_samples(FAST_RATE) / 2;
+    assert!(burst > mock_ring(), "the burst must not fit the old ring");
+    lock(&sink)
+        .as_mut()
+        .expect("the radio streams")
+        .push(&vec![Complex::new(0.0f32, 0.0); burst]);
+
+    assert_eq!(engine.snapshot().device_sets[0].overruns, 0);
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
 async fn a_faulted_set_releases_its_device_so_the_replug_can_reopen_it() {
     let claimed = Arc::new(AtomicBool::new(false));
     let die = Arc::new(AtomicBool::new(false));

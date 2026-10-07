@@ -878,6 +878,58 @@ impl SdrDevice for SnappingDevice {
     fn rx_stop(&mut self) {}
 }
 
+struct HeldSinkDriver {
+    sink: Arc<Mutex<Option<RxSink>>>,
+}
+
+impl DeviceDriver for HeldSinkDriver {
+    fn id(&self) -> &'static str {
+        "mock"
+    }
+
+    fn probe(&self) -> Vec<DeviceInfo> {
+        vec![mock_info("held", None)]
+    }
+
+    fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        Ok(Box::new(HeldSinkDevice {
+            capabilities: empty_capabilities(),
+            settings: mock_settings(),
+            sink: self.sink.clone(),
+        }))
+    }
+}
+
+struct HeldSinkDevice {
+    capabilities: Capabilities,
+    settings: DeviceSettings,
+    sink: Arc<Mutex<Option<RxSink>>>,
+}
+
+impl SdrDevice for HeldSinkDevice {
+    fn capabilities(&self) -> &Capabilities {
+        &self.capabilities
+    }
+
+    fn settings(&self) -> &DeviceSettings {
+        &self.settings
+    }
+
+    fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
+        self.settings.merge_from(settings);
+        Ok(())
+    }
+
+    fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
+        *lock(&self.sink) = Some(single_rx_sink(sinks)?);
+        Ok(())
+    }
+
+    fn rx_stop(&mut self) {
+        lock(&self.sink).take();
+    }
+}
+
 struct ExclusiveDriver {
     claimed: Arc<AtomicBool>,
     die: Arc<AtomicBool>,

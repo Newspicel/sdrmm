@@ -12,7 +12,6 @@ mod worker;
 
 pub use capture::CaptureRuntime;
 pub(crate) use capture::VirtualLaneSink;
-#[cfg(test)]
 pub(crate) use capture::ring_capacity;
 pub(crate) use channel::{
     ChannelHost, ChannelSinks, DecodedSink, RawDecoded, RawImage, RawPayload, reaches,

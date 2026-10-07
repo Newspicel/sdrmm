@@ -15,7 +15,7 @@ use crate::{
     RatePatchGuard, RebuildEntry, dc_block, fault_kind, hotplug, ids_of, lock_runtime,
     planning::{plan_center, validate_streams},
     refusal,
-    runtime::{CaptureRuntime, DeviceRuntime},
+    runtime::{CaptureRuntime, DeviceRuntime, ring_capacity},
     sample_rate_of, teardown_set,
 };
 
@@ -846,7 +846,7 @@ impl Engine {
         let applied = runtime.apply(&hardware);
         self.note_refusal(ds, &hardware, applied.as_ref().err());
         let actual = applied?.map(|actual| DeviceSettings::from_hardware(actual, delta.offset_hz));
-        let (settings, blocking, patched, rebuilds) = {
+        let (settings, blocking, patched, rebuilds, resized) = {
             let mut inner = self.lock();
             let state = inner
                 .device_sets
@@ -918,7 +918,8 @@ impl Engine {
                 history.center_hz = center_hz;
             }
             let rate = sample_rate_of(&state.settings);
-            let rebuilds: Vec<RebuildEntry> = if rate == old_rate {
+            let resized = ring_capacity(rate) != ring_capacity(old_rate);
+            let rebuilds: Vec<RebuildEntry> = if rate == old_rate || resized {
                 Vec::new()
             } else {
                 state
@@ -945,7 +946,7 @@ impl Engine {
                 capabilities_changed: state.capabilities != old_capabilities,
             };
             inner.revision += 1;
-            (settings, blocking, patched, rebuilds)
+            (settings, blocking, patched, rebuilds, resized)
         };
         lock_runtime(&runtime).set_meta(&settings, blocking);
         let mut dead: Vec<ChannelMedia> = Vec::new();
@@ -955,7 +956,7 @@ impl Engine {
         for handle in dead {
             handle.shutdown();
         }
-        if self.receivers_of(ds) != receivers_before
+        if (resized || self.receivers_of(ds) != receivers_before)
             && let Err(error) = self.restart_lanes(ds)
         {
             self.mark_device_fault(ds, DeviceError::Io(format!("lane restart: {error}")));
