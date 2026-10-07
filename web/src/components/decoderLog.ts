@@ -55,6 +55,7 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   lrpt: "Meteor LRPT",
   wefax: "WEFAX",
   radiosonde: "Radiosonde",
+  lora: "LoRa",
   df: "Bearing",
   df_fix: "Fix",
   radar: "Radar",

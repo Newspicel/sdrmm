@@ -32,6 +32,7 @@ mod ils;
 mod inmarsat_aero;
 mod inmarsat_stdc;
 mod iridium;
+mod lora;
 mod lrpt;
 pub mod monitor;
 mod morse;
@@ -104,6 +105,7 @@ pub use ils::IlsChannel;
 pub use inmarsat_aero::InmarsatAeroChannel;
 pub use inmarsat_stdc::InmarsatStdcChannel;
 pub use iridium::IridiumChannel;
+pub use lora::LoraChannel;
 pub use lrpt::LrptChannel;
 pub use morse::MorseChannel;
 pub use navtex::NavtexChannel;
@@ -209,6 +211,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Lrpt(p) => lrpt::occupied_band(p),
         ChannelParams::Wefax(p) => wefax::occupied_band(p),
         ChannelParams::Radiosonde(p) => radiosonde::occupied_band(p),
+        ChannelParams::Lora(p) => lora::occupied_band(p),
     }
 }
 
@@ -292,6 +295,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Lrpt(p) => lrpt::channel_filter(p),
         ChannelParams::Wefax(p) => wefax::channel_filter(p),
         ChannelParams::Radiosonde(p) => radiosonde::channel_filter(p),
+        ChannelParams::Lora(p) => Ok(lora::channel_filter(p)),
     }
 }
 
@@ -682,6 +686,11 @@ const REGISTRY: &[Registration] = &[
         create: boxed::<RadiosondeChannel>,
         create_tx: None,
     },
+    Registration {
+        descriptor: LoraChannel::descriptor,
+        create: boxed::<LoraChannel>,
+        create_tx: None,
+    },
 ];
 
 static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::LazyLock::new(|| {
@@ -751,6 +760,7 @@ pub fn input_rate(params: &ChannelParams) -> f64 {
         ChannelParams::Datv(p) => datv::input_rate_hz(p),
         ChannelParams::Dvbt(p) => p.sample_rate_hz(),
         ChannelParams::Iridium(p) => iridium::input_rate(p),
+        ChannelParams::Lora(p) => lora::input_rate(p),
         other => descriptor_of(other.type_id()).map_or(0.0, |d| d.input_rate_hz),
     }
 }
@@ -848,6 +858,7 @@ mod tests {
             "lrpt" => ChannelParams::Lrpt(LrptParams::default()),
             "wefax" => ChannelParams::Wefax(WefaxParams::default()),
             "radiosonde" => ChannelParams::Radiosonde(RadiosondeParams::default()),
+            "lora" => ChannelParams::Lora(sdrmm_wire::LoraParams::default()),
             other => panic!("unexpected type id {other}"),
         }
     }
@@ -896,7 +907,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 51);
+        assert_eq!(all.len(), 52);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -952,6 +963,7 @@ mod tests {
                 "lrpt",
                 "wefax",
                 "radiosonde",
+                "lora",
             ])
         );
         for d in &all {
@@ -999,6 +1011,7 @@ mod tests {
                 "lrpt" => (140_000.0, 288_000.0),
                 "wefax" => (1_600.0, 12_000.0),
                 "radiosonde" => (20_000.0, 48_000.0),
+                "lora" => (125_000.0, 250_000.0),
                 other => panic!("unexpected type id {other}"),
             };
             assert_eq!(d.bandwidth_hz, bandwidth, "{}", d.type_id);

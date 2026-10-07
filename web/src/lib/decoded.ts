@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { loraStation, withLoraPosition } from "./lora";
 import { clearTrails, dropTrail, recordTrail } from "./trails";
 import type {
   DecodedRecord,
@@ -310,6 +311,8 @@ function stationId(event: DecoderEvent): string | null {
       return null;
     case "radiosonde":
       return event.data.serial;
+    case "lora":
+      return loraStation(event.data);
     case "dect":
       return event.data.identity?.rfpi ?? null;
     case "df":
@@ -320,6 +323,9 @@ function stationId(event: DecoderEvent): string | null {
 }
 
 function mergeForward(previous: DecoderEvent, next: DecoderEvent): DecoderEvent {
+  if (previous.kind === "lora" && next.kind === "lora") {
+    return { kind: "lora", data: withLoraPosition(previous.data, next.data) };
+  }
   const data: Record<string, unknown> = { ...previous.data };
   for (const [key, value] of Object.entries(next.data)) {
     if (value != null) {

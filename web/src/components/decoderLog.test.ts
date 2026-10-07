@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DecodedState } from "../lib/decoded";
-import type { DecodedRecord, DecoderEvent, DecoderLogEntry } from "../lib/types";
+import type { DecodedRecord, DecoderEvent, DecoderLogEntry, LoraFrame } from "../lib/types";
 import {
   buildRows,
   clampColumnWidth,
@@ -12,6 +12,7 @@ import {
   eventStation,
   eventSummary,
   FLEX_COLUMN,
+  hasPosition,
   isFiltered,
   kindLabel,
   LOG_COLUMNS,
@@ -494,6 +495,101 @@ describe("eventStation", () => {
     };
     expect(eventSummary(event)).toBe("CCIR-1 · 12234");
     expect(eventStation(event)).toBeNull();
+  });
+});
+
+function lora(decoded: LoraFrame["decoded"], integrity: LoraFrame["integrity"]): DecoderEvent {
+  return {
+    kind: "lora",
+    data: {
+      spreading_factor: 11,
+      bandwidth_hz: 250_000,
+      coding_rate: "4/5",
+      sync_word: 0x2b,
+      implicit_header: false,
+      low_data_rate: false,
+      inverted_iq: false,
+      integrity,
+      fec_corrected: 0,
+      snr_db: 3,
+      frequency_error_hz: 120,
+      payload: "00112233",
+      decoded,
+    },
+  };
+}
+
+describe("LoRa rows", () => {
+  it("labels the kind", () => {
+    expect(kindLabel("lora")).toBe("LoRa");
+  });
+
+  it("matches the server summary for a raw frame and a failed check", () => {
+    const raw = lora(null, "crc_failed");
+    expect(eventSummary(raw)).toBe("SF11 250 kHz · 4 bytes · CRC failed");
+    expect(eventStation(raw)).toBeNull();
+    expect(hasPosition(raw)).toBe(false);
+  });
+
+  it("names a Meshtastic node and finds its position", () => {
+    const event = lora(
+      {
+        protocol: "meshtastic",
+        to: 0xffff_ffff,
+        from: 0xa1b2c3d4,
+        id: 7,
+        hop_limit: 3,
+        hop_start: 3,
+        want_ack: false,
+        via_mqtt: false,
+        channel_hash: 8,
+        next_hop: 0,
+        relay_node: 0,
+        encryption: "channel",
+        content: { type: "position", lat: 47.5, lon: 8.25 },
+      },
+      "crc_ok",
+    );
+    expect(eventStation(event)).toBe("!a1b2c3d4");
+    expect(eventSummary(event)).toBe(
+      "SF11 250 kHz · !a1b2c3d4 → ^all · position 47.50000, 8.25000",
+    );
+    expect(hasPosition(event)).toBe(true);
+  });
+
+  it("keys LoRaWAN by DevAddr and MeshCore by advert name", () => {
+    const uplink = lora(
+      {
+        protocol: "lorawan",
+        message_type: "unconfirmed_up",
+        major: 0,
+        mic: "00",
+        dev_addr: "26011BDA",
+        f_cnt: 5,
+        f_port: 2,
+      },
+      "crc_ok",
+    );
+    expect(eventStation(uplink)).toBe("26011BDA");
+    expect(eventSummary(uplink)).toBe("SF11 250 kHz · Uplink · 26011BDA · FCnt 5 · port 2");
+    const advert = lora(
+      {
+        protocol: "meshcore",
+        route: "flood",
+        payload_type: "advert",
+        version: 1,
+        content: {
+          type: "advert",
+          public_key: "0011223344",
+          timestamp: 1,
+          node_type: "chat",
+          signature_ok: true,
+        },
+      },
+      "crc_ok",
+    );
+    expect(eventStation(advert)).toBe("00112233");
+    expect(eventSummary(advert)).toBe("SF11 250 kHz · Advert");
   });
 });
 

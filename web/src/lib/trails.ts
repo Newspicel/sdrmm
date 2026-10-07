@@ -1,3 +1,4 @@
+import { loraPosition } from "./lora";
 import type { DecoderEvent, DecoderKind } from "./types";
 
 export const TRAIL_CAPACITY = 512;
@@ -45,6 +46,10 @@ export function trailPosition(event: DecoderEvent): LonLat | null {
     case "aprs":
     case "radiosonde":
       return geoPosition(event.data.lat, event.data.lon);
+    case "lora": {
+      const position = loraPosition(event.data);
+      return geoPosition(position?.lat, position?.lon);
+    }
     default:
       return null;
   }

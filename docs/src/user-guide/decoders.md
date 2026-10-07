@@ -18,7 +18,7 @@ covers the modes that need more than a frequency.
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect) | | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora) | [LoRaWAN, Meshtastic, MeshCore](#lora) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -125,8 +125,8 @@ calibration data has arrived, about a minute after first lock.
 
 ## Map
 
-Wire ADS-B, AIS, APRS or Radiosonde `events` to **Map**. Each target draws its track. The gear at
-the bottom left picks the style, hides tracks, or takes a custom URL: an XYZ template
+Wire ADS-B, AIS, APRS, Radiosonde or LoRa `events` to **Map**. Each target draws its track. The
+gear at the bottom left picks the style, hides tracks, or takes a custom URL: an XYZ template
 (`https://…/{z}/{x}/{y}.png`) or a MapLibre style URL, with any API key in the URL. The choice is
 kept in this browser.
 
@@ -199,3 +199,34 @@ Each record lists the base identity (RFPI), system information, capabilities, ad
 observed security, and handset IDs seen during encryption setup. Encryption is marked active only
 after a grant is seen. Advertised support does not prove a call was encrypted, and missing
 signalling does not prove it was not.
+
+## LoRa
+
+The LoRa channel reads LoRa packets and decodes LoRaWAN, Meshtastic and MeshCore inside them.
+Tune to the centre of the LoRa channel.
+
+| Setting | Does |
+|---|---|
+| Preset | Sets BW, SF, IQ and Protocol for a Meshtastic modem preset, MeshCore EU or US, or LoRaWAN. The frequency stays as tuned. |
+| BW | 7.8 to 500 kHz |
+| SF | One spreading factor, or **All** for SF7 to SF12 at once |
+| IQ | **Inverted** hears LoRaWAN downlinks, **Both** hears both directions |
+| Protocol | **Auto** picks by sync word. **LoRa** shows bytes only. |
+| Keys | Extra channel and session keys |
+| Implicit | Payload length for packets sent without a header, then **CR** and **CRC** |
+
+Meshtastic's default key on every preset channel name and the MeshCore **Public** channel are
+built in. Add others under **Keys**:
+
+| Key | Fields |
+|---|---|
+| Meshtastic | Channel name and base64 PSK. An empty PSK is an open channel. |
+| MeshCore | Channel name and base64 or hex secret. A `#tag` name needs no secret. |
+| ABP | LoRaWAN DevAddr, NwkSKey and AppSKey: checks the MIC and decrypts the payload |
+| OTAA | LoRaWAN AppKey: checks join requests and opens join accepts |
+
+The LoRa readout lists each node heard, keyed by Meshtastic node ID, MeshCore name or LoRaWAN
+DevAddr. Meshtastic positions, waypoints and map reports and MeshCore adverts with a location
+appear on **Map**. Meshtastic direct messages and MeshCore private messages are end-to-end
+encrypted and show as such. The signal generator sends Meshtastic, MeshCore and LoRaWAN test
+packets.

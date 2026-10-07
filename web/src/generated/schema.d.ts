@@ -3202,6 +3202,10 @@ export interface components {
             settings: components["schemas"]["RadiosondeParams"];
             /** @enum {string} */
             type: "radiosonde";
+        } | {
+            settings: components["schemas"]["LoraParams"];
+            /** @enum {string} */
+            type: "lora";
         };
         ChannelSettings: {
             blanker?: components["schemas"]["NoiseBlankerSettings"];
@@ -3979,6 +3983,10 @@ export interface components {
             data: components["schemas"]["RadiosondeFrame"];
             /** @enum {string} */
             kind: "radiosonde";
+        } | {
+            data: components["schemas"]["LoraFrame"];
+            /** @enum {string} */
+            kind: "lora";
         };
         /** @enum {string} */
         DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
@@ -5310,6 +5318,119 @@ export interface components {
             message: string;
             target: string;
         };
+        /** @enum {string} */
+        LoraBandwidth: "khz7_8" | "khz10_4" | "khz15_6" | "khz20_8" | "khz31_25" | "khz41_7" | "khz62_5" | "khz125" | "khz250" | "khz500";
+        /** @enum {string} */
+        LoraCodingRate: "4/5" | "4/6" | "4/7" | "4/8";
+        LoraFrame: {
+            /** Format: double */
+            bandwidth_hz: number;
+            coding_rate: components["schemas"]["LoraCodingRate"];
+            decoded?: components["schemas"]["LoraPayload"] | null;
+            /** Format: int32 */
+            fec_corrected: number;
+            /** Format: float */
+            frequency_error_hz: number;
+            implicit_header: boolean;
+            integrity: components["schemas"]["LoraIntegrity"];
+            inverted_iq: boolean;
+            low_data_rate: boolean;
+            payload: string;
+            /** Format: float */
+            snr_db: number;
+            /** Format: int32 */
+            spreading_factor: number;
+            /** Format: int32 */
+            sync_word: number;
+        };
+        LoraImplicitHeader: {
+            coding_rate?: components["schemas"]["LoraCodingRate"];
+            crc?: boolean;
+            /** Format: int32 */
+            length: number;
+        };
+        /** @enum {string} */
+        LoraIntegrity: "crc_ok" | "crc_failed" | "no_crc" | "header_failed";
+        /** @enum {string} */
+        LoraIq: "normal" | "inverted" | "both";
+        LoraKey: {
+            /** @enum {string} */
+            kind: "meshtastic_channel";
+            name: string;
+            psk: string;
+        } | {
+            /** @enum {string} */
+            kind: "meshcore_channel";
+            name: string;
+            secret: string;
+        } | {
+            app_s_key: string;
+            dev_addr: string;
+            /** @enum {string} */
+            kind: "lorawan_session";
+            nwk_s_key: string;
+        } | {
+            app_key: string;
+            /** @enum {string} */
+            kind: "lorawan_app_key";
+        };
+        LoraParams: {
+            bandwidth?: components["schemas"]["LoraBandwidth"];
+            implicit_header?: components["schemas"]["LoraImplicitHeader"] | null;
+            iq?: components["schemas"]["LoraIq"];
+            keys?: components["schemas"]["LoraKey"][];
+            protocol?: components["schemas"]["LoraProtocol"];
+            spreading_factor?: components["schemas"]["LoraSpreadingFactor"];
+        };
+        LoraPayload: (components["schemas"]["LorawanFrame"] & {
+            /** @enum {string} */
+            protocol: "lorawan";
+        }) | (components["schemas"]["MeshtasticPacket"] & {
+            /** @enum {string} */
+            protocol: "meshtastic";
+        }) | (components["schemas"]["MeshcorePacket"] & {
+            /** @enum {string} */
+            protocol: "meshcore";
+        });
+        /** @enum {string} */
+        LoraProtocol: "auto" | "raw" | "lorawan" | "meshtastic" | "meshcore";
+        /** @enum {string} */
+        LoraSpreadingFactor: "all" | "sf7" | "sf8" | "sf9" | "sf10" | "sf11" | "sf12";
+        LorawanFrame: {
+            ack?: boolean | null;
+            adr?: boolean | null;
+            adr_ack_req?: boolean | null;
+            cf_list_hz?: number[];
+            decrypted?: string | null;
+            dev_addr?: string | null;
+            dev_eui?: string | null;
+            /** Format: int32 */
+            dev_nonce?: number | null;
+            /** Format: int32 */
+            f_cnt?: number | null;
+            /** Format: int32 */
+            f_port?: number | null;
+            frm_payload?: string | null;
+            join_eui?: string | null;
+            /** Format: int32 */
+            join_nonce?: number | null;
+            mac_commands?: string[];
+            /** Format: int32 */
+            major: number;
+            message_type: components["schemas"]["LorawanMessageType"];
+            mic: string;
+            mic_ok?: boolean | null;
+            net_id?: string | null;
+            pending_or_class_b?: boolean | null;
+            /** Format: int32 */
+            rx_delay_s?: number | null;
+            /** Format: int32 */
+            rx1_dr_offset?: number | null;
+            /** Format: int32 */
+            rx2_data_rate?: number | null;
+        };
+        /** @enum {string} */
+        LorawanMessageType: "join_request" | "join_accept" | "unconfirmed_up" | "unconfirmed_down" | "confirmed_up" | "confirmed_down" | "rejoin_request" | "proprietary";
         LrptImage: {
             apids: number[];
             complete: boolean;
@@ -5353,6 +5474,231 @@ export interface components {
         MergeMode: "replace" | "append" | "union";
         /** @enum {string} */
         MergePart: "contacts" | "group_lists" | "channels" | "zones" | "scan_lists" | "radio_ids" | "settings";
+        MeshcoreContent: {
+            /** Format: double */
+            lat?: number | null;
+            /** Format: double */
+            lon?: number | null;
+            name?: string | null;
+            node_type: components["schemas"]["MeshcoreNodeType"];
+            public_key: string;
+            signature_ok: boolean;
+            /** Format: int32 */
+            timestamp: number;
+            /** @enum {string} */
+            type: "advert";
+        } | {
+            channel?: string | null;
+            /** Format: int32 */
+            channel_hash: number;
+            sender?: string | null;
+            text?: string | null;
+            /** Format: int32 */
+            timestamp?: number | null;
+            /** @enum {string} */
+            type: "group_text";
+        } | {
+            channel?: string | null;
+            /** Format: int32 */
+            channel_hash: number;
+            data?: string | null;
+            /** Format: int32 */
+            data_type?: number | null;
+            /** @enum {string} */
+            type: "group_data";
+        } | {
+            destination: string;
+            mac: string;
+            source: string;
+            /** @enum {string} */
+            type: "encrypted";
+        } | {
+            destination: string;
+            public_key: string;
+            /** @enum {string} */
+            type: "anon_request";
+        } | {
+            /** Format: int32 */
+            checksum: number;
+            /** @enum {string} */
+            type: "ack";
+        } | {
+            /** Format: int32 */
+            auth_code: number;
+            /** Format: int32 */
+            flags: number;
+            hops: string[];
+            /** Format: int32 */
+            tag: number;
+            /** @enum {string} */
+            type: "trace";
+        } | {
+            data: string;
+            /** Format: int32 */
+            subtype: number;
+            /** @enum {string} */
+            type: "control";
+        } | {
+            data: string;
+            /** Format: int32 */
+            inner_type: number;
+            /** Format: int32 */
+            remaining: number;
+            /** @enum {string} */
+            type: "multipart";
+        } | {
+            data: string;
+            /** @enum {string} */
+            type: "raw";
+        };
+        /** @enum {string} */
+        MeshcoreNodeType: "none" | "chat" | "repeater" | "room" | "sensor" | "other";
+        MeshcorePacket: {
+            content: components["schemas"]["MeshcoreContent"];
+            path?: string[];
+            payload_type: components["schemas"]["MeshcorePayloadType"];
+            route: components["schemas"]["MeshcoreRoute"];
+            transport_codes?: number[];
+            /** Format: int32 */
+            version: number;
+        };
+        /** @enum {string} */
+        MeshcorePayloadType: "request" | "response" | "text" | "ack" | "advert" | "group_text" | "group_data" | "anon_request" | "path" | "trace" | "multipart" | "control" | "reserved" | "raw_custom";
+        /** @enum {string} */
+        MeshcoreRoute: "transport_flood" | "flood" | "direct" | "transport_direct";
+        MeshtasticContent: {
+            text: string;
+            /** @enum {string} */
+            type: "text";
+        } | {
+            /** Format: int32 */
+            altitude_m?: number | null;
+            /** Format: int32 */
+            ground_speed_kmh?: number | null;
+            /** Format: double */
+            lat?: number | null;
+            /** Format: double */
+            lon?: number | null;
+            /** Format: int32 */
+            precision_bits?: number | null;
+            /** Format: int32 */
+            satellites?: number | null;
+            /** Format: int32 */
+            time?: number | null;
+            /** @enum {string} */
+            type: "position";
+        } | {
+            /** Format: int32 */
+            hw_model?: number | null;
+            id: string;
+            licensed: boolean;
+            long_name: string;
+            public_key?: string | null;
+            /** Format: int32 */
+            role?: number | null;
+            short_name: string;
+            /** @enum {string} */
+            type: "node_info";
+        } | {
+            kind: string;
+            metrics: components["schemas"]["MeshtasticMetric"][];
+            /** Format: int32 */
+            time?: number | null;
+            /** @enum {string} */
+            type: "telemetry";
+        } | {
+            error?: string | null;
+            route?: number[];
+            /** @enum {string} */
+            type: "routing";
+        } | {
+            route: number[];
+            route_back: number[];
+            snr_back_db: number[];
+            snr_towards_db: number[];
+            /** @enum {string} */
+            type: "traceroute";
+        } | {
+            neighbors: components["schemas"]["MeshtasticNeighbor"][];
+            /** Format: int32 */
+            node: number;
+            /** @enum {string} */
+            type: "neighbor_info";
+        } | {
+            description: string;
+            /** Format: int32 */
+            expire?: number | null;
+            /** Format: int32 */
+            id: number;
+            /** Format: double */
+            lat?: number | null;
+            /** Format: double */
+            lon?: number | null;
+            name: string;
+            /** @enum {string} */
+            type: "waypoint";
+        } | {
+            /** Format: int32 */
+            altitude_m?: number | null;
+            firmware_version: string;
+            /** Format: double */
+            lat?: number | null;
+            /** Format: double */
+            lon?: number | null;
+            long_name: string;
+            /** Format: int32 */
+            online_nodes?: number | null;
+            short_name: string;
+            /** @enum {string} */
+            type: "map_report";
+        } | {
+            bytes: string;
+            /** @enum {string} */
+            type: "data";
+        };
+        /** @enum {string} */
+        MeshtasticEncryption: "open" | "channel" | "pki" | "unknown";
+        MeshtasticMetric: {
+            name: string;
+            /** Format: double */
+            value: number;
+        };
+        MeshtasticNeighbor: {
+            /** Format: int32 */
+            node: number;
+            /** Format: float */
+            snr_db: number;
+        };
+        MeshtasticPacket: {
+            channel?: string | null;
+            /** Format: int32 */
+            channel_hash: number;
+            content?: components["schemas"]["MeshtasticContent"] | null;
+            encryption: components["schemas"]["MeshtasticEncryption"];
+            /** Format: int32 */
+            from: number;
+            /** Format: int32 */
+            hop_limit: number;
+            /** Format: int32 */
+            hop_start: number;
+            /** Format: int32 */
+            id: number;
+            /** Format: int32 */
+            next_hop: number;
+            /** Format: int32 */
+            port?: number | null;
+            port_name?: string | null;
+            /** Format: int32 */
+            relay_node: number;
+            /** Format: int32 */
+            reply_id?: number | null;
+            /** Format: int32 */
+            request_id?: number | null;
+            /** Format: int32 */
+            to: number;
+            via_mqtt: boolean;
+            want_ack: boolean;
+        };
         Mission: components["schemas"]["MissionBody"] & {
             controls?: components["schemas"]["MissionControl"][];
             label: string;

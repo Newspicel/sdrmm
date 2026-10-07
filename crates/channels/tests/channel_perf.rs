@@ -205,3 +205,17 @@ fn analog_channels_allocate_nothing_after_warmup_and_exceed_realtime() {
         );
     }
 }
+
+#[test]
+fn lora_allocates_nothing_while_every_spreading_factor_searches() {
+    let settings = ChannelSettings::default_for("lora").expect("settings");
+    let rate = sdrmm_channels::input_rate(&settings.params);
+    let mut rx =
+        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+    let iq = searching_signal(rate);
+    let mut outputs = ChannelOutputs::default();
+    for _ in 0..4 {
+        drive(rx.as_mut(), &iq, &mut outputs);
+    }
+    assert_no_alloc("lora", || drive(rx.as_mut(), &iq, &mut outputs));
+}

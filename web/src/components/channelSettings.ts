@@ -189,7 +189,23 @@ export function reachesHz(frequencyHz: number, window: RadioWindow | null): bool
   return window === null || (frequencyHz >= window.lowHz && frequencyHz <= window.highHz);
 }
 
+const LORA_BANDWIDTH_HZ: Record<NonNullable<ChannelParamsOf<"lora">["bandwidth"]>, number> = {
+  khz7_8: 500_000 / 64,
+  khz10_4: 500_000 / 48,
+  khz15_6: 500_000 / 32,
+  khz20_8: 500_000 / 24,
+  khz31_25: 500_000 / 16,
+  khz41_7: 500_000 / 12,
+  khz62_5: 500_000 / 8,
+  khz125: 500_000 / 4,
+  khz250: 500_000 / 2,
+  khz500: 500_000,
+};
+
 export function paramBandwidthHz(params: ChannelParams): number | null {
+  if (params.type === "lora") {
+    return LORA_BANDWIDTH_HZ[params.settings.bandwidth ?? "khz125"] ?? null;
+  }
   return "bandwidth_hz" in params.settings && typeof params.settings.bandwidth_hz === "number"
     ? params.settings.bandwidth_hz
     : null;

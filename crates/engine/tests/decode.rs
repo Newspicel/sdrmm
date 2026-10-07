@@ -13,11 +13,11 @@ use sdrmm_wire::{
     BroadcastSystem, ChannelParams, ChannelSettings, CwSkimmerParams, DabParams, DatvParams,
     DatvStandard, DecodedRecord, DecoderEvent, DectCapability, DectCipherState, DectParams,
     DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode, EotArming, EotBattery, EotParams,
-    EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams, GnssParams, IdentParams, LrptMode,
-    LrptParams, Modulation, MorseParams, NavtexParams, NfmParams, NfmToneMode, PipelineStage,
-    PocsagBaud, PocsagParams, PskBaud, PskParams, RadiosondeParams, RdsUpdate, RttyParams,
-    SelcallParams, SelcallSystem, SondeType, SymbolPlane, VorParams, WefaxIoc, WefaxLpm,
-    WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+    EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams, GnssParams, IdentParams,
+    LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation, MorseParams, NavtexParams,
+    NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams, PskBaud, PskParams,
+    RadiosondeParams, RdsUpdate, RttyParams, SelcallParams, SelcallSystem, SondeType, SymbolPlane,
+    VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -501,6 +501,42 @@ async fn selcall_survives_the_ddc_and_reaches_the_decoded_stream() {
     };
     assert_eq!(call.code, "12234");
     assert_eq!(call.system, SelcallSystem::Ccir1);
+}
+
+#[tokio::test]
+async fn a_meshtastic_text_survives_the_ddc_and_reaches_the_decoded_stream() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let rate = 1_000_000.0;
+    let offset_hz = -180_000.0;
+    let mut iq = synth::lora::meshtastic_scene(rate);
+    synth::shift(&mut iq, offset_hz, rate);
+    let device = plant(dir.path(), "meshtastic_long_fast", iq, rate);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ + offset_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Lora(LoraParams {
+                bandwidth: LoraBandwidth::Khz250,
+                ..LoraParams::default()
+            }),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Lora(frame) if frame.decoded.is_some()),
+    )
+    .await;
+    let DecoderEvent::Lora(frame) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(frame.spreading_factor, 11);
+    assert_eq!(frame.station().as_deref(), Some("!5d12a7c3"));
+    assert!(
+        frame.summary().contains("SDR-- MESH FIXTURE"),
+        "{}",
+        frame.summary()
+    );
 }
 
 #[tokio::test]

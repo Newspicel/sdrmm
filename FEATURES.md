@@ -64,7 +64,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 
 ### ISM & IoT
 - ISM remotes and sensors (OOK/FSK)
-- LoRa (ChirpChat), LoRaWAN frames, Meshtastic, MeshCore
 - BLE advertisements, 2.4 GHz survey, Wi-Fi channel occupancy (energy only)
 
 ### DECT

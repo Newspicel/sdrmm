@@ -1600,6 +1600,7 @@ pub enum ChannelParams {
     Lrpt(crate::weather::LrptParams),
     Wefax(crate::weather::WefaxParams),
     Radiosonde(crate::weather::RadiosondeParams),
+    Lora(crate::lora::LoraParams),
 }
 
 impl ChannelParams {
@@ -1657,6 +1658,7 @@ impl ChannelParams {
             Self::Lrpt(_) => "lrpt",
             Self::Wefax(_) => "wefax",
             Self::Radiosonde(_) => "radiosonde",
+            Self::Lora(_) => "lora",
         }
     }
 }

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FLUSH_MS, RING_CAPACITY, STATION_CAPACITY, useDecodedStore } from "./decoded";
 import { trailsOf } from "./trails";
-import type { AdsbMessage, DecodedRecord, RadiosondeFrame, RdsUpdate } from "./types";
+import type { AdsbMessage, DecodedRecord, LoraFrame, RadiosondeFrame, RdsUpdate } from "./types";
 
 const T0 = Date.parse("2026-08-09T12:00:00Z");
 
@@ -46,6 +46,50 @@ function sonde(data: Partial<RadiosondeFrame> & { serial: string }, offsetMs = 0
     channel: 4,
     freq_hz: 403_000_000,
     event: { kind: "radiosonde", data: { sonde: "rs41", errors_corrected: 0, ...data } },
+  };
+}
+
+function meshtastic(
+  content: NonNullable<Extract<LoraFrame["decoded"], { protocol: "meshtastic" }>["content"]>,
+  offsetMs = 0,
+): DecodedRecord {
+  return {
+    at: at(offsetMs),
+    device_set: 0,
+    channel: 5,
+    freq_hz: 869_525_000,
+    event: {
+      kind: "lora",
+      data: {
+        spreading_factor: 11,
+        bandwidth_hz: 250_000,
+        coding_rate: "4/5",
+        sync_word: 0x2b,
+        implicit_header: false,
+        low_data_rate: false,
+        inverted_iq: false,
+        integrity: "crc_ok",
+        fec_corrected: 0,
+        snr_db: 1,
+        frequency_error_hz: 0,
+        payload: "00",
+        decoded: {
+          protocol: "meshtastic",
+          to: 0xffff_ffff,
+          from: 0xa1,
+          id: 1,
+          hop_limit: 3,
+          hop_start: 3,
+          want_ack: false,
+          via_mqtt: false,
+          channel_hash: 8,
+          next_hop: 0,
+          relay_node: 0,
+          encryption: "channel",
+          content,
+        },
+      },
+    },
   };
 }
 
@@ -172,6 +216,20 @@ describe("stations", () => {
     expect(stations).toHaveLength(1);
     expect(stations[0]?.id).toBe("S1234567");
     expect(stations[0]?.event.data.altitude_m).toBe(1_050);
+  });
+
+  it("keeps a LoRa node's last position across frames without one", () => {
+    push(
+      meshtastic({ type: "position", lat: 47.5, lon: 8.25 }, 0),
+      meshtastic({ type: "text", text: "hi" }, 1_000),
+    );
+
+    const stations = useDecodedStore.getState().stations.lora ?? [];
+    expect(stations).toHaveLength(1);
+    expect(stations[0]?.id).toBe("!000000a1");
+    expect(stations[0]?.frames).toBe(2);
+    expect(stations[0]?.event.data.decoded).toMatchObject({ content: { type: "position" } });
+    expect(trailsOf("lora").get("!000000a1")?.points).toEqual([[8.25, 47.5]]);
   });
 
   it("has no rows for character-stream decoders", () => {
