@@ -1,4 +1,14 @@
 {
+  "broadcast_system": {
+    "dab": "DAB",
+    "dab_plus": "DAB+",
+    "drm30": "DRM30",
+    "drm_plus": "DRM+",
+    "dvb_s": "DVB-S",
+    "dvb_s2": "DVB-S2",
+    "dvb_t": "DVB-T",
+    "dvb_t2": "DVB-T2"
+  },
   "cal": {
     "failed": "Cal failed",
     "measuring": "Calibrating",

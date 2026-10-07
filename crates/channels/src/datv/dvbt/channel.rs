@@ -4,7 +4,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
     BroadcastService, BroadcastServiceKind, ChannelDescriptor, ChannelParams, ChannelSettings,
-    DecoderEvent, DecoderFamily, DvbtParams,
+    DecoderFamily, DvbtParams,
 };
 
 use super::frontend::Frontend;
@@ -29,7 +29,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE,
     has_audio: true,
     has_video: true,
-    decoder_kind: Some("broadcast".to_owned()),
+    decoder_kind: Some("broadcast_data".to_owned()),
     ..ChannelDescriptor::default()
 });
 
@@ -142,7 +142,7 @@ impl DvbtChannel {
         status.video_frames_bad = self.media.video_errors;
         status.video_error = self.media.video_error.clone();
         status.services = services;
-        out.events.push(DecoderEvent::Broadcast(status));
+        out.broadcast = Some(status);
     }
 }
 
@@ -278,9 +278,7 @@ mod tests {
         );
         out.reset();
         receiver.report(&mut out);
-        let DecoderEvent::Broadcast(status) = &out.events[0] else {
-            panic!("broadcast status");
-        };
+        let status = out.broadcast.as_ref().expect("broadcast status");
         assert!(
             (status.frequency_error_hz - 600.0).abs() < 30.0,
             "{bandwidth:?} {}",
@@ -397,18 +395,7 @@ mod tests {
             channel.process(&filtered, &mut out);
         }
         channel.report(&mut out);
-        let status = out
-            .events
-            .iter()
-            .rev()
-            .find_map(|event| {
-                if let DecoderEvent::Broadcast(status) = event {
-                    Some(status)
-                } else {
-                    None
-                }
-            })
-            .unwrap();
+        let status = out.broadcast.as_ref().unwrap();
         assert_eq!(status.system, sdrmm_wire::BroadcastSystem::DvbT2);
         assert_eq!(status.frames_ok, 4, "{status:?}");
         assert_eq!(status.frames_bad, 0, "{status:?}");
@@ -512,14 +499,9 @@ mod tests {
             channel.process(block, &mut out);
         }
         channel.report(&mut out);
-        out.events
-            .iter()
-            .rev()
-            .find_map(|event| match event {
-                DecoderEvent::Broadcast(status) => Some((status.frames_ok, status.frames_bad)),
-                _ => None,
-            })
-            .unwrap_or((0, 0))
+        out.broadcast
+            .as_ref()
+            .map_or((0, 0), |status| (status.frames_ok, status.frames_bad))
     }
 
     #[test]

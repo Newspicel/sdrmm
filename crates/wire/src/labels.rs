@@ -3,6 +3,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     array::{ARRAY_FAILURE_LABELS, CalPhase, ProcessorGate, SyncState},
+    decode::BroadcastSystem,
     patch::REFUSALS,
     phone::PHONE_TEXTS,
     radar::RadarProblem,
@@ -24,6 +25,14 @@ pub fn generated() -> Result<Value, serde_json::Error> {
     labels.insert(
         "gate".to_owned(),
         keyed(ProcessorGate::ALL.iter().map(|gate| (gate, gate.label())))?,
+    );
+    labels.insert(
+        "broadcast_system".to_owned(),
+        keyed(
+            BroadcastSystem::ALL
+                .iter()
+                .map(|system| (system, system.label())),
+        )?,
     );
     labels.insert("failure".to_owned(), named(ARRAY_FAILURE_LABELS));
     labels.insert("radar_problem".to_owned(), named(radar_problems()));

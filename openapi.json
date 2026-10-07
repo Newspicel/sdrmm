@@ -13773,24 +13773,6 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/BroadcastStatus"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "broadcast"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
                 "$ref": "#/components/schemas/BroadcastData"
               },
               "kind": {
@@ -28106,6 +28088,44 @@
                 "type": "string",
                 "enum": [
                   "HuntUpdate"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "device_set",
+                  "channel",
+                  "status"
+                ],
+                "properties": {
+                  "channel": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "device_set": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/BroadcastStatus"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "BroadcastUpdate"
                 ]
               }
             }

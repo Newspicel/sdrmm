@@ -149,6 +149,11 @@ pub enum ServerEvent {
         device_set: u32,
         status: Box<crate::hunt::HuntStatus>,
     },
+    BroadcastUpdate {
+        device_set: u32,
+        channel: u32,
+        status: Box<crate::decode::BroadcastStatus>,
+    },
     SatelliteUpdate {
         status: Box<crate::satellite::SatelliteStatus>,
     },

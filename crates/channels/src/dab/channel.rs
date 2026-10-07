@@ -4,8 +4,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, Soft, design_lowpass};
 use sdrmm_wire::{
     BroadcastService, BroadcastServiceKind, BroadcastStatus, BroadcastSystem, ChannelDescriptor,
-    ChannelParams, ChannelSettings, DabMode, DabParams, DabTransmissionMode, DecoderEvent,
-    DecoderFamily,
+    ChannelParams, ChannelSettings, DabMode, DabParams, DabTransmissionMode, DecoderFamily,
 };
 
 use super::{
@@ -41,7 +40,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    decoder_kind: Some("broadcast".to_owned()),
+    decoder_kind: Some("broadcast_data".to_owned()),
     ..ChannelDescriptor::default()
 });
 
@@ -525,7 +524,7 @@ impl DabChannel {
             };
             format!("{} {rates} {}ch", format.codec(), format.channels())
         });
-        out.events.push(DecoderEvent::Broadcast(BroadcastStatus {
+        out.broadcast = Some(BroadcastStatus {
             dynamic_label: self.media.dynamic_label.clone(),
             data_groups_ok: self.media.data_groups,
             data_groups_bad: self.media.data_errors,
@@ -566,7 +565,7 @@ impl DabChannel {
             frames_bad: self.fic.blocks_bad,
             services: self.services(),
             ..BroadcastStatus::default()
-        }));
+        });
     }
 }
 
@@ -671,6 +670,8 @@ impl ChannelRx for DabChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sdrmm_wire::DecoderEvent;
+
     use crate::{dab::ofdm::FRAME, synth, testutil::realtime_budget};
 
     fn settings(service_id: Option<u32>) -> ChannelSettings {
@@ -736,14 +737,7 @@ mod tests {
     }
 
     fn status(out: &ChannelOutputs) -> &BroadcastStatus {
-        out.events
-            .iter()
-            .rev()
-            .find_map(|event| match event {
-                DecoderEvent::Broadcast(status) => Some(status),
-                _ => None,
-            })
-            .expect("a broadcast status")
+        out.broadcast.as_ref().expect("a broadcast status")
     }
 
     #[test]
@@ -1080,11 +1074,11 @@ mod tests {
             .collect();
         let mut channel = channel(None);
         let mut out = ChannelOutputs::default();
-        channel.process(&iq, &mut out);
-        assert!(out.events.iter().all(|event| !matches!(
-            event,
-            DecoderEvent::Broadcast(status) if status.locked
-        )));
+        for block in iq.chunks(4_096) {
+            out.reset();
+            channel.process(block, &mut out);
+            assert!(!out.broadcast.as_ref().is_some_and(|status| status.locked));
+        }
     }
 
     #[test]

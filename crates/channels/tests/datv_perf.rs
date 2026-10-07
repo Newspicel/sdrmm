@@ -5,7 +5,7 @@ use sdrmm_channels::{
     ChannelCtx, ChannelOutputs, Dvbs2Modulation as Modulation, Dvbs2Rate as Rate, synth,
 };
 use sdrmm_modem_test_support::ber::perf::measure_throughput;
-use sdrmm_wire::{ChannelParams, ChannelSettings, DatvParams, DatvStandard, DecoderEvent};
+use sdrmm_wire::{ChannelParams, ChannelSettings, DatvParams, DatvStandard};
 
 const BLOCK: usize = 2_048;
 const SECONDS: usize = 1;
@@ -38,10 +38,8 @@ fn drive(
     for block in iq.chunks(BLOCK) {
         outputs.reset();
         rx.process(block, outputs);
-        for event in &outputs.events {
-            if let DecoderEvent::Broadcast(status) = event {
-                frames_ok = frames_ok.max(u64::from(status.frames_ok));
-            }
+        if let Some(status) = &outputs.broadcast {
+            frames_ok = frames_ok.max(u64::from(status.frames_ok));
         }
     }
     frames_ok

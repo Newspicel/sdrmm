@@ -65,7 +65,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: input_rate_hz(&DatvParams::default()),
     has_audio: true,
     has_video: true,
-    decoder_kind: Some("broadcast".to_owned()),
+    decoder_kind: Some("broadcast_data".to_owned()),
     ..ChannelDescriptor::default()
 });
 
@@ -395,7 +395,7 @@ impl DatvChannel {
         self.last = acquired;
         let metrics = self.decoder.metrics();
         let program = self.demux.program();
-        out.events.push(DecoderEvent::Broadcast(BroadcastStatus {
+        out.broadcast = Some(BroadcastStatus {
             system: self.system(),
             audio_frames_ok: self.media.audio_frames,
             audio_frames_bad: self.media.audio_errors,
@@ -444,7 +444,7 @@ impl DatvChannel {
                 })
             }),
             ..BroadcastStatus::default()
-        }));
+        });
     }
 }
 
@@ -613,11 +613,7 @@ mod tests {
         for block in iq.chunks(16_384) {
             out.reset();
             channel.process(block, &mut out);
-            for event in &out.events {
-                if let DecoderEvent::Broadcast(status) = event {
-                    statuses.push(status.clone());
-                }
-            }
+            statuses.extend(out.broadcast.take());
         }
         statuses
     }

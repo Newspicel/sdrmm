@@ -10,15 +10,15 @@ use sdrmm_engine::Engine;
 use sdrmm_recorder::SigmfWriter;
 use sdrmm_wire::{
     AcarsParams, AdsbParams, AisChannel, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
-    BroadcastSystem, ChannelParams, ChannelSettings, CwSkimmerParams, DabParams, DatvParams,
-    DatvStandard, DecodedRecord, DecoderEvent, DectBand, DectCapability, DectCipherState,
-    DectParams, DectSpan, DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode, EotArming,
-    EotBattery, EotParams, EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams, GnssParams,
-    IdentParams, LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation, MorseParams,
-    NavtexParams, NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams, PskBaud,
-    PskParams, RadiosondeParams, RdsUpdate, RttyParams, SelcallParams, SelcallSystem, SondeType,
-    SymbolPlane, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams, WsprParams,
-    YsfParams,
+    BroadcastStatus, BroadcastSystem, ChannelParams, ChannelSettings, CwSkimmerParams, DabParams,
+    DatvParams, DatvStandard, DecodedRecord, DecoderEvent, DectBand, DectCapability,
+    DectCipherState, DectParams, DectSpan, DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode,
+    EotArming, EotBattery, EotParams, EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams,
+    GnssParams, IdentParams, LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation,
+    MorseParams, NavtexParams, NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams,
+    PskBaud, PskParams, RadiosondeParams, RdsUpdate, RttyParams, SelcallParams, SelcallSystem,
+    ServerEvent, SondeType, SymbolPlane, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams,
+    WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -88,6 +88,35 @@ fn plant_at(
     writer.write_block(&iq).unwrap();
     writer.finalize().unwrap();
     format!("recording:{}", path.file_name().unwrap().display())
+}
+
+async fn broadcast_first(
+    engine: &Arc<Engine>,
+    device_id: &str,
+    settings: ChannelSettings,
+    want: impl Fn(&BroadcastStatus) -> bool,
+) -> BroadcastStatus {
+    let mut rx = engine.subscribe_events();
+    let ds = engine.create_device_set(device_id).unwrap();
+    let ch = engine.add_channel(ds, 0, settings).unwrap();
+    let found = tokio::time::timeout(DECODE_TIMEOUT, async {
+        loop {
+            match rx.recv().await {
+                Ok(ServerEvent::BroadcastUpdate {
+                    device_set,
+                    channel,
+                    status,
+                }) if device_set == ds && channel == ch && want(&status) => return *status,
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    panic!("event stream closed")
+                }
+            }
+        }
+    })
+    .await;
+    engine.remove_device_set(ds).unwrap();
+    found.expect("a matching broadcast status within the timeout")
 }
 
 async fn decode_first(
@@ -1131,7 +1160,7 @@ async fn ident_names_an_unknown_transmission_end_to_end() {
 }
 
 #[tokio::test]
-async fn a_dab_ensemble_reaches_the_decoded_stream_through_a_virtual_device() {
+async fn a_dab_ensemble_locks_through_a_virtual_device() {
     for mode in [
         sdrmm_wire::DabTransmissionMode::I,
         sdrmm_wire::DabTransmissionMode::Ii,
@@ -1147,21 +1176,21 @@ async fn a_dab_ensemble_reaches_the_decoded_stream_through_a_virtual_device() {
             DEVICE_RATE,
         );
         let device = plant(dir.path(), "dab-ensemble", iq, DEVICE_RATE);
-        let record = decode_first(
-        &engine,
-        &device,
-        ChannelSettings {
-            frequency_hz: CENTER_HZ,
-            squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::Dab(DabParams { transmission_mode: mode, ..DabParams::default() }),
-            blanker: Default::default(),
-        },
-        |event| matches!(event, DecoderEvent::Broadcast(status) if status.locked && !status.services.is_empty()),
-    )
-    .await;
-        let DecoderEvent::Broadcast(status) = record.event else {
-            unreachable!("filtered above")
-        };
+        let status = broadcast_first(
+            &engine,
+            &device,
+            ChannelSettings {
+                frequency_hz: CENTER_HZ,
+                squelch: sdrmm_wire::Squelch::Off,
+                params: ChannelParams::Dab(DabParams {
+                    transmission_mode: mode,
+                    ..DabParams::default()
+                }),
+                blanker: Default::default(),
+            },
+            |status| status.locked && !status.services.is_empty(),
+        )
+        .await;
         assert_eq!(
             status.ensemble_label.as_deref(),
             Some(synth::dab::ENSEMBLE_LABEL)
@@ -1174,11 +1203,11 @@ async fn a_dab_ensemble_reaches_the_decoded_stream_through_a_virtual_device() {
 }
 
 #[tokio::test]
-async fn a_dvb_s_transport_stream_reaches_the_decoded_stream() {
+async fn a_dvb_s_transport_stream_names_its_program() {
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
     let device = plant(dir.path(), "dvb-s", synth::datv::dvbs(4), 2_000_000.0);
-    let record = decode_first(
+    let status = broadcast_first(
         &engine,
         &device,
         ChannelSettings {
@@ -1192,12 +1221,9 @@ async fn a_dvb_s_transport_stream_reaches_the_decoded_stream() {
             }),
             blanker: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Broadcast(status) if !status.services.is_empty()),
+        |status| !status.services.is_empty(),
     )
     .await;
-    let DecoderEvent::Broadcast(status) = record.event else {
-        unreachable!("filtered above")
-    };
     assert_eq!(status.system, BroadcastSystem::DvbS);
     assert_eq!(status.label.as_deref(), Some(synth::datv::PROGRAM_NAME));
     assert_eq!(status.code_rate.as_deref(), Some("3/4"));
@@ -1221,11 +1247,11 @@ fn datv_qpsk_fixture() -> Vec<Complex<f32>> {
 }
 
 #[tokio::test]
-async fn datv_qpsk_lock_reaches_the_decoded_stream() {
+async fn datv_qpsk_lock_is_reported() {
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
     let device = plant(dir.path(), "datv-qpsk", datv_qpsk_fixture(), 2_000_000.0);
-    let record = decode_first(
+    let status = broadcast_first(
         &engine,
         &device,
         ChannelSettings {
@@ -1238,17 +1264,14 @@ async fn datv_qpsk_lock_reaches_the_decoded_stream() {
             }),
             blanker: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Broadcast(status) if status.system == BroadcastSystem::DvbS2 && status.locked),
+        |status| status.system == BroadcastSystem::DvbS2 && status.locked,
     )
     .await;
-    let DecoderEvent::Broadcast(status) = record.event else {
-        unreachable!("filtered above")
-    };
     assert_eq!(status.symbol_rate, Some(250_000.0));
 }
 
 #[tokio::test]
-async fn drm30_lock_reaches_the_decoded_stream() {
+async fn drm30_lock_is_reported() {
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
     let device = plant(
@@ -1257,7 +1280,7 @@ async fn drm30_lock_reaches_the_decoded_stream() {
         synth::drm::signal(synth::drm::defaults(synth::drm::Robustness::B), 3),
         synth::drm::RATE_HZ,
     );
-    let record = decode_first(
+    let status = broadcast_first(
         &engine,
         &device,
         ChannelSettings {
@@ -1270,12 +1293,9 @@ async fn drm30_lock_reaches_the_decoded_stream() {
             }),
             blanker: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Broadcast(status) if status.system == BroadcastSystem::Drm30 && status.locked),
+        |status| status.system == BroadcastSystem::Drm30 && status.locked,
     )
     .await;
-    let DecoderEvent::Broadcast(status) = record.event else {
-        unreachable!("filtered above")
-    };
     assert!(status.frequency_error_hz.abs() < 30.0, "{status:?}");
 }
 

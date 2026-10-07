@@ -118,7 +118,8 @@ pub use radiosonde::RadiosondeChannel;
 pub use rtty::RttyChannel;
 use sdrmm_dsp::{Decimator, FirC};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, PositionFix, Sideband,
+    BroadcastStatus, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, PositionFix,
+    Sideband,
 };
 pub use selcall::SelcallChannel;
 pub use ssb::{SsbChannel, SsbTx};
@@ -345,6 +346,7 @@ pub struct ChannelOutputs {
     pub video: Vec<VideoPicture>,
     pub images: Vec<DecodedImage>,
     pub symbols: SymbolTap,
+    pub broadcast: Option<BroadcastStatus>,
 }
 
 impl ChannelOutputs {
@@ -355,6 +357,7 @@ impl ChannelOutputs {
         self.video.clear();
         self.images.clear();
         self.symbols.clear();
+        self.broadcast = None;
     }
 }
 
@@ -1081,7 +1084,7 @@ mod tests {
                 "{} emitted a partial sample frame",
                 d.type_id
             );
-            if matches!(d.decoder_kind.as_deref(), Some("dv" | "broadcast")) {
+            if matches!(d.decoder_kind.as_deref(), Some("dv" | "broadcast_data")) {
                 continue;
             }
             if d.type_id == "atv" && audio.is_empty() {

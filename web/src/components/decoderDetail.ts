@@ -421,53 +421,6 @@ const DETAIL: {
         ? new TextDecoder().decode(new Uint8Array(data.bytes))
         : null,
   }),
-  broadcast: (status) => ({
-    fields: fields([
-      ["System", broadcastSystem(status.system)],
-      ["Mode", status.transmission_mode?.toUpperCase()],
-      ["Lock", status.locked ? "locked" : "searching"],
-      ["SNR", status.locked ? `${status.snr_db.toFixed(1)} dB` : undefined],
-      [
-        "Frequency error",
-        status.locked
-          ? `${status.frequency_error_hz >= 0 ? "+" : ""}${status.frequency_error_hz.toFixed(0)} Hz`
-          : undefined,
-      ],
-      ["Symbol rate", status.symbol_rate == null ? undefined : `${status.symbol_rate} Bd`],
-      [
-        "Superframe",
-        status.superframe == null
-          ? undefined
-          : `format ${status.superframe.format}, WH ${[
-              status.superframe.sosf,
-              status.superframe.pilot,
-              status.superframe.trailer,
-            ]
-              .filter((row) => row != null)
-              .join("/")}, codes ${status.superframe.reference}/${status.superframe.payload}`,
-      ],
-      ["Ensemble ID", status.ensemble_id == null ? undefined : hex(status.ensemble_id, 4)],
-      ["Service ID", status.service_id == null ? undefined : hex(status.service_id, 4)],
-      ["Label", status.label],
-      [
-        "Audio frames",
-        (status.audio_frames_ok ?? 0) > 0 ? String(status.audio_frames_ok) : undefined,
-      ],
-      [
-        "Audio failures",
-        (status.audio_frames_bad ?? 0) > 0 ? String(status.audio_frames_bad) : undefined,
-      ],
-      ["Audio error", status.audio_error],
-      ["Video frames", status.video_frames_ok ? String(status.video_frames_ok) : undefined],
-      ["Video failures", status.video_frames_bad ? String(status.video_frames_bad) : undefined],
-      ["Video error", status.video_error],
-      ["Data groups", status.data_groups_ok ? String(status.data_groups_ok) : undefined],
-      ["Data failures", status.data_groups_bad ? String(status.data_groups_bad) : undefined],
-      ["Data error", status.data_error],
-      ["Dynamic label", status.dynamic_label],
-    ]),
-    body: null,
-  }),
   radio_clock: (r) => ({
     fields: fields([
       ["Service", r.standard.toUpperCase()],
@@ -652,20 +605,6 @@ function utcOffset(minutes: number | null | undefined): string | undefined {
   const sign = minutes < 0 ? "−" : "+";
   const absolute = Math.abs(minutes);
   return `UTC${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
-}
-
-function broadcastSystem(system: string): string {
-  const labels: Record<string, string> = {
-    dab: "DAB",
-    dab_plus: "DAB+",
-    dvb_s: "DVB-S",
-    dvb_s2: "DVB-S2",
-    dvb_t: "DVB-T",
-    dvb_t2: "DVB-T2",
-    drm30: "DRM30",
-    drm_plus: "DRM+",
-  };
-  return labels[system] ?? system;
 }
 
 function dvVendor(frame: DvFrame): string | undefined {

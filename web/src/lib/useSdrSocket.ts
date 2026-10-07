@@ -18,6 +18,7 @@ import {
 import { useArrayStore } from "./arrays";
 import { audioEngine } from "./audio/useChannelAudio";
 import { useBearingStore } from "./bearings";
+import { useBroadcastStore } from "./broadcast";
 import { useDecodedStore } from "./decoded";
 import { recordEvent } from "./diagnostics";
 import { useFusionStore } from "./fusion";
@@ -101,6 +102,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", useDecodedStore.getState().observe);
     s.on("event", useScannerStore.getState().observe);
     s.on("event", useHuntStore.getState().observe);
+    s.on("event", useBroadcastStore.getState().observe);
     s.on("event", usePositionStore.getState().observe);
     s.on("event", useSatelliteStore.getState().observe);
     s.on("event", useLevelStore.getState().observe);

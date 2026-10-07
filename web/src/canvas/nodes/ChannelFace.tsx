@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
+import { broadcastTitle } from "../../components/broadcastStatus";
 import { ChannelControls, ChannelDial } from "../../components/ChannelControls";
 import {
   channelHasAudio,
@@ -14,11 +15,11 @@ import { FaceStats, Stat } from "../../components/face/Stats";
 import { DROPS_HINT, formatCount, formatHz } from "../../components/format";
 import { SignalRow } from "../../components/SignalRow";
 import { devicesQuery } from "../../lib/api";
-import { useDecodedKind } from "../../lib/decoded";
+import { useBroadcast } from "../../lib/broadcast";
 import { heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, usePipelineHealth } from "../../lib/pipeline";
 import { trackedBy, useSatelliteStore } from "../../lib/satellite";
-import type { PatchNode, PatchNodeOf } from "../../lib/types";
+import type { BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
 import { hasWire, iqLanesOf, tuningControllerOf } from "../binding";
@@ -47,8 +48,9 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const levels = useLevelStore((state) => (set === null ? undefined : state.byDeviceSet[set.id]));
   const attached = useQuery(devicesQuery());
   const editChannel = useChannelEdit();
-  const broadcasts = useDecodedKind("broadcast");
   const tracked = useSatelliteStore((store) => trackedBy(store.byNode, node.id));
+  const live = liveChannelOf(workspace, node.id);
+  const broadcast = useBroadcast(live?.deviceSet, live?.id);
   if (node.kind !== "channel") {
     return null;
   }
@@ -67,7 +69,6 @@ export function ChannelFace({ node }: { node: PatchNode }) {
     attached: radioIsAttached(references, attached.data?.devices ?? []),
   });
   const centerHz = set === null ? null : laneCenterHz(set, source?.stream ?? 0);
-  const live = liveChannelOf(workspace, node.id);
   const settings = channelSettingsOf(workspace, node.id);
   const onEdit = (edit: ChannelEdit): void => editChannel(node.id, edit);
   const level = live === null ? undefined : levels?.[live.id];
@@ -150,17 +151,19 @@ export function ChannelFace({ node }: { node: PatchNode }) {
           <ChannelControls
             settings={settings}
             descriptor={descriptor}
-            broadcast={
-              broadcasts.find(
-                (record) => record.device_set === live?.deviceSet && record.channel === live?.id,
-              )?.event.data
-            }
+            broadcast={broadcast?.status}
             onEdit={onEdit}
           />
         )}
       </FaceBody>
       <FaceFooter>
-        {live !== null && <ChannelHealth deviceSet={live.deviceSet} channel={live.id} />}
+        {live !== null && (
+          <ChannelHealth
+            deviceSet={live.deviceSet}
+            channel={live.id}
+            broadcast={broadcast?.status}
+          />
+        )}
         {action !== null && (
           <Button
             type="button"
@@ -206,22 +209,45 @@ function faceStatus({
   return undefined;
 }
 
-function ChannelHealth({ deviceSet, channel }: { deviceSet: number; channel: number }) {
+function ChannelHealth({
+  deviceSet,
+  channel,
+  broadcast,
+}: {
+  deviceSet: number;
+  channel: number;
+  broadcast: BroadcastStatus | undefined;
+}) {
   const health = usePipelineHealth((state) => state.health);
   const summary = channelQueueSummary(health, deviceSet, channel);
-  if (summary === null) {
+  if (summary === null && broadcast === undefined) {
     return null;
   }
   return (
     <FaceStats>
-      <Stat label="Queue" title={summary.detail}>
-        {summary.oldestMs.toFixed(0)} ms
-      </Stat>
-      {summary.dropped > 0 && (
+      {broadcast !== undefined && <BroadcastStats status={broadcast} />}
+      {summary !== null && (
+        <Stat label="Queue" title={summary.detail}>
+          {summary.oldestMs.toFixed(0)} ms
+        </Stat>
+      )}
+      {summary !== null && summary.dropped > 0 && (
         <Stat label="Drops" title={DROPS_HINT} tone="warn">
           {formatCount(summary.dropped)}
         </Stat>
       )}
     </FaceStats>
+  );
+}
+
+function BroadcastStats({ status }: { status: BroadcastStatus }) {
+  const title = broadcastTitle(status);
+  if (!status.locked) {
+    return <Stat label="No lock" title={title} tone="warn" />;
+  }
+  return (
+    <Stat label="SNR" title={title} tone="ok">
+      {status.snr_db.toFixed(1)} dB
+    </Stat>
   );
 }

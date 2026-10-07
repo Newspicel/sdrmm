@@ -44,14 +44,7 @@ fn channel(mode: DrmMode, service: Option<u8>) -> DrmChannel {
 }
 
 fn status(out: &ChannelOutputs) -> &BroadcastStatus {
-    out.events
-        .iter()
-        .rev()
-        .find_map(|event| match event {
-            DecoderEvent::Broadcast(status) => Some(status),
-            _ => None,
-        })
-        .expect("a broadcast status")
+    out.broadcast.as_ref().expect("a broadcast status")
 }
 
 fn run(channel: &mut DrmChannel, iq: &[Complex<f32>]) -> ChannelOutputs {
@@ -254,28 +247,25 @@ fn a_burst_of_interference_surfaces_as_errors() {
 fn noise_never_locks() {
     let mut channel = channel(DrmMode::Auto, None);
     let iq = crate::testutil::complex_noise(7, 0.5, 2 * INPUT_RATE_HZ as usize);
-    let mut out = ChannelOutputs::default();
-    channel.process(&iq, &mut out);
-    assert!(
-        out.events
-            .iter()
-            .all(|event| !matches!(event, DecoderEvent::Broadcast(status) if status.locked))
-    );
+    never_locks(&mut channel, &iq);
 }
 
 #[test]
 fn a_single_carrier_never_locks() {
     let mut channel = channel(DrmMode::Auto, None);
-    let mut out = ChannelOutputs::default();
-    channel.process(
+    never_locks(
+        &mut channel,
         &vec![Complex::new(1.0, 0.0); 2 * INPUT_RATE_HZ as usize],
-        &mut out,
     );
-    assert!(
-        out.events
-            .iter()
-            .all(|event| !matches!(event, DecoderEvent::Broadcast(status) if status.locked))
-    );
+}
+
+fn never_locks(channel: &mut DrmChannel, iq: &[Complex<f32>]) {
+    let mut out = ChannelOutputs::default();
+    for block in iq.chunks(4_096) {
+        out.reset();
+        channel.process(block, &mut out);
+        assert!(!out.broadcast.as_ref().is_some_and(|status| status.locked));
+    }
 }
 
 #[test]

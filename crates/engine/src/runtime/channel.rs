@@ -9,7 +9,7 @@ use sdrmm_channels::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
 };
 use sdrmm_dsp::{LevelMeter, NoiseBlanker, Squelch};
-use sdrmm_wire::{ChannelSettings, DecoderEvent, PositionFix};
+use sdrmm_wire::{BroadcastStatus, ChannelSettings, DecoderEvent, PositionFix};
 use tokio::sync::broadcast;
 
 use super::{downconvert::Downconverter, dsp_block_len};
@@ -33,7 +33,12 @@ pub(crate) struct RawDecoded {
     pub(crate) device_set: u32,
     pub(crate) channel: u32,
     pub(crate) freq_hz: f64,
-    pub(crate) event: DecoderEvent,
+    pub(crate) payload: RawPayload,
+}
+
+pub(crate) enum RawPayload {
+    Event(DecoderEvent),
+    Broadcast(BroadcastStatus),
 }
 
 pub(crate) struct RawImage {
@@ -87,11 +92,19 @@ impl DecodedSink {
     }
 
     pub(crate) fn publish(&self, freq_hz: f64, event: DecoderEvent) {
+        self.send(freq_hz, RawPayload::Event(event));
+    }
+
+    pub(crate) fn publish_broadcast(&self, freq_hz: f64, status: BroadcastStatus) {
+        self.send(freq_hz, RawPayload::Broadcast(status));
+    }
+
+    fn send(&self, freq_hz: f64, payload: RawPayload) {
         let record = RawDecoded {
             device_set: self.device_set,
             channel: self.channel,
             freq_hz,
-            event,
+            payload,
         };
         if self.tx.try_send(record).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);

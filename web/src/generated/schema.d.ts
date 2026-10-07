@@ -3900,10 +3900,6 @@ export interface components {
             /** @enum {string} */
             kind: "ident";
         } | {
-            data: components["schemas"]["BroadcastStatus"];
-            /** @enum {string} */
-            kind: "broadcast";
-        } | {
             data: components["schemas"]["BroadcastData"];
             /** @enum {string} */
             kind: "broadcast_data";
@@ -7728,6 +7724,16 @@ export interface components {
             };
             /** @enum {string} */
             type: "HuntUpdate";
+        } | {
+            data: {
+                /** Format: int32 */
+                channel: number;
+                /** Format: int32 */
+                device_set: number;
+                status: components["schemas"]["BroadcastStatus"];
+            };
+            /** @enum {string} */
+            type: "BroadcastUpdate";
         } | {
             data: {
                 status: components["schemas"]["SatelliteStatus"];

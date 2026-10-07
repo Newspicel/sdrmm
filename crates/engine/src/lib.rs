@@ -85,6 +85,7 @@ use crate::{
     recording::RecordingShared,
     runtime::{
         CaptureRuntime, ChannelSinks, DecodedSink, DeviceRuntime, DspCommand, RawDecoded, RawImage,
+        RawPayload,
     },
     scanner::ScannerState,
     sinks::ChannelBasebandRecording,
@@ -1004,28 +1005,43 @@ impl Engine {
                         tracing::warn!(count, "decoded events dropped: the decoder log is behind");
                         engine.emit(ServerEvent::DecodedLost { count });
                     }
-                    let Some(raw) = raw else { continue };
-                    let at = format!("{:.9}", jiff::Timestamp::now());
-                    let record = DecodedRecord {
-                        origin: None,
-                        sinks: Vec::new(),
-                        device_set: raw.device_set,
-                        channel: raw.channel,
-                        at,
-                        freq_hz: raw.freq_hz,
-                        event: raw.event,
-                    };
-                    if engine.trunk_active.load(Ordering::Relaxed) {
-                        let _ = engine
-                            .trunk_tx
-                            .send(trunking::TrunkInput::Record(Box::new(record.clone())));
+                    if let Some(raw) = raw {
+                        engine.route_raw(raw);
                     }
-                    let _ = engine.decoded_tx_out.send(record);
                 }
             });
         if let Err(e) = spawned {
             tracing::error!("failed to spawn decoder pump: {e}");
         }
+    }
+
+    fn route_raw(&self, raw: RawDecoded) {
+        let event = match raw.payload {
+            RawPayload::Event(event) => event,
+            RawPayload::Broadcast(status) => {
+                self.emit(ServerEvent::BroadcastUpdate {
+                    device_set: raw.device_set,
+                    channel: raw.channel,
+                    status: Box::new(status),
+                });
+                return;
+            }
+        };
+        let record = DecodedRecord {
+            origin: None,
+            sinks: Vec::new(),
+            device_set: raw.device_set,
+            channel: raw.channel,
+            at: format!("{:.9}", jiff::Timestamp::now()),
+            freq_hz: raw.freq_hz,
+            event,
+        };
+        if self.trunk_active.load(Ordering::Relaxed) {
+            let _ = self
+                .trunk_tx
+                .send(trunking::TrunkInput::Record(Box::new(record.clone())));
+        }
+        let _ = self.decoded_tx_out.send(record);
     }
 
     fn spawn_image_pump(self: &Arc<Self>, image_rx: mpsc::Receiver<RawImage>) {

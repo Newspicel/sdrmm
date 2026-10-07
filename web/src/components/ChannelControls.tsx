@@ -1,4 +1,4 @@
-import type { ChannelDescriptor, ChannelSettings } from "../lib/types";
+import type { BroadcastStatus, ChannelDescriptor, ChannelSettings } from "../lib/types";
 import type { ChannelEdit } from "../lib/useChannelPatch";
 import { BlankerChip } from "./BlankerControl";
 import { AUDIO_LIMITS, channelHasAudio, radioWindowHz, squelchMarginDb } from "./channelSettings";
@@ -6,7 +6,7 @@ import { inTuningRange, type Range } from "./dial";
 import { FrequencyDial } from "./FrequencyDial";
 import { Chips, NumberChip } from "./face/Chips";
 import { formatMhz } from "./format";
-import { type BroadcastStatus, ModeChips } from "./ModeChips";
+import { ModeChips } from "./ModeChips";
 import { TuneTo } from "./TuneTo";
 import { TuningLock } from "./TuningLock";
 

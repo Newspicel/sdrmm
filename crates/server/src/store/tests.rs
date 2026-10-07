@@ -2309,6 +2309,34 @@ fn a_stored_retired_decoder_event_leaves_the_log() {
 }
 
 #[test]
+fn a_stored_broadcast_status_leaves_the_log() {
+    let file = tempfile::NamedTempFile::new().expect("temp db");
+    {
+        let store = Store::open(Some(file.path())).expect("open");
+        seed(&store);
+        let conn = store.lock();
+        conn.execute(
+            "INSERT INTO decoder_log (at, device_set, channel, kind, freq_hz, summary, event) \
+             VALUES ('2026-08-09T12:00:03Z', 0, 0, 'broadcast', 100000000.0, 'DVB-T', \
+             '{\"kind\":\"broadcast\",\"data\":{\"system\":\"dvb_t\"}}')",
+            [],
+        )
+        .expect("an old row");
+        let retiring = MIGRATIONS
+            .iter()
+            .position(|migration| migration.contains("kind = 'broadcast'"))
+            .expect("the retiring migration");
+        conn.pragma_update(None, "user_version", retiring as i64)
+            .expect("rewind");
+    }
+
+    let store = Store::open(Some(file.path())).expect("reopen");
+    let (entries, total) = query(&store, DecoderLogQuery::default());
+    assert_eq!(total, 3);
+    assert!(entries.iter().all(|entry| entry.kind != "broadcast"));
+}
+
+#[test]
 fn an_old_radar_detection_leaves_the_log() {
     let store = Store::open(None).expect("open");
     seed(&store);

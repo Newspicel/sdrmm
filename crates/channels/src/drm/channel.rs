@@ -4,7 +4,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
     BroadcastService, BroadcastServiceKind, BroadcastStatus, BroadcastSystem, ChannelDescriptor,
-    ChannelSettings, DecoderEvent, DecoderFamily, DrmMode, DrmParams,
+    ChannelSettings, DecoderFamily, DrmMode, DrmParams,
 };
 
 use super::{
@@ -35,7 +35,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: DRM_PLUS_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    decoder_kind: Some("broadcast".to_owned()),
+    decoder_kind: Some("broadcast_data".to_owned()),
     ..ChannelDescriptor::default()
 });
 
@@ -280,7 +280,7 @@ impl DrmChannel {
                 ..BroadcastStatus::default()
             },
         };
-        out.events.push(DecoderEvent::Broadcast(status));
+        out.broadcast = Some(status);
     }
 
     fn locked_status(&self, locked: &Locked) -> BroadcastStatus {

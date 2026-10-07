@@ -112,7 +112,6 @@ export function kindsOffered(
     const kind = descriptor?.decoder_kind;
     if (kind != null) {
       kinds.add(kind);
-      if (kind === "broadcast") kinds.add("broadcast_data");
     }
     if (descriptor?.has_audio === true || kind === "dv") {
       kinds.add("call");

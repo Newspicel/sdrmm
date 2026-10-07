@@ -780,6 +780,17 @@ pub enum BroadcastSystem {
 }
 
 impl BroadcastSystem {
+    pub const ALL: [Self; 8] = [
+        Self::Dab,
+        Self::DabPlus,
+        Self::DvbS,
+        Self::DvbS2,
+        Self::DvbT,
+        Self::DvbT2,
+        Self::Drm30,
+        Self::DrmPlus,
+    ];
+
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -1435,7 +1446,6 @@ pub enum DecoderEvent {
     Psk(PskText),
     Wspr(WsprSpot),
     Ident(IdentReport),
-    Broadcast(BroadcastStatus),
     BroadcastData(BroadcastData),
     RadioClock(RadioClockFrame),
     Gnss(GnssFrame),
@@ -1695,7 +1705,6 @@ impl DecoderEvent {
             Self::Psk(_) => "psk",
             Self::Wspr(_) => "wspr",
             Self::Ident(_) => "ident",
-            Self::Broadcast(_) => "broadcast",
             Self::BroadcastData(_) => "broadcast_data",
             Self::RadioClock(_) => "radio_clock",
             Self::Gnss(_) => "gnss",
@@ -1835,36 +1844,6 @@ impl DecoderEvent {
             Self::Wspr(s) => format!("{} · {:+.0} dB · {:.0} Hz", s.text, s.snr_db, s.audio_hz),
             Self::Ident(r) => ident_summary(r),
             Self::BroadcastData(data) => format!("{} · {} bytes", data.name, data.bytes.len()),
-            Self::Broadcast(status) => {
-                let mut parts = vec![status.system.label().to_owned()];
-                parts.push(if status.locked { "locked" } else { "searching" }.to_owned());
-                if status.locked {
-                    parts.push(format!("{:.1} dB SNR", status.snr_db));
-                    parts.push(format!("{:+.0} Hz", status.frequency_error_hz));
-                }
-                if let Some(label) = &status.ensemble_label {
-                    parts.push(label.clone());
-                }
-                if let Some(label) = &status.label {
-                    parts.push(label.clone());
-                }
-                if let Some(rate) = &status.code_rate {
-                    parts.push(format!("FEC {rate}"));
-                }
-                if let Some(kbps) = status.bitrate_kbps {
-                    parts.push(crate::units::bit_rate(f64::from(kbps) * 1e3));
-                }
-                if let Some(ber) = status.bit_error_rate {
-                    parts.push(format!("BER {ber:.1e}"));
-                }
-                if !status.services.is_empty() {
-                    parts.push(format!("{} services", status.services.len()));
-                }
-                if let Some(text) = &status.text {
-                    parts.push(text.clone());
-                }
-                parts.join(" · ")
-            }
             Self::RadioClock(r) => {
                 let mut parts = vec![
                     format!("{:?}", r.standard).to_uppercase(),
@@ -1988,10 +1967,6 @@ impl DecoderEvent {
             | Self::Ident(_)
             | Self::Selcall(_) => None,
             Self::BroadcastData(_) => None,
-            Self::Broadcast(status) => status
-                .service_id
-                .or(status.ensemble_id)
-                .map(|id| format!("{id:X}")),
             Self::Gnss(g) => Some(format!("GPS-{}", g.prn)),
             Self::RadioClock(r) => Some(format!("{:?}", r.standard).to_uppercase()),
             Self::Sstv(p) => Some(p.mode.label().to_owned()),
@@ -2211,7 +2186,6 @@ mod tests {
                 time_offset_s: 0.0,
                 drift_hz: 0.0,
             }),
-            DecoderEvent::Broadcast(BroadcastStatus::default()),
             DecoderEvent::BroadcastData(BroadcastData {
                 protocol: None,
                 label: Vec::new(),

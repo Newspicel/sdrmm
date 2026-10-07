@@ -373,6 +373,7 @@ const MIGRATIONS: &[&str] = &[
     ) WITHOUT ROWID;
     ",
     "ALTER TABLE recordings ADD COLUMN lanes INTEGER NOT NULL DEFAULT 1;",
+    "DELETE FROM decoder_log WHERE kind = 'broadcast';",
 ];
 
 const SERVER_ID_KEY: &str = "server_id";

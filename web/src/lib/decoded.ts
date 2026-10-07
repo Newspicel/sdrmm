@@ -292,7 +292,6 @@ function stationId(event: DecoderEvent): string | null {
     case "dv":
     case "ident":
     case "broadcast_data":
-    case "broadcast":
     case "radio_clock":
     case "gnss":
     case "sstv":

@@ -37,7 +37,6 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   ft4: "FT4",
   psk: "PSK",
   wspr: "WSPR",
-  broadcast: "Digital broadcast",
   broadcast_data: "Broadcast data",
   radio_clock: "Radio clock",
   gnss: "GNSS lab",

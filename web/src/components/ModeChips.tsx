@@ -1,4 +1,4 @@
-import type { ChannelParams, DecoderEvent, ParamLimit } from "../lib/types";
+import type { BroadcastStatus, ChannelParams, ParamLimit } from "../lib/types";
 import { type ChannelTypeId, limitOf, type NumberLimit, scaledLimit } from "./channelSettings";
 import type { Options } from "./controls";
 import {
@@ -71,8 +71,6 @@ import { NumberField } from "./NumberField";
 import { Segmented } from "./Segmented";
 import { withCurrent } from "./selectOptions";
 import { TextAutocomplete } from "./TextAutocomplete";
-
-export type BroadcastStatus = Extract<DecoderEvent, { kind: "broadcast" }>["data"];
 
 type Limits = readonly ParamLimit[];
 type ParamsOf<K extends ChannelTypeId> = Extract<ChannelParams, { type: K }>;

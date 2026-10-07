@@ -168,6 +168,9 @@ impl ChannelPublisher {
                 for event in packet.outputs.events.drain(..) {
                     decoded.publish(packet.frequency, event);
                 }
+                if let Some(status) = packet.outputs.broadcast.take() {
+                    decoded.publish_broadcast(packet.frequency, status);
+                }
                 for image in packet.outputs.images.drain(..) {
                     decoded.publish_image(packet.frequency, image);
                 }

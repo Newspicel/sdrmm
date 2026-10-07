@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { capturedImageUrl, imagesQuery } from "../lib/api";
+import { useBroadcastStore } from "../lib/broadcast";
 import { copyText } from "../lib/copyText";
 import { useDecodedKind, useDecodedStore, useStations } from "../lib/decoded";
 import type { DecodedRecordOf, DecoderKind, IdentSignal } from "../lib/types";
@@ -1028,16 +1029,17 @@ function PicturesView({ source, scope = {} }: { source: PictureSource; scope?: D
 }
 
 function BroadcastView({ scope }: { scope: DecoderScope }) {
-  const statuses = recordsInScope(useDecodedKind("broadcast"), scope);
+  const current = useBroadcastStore((store) =>
+    Object.values(store.byChannel).find((entry) => inScope(entry.deviceSet, entry.channel, scope)),
+  );
   const objects = recordsInScope(useDecodedKind("broadcast_data"), scope);
-  const status = statuses.at(0)?.event.data;
+  const status = current?.status;
   const object = status?.locked
     ? objects.find(
         (record) =>
           record.event.data.service_id === status.service_id &&
-          record.device_set === statuses[0]?.device_set &&
-          record.channel === statuses[0]?.channel &&
-          record.freq_hz === statuses[0]?.freq_hz,
+          record.device_set === current?.deviceSet &&
+          record.channel === current?.channel,
       )?.event.data
     : undefined;
   return (
@@ -1075,7 +1077,6 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   ft8: null,
   ft4: null,
   wspr: null,
-  broadcast: (scope) => <BroadcastView scope={scope} />,
   broadcast_data: (scope) => <BroadcastView scope={scope} />,
   radio_clock: null,
   gnss: null,

@@ -152,6 +152,7 @@ export type ScanState = components["schemas"]["ScanState"];
 export type ScanMode = components["schemas"]["ScanMode"];
 export type HuntSettings = components["schemas"]["HuntSettings"];
 export type HuntStatus = components["schemas"]["HuntStatus"];
+export type BroadcastStatus = components["schemas"]["BroadcastStatus"];
 export type SatelliteNode = components["schemas"]["SatelliteNode"];
 export type SatelliteStatus = components["schemas"]["SatelliteStatus"];
 export type SatellitePass = components["schemas"]["SatellitePass"];

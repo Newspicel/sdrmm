@@ -63,20 +63,6 @@ export function hasPosition(event: DecoderEvent): boolean {
   return data?.lat != null && data?.lon != null;
 }
 
-function broadcastSystem(system: string): string {
-  const labels: Record<string, string> = {
-    dab: "DAB",
-    dab_plus: "DAB+",
-    dvb_s: "DVB-S",
-    dvb_s2: "DVB-S2",
-    dvb_t: "DVB-T",
-    dvb_t2: "DVB-T2",
-    drm30: "DRM30",
-    drm_plus: "DRM+",
-  };
-  return labels[system] ?? system;
-}
-
 function join(parts: readonly (string | null)[]): string {
   return parts.filter((p) => p !== null).join(" · ");
 }
@@ -157,18 +143,6 @@ function identSummary(r: EventData<"ident">): string {
     loudest.deviation_hz == null ? null : `\u00b1${Math.round(loudest.deviation_hz)} Hz`,
     loudest.burst_ms == null ? null : `${loudest.burst_ms.toFixed(1)} ms bursts`,
     best == null ? null : `${best.name} (${candidateScore(best)})`,
-  ]);
-}
-
-function broadcastSummary(status: EventData<"broadcast">): string {
-  return join([
-    broadcastSystem(status.system),
-    status.locked ? "locked" : "searching",
-    status.locked ? `${status.snr_db.toFixed(1)} dB SNR` : null,
-    status.locked
-      ? `${status.frequency_error_hz >= 0 ? "+" : ""}${status.frequency_error_hz.toFixed(0)} Hz`
-      : null,
-    status.label ?? null,
   ]);
 }
 
@@ -291,8 +265,6 @@ export function eventSummary(event: DecoderEvent): string {
       return identSummary(event.data);
     case "broadcast_data":
       return `${event.data.name} · ${event.data.bytes.length} bytes`;
-    case "broadcast":
-      return broadcastSummary(event.data);
     case "radio_clock": {
       const r = event.data;
       return join([r.standard.toUpperCase(), r.datetime, r.leap_warning ? "leap warning" : null]);
@@ -508,10 +480,5 @@ export function eventStation(event: DecoderEvent): string | null {
       return SSTV_MODE_LABELS[event.data.mode];
     case "broadcast_data":
       return null;
-    case "broadcast": {
-      const status = event.data;
-      const id = status.service_id ?? status.ensemble_id;
-      return id == null ? null : id.toString(16).toUpperCase();
-    }
   }
 }
