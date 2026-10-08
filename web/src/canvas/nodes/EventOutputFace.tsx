@@ -79,6 +79,9 @@ function emptyHint(inputs: number, configured: boolean, target: EventOutputTarge
   if (target.service === "desktop") {
     return "One notification per event";
   }
+  if (target.service === "csv") {
+    return configured ? "One row per event in Recordings" : "Enter a file name";
+  }
   if (target.service === "tunnel") {
     return configured ? "Received IPv4 and IPv6 datagrams" : "Enter the interface name";
   }
@@ -115,6 +118,16 @@ function TargetChips({
     case "recordings":
     case "desktop":
       return null;
+    case "csv":
+      return (
+        <TextChip
+          label="File"
+          name="CSV file name"
+          title="Appended in Recordings/events. Letters, digits, - _ and ."
+          value={target.file}
+          onCommit={(file) => onEdit({ ...target, file })}
+        />
+      );
     case "beast":
       return (
         <TextChip

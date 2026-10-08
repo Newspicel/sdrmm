@@ -17591,6 +17591,24 @@
           {
             "type": "object",
             "required": [
+              "file",
+              "service"
+            ],
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "csv"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
               "address",
               "service"
             ],

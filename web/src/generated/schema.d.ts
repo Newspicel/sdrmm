@@ -4875,6 +4875,10 @@ export interface components {
             /** @enum {string} */
             service: "desktop";
         } | {
+            file: string;
+            /** @enum {string} */
+            service: "csv";
+        } | {
             address: string;
             enabled?: boolean;
             /** @enum {string} */

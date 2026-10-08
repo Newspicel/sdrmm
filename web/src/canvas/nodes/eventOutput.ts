@@ -3,6 +3,7 @@ import type { EventOutputTarget } from "../../lib/types";
 export const OUTPUT_SERVICES = [
   { value: "recordings", label: "Recordings" },
   { value: "desktop", label: "Notification" },
+  { value: "csv", label: "CSV file" },
   { value: "beast", label: "ADS-B Beast TCP" },
   { value: "webhook", label: "Webhook" },
   { value: "matrix", label: "Matrix" },
@@ -28,6 +29,8 @@ export function newOutputTarget(service: EventOutputTarget["service"]): EventOut
     case "recordings":
     case "desktop":
       return { service };
+    case "csv":
+      return { service, file: "events" };
     case "beast":
       return { service, address: "127.0.0.1:30005", enabled: false };
     case "tunnel":
@@ -50,6 +53,8 @@ export function eventOutputConfigured(target: EventOutputTarget): boolean {
     case "recordings":
     case "desktop":
       return true;
+    case "csv":
+      return target.file.trim() !== "";
     case "beast":
       return target.enabled === true && target.address.trim() !== "";
     case "tunnel":

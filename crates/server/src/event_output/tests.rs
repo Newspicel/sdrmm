@@ -1525,3 +1525,76 @@ async fn an_unreachable_postgres_surfaces_the_failure() {
 
     assert!(error.starts_with("Postgres connect:"), "{error}");
 }
+
+#[test]
+fn a_csv_row_quotes_text_and_defuses_formulas() {
+    let record = DecodedRecord {
+        event: DecoderEvent::Rtty(RttyText {
+            text: "=HYPERLINK(\"x\"), hi".to_owned(),
+        }),
+        ..decoded()
+    };
+    let message = decoded_message("log", &record, 1);
+
+    let row = csv::row("log", &message.facts);
+
+    assert_eq!(
+        row,
+        "2026-08-15T10:00:02Z,rtty,log,1,2,14080000,,\"'=HYPERLINK(\"\"x\"\"), hi\",\
+         \"{\"\"text\"\":\"\"=HYPERLINK(\\\"\"x\\\"\"), hi\"\"}\"\r\n"
+    );
+}
+
+#[tokio::test]
+async fn csv_appends_rows_under_one_header() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let engine = Engine::with_registry(
+        sdrmm_device::DeviceRegistry::new(),
+        Some(dir.path().to_path_buf()),
+    );
+    let target = EventOutputTarget::Csv {
+        file: "log".to_owned(),
+    };
+    let batch = [
+        delivery_to("log", target.clone(), &decoded()),
+        delivery_to("log", target, &decoded()),
+    ];
+    let weak = Arc::downgrade(&engine);
+
+    csv::append(&weak, "log", &batch).await.expect("first");
+    csv::append(&weak, "log", &batch[..1])
+        .await
+        .expect("second");
+
+    let text = std::fs::read_to_string(csv::events_dir(dir.path()).join("log.csv")).expect("read");
+    let lines: Vec<_> = text.lines().collect();
+    assert_eq!(lines.len(), 4);
+    assert!(lines[0].starts_with("at,kind,output"));
+    assert_eq!(
+        lines.iter().filter(|line| line.starts_with("at,")).count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn csv_refuses_a_path_and_a_missing_library() {
+    let engine = Engine::with_registry(sdrmm_device::DeviceRegistry::new(), None);
+    let weak = Arc::downgrade(&engine);
+    let batch = [delivery_to(
+        "log",
+        EventOutputTarget::Csv {
+            file: "log".to_owned(),
+        },
+        &decoded(),
+    )];
+
+    let escape = csv::append(&weak, "../log", &batch)
+        .await
+        .expect_err("path");
+    let missing = csv::append(&weak, "log", &batch)
+        .await
+        .expect_err("no library");
+
+    assert!(escape.to_string().contains("plain name"), "{escape}");
+    assert!(missing.to_string().contains("recordings"), "{missing}");
+}

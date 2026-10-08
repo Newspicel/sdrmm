@@ -22,6 +22,7 @@ use tokio::sync::{
 use crate::{NativeShell, Store, calls::Calls, decoded::Decoded};
 
 mod beast;
+mod csv;
 mod influx;
 mod postgres;
 mod status;
@@ -394,7 +395,9 @@ async fn deliver_all(
 fn same_batch(first: &Delivery, next: &Delivery) -> bool {
     matches!(
         first.target,
-        EventOutputTarget::Postgres { .. } | EventOutputTarget::Influx { .. }
+        EventOutputTarget::Postgres { .. }
+            | EventOutputTarget::Influx { .. }
+            | EventOutputTarget::Csv { .. }
     ) && first.node == next.node
         && first.target == next.target
 }
@@ -462,6 +465,7 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
     match &delivery.target {
         EventOutputTarget::Recordings => save_recording(outputs.engine, &delivery.message).await,
         EventOutputTarget::Desktop => notify(outputs.shell, &delivery.message).await,
+        EventOutputTarget::Csv { file } => csv::append(outputs.engine, file, batch).await,
         EventOutputTarget::Tunnel { .. } | EventOutputTarget::Beast { .. } => Err(
             DeliveryError::Failed("Network streams use the dedicated writer".to_owned()),
         ),

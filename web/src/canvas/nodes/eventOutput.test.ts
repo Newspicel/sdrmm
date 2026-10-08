@@ -35,6 +35,12 @@ describe("event output configuration", () => {
     expect(offered(false, "desktop")).toBe(true);
   });
 
+  it("appends CSV once a file name is set", () => {
+    expect(newOutputTarget("csv")).toEqual({ service: "csv", file: "events" });
+    expect(eventOutputConfigured({ service: "csv", file: "events" })).toBe(true);
+    expect(eventOutputConfigured({ service: "csv", file: " " })).toBe(false);
+  });
+
   it("opens Beast only after an address and explicit enable", () => {
     expect(
       eventOutputConfigured({ service: "beast", address: "127.0.0.1:30005", enabled: false }),
