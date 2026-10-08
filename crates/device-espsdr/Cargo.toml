@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 sdrmm-wire.workspace = true
 sdrmm-device.workspace = true
+sdrmm-dsp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serialport.workspace = true

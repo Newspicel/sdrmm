@@ -2446,6 +2446,8 @@ export interface components {
             token_required: boolean;
         };
         /** @enum {string} */
+        AuthType: "none" | "uas_id_signature" | "operator_id_signature" | "message_set_signature" | "network_remote_id" | "specific_method" | "reserved" | "private";
+        /** @enum {string} */
         AvhrrChannel: "ch1" | "ch2" | "ch3a" | "ch3b" | "ch4" | "ch5";
         BandAllocation: {
             aliases?: string[];
@@ -3219,6 +3221,10 @@ export interface components {
             settings: components["schemas"]["LoraParams"];
             /** @enum {string} */
             type: "lora";
+        } | {
+            settings: components["schemas"]["RemoteIdParams"];
+            /** @enum {string} */
+            type: "remote_id";
         };
         ChannelSettings: {
             blanker?: components["schemas"]["NoiseBlankerSettings"];
@@ -3996,6 +4002,10 @@ export interface components {
             data: components["schemas"]["LoraFrame"];
             /** @enum {string} */
             kind: "lora";
+        } | {
+            data: components["schemas"]["RemoteIdFrame"];
+            /** @enum {string} */
+            kind: "remote_id";
         };
         /** @enum {string} */
         DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
@@ -4792,6 +4802,13 @@ export interface components {
          * @enum {string}
          */
         ErrorCode: "request" | "not_found" | "conflict" | "unavailable" | "engine" | "storage" | "tool" | "forbidden" | "internal" | "auth" | "rate_limited";
+        /** @enum {string} */
+        EuCategory: "undeclared" | "open" | "specific" | "certified" | "reserved";
+        EuClassification: {
+            category: components["schemas"]["EuCategory"];
+            /** Format: int32 */
+            class?: number | null;
+        };
         EventAudio: {
             media_type: string;
             url: string;
@@ -5049,6 +5066,8 @@ export interface components {
         Hand: "right" | "left" | "linear";
         /** @enum {string} */
         HeadingSource: "compass" | "course" | "fused" | "gnss" | "sensor";
+        /** @enum {string} */
+        HeightReference: "takeoff" | "ground";
         HeldLane: {
             array: string;
             /** Format: int32 */
@@ -6329,6 +6348,8 @@ export interface components {
             /** @enum {string} */
             state: "superseded";
         };
+        /** @enum {string} */
+        OperatorLocationType: "takeoff" | "live_gnss" | "fixed" | "reserved";
         P25Params: Record<string, never>;
         /** @enum {string} */
         PagerPayload: "tone" | "numeric" | "alpha" | "binary";
@@ -7369,6 +7390,127 @@ export interface components {
         };
         /** @enum {string} */
         ReferenceMode: "raw" | "cma" | "dab_remod";
+        RemoteIdFrame: {
+            address: string;
+            /** Format: int32 */
+            channel?: number | null;
+            /** Format: int32 */
+            counter?: number | null;
+            /** Format: float */
+            level_dbfs: number;
+            messages: components["schemas"]["RemoteIdMessage"][];
+            phy: components["schemas"]["RemoteIdPhy"];
+            /** Format: int32 */
+            rejected?: number;
+            ssid?: string | null;
+            transport: components["schemas"]["RemoteIdTransport"];
+            uas_id?: string | null;
+        };
+        /** @enum {string} */
+        RemoteIdLink: "bluetooth" | "bluetooth_band" | "wifi";
+        RemoteIdLocation: {
+            /** Format: float */
+            geodetic_altitude_m?: number | null;
+            /** Format: float */
+            height_m?: number | null;
+            height_reference: components["schemas"]["HeightReference"];
+            /** Format: float */
+            horizontal_accuracy_m?: number | null;
+            /** Format: double */
+            lat?: number | null;
+            /** Format: double */
+            lon?: number | null;
+            /** Format: float */
+            pressure_accuracy_m?: number | null;
+            /** Format: float */
+            pressure_altitude_m?: number | null;
+            /** Format: float */
+            seconds_after_hour?: number | null;
+            /** Format: float */
+            speed_accuracy_mps?: number | null;
+            /** Format: float */
+            speed_mps?: number | null;
+            status: components["schemas"]["UaStatus"];
+            /** Format: float */
+            timestamp_accuracy_s?: number | null;
+            /** Format: float */
+            track_deg?: number | null;
+            /** Format: float */
+            vertical_accuracy_m?: number | null;
+            /** Format: float */
+            vertical_speed_mps?: number | null;
+        };
+        RemoteIdMessage: {
+            id_type: components["schemas"]["UasIdType"];
+            /** @enum {string} */
+            type: "basic_id";
+            ua_type: components["schemas"]["UaType"];
+            uas_id: string;
+        } | (components["schemas"]["RemoteIdLocation"] & {
+            /** @enum {string} */
+            type: "location";
+        }) | {
+            auth_type: components["schemas"]["AuthType"];
+            data: string;
+            /** Format: int32 */
+            last_page?: number | null;
+            /** Format: int32 */
+            length?: number | null;
+            /** Format: int32 */
+            page: number;
+            /** Format: int64 */
+            timestamp?: number | null;
+            /** @enum {string} */
+            type: "authentication";
+        } | {
+            /** Format: int32 */
+            description_type: number;
+            text: string;
+            /** @enum {string} */
+            type: "self_id";
+        } | (components["schemas"]["RemoteIdSystem"] & {
+            /** @enum {string} */
+            type: "system";
+        }) | {
+            /** Format: int32 */
+            id_type: number;
+            operator_id: string;
+            /** @enum {string} */
+            type: "operator_id";
+        } | {
+            data: string;
+            /** Format: int32 */
+            message_type: number;
+            /** @enum {string} */
+            type: "unknown";
+        };
+        RemoteIdParams: {
+            link?: components["schemas"]["RemoteIdLink"];
+        };
+        /** @enum {string} */
+        RemoteIdPhy: "le1m" | "le_coded_s8" | "le_coded_s2" | "dsss1m" | "dsss2m" | "cck5m5" | "cck11m" | "ofdm";
+        RemoteIdSystem: {
+            /** Format: float */
+            area_ceiling_m?: number | null;
+            /** Format: int32 */
+            area_count: number;
+            /** Format: float */
+            area_floor_m?: number | null;
+            /** Format: int32 */
+            area_radius_m: number;
+            classification?: components["schemas"]["EuClassification"] | null;
+            /** Format: float */
+            operator_altitude_m?: number | null;
+            /** Format: double */
+            operator_lat?: number | null;
+            operator_location_type: components["schemas"]["OperatorLocationType"];
+            /** Format: double */
+            operator_lon?: number | null;
+            /** Format: int64 */
+            timestamp?: number | null;
+        };
+        /** @enum {string} */
+        RemoteIdTransport: "bluetooth_legacy" | "bluetooth_extended" | "wifi_beacon" | "wifi_beacon_french" | "wifi_beacon_dji" | "wifi_nan";
         /** @enum {string} */
         RemoteState: "unpaired" | "pairing" | "connecting" | "online" | "retrying" | "rejected";
         RemoteStatus: {
@@ -8482,6 +8624,12 @@ export interface components {
         };
         /** @enum {string} */
         Tuning: "auto" | "manual";
+        /** @enum {string} */
+        UasIdType: "none" | "serial_number" | "caa_registration" | "utm_assigned" | "specific_session" | "french_identifier" | "reserved";
+        /** @enum {string} */
+        UaStatus: "undeclared" | "ground" | "airborne" | "emergency" | "system_failure" | "reserved";
+        /** @enum {string} */
+        UaType: "none" | "aeroplane" | "rotorcraft" | "gyroplane" | "hybrid_lift" | "ornithopter" | "glider" | "kite" | "free_balloon" | "captive_balloon" | "airship" | "parachute" | "rocket" | "tethered_aircraft" | "ground_obstacle" | "other";
         /** @enum {string} */
         UlaSide: "both" | "front" | "back";
         UpdateWorkspaceRequest: {

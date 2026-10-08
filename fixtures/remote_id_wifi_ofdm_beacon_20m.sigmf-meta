@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 20000000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "USRP B210",
+    "core:description": "Wi-Fi channel 1 off air: 802.11g 6 Mbit/s beacon from MipsTucker"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 2412000000.0,
+      "core:datetime": "2026-10-08T14:19:00.318873Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "IQEngine ism_band_24 by Marc Lichtman, CC BY-SA 4.0; source SHA-256 e9819b1db0a9632ea2dfa1c173a118deb28e7e5f8026e6413b296bd76c689ae2; samples 19476800..19510400 at 56000000 Hz",
+      "core:sample_count": 12000,
+      "core:sample_start": 0
+    }
+  ]
+}

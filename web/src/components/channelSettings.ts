@@ -202,7 +202,16 @@ const LORA_BANDWIDTH_HZ: Record<NonNullable<ChannelParamsOf<"lora">["bandwidth"]
   khz500: 500_000,
 };
 
+const REMOTE_ID_WIDTH_HZ: Record<NonNullable<ChannelParamsOf<"remote_id">["link"]>, number> = {
+  bluetooth: 2_000_000,
+  bluetooth_band: 18_000_000,
+  wifi: 20_000_000,
+};
+
 export function paramBandwidthHz(params: ChannelParams): number | null {
+  if (params.type === "remote_id") {
+    return REMOTE_ID_WIDTH_HZ[params.settings.link ?? "bluetooth"];
+  }
   if (params.type === "lora") {
     return LORA_BANDWIDTH_HZ[params.settings.bandwidth ?? "khz125"] ?? null;
   }

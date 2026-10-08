@@ -7,8 +7,9 @@ use sdrmm_wire::{
     ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams, EotParams,
     ErmesParams, FlexParams, GnssParams, LrptParams, M17Params, MorseParams, NavtexParams,
     NfmParams, NodeBody, PatchEdge, PatchGraph, PatchNode, PocsagParams, PortRef, Position,
-    PskParams, RadioClockParams, RadiosondeParams, RttyParams, Squelch, SsbParams, SstvParams,
-    TemplateInfo, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+    PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams,
+    Squelch, SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams, WsjtParams, WsprParams,
+    YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -326,6 +327,43 @@ static TEMPLATES: &[Entry] = &[
             457_937_500.0,
             || ChannelParams::Eot(EotParams::default()),
             LOG_READ,
+        )],
+    },
+    Entry {
+        id: "drone-remote-id",
+        name: "Drone Remote ID",
+        description: "Drone ID, position and pilot over Bluetooth.",
+        explainer: "Drones broadcast their serial number, position and pilot location under \
+                    ASTM F3411 and EN 4709-002. Bluetooth 4 adverts arrive on channel 38; \
+                    Bluetooth 5 long range puts its data on the channels around it.",
+        center_hz: 2_426_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_426_000_000.0,
+            || {
+                ChannelParams::RemoteId(RemoteIdParams {
+                    link: RemoteIdLink::BluetoothBand,
+                })
+            },
+            TRACK_READ,
+        )],
+    },
+    Entry {
+        id: "drone-remote-id-wifi",
+        name: "Drone Remote ID · Wi-Fi",
+        description: "Drone ID, position and pilot from Wi-Fi beacons.",
+        explainer: "DJI and many other drones send Remote ID in Wi-Fi beacons, usually on \
+                    channel 6. Retune to channel 1, 11 or 149 if nothing shows.",
+        center_hz: 2_437_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_437_000_000.0,
+            || {
+                ChannelParams::RemoteId(RemoteIdParams {
+                    link: RemoteIdLink::Wifi,
+                })
+            },
+            TRACK_READ,
         )],
     },
     Entry {

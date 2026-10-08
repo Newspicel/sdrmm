@@ -5996,6 +5996,7 @@ name = "sdrmm-device-espsdr"
 version = "0.0.0"
 dependencies = [
  "sdrmm-device",
+ "sdrmm-dsp",
  "sdrmm-wire",
  "serde",
  "serde_json",

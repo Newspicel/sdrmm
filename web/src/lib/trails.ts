@@ -1,4 +1,5 @@
 import { loraPosition } from "./lora";
+import { remoteIdPosition } from "./remoteId";
 import type { DecoderEvent, DecoderKind } from "./types";
 
 export const TRAIL_CAPACITY = 512;
@@ -48,6 +49,10 @@ export function trailPosition(event: DecoderEvent): LonLat | null {
       return geoPosition(event.data.lat, event.data.lon);
     case "lora": {
       const position = loraPosition(event.data);
+      return geoPosition(position?.lat, position?.lon);
+    }
+    case "remote_id": {
+      const position = remoteIdPosition(event.data);
       return geoPosition(position?.lat, position?.lon);
     }
     default:

@@ -5,6 +5,14 @@ import {
   MESHCORE_TYPE_LABELS,
   meshtasticNode,
 } from "../lib/lora";
+import {
+  REMOTE_ID_TRANSPORT_LABELS,
+  remoteIdLocation,
+  remoteIdSystem,
+  remoteIdText,
+  UA_STATUS_LABELS,
+  UA_TYPE_LABELS,
+} from "../lib/remoteId";
 import type {
   AprsPacket,
   DataLinkMessage,
@@ -19,6 +27,7 @@ import type {
   MeshcorePacket,
   MeshtasticContent,
   MeshtasticPacket,
+  RemoteIdFrame,
 } from "../lib/types";
 import { hex5 } from "./decoderLog";
 import {
@@ -519,6 +528,7 @@ const DETAIL: {
   iridium: dataLinkDetail,
   dect: dectDetail,
   lora: loraDetail,
+  remote_id: remoteIdDetail,
   apt: (p) => ({
     fields: fields([
       ["Channels", avhrrChannels(p)],
@@ -892,6 +902,73 @@ function loraDetail(frame: LoraFrame): EventDetail {
   }
   rows.push(["Payload", frame.payload]);
   return { fields: fields(rows), body: body || null };
+}
+
+const REMOTE_ID_PHY_LABELS: Record<RemoteIdFrame["phy"], string> = {
+  le1m: "LE 1M",
+  le_coded_s8: "LE Coded S8",
+  le_coded_s2: "LE Coded S2",
+  dsss1m: "DSSS 1 Mb/s",
+  dsss2m: "DSSS 2 Mb/s",
+  cck5m5: "CCK 5.5 Mb/s",
+  cck11m: "CCK 11 Mb/s",
+  ofdm: "OFDM",
+};
+
+function lengthM(value: number | null | undefined, digits = 0): string | undefined {
+  return value == null ? undefined : `${value.toFixed(digits)} m`;
+}
+
+function remoteIdDetail(frame: RemoteIdFrame): EventDetail {
+  const location = remoteIdLocation(frame);
+  const system = remoteIdSystem(frame);
+  const basic = frame.messages.find((message) => message.type === "basic_id");
+  const operator = frame.messages.find((message) => message.type === "operator_id");
+  const pages = frame.messages.filter((message) => message.type === "authentication").length;
+  const classification = system?.classification;
+  const rows: Rows = [
+    ["UAS ID", frame.uas_id],
+    ["Type", basic?.type === "basic_id" ? UA_TYPE_LABELS[basic.ua_type] : undefined],
+    ["Status", location ? UA_STATUS_LABELS[location.status] : undefined],
+    ["Position", position(location?.lat, location?.lon)],
+    ["Height", lengthM(location?.height_m, 1)],
+    ["Altitude", lengthM(location?.geodetic_altitude_m, 1)],
+    ["Pressure altitude", lengthM(location?.pressure_altitude_m, 1)],
+    ["Speed", location?.speed_mps == null ? undefined : `${location.speed_mps.toFixed(2)} m/s`],
+    ["Track", location?.track_deg == null ? undefined : `${location.track_deg.toFixed(0)}°`],
+    [
+      "Climb",
+      location?.vertical_speed_mps == null
+        ? undefined
+        : `${signed(location.vertical_speed_mps, 1)} m/s`,
+    ],
+    ["Accuracy", lengthM(location?.horizontal_accuracy_m, 0)],
+    [
+      "Time",
+      location?.seconds_after_hour == null
+        ? undefined
+        : `${location.seconds_after_hour.toFixed(1)} s past the hour`,
+    ],
+    ["Pilot", position(system?.operator_lat, system?.operator_lon)],
+    ["Pilot altitude", lengthM(system?.operator_altitude_m, 0)],
+    [
+      "EU class",
+      classification == null
+        ? undefined
+        : `${classification.category}${classification.class == null ? "" : ` C${classification.class}`}`,
+    ],
+    ["Operator", operator?.type === "operator_id" ? operator.operator_id : undefined],
+    ["Auth pages", pages > 0 ? String(pages) : undefined],
+    ["Link", REMOTE_ID_TRANSPORT_LABELS[frame.transport]],
+    ["PHY", REMOTE_ID_PHY_LABELS[frame.phy]],
+    ["Address", frame.address],
+    ["Channel", frame.channel == null ? undefined : String(frame.channel)],
+    ["SSID", frame.ssid],
+    ["Counter", frame.counter == null ? undefined : String(frame.counter)],
+    ["Level", `${frame.level_dbfs.toFixed(1)} dBFS`],
+    ["Rejected", frame.rejected ? String(frame.rejected) : undefined],
+  ];
+  return { fields: fields(rows), body: remoteIdText(frame) };
 }
 
 function lorawanRows(frame: LorawanFrame): Rows {

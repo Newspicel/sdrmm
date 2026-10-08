@@ -1,5 +1,16 @@
 import type { StationOf } from "../decoded";
 import { loraName, loraPosition, loraProtocol } from "../lora";
+import {
+  distanceM,
+  REMOTE_ID_TRANSPORT_LABELS,
+  remoteIdLocation,
+  remoteIdOperator,
+  remoteIdPilot,
+  remoteIdPosition,
+  remoteIdUaType,
+  UA_STATUS_LABELS,
+  UA_TYPE_LABELS,
+} from "../remoteId";
 import { geoPosition, type Trail, trailLine } from "../trails";
 import type { ChannelParams, DecoderKind } from "../types";
 
@@ -9,6 +20,7 @@ export const MAP_KINDS = [
   "aprs",
   "radiosonde",
   "lora",
+  "remote_id",
 ] as const satisfies readonly DecoderKind[];
 
 export type MapKind = (typeof MAP_KINDS)[number];
@@ -20,6 +32,7 @@ export const KIND_STYLE: Record<MapKind, { title: string; color: string }> = {
   aprs: { title: "APRS", color: "#b07de0" },
   radiosonde: { title: "Sondes", color: "#e06c6c" },
   lora: { title: "LoRa", color: "#6cc070" },
+  remote_id: { title: "Drones", color: "#e0d05c" },
 };
 
 export const TARGET_MAX_AGE_MS = 5 * 60_000;
@@ -145,6 +158,10 @@ export function targetPosition(station: Target): [number, number] | null {
     const position = loraPosition(event.data);
     return geoPosition(position?.lat, position?.lon);
   }
+  if (event.kind === "remote_id") {
+    const position = remoteIdPosition(event.data);
+    return geoPosition(position?.lat, position?.lon);
+  }
   return geoPosition(event.data.lat, event.data.lon);
 }
 
@@ -200,6 +217,8 @@ export function targetLabel(station: Target): string {
       return event.data.serial;
     case "lora":
       return loraName(event.data) ?? station.id;
+    case "remote_id":
+      return event.data.uas_id ?? event.data.address;
   }
 }
 
@@ -216,6 +235,8 @@ export function targetHeading(station: Target): number | null {
       return bearing(event.data.heading_deg);
     case "lora":
       return null;
+    case "remote_id":
+      return bearing(remoteIdLocation(event.data)?.track_deg);
   }
 }
 
@@ -298,7 +319,36 @@ function detailRows(station: Target): (readonly [string, string])[] {
         ["SNR", scalar(d.snr_db, 1, " dB")],
       ]);
     }
+    case "remote_id":
+      return remoteIdRows(station, event.data, fix);
   }
+}
+
+function remoteIdRows(
+  station: Target,
+  frame: StationOf<"remote_id">["event"]["data"],
+  fix: string | null,
+): (readonly [string, string])[] {
+  const location = remoteIdLocation(frame);
+  const drone = remoteIdPosition(frame);
+  const pilot = remoteIdPilot(frame);
+  const uaType = remoteIdUaType(frame);
+  return kept([
+    ["ID", station.id],
+    ["Type", uaType === null ? null : UA_TYPE_LABELS[uaType]],
+    ["Status", location ? UA_STATUS_LABELS[location.status] : null],
+    ["Position", fix],
+    ["Height", scalar(location?.height_m, 0, " m")],
+    ["Altitude", scalar(location?.geodetic_altitude_m, 0, " m")],
+    ["Speed", scalar(location?.speed_mps, 1, " m/s")],
+    ["Pilot", pilot === null ? null : formatPosition(pilot.lat, pilot.lon)],
+    [
+      "Pilot distance",
+      drone === null || pilot === null ? null : scalar(distanceM(drone, pilot), 0, " m"),
+    ],
+    ["Operator", remoteIdOperator(frame)],
+    ["Link", REMOTE_ID_TRANSPORT_LABELS[frame.transport]],
+  ]);
 }
 
 function kept(

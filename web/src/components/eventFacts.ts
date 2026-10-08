@@ -1,4 +1,5 @@
 import { loraPosition, loraStation, loraSummary } from "../lib/lora";
+import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
 import type { DecoderEvent, HotCommand } from "../lib/types";
 import {
   callMode,
@@ -58,6 +59,9 @@ function position(lat: number | null | undefined, lon: number | null | undefined
 export function hasPosition(event: DecoderEvent): boolean {
   if (event.kind === "lora") {
     return loraPosition(event.data) !== null;
+  }
+  if (event.kind === "remote_id") {
+    return remoteIdPosition(event.data) !== null;
   }
   const data = event.data as { lat?: number | null; lon?: number | null } | undefined;
   return data?.lat != null && data?.lon != null;
@@ -371,6 +375,8 @@ export function eventSummary(event: DecoderEvent): string {
       return radiosondeSummary(event.data);
     case "lora":
       return loraSummary(event.data);
+    case "remote_id":
+      return remoteIdSummary(event.data);
   }
 }
 
@@ -459,6 +465,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return event.data.serial;
     case "lora":
       return loraStation(event.data);
+    case "remote_id":
+      return remoteIdStation(event.data);
     case "apt":
       return "APT";
     case "lrpt":

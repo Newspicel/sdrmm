@@ -48,6 +48,7 @@ mod psk;
 mod radio_clock;
 mod radiosonde;
 mod rds;
+mod remote_id;
 mod rtty;
 mod selcall;
 pub mod spatial_spectrum;
@@ -115,6 +116,7 @@ pub use pocsag::PocsagChannel;
 pub use psk::PskChannel;
 pub use radio_clock::RadioClockChannel;
 pub use radiosonde::RadiosondeChannel;
+pub use remote_id::RemoteIdChannel;
 pub use rtty::RttyChannel;
 use sdrmm_dsp::{Decimator, FirC};
 use sdrmm_wire::{
@@ -213,6 +215,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Wefax(p) => wefax::occupied_band(p),
         ChannelParams::Radiosonde(p) => radiosonde::occupied_band(p),
         ChannelParams::Lora(p) => lora::occupied_band(p),
+        ChannelParams::RemoteId(p) => remote_id::occupied_band(p),
     }
 }
 
@@ -297,6 +300,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Wefax(p) => wefax::channel_filter(p),
         ChannelParams::Radiosonde(p) => radiosonde::channel_filter(p),
         ChannelParams::Lora(p) => Ok(lora::channel_filter(p)),
+        ChannelParams::RemoteId(p) => Ok(remote_id::channel_filter(p)),
     }
 }
 
@@ -694,6 +698,11 @@ const REGISTRY: &[Registration] = &[
         create: boxed::<LoraChannel>,
         create_tx: None,
     },
+    Registration {
+        descriptor: RemoteIdChannel::descriptor,
+        create: boxed::<RemoteIdChannel>,
+        create_tx: None,
+    },
 ];
 
 static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::LazyLock::new(|| {
@@ -765,6 +774,7 @@ pub fn input_rate(params: &ChannelParams) -> f64 {
         ChannelParams::Iridium(p) => iridium::input_rate(p),
         ChannelParams::Dect(p) => dect::input_rate(p),
         ChannelParams::Lora(p) => lora::input_rate(p),
+        ChannelParams::RemoteId(p) => remote_id::input_rate(p),
         other => descriptor_of(other.type_id()).map_or(0.0, |d| d.input_rate_hz),
     }
 }
@@ -863,6 +873,7 @@ mod tests {
             "wefax" => ChannelParams::Wefax(WefaxParams::default()),
             "radiosonde" => ChannelParams::Radiosonde(RadiosondeParams::default()),
             "lora" => ChannelParams::Lora(sdrmm_wire::LoraParams::default()),
+            "remote_id" => ChannelParams::RemoteId(sdrmm_wire::RemoteIdParams::default()),
             other => panic!("unexpected type id {other}"),
         }
     }
@@ -911,7 +922,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 52);
+        assert_eq!(all.len(), 53);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -968,6 +979,7 @@ mod tests {
                 "wefax",
                 "radiosonde",
                 "lora",
+                "remote_id",
             ])
         );
         for d in &all {
@@ -1016,6 +1028,7 @@ mod tests {
                 "wefax" => (1_600.0, 12_000.0),
                 "radiosonde" => (20_000.0, 48_000.0),
                 "lora" => (125_000.0, 250_000.0),
+                "remote_id" => (2_000_000.0, 4_000_000.0),
                 other => panic!("unexpected type id {other}"),
             };
             assert_eq!(d.bandwidth_hz, bandwidth, "{}", d.type_id);

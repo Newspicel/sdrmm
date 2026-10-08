@@ -53,6 +53,7 @@ import {
   POCSAG_BAUDS,
   PSK_BAUDS,
   RADIO_CLOCK_STANDARDS,
+  REMOTE_ID_LINKS,
   RTTY_BAUDS,
   RTTY_SHIFTS_HZ,
   RTTY_STOP_BITS,
@@ -181,6 +182,8 @@ export function ModeChips({
       return <RadiosondeChips params={params} {...mode} />;
     case "lora":
       return <LoraChips params={params} {...mode} />;
+    case "remote_id":
+      return <RemoteIdChips params={params} {...mode} />;
     case "dstar":
     case "ysf":
     case "p25":
@@ -1322,6 +1325,18 @@ function RadiosondeChips({ params, onParams }: Mode<"radiosonde">) {
           settings: { ...settings, sonde: next === SONDE_AUTO ? null : next },
         })
       }
+    />
+  );
+}
+
+function RemoteIdChips({ params, onParams }: Mode<"remote_id">) {
+  return (
+    <ChoiceChip
+      label="Link"
+      title="Radio link to listen on"
+      value={params.settings.link ?? "bluetooth"}
+      options={REMOTE_ID_LINKS}
+      onChange={(link) => onParams({ type: "remote_id", settings: { ...params.settings, link } })}
     />
   );
 }

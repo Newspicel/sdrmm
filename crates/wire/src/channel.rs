@@ -1629,6 +1629,7 @@ pub enum ChannelParams {
     Wefax(crate::weather::WefaxParams),
     Radiosonde(crate::weather::RadiosondeParams),
     Lora(crate::lora::LoraParams),
+    RemoteId(crate::remote_id::RemoteIdParams),
 }
 
 impl ChannelParams {
@@ -1687,6 +1688,7 @@ impl ChannelParams {
             Self::Wefax(_) => "wefax",
             Self::Radiosonde(_) => "radiosonde",
             Self::Lora(_) => "lora",
+            Self::RemoteId(_) => "remote_id",
         }
     }
 }
@@ -1791,6 +1793,7 @@ pub fn home_frequency_hz(type_id: &str) -> Option<f64> {
         "lrpt" => 137_900_000.0,
         "radio_clock" => 77_500.0,
         "dab" => 227_360_000.0,
+        "remote_id" => 2_426_000_000.0,
         _ => return None,
     };
     Some(hz)

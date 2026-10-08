@@ -1,4 +1,5 @@
 pub mod analog;
+pub mod ble;
 pub mod constellation;
 pub mod cpm;
 pub mod framesync;
@@ -12,6 +13,7 @@ pub mod quality;
 pub mod soft;
 pub mod spread;
 pub mod symbolcode;
+pub mod wifi;
 
 #[cfg(test)]
 #[global_allocator]
