@@ -78,6 +78,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - Layers for sondes, satellites, beacons
 
 ## 7. Automation & API
-- Desktop and push notifications from Event filter
+- Desktop notifications as Event Output
 - WASM plugin SDK
 - Offline bundles for TLE snapshots and callsign prefixes
