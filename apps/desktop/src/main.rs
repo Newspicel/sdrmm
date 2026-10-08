@@ -26,6 +26,7 @@ fn main() -> anyhow::Result<()> {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -44,7 +45,7 @@ fn main() -> anyhow::Result<()> {
                 db_path: Some(db),
                 tls: None,
                 options: sdrmm_server::ServerOptions {
-                    shell: Some(Arc::new(reveal::Shell)),
+                    shell: Some(Arc::new(reveal::Shell(app.handle().clone()))),
                     ..sdrmm_server::ServerOptions::default()
                 },
             };

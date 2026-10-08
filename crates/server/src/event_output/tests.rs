@@ -877,19 +877,86 @@ async fn delivery_outcomes_reach_the_output_status() {
         .expect("queued");
     drop(sender);
 
-    deliver_all(
-        Client::new(),
-        receiver,
-        std::sync::Weak::new(),
-        statuses.clone(),
-    )
-    .await;
+    deliver_all(senders(None), receiver, statuses.clone()).await;
 
     let good = statuses.get("good").expect("good status");
     assert_eq!((good.delivered, good.failed, good.error), (1, 0, None));
     let bad = statuses.get("bad").expect("bad status");
     assert_eq!((bad.delivered, bad.failed), (0, 1));
     assert!(bad.error.expect("failure").starts_with("Webhook request:"));
+}
+
+fn senders(shell: Option<Arc<dyn NativeShell>>) -> Senders {
+    Senders {
+        client: Client::new(),
+        engine: std::sync::Weak::new(),
+        shell,
+    }
+}
+
+#[derive(Debug, Default)]
+struct Notifications(Mutex<Vec<(String, String)>>);
+
+impl NativeShell for Notifications {
+    fn reveal(&self, _: &std::path::Path) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn notify(&self, title: &str, body: &str) -> std::io::Result<()> {
+        self.0
+            .lock()
+            .expect("notifications")
+            .push((title.to_owned(), body.to_owned()));
+        Ok(())
+    }
+}
+
+async fn notify_once(shell: Option<Arc<dyn NativeShell>>) -> status::Statuses {
+    let statuses = status::Statuses::default();
+    statuses.configure(&[Binding {
+        node: "desk".to_owned(),
+        target: EventOutputTarget::Desktop,
+    }]);
+    let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
+    sender
+        .send(delivery_to("desk", EventOutputTarget::Desktop, &decoded()))
+        .await
+        .expect("queued");
+    drop(sender);
+    deliver_all(senders(shell), receiver, statuses.clone()).await;
+    statuses
+}
+
+#[tokio::test]
+async fn a_desktop_output_shows_one_notification_per_event() {
+    let shell = Arc::new(Notifications::default());
+    let statuses = notify_once(Some(shell.clone())).await;
+
+    assert_eq!(statuses.get("desk").expect("status").delivered, 1);
+    let shown = shell.0.lock().expect("notifications").clone();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].0, "RTTY decode");
+    assert!(shown[0].1.contains("Frequency:"), "{}", shown[0].1);
+}
+
+#[tokio::test]
+async fn a_desktop_output_without_the_desktop_app_reports_why() {
+    let status = notify_once(None).await.get("desk").expect("status");
+
+    assert_eq!(status.failed, 1);
+    assert_eq!(
+        status.error.as_deref(),
+        Some("Notifications need the desktop app")
+    );
+}
+
+#[test]
+fn a_call_notification_is_titled_by_its_mode() {
+    assert_eq!(
+        notification_text("DMR call · talkgroup 91 · 2.0 s"),
+        ("DMR call", "talkgroup 91 · 2.0 s")
+    );
+    assert_eq!(notification_text("plain"), ("plain", ""));
 }
 
 #[test]

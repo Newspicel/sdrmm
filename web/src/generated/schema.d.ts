@@ -1709,6 +1709,7 @@ export interface components {
             license: string;
             license_text: string;
             name: string;
+            notify?: boolean;
             /** Format: int32 */
             protocol: number;
             repository: string;
@@ -4870,6 +4871,9 @@ export interface components {
         EventOutputTarget: {
             /** @enum {string} */
             service: "recordings";
+        } | {
+            /** @enum {string} */
+            service: "desktop";
         } | {
             address: string;
             enabled?: boolean;

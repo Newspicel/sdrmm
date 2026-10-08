@@ -5799,6 +5799,9 @@
           "name": {
             "type": "string"
           },
+          "notify": {
+            "type": "boolean"
+          },
           "protocol": {
             "type": "integer",
             "format": "int32",
@@ -17567,6 +17570,20 @@
                 "type": "string",
                 "enum": [
                   "recordings"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "service"
+            ],
+            "properties": {
+              "service": {
+                "type": "string",
+                "enum": [
+                  "desktop"
                 ]
               }
             }

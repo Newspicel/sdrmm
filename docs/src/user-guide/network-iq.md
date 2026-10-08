@@ -8,6 +8,7 @@ Send live IQ or decoded events to other programs.
 | Network IQ | rtl_tcp server | rtl_433 and other rtl_tcp clients |
 | Event output | ADS-B Beast TCP | Flight tracking feeders |
 | Event output | Webhook, Matrix, MQTT | Chat, automation and alerts |
+| Event output | Notification | Alerts in the desktop app |
 | Event output | PostgreSQL, InfluxDB | Databases |
 | Event output | Network interface | IP packets from DAB and DVB-S2 |
 
@@ -78,6 +79,7 @@ Wire `events` to an **Event output** and pick a **Service**. Each event is sent 
 | Webhook, Discord | The text as a message, with any audio attached |
 | Matrix | The text to a room, with any audio uploaded |
 | MQTT | The JSON payload to a topic, at least once. Use `mqtt://` or `mqtts://`. |
+| Notification | The text as a system notification. Desktop app only. |
 
 Long messages are cut at 1,900 characters. A rate-limited send is retried up to four times.
 Failures go to the server log.

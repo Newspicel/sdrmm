@@ -22,6 +22,11 @@ describe("EventOutputFace", () => {
     expect(html).not.toMatch(/<(?:select)/);
   });
 
+  it("names a notification output", () => {
+    const html = render({ service: "desktop" });
+    expect(html).toContain(">Notification<");
+  });
+
   it("never shows a secret on its chip", () => {
     const html = render({ service: "webhook", url: "https://hooks.example/abc", format: "json" });
     expect(html).not.toContain("hooks.example");

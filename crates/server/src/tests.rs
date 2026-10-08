@@ -154,6 +154,9 @@ impl NativeShell for FakeShell {
             .push(path.to_path_buf());
         Ok(())
     }
+    fn notify(&self, _: &str, _: &str) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 fn recording_router_with_shell(dir: &Path) -> (Router, Arc<FakeShell>) {

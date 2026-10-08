@@ -74,6 +74,7 @@ pub use store::{RemotePairing, Store, StoreError};
 
 pub trait NativeShell: Send + Sync + std::fmt::Debug {
     fn reveal(&self, path: &Path) -> std::io::Result<()>;
+    fn notify(&self, title: &str, body: &str) -> std::io::Result<()>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -390,8 +391,9 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
         let store = state.store.clone();
         let calls = state.calls.clone();
         let records = state.decoded.subscribe();
+        let shell = state.shell.clone();
         spawn_task("sdrmm-event-output", move || {
-            event_output::run(records, engine, store, calls)
+            event_output::run(records, engine, store, calls, shell)
         })
     };
     let audio_fx = {
