@@ -2,14 +2,17 @@ mod cck;
 mod plcp;
 
 use num_complex::Complex;
-use sdrmm_wire::RemoteIdPhy;
 
-use self::plcp::Header;
-use super::receiver::{Burst, level_dbfs};
+use self::{cck::Cck, plcp::Header};
+use super::{Frame, MAX_MPDU_BYTES, Sink, WifiPhy, byte, fcs_ok, level_dbfs};
+use crate::spread::{PnError, PnSequence};
 
-pub(crate) const SYMBOL: usize = 20;
-pub(crate) const BARKER: [f32; 11] = [1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0];
-pub(crate) const CHIP_SAMPLES: f64 = SYMBOL as f64 / 11.0;
+pub use self::cck::codeword as cck_codeword;
+pub use self::plcp::{crc16 as header_crc, psdu_bytes};
+
+pub const SYMBOL: usize = 20;
+pub const BARKER_CHIPS: usize = 11;
+pub const CHIP_SAMPLES: f64 = SYMBOL as f64 / BARKER_CHIPS as f64;
 const DETECT_SYMBOLS: usize = 8;
 const DETECT_THRESHOLD: f32 = 0.2;
 const MIN_POWER: f32 = 1e-9;
@@ -17,13 +20,21 @@ const TIMING_GAIN: f64 = 0.1;
 const PHASE_SYMBOLS: usize = 32;
 const PHASE_SEARCH: usize = 4;
 const MAX_PREAMBLE_SYMBOLS: usize = 160;
-const MAX_PSDU_BYTES: usize = 2_400;
 const LOOKAHEAD: usize = SYMBOL * (DETECT_SYMBOLS + 2);
 const MAX_HISTORY: usize = 450_000;
+const MARGIN: usize = SYMBOL + 2;
 
-pub(crate) fn template() -> [f32; SYMBOL] {
+pub fn barker() -> Result<[f32; BARKER_CHIPS], PnError> {
+    let sequence = PnSequence::barker(BARKER_CHIPS)?;
+    let mut chips = [0.0; BARKER_CHIPS];
+    chips.copy_from_slice(sequence.chips());
+    Ok(chips)
+}
+
+#[must_use]
+pub fn template(barker: &[f32; BARKER_CHIPS]) -> [f32; SYMBOL] {
     std::array::from_fn(|k| {
-        BARKER
+        barker
             .iter()
             .enumerate()
             .map(|(chip, &value)| {
@@ -35,11 +46,7 @@ pub(crate) fn template() -> [f32; SYMBOL] {
     })
 }
 
-pub(crate) fn correlate(
-    history: &[Complex<f32>],
-    at: usize,
-    template: &[f32; SYMBOL],
-) -> Complex<f32> {
+fn correlate(history: &[Complex<f32>], at: usize, template: &[f32; SYMBOL]) -> Complex<f32> {
     history[at..at + SYMBOL]
         .iter()
         .zip(template)
@@ -53,9 +60,18 @@ enum State {
     Pending(usize),
 }
 
-pub(crate) struct Dsss {
+enum Outcome {
+    Frame(Header, usize),
+    Skip(usize),
+    Short,
+    Failed,
+}
+
+pub struct Dsss {
     template: [f32; SYMBOL],
+    cck: Cck,
     history: Vec<Complex<f32>>,
+    bytes: Vec<u8>,
     energy: f32,
     rings: [[f32; DETECT_SYMBOLS]; SYMBOL],
     sums: [f32; SYMBOL],
@@ -63,21 +79,16 @@ pub(crate) struct Dsss {
     consumed: u64,
     cursor: usize,
     state: State,
-    pub(crate) rejected: u32,
-}
-
-pub(crate) enum Outcome {
-    Burst(Burst, usize),
-    Skip(usize),
-    Short,
-    Failed,
+    rejected: u32,
 }
 
 impl Dsss {
-    pub(crate) fn new() -> Self {
-        Self {
-            template: template(),
-            history: Vec::new(),
+    pub fn new() -> Result<Self, PnError> {
+        Ok(Self {
+            template: template(&barker()?),
+            cck: Cck::new(),
+            history: Vec::with_capacity(MAX_HISTORY),
+            bytes: Vec::with_capacity(MAX_MPDU_BYTES),
             energy: 0.0,
             rings: [[0.0; DETECT_SYMBOLS]; SYMBOL],
             sums: [0.0; SYMBOL],
@@ -86,10 +97,15 @@ impl Dsss {
             cursor: 0,
             state: State::Search,
             rejected: 0,
-        }
+        })
     }
 
-    pub(crate) fn reset(&mut self) {
+    #[must_use]
+    pub fn rejected(&self) -> u32 {
+        self.rejected
+    }
+
+    pub fn reset(&mut self) {
         self.history.clear();
         self.consumed = 0;
         self.cursor = 0;
@@ -104,14 +120,19 @@ impl Dsss {
         self.filled = 0;
     }
 
-    pub(crate) fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<Burst>) {
+    pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
         self.history.extend_from_slice(iq);
         loop {
             match self.state {
-                State::Pending(start) => match self.demodulate(start) {
+                State::Pending(start) => match self.demodulate(start, sink) {
                     Outcome::Short => break,
-                    Outcome::Burst(burst, end) => {
-                        out.push(burst);
+                    Outcome::Frame(header, end) => {
+                        sink.frame(Frame {
+                            mpdu: &self.bytes,
+                            phy: header.phy,
+                            level_dbfs: level_dbfs(&self.history[start..end]),
+                            sample: self.consumed + start as u64,
+                        });
                         self.resume(end);
                     }
                     Outcome::Skip(end) => self.resume(end),
@@ -174,8 +195,16 @@ impl Dsss {
         self.sums[phase] >= previous && self.sums[phase] >= next
     }
 
-    fn demodulate(&mut self, start: usize) -> Outcome {
-        let mut reader = SymbolReader::new(&self.history, start, &self.template);
+    fn demodulate(&mut self, start: usize, sink: &impl Sink) -> Outcome {
+        let Self {
+            history,
+            template,
+            cck,
+            bytes,
+            rejected,
+            ..
+        } = self;
+        let mut reader = SymbolReader::new(history, start, template);
         let preamble = match plcp::find_sfd(&mut reader, MAX_PREAMBLE_SYMBOLS) {
             Ok(preamble) => preamble,
             Err(outcome) => return outcome,
@@ -184,32 +213,27 @@ impl Dsss {
             Ok(header) => header,
             Err(outcome) => return outcome,
         };
-        if header.bytes > MAX_PSDU_BYTES {
+        if header.bytes > MAX_MPDU_BYTES || header.bytes == 0 {
             return Outcome::Failed;
         }
-        let bytes = match header.phy {
-            RemoteIdPhy::Cck5m5 | RemoteIdPhy::Cck11m => cck::psdu(&mut reader, &header),
-            _ => reader.psdu(&header),
-        };
-        let Some(bytes) = bytes else {
+        let end = reader.position() + duration(&header) + MARGIN;
+        if end > history.len() {
             return Outcome::Short;
+        }
+        bytes.clear();
+        let complete = match header.phy {
+            WifiPhy::Cck5m5 | WifiPhy::Cck11m => cck.psdu(&mut reader, &header, bytes, sink),
+            _ => reader.psdu(&header, bytes, sink),
         };
-        let end = reader.position();
-        if !super::fcs_ok(&bytes) {
-            if super::wanted(&bytes) {
-                self.rejected = self.rejected.saturating_add(1);
-            }
+        let end = reader.position().min(history.len());
+        if !complete {
             return Outcome::Skip(end);
         }
-        Outcome::Burst(
-            Burst {
-                bytes,
-                phy: header.phy,
-                level_dbfs: level_dbfs(&self.history[start..end.min(self.history.len())]),
-                sample: self.consumed + start as u64,
-            },
-            end,
-        )
+        if !fcs_ok(bytes) {
+            *rejected = rejected.saturating_add(1);
+            return Outcome::Skip(end);
+        }
+        Outcome::Frame(header, end)
     }
 
     fn trim(&mut self) {
@@ -227,6 +251,15 @@ impl Dsss {
         if let State::Pending(start) = &mut self.state {
             *start = start.saturating_sub(drop);
         }
+    }
+}
+
+fn duration(header: &Header) -> usize {
+    let bits = header.bytes * 8;
+    match header.phy {
+        WifiPhy::Dsss2m => bits.div_ceil(2) * SYMBOL,
+        WifiPhy::Cck5m5 | WifiPhy::Cck11m => cck::duration(header.phy, header.bytes),
+        _ => bits * SYMBOL,
     }
 }
 
@@ -315,7 +348,7 @@ impl<'a> SymbolReader<'a> {
         self.next()
     }
 
-    fn descramble(&mut self, bit: bool) -> bool {
+    pub(crate) fn descrambled(&mut self, bit: bool) -> bool {
         let out = bit ^ (self.descrambler >> 3 & 1 == 1) ^ (self.descrambler >> 6 & 1 == 1);
         self.descrambler = (self.descrambler << 1 | u8::from(bit)) & 0x7F;
         out
@@ -323,17 +356,13 @@ impl<'a> SymbolReader<'a> {
 
     pub(crate) fn dbpsk(&mut self) -> Option<bool> {
         let differential = self.next()?;
-        Some(self.descramble(differential.re < 0.0))
+        Some(self.descrambled(differential.re < 0.0))
     }
 
     pub(crate) fn dqpsk(&mut self) -> Option<[bool; 2]> {
         let differential = self.next()?;
         let dibit = quadrant(differential);
-        Some([self.descramble(dibit[0]), self.descramble(dibit[1])])
-    }
-
-    pub(crate) fn descrambled(&mut self, bit: bool) -> bool {
-        self.descramble(bit)
+        Some([self.descrambled(dibit[0]), self.descrambled(dibit[1])])
     }
 
     pub(crate) fn chip_start(&self) -> f64 {
@@ -352,29 +381,38 @@ impl<'a> SymbolReader<'a> {
         self.position = position;
     }
 
-    fn psdu(&mut self, header: &Header) -> Option<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(header.bytes);
-        let mut bits = Vec::with_capacity(8);
+    fn psdu(&mut self, header: &Header, bytes: &mut Vec<u8>, sink: &impl Sink) -> bool {
+        let mut bits = [false; 8];
+        let mut filled = 0;
         while bytes.len() < header.bytes {
-            match header.phy {
-                RemoteIdPhy::Dsss2m => bits.extend(self.dqpsk()?),
-                _ => bits.push(self.dbpsk()?),
-            }
-            while bits.len() >= 8 {
-                bytes.push(
-                    bits.drain(..8)
-                        .enumerate()
-                        .fold(0u8, |acc, (bit, value)| acc | u8::from(value) << bit),
-                );
+            let decided = match header.phy {
+                WifiPhy::Dsss2m => self.dqpsk().map(|pair| (pair, 2)),
+                _ => self.dbpsk().map(|bit| ([bit, false], 1)),
+            };
+            let Some((pair, count)) = decided else {
+                return false;
+            };
+            for &bit in &pair[..count] {
+                bits[filled] = bit;
+                filled += 1;
+                if filled == 8 {
+                    bytes.push(byte(&bits));
+                    filled = 0;
+                    if bytes.len() == 1 && !sink.accepts(bytes[0]) {
+                        self.advance_to(self.position + skipped(header, bytes.len()));
+                        return false;
+                    }
+                }
             }
         }
-        Some(bytes)
+        true
     }
 }
 
-#[cfg(any(test, feature = "synth"))]
-pub(crate) fn cck_codeword(phy: RemoteIdPhy, phi1: f32, label: u8) -> [Complex<f32>; cck::CHIPS] {
-    cck::codeword(phi1, cck::phases(phy, label))
+fn skipped(header: &Header, read: usize) -> f64 {
+    let bits_left = header.bytes.saturating_sub(read) * 8;
+    let per_symbol = if header.phy == WifiPhy::Dsss2m { 2 } else { 1 };
+    (bits_left.div_ceil(per_symbol) * SYMBOL) as f64
 }
 
 pub(crate) fn quadrant(differential: Complex<f32>) -> [bool; 2] {

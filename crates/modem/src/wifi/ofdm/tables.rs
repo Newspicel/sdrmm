@@ -1,14 +1,14 @@
 use num_complex::Complex;
 
-pub(crate) const FFT: usize = 64;
-pub(crate) const CP: usize = 16;
-pub(crate) const SYMBOL: usize = FFT + CP;
-pub(crate) const SHORT: usize = 16;
-pub(crate) const DATA_CARRIERS: usize = 48;
-pub(crate) const PILOT_CARRIERS: [i32; 4] = [-21, -7, 7, 21];
-pub(crate) const PILOT_VALUES: [f32; 4] = [1.0, 1.0, 1.0, -1.0];
-pub(crate) const SERVICE_BITS: usize = 16;
-pub(crate) const TAIL_BITS: usize = 6;
+pub const FFT: usize = 64;
+pub const CP: usize = 16;
+pub const SYMBOL: usize = FFT + CP;
+pub const SHORT: usize = 16;
+pub const DATA_CARRIERS: usize = 48;
+pub const PILOT_CARRIERS: [i32; 4] = [-21, -7, 7, 21];
+pub const PILOT_VALUES: [f32; 4] = [1.0, 1.0, 1.0, -1.0];
+pub const SERVICE_BITS: usize = 16;
+pub const TAIL_BITS: usize = 6;
 const LONG_TRAINING: [i8; 53] = [
     1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 0, 1, -1,
     -1, 1, 1, -1, 1, -1, 1, -1, -1, -1, -1, -1, 1, 1, -1, -1, 1, -1, 1, -1, 1, 1, 1, 1,
@@ -19,7 +19,7 @@ const SHORT_TRAINING: [i8; 53] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Modulation {
+pub enum Modulation {
     Bpsk,
     Qpsk,
     Qam16,
@@ -27,7 +27,7 @@ pub(crate) enum Modulation {
 }
 
 impl Modulation {
-    pub(crate) fn bits(self) -> usize {
+    pub fn bits(self) -> usize {
         match self {
             Self::Bpsk => 1,
             Self::Qpsk => 2,
@@ -38,14 +38,14 @@ impl Modulation {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CodeRate {
+pub enum CodeRate {
     Half,
     TwoThirds,
     ThreeQuarters,
 }
 
 impl CodeRate {
-    pub(crate) fn puncture(self) -> &'static [bool] {
+    pub fn puncture(self) -> &'static [bool] {
         match self {
             Self::Half => &[true, true],
             Self::TwoThirds => &[true, true, true, false],
@@ -55,7 +55,7 @@ impl CodeRate {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Rate {
+pub struct Rate {
     pub code: u8,
     pub mbps: f32,
     pub modulation: Modulation,
@@ -64,16 +64,16 @@ pub(crate) struct Rate {
 }
 
 impl Rate {
-    pub(crate) fn coded_bits(self) -> usize {
+    pub fn coded_bits(self) -> usize {
         DATA_CARRIERS * self.modulation.bits()
     }
 
-    pub(crate) fn symbols(self, length: usize) -> usize {
+    pub fn symbols(self, length: usize) -> usize {
         (SERVICE_BITS + 8 * length + TAIL_BITS).div_ceil(self.data_bits)
     }
 }
 
-pub(crate) const RATES: [Rate; 8] = [
+pub const RATES: [Rate; 8] = [
     rate(0b1101, 6.0, Modulation::Bpsk, CodeRate::Half, 24),
     rate(0b1111, 9.0, Modulation::Bpsk, CodeRate::ThreeQuarters, 36),
     rate(0b0101, 12.0, Modulation::Qpsk, CodeRate::Half, 48),
@@ -112,19 +112,19 @@ const fn rate(
     }
 }
 
-pub(crate) fn rate_for(code: u8) -> Option<Rate> {
+pub fn rate_for(code: u8) -> Option<Rate> {
     RATES.iter().copied().find(|rate| rate.code == code)
 }
 
-pub(crate) fn bin(carrier: i32) -> usize {
+pub fn bin(carrier: i32) -> usize {
     carrier.rem_euclid(FFT as i32) as usize
 }
 
-pub(crate) fn data_carriers() -> impl Iterator<Item = i32> {
+pub fn data_carriers() -> impl Iterator<Item = i32> {
     (-26..=26).filter(|carrier| *carrier != 0 && !PILOT_CARRIERS.contains(carrier))
 }
 
-pub(crate) fn long_training(carrier: i32) -> f32 {
+pub fn long_training(carrier: i32) -> f32 {
     if (-26..=26).contains(&carrier) {
         f32::from(LONG_TRAINING[(carrier + 26) as usize])
     } else {
@@ -132,7 +132,7 @@ pub(crate) fn long_training(carrier: i32) -> f32 {
     }
 }
 
-pub(crate) fn short_training(carrier: i32) -> Complex<f32> {
+pub fn short_training(carrier: i32) -> Complex<f32> {
     let scale = (13.0f32 / 6.0).sqrt();
     if (-26..=26).contains(&carrier) {
         let value = f32::from(SHORT_TRAINING[(carrier + 26) as usize]);
@@ -142,7 +142,7 @@ pub(crate) fn short_training(carrier: i32) -> Complex<f32> {
     }
 }
 
-pub(crate) fn polarity() -> [f32; 127] {
+pub fn polarity() -> [f32; 127] {
     let mut register = 0x7Fu8;
     std::array::from_fn(|_| {
         let bit = (register >> 6 ^ register >> 3) & 1;
@@ -151,7 +151,7 @@ pub(crate) fn polarity() -> [f32; 127] {
     })
 }
 
-pub(crate) fn interleave_table(rate: Rate) -> Vec<usize> {
+pub fn interleave_table(rate: Rate) -> Vec<usize> {
     let coded = rate.coded_bits();
     let spread = (rate.modulation.bits() / 2).max(1);
     (0..coded)

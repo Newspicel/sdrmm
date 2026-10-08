@@ -218,33 +218,7 @@ impl DataHeader {
     }
 }
 
-const CRC_TABLE: [u32; 256] = crc_table();
-
-const fn crc_table() -> [u32; 256] {
-    let mut table = [0u32; 256];
-    let mut n = 0;
-    while n < 256 {
-        let mut c = n as u32;
-        let mut k = 0;
-        while k < 8 {
-            c = if c & 1 == 1 {
-                0xEDB8_8320 ^ (c >> 1)
-            } else {
-                c >> 1
-            };
-            k += 1;
-        }
-        table[n] = c;
-        n += 1;
-    }
-    table
-}
-
-pub(crate) fn crc32(bytes: &[u8]) -> u32 {
-    !bytes.iter().fold(u32::MAX, |crc, byte| {
-        CRC_TABLE[((crc ^ u32::from(*byte)) & 0xFF) as usize] ^ (crc >> 8)
-    })
-}
+pub(crate) use sdrmm_dsp::crc32_ieee as crc32;
 
 pub(crate) fn unpack(bits: Bits, payload: &[u8], out: &mut [u8]) -> usize {
     match bits {

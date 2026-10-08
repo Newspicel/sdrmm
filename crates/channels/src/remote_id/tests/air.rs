@@ -1,18 +1,49 @@
 use num_complex::Complex;
-use sdrmm_wire::RemoteIdPhy;
+use sdrmm_modem::{
+    ble::{self, BlePhy, Lane},
+    wifi::{self, WifiPhy},
+};
 
 use crate::{
-    remote_id::{
-        ble::{
-            address_text, advert, channel_index,
-            receiver::{Lane, Packet, Syncs},
-        },
-        wifi::{dsss::Dsss, ofdm::Ofdm, receiver::Burst},
-    },
+    remote_id::ble::{address_text, advert},
     testutil::cf32_le,
 };
 
 const FLUSH: usize = 80_000;
+
+#[derive(Debug)]
+struct Heard<P> {
+    bytes: Vec<u8>,
+    phy: P,
+}
+
+#[derive(Default)]
+struct Packets(Vec<Heard<BlePhy>>);
+
+impl ble::Sink for Packets {
+    fn packet(&mut self, packet: ble::Packet<'_>) {
+        self.0.push(Heard {
+            bytes: packet.pdu.to_vec(),
+            phy: packet.phy,
+        });
+    }
+}
+
+#[derive(Default)]
+struct Frames(Vec<Heard<WifiPhy>>);
+
+impl wifi::Sink for Frames {
+    fn accepts(&self, _: u8) -> bool {
+        true
+    }
+
+    fn frame(&mut self, frame: wifi::Frame<'_>) {
+        self.0.push(Heard {
+            bytes: frame.mpdu.to_vec(),
+            phy: frame.phy,
+        });
+    }
+}
 
 fn flushed(bytes: &[u8]) -> Vec<Complex<f32>> {
     let mut iq = cf32_le(bytes);
@@ -20,30 +51,27 @@ fn flushed(bytes: &[u8]) -> Vec<Complex<f32>> {
     iq
 }
 
-fn bluetooth(iq: &[Complex<f32>], rf: u8) -> Vec<Packet> {
-    let mut lane = Lane::new(Some(rf), channel_index(rf));
-    let syncs = Syncs::new();
-    let mut packets = Vec::new();
+fn bluetooth(iq: &[Complex<f32>], rf: u8) -> Vec<Heard<BlePhy>> {
+    let mut lane = Lane::new(Some(rf), ble::channel_index(rf)).unwrap();
+    let mut packets = Packets::default();
     for block in iq.chunks(4_096) {
-        lane.process(block, &syncs, &mut packets);
+        lane.process(block, &mut packets);
     }
-    packets
+    packets.0
 }
 
-fn wifi(iq: &[Complex<f32>]) -> Vec<Burst> {
-    let mut dsss = Dsss::new();
-    let mut ofdm = Ofdm::new();
-    let mut bursts = Vec::new();
+fn wifi(iq: &[Complex<f32>]) -> Vec<Heard<WifiPhy>> {
+    let mut receiver = wifi::Receiver::new().unwrap();
+    let mut frames = Frames::default();
     for block in iq.chunks(8_192) {
-        dsss.process(block, &mut bursts);
-        ofdm.process(block, &mut bursts);
+        receiver.process(block, &mut frames);
     }
-    bursts
+    frames.0
 }
 
-fn ssid(burst: &Burst) -> String {
-    let length = usize::from(burst.bytes[37]);
-    String::from_utf8_lossy(&burst.bytes[38..38 + length]).into_owned()
+fn ssid(frame: &Heard<WifiPhy>) -> String {
+    let length = usize::from(frame.bytes[37]);
+    String::from_utf8_lossy(&frame.bytes[38..38 + length]).into_owned()
 }
 
 #[test]
@@ -53,10 +81,10 @@ fn a_dji_mini_4_pro_names_itself_on_bluetooth_channel_38() {
     ));
     let packets = bluetooth(&iq, 12);
     assert_eq!(packets.len(), 8, "{packets:?}");
-    assert!(packets.iter().all(|packet| packet.phy == RemoteIdPhy::Le1m));
+    assert!(packets.iter().all(|packet| packet.phy == BlePhy::Le1m));
     let response = packets
         .iter()
-        .filter_map(|packet| advert(&packet.pdu))
+        .filter_map(|packet| advert(&packet.bytes))
         .find(|advert| {
             advert
                 .data
@@ -77,7 +105,7 @@ fn an_off_air_1_mbit_beacon_passes_its_fcs() {
     ));
     let bursts = wifi(&iq);
     assert_eq!(bursts.len(), 1, "{bursts:?}");
-    assert_eq!(bursts[0].phy, RemoteIdPhy::Dsss1m);
+    assert_eq!(bursts[0].phy, WifiPhy::Dsss1m);
     assert_eq!(bursts[0].bytes.len(), 263);
     assert_eq!(ssid(&bursts[0]), "Xiaomi 13");
 }
@@ -87,13 +115,9 @@ fn an_off_air_cck_frame_passes_its_fcs() {
     let iq = flushed(include_bytes!(
         "../../../../../fixtures/remote_id_wifi_cck_20m.sigmf-data"
     ));
-    let mut dsss = Dsss::new();
-    let mut bursts = Vec::new();
-    for block in iq.chunks(8_192) {
-        dsss.process(block, &mut bursts);
-    }
+    let bursts = wifi(&iq);
     assert_eq!(bursts.len(), 1, "{bursts:?}");
-    assert_eq!(bursts[0].phy, RemoteIdPhy::Cck11m);
+    assert_eq!(bursts[0].phy, WifiPhy::Cck11m);
     assert_eq!(bursts[0].bytes.len(), 220);
     assert_eq!(bursts[0].bytes[0], 0x88);
 }
@@ -105,7 +129,7 @@ fn an_off_air_6_mbit_beacon_passes_its_fcs() {
     ));
     let bursts = wifi(&iq);
     assert_eq!(bursts.len(), 1, "{bursts:?}");
-    assert_eq!(bursts[0].phy, RemoteIdPhy::Ofdm);
+    assert_eq!(bursts[0].phy, WifiPhy::Ofdm { mbps: 6 });
     assert_eq!(bursts[0].bytes.len(), 270);
     assert_eq!(ssid(&bursts[0]), "MipsTucker");
 }

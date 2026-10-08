@@ -5,12 +5,12 @@ use sdrmm_wire::{
     UaType, UasIdType,
 };
 
-use super::{RemoteIdChannel, ble, input_rate};
+use super::{RemoteIdChannel, input_rate};
 use crate::{
-    ChannelCtx, ChannelOutputs, ChannelRx, channel_filter,
+    ChannelCtx, ChannelError, ChannelOutputs, ChannelRx, channel_filter,
     synth::{
         self,
-        remote_id::{self as tx, WifiRate},
+        remote_id::{self as tx, BlePhy, WifiPhy},
     },
     testutil::settings,
 };
@@ -19,6 +19,7 @@ const ADDRESS: [u8; 6] = [0xC2, 0x11, 0x22, 0x33, 0x44, 0x55];
 const WIFI_ADDRESS: [u8; 6] = [0x60, 0x60, 0x1F, 0x12, 0x34, 0x56];
 const CHANNEL_37_HZ: f64 = 2_402e6;
 const CHANNEL_38_HZ: f64 = 2_426e6;
+const DATA_8_HZ: f64 = 2_420e6;
 const WIFI_6_HZ: f64 = 2_437e6;
 
 pub(crate) fn decode(
@@ -122,7 +123,7 @@ fn a_legacy_bluetooth_location_carries_the_remembered_id() {
     {
         let pdu = tx::legacy_pdu(ADDRESS, counter as u8, message);
         iq.extend(on_air(
-            tx::bluetooth(&pdu, 0, RemoteIdPhy::Le1m, rate),
+            tx::bluetooth(&pdu, 0, BlePhy::Le1m, rate),
             rate,
             40e3,
             0.05,
@@ -141,19 +142,60 @@ fn a_legacy_bluetooth_location_carries_the_remembered_id() {
     assert_eq!(last.position(), Some((52.520_008_1, 13.404_954_3)));
 }
 
+fn try_channel(link: RemoteIdLink, frequency_hz: f64) -> Result<RemoteIdChannel, ChannelError> {
+    let params = RemoteIdParams { link };
+    let ctx = ChannelCtx {
+        input_rate: input_rate(&params),
+    };
+    RemoteIdChannel::new(
+        ctx,
+        ChannelSettings {
+            frequency_hz,
+            ..settings(ChannelParams::RemoteId(params))
+        },
+    )
+}
+
 #[test]
-fn long_range_packs_decode_at_both_coding_rates() {
+fn a_bluetooth_channel_off_the_grid_is_refused() {
+    for hz in [145e6, 2_401e6, 2_482e6] {
+        assert!(matches!(
+            try_channel(RemoteIdLink::Bluetooth, hz),
+            Err(ChannelError::InvalidSettings(_))
+        ));
+    }
+    assert!(try_channel(RemoteIdLink::Bluetooth, DATA_8_HZ).is_ok());
+}
+
+#[test]
+fn long_range_packs_decode_on_a_data_channel_at_both_coding_rates() {
     let rate = RemoteIdLink::Bluetooth.input_rate_hz();
-    for phy in [RemoteIdPhy::LeCodedS8, RemoteIdPhy::LeCodedS2] {
-        let pdu = tx::extended_pdu(ADDRESS, 9, &pack());
-        let iq = on_air(tx::bluetooth(&pdu, 12, phy, rate), rate, -60e3, 0.1);
-        let frames = decode(RemoteIdLink::Bluetooth, CHANNEL_38_HZ, &iq);
+    for (phy, wire) in [
+        (BlePhy::CodedS8, RemoteIdPhy::LeCodedS8),
+        (BlePhy::CodedS2, RemoteIdPhy::LeCodedS2),
+    ] {
+        let pdu = tx::aux_adv_pdu(ADDRESS, 9, &pack());
+        let iq = on_air(tx::bluetooth(&pdu, 9, phy, rate), rate, -60e3, 0.1);
+        let frames = decode(RemoteIdLink::Bluetooth, DATA_8_HZ, &iq);
         assert_eq!(frames.len(), 1, "{phy:?} {frames:?}");
         assert_eq!(frames[0].transport, RemoteIdTransport::BluetoothExtended);
-        assert_eq!(frames[0].phy, phy);
-        assert_eq!(frames[0].channel, Some(38));
+        assert_eq!(frames[0].phy, wire);
+        assert_eq!(frames[0].channel, Some(8));
         assert_eq!(frames[0].messages, pack());
     }
+}
+
+#[test]
+fn a_primary_channel_pointer_carries_no_pack() {
+    let rate = RemoteIdLink::Bluetooth.input_rate_hz();
+    let pdu = tx::ext_adv_pdu(8, BlePhy::CodedS8);
+    let iq = on_air(
+        tx::bluetooth(&pdu, 12, BlePhy::CodedS8, rate),
+        rate,
+        0.0,
+        0.05,
+    );
+    assert!(decode(RemoteIdLink::Bluetooth, CHANNEL_38_HZ, &iq).is_empty());
 }
 
 #[test]
@@ -162,16 +204,16 @@ fn a_twenty_megahertz_window_hears_every_bluetooth_channel_in_it() {
     let mut first = tx::bluetooth(
         &tx::legacy_pdu(ADDRESS, 1, &basic_id()),
         12,
-        RemoteIdPhy::Le1m,
+        BlePhy::Le1m,
         rate,
     );
     let mut second = tx::bluetooth(
-        &tx::extended_pdu([0xD0, 1, 2, 3, 4, 5], 2, &pack()),
+        &tx::aux_adv_pdu([0xD0, 1, 2, 3, 4, 5], 2, &pack()),
         9,
-        RemoteIdPhy::LeCodedS8,
+        BlePhy::CodedS8,
         rate,
     );
-    synth::shift(&mut second, ble::rf_channel_hz(9) - CHANNEL_38_HZ, rate);
+    synth::shift(&mut second, DATA_8_HZ - CHANNEL_38_HZ, rate);
     first.resize(second.len(), Complex::new(0.0, 0.0));
     let mixed: Vec<Complex<f32>> = first.iter().zip(&second).map(|(a, b)| a + b).collect();
     let frames = decode(
@@ -190,22 +232,14 @@ fn other_bluetooth_adverts_are_ignored() {
     let mut pdu = vec![0x42, 20];
     pdu.extend(ADDRESS);
     pdu.extend([13, 0xFF, 0x4C, 0x00, 0x02, 0x15, 1, 2, 3, 4, 5, 6, 7, 8]);
-    let iq = on_air(
-        tx::bluetooth(&pdu, 39, RemoteIdPhy::Le1m, rate),
-        rate,
-        0.0,
-        0.05,
-    );
+    let iq = on_air(tx::bluetooth(&pdu, 39, BlePhy::Le1m, rate), rate, 0.0, 0.05);
     assert!(decode(RemoteIdLink::Bluetooth, 2_480e6, &iq).is_empty());
 }
 
-fn wifi(rate: WifiRate, mpdu: &[u8]) -> Vec<Complex<f32>> {
-    let signal = match rate {
-        WifiRate::Dsss {
-            phy,
-            short_preamble,
-        } => tx::dsss(mpdu, phy, short_preamble),
-        WifiRate::Ofdm { mbps } => tx::ofdm(mpdu, mbps),
+fn wifi(phy: WifiPhy, short_preamble: bool, mpdu: &[u8]) -> Vec<Complex<f32>> {
+    let signal = match phy {
+        WifiPhy::Ofdm { mbps } => tx::ofdm(mpdu, mbps),
+        _ => tx::dsss(mpdu, phy, short_preamble).unwrap(),
     };
     on_air(signal, RemoteIdLink::Wifi.input_rate_hz(), 35e3, 0.02)
 }
@@ -219,40 +253,31 @@ fn wifi_beacons_decode_at_every_rate() {
         &tx::encode::pack(&pack()),
     );
     let rates = [
-        WifiRate::Dsss {
-            phy: RemoteIdPhy::Dsss1m,
-            short_preamble: false,
-        },
-        WifiRate::Dsss {
-            phy: RemoteIdPhy::Dsss2m,
-            short_preamble: true,
-        },
-        WifiRate::Dsss {
-            phy: RemoteIdPhy::Cck5m5,
-            short_preamble: false,
-        },
-        WifiRate::Dsss {
-            phy: RemoteIdPhy::Cck11m,
-            short_preamble: true,
-        },
+        (WifiPhy::Dsss1m, false, RemoteIdPhy::Dsss1m),
+        (WifiPhy::Dsss2m, true, RemoteIdPhy::Dsss2m),
+        (WifiPhy::Cck5m5, false, RemoteIdPhy::Cck5m5),
+        (WifiPhy::Cck11m, true, RemoteIdPhy::Cck11m),
     ]
     .into_iter()
-    .chain([6, 9, 12, 18, 24, 36, 48, 54].map(|mbps| WifiRate::Ofdm { mbps }));
-    for rate in rates {
-        let frames = decode(RemoteIdLink::Wifi, WIFI_6_HZ, &wifi(rate, &beacon));
-        assert_eq!(frames.len(), 1, "{rate:?}");
+    .chain(
+        [6, 9, 12, 18, 24, 36, 48, 54]
+            .map(|mbps| (WifiPhy::Ofdm { mbps }, false, RemoteIdPhy::Ofdm)),
+    );
+    for (phy, short_preamble, wire) in rates {
+        let frames = decode(
+            RemoteIdLink::Wifi,
+            WIFI_6_HZ,
+            &wifi(phy, short_preamble, &beacon),
+        );
+        assert_eq!(frames.len(), 1, "{phy:?}");
         let frame = &frames[0];
         assert_eq!(frame.transport, RemoteIdTransport::WifiBeacon);
         assert_eq!(frame.address, "60:60:1F:12:34:56");
         assert_eq!(frame.ssid.as_deref(), Some("RID-1581F5FJD"));
         assert_eq!(frame.channel, Some(6));
         assert_eq!(frame.counter, Some(17));
-        assert_eq!(frame.messages, pack(), "{rate:?}");
-        if let WifiRate::Dsss { phy, .. } = rate {
-            assert_eq!(frame.phy, phy);
-        } else {
-            assert_eq!(frame.phy, RemoteIdPhy::Ofdm);
-        }
+        assert_eq!(frame.messages, pack(), "{phy:?}");
+        assert_eq!(frame.phy, wire);
     }
 }
 
@@ -262,7 +287,7 @@ fn nan_service_discovery_frames_decode() {
     let frames = decode(
         RemoteIdLink::Wifi,
         WIFI_6_HZ,
-        &wifi(WifiRate::Ofdm { mbps: 6 }, &frame),
+        &wifi(WifiPhy::Ofdm { mbps: 6 }, false, &frame),
     );
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].transport, RemoteIdTransport::WifiNan);
@@ -273,10 +298,10 @@ fn nan_service_discovery_frames_decode() {
 #[test]
 fn a_broken_frame_is_counted_on_the_next_one() {
     let mut beacon = tx::build::beacon(WIFI_ADDRESS, "RID", 1, &tx::encode::pack(&pack()));
-    let good = wifi(WifiRate::Ofdm { mbps: 12 }, &beacon);
+    let good = wifi(WifiPhy::Ofdm { mbps: 12 }, false, &beacon);
     let last = beacon.len() - 1;
     beacon[last] ^= 0x55;
-    let mut iq = wifi(WifiRate::Ofdm { mbps: 12 }, &beacon);
+    let mut iq = wifi(WifiPhy::Ofdm { mbps: 12 }, false, &beacon);
     iq.extend(good);
     let frames = decode(RemoteIdLink::Wifi, WIFI_6_HZ, &iq);
     assert_eq!(frames.len(), 1);
@@ -287,16 +312,16 @@ fn a_broken_frame_is_counted_on_the_next_one() {
 fn the_signal_generator_scenes_decode() {
     let bluetooth = decode(
         RemoteIdLink::Bluetooth,
-        145e6,
+        CHANNEL_37_HZ,
         &tx::bluetooth_scene(RemoteIdLink::Bluetooth.input_rate_hz()),
     );
-    assert_eq!(bluetooth.len(), 6, "{bluetooth:?}");
+    assert_eq!(bluetooth.len(), 5, "{bluetooth:?}");
     assert!(
         bluetooth
             .iter()
             .all(|frame| frame.uas_id.as_deref() == Some("1581F5FJD239C00DW22E"))
     );
-    let wifi = decode(RemoteIdLink::Wifi, 145e6, &tx::wifi_scene());
+    let wifi = decode(RemoteIdLink::Wifi, 145e6, &tx::wifi_scene().unwrap());
     let transports: Vec<RemoteIdTransport> = wifi.iter().map(|frame| frame.transport).collect();
     assert_eq!(
         transports,

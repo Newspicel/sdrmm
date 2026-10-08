@@ -1,16 +1,39 @@
+use std::fmt;
+
 use num_complex::Complex;
-use sdrmm_dsp::{Channelizer, Nco};
+use sdrmm_dsp::{Channelizer, ChannelizerError, Nco};
 
 use super::{
-    CHANNEL_SPACING_HZ, channel_index, gfsk,
-    receiver::{Lane, Packet, Syncs},
-    rf_channel_hz,
+    CHANNEL_SPACING_HZ, RATE_HZ, RF_CHANNELS, Sink, channel_index, receiver::Lane, rf_channel_hz,
 };
-use crate::ChannelError;
+use crate::cpm::LaurentError;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BandError {
+    NoChannel { rate_hz: f64, center_hz: f64 },
+    Channelizer(ChannelizerError),
+    Pulse(LaurentError),
+}
+
+impl fmt::Display for BandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoChannel { rate_hz, center_hz } => write!(
+                f,
+                "no Bluetooth channel within {:.1} MHz of {:.3} MHz",
+                rate_hz / 2e6,
+                center_hz / 1e6
+            ),
+            Self::Channelizer(error) => write!(f, "{error}"),
+            Self::Pulse(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for BandError {}
 
 const CUTOFF_HZ: f64 = 1_100_000.0;
 const EDGE_HZ: f64 = 1_500_000.0;
-const RF_CHANNELS: u8 = 40;
 
 struct Plan {
     shift_hz: f64,
@@ -31,7 +54,7 @@ fn plan(rate: f64, center_hz: f64) -> Plan {
     Plan { shift_hz, lanes }
 }
 
-pub(crate) struct Band {
+pub struct Band {
     shift: Option<Nco>,
     shifted: Vec<Complex<f32>>,
     channelizer: Channelizer,
@@ -40,40 +63,41 @@ pub(crate) struct Band {
 }
 
 impl Band {
-    pub(crate) fn new(rate: f64, center_hz: f64) -> Result<Self, ChannelError> {
+    pub fn new(rate: f64, center_hz: f64) -> Result<Self, BandError> {
         let bins = (rate / CHANNEL_SPACING_HZ).round() as usize;
         let plan = plan(rate, center_hz);
         if plan.lanes.is_empty() {
-            return Err(ChannelError::InvalidSettings(format!(
-                "no Bluetooth channel within {:.1} MHz of {:.3} MHz",
-                rate / 2e6,
-                center_hz / 1e6
-            )));
+            return Err(BandError::NoChannel {
+                rate_hz: rate,
+                center_hz,
+            });
         }
         let wanted: Vec<i32> = plan.lanes.iter().map(|&(bin, _)| bin).collect();
-        let decimation = (rate / gfsk::RATE_HZ).round() as usize;
+        let decimation = (rate / RATE_HZ).round() as usize;
         let channelizer = Channelizer::new(bins, decimation, CUTOFF_HZ / rate, &wanted)
-            .map_err(|error| ChannelError::InvalidSettings(error.to_string()))?;
+            .map_err(BandError::Channelizer)?;
+        let lanes = plan
+            .lanes
+            .iter()
+            .map(|&(_, rf)| Lane::new(Some(rf), channel_index(rf)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(BandError::Pulse)?;
         Ok(Self {
             shift: (plan.shift_hz.abs() > 1.0)
                 .then(|| Nco::new(-plan.shift_hz as f32, rate as f32)),
             shifted: Vec::new(),
             outputs: vec![Vec::new(); wanted.len()],
             channelizer,
-            lanes: plan
-                .lanes
-                .iter()
-                .map(|&(_, rf)| Lane::new(Some(rf), channel_index(rf)))
-                .collect(),
+            lanes,
         })
     }
 
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.channelizer.reset();
         self.lanes.iter_mut().for_each(Lane::reset);
     }
 
-    pub(crate) fn process(&mut self, iq: &[Complex<f32>], syncs: &Syncs, out: &mut Vec<Packet>) {
+    pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
         let input = match &mut self.shift {
             Some(nco) => {
                 self.shifted.clear();
@@ -85,9 +109,8 @@ impl Band {
         };
         self.channelizer.process(input, &mut self.outputs);
         for (lane, samples) in self.lanes.iter_mut().zip(&self.outputs) {
-            lane.process(samples, syncs, out);
+            lane.process(samples, sink);
         }
-        out.sort_unstable_by_key(|packet| packet.sample);
     }
 }
 

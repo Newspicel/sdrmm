@@ -1,12 +1,9 @@
 mod dji;
-pub(crate) mod dsss;
 mod french;
-pub(crate) mod ofdm;
-pub(crate) mod receiver;
 
-use sdrmm_wire::{RemoteIdFrame, RemoteIdPhy, RemoteIdTransport};
+use sdrmm_modem::wifi::{self as phy, WifiPhy};
+use sdrmm_wire::{DecoderEvent, RemoteIdFrame, RemoteIdPhy, RemoteIdTransport};
 
-pub(crate) use self::receiver::Wifi;
 use super::{
     odid::APP_CODE,
     tracker::{Heard, Tracker},
@@ -36,28 +33,6 @@ const BAND_5_START_MHZ: f64 = 5_000.0;
 const CHANNEL_14_MHZ: f64 = 2_484.0;
 
 #[must_use]
-pub(crate) fn crc32(data: &[u8]) -> u32 {
-    !data.iter().fold(u32::MAX, |crc, &byte| {
-        (0..8).fold(crc ^ u32::from(byte), |crc, _| {
-            if crc & 1 != 0 {
-                (crc >> 1) ^ 0xEDB8_8320
-            } else {
-                crc >> 1
-            }
-        })
-    })
-}
-
-#[must_use]
-pub(crate) fn fcs_ok(mpdu: &[u8]) -> bool {
-    let Some(split) = mpdu.len().checked_sub(FCS_BYTES) else {
-        return false;
-    };
-    let (body, fcs) = mpdu.split_at(split);
-    crc32(body).to_le_bytes() == fcs
-}
-
-#[must_use]
 pub(crate) fn channel_number(frequency_hz: f64) -> Option<u8> {
     let mhz = frequency_hz / 1e6;
     if (mhz - CHANNEL_14_MHZ).abs() < 2.5 {
@@ -79,11 +54,6 @@ pub(crate) fn wanted_control(control: u8) -> bool {
     matches!(u16::from(control) & TYPE_MASK, BEACON | ACTION)
 }
 
-#[must_use]
-pub(crate) fn wanted(mpdu: &[u8]) -> bool {
-    mpdu.len() >= HEADER_BYTES + FCS_BYTES && wanted_control(mpdu[0])
-}
-
 pub(crate) struct Mpdu<'a> {
     pub bytes: &'a [u8],
     pub phy: RemoteIdPhy,
@@ -96,22 +66,21 @@ pub(crate) fn frame(mpdu: &Mpdu<'_>, tracker: &mut Tracker) -> Option<RemoteIdFr
     let body_end = bytes.len().checked_sub(FCS_BYTES)?;
     let header = bytes.get(..HEADER_BYTES)?;
     let control = u16::from_le_bytes([header[0], header[1]]) & TYPE_MASK;
-    let address = address_text(&header[10..16]);
     let body = bytes.get(HEADER_BYTES..body_end)?;
-    let heard = |transport, counter, ssid, payload| Heard {
+    let heard = |transport, counter, ssid: Option<&[u8]>, payload| Heard {
         transport,
         phy: mpdu.phy,
-        address: address.clone(),
+        address: address_text(&header[10..16]),
         channel: mpdu.channel,
         counter,
-        ssid,
+        ssid: ssid.map(text),
         level_dbfs: mpdu.level_dbfs,
         payload,
     };
     match control {
         BEACON => {
             let elements = body.get(BEACON_FIXED..)?;
-            let ssid = element(elements, |id, _| id == SSID).map(text);
+            let ssid = element(elements, |id, _| id == SSID);
             if let Some(found) = element(elements, |id, data| {
                 id == VENDOR && data.starts_with(&ASTM_OUI) && data.get(3) == Some(&APP_CODE)
             }) {
@@ -223,6 +192,40 @@ fn text(bytes: &[u8]) -> String {
         .chars()
         .map(|c| if c.is_control() { '?' } else { c })
         .collect()
+}
+
+fn wire_phy(phy: WifiPhy) -> RemoteIdPhy {
+    match phy {
+        WifiPhy::Dsss1m => RemoteIdPhy::Dsss1m,
+        WifiPhy::Dsss2m => RemoteIdPhy::Dsss2m,
+        WifiPhy::Cck5m5 => RemoteIdPhy::Cck5m5,
+        WifiPhy::Cck11m => RemoteIdPhy::Cck11m,
+        WifiPhy::Ofdm { .. } => RemoteIdPhy::Ofdm,
+    }
+}
+
+pub(crate) struct Events<'a> {
+    pub tracker: &'a mut Tracker,
+    pub events: &'a mut Vec<DecoderEvent>,
+    pub channel: Option<u8>,
+}
+
+impl phy::Sink for Events<'_> {
+    fn accepts(&self, frame_control: u8) -> bool {
+        wanted_control(frame_control)
+    }
+
+    fn frame(&mut self, frame: phy::Frame<'_>) {
+        let mpdu = Mpdu {
+            bytes: frame.mpdu,
+            phy: wire_phy(frame.phy),
+            channel: self.channel,
+            level_dbfs: frame.level_dbfs,
+        };
+        if let Some(event) = self::frame(&mpdu, self.tracker) {
+            self.events.push(DecoderEvent::RemoteId(event));
+        }
+    }
 }
 
 #[cfg(any(test, feature = "synth"))]

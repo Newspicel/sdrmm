@@ -1,0 +1,40 @@
+{
+  "label": "ble le coded s=8: coded access address sync, pilot-aided coherent pattern detection, k=4 soft viterbi, 37-byte payload, a missed packet counts every bit, uncoded BER, seed 0xb1e8",
+  "points": [
+    {
+      "ebn0_db": 10.0,
+      "errors": 2072,
+      "trials": 2664
+    },
+    {
+      "ebn0_db": 11.0,
+      "errors": 2072,
+      "trials": 2960
+    },
+    {
+      "ebn0_db": 12.0,
+      "errors": 2072,
+      "trials": 13320
+    },
+    {
+      "ebn0_db": 13.0,
+      "errors": 2072,
+      "trials": 88800
+    },
+    {
+      "ebn0_db": 14.0,
+      "errors": 2072,
+      "trials": 469456
+    },
+    {
+      "ebn0_db": 15.0,
+      "errors": 0,
+      "trials": 3000256
+    },
+    {
+      "ebn0_db": 16.0,
+      "errors": 0,
+      "trials": 3000256
+    }
+  ]
+}

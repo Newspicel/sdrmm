@@ -1,20 +1,18 @@
 mod demap;
-pub(crate) mod tables;
+pub mod tables;
 
 use std::f32::consts::TAU;
 
 use num_complex::Complex;
 use sdrmm_dsp::{ConvCode, Soft, ViterbiK7, depuncture, fft::FftPair};
-use sdrmm_wire::RemoteIdPhy;
 
 use self::tables::{
-    CP, FFT, PILOT_CARRIERS, PILOT_VALUES, Rate, SERVICE_BITS, SHORT, SYMBOL, bin,
+    CP, FFT, PILOT_CARRIERS, PILOT_VALUES, RATES, Rate, SERVICE_BITS, SHORT, SYMBOL, bin,
     interleave_table, long_training, polarity, rate_for,
 };
-use super::receiver::{Burst, level_dbfs};
+use super::{Frame, MAX_MPDU_BYTES, Sink, WifiPhy, byte, fcs_ok, level_dbfs};
 
-#[cfg(any(test, feature = "synth"))]
-pub(crate) use self::demap::map as map_point;
+pub use self::demap::map as map_point;
 
 const WINDOW: usize = 48;
 const PLATEAU: f32 = 0.7;
@@ -27,6 +25,9 @@ const MIN_LENGTH: usize = 14;
 const LOOKAHEAD: usize = WINDOW + SHORT + LTF_SEARCH + 2 * FFT + SYMBOL;
 const MAX_HISTORY: usize = 600_000;
 const PEEK_BITS: usize = SERVICE_BITS + 16 + 96;
+const MAX_CODED_BITS: usize = 288;
+const MAX_DATA_BITS: usize = 24 * 1_366;
+const MAX_CODED_STREAM: usize = 66_000;
 
 #[derive(Clone, Copy)]
 enum State {
@@ -34,7 +35,38 @@ enum State {
     Pending(usize),
 }
 
-pub(crate) struct Ofdm {
+enum Outcome {
+    Frame(Rate, usize),
+    Skip(usize),
+    Short,
+    Failed,
+}
+
+struct Scratch {
+    scores: [f32; LTF_SEARCH + FFT],
+    received: [f32; MAX_CODED_BITS],
+    coded: Vec<Soft>,
+    full: Vec<Soft>,
+    bits: Vec<bool>,
+    bytes: Vec<u8>,
+    tables: Vec<Vec<usize>>,
+}
+
+impl Scratch {
+    fn new() -> Self {
+        Self {
+            scores: [0.0; LTF_SEARCH + FFT],
+            received: [0.0; MAX_CODED_BITS],
+            coded: Vec::with_capacity(MAX_CODED_STREAM),
+            full: Vec::with_capacity(2 * MAX_DATA_BITS + MAX_CODED_BITS),
+            bits: Vec::with_capacity(MAX_DATA_BITS + MAX_CODED_BITS),
+            bytes: Vec::with_capacity(MAX_MPDU_BYTES),
+            tables: RATES.iter().map(|&rate| interleave_table(rate)).collect(),
+        }
+    }
+}
+
+pub struct Ofdm {
     history: Vec<Complex<f32>>,
     correlation: Complex<f32>,
     energy: f32,
@@ -48,14 +80,8 @@ pub(crate) struct Ofdm {
     reference: [Complex<f32>; FFT],
     polarity: [f32; 127],
     viterbi: ViterbiK7,
-    pub(crate) rejected: u32,
-}
-
-enum Outcome {
-    Burst(Burst, usize),
-    Skip(usize),
-    Short,
-    Failed,
+    scratch: Scratch,
+    rejected: u32,
 }
 
 struct Lock {
@@ -66,8 +92,15 @@ struct Lock {
     gain: f32,
 }
 
+impl Default for Ofdm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ofdm {
-    pub(crate) fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         let mut fft = FftPair::new(FFT);
         let mut reference = [Complex::new(0.0, 0.0); FFT];
         for carrier in -26..=26 {
@@ -75,7 +108,7 @@ impl Ofdm {
         }
         fft.inverse(&mut reference);
         Self {
-            history: Vec::new(),
+            history: Vec::with_capacity(MAX_HISTORY),
             correlation: Complex::new(0.0, 0.0),
             energy: 0.0,
             run: 0,
@@ -87,12 +120,21 @@ impl Ofdm {
             fft,
             reference,
             polarity: polarity(),
-            viterbi: ViterbiK7::new(ConvCode::new(&[0o133, 0o171])),
+            viterbi: ViterbiK7::with_capacity(
+                ConvCode::new(&[0o133, 0o171]),
+                MAX_DATA_BITS + MAX_CODED_BITS,
+            ),
+            scratch: Scratch::new(),
             rejected: 0,
         }
     }
 
-    pub(crate) fn reset(&mut self) {
+    #[must_use]
+    pub fn rejected(&self) -> u32 {
+        self.rejected
+    }
+
+    pub fn reset(&mut self) {
         self.history.clear();
         self.consumed = 0;
         self.cursor = 0;
@@ -102,14 +144,21 @@ impl Ofdm {
         self.holding = false;
     }
 
-    pub(crate) fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<Burst>) {
+    pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
         self.history.extend_from_slice(iq);
         loop {
             match self.state {
-                State::Pending(start) => match self.demodulate(start) {
+                State::Pending(start) => match self.demodulate(start, sink) {
                     Outcome::Short => break,
-                    Outcome::Burst(burst, end) => {
-                        out.push(burst);
+                    Outcome::Frame(rate, end) => {
+                        sink.frame(Frame {
+                            mpdu: &self.scratch.bytes,
+                            phy: WifiPhy::Ofdm {
+                                mbps: rate.mbps as u8,
+                            },
+                            level_dbfs: level_dbfs(&self.history[start..end]),
+                            sample: self.consumed + start as u64,
+                        });
                         self.resume(end, false);
                     }
                     Outcome::Skip(end) => self.resume(end, false),
@@ -185,17 +234,15 @@ impl Ofdm {
             .map(|k| self.history[origin + k] * self.history[origin + k + SHORT].conj())
             .sum();
         let coarse_cfo = -coarse.arg() / (TAU * SHORT as f32);
-        let scores: Vec<f32> = (0..LTF_SEARCH + FFT)
-            .map(|offset| {
-                (0..FFT)
-                    .map(|k| {
-                        self.sample(origin, coarse_cfo, origin + offset + k)
-                            * self.reference[k].conj()
-                    })
-                    .sum::<Complex<f32>>()
-                    .norm()
-            })
-            .collect();
+        for offset in 0..LTF_SEARCH + FFT {
+            self.scratch.scores[offset] = (0..FFT)
+                .map(|k| {
+                    self.sample(origin, coarse_cfo, origin + offset + k) * self.reference[k].conj()
+                })
+                .sum::<Complex<f32>>()
+                .norm();
+        }
+        let scores = &self.scratch.scores;
         let first = (0..LTF_SEARCH).max_by(|&a, &b| {
             (scores[a] + scores[a + FFT]).total_cmp(&(scores[b] + scores[b + FFT]))
         })?;
@@ -262,47 +309,44 @@ impl Ofdm {
         points
     }
 
-    fn soft_symbol(
-        &mut self,
-        lock: &Lock,
-        index: usize,
-        rate: Rate,
-        table: &[usize],
-        out: &mut Vec<Soft>,
-    ) {
+    fn soft_symbol(&mut self, lock: &Lock, index: usize, rate: Rate, table: usize) {
         let points = self.equalized(lock, index);
-        let mut received = vec![0.0f32; rate.coded_bits()];
+        let coded = rate.coded_bits();
         demap::demap(
             &points,
             &lock.channel,
             lock.gain,
             rate.modulation,
-            &mut received,
+            &mut self.scratch.received[..coded],
         );
-        out.extend(
-            table
+        let scratch = &mut self.scratch;
+        scratch.coded.extend(
+            scratch.tables[table]
                 .iter()
-                .map(|&position| demap::soft(received[position])),
+                .map(|&position| demap::soft(scratch.received[position])),
         );
     }
 
-    fn decode(&mut self, lock: &Lock, rate: Rate, symbols: usize, first: usize) -> Vec<bool> {
-        let table = interleave_table(rate);
-        let mut coded = Vec::with_capacity(symbols * rate.coded_bits());
+    fn decode(&mut self, lock: &Lock, rate: Rate, symbols: usize, first: usize) {
+        let table = RATES
+            .iter()
+            .position(|candidate| candidate.code == rate.code)
+            .unwrap_or(0);
+        self.scratch.coded.clear();
         for index in first..first + symbols {
-            self.soft_symbol(lock, index, rate, &table, &mut coded);
+            self.soft_symbol(lock, index, rate, table);
         }
-        let mut full = Vec::with_capacity(coded.len() * 2);
-        depuncture(&coded, rate.coding.puncture(), &mut full);
-        full.truncate(symbols * rate.data_bits * 2);
-        let mut bits = Vec::with_capacity(symbols * rate.data_bits);
-        self.viterbi.decode(&full, &mut bits);
-        bits
+        let scratch = &mut self.scratch;
+        scratch.full.clear();
+        depuncture(&scratch.coded, rate.coding.puncture(), &mut scratch.full);
+        scratch.full.truncate(symbols * rate.data_bits * 2);
+        scratch.bits.clear();
+        self.viterbi.decode(&scratch.full, &mut scratch.bits);
     }
 
     fn signal(&mut self, lock: &Lock) -> Option<(Rate, usize)> {
-        let bits = self.decode(lock, tables::RATES[0], 1, 0);
-        let bits = bits.get(..SIGNAL_BITS)?;
+        self.decode(lock, RATES[0], 1, 0);
+        let bits = self.scratch.bits.get(..SIGNAL_BITS)?;
         let parity = bits[..18].iter().filter(|&&bit| bit).count() % 2 == 0;
         let tail = bits[18..].iter().all(|&bit| !bit);
         let code = bits[..4]
@@ -316,7 +360,7 @@ impl Ofdm {
         (parity && tail && !bits[4] && length >= MIN_LENGTH).then_some((rate, length))
     }
 
-    fn demodulate(&mut self, start: usize) -> Outcome {
+    fn demodulate(&mut self, start: usize, sink: &impl Sink) -> Outcome {
         if start + LOOKAHEAD > self.history.len() {
             return Outcome::Short;
         }
@@ -335,33 +379,33 @@ impl Ofdm {
             return Outcome::Short;
         }
         let peek = PEEK_BITS.div_ceil(rate.data_bits).min(symbols);
-        let frame_control = descramble(&self.decode(&lock, rate, peek, 1))
+        self.decode(&lock, rate, peek, 1);
+        descramble(&mut self.scratch.bits);
+        let frame_control = self
+            .scratch
+            .bits
             .get(SERVICE_BITS..SERVICE_BITS + 8)
             .map(byte);
-        if !frame_control.is_some_and(super::wanted_control) {
+        if !frame_control.is_some_and(|control| sink.accepts(control)) {
             return Outcome::Skip(end);
         }
-        let bits = descramble(&self.decode(&lock, rate, symbols, 1));
-        let bytes: Vec<u8> = bits[SERVICE_BITS..]
-            .as_chunks::<8>()
-            .0
-            .iter()
-            .take(length)
-            .map(|bits| byte(bits))
-            .collect();
-        if bytes.len() != length || !super::fcs_ok(&bytes) {
+        self.decode(&lock, rate, symbols, 1);
+        let scratch = &mut self.scratch;
+        descramble(&mut scratch.bits);
+        scratch.bytes.clear();
+        scratch.bytes.extend(
+            scratch.bits[SERVICE_BITS.min(scratch.bits.len())..]
+                .as_chunks::<8>()
+                .0
+                .iter()
+                .take(length)
+                .map(|bits| byte(bits)),
+        );
+        if scratch.bytes.len() != length || !fcs_ok(&scratch.bytes) {
             self.rejected = self.rejected.saturating_add(1);
             return Outcome::Skip(end);
         }
-        Outcome::Burst(
-            Burst {
-                bytes,
-                phy: RemoteIdPhy::Ofdm,
-                level_dbfs: level_dbfs(&self.history[start..end]),
-                sample: self.consumed + start as u64,
-            },
-            end,
-        )
+        Outcome::Frame(rate, end)
     }
 
     fn trim(&mut self) {
@@ -382,21 +426,17 @@ impl Ofdm {
     }
 }
 
-fn descramble(bits: &[bool]) -> Vec<bool> {
-    let mut sequence: Vec<bool> = bits.iter().take(7).copied().collect();
-    let mut out = vec![false; bits.len().min(7)];
-    for (n, &bit) in bits.iter().enumerate().skip(7) {
-        let next = sequence[n - 7] ^ sequence[n - 4];
-        sequence.push(next);
-        out.push(bit ^ next);
+pub(crate) fn descramble(bits: &mut [bool]) {
+    let seed = bits.len().min(7);
+    let mut register = bits[..seed]
+        .iter()
+        .fold(0u8, |acc, &bit| acc << 1 | u8::from(bit));
+    bits[..seed].fill(false);
+    for bit in bits.iter_mut().skip(seed) {
+        let next = (register >> 6 ^ register >> 3) & 1;
+        register = (register << 1 | next) & 0x7F;
+        *bit ^= next == 1;
     }
-    out
-}
-
-fn byte(bits: &[bool]) -> u8 {
-    bits.iter()
-        .enumerate()
-        .fold(0u8, |acc, (bit, &value)| acc | u8::from(value) << bit)
 }
 
 #[cfg(test)]

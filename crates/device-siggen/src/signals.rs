@@ -801,7 +801,7 @@ fn remote_id_bluetooth() -> Vec<Complex<f32>> {
 }
 
 fn remote_id_wifi() -> Vec<Complex<f32>> {
-    synth::remote_id::wifi_scene()
+    synth::remote_id::wifi_scene().unwrap_or_default()
 }
 
 fn dect() -> Vec<Complex<f32>> {

@@ -1,9 +1,8 @@
 use sdrmm_wire::{RemoteIdMessage, RemoteIdTransport, UaType, UasIdType};
 
-use super::{
-    Whitener, address_text, advert, channel_index, crc_ok, crc24, nearest_rf_channel,
-    remote_id_payload, rf_channel_hz, whiten,
-};
+use sdrmm_modem::ble::crc_ok;
+
+use super::{address_text, advert, remote_id_payload};
 use crate::remote_id::odid;
 
 pub(crate) const BT5_LONG_RANGE_PDU: &str = "07f409091c2febea7de0750ee916faff0d41f01905001253534556544647393337303030373000000000000000001023b5ff7e000000000000000062070000cf07005000000100300044726f6e652049442064656d6f0000000000000000000040040000000000000000010000000000001100000000000000500046494e38376173747264676531326b78797a38000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001a656";
@@ -64,57 +63,4 @@ fn foreign_service_data_is_not_remote_id() {
     assert_eq!(remote_id_payload(&data), None);
     assert_eq!(remote_id_payload(&[0, 1, 2]), None);
     assert_eq!(remote_id_payload(&[9, 0x16, 0xFA]), None);
-}
-
-#[test]
-fn advertising_channels_map_to_their_indices() {
-    assert_eq!(nearest_rf_channel(2_402e6), Some(0));
-    assert_eq!(channel_index(0), 37);
-    assert_eq!(channel_index(nearest_rf_channel(2_426e6).unwrap()), 38);
-    assert_eq!(channel_index(nearest_rf_channel(2_480.4e6).unwrap()), 39);
-    assert_eq!(channel_index(1), 0);
-    assert_eq!(channel_index(13), 11);
-    assert_eq!(channel_index(38), 36);
-    assert_eq!(nearest_rf_channel(2_300e6), None);
-    assert_eq!(rf_channel_hz(39), 2_480e6);
-}
-
-#[test]
-fn whitening_is_its_own_inverse_and_depends_on_the_channel() {
-    let original: Vec<u8> = (0..40).collect();
-    let mut data = original.clone();
-    whiten(37, &mut data);
-    assert_ne!(data, original);
-    let mut other = original.clone();
-    whiten(38, &mut other);
-    assert_ne!(data, other);
-    whiten(37, &mut data);
-    assert_eq!(data, original);
-}
-
-#[test]
-fn whitening_follows_the_spec_register_for_every_channel() {
-    for channel in 0..40u8 {
-        let mut register: [bool; 7] =
-            std::array::from_fn(|position| position == 0 || channel >> (6 - position) & 1 == 1);
-        let mut whitener = Whitener::new(channel);
-        for _ in 0..64 {
-            let out = register[6];
-            register = [
-                out,
-                register[0],
-                register[1],
-                register[2],
-                register[3] ^ out,
-                register[4],
-                register[5],
-            ];
-            assert_eq!(whitener.bit(), out, "channel {channel}");
-        }
-    }
-}
-
-#[test]
-fn the_crc_of_nothing_is_the_initial_register() {
-    assert_eq!(crc24(&[]), 0xAA_AAAA);
 }

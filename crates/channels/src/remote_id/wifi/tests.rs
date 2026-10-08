@@ -1,6 +1,8 @@
 use sdrmm_wire::{HeightReference, RemoteIdMessage, RemoteIdPhy, RemoteIdTransport, UaStatus};
 
-use super::{Mpdu, build, channel_number, crc32, fcs_ok, frame};
+use sdrmm_modem::wifi::{append_fcs, fcs_ok};
+
+use super::{Mpdu, build, channel_number, frame};
 use crate::remote_id::{ble::tests::bytes, tracker::Tracker};
 
 const PARROT_ANAFI_BEACON: &str = "80000000ffffffffffff903ae65bc8a8903ae65bc8a8303c81e1a60500000000640031040014416e616669546865726d616c2d4130303434313801018c03010105040102000007244348200101140201140301140401140501140601140701140801140901140a01140b01143b125151525354737475767778797a7b7d7e7f802a010030140100000fac040100000fac040100000fac028c002d1a8d011fffff0000000000000000000000000000000000000000003d1601001500000000000000000000000000000000000000dd180050f2020101810003a4000027a4000042545e0061322f007f0104dd0700a0c602020300dd1b9003b7091950493034303434354143304130303434313800000000dd21fa0bbc0d5bf0190110105400009ff3211ce320340500000000d00700004b240000cfb82627";
@@ -8,10 +10,7 @@ const ESP32_NAN: &str = "d0000000516f9a01000084cca8604324506f9a01017950060409506
 const ESP32_BEACON: &str = "80000000ffffffffffff84cca860432484cca860432460060000000000000000b80b2104030106000e4742522d4f502d31323341424344dd21fa0bbc0d22f0190150004742522d4f502d31323341424344000000000000000004";
 
 fn with_fcs(text: &str) -> Vec<u8> {
-    let mut mpdu = bytes(text);
-    let fcs = crc32(&mpdu);
-    mpdu.extend_from_slice(&fcs.to_le_bytes());
-    mpdu
+    append_fcs(bytes(text))
 }
 
 fn heard(mpdu: &[u8], phy: RemoteIdPhy) -> sdrmm_wire::RemoteIdFrame {
@@ -25,11 +24,6 @@ fn heard(mpdu: &[u8], phy: RemoteIdPhy) -> sdrmm_wire::RemoteIdFrame {
         &mut Tracker::default(),
     )
     .expect("a Remote ID frame")
-}
-
-#[test]
-fn the_crc_matches_the_ieee_check_value() {
-    assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
 }
 
 #[test]
@@ -78,8 +72,7 @@ fn an_esp32_transmitter_sends_the_same_pack_by_beacon_and_nan() {
 fn ordinary_beacons_are_not_remote_id() {
     let mut mpdu = bytes(ESP32_BEACON);
     mpdu.truncate(mpdu.len() - 35);
-    let fcs = crc32(&mpdu);
-    mpdu.extend_from_slice(&fcs.to_le_bytes());
+    let mpdu = append_fcs(mpdu);
     let found = frame(
         &Mpdu {
             bytes: &mpdu,

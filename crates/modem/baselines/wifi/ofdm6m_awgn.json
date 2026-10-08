@@ -1,0 +1,35 @@
+{
+  "label": "802.11a/g ofdm 6 mbit/s at 20 MS/s: stf plateau detector, ltf timing and channel estimate, pilot phase tracking, k=7 soft viterbi, 100-byte payload with fcs, a missed frame counts every bit, uncoded BER, seed 0x1f16",
+  "points": [
+    {
+      "ebn0_db": 11.0,
+      "errors": 2400,
+      "trials": 8000
+    },
+    {
+      "ebn0_db": 12.0,
+      "errors": 2400,
+      "trials": 11200
+    },
+    {
+      "ebn0_db": 13.0,
+      "errors": 2400,
+      "trials": 4800
+    },
+    {
+      "ebn0_db": 14.0,
+      "errors": 2400,
+      "trials": 32800
+    },
+    {
+      "ebn0_db": 15.0,
+      "errors": 2400,
+      "trials": 102400
+    },
+    {
+      "ebn0_db": 16.0,
+      "errors": 2400,
+      "trials": 1958400
+    }
+  ]
+}

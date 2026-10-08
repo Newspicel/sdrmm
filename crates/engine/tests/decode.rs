@@ -17,9 +17,9 @@ use sdrmm_wire::{
     GnssParams, IdentParams, LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation,
     MorseParams, NavtexParams, NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams,
     PskBaud, PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
-    RemoteIdPhy, RemoteIdTransport, RttyParams, SelcallParams, SelcallSystem, ServerEvent,
-    SondeType, SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm, WefaxParams,
-    WfmParams, WsjtParams, WsprParams, YsfParams,
+    RemoteIdTransport, RttyParams, SelcallParams, SelcallSystem, ServerEvent, SondeType,
+    SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams,
+    WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -2044,10 +2044,15 @@ fn drone_pack() -> Vec<RemoteIdMessage> {
 async fn a_long_range_remote_id_pack_survives_the_ddc() {
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
-    let center_hz = 2_430_000_000.0;
-    let channel_hz = 2_426_000_000.0;
-    let pdu = synth::remote_id::extended_pdu([0xC6, 1, 2, 3, 4, 5], 3, &drone_pack());
-    let mut iq = synth::remote_id::bluetooth(&pdu, 12, RemoteIdPhy::LeCodedS8, HACKRF_DEVICE_RATE);
+    let center_hz = 2_424_000_000.0;
+    let channel_hz = 2_420_000_000.0;
+    let pdu = synth::remote_id::aux_adv_pdu([0xC6, 1, 2, 3, 4, 5], 3, &drone_pack());
+    let mut iq = synth::remote_id::bluetooth(
+        &pdu,
+        9,
+        synth::remote_id::BlePhy::CodedS8,
+        HACKRF_DEVICE_RATE,
+    );
     synth::scale(&mut iq, 0.3);
     synth::shift(&mut iq, channel_hz - center_hz, HACKRF_DEVICE_RATE);
     let mut padded = synth::silence(20_000);
@@ -2075,7 +2080,7 @@ async fn a_long_range_remote_id_pack_survives_the_ddc() {
         unreachable!("filtered above")
     };
     assert_eq!(frame.transport, RemoteIdTransport::BluetoothExtended);
-    assert_eq!(frame.channel, Some(38));
+    assert_eq!(frame.channel, Some(8));
     assert_eq!(frame.messages, drone_pack());
 }
 
@@ -2086,7 +2091,7 @@ async fn a_remote_id_wifi_beacon_reaches_the_decoded_stream() {
     let channel_hz = 2_437_000_000.0;
     let pack = synth::remote_id::encode::pack(&drone_pack());
     let beacon = synth::remote_id::build::beacon([0x60, 0x60, 0x1F, 1, 2, 3], "RID", 9, &pack);
-    let mut iq = synth::remote_id::dsss(&beacon, RemoteIdPhy::Dsss1m, false);
+    let mut iq = synth::remote_id::dsss(&beacon, synth::remote_id::WifiPhy::Dsss1m, false).unwrap();
     synth::scale(&mut iq, 0.3);
     let mut padded = synth::silence(20_000);
     padded.append(&mut iq);

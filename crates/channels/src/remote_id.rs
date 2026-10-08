@@ -7,18 +7,15 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, RemoteIdFrame,
-    RemoteIdLink, RemoteIdParams,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, RemoteIdLink, RemoteIdParams,
 };
 
-use self::{
-    ble::{
-        band::Band,
-        receiver::{Lane, Packet, Syncs},
-    },
-    tracker::Tracker,
-    wifi::Wifi,
+use sdrmm_modem::{
+    ble::{self as bluetooth, Lane, band::Band},
+    wifi::Receiver as Wifi,
 };
+
+use self::tracker::Tracker;
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_rate, datalink,
 };
@@ -71,17 +68,28 @@ enum Front {
     Wifi(Box<Wifi>),
 }
 
+fn invalid(error: impl std::fmt::Display) -> ChannelError {
+    ChannelError::InvalidSettings(error.to_string())
+}
+
 impl Front {
     fn new(link: RemoteIdLink, frequency_hz: f64) -> Result<Self, ChannelError> {
         Ok(match link {
             RemoteIdLink::Bluetooth => {
-                let rf = ble::nearest_rf_channel(frequency_hz).unwrap_or(ble::ADVERTISING_37);
-                Self::Bluetooth(Box::new(Lane::new(Some(rf), ble::channel_index(rf))))
+                let rf = bluetooth::rf_channel_at(frequency_hz).ok_or_else(|| {
+                    ChannelError::InvalidSettings(format!(
+                        "{:.3} MHz is not a Bluetooth channel: 2402 to 2480 MHz in 2 MHz steps",
+                        frequency_hz / 1e6
+                    ))
+                })?;
+                Self::Bluetooth(Box::new(
+                    Lane::new(Some(rf), bluetooth::channel_index(rf)).map_err(invalid)?,
+                ))
             }
-            RemoteIdLink::BluetoothBand => {
-                Self::BluetoothBand(Box::new(Band::new(link.input_rate_hz(), frequency_hz)?))
-            }
-            RemoteIdLink::Wifi => Self::Wifi(Box::new(Wifi::new(frequency_hz))),
+            RemoteIdLink::BluetoothBand => Self::BluetoothBand(Box::new(
+                Band::new(link.input_rate_hz(), frequency_hz).map_err(invalid)?,
+            )),
+            RemoteIdLink::Wifi => Self::Wifi(Box::new(Wifi::new().map_err(invalid)?)),
         })
     }
 
@@ -98,20 +106,8 @@ pub struct RemoteIdChannel {
     link: RemoteIdLink,
     frequency_hz: f64,
     front: Front,
-    syncs: Syncs,
-    packets: Vec<Packet>,
-    frames: Vec<RemoteIdFrame>,
     tracker: Tracker,
-}
-
-impl RemoteIdChannel {
-    fn bluetooth(&mut self, out: &mut ChannelOutputs) {
-        for packet in self.packets.drain(..) {
-            if let Some(frame) = ble::frame(&packet, &mut self.tracker) {
-                out.events.push(DecoderEvent::RemoteId(frame));
-            }
-        }
-    }
+    rejected: u32,
 }
 
 impl ChannelRx for RemoteIdChannel {
@@ -126,10 +122,8 @@ impl ChannelRx for RemoteIdChannel {
             link: params.link,
             frequency_hz: settings.frequency_hz,
             front: Front::new(params.link, settings.frequency_hz)?,
-            syncs: Syncs::new(),
-            packets: Vec::new(),
-            frames: Vec::new(),
             tracker: Tracker::default(),
+            rejected: 0,
         })
     }
 
@@ -142,6 +136,7 @@ impl ChannelRx for RemoteIdChannel {
         }
         if params.link != self.link || settings.frequency_hz != self.frequency_hz {
             self.front = Front::new(params.link, settings.frequency_hz)?;
+            self.rejected = 0;
             self.link = params.link;
             self.frequency_hz = settings.frequency_hz;
         }
@@ -154,18 +149,32 @@ impl ChannelRx for RemoteIdChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         match &mut self.front {
-            Front::Bluetooth(lane) => {
-                lane.process(iq, &self.syncs, &mut self.packets);
-                self.bluetooth(out);
-            }
-            Front::BluetoothBand(band) => {
-                band.process(iq, &self.syncs, &mut self.packets);
-                self.bluetooth(out);
-            }
-            Front::Wifi(wifi) => {
-                wifi.process(iq, &mut self.tracker, &mut self.frames);
-                out.events
-                    .extend(self.frames.drain(..).map(DecoderEvent::RemoteId));
+            Front::Bluetooth(lane) => lane.process(
+                iq,
+                &mut ble::Events {
+                    tracker: &mut self.tracker,
+                    events: &mut out.events,
+                },
+            ),
+            Front::BluetoothBand(band) => band.process(
+                iq,
+                &mut ble::Events {
+                    tracker: &mut self.tracker,
+                    events: &mut out.events,
+                },
+            ),
+            Front::Wifi(receiver) => {
+                let rejected = receiver.rejected();
+                self.tracker.reject(rejected.saturating_sub(self.rejected));
+                self.rejected = rejected;
+                receiver.process(
+                    iq,
+                    &mut wifi::Events {
+                        tracker: &mut self.tracker,
+                        events: &mut out.events,
+                        channel: wifi::channel_number(self.frequency_hz),
+                    },
+                );
             }
         }
     }

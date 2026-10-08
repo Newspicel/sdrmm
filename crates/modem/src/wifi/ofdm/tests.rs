@@ -1,11 +1,11 @@
-use super::{byte, descramble, tables::RATES};
-use crate::synth::remote_id::ofdm;
+use super::{descramble, tables::RATES};
+use crate::wifi::{byte, transmit::ofdm};
 
 #[test]
 fn the_service_field_seeds_the_descrambler() {
     let mut register = 0b101_1101u8;
     let data: Vec<bool> = (0..64).map(|k| k % 3 == 0 && k >= 16).collect();
-    let scrambled: Vec<bool> = data
+    let mut scrambled: Vec<bool> = data
         .iter()
         .map(|&bit| {
             let next = (register >> 6 ^ register >> 3) & 1;
@@ -13,7 +13,8 @@ fn the_service_field_seeds_the_descrambler() {
             bit ^ (next == 1)
         })
         .collect();
-    assert_eq!(descramble(&scrambled), data);
+    descramble(&mut scrambled);
+    assert_eq!(scrambled, data);
 }
 
 #[test]

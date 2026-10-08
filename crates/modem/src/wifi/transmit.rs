@@ -2,15 +2,19 @@ use std::f32::consts::{FRAC_PI_2, PI};
 
 use num_complex::Complex;
 use sdrmm_dsp::{ConvCode, fft::FftPair, puncture};
-use sdrmm_wire::RemoteIdPhy;
 
-use crate::remote_id::wifi::{
-    dsss::{BARKER, CHIP_SAMPLES, SYMBOL as DSSS_SYMBOL},
-    ofdm::tables::{
-        CP, FFT, PILOT_CARRIERS, PILOT_VALUES, RATES, Rate, SERVICE_BITS, TAIL_BITS, bin,
-        data_carriers, interleave_table, long_training, polarity, short_training,
+use super::{
+    WifiPhy,
+    dsss::{CHIP_SAMPLES, SYMBOL as DSSS_SYMBOL, barker, cck_codeword, header_crc},
+    ofdm::{
+        map_point,
+        tables::{
+            CP, FFT, PILOT_CARRIERS, PILOT_VALUES, RATES, Rate, SERVICE_BITS, TAIL_BITS, bin,
+            data_carriers, interleave_table, long_training, polarity, short_training,
+        },
     },
 };
+use crate::spread::PnError;
 
 const LONG_SYNC_BITS: usize = 128;
 const SHORT_SYNC_BITS: usize = 56;
@@ -19,17 +23,6 @@ const SHORT_SFD: u16 = 0x05CF;
 const LONG_SEED: u8 = 0b110_1100;
 const SHORT_SEED: u8 = 0b001_1011;
 const OFDM_SEED: u8 = 0b101_1101;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum WifiRate {
-    Dsss {
-        phy: RemoteIdPhy,
-        short_preamble: bool,
-    },
-    Ofdm {
-        mbps: u8,
-    },
-}
 
 fn lsb(value: u32, bits: usize) -> impl Iterator<Item = bool> {
     (0..bits).map(move |bit| value >> bit & 1 == 1)
@@ -49,21 +42,21 @@ impl Scrambler {
     }
 }
 
-fn signal_code(phy: RemoteIdPhy) -> u32 {
+fn signal_code(phy: WifiPhy) -> u32 {
     match phy {
-        RemoteIdPhy::Dsss2m => 0x14,
-        RemoteIdPhy::Cck5m5 => 0x37,
-        RemoteIdPhy::Cck11m => 0x6E,
+        WifiPhy::Dsss2m => 0x14,
+        WifiPhy::Cck5m5 => 0x37,
+        WifiPhy::Cck11m => 0x6E,
         _ => 0x0A,
     }
 }
 
-fn length_field(phy: RemoteIdPhy, bytes: usize) -> (u32, u32) {
+fn length_field(phy: WifiPhy, bytes: usize) -> (u32, u32) {
     let bits = bytes * 8;
     match phy {
-        RemoteIdPhy::Dsss2m => (bits.div_ceil(2) as u32, 0),
-        RemoteIdPhy::Cck5m5 => ((bits * 2).div_ceil(11) as u32, 0),
-        RemoteIdPhy::Cck11m => {
+        WifiPhy::Dsss2m => (bits.div_ceil(2) as u32, 0),
+        WifiPhy::Cck5m5 => ((bits * 2).div_ceil(11) as u32, 0),
+        WifiPhy::Cck11m => {
             let length = bits.div_ceil(11);
             let extension = u32::from(length * 11 - bits >= 8);
             (length as u32, extension << 7)
@@ -72,22 +65,14 @@ fn length_field(phy: RemoteIdPhy, bytes: usize) -> (u32, u32) {
     }
 }
 
-fn crc16(bits: &[bool]) -> u16 {
-    !bits.iter().fold(0xFFFFu16, |register, &bit| {
-        let feedback = (register >> 15 == 1) ^ bit;
-        let shifted = register << 1;
-        if feedback { shifted ^ 0x1021 } else { shifted }
-    })
-}
-
-#[must_use]
-pub fn dsss(mpdu: &[u8], phy: RemoteIdPhy, short_preamble: bool) -> Vec<Complex<f32>> {
+pub fn dsss(mpdu: &[u8], phy: WifiPhy, short_preamble: bool) -> Result<Vec<Complex<f32>>, PnError> {
+    let sequence = barker()?;
     let (length, extension) = length_field(phy, mpdu.len());
     let mut header: Vec<bool> = lsb(signal_code(phy), 8)
         .chain(lsb(0x04 | extension, 8))
         .chain(lsb(length, 16))
         .collect();
-    let crc = crc16(&header);
+    let crc = header_crc(&header);
     header.extend((0..16).map(|bit| crc >> (15 - bit) & 1 == 1));
     let (sync, sfd, seed) = if short_preamble {
         (vec![false; SHORT_SYNC_BITS], SHORT_SFD, SHORT_SEED)
@@ -103,40 +88,44 @@ pub fn dsss(mpdu: &[u8], phy: RemoteIdPhy, short_preamble: bool) -> Vec<Complex<
     let payload = scramble(bytes_bits(mpdu).collect());
     let mut chips: Vec<Complex<f32>> = Vec::new();
     let mut phase = 0.0f32;
-    let barker = |phase: f32, chips: &mut Vec<Complex<f32>>| {
-        chips.extend(BARKER.iter().map(|&chip| Complex::from_polar(chip, phase)));
+    let spread = |phase: f32, chips: &mut Vec<Complex<f32>>| {
+        chips.extend(
+            sequence
+                .iter()
+                .map(|&chip| Complex::from_polar(chip, phase)),
+        );
     };
     for &bit in &preamble {
         phase += if bit { PI } else { 0.0 };
-        barker(phase, &mut chips);
+        spread(phase, &mut chips);
     }
     if short_preamble {
         for pair in header.as_chunks::<2>().0 {
             phase += dqpsk(pair[0], pair[1]);
-            barker(phase, &mut chips);
+            spread(phase, &mut chips);
         }
     } else {
         for &bit in &header {
             phase += if bit { PI } else { 0.0 };
-            barker(phase, &mut chips);
+            spread(phase, &mut chips);
         }
     }
     match phy {
-        RemoteIdPhy::Dsss2m => {
+        WifiPhy::Dsss2m => {
             for pair in payload.chunks(2) {
                 phase += dqpsk(pair[0], pair.get(1).copied().unwrap_or(false));
-                barker(phase, &mut chips);
+                spread(phase, &mut chips);
             }
         }
-        RemoteIdPhy::Cck5m5 | RemoteIdPhy::Cck11m => cck(&payload, phy, phase, &mut chips),
+        WifiPhy::Cck5m5 | WifiPhy::Cck11m => cck(&payload, phy, phase, &mut chips),
         _ => {
             for &bit in &payload {
                 phase += if bit { PI } else { 0.0 };
-                barker(phase, &mut chips);
+                spread(phase, &mut chips);
             }
         }
     }
-    render_chips(&chips)
+    Ok(render_chips(&chips))
 }
 
 fn dqpsk(first: bool, second: bool) -> f32 {
@@ -148,14 +137,13 @@ fn dqpsk(first: bool, second: bool) -> f32 {
     }
 }
 
-fn cck(payload: &[bool], phy: RemoteIdPhy, mut phi1: f32, chips: &mut Vec<Complex<f32>>) {
-    use crate::remote_id::wifi::dsss::cck_codeword;
-    let label_bits = if phy == RemoteIdPhy::Cck11m { 6 } else { 2 };
+fn cck(payload: &[bool], phy: WifiPhy, mut phi1: f32, chips: &mut Vec<Complex<f32>>) {
+    let label_bits = if phy == WifiPhy::Cck11m { 6 } else { 2 };
     for (symbol, bits) in payload.chunks(label_bits + 2).enumerate() {
         let bit = |index: usize| bits.get(index).copied().unwrap_or(false);
         phi1 += dqpsk(bit(0), bit(1)) + if symbol % 2 == 1 { PI } else { 0.0 };
-        let label = (0..label_bits).fold(0u8, |acc, index| acc | u8::from(bit(index + 2)) << index);
-        chips.extend(cck_codeword(phy, phi1, label));
+        let labels: [bool; 6] = std::array::from_fn(|index| bit(index + 2));
+        chips.extend(cck_codeword(phy, phi1, &labels[..label_bits]));
     }
 }
 
@@ -204,7 +192,6 @@ fn modulate_bits(
     first: usize,
     out: &mut Vec<Complex<f32>>,
 ) {
-    use crate::remote_id::wifi::ofdm::map_point;
     let table = interleave_table(rate);
     let bits = rate.modulation.bits();
     for (offset, block) in coded.chunks_exact(rate.coded_bits()).enumerate() {

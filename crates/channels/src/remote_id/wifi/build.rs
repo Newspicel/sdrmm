@@ -1,6 +1,6 @@
 use super::{
     ASTM_OUI, BEACON, NAN_TYPE, PUBLIC_ACTION, REMOTE_ID_SERVICE, SERVICE_DESCRIPTOR, SERVICE_INFO,
-    SSID, VENDOR, VENDOR_ACTION, WFA_OUI, crc32, french,
+    SSID, VENDOR, VENDOR_ACTION, WFA_OUI, french,
 };
 use crate::remote_id::odid::APP_CODE;
 
@@ -10,6 +10,8 @@ const BEACON_INTERVAL_TU: u16 = 100;
 const CAPABILITY: u16 = 0x0421;
 const RATES: u8 = 1;
 const SUPPORTED_RATES: [u8; 4] = [0x82, 0x84, 0x8B, 0x96];
+const DATA: u16 = 0x0008;
+const WMM: [u8; 7] = [0x00, 0x50, 0xF2, 0x02, 0x01, 0x01, 0x00];
 
 fn header(
     control: u16,
@@ -28,10 +30,8 @@ fn header(
     out
 }
 
-fn finish(mut mpdu: Vec<u8>) -> Vec<u8> {
-    let fcs = crc32(&mpdu);
-    mpdu.extend_from_slice(&fcs.to_le_bytes());
-    mpdu
+fn finish(mpdu: Vec<u8>) -> Vec<u8> {
+    sdrmm_modem::wifi::append_fcs(mpdu)
 }
 
 fn beacon_with(source: [u8; 6], ssid: &str, vendor: &[u8]) -> Vec<u8> {
@@ -45,6 +45,18 @@ fn beacon_with(source: [u8; 6], ssid: &str, vendor: &[u8]) -> Vec<u8> {
     mpdu.extend_from_slice(&SUPPORTED_RATES);
     mpdu.extend_from_slice(&[VENDOR, vendor.len() as u8]);
     mpdu.extend_from_slice(vendor);
+    finish(mpdu)
+}
+
+#[must_use]
+pub fn ordinary_beacon(source: [u8; 6], ssid: &str) -> Vec<u8> {
+    beacon_with(source, ssid, &WMM)
+}
+
+#[must_use]
+pub fn data(source: [u8; 6], payload: &[u8]) -> Vec<u8> {
+    let mut mpdu = header(DATA, BROADCAST, source, source, 3);
+    mpdu.extend_from_slice(payload);
     finish(mpdu)
 }
 

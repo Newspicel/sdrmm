@@ -1,7 +1,7 @@
 use num_complex::Complex;
-use sdrmm_wire::RemoteIdPhy;
+use sdrmm_dsp::crc16_msb_bits;
 
-use super::{Outcome, SymbolReader};
+use super::{Outcome, SymbolReader, WifiPhy};
 
 const TRAINING_SYMBOLS: usize = 16;
 const LONG_SFD: u16 = 0xF3A0;
@@ -11,14 +11,14 @@ const CRC_POLY: u16 = 0x1021;
 const LENGTH_EXTENSION: u8 = 0x80;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Preamble {
+pub enum Preamble {
     Long,
     Short,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Header {
-    pub phy: RemoteIdPhy,
+pub struct Header {
+    pub phy: WifiPhy,
     pub service: u8,
     pub length_us: u16,
     pub bytes: usize,
@@ -80,10 +80,10 @@ pub(crate) fn header(reader: &mut SymbolReader<'_>, preamble: Preamble) -> Resul
     let service = field(8, 8) as u8;
     let length_us = field(16, 16) as u16;
     let phy = match field(0, 8) {
-        0x0A => RemoteIdPhy::Dsss1m,
-        0x14 => RemoteIdPhy::Dsss2m,
-        0x37 => RemoteIdPhy::Cck5m5,
-        0x6E => RemoteIdPhy::Cck11m,
+        0x0A => WifiPhy::Dsss1m,
+        0x14 => WifiPhy::Dsss2m,
+        0x37 => WifiPhy::Cck5m5,
+        0x6E => WifiPhy::Cck11m,
         _ => return Err(Outcome::Failed),
     };
     Ok(Header {
@@ -94,28 +94,22 @@ pub(crate) fn header(reader: &mut SymbolReader<'_>, preamble: Preamble) -> Resul
     })
 }
 
-pub(crate) fn psdu_bytes(phy: RemoteIdPhy, length_us: u16, service: u8) -> usize {
+#[must_use]
+pub fn psdu_bytes(phy: WifiPhy, length_us: u16, service: u8) -> usize {
     let length = usize::from(length_us);
     match phy {
-        RemoteIdPhy::Dsss2m => length / 4,
-        RemoteIdPhy::Cck5m5 => length * 11 / 16,
-        RemoteIdPhy::Cck11m => {
+        WifiPhy::Dsss2m => length / 4,
+        WifiPhy::Cck5m5 => length * 11 / 16,
+        WifiPhy::Cck11m => {
             (length * 11 / 8).saturating_sub(usize::from(service & LENGTH_EXTENSION != 0))
         }
         _ => length / 8,
     }
 }
 
-pub(crate) fn crc16(bits: &[bool]) -> u16 {
-    !bits.iter().fold(0xFFFFu16, |register, &bit| {
-        let feedback = (register >> 15 == 1) ^ bit;
-        let shifted = register << 1;
-        if feedback {
-            shifted ^ CRC_POLY
-        } else {
-            shifted
-        }
-    })
+#[must_use]
+pub fn crc16(bits: &[bool]) -> u16 {
+    !crc16_msb_bits(CRC_POLY, 0xFFFF, bits)
 }
 
 fn received_crc(bits: &[bool]) -> u16 {

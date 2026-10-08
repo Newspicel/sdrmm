@@ -6,7 +6,7 @@ use super::tables::{FFT, Modulation, bin, data_carriers};
 const SCALE: f32 = 32.0;
 const LIMIT: f32 = 127.0;
 
-pub(crate) fn demap(
+pub fn demap(
     points: &[Complex<f32>; FFT],
     channel: &[Complex<f32>; FFT],
     gain: f32,
@@ -51,12 +51,11 @@ fn axis64(y: f32, out: &mut [f32]) {
     out[2] = 2.0 - (y.abs() - 4.0).abs();
 }
 
-pub(crate) fn soft(llr: f32) -> Soft {
+pub fn soft(llr: f32) -> Soft {
     (llr * SCALE).round().clamp(-LIMIT, LIMIT) as Soft
 }
 
-#[cfg(any(test, feature = "synth"))]
-pub(crate) fn map(modulation: Modulation, bits: &[bool]) -> Complex<f32> {
+pub fn map(modulation: Modulation, bits: &[bool]) -> Complex<f32> {
     let level = |bits: &[bool]| -> f32 {
         match bits {
             [b0] => {

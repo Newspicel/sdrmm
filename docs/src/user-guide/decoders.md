@@ -252,14 +252,17 @@ It needs a radio that reaches 2.4 GHz. HackRF, SDRplay and Pluto work, RTL-SDR d
 
 | Link | Hears | Rate |
 |---|---|---|
-| Bluetooth | Bluetooth 4 and 5 long range adverts on one channel | 4 MS/s |
-| BT band | Every Bluetooth channel in reach, where long range drones put their data | 20 MS/s |
+| Bluetooth | Bluetooth 4 adverts on one channel | 4 MS/s |
+| BT band | Every Bluetooth channel in reach, including long range data | 20 MS/s |
 | Wi-Fi | Beacons and NAN frames on one channel, 802.11b and 802.11g | 20 MS/s |
 
 The **Drone Remote ID** and **Drone Remote ID · Wi-Fi** templates set this up.
 
 Tune Bluetooth to an advertising channel: 2402, 2426 or 2480 MHz. Tune Wi-Fi to the channel
 centre, usually channel 6 at 2437 MHz, or 2412, 2462 or 5745 MHz.
+
+Long range drones send their data on any of 37 data channels. BT band covers about 8 of them, so it
+hears about a fifth of those packets.
 
 A Bluetooth 4 advert carries one message, so the readout joins each drone's adverts into one row
 keyed by serial number. **Map** shows the drone and its track; the detail lists the pilot and the
