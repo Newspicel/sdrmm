@@ -239,7 +239,9 @@ No public IQ recording holds a real Remote ID transmission, so these check the B
 receivers on real air and the message parser runs on real frames from packet captures. Three come
 from the RFUAV dataset (Apache-2.0, huggingface.co/datasets/alley66/RFUAV), a USRP X310 at
 100 MS/s beside a DJI Mini 4 Pro. `remote_id_wifi_ofdm_beacon_20m` comes from IQEngine
-`ism_band_24` by Marc Lichtman (CC BY-SA 4.0), a USRP B210 at 56 MS/s.
+`ism_band_24` by Marc Lichtman (CC BY-SA 4.0), a USRP B210 at 56 MS/s. That capture holds only
+about 6% of the time it spans: beacon timestamps advance 1.02 s where the samples advance 62 ms,
+so long frames break at the gaps. The excerpt is one beacon inside an unbroken stretch.
 `remote_id::tests::air` reads them directly.
 
 ### Public receivers: `dsc_offair_8k`, `radio_clock_*_offair_2k`, `flex_p2000_offair_48k`

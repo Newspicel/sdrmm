@@ -181,6 +181,10 @@ fn band_capabilities() -> Capabilities {
             2_048_000.0,
             2_400_000.0,
             3_200_000.0,
+            4_000_000.0,
+            8_000_000.0,
+            10_000_000.0,
+            20_000_000.0,
         ],
         sample_rate_ranges: Vec::new(),
         gains: vec![GainStage::new(
@@ -560,13 +564,80 @@ impl SdrDevice for MarkerGen {
     }
 }
 
+const RENORMALIZE_SAMPLES: u64 = 1_024;
+const DRIFT_STEP_SAMPLES: u64 = 64;
+const SERIES_LIMIT_RAD: f64 = 0.3;
+const LFO_HZ: f64 = 0.08;
+const DRIFT_SPAN: f64 = 0.35;
+const NOISE_AMP: f64 = 0.012;
+
+#[derive(Clone, Copy)]
+struct Phasor {
+    re: f64,
+    im: f64,
+}
+
+impl Phasor {
+    const ONE: Self = Self { re: 1.0, im: 0.0 };
+
+    fn at(angle: f64) -> Self {
+        let (im, re) = angle.sin_cos();
+        Self { re, im }
+    }
+
+    fn small(angle: f64) -> Self {
+        if angle.abs() > SERIES_LIMIT_RAD {
+            return Self::at(angle);
+        }
+        let x2 = angle * angle;
+        Self {
+            re: 1.0 - x2 / 2.0 * (1.0 - x2 / 12.0 * (1.0 - x2 / 30.0)),
+            im: angle * (1.0 - x2 / 6.0 * (1.0 - x2 / 20.0 * (1.0 - x2 / 42.0))),
+        }
+    }
+
+    fn turn(self, by: Self) -> Self {
+        Self {
+            re: self.re * by.re - self.im * by.im,
+            im: self.re * by.im + self.im * by.re,
+        }
+    }
+
+    fn normalized(self) -> Self {
+        let norm = self.re.hypot(self.im);
+        Self {
+            re: self.re / norm,
+            im: self.im / norm,
+        }
+    }
+}
+
+struct Tone {
+    turn: Phasor,
+    amp: f64,
+    phasor: Phasor,
+}
+
+impl Tone {
+    fn new(fraction: f64, amp: f64) -> Self {
+        Self {
+            turn: Phasor::at(std::f64::consts::TAU * fraction),
+            amp,
+            phasor: Phasor::ONE,
+        }
+    }
+}
+
 struct ModCarrier {
     offset_hz: f64,
     amp: f64,
     block_amp: f64,
     kind: ModKind,
-    carrier_phase: f64,
-    mod_phase: f64,
+    carrier: Phasor,
+    modulation: Phasor,
+    carrier_turn: Phasor,
+    modulation_turn: Phasor,
+    deviation_rad: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -582,8 +653,11 @@ impl ModCarrier {
             amp: MOD_CARRIER_AMP,
             block_amp: 0.0,
             kind,
-            carrier_phase: 0.0,
-            mod_phase: 0.0,
+            carrier: Phasor::ONE,
+            modulation: Phasor::ONE,
+            carrier_turn: Phasor::ONE,
+            modulation_turn: Phasor::ONE,
+            deviation_rad: 0.0,
         }
     }
 
@@ -593,24 +667,74 @@ impl ModCarrier {
             ModKind::Am { .. } => MOD_TONE_HZ,
         }
     }
+
+    fn prepare(&mut self, sample_rate: f64) {
+        let hz_to_rad = std::f64::consts::TAU / sample_rate;
+        self.block_amp =
+            if self.offset_hz.abs() + self.occupied_half_width_hz() <= sample_rate / 2.0 {
+                self.amp
+            } else {
+                0.0
+            };
+        self.carrier_turn = Phasor::at(self.offset_hz * hz_to_rad);
+        self.modulation_turn = Phasor::at(MOD_TONE_HZ * hz_to_rad);
+        self.deviation_rad = match self.kind {
+            ModKind::Fm { deviation_hz } => deviation_hz * hz_to_rad,
+            ModKind::Am { .. } => 0.0,
+        };
+    }
+
+    fn next(&mut self) -> Phasor {
+        let envelope = match self.kind {
+            ModKind::Fm { .. } => {
+                self.carrier = self
+                    .carrier
+                    .turn(self.carrier_turn)
+                    .turn(Phasor::small(self.deviation_rad * self.modulation.im));
+                1.0
+            }
+            ModKind::Am { depth } => {
+                self.carrier = self.carrier.turn(self.carrier_turn);
+                1.0 + depth * self.modulation.im
+            }
+        };
+        self.modulation = self.modulation.turn(self.modulation_turn);
+        let scale = self.block_amp * envelope;
+        Phasor {
+            re: scale * self.carrier.re,
+            im: scale * self.carrier.im,
+        }
+    }
+
+    fn renormalize(&mut self) {
+        self.carrier = self.carrier.normalized();
+        self.modulation = self.modulation.normalized();
+    }
 }
 
 struct Generator {
-    tones: Vec<(f64, f64, f64)>,
+    tones: Vec<Tone>,
     drift_amp: f64,
-    drift_phase: f64,
-    lfo_phase: f64,
+    drift: Phasor,
+    drift_turn: Phasor,
+    lfo: Phasor,
     carriers: Vec<ModCarrier>,
     noise: Xorshift,
+    sample: u64,
 }
 
 impl Generator {
     fn new() -> Self {
         Self {
-            tones: vec![(0.15, 0.30, 0.0), (-0.30, 0.16, 0.0), (0.05, 0.10, 0.0)],
+            tones: vec![
+                Tone::new(0.15, 0.30),
+                Tone::new(-0.30, 0.16),
+                Tone::new(0.05, 0.10),
+            ],
             drift_amp: 0.20,
-            drift_phase: 0.0,
-            lfo_phase: 0.0,
+            drift: Phasor::ONE,
+            drift_turn: Phasor::ONE,
+            lfo: Phasor::ONE,
             carriers: vec![
                 ModCarrier::new(
                     NFM_CARRIER_OFFSET_HZ,
@@ -632,6 +756,7 @@ impl Generator {
                 ),
             ],
             noise: Xorshift::new(NOISE_SEED),
+            sample: 0,
         }
     }
 
@@ -639,8 +764,9 @@ impl Generator {
         Self {
             tones: Vec::new(),
             drift_amp: 0.0,
-            drift_phase: 0.0,
-            lfo_phase: 0.0,
+            drift: Phasor::ONE,
+            drift_turn: Phasor::ONE,
+            lfo: Phasor::ONE,
             carriers: vec![ModCarrier::new(
                 stream_marker_offset_hz(stream),
                 ModKind::Fm {
@@ -648,6 +774,7 @@ impl Generator {
                 },
             )],
             noise: Xorshift::new(NOISE_SEED ^ (u64::from(stream) << 32)),
+            sample: 0,
         }
     }
 
@@ -658,70 +785,50 @@ impl Generator {
     }
 
     fn fill(&mut self, block: &mut [Complex<f32>], sample_rate: f64) {
-        use std::f64::consts::TAU;
-
-        let hz_to_w = TAU / sample_rate;
-        let lfo_w = 0.08 * hz_to_w;
-        let noise_amp = 0.012;
-        let mod_w = MOD_TONE_HZ * hz_to_w;
-
-        let nyquist = 0.5 * sample_rate;
+        let lfo_step =
+            Phasor::at(std::f64::consts::TAU * LFO_HZ * DRIFT_STEP_SAMPLES as f64 / sample_rate);
         for carrier in &mut self.carriers {
-            carrier.block_amp =
-                if carrier.offset_hz.abs() + carrier.occupied_half_width_hz() <= nyquist {
-                    carrier.amp
-                } else {
-                    0.0
-                };
+            carrier.prepare(sample_rate);
         }
-
         for slot in block.iter_mut() {
-            let mut re = 0.0f64;
-            let mut im = 0.0f64;
-            for (frac, amp, phase) in &mut self.tones {
-                let w = TAU * *frac;
-                *phase += w;
-                re += *amp * phase.cos();
-                im += *amp * phase.sin();
+            let mut sum = Phasor { re: 0.0, im: 0.0 };
+            for tone in &mut self.tones {
+                tone.phasor = tone.phasor.turn(tone.turn);
+                sum.re += tone.amp * tone.phasor.re;
+                sum.im += tone.amp * tone.phasor.im;
             }
-
             if self.drift_amp > 0.0 {
-                self.drift_phase += TAU * 0.35 * self.lfo_phase.sin();
-                self.lfo_phase += lfo_w;
-                re += self.drift_amp * self.drift_phase.cos();
-                im += self.drift_amp * self.drift_phase.sin();
+                if self.sample.is_multiple_of(DRIFT_STEP_SAMPLES) {
+                    self.drift_turn = Phasor::at(std::f64::consts::TAU * DRIFT_SPAN * self.lfo.im);
+                    self.lfo = self.lfo.turn(lfo_step);
+                }
+                self.drift = self.drift.turn(self.drift_turn);
+                sum.re += self.drift_amp * self.drift.re;
+                sum.im += self.drift_amp * self.drift.im;
             }
-
             for carrier in &mut self.carriers {
-                let (inst_hz, envelope) = match carrier.kind {
-                    ModKind::Fm { deviation_hz } => (
-                        carrier.offset_hz + deviation_hz * carrier.mod_phase.sin(),
-                        1.0,
-                    ),
-                    ModKind::Am { depth } => {
-                        (carrier.offset_hz, 1.0 + depth * carrier.mod_phase.sin())
-                    }
-                };
-                carrier.mod_phase += mod_w;
-                carrier.carrier_phase += inst_hz * hz_to_w;
-                re += carrier.block_amp * envelope * carrier.carrier_phase.cos();
-                im += carrier.block_amp * envelope * carrier.carrier_phase.sin();
+                let value = carrier.next();
+                sum.re += value.re;
+                sum.im += value.im;
             }
-
-            re += noise_amp * self.noise.next_bipolar();
-            im += noise_amp * self.noise.next_bipolar();
-
-            *slot = Complex::new(re as f32, im as f32);
+            sum.re += NOISE_AMP * self.noise.next_bipolar();
+            sum.im += NOISE_AMP * self.noise.next_bipolar();
+            *slot = Complex::new(sum.re as f32, sum.im as f32);
+            self.sample += 1;
+            if self.sample.is_multiple_of(RENORMALIZE_SAMPLES) {
+                self.renormalize();
+            }
         }
+    }
 
-        for (_, _, phase) in &mut self.tones {
-            *phase = phase.rem_euclid(TAU);
+    fn renormalize(&mut self) {
+        for tone in &mut self.tones {
+            tone.phasor = tone.phasor.normalized();
         }
-        self.drift_phase = self.drift_phase.rem_euclid(TAU);
-        self.lfo_phase = self.lfo_phase.rem_euclid(TAU);
+        self.drift = self.drift.normalized();
+        self.lfo = self.lfo.normalized();
         for carrier in &mut self.carriers {
-            carrier.carrier_phase = carrier.carrier_phase.rem_euclid(TAU);
-            carrier.mod_phase = carrier.mod_phase.rem_euclid(TAU);
+            carrier.renormalize();
         }
     }
 }
