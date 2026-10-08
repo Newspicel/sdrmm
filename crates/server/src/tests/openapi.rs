@@ -91,6 +91,8 @@ fn openapi_registers_paths_and_ws_schemas() {
         "LoraParams",
         "LoraKey",
         "LoraFrame",
+        "RemoteIdFrame",
+        "RemoteIdParams",
         "LorawanFrame",
         "MeshtasticPacket",
         "MeshcorePacket",

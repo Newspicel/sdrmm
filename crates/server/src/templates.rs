@@ -7,8 +7,8 @@ use sdrmm_wire::{
     ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams, EotParams,
     ErmesParams, FlexParams, GnssParams, LrptParams, M17Params, MorseParams, NavtexParams,
     NfmParams, NodeBody, PatchEdge, PatchGraph, PatchNode, PocsagParams, PortRef, Position,
-    PskParams, RadioClockParams, RadiosondeParams, RttyParams, Squelch, SsbParams, SstvParams,
-    TemplateInfo, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+    PskParams, RadioClockParams, RadiosondeParams, RemoteIdParams, RttyParams, Squelch, SsbParams,
+    SstvParams, TemplateInfo, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -326,6 +326,22 @@ static TEMPLATES: &[Entry] = &[
             457_937_500.0,
             || ChannelParams::Eot(EotParams::default()),
             LOG_READ,
+        )],
+    },
+    Entry {
+        id: "drone-remote-id",
+        name: "Drone Remote ID",
+        description: "Drone ID, position and pilot over Bluetooth.",
+        explainer: "Drones broadcast their serial number, position and pilot location under \
+                    ASTM F3411 and EN 4709-002. Bluetooth 4 adverts arrive on channel 38. \
+                    For Wi-Fi beacons, set the link to Wi-Fi on channel 6 with a 20 MS/s \
+                    radio.",
+        center_hz: 2_426_000_000.0,
+        sample_rate: 4_000_000.0,
+        channels: &[Channel::at(
+            2_426_000_000.0,
+            || ChannelParams::RemoteId(RemoteIdParams::default()),
+            TRACK_READ,
         )],
     },
     Entry {

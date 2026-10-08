@@ -16,9 +16,10 @@ use sdrmm_wire::{
     EotArming, EotBattery, EotParams, EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams,
     GnssParams, IdentParams, LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation,
     MorseParams, NavtexParams, NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams,
-    PskBaud, PskParams, RadiosondeParams, RdsUpdate, RttyParams, SelcallParams, SelcallSystem,
-    ServerEvent, SondeType, SymbolPlane, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams,
-    WsjtParams, WsprParams, YsfParams,
+    PskBaud, PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
+    RemoteIdPhy, RemoteIdTransport, RttyParams, SelcallParams, SelcallSystem, ServerEvent,
+    SondeType, SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm, WefaxParams,
+    WfmParams, WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -2023,4 +2024,97 @@ async fn a_meteor_lrpt_pass_reaches_the_decoded_stream() {
     assert_eq!(image.lines, 32);
     assert_eq!(image.frames_failed, 0);
     assert_eq!(image.packets_lost, 0);
+}
+
+fn drone_pack() -> Vec<RemoteIdMessage> {
+    vec![
+        RemoteIdMessage::BasicId {
+            id_type: UasIdType::SerialNumber,
+            ua_type: UaType::Rotorcraft,
+            uas_id: "1581F5FJD239C00DW22E".to_owned(),
+        },
+        RemoteIdMessage::OperatorId {
+            id_type: 0,
+            operator_id: "DEU12345abcdef".to_owned(),
+        },
+    ]
+}
+
+#[tokio::test]
+async fn a_long_range_remote_id_pack_survives_the_ddc() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let center_hz = 2_430_000_000.0;
+    let channel_hz = 2_426_000_000.0;
+    let pdu = synth::remote_id::extended_pdu([0xC6, 1, 2, 3, 4, 5], 3, &drone_pack());
+    let mut iq = synth::remote_id::bluetooth(&pdu, 12, RemoteIdPhy::LeCodedS8, HACKRF_DEVICE_RATE);
+    synth::scale(&mut iq, 0.3);
+    synth::shift(&mut iq, channel_hz - center_hz, HACKRF_DEVICE_RATE);
+    let mut padded = synth::silence(20_000);
+    padded.append(&mut iq);
+    let device = plant_at(
+        dir.path(),
+        "remote_id_ble",
+        padded,
+        HACKRF_DEVICE_RATE,
+        center_hz,
+    );
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: channel_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::RemoteId(RemoteIdParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::RemoteId(_)),
+    )
+    .await;
+    let DecoderEvent::RemoteId(frame) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(frame.transport, RemoteIdTransport::BluetoothExtended);
+    assert_eq!(frame.channel, Some(38));
+    assert_eq!(frame.messages, drone_pack());
+}
+
+#[tokio::test]
+async fn a_remote_id_wifi_beacon_reaches_the_decoded_stream() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let channel_hz = 2_437_000_000.0;
+    let pack = synth::remote_id::encode::pack(&drone_pack());
+    let beacon = synth::remote_id::build::beacon([0x60, 0x60, 0x1F, 1, 2, 3], "RID", 9, &pack);
+    let mut iq = synth::remote_id::dsss(&beacon, RemoteIdPhy::Dsss1m, false);
+    synth::scale(&mut iq, 0.3);
+    let mut padded = synth::silence(20_000);
+    padded.append(&mut iq);
+    let device = plant_at(
+        dir.path(),
+        "remote_id_wifi",
+        padded,
+        HACKRF_DEVICE_RATE,
+        channel_hz,
+    );
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: channel_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::RemoteId(RemoteIdParams {
+                link: RemoteIdLink::Wifi,
+            }),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::RemoteId(_)),
+    )
+    .await;
+    let DecoderEvent::RemoteId(frame) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(frame.transport, RemoteIdTransport::WifiBeacon);
+    assert_eq!(frame.channel, Some(6));
+    assert_eq!(frame.uas_id.as_deref(), Some("1581F5FJD239C00DW22E"));
 }

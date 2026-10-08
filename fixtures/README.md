@@ -43,7 +43,7 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 
 ## Committed fixtures
 
-These thirty-three pairs are not regenerated: nineteen are recordings, two are frozen synthetic waveforms,
+These thirty-seven pairs are not regenerated: twenty-three are recordings, two are frozen synthetic waveforms,
 and twelve are reference waveforms from generators that are independent of the Rust modulators.
 They retain cases that the current generators do not reproduce.
 
@@ -73,6 +73,10 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `lora_epfl_sf10_500k` | 500 k | `lora` @ 0 Hz, 250 kHz | SF10 CR 4/5, 19 bytes from a drone, 6 dB |
 | `lora_epfl_sf10_weak_500k` | 500 k | `lora` @ 0 Hz, 250 kHz | SF10 CR 4/5, 19 bytes from a drone, −14 dB |
 | `lora_grlorasdr_sf7_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | gr-lora_sdr transmitter, SF7 sync 0x12, `sdrflex lora fixture` twice |
+| `remote_id_ble_dji_mini4_4m` | 4 M | Bluetooth channel 38 | 8 CRC-valid adverts, including `DJI-MINI4-Pro-98F8` from `E4:7A:2C:AB:98:F9` |
+| `remote_id_wifi_dsss_beacon_20m` | 20 M | Wi-Fi channel 1 | 1 Mbit/s beacon `Xiaomi 13`, FCS ok |
+| `remote_id_wifi_cck_20m` | 20 M | Wi-Fi channel 1 | 220-byte CCK 11 Mbit/s data frame, FCS ok |
+| `remote_id_wifi_ofdm_beacon_20m` | 20 M | Wi-Fi channel 1 | 6 Mbit/s beacon `MipsTucker`, FCS ok |
 | `dsc_offair_8k` | 8 k | `dsc` @ 0 Hz | Lyngby Radio `002191000` acknowledging a test call from `231700000` |
 | `radio_clock_dcf77_offair_2k` | 2 k | `radio_clock` / DCF77 @ 0 Hz | 2026-10-03 22:04 CEST |
 | `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
@@ -228,6 +232,15 @@ transmitters exposed: a one bin one chip offset after coarse sync, a half bin bi
 symbols, and timing over a long frame. `lora::tests::real_epfl_frames_decode_from_strong_to_near_the_sensitivity_limit`
 reads them directly. `lora_grlorasdr_sf7_250k` is gr-lora_sdr's own transmitter output from the
 sdr-flex repository (CC0), so the encoder is independent of ours.
+
+### Remote ID PHYs: `remote_id_*`
+
+No public IQ recording holds a real Remote ID transmission, so these check the Bluetooth and Wi-Fi
+receivers on real air and the message parser runs on real frames from packet captures. Three come
+from the RFUAV dataset (Apache-2.0, huggingface.co/datasets/alley66/RFUAV), a USRP X310 at
+100 MS/s beside a DJI Mini 4 Pro. `remote_id_wifi_ofdm_beacon_20m` comes from IQEngine
+`ism_band_24` by Marc Lichtman (CC BY-SA 4.0), a USRP B210 at 56 MS/s.
+`remote_id::tests::air` reads them directly.
 
 ### Public receivers: `dsc_offair_8k`, `radio_clock_*_offair_2k`, `flex_p2000_offair_48k`
 

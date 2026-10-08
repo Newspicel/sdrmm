@@ -9,7 +9,7 @@ use sdrmm_test_support::{CountingAlloc, assert_no_alloc, measure_throughput};
 
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc::new();
-use sdrmm_wire::ChannelSettings;
+use sdrmm_wire::{ChannelParams, ChannelSettings, RemoteIdLink, RemoteIdParams};
 
 const BLOCK: usize = 2_048;
 const SURVEY_SECONDS: f64 = 0.1;
@@ -218,4 +218,27 @@ fn lora_allocates_nothing_while_every_spreading_factor_searches() {
         drive(rx.as_mut(), &iq, &mut outputs);
     }
     assert_no_alloc("lora", || drive(rx.as_mut(), &iq, &mut outputs));
+}
+
+#[test]
+fn remote_id_allocates_nothing_while_every_link_searches() {
+    for link in [
+        RemoteIdLink::Bluetooth,
+        RemoteIdLink::BluetoothBand,
+        RemoteIdLink::Wifi,
+    ] {
+        let settings = ChannelSettings {
+            params: ChannelParams::RemoteId(RemoteIdParams { link }),
+            ..ChannelSettings::default_for("remote_id").expect("settings")
+        };
+        let rate = sdrmm_channels::input_rate(&settings.params);
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = searching_signal(rate);
+        let mut outputs = ChannelOutputs::default();
+        for _ in 0..4 {
+            drive(rx.as_mut(), &iq, &mut outputs);
+        }
+        assert_no_alloc("remote_id", || drive(rx.as_mut(), &iq, &mut outputs));
+    }
 }

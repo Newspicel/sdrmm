@@ -19,6 +19,7 @@ import {
   cwSignalRows,
   type DecoderScope,
   type DectStation,
+  type Drone,
   dectStations,
   formatAge,
   formatAltFreqs,
@@ -41,6 +42,7 @@ import {
   rdsPicture,
   rdsQuality,
   recordsInScope,
+  remoteIdDrones,
   shipRow,
   signalFrequency,
   sortTargets,
@@ -636,6 +638,77 @@ function LoraRow({ station, now }: { station: LoraStation; now: number }) {
   );
 }
 
+function wholeMetres(value: number | null): string {
+  return value === null ? "-" : value.toFixed(0);
+}
+
+function DroneRow({ drone, now }: { drone: Drone; now: number }) {
+  const ageMs = now - Date.parse(drone.at);
+  return (
+    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <td className={`${TABLE_CELL} font-mono`}>{drone.key}</td>
+      <td className={TABLE_CELL}>{drone.kind}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{wholeMetres(drone.heightM)}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>
+        {drone.speedMps === null ? "-" : drone.speedMps.toFixed(1)}
+      </td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{wholeMetres(drone.pilotM)}</td>
+      <td className={`${TABLE_CELL} max-w-40 truncate`} title={drone.operator ?? undefined}>
+        {drone.operator ?? "-"}
+      </td>
+      <td className={TABLE_CELL}>{drone.links.join(", ")}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{drone.levelDbfs.toFixed(0)}</td>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+    </tr>
+  );
+}
+
+function RemoteIdView({ scope = {} }: { scope?: DecoderScope }) {
+  const now = useNow();
+  const drones = remoteIdDrones(recordsInScope(useDecodedKind("remote_id"), scope));
+  if (drones.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No drones heard yet.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Drone</th>
+              <th className={TABLE_HEAD}>Type</th>
+              <th className={TABLE_HEAD}>
+                Height <Unit symbol="m" />
+              </th>
+              <th className={TABLE_HEAD}>
+                Speed <Unit symbol="m/s" />
+              </th>
+              <th className={TABLE_HEAD} title="Distance from drone to pilot">
+                Pilot <Unit symbol="m" />
+              </th>
+              <th className={TABLE_HEAD}>Operator</th>
+              <th className={TABLE_HEAD}>Link</th>
+              <th className={TABLE_HEAD}>
+                Level <Unit symbol="dBFS" />
+              </th>
+              <th className={TABLE_HEAD}>Heard</th>
+            </tr>
+          </thead>
+          <tbody>
+            {drones.map((drone) => (
+              <DroneRow key={drone.key} drone={drone} now={now} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function LoraView({ scope = {} }: { scope?: DecoderScope }) {
   const now = useNow();
   const stations = loraStations(recordsInScope(useDecodedKind("lora"), scope));
@@ -1098,6 +1171,7 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   iridium: null,
   dect: (scope) => <DectView scope={scope} />,
   lora: (scope) => <LoraView scope={scope} />,
+  remote_id: (scope) => <RemoteIdView scope={scope} />,
 };
 
 function isDecoderKind(kind: string): kind is DecoderKind {

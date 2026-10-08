@@ -12,6 +12,16 @@ export const NXDN_WIDTHS: Options<NonNullable<ChannelParamsOf<"nxdn">["bandwidth
   { value: "narrow", label: "6.25" },
   { value: "wide", label: "12.5" },
 ];
+export const REMOTE_ID_LINKS: Options<NonNullable<ChannelParamsOf<"remote_id">["link"]>> = [
+  { value: "bluetooth", label: "Bluetooth", title: "One Bluetooth channel at 4 MS/s" },
+  {
+    value: "bluetooth_band",
+    label: "BT band",
+    title: "Every Bluetooth channel in a 20 MS/s window, for long range",
+  },
+  { value: "wifi", label: "Wi-Fi", title: "One 20 MHz Wi-Fi channel" },
+];
+
 export const DECT_BANDS: Options<NonNullable<ChannelParamsOf<"dect">["band"]>> = [
   { value: "eu", label: "EU" },
   { value: "us", label: "US" },

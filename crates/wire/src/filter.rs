@@ -37,6 +37,7 @@ const FACETS: &[(&str, &[EventFacet])] = &[
     ("inmarsat_stdc", &[EventFacet::Position]),
     ("iridium", &[EventFacet::Position]),
     ("lora", &[EventFacet::Position]),
+    ("remote_id", &[EventFacet::Position]),
     ("radar", &[EventFacet::Position]),
     ("vdl2", &[EventFacet::Position]),
 ];

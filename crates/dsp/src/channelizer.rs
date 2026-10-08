@@ -143,6 +143,7 @@ impl Channelizer {
         let window_im = &self.history.im[oldest..oldest + self.span];
         match self.bins {
             8 => fir_fixed::<8>(&self.reversed, window_re, window_im, &mut self.partial),
+            10 => fir_fixed::<10>(&self.reversed, window_re, window_im, &mut self.partial),
             12 => fir_fixed::<12>(&self.reversed, window_re, window_im, &mut self.partial),
             bins => fir_any(
                 bins,
@@ -156,6 +157,7 @@ impl Channelizer {
         match (self.bins, self.padded) {
             (12, 12) => rotate_fixed::<12, 12>(&self.partial, table, &mut self.sums),
             (8, 8) => rotate_fixed::<8, 8>(&self.partial, table, &mut self.sums),
+            (10, 12) => rotate_fixed::<10, 12>(&self.partial, table, &mut self.sums),
             (_, padded) => rotate(&self.partial, table, padded, &mut self.sums),
         }
         for ((sink, &re), &im) in out
@@ -398,6 +400,36 @@ mod tests {
             .zip(general.re.iter().chain(&general.im))
         {
             assert!((a - b).abs() < 1e-5, "{a} vs {b}");
+        }
+    }
+
+    #[test]
+    fn ten_bins_match_the_general_path() {
+        let taps: Vec<f32> = (0..160)
+            .map(|k| ((k * 37) % 101) as f32 / 101.0 - 0.5)
+            .collect();
+        let re: Vec<f32> = (0..160)
+            .map(|k| ((k * 13) % 29) as f32 / 29.0 - 0.5)
+            .collect();
+        let im: Vec<f32> = (0..160)
+            .map(|k| ((k * 7) % 31) as f32 / 31.0 - 0.5)
+            .collect();
+        let mut fixed = Planes::zeroed(10);
+        let mut general = Planes::zeroed(10);
+        fir_fixed::<10>(&taps, &re, &im, &mut fixed);
+        fir_any(10, &taps, &re, &im, &mut general);
+        let table = twiddle_table(10, &[-4, -3, -2, -1, 0, 1, 2, 3, 4]).swap_remove(3);
+        let mut rotated = Planes::zeroed(12);
+        let mut reference = Planes::zeroed(12);
+        rotate_fixed::<10, 12>(&fixed, &table, &mut rotated);
+        rotate(&general, &table, 12, &mut reference);
+        for (a, b) in rotated
+            .re
+            .iter()
+            .chain(&rotated.im)
+            .zip(reference.re.iter().chain(&reference.im))
+        {
+            assert!((a - b).abs() < 1e-4, "{a} vs {b}");
         }
     }
 
