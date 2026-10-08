@@ -64,6 +64,7 @@ enum Outcome {
     Frame(Header, usize),
     Skip(usize),
     Short,
+    Wait(usize),
     Failed,
 }
 
@@ -78,6 +79,7 @@ pub struct Dsss {
     filled: usize,
     consumed: u64,
     cursor: usize,
+    ready_at: usize,
     state: State,
     rejected: u32,
 }
@@ -95,6 +97,7 @@ impl Dsss {
             filled: 0,
             consumed: 0,
             cursor: 0,
+            ready_at: 0,
             state: State::Search,
             rejected: 0,
         })
@@ -109,6 +112,7 @@ impl Dsss {
         self.history.clear();
         self.consumed = 0;
         self.cursor = 0;
+        self.ready_at = 0;
         self.state = State::Search;
         self.restart_detector();
     }
@@ -124,8 +128,13 @@ impl Dsss {
         self.history.extend_from_slice(iq);
         loop {
             match self.state {
+                State::Pending(_) if self.history.len() < self.ready_at => break,
                 State::Pending(start) => match self.demodulate(start, sink) {
                     Outcome::Short => break,
+                    Outcome::Wait(needed) => {
+                        self.ready_at = needed;
+                        break;
+                    }
                     Outcome::Frame(header, end) => {
                         sink.frame(Frame {
                             mpdu: &self.bytes,
@@ -149,6 +158,7 @@ impl Dsss {
     }
 
     fn resume(&mut self, at: usize) {
+        self.ready_at = 0;
         self.cursor = at.max(self.cursor);
         self.state = State::Search;
         self.restart_detector();
@@ -218,7 +228,7 @@ impl Dsss {
         }
         let end = reader.position() + duration(&header) + MARGIN;
         if end > history.len() {
-            return Outcome::Short;
+            return Outcome::Wait(end);
         }
         bytes.clear();
         let complete = match header.phy {
@@ -248,6 +258,7 @@ impl Dsss {
         self.history.drain(..drop);
         self.consumed += drop as u64;
         self.cursor = self.cursor.saturating_sub(drop);
+        self.ready_at = self.ready_at.saturating_sub(drop);
         if let State::Pending(start) = &mut self.state {
             *start = start.saturating_sub(drop);
         }

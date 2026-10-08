@@ -18,11 +18,8 @@ use crate::cpm::{LaurentError, laurent_main_pulse};
 const ONE_SYMBOLS: usize = 40;
 const ONE_ERRORS: usize = 6;
 const MIN_COHERENCE: f32 = 0.6;
-const ONE_SCREEN_ERRORS: u32 = 2;
+const ONE_SCREEN_ERRORS: u32 = 5;
 const ONE_BALANCED: std::ops::RangeInclusive<usize> = 1..=8;
-const ONE_SCREEN_MASK: u64 = 0x7F;
-const ONE_SCREEN: u64 = 0x2A;
-const ONE_SCREEN_BACK: usize = (ONE_SYMBOLS - 1 - 8) * SPS;
 const ONE_SEGMENT: usize = 8;
 const CODED_ERRORS: u32 = 12;
 const CODED_SEGMENT: usize = 16;
@@ -30,6 +27,7 @@ const BLOCK_SAMPLES: usize = 4 * SPS;
 const AA_SYMBOLS: usize = AA_BLOCKS * 4;
 const KEEP_BEHIND: usize = AA_SYMBOLS * SPS + 64;
 const MAX_HISTORY: usize = 90_000;
+const TRIM_SLACK: usize = 16_384;
 const HEADER_BITS: usize = HEADER_BYTES * 8;
 const HEADER_MARGIN_BITS: usize = 24;
 const MARGIN_SAMPLES: f64 = (2 * BLOCK_SAMPLES) as f64;
@@ -43,10 +41,24 @@ const PREAMBLE_BITS: usize = 8;
 
 struct Patterns {
     one_symbols: Vec<bool>,
+    one_rising: u64,
+    one_turns: u64,
     one_known: Vec<Complex<f32>>,
     coded: u64,
     coded_known: Vec<Complex<f32>>,
     indicators: [(BlePhy, [bool; INDICATOR_BLOCKS]); 2],
+}
+
+fn transitions(symbols: &[bool]) -> (u64, u64) {
+    let last = symbols.len() - 1;
+    symbols
+        .windows(2)
+        .enumerate()
+        .filter(|(_, pair)| pair[0] != pair[1])
+        .fold((0, 0), |(rising, turns), (k, pair)| {
+            let bit = 1u64 << (last - 1 - k);
+            (rising | if pair[1] { bit } else { 0 }, turns | bit)
+        })
 }
 
 impl Patterns {
@@ -66,8 +78,11 @@ impl Patterns {
             coded_bits.iter().flat_map(|&bit| s8_pattern(bit)),
             &mut coded_known,
         );
+        let (one_rising, one_turns) = transitions(&one_symbols);
         Self {
             one_symbols,
+            one_rising,
+            one_turns,
             one_known,
             coded,
             coded_known,
@@ -104,9 +119,11 @@ impl Scratch {
 
 enum Attempt {
     Done(usize, usize, BlePhy, usize),
-    Wait,
+    Wait(usize),
     Miss,
 }
+
+type Stage = Result<Option<(usize, usize)>, usize>;
 
 pub struct Lane {
     rf: Option<u8>,
@@ -122,6 +139,7 @@ pub struct Lane {
     refilter: Refilter,
     consumed: u64,
     cursor: usize,
+    ready_at: usize,
     patterns: Patterns,
     scratch: Scratch,
 }
@@ -177,6 +195,7 @@ impl Lane {
             raw: Vec::with_capacity(MAX_HISTORY),
             consumed: 0,
             cursor: 0,
+            ready_at: 0,
             patterns: Patterns::new(),
             scratch: Scratch::new(),
         })
@@ -192,48 +211,55 @@ impl Lane {
         self.raw.clear();
         self.consumed = 0;
         self.cursor = 0;
+        self.ready_at = 0;
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
         self.matched.process(iq, &mut self.filtered);
-        for index in 0..self.filtered.len() {
-            self.push(self.filtered[index]);
-        }
+        self.extend();
         self.raw.extend_from_slice(iq);
         self.scan(sink);
     }
 
-    fn push(&mut self, value: Complex<f32>) {
-        let n = self.y.len();
-        self.y.push(value);
-        let step = n
-            .checked_sub(SPS)
-            .map_or(Complex::new(0.0, 0.0), |earlier| {
-                value * self.y[earlier].conj()
+    fn extend(&mut self) {
+        let first = self.y.len();
+        self.y.extend_from_slice(&self.filtered);
+        let y = &self.y;
+        let warm = SPS.saturating_sub(first).min(y.len() - first);
+        self.e.extend(std::iter::repeat_n(0.0, warm));
+        self.angles.extend(std::iter::repeat_n(0.0, warm));
+        let start = first + warm;
+        let steps = y[start..]
+            .iter()
+            .zip(&y[start - SPS.min(start)..])
+            .map(|(now, earlier)| now * earlier.conj());
+        self.e.extend(steps.clone().map(|step| step.im));
+        self.angles.extend(steps.map(fast_arg));
+        for n in first..y.len() {
+            let rising = n.checked_sub(SPS).map_or(0, |earlier| {
+                self.rising[earlier] << 1 | u64::from(self.angles[n] > self.angles[earlier])
             });
-        let e = step.im;
-        self.e.push(e);
-        let angle = fast_arg(step);
-        self.angles.push(angle);
-        let rising = n.checked_sub(SPS).map_or(0, |earlier| {
-            self.rising[earlier] << 1 | u64::from(angle > self.angles[earlier])
-        });
-        self.rising.push(rising);
-        let block = n.checked_sub(BLOCK_SAMPLES).map_or(0, |earlier| {
-            let metric = self.e[n - 3 * SPS] + self.e[n - 2 * SPS] - self.e[n - SPS] - e;
-            self.blocks[earlier] << 1 | u64::from(metric > 0.0)
-        });
-        self.blocks.push(block);
+            self.rising.push(rising);
+            let block = n.checked_sub(BLOCK_SAMPLES).map_or(0, |earlier| {
+                let e = &self.e;
+                let metric = e[n - 3 * SPS] + e[n - 2 * SPS] - e[n - SPS] - e[n];
+                self.blocks[earlier] << 1 | u64::from(metric > 0.0)
+            });
+            self.blocks.push(block);
+        }
     }
 
     fn scan(&mut self, sink: &mut impl Sink) {
+        if self.y.len() < self.ready_at {
+            self.trim();
+            return;
+        }
         let mut at = self.cursor;
         while at < self.y.len() {
-            let one = at.checked_sub(ONE_SCREEN_BACK).is_some_and(|back| {
-                let screen = ((self.rising[back] ^ ONE_SCREEN) & ONE_SCREEN_MASK).count_ones()
-                    <= ONE_SCREEN_ERRORS;
-                screen && one_sync(&self.angles, at, &self.patterns.one_symbols)
-            });
+            let patterns = &self.patterns;
+            let one = ((self.rising[at] ^ patterns.one_rising) & patterns.one_turns).count_ones()
+                <= ONE_SCREEN_ERRORS
+                && one_sync(&self.angles, at, &patterns.one_symbols);
             let coded = (self.blocks[at] ^ self.patterns.coded).count_ones() <= CODED_ERRORS;
             if !one && !coded {
                 at += 1;
@@ -269,7 +295,10 @@ impl Lane {
                     });
                     at = end.max(at + 1);
                 }
-                Attempt::Wait => break,
+                Attempt::Wait(needed) => {
+                    self.ready_at = needed;
+                    break;
+                }
                 Attempt::Miss => at += 1,
             }
         }
@@ -311,18 +340,20 @@ impl Lane {
             Attempt::Done(start, end, phy, length) => {
                 Attempt::Done(start + base, end + base, phy, length)
             }
-            other => other,
+            Attempt::Wait(needed) if needed + base <= anchor + longest => {
+                Attempt::Wait(needed + base)
+            }
+            _ => Attempt::Miss,
         }
     }
 
     fn trim(&mut self) {
-        let drop = self
-            .cursor
-            .saturating_sub(KEEP_BEHIND)
-            .max(self.y.len().saturating_sub(MAX_HISTORY));
-        if drop == 0 {
+        let behind = self.cursor.saturating_sub(KEEP_BEHIND);
+        let over = self.y.len().saturating_sub(MAX_HISTORY);
+        if behind < TRIM_SLACK && over == 0 {
             return;
         }
+        let drop = behind.max(over);
         self.y.drain(..drop);
         self.e.drain(..drop);
         self.angles.drain(..drop);
@@ -331,6 +362,7 @@ impl Lane {
         self.raw.drain(..drop.min(self.raw.len()));
         self.consumed += drop as u64;
         self.cursor = self.cursor.saturating_sub(drop);
+        self.ready_at = self.ready_at.saturating_sub(drop);
     }
 }
 
@@ -351,23 +383,23 @@ impl Decoder<'_> {
         let start = anchor.saturating_sub(ONE_SYMBOLS * SPS);
         let view = acquired.view(self.y);
         let mut detector = Coherent::new(view, acquired.instant, acquired.carrier, acquired.last);
-        if !self.available(detector.position(), HEADER_BITS) {
-            return Attempt::Wait;
+        if let Err(needed) = self.need(detector.position(), HEADER_BITS) {
+            return Attempt::Wait(needed);
         }
         let mut whitener = Whitener::new(self.channel_index);
         for slot in 0..HEADER_BYTES {
             let Some(byte) = read_byte(&mut detector) else {
-                return Attempt::Wait;
+                return Attempt::Wait(self.more());
             };
             self.scratch.pdu[slot] = whitener.byte(byte);
         }
         let total = HEADER_BYTES + usize::from(self.scratch.pdu[1]) + CRC_BYTES;
-        if !self.available(detector.position(), (total - HEADER_BYTES) * 8) {
-            return Attempt::Wait;
+        if let Err(needed) = self.need(detector.position(), (total - HEADER_BYTES) * 8) {
+            return Attempt::Wait(needed);
         }
         for slot in HEADER_BYTES..total {
             let Some(byte) = read_byte(&mut detector) else {
-                return Attempt::Wait;
+                return Attempt::Wait(self.more());
             };
             self.scratch.pdu[slot] = whitener.byte(byte);
         }
@@ -383,8 +415,17 @@ impl Decoder<'_> {
         }
     }
 
-    fn available(&self, position: f64, symbols: usize) -> bool {
-        position + (symbols * SPS) as f64 + MARGIN_SAMPLES < self.y.len() as f64
+    fn need(&self, position: f64, symbols: usize) -> Result<(), usize> {
+        let needed = (position + (symbols * SPS) as f64 + MARGIN_SAMPLES).ceil() as usize + 1;
+        if needed <= self.y.len() {
+            Ok(())
+        } else {
+            Err(needed)
+        }
+    }
+
+    fn more(&self) -> usize {
+        self.y.len() + BLOCK_SAMPLES
     }
 
     fn coded(&mut self, anchor: usize) -> Attempt {
@@ -394,8 +435,8 @@ impl Decoder<'_> {
             return Attempt::Miss;
         };
         let header_coded = 2 * (HEADER_BITS + HEADER_MARGIN_BITS);
-        if !self.available(acquired.instant, (INDICATOR_BLOCKS + header_coded) * 4) {
-            return Attempt::Wait;
+        if let Err(needed) = self.need(acquired.instant, (INDICATOR_BLOCKS + header_coded) * 4) {
+            return Attempt::Wait(needed);
         }
         let view = acquired.view(self.y);
         let mut blocks = Blocks::new(
@@ -406,7 +447,7 @@ impl Decoder<'_> {
         self.scratch.pilots.clear();
         self.scratch.data.clear();
         if !read_blocks(&mut blocks, INDICATOR_BLOCKS, self.scratch) {
-            return Attempt::Wait;
+            return Attempt::Wait(self.more());
         }
         let phy = self.indicator();
         let start = anchor.saturating_sub(AA_SYMBOLS * SPS);
@@ -415,9 +456,9 @@ impl Decoder<'_> {
             _ => self.s2(&acquired, &blocks, header_coded),
         };
         match outcome {
-            Some(Some((end, length))) => Attempt::Done(start, end, phy, length),
-            Some(None) => Attempt::Miss,
-            None => Attempt::Wait,
+            Ok(Some((end, length))) => Attempt::Done(start, end, phy, length),
+            Ok(None) => Attempt::Miss,
+            Err(needed) => Attempt::Wait(needed),
         }
     }
 
@@ -445,22 +486,16 @@ impl Decoder<'_> {
             .map_or(BlePhy::CodedS8, |(phy, _)| phy)
     }
 
-    fn s8(
-        &mut self,
-        blocks: &mut Blocks<'_>,
-        header_coded: usize,
-    ) -> Option<Option<(usize, usize)>> {
+    fn s8(&mut self, blocks: &mut Blocks<'_>, header_coded: usize) -> Stage {
         if !read_blocks(blocks, header_coded, self.scratch) {
-            return None;
+            return Err(self.more());
         }
-        let length = self.coded_length(true)?;
+        let length = self.coded_length(true).ok_or_else(|| self.more())?;
         let coded = 2 * ((HEADER_BYTES + length + CRC_BYTES) * 8 + TERM_BITS);
         let remaining = coded.saturating_sub(header_coded);
-        if !self.available(blocks.position(), remaining * 4) {
-            return None;
-        }
+        self.need(blocks.position(), remaining * 4)?;
         if !read_blocks(blocks, remaining, self.scratch) {
-            return None;
+            return Err(self.more());
         }
         self.scratch.soft.clear();
         smoothed_soft(
@@ -468,34 +503,27 @@ impl Decoder<'_> {
             &self.scratch.data,
             &mut self.scratch.soft,
         );
-        Some(self.finish(INDICATOR_BLOCKS, coded, length, blocks.position()))
+        Ok(self.finish(INDICATOR_BLOCKS, coded, length, blocks.position()))
     }
 
-    fn s2(
-        &mut self,
-        acquired: &Acquired,
-        blocks: &Blocks<'_>,
-        header_coded: usize,
-    ) -> Option<Option<(usize, usize)>> {
+    fn s2(&mut self, acquired: &Acquired, blocks: &Blocks<'_>, header_coded: usize) -> Stage {
         let carrier = carrier_from_pilot(blocks.reference(), acquired.last);
         let view = acquired.view(self.y);
         let mut detector = Coherent::new(view, blocks.position(), carrier, acquired.last);
         self.scratch.soft.clear();
         for _ in 0..header_coded {
-            let soft = detector.symbol()?;
+            let soft = detector.symbol().ok_or_else(|| self.more())?;
             self.scratch.soft.push(soft);
         }
-        let length = self.coded_length(false)?;
+        let length = self.coded_length(false).ok_or_else(|| self.more())?;
         let coded = 2 * ((HEADER_BYTES + length + CRC_BYTES) * 8 + TERM_BITS);
         let remaining = coded.saturating_sub(header_coded);
-        if !self.available(detector.position(), remaining) {
-            return None;
-        }
+        self.need(detector.position(), remaining)?;
         for _ in 0..remaining {
-            let soft = detector.symbol()?;
+            let soft = detector.symbol().ok_or_else(|| self.more())?;
             self.scratch.soft.push(soft);
         }
-        Some(self.finish(0, coded, length, detector.position()))
+        Ok(self.finish(0, coded, length, detector.position()))
     }
 
     fn coded_length(&mut self, smooth: bool) -> Option<usize> {

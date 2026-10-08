@@ -38,7 +38,7 @@ enum State {
 enum Outcome {
     Frame(Rate, usize),
     Skip(usize),
-    Short,
+    Wait(usize),
     Failed,
 }
 
@@ -75,6 +75,7 @@ pub struct Ofdm {
     primed: bool,
     consumed: u64,
     cursor: usize,
+    ready_at: usize,
     state: State,
     fft: FftPair,
     reference: [Complex<f32>; FFT],
@@ -116,6 +117,7 @@ impl Ofdm {
             primed: false,
             consumed: 0,
             cursor: 0,
+            ready_at: 0,
             state: State::Search,
             fft,
             reference,
@@ -138,6 +140,7 @@ impl Ofdm {
         self.history.clear();
         self.consumed = 0;
         self.cursor = 0;
+        self.ready_at = 0;
         self.state = State::Search;
         self.primed = false;
         self.run = 0;
@@ -148,8 +151,12 @@ impl Ofdm {
         self.history.extend_from_slice(iq);
         loop {
             match self.state {
+                State::Pending(_) if self.history.len() < self.ready_at => break,
                 State::Pending(start) => match self.demodulate(start, sink) {
-                    Outcome::Short => break,
+                    Outcome::Wait(needed) => {
+                        self.ready_at = needed;
+                        break;
+                    }
                     Outcome::Frame(rate, end) => {
                         sink.frame(Frame {
                             mpdu: &self.scratch.bytes,
@@ -175,6 +182,7 @@ impl Ofdm {
     }
 
     fn resume(&mut self, at: usize, holding: bool) {
+        self.ready_at = 0;
         if at > self.cursor {
             self.cursor = at;
             self.primed = false;
@@ -362,13 +370,13 @@ impl Ofdm {
 
     fn demodulate(&mut self, start: usize, sink: &impl Sink) -> Outcome {
         if start + LOOKAHEAD > self.history.len() {
-            return Outcome::Short;
+            return Outcome::Wait(start + LOOKAHEAD);
         }
         let Some(lock) = self.lock(start) else {
             return Outcome::Failed;
         };
         if lock.signal + SYMBOL > self.history.len() {
-            return Outcome::Short;
+            return Outcome::Wait(lock.signal + SYMBOL);
         }
         let Some((rate, length)) = self.signal(&lock) else {
             return Outcome::Failed;
@@ -376,7 +384,7 @@ impl Ofdm {
         let symbols = rate.symbols(length);
         let end = lock.signal + SYMBOL * (1 + symbols);
         if end > self.history.len() {
-            return Outcome::Short;
+            return Outcome::Wait(end);
         }
         let peek = PEEK_BITS.div_ceil(rate.data_bits).min(symbols);
         self.decode(&lock, rate, peek, 1);
@@ -420,6 +428,7 @@ impl Ofdm {
         self.history.drain(..drop);
         self.consumed += drop as u64;
         self.cursor = self.cursor.saturating_sub(drop);
+        self.ready_at = self.ready_at.saturating_sub(drop);
         if let State::Pending(start) = &mut self.state {
             *start = start.saturating_sub(drop);
         }
