@@ -9,7 +9,7 @@ use sdrmm_test_support::{CountingAlloc, assert_no_alloc, measure_throughput};
 
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc::new();
-use sdrmm_wire::ChannelSettings;
+use sdrmm_wire::{ChannelParams, ChannelSettings, RemoteIdLink, RemoteIdParams};
 
 const BLOCK: usize = 2_048;
 const SURVEY_SECONDS: f64 = 0.1;
@@ -218,4 +218,105 @@ fn lora_allocates_nothing_while_every_spreading_factor_searches() {
         drive(rx.as_mut(), &iq, &mut outputs);
     }
     assert_no_alloc("lora", || drive(rx.as_mut(), &iq, &mut outputs));
+}
+
+fn remote_id_settings(link: RemoteIdLink) -> ChannelSettings {
+    ChannelSettings {
+        params: ChannelParams::RemoteId(RemoteIdParams { link }),
+        ..ChannelSettings::default_for("remote_id").expect("settings")
+    }
+}
+
+fn aux_without_remote_id() -> Vec<u8> {
+    let mut pdu = vec![0x47, 30, 9, 0x09, 6, 5, 4, 3, 2, 0xC1, 0x75, 0x0E];
+    pdu.extend([19, 0xFF, 0x4C, 0x00, 0x02, 0x15]);
+    pdu.extend(1..=14);
+    pdu
+}
+
+fn busy_bluetooth(rate: f64, spread: bool) -> Vec<Complex<f32>> {
+    use sdrmm_channels::synth::remote_id::{BlePhy, bluetooth, ext_adv_pdu};
+    let mut ibeacon = vec![0x42, 20, 6, 5, 4, 3, 2, 0xC1];
+    ibeacon.extend([13, 0xFF, 0x4C, 0x00, 0x02, 0x15, 1, 2, 3, 4, 5, 6, 7, 8]);
+    let mut bursts = vec![
+        bluetooth(&ibeacon, 12, BlePhy::Le1m, rate),
+        bluetooth(&ext_adv_pdu(8, BlePhy::CodedS8), 12, BlePhy::CodedS8, rate),
+        bluetooth(&aux_without_remote_id(), 12, BlePhy::CodedS2, rate),
+    ];
+    if spread {
+        let mut aux = bluetooth(&aux_without_remote_id(), 9, BlePhy::CodedS8, rate);
+        sdrmm_channels::synth::shift(&mut aux, -6e6, rate);
+        bursts.push(aux);
+    }
+    busy(bursts, rate)
+}
+
+fn busy_wifi(rate: f64) -> Vec<Complex<f32>> {
+    use sdrmm_channels::synth::remote_id::{WifiPhy, build, dsss, ofdm};
+    let source = [0x02, 1, 2, 3, 4, 5];
+    let beacon = build::ordinary_beacon(source, "HomeNet");
+    let data = build::data(source, &[0xAA; 300]);
+    busy(
+        vec![
+            dsss(&beacon, WifiPhy::Dsss1m, false).unwrap(),
+            dsss(&data, WifiPhy::Cck11m, true).unwrap(),
+            ofdm(&beacon, 24),
+            ofdm(&data, 6),
+        ],
+        rate,
+    )
+}
+
+fn busy(bursts: Vec<Vec<Complex<f32>>>, rate: f64) -> Vec<Complex<f32>> {
+    let gap = (200e-6 * rate) as usize;
+    let mut iq = sdrmm_channels::synth::silence(gap);
+    for mut burst in bursts {
+        sdrmm_channels::synth::scale(&mut burst, 0.3);
+        iq.append(&mut burst);
+        iq.extend(sdrmm_channels::synth::silence(gap));
+    }
+    sdrmm_channels::synth::add_noise(&mut iq, 0xB05E, 0.02);
+    iq
+}
+
+#[test]
+fn remote_id_allocates_nothing_on_a_busy_channel_without_remote_id() {
+    for link in [
+        RemoteIdLink::Bluetooth,
+        RemoteIdLink::BluetoothBand,
+        RemoteIdLink::Wifi,
+    ] {
+        let settings = remote_id_settings(link);
+        let rate = sdrmm_channels::input_rate(&settings.params);
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = match link {
+            RemoteIdLink::Wifi => busy_wifi(rate),
+            _ => busy_bluetooth(rate, link == RemoteIdLink::BluetoothBand),
+        };
+        let mut outputs = ChannelOutputs::default();
+        drive(rx.as_mut(), &searching_signal(rate), &mut outputs);
+        assert_no_alloc("remote_id busy", || drive(rx.as_mut(), &iq, &mut outputs));
+        assert!(outputs.events.is_empty());
+    }
+}
+
+#[test]
+fn remote_id_allocates_nothing_while_every_link_searches() {
+    for link in [
+        RemoteIdLink::Bluetooth,
+        RemoteIdLink::BluetoothBand,
+        RemoteIdLink::Wifi,
+    ] {
+        let settings = remote_id_settings(link);
+        let rate = sdrmm_channels::input_rate(&settings.params);
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = searching_signal(rate);
+        let mut outputs = ChannelOutputs::default();
+        for _ in 0..4 {
+            drive(rx.as_mut(), &iq, &mut outputs);
+        }
+        assert_no_alloc("remote_id", || drive(rx.as_mut(), &iq, &mut outputs));
+    }
 }

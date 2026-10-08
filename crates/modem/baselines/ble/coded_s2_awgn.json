@@ -1,0 +1,40 @@
+{
+  "label": "ble le coded s=2: coded access address sync, laurent matched filter, decision-fed carrier, k=4 soft viterbi, 37-byte payload, a missed packet counts every bit, uncoded BER, seed 0xb1e2",
+  "points": [
+    {
+      "ebn0_db": 9.0,
+      "errors": 2072,
+      "trials": 2664
+    },
+    {
+      "ebn0_db": 10.0,
+      "errors": 2072,
+      "trials": 6808
+    },
+    {
+      "ebn0_db": 11.0,
+      "errors": 2072,
+      "trials": 51208
+    },
+    {
+      "ebn0_db": 12.0,
+      "errors": 2072,
+      "trials": 457024
+    },
+    {
+      "ebn0_db": 13.0,
+      "errors": 592,
+      "trials": 3000256
+    },
+    {
+      "ebn0_db": 14.0,
+      "errors": 296,
+      "trials": 3000256
+    },
+    {
+      "ebn0_db": 15.0,
+      "errors": 0,
+      "trials": 3000256
+    }
+  ]
+}

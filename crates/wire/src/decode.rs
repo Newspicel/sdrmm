@@ -1467,6 +1467,7 @@ pub enum DecoderEvent {
     Wefax(crate::weather::WefaxPicture),
     Radiosonde(crate::weather::RadiosondeFrame),
     Lora(crate::lora::LoraFrame),
+    RemoteId(crate::remote_id::RemoteIdFrame),
 }
 
 fn dect_summary(f: &DectFrame) -> String {
@@ -1728,6 +1729,7 @@ impl DecoderEvent {
             Self::Wefax(_) => "wefax",
             Self::Radiosonde(_) => "radiosonde",
             Self::Lora(_) => "lora",
+            Self::RemoteId(_) => "remote_id",
         }
     }
 
@@ -1911,6 +1913,7 @@ impl DecoderEvent {
             Self::Wefax(p) => crate::weather::wefax_summary(p),
             Self::Radiosonde(f) => crate::weather::radiosonde_summary(f),
             Self::Lora(f) => f.summary(),
+            Self::RemoteId(f) => f.summary(),
         }
     }
 
@@ -1926,6 +1929,7 @@ impl DecoderEvent {
             Self::Radar(t) => (t.lat, t.lon),
             Self::Radiosonde(f) => (f.lat, f.lon),
             Self::Lora(f) => f.position().unzip(),
+            Self::RemoteId(f) => f.position().unzip(),
             Self::Dsc(m)
             | Self::InmarsatStdc(m)
             | Self::InmarsatAero(m)
@@ -1987,6 +1991,7 @@ impl DecoderEvent {
             Self::Wefax(p) => Some(format!("IOC {}", p.ioc.value())),
             Self::Radiosonde(f) => Some(f.serial.clone()),
             Self::Lora(f) => f.station(),
+            Self::RemoteId(f) => Some(f.station()),
         }
     }
 }

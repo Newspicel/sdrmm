@@ -11,7 +11,7 @@ covers the modes that need more than a frequency.
 |---|---|---|---|
 | Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
 | Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | | |
-| Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium) | VOR, ILS localizer / glideslope |
+| Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium), [Drone Remote ID](#drone-remote-id) | VOR, ILS localizer / glideslope |
 | Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC | |
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
 | Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager, [End-of-Train](#end-of-train) | |
@@ -125,7 +125,7 @@ calibration data has arrived, about a minute after first lock.
 
 ## Map
 
-Wire ADS-B, AIS, APRS, Radiosonde or LoRa `events` to **Map**. Each target draws its track. The
+Wire ADS-B, AIS, APRS, Radiosonde, LoRa or Drone Remote ID `events` to **Map**. Each target draws its track. The
 gear at the bottom left picks the style, hides tracks, or takes a custom URL: an XYZ template
 (`https://…/{z}/{x}/{y}.png`) or a MapLibre style URL, with any API key in the URL. The choice is
 kept in this browser.
@@ -241,3 +241,33 @@ DevAddr. Meshtastic positions, waypoints and map reports and MeshCore adverts wi
 appear on **Map**. Meshtastic direct messages and MeshCore private messages are end-to-end
 encrypted and show as such. The signal generator sends Meshtastic, MeshCore and LoRaWAN test
 packets.
+
+## Drone Remote ID
+
+The Drone Remote ID channel reads what drones broadcast under ASTM F3411 and EN 4709-002: serial
+number, position, height, speed, pilot position, operator ID and self ID. It also reads the French
+beacon format and DJI's own DroneID beacons.
+
+It needs a radio that reaches 2.4 GHz. HackRF, SDRplay and Pluto work, RTL-SDR does not.
+
+| Link | Hears | Rate |
+|---|---|---|
+| Bluetooth | Bluetooth 4 adverts on one channel | 4 MS/s |
+| BT band | Every Bluetooth channel in reach, including long range data | 20 MS/s |
+| Wi-Fi | Beacons and NAN frames on one channel, 802.11b and 802.11g | 20 MS/s |
+
+The **Drone Remote ID** and **Drone Remote ID · Wi-Fi** templates set this up.
+
+Tune Bluetooth to an advertising channel: 2402, 2426 or 2480 MHz. Tune Wi-Fi to the channel
+centre, usually channel 6 at 2437 MHz, or 2412, 2462 or 5745 MHz.
+
+Long range drones send their data on any of 37 data channels. BT band covers about 8 of them, so it
+hears about a fifth of those packets.
+
+A Bluetooth 4 advert carries one message, so the readout joins each drone's adverts into one row
+keyed by serial number. **Map** shows the drone and its track; the detail lists the pilot and the
+distance to them. Frames that fail their checksum after the header are counted as rejected.
+
+Tested on real Bluetooth and Wi-Fi captures and on real Remote ID frames from packet captures. No
+public IQ recording of a real Remote ID transmission exists yet.
+

@@ -27,6 +27,7 @@ pub mod psk;
 pub mod radio_clock;
 pub mod radiosonde;
 pub mod rds;
+pub mod remote_id;
 pub mod rtty;
 pub mod selcall;
 pub mod sstv;

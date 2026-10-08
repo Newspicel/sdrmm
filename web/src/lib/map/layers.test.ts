@@ -364,3 +364,39 @@ describe("targetDetail", () => {
     });
   });
 });
+
+describe("drone targets", () => {
+  it("place a drone by its location and name it by its serial", () => {
+    const drone = station(
+      {
+        kind: "remote_id",
+        data: {
+          transport: "wifi_beacon",
+          phy: "ofdm",
+          address: "90:3A:E6:5B:C8:A8",
+          uas_id: "1588E040445AC004418",
+          level_dbfs: -50,
+          messages: [
+            {
+              type: "location",
+              status: "ground",
+              lat: 47.1987103,
+              lon: 8.7302371,
+              track_deg: 84,
+              height_m: 0,
+              height_reference: "takeoff",
+            },
+          ],
+        },
+      },
+      { id: "1588E040445AC004418" },
+    );
+    expect(targetFeature(drone)).toEqual({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [8.7302371, 47.1987103] },
+      properties: { id: "1588E040445AC004418", label: "1588E040445AC004418", heading: 84 },
+    });
+    expect(targetDetail(drone).rows).toContainEqual(["Link", "Wi-Fi beacon"]);
+    expect(mapKindsOf(["remote_id"])).toEqual(["remote_id"]);
+  });
+});

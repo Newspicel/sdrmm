@@ -8481,6 +8481,19 @@
           }
         }
       },
+      "AuthType": {
+        "type": "string",
+        "enum": [
+          "none",
+          "uas_id_signature",
+          "operator_id_signature",
+          "message_set_signature",
+          "network_remote_id",
+          "specific_method",
+          "reserved",
+          "private"
+        ]
+      },
       "AvhrrChannel": {
         "type": "string",
         "enum": [
@@ -11251,6 +11264,24 @@
                 "type": "string",
                 "enum": [
                   "lora"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/RemoteIdParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "remote_id"
                 ]
               }
             }
@@ -14139,6 +14170,24 @@
                 "type": "string",
                 "enum": [
                   "lora"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/RemoteIdFrame"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "remote_id"
                 ]
               }
             }
@@ -17151,6 +17200,35 @@
           "rate_limited"
         ]
       },
+      "EuCategory": {
+        "type": "string",
+        "enum": [
+          "undeclared",
+          "open",
+          "specific",
+          "certified",
+          "reserved"
+        ]
+      },
+      "EuClassification": {
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/EuCategory"
+          },
+          "class": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "EventAudio": {
         "type": "object",
         "required": [
@@ -18159,6 +18237,13 @@
           "fused",
           "gnss",
           "sensor"
+        ]
+      },
+      "HeightReference": {
+        "type": "string",
+        "enum": [
+          "takeoff",
+          "ground"
         ]
       },
       "HeldLane": {
@@ -23294,6 +23379,15 @@
           }
         ]
       },
+      "OperatorLocationType": {
+        "type": "string",
+        "enum": [
+          "takeoff",
+          "live_gnss",
+          "fixed",
+          "reserved"
+        ]
+      },
       "P25Params": {
         "type": "object"
       },
@@ -26736,6 +26830,493 @@
           "raw",
           "cma",
           "dab_remod"
+        ]
+      },
+      "RemoteIdFrame": {
+        "type": "object",
+        "required": [
+          "transport",
+          "phy",
+          "address",
+          "level_dbfs",
+          "messages"
+        ],
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "channel": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "counter": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "level_dbfs": {
+            "type": "number",
+            "format": "float"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoteIdMessage"
+            }
+          },
+          "phy": {
+            "$ref": "#/components/schemas/RemoteIdPhy"
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "ssid": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transport": {
+            "$ref": "#/components/schemas/RemoteIdTransport"
+          },
+          "uas_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RemoteIdLink": {
+        "type": "string",
+        "enum": [
+          "bluetooth",
+          "bluetooth_band",
+          "wifi"
+        ]
+      },
+      "RemoteIdLocation": {
+        "type": "object",
+        "required": [
+          "status",
+          "height_reference"
+        ],
+        "properties": {
+          "geodetic_altitude_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "height_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "height_reference": {
+            "$ref": "#/components/schemas/HeightReference"
+          },
+          "horizontal_accuracy_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "lat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "lon": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pressure_accuracy_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "pressure_altitude_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "seconds_after_hour": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "speed_accuracy_mps": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "speed_mps": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UaStatus"
+          },
+          "timestamp_accuracy_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "track_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "vertical_accuracy_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "vertical_speed_mps": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          }
+        }
+      },
+      "RemoteIdMessage": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id_type",
+              "ua_type",
+              "uas_id",
+              "type"
+            ],
+            "properties": {
+              "id_type": {
+                "$ref": "#/components/schemas/UasIdType"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "basic_id"
+                ]
+              },
+              "ua_type": {
+                "$ref": "#/components/schemas/UaType"
+              },
+              "uas_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RemoteIdLocation"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "location"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "auth_type",
+              "page",
+              "data",
+              "type"
+            ],
+            "properties": {
+              "auth_type": {
+                "$ref": "#/components/schemas/AuthType"
+              },
+              "data": {
+                "type": "string"
+              },
+              "last_page": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "length": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "page": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "timestamp": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "authentication"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "description_type",
+              "text",
+              "type"
+            ],
+            "properties": {
+              "description_type": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "self_id"
+                ]
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RemoteIdSystem"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "system"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "id_type",
+              "operator_id",
+              "type"
+            ],
+            "properties": {
+              "id_type": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "operator_id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "operator_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_type",
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "string"
+              },
+              "message_type": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "unknown"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "RemoteIdParams": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "$ref": "#/components/schemas/RemoteIdLink"
+          }
+        }
+      },
+      "RemoteIdPhy": {
+        "type": "string",
+        "enum": [
+          "le1m",
+          "le_coded_s8",
+          "le_coded_s2",
+          "dsss1m",
+          "dsss2m",
+          "cck5m5",
+          "cck11m",
+          "ofdm"
+        ]
+      },
+      "RemoteIdSystem": {
+        "type": "object",
+        "required": [
+          "operator_location_type",
+          "area_count",
+          "area_radius_m"
+        ],
+        "properties": {
+          "area_ceiling_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "area_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "area_floor_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "area_radius_m": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "classification": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EuClassification"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operator_altitude_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "operator_lat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "operator_location_type": {
+            "$ref": "#/components/schemas/OperatorLocationType"
+          },
+          "operator_lon": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "timestamp": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "RemoteIdTransport": {
+        "type": "string",
+        "enum": [
+          "bluetooth_legacy",
+          "bluetooth_extended",
+          "wifi_beacon",
+          "wifi_beacon_french",
+          "wifi_beacon_dji",
+          "wifi_nan"
         ]
       },
       "RemoteState": {
@@ -30598,6 +31179,50 @@
         "enum": [
           "auto",
           "manual"
+        ]
+      },
+      "UaStatus": {
+        "type": "string",
+        "enum": [
+          "undeclared",
+          "ground",
+          "airborne",
+          "emergency",
+          "system_failure",
+          "reserved"
+        ]
+      },
+      "UaType": {
+        "type": "string",
+        "enum": [
+          "none",
+          "aeroplane",
+          "rotorcraft",
+          "gyroplane",
+          "hybrid_lift",
+          "ornithopter",
+          "glider",
+          "kite",
+          "free_balloon",
+          "captive_balloon",
+          "airship",
+          "parachute",
+          "rocket",
+          "tethered_aircraft",
+          "ground_obstacle",
+          "other"
+        ]
+      },
+      "UasIdType": {
+        "type": "string",
+        "enum": [
+          "none",
+          "serial_number",
+          "caa_registration",
+          "utm_assigned",
+          "specific_session",
+          "french_identifier",
+          "reserved"
         ]
       },
       "UlaSide": {

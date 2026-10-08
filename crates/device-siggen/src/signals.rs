@@ -301,6 +301,18 @@ pub static SIGNALS: &[Signal] = &[
         render: lorawan,
     },
     Signal {
+        id: "remote_id_bluetooth",
+        label: "Drone Remote ID · Bluetooth",
+        rate_hz: 4_000_000.0,
+        render: remote_id_bluetooth,
+    },
+    Signal {
+        id: "remote_id_wifi",
+        label: "Drone Remote ID · Wi-Fi",
+        rate_hz: 20_000_000.0,
+        render: remote_id_wifi,
+    },
+    Signal {
         id: "gnss",
         label: "GPS L1 C/A",
         rate_hz: 2_048_000.0,
@@ -782,6 +794,14 @@ fn meshcore() -> Vec<Complex<f32>> {
 
 fn lorawan() -> Vec<Complex<f32>> {
     synth::lora::lorawan_scene(250_000.0)
+}
+
+fn remote_id_bluetooth() -> Vec<Complex<f32>> {
+    synth::remote_id::bluetooth_scene(4_000_000.0)
+}
+
+fn remote_id_wifi() -> Vec<Complex<f32>> {
+    synth::remote_id::wifi_scene().unwrap_or_default()
 }
 
 fn dect() -> Vec<Complex<f32>> {

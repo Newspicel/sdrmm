@@ -1,0 +1,45 @@
+{
+  "label": "ble le 1m: gfsk bt0.5 h0.5 at 4 sps, preamble + access address sync, laurent matched filter, decision-fed carrier, whitening and crc-24, 37-byte payload, a missed packet counts every bit, uncoded BER, seed 0xb1e1",
+  "points": [
+    {
+      "ebn0_db": 10.0,
+      "errors": 2072,
+      "trials": 96792
+    },
+    {
+      "ebn0_db": 11.0,
+      "errors": 2072,
+      "trials": 682280
+    },
+    {
+      "ebn0_db": 12.0,
+      "errors": 2072,
+      "trials": 1990896
+    },
+    {
+      "ebn0_db": 13.0,
+      "errors": 592,
+      "trials": 3000256
+    },
+    {
+      "ebn0_db": 14.0,
+      "errors": 296,
+      "trials": 3000256
+    },
+    {
+      "ebn0_db": 15.0,
+      "errors": 0,
+      "trials": 3000256
+    },
+    {
+      "ebn0_db": 16.0,
+      "errors": 0,
+      "trials": 3000256
+    },
+    {
+      "ebn0_db": 17.0,
+      "errors": 0,
+      "trials": 3000256
+    }
+  ]
+}

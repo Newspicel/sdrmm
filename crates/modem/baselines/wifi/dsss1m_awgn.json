@@ -1,0 +1,35 @@
+{
+  "label": "802.11b dsss 1 mbit/s at 20 MS/s: barker correlation detector, differential dbpsk, long preamble, plcp crc, 100-byte payload with fcs, a missed frame counts every bit, uncoded BER, seed 0x1f11",
+  "points": [
+    {
+      "ebn0_db": 11.0,
+      "errors": 2400,
+      "trials": 4000
+    },
+    {
+      "ebn0_db": 12.0,
+      "errors": 2400,
+      "trials": 36000
+    },
+    {
+      "ebn0_db": 13.0,
+      "errors": 2400,
+      "trials": 61600
+    },
+    {
+      "ebn0_db": 14.0,
+      "errors": 1600,
+      "trials": 3000000
+    },
+    {
+      "ebn0_db": 15.0,
+      "errors": 0,
+      "trials": 3000000
+    },
+    {
+      "ebn0_db": 16.0,
+      "errors": 0,
+      "trials": 3000000
+    }
+  ]
+}

@@ -30,6 +30,7 @@ pub mod processor;
 pub mod propagation;
 pub mod radar;
 pub mod remote;
+pub mod remote_id;
 pub mod rest;
 pub mod satellite;
 pub mod scan;
@@ -216,6 +217,11 @@ pub use radar::{
 pub use remote::{
     DEFAULT_REMOTE_APP, MAX_HEALTH_LABEL_CHARS, MAX_HEALTH_RADIOS, RadioHealth, RemoteState,
     RemoteStatus, SiteHealth,
+};
+pub use remote_id::{
+    AuthType, EuCategory, EuClassification, HeightReference, OperatorLocationType, RemoteIdFrame,
+    RemoteIdLink, RemoteIdLocation, RemoteIdMessage, RemoteIdParams, RemoteIdPhy, RemoteIdSystem,
+    RemoteIdTransport, UaStatus, UaType, UasIdType,
 };
 pub use rest::{
     AnnotationError, ApiError, ApplyTemplateRequest, AudioRecordingInfo, AudioRecordingsResponse,

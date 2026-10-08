@@ -8,7 +8,14 @@ import type { SurveyCell } from "../../lib/types";
 
 export type Counts = Record<MapKind, number>;
 
-export const ZERO_COUNTS: Counts = { adsb: 0, ais: 0, aprs: 0, radiosonde: 0, lora: 0 };
+export const ZERO_COUNTS: Counts = {
+  adsb: 0,
+  ais: 0,
+  aprs: 0,
+  radiosonde: 0,
+  lora: 0,
+  remote_id: 0,
+};
 
 export interface MapInputs {
   kinds: readonly MapKind[];

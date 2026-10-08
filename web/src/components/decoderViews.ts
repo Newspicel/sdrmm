@@ -1,5 +1,17 @@
 import type { StationOf } from "../lib/decoded";
 import { loraMessage, loraName, loraProtocol, loraStation } from "../lib/lora";
+import {
+  distanceM,
+  REMOTE_ID_TRANSPORT_LABELS,
+  remoteIdLocation,
+  remoteIdOperator,
+  remoteIdPilot,
+  remoteIdPosition,
+  remoteIdStation,
+  remoteIdUaType,
+  UA_TYPE_LABELS,
+  withRemoteIdState,
+} from "../lib/remoteId";
 import type {
   AdsbMessage,
   AisMessage,
@@ -172,6 +184,56 @@ export function radiosondeLog(
   limit: number,
 ): DecodedRecordOf<"radiosonde">[] {
   return records.filter((record) => record.event.data.serial === serial).slice(0, limit);
+}
+
+export interface Drone {
+  key: string;
+  kind: string;
+  heightM: number | null;
+  speedMps: number | null;
+  pilotM: number | null;
+  operator: string | null;
+  links: string[];
+  levelDbfs: number;
+  frames: number;
+  at: string;
+}
+
+export function remoteIdDrones(records: readonly DecodedRecordOf<"remote_id">[]): Drone[] {
+  const states = new Map<
+    string,
+    { frame: DecodedRecordOf<"remote_id">["event"]["data"]; drone: Drone }
+  >();
+  for (const record of chronological(records)) {
+    const next = record.event.data;
+    const key = remoteIdStation(next);
+    const previous = states.get(key);
+    const frame = previous ? withRemoteIdState(previous.frame, next) : next;
+    const location = remoteIdLocation(frame);
+    const drone = remoteIdPosition(frame);
+    const pilot = remoteIdPilot(frame);
+    const uaType = remoteIdUaType(frame);
+    const link = REMOTE_ID_TRANSPORT_LABELS[next.transport];
+    const links = previous?.drone.links ?? [];
+    states.set(key, {
+      frame,
+      drone: {
+        key,
+        kind: uaType === null ? "-" : UA_TYPE_LABELS[uaType],
+        heightM: location?.height_m ?? null,
+        speedMps: location?.speed_mps ?? null,
+        pilotM: drone !== null && pilot !== null ? distanceM(drone, pilot) : null,
+        operator: remoteIdOperator(frame),
+        links: links.includes(link) ? links : [...links, link],
+        levelDbfs: next.level_dbfs,
+        frames: (previous?.drone.frames ?? 0) + 1,
+        at: record.at,
+      },
+    });
+  }
+  return [...states.values()]
+    .map((state) => state.drone)
+    .toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
 
 export interface LoraStation {

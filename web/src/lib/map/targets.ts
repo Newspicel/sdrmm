@@ -30,6 +30,7 @@ const LABEL_OFFSET_EM: Record<MapKind, number> = {
   aprs: 0.7,
   radiosonde: 0.7,
   lora: 0.7,
+  remote_id: 0.7,
 };
 
 export const LAYER_KIND: ReadonlyMap<string, MapKind> = new Map(
@@ -282,4 +283,5 @@ const KIND_ICON: Record<MapKind, (color: string, edge: string) => ImageData | nu
   aprs: arrowImage,
   radiosonde: arrowImage,
   lora: arrowImage,
+  remote_id: arrowImage,
 };

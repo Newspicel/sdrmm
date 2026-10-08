@@ -266,6 +266,14 @@ impl ViterbiK7 {
     }
 
     #[must_use]
+    pub fn with_capacity(code: ConvCode, steps: usize) -> Self {
+        Self {
+            decisions: Vec::with_capacity(steps),
+            ..Self::new(code)
+        }
+    }
+
+    #[must_use]
     pub const fn outputs(&self) -> usize {
         self.code.outputs()
     }

@@ -356,6 +356,16 @@ describe("eventDetail", () => {
         data: { sonde: "rs41", serial: "S1234567", errors_corrected: 0 },
       },
       lora: lora(null),
+      remote_id: {
+        kind: "remote_id",
+        data: {
+          transport: "bluetooth_legacy",
+          phy: "le1m",
+          address: "C2:11:22:33:44:55",
+          level_dbfs: -40,
+          messages: [],
+        },
+      },
     };
     for (const kind of DECODER_KINDS) {
       expect(() => eventDetail(sample[kind]), kind).not.toThrow();
