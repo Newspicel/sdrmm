@@ -11,62 +11,9 @@ use sdrmm_wire::{
 use crate::{
     gps::GpsHub,
     rest::{lock_gate, reconcile_recordings},
-    store::{Store, StoreError},
+    store::Store,
     workspace::{bind, bind_devices},
 };
-
-const SWITCH_ATTEMPTS: usize = 3;
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum SwitchError {
-    #[error("no workspace is open")]
-    NoWorkspace,
-    #[error("no recorder `{0}` in the open workspace")]
-    NoRecorder(String),
-    #[error(transparent)]
-    Store(#[from] StoreError),
-}
-
-fn switch_of(body: &mut NodeBody) -> Option<&mut bool> {
-    match body {
-        NodeBody::Recorder(recorder) | NodeBody::BasebandRecorder(recorder) => {
-            Some(&mut recorder.recording)
-        }
-        NodeBody::AudioRecorder(recorder) => Some(&mut recorder.recording),
-        _ => None,
-    }
-}
-
-pub(crate) fn switch(store: &Store, node: &str, recording: bool) -> Result<(), SwitchError> {
-    let mut attempt = 0;
-    loop {
-        let mut workspace = store.active_workspace()?.ok_or(SwitchError::NoWorkspace)?;
-        let recorder = workspace
-            .snapshot
-            .graph
-            .nodes
-            .iter_mut()
-            .filter(|found| found.id == node)
-            .find_map(|found| switch_of(&mut found.body))
-            .ok_or_else(|| SwitchError::NoRecorder(node.to_owned()))?;
-        if *recorder == recording {
-            return Ok(());
-        }
-        *recorder = recording;
-        let update = sdrmm_wire::UpdateWorkspaceRequest {
-            revision: workspace.info.revision,
-            name: None,
-            snapshot: Some(workspace.snapshot),
-        };
-        match store.update_workspace(workspace.info.id, &update) {
-            Ok(_) => return Ok(()),
-            Err(StoreError::WorkspaceConflict { .. }) if attempt + 1 < SWITCH_ATTEMPTS => {
-                attempt += 1;
-            }
-            Err(error) => return Err(error.into()),
-        }
-    }
-}
 
 pub(crate) struct Hooks {
     pub(crate) store: Arc<Store>,
@@ -513,35 +460,6 @@ mod tests {
                 ("b".to_owned(), Vec::new()),
             ]
         );
-    }
-
-    #[test]
-    fn switching_any_recorder_is_stored_in_the_workspace() {
-        let store = Store::open(None).expect("store");
-        let mut snapshot = sdrmm_wire::WorkspaceSnapshot::empty();
-        snapshot.graph.nodes.extend([
-            node("iq", NodeBody::Recorder(on(false))),
-            node("base", NodeBody::BasebandRecorder(on(false))),
-            node("audio", NodeBody::AudioRecorder(audio_on(false))),
-        ]);
-        let id = store.create_workspace("w", &snapshot).expect("workspace");
-        store.activate_workspace(id).expect("activate");
-        for recorder in ["iq", "base", "audio"] {
-            switch(&store, recorder, true).expect("switch on");
-        }
-        let stored = store.workspace(id).expect("read");
-        assert!(
-            stored
-                .snapshot
-                .graph
-                .nodes
-                .iter()
-                .all(|found| recording(&found.body))
-        );
-        assert!(matches!(
-            switch(&store, "nope", true),
-            Err(SwitchError::NoRecorder(_))
-        ));
     }
 
     fn patch(recording: bool) -> PatchGraph {

@@ -100,8 +100,8 @@ async fn mcp_is_mounted_and_shares_the_token_gate() {
         .as_array()
         .unwrap_or_else(|| panic!("no tools in {json}"));
     assert!(
-        tools.iter().any(|t| t["name"] == "get_state"),
-        "get_state missing from the tool list"
+        tools.iter().any(|t| t["name"] == "get_workspace"),
+        "get_workspace missing from the tool list"
     );
 }
 
@@ -116,23 +116,30 @@ async fn mcp_serves_the_tool_bench_beside_the_receiver() {
     assert!(tools.iter().any(|tool| tool["id"] == "antenna"));
     assert!(tools.iter().any(|tool| tool["id"] == "nanovna"));
 
-    let found = mcp_call(&app, "nanovna_list_devices", serde_json::json!({})).await;
-    let result = &found["result"]["structuredContent"];
+    let found = mcp_call(
+        &app,
+        "run_tool",
+        serde_json::json!({ "tool": "nanovna", "request": { "action": "list_devices" } }),
+    )
+    .await;
+    let result = &found["result"]["structuredContent"]["result"];
     assert_eq!(result["kind"], "devices", "{found}");
     assert_eq!(result["devices"][0]["port"], "fixture-port");
     assert_eq!(result["ignored_ports"][0], "fixture-gnss");
 
     let cut = mcp_call(
         &app,
-        "design_antenna",
+        "run_tool",
         serde_json::json!({
-            "frequency_hz": 145_500_000.0,
-            "design": "yagi",
-            "directors": 3,
+            "tool": "antenna",
+            "request": {
+                "frequency_hz": 145_500_000.0,
+                "design": { "type": "yagi", "settings": { "directors": 3 } },
+            },
         }),
     )
     .await;
-    let report = &cut["result"]["structuredContent"];
+    let report = &cut["result"]["structuredContent"]["result"];
     assert_eq!(report["design"]["type"], "yagi", "{cut}");
     assert_eq!(report["design"]["settings"]["directors"], 3);
     let parts = report["parts"]
@@ -141,66 +148,65 @@ async fn mcp_serves_the_tool_bench_beside_the_receiver() {
     assert!(parts.iter().any(|part| part["name"] == "Director 3"));
 }
 
+fn refusal(answer: &serde_json::Value) -> &str {
+    answer["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("not refused: {answer}"))
+}
+
 #[tokio::test]
 async fn mcp_tool_bench_refusals_name_what_was_wrong() {
     let app = test_router();
+    let antenna = |design: serde_json::Value, frequency_hz: f64| {
+        serde_json::json!({
+            "tool": "antenna",
+            "request": { "frequency_hz": frequency_hz, "design": design },
+        })
+    };
 
     let unknown = mcp_call(
         &app,
-        "design_antenna",
-        serde_json::json!({ "frequency_hz": 145_500_000.0, "design": "helix" }),
+        "run_tool",
+        antenna(serde_json::json!({ "type": "helix" }), 145_500_000.0),
     )
     .await;
-    assert!(
-        unknown["error"]["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("helix")),
-        "{unknown}"
-    );
+    assert!(refusal(&unknown).contains("helix"), "{unknown}");
 
     let refused = mcp_call(
         &app,
-        "design_antenna",
-        serde_json::json!({ "frequency_hz": 0.0, "design": "dipole" }),
+        "run_tool",
+        antenna(serde_json::json!({ "type": "dipole" }), 0.0),
     )
     .await;
-    assert!(
-        refused["error"]["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("frequency_hz")),
-        "{refused}"
-    );
+    assert!(refusal(&refused).contains("frequency_hz"), "{refused}");
 
     let too_many = mcp_call(
         &app,
-        "nanovna_sweep",
+        "run_tool",
         serde_json::json!({
-            "port": "fixture-port",
-            "start_hz": 1_000_000,
-            "stop_hz": 30_000_000,
-            "points": 10_001,
+            "tool": "nanovna",
+            "request": {
+                "action": "sweep",
+                "port": "fixture-port",
+                "start_hz": 1_000_000,
+                "stop_hz": 30_000_000,
+                "points": 10_001,
+            },
         }),
     )
     .await;
-    assert!(
-        too_many["error"]["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("401 points")),
-        "{too_many}"
-    );
+    assert!(refusal(&too_many).contains("401 points"), "{too_many}");
 
     let no_slot = mcp_call(
         &app,
-        "nanovna_calibrate",
-        serde_json::json!({ "port": "fixture-port", "step": "save" }),
+        "run_tool",
+        serde_json::json!({
+            "tool": "nanovna",
+            "request": { "action": "calibrate", "port": "fixture-port", "step": "save" },
+        }),
     )
     .await;
-    assert!(
-        no_slot["error"]["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("slot")),
-        "{no_slot}"
-    );
+    assert!(refusal(&no_slot).contains("slot"), "{no_slot}");
 }
 
 #[tokio::test]

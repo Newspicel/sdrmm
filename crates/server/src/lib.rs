@@ -264,11 +264,7 @@ fn app(state: &AppState, role: auth::ListenerRole, tls: bool) -> Router {
         .route("/api/ws", axum::routing::get(ws::handler));
     if role == auth::ListenerRole::Main {
         routes = routes
-            .merge(mcp::router(
-                state.engine.clone(),
-                state.store.clone(),
-                state.tools.clone(),
-            ))
+            .merge(mcp::router(state))
             .route("/api/openapi.json", openapi_route(&api))
             .route("/api/docs", axum::routing::get(assets::api_docs))
             .route("/api/docs/", axum::routing::get(assets::api_docs));

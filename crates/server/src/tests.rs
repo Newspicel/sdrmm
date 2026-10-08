@@ -26,6 +26,7 @@ mod decoderlog;
 mod devices;
 mod diagnostics;
 mod fusion;
+mod mcp_canvas;
 mod openapi;
 mod phones;
 mod presets;

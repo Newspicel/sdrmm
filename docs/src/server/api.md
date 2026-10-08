@@ -48,6 +48,7 @@ OpenAPI schema; the web client in `web/src` is the reference implementation.
 ## MCP
 
 Point an MCP client at `http://<server>:8080/mcp`, with the bearer header if a token is set. Its
-tools open and tune radios, add and remove channels, scan, switch recorders, read the decoder log,
-grab spectrum snapshots, design antennas, and drive a NanoVNA from the
-[tools](../user-guide/tools.md).
+tools edit the open canvas the way a user does: add, change and remove nodes, draw and cut wires,
+tune radios, set channels, scan, and undo. Every change shows up on the canvas. It also reads the
+decoder log and spectrum, and runs the [tools](../user-guide/tools.md). Tool arguments use the
+same types as the OpenAPI schema.

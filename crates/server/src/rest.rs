@@ -64,6 +64,7 @@ use capture::*;
 use cps::*;
 use decoderlog::*;
 use devices::*;
+pub(crate) use devices::{patch_channel_live, patch_device_live};
 use info::*;
 use media::*;
 pub(crate) use media::{call_audio_path, captured_image_path};
@@ -71,8 +72,12 @@ use presets::*;
 use recordings::*;
 use remote::*;
 use satellites::*;
+pub(crate) use scanning::scan;
 use scanning::*;
 use workspaces::*;
+pub(crate) use workspaces::{
+    activate, bring_up_active, check_channel_node, reconcile_graph, save_channel, step_history,
+};
 
 use crate::{
     AppState, calibration,
@@ -98,15 +103,15 @@ impl AppError {
         }
     }
 
-    fn bad_request(message: impl Into<String>) -> Self {
+    pub(crate) fn bad_request(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, ErrorCode::Request, message.into())
     }
 
-    fn not_found(message: String) -> Self {
+    pub(crate) fn not_found(message: String) -> Self {
         Self::new(StatusCode::NOT_FOUND, ErrorCode::NotFound, message)
     }
 
-    fn internal(message: String) -> Self {
+    pub(crate) fn internal(message: String) -> Self {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             ErrorCode::Internal,
@@ -149,6 +154,17 @@ impl AppError {
     fn with_detail(mut self, detail: String) -> Self {
         self.body.detail = Some(detail);
         self
+    }
+
+    pub(crate) fn is_client_error(&self) -> bool {
+        self.status.is_client_error()
+    }
+
+    pub(crate) fn message(&self) -> String {
+        match &self.body.detail {
+            Some(detail) => format!("{}: {detail}", self.body.error),
+            None => self.body.error.clone(),
+        }
     }
 }
 

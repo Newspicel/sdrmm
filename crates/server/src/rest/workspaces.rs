@@ -586,7 +586,7 @@ pub(super) async fn activate_workspace(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub(super) fn activate(state: &AppState, id: i64) -> Result<(), AppError> {
+pub(crate) fn activate(state: &AppState, id: i64) -> Result<(), AppError> {
     if let Err(err) = workspace::save_active(state) {
         tracing::warn!(%err, "could not save the outgoing workspace before the switch");
     }
@@ -645,7 +645,7 @@ pub(super) async fn redo_workspace(
     step_history(state, id, Store::redo_workspace).await
 }
 
-pub(super) async fn step_history(
+pub(crate) async fn step_history(
     state: AppState,
     id: i64,
     step: fn(&Store, i64) -> Result<SteppedWorkspace, StoreError>,
@@ -714,13 +714,13 @@ pub(super) async fn apply_workspace(
     Ok(Json(report))
 }
 
-pub(super) fn bring_up_active(state: &AppState, id: i64) -> Result<PatchApplyReport, AppError> {
+pub(crate) fn bring_up_active(state: &AppState, id: i64) -> Result<PatchApplyReport, AppError> {
     let workspace = state.store.workspace(id)?;
     let saved = state.store.workspace_state(id)?;
     bring_up(state, id, &workspace.snapshot, &saved)
 }
 
-pub(super) async fn reconcile_graph(state: AppState) -> Result<(), AppError> {
+pub(crate) async fn reconcile_graph(state: AppState) -> Result<(), AppError> {
     tokio::task::spawn_blocking(move || {
         state.gps.reconcile(&state);
         state.satellites.reconcile(&state);
@@ -752,25 +752,28 @@ pub(super) async fn put_workspace_channel(
     Path((id, node)): Path<(i64, String)>,
     Json(settings): Json<ChannelSettings>,
 ) -> Result<StatusCode, AppError> {
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let _serialized = state
-            .apply_gate
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let graph = state.store.workspace(id)?.snapshot.graph;
-        check_channel_node(&graph, &node, &settings)?;
-        let mut saved = state.store.workspace_state(id)?;
-        saved.put_channel(&node, settings);
-        state.store.put_workspace_state(id, &saved)?;
-        Ok(())
-    })
-    .await??;
+    tokio::task::spawn_blocking(move || save_channel(&state, id, &node, settings)).await??;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) fn save_channel(
+    state: &AppState,
+    id: i64,
+    node: &str,
+    settings: ChannelSettings,
+) -> Result<(), AppError> {
+    let _serialized = lock_gate(&state.apply_gate);
+    let graph = state.store.workspace(id)?.snapshot.graph;
+    check_channel_node(&graph, node, &settings)?;
+    let mut saved = state.store.workspace_state(id)?;
+    saved.put_channel(node, settings);
+    state.store.put_workspace_state(id, &saved)?;
+    Ok(())
 }
 
 /// Refuses settings that do not belong to the node they are addressed to. A decoder holds its own
 /// settings, so whether a radio is wired into it yet is none of this check's business.
-fn check_channel_node(
+pub(crate) fn check_channel_node(
     graph: &PatchGraph,
     node: &str,
     settings: &ChannelSettings,

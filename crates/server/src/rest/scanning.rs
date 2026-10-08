@@ -29,26 +29,32 @@ pub(super) async fn scan_channel(
     Json(req): Json<ScanRequest>,
 ) -> Result<Json<ScannerStatus>, AppError> {
     let engine = state.engine.clone();
-    let status = tokio::task::spawn_blocking(move || -> Result<ScannerStatus, AppError> {
-        match req.action {
-            ScanAction::Start => {
-                let settings = req.settings.ok_or_else(|| {
-                    AppError::bad_request("starting a scan needs `settings`".to_string())
-                })?;
-                Ok(engine.start_scan(
-                    ds,
-                    ScanSettings {
-                        channel: ch,
-                        ..settings
-                    },
-                )?)
-            }
-            ScanAction::Stop => Ok(engine.stop_scan(ds, ch)?),
-            ScanAction::Skip => Ok(engine.skip_scan(ds, ch)?),
-        }
-    })
-    .await??;
+    let status = tokio::task::spawn_blocking(move || scan(&engine, ds, ch, req)).await??;
     Ok(Json(status))
+}
+
+pub(crate) fn scan(
+    engine: &std::sync::Arc<sdrmm_engine::Engine>,
+    ds: u32,
+    ch: u32,
+    req: ScanRequest,
+) -> Result<ScannerStatus, AppError> {
+    match req.action {
+        ScanAction::Start => {
+            let settings = req.settings.ok_or_else(|| {
+                AppError::bad_request("starting a scan needs `settings`".to_string())
+            })?;
+            Ok(engine.start_scan(
+                ds,
+                ScanSettings {
+                    channel: ch,
+                    ..settings
+                },
+            )?)
+        }
+        ScanAction::Stop => Ok(engine.stop_scan(ds, ch)?),
+        ScanAction::Skip => Ok(engine.skip_scan(ds, ch)?),
+    }
 }
 
 #[utoipa::path(

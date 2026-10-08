@@ -112,25 +112,27 @@ pub(super) async fn patch_device(
     Path(ds): Path<u32>,
     Json(settings): Json<DeviceSettings>,
 ) -> Result<StatusCode, AppError> {
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let _serialized = state
-            .apply_gate
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let edit = workspace::begin_edit(&state, ds, None);
-        let calibrates = settings.ppm.is_some() || settings.offset_hz.is_some();
-        state.engine.patch_device(ds, settings)?;
-        if calibrates {
-            calibration::remember_live(&state.engine, &state.store, ds);
-        }
-        if let Some(edit) = edit {
-            workspace::finish_edit(&state, edit);
-        }
-        crate::placement::settle_active(&state);
-        Ok(())
-    })
-    .await??;
+    tokio::task::spawn_blocking(move || patch_device_live(&state, ds, settings)).await??;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) fn patch_device_live(
+    state: &AppState,
+    ds: u32,
+    settings: DeviceSettings,
+) -> Result<(), AppError> {
+    let _serialized = lock_gate(&state.apply_gate);
+    let edit = workspace::begin_edit(state, ds, None);
+    let calibrates = settings.ppm.is_some() || settings.offset_hz.is_some();
+    state.engine.patch_device(ds, settings)?;
+    if calibrates {
+        calibration::remember_live(&state.engine, &state.store, ds);
+    }
+    if let Some(edit) = edit {
+        workspace::finish_edit(state, edit);
+    }
+    crate::placement::settle_active(state);
+    Ok(())
 }
 
 #[utoipa::path(
@@ -174,21 +176,24 @@ pub(super) async fn patch_channel(
     Path((ds, ch)): Path<(u32, u32)>,
     Json(settings): Json<ChannelSettings>,
 ) -> Result<StatusCode, AppError> {
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let _serialized = state
-            .apply_gate
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let edit = workspace::begin_edit(&state, ds, Some(ch));
-        state.engine.patch_channel(ds, ch, settings)?;
-        if let Some(edit) = edit {
-            workspace::finish_edit(&state, edit);
-        }
-        crate::placement::settle_active(&state);
-        Ok(())
-    })
-    .await??;
+    tokio::task::spawn_blocking(move || patch_channel_live(&state, ds, ch, settings)).await??;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) fn patch_channel_live(
+    state: &AppState,
+    ds: u32,
+    ch: u32,
+    settings: ChannelSettings,
+) -> Result<(), AppError> {
+    let _serialized = lock_gate(&state.apply_gate);
+    let edit = workspace::begin_edit(state, ds, Some(ch));
+    state.engine.patch_channel(ds, ch, settings)?;
+    if let Some(edit) = edit {
+        workspace::finish_edit(state, edit);
+    }
+    crate::placement::settle_active(state);
+    Ok(())
 }
 
 #[utoipa::path(
