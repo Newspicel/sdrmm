@@ -2499,6 +2499,23 @@ export interface components {
         };
         /** @enum {string} */
         BandLayerKind: "world" | "regulatory" | "amateur" | "application";
+        BandMiss: {
+            /** Format: double */
+            needs_hz: number;
+            /** @enum {string} */
+            reason: "too_wide";
+            /** Format: double */
+            top_rate_hz?: number | null;
+        } | {
+            /** @enum {string} */
+            reason: "off_tuner";
+        } | {
+            /** @enum {string} */
+            reason: "crowded";
+        } | {
+            /** @enum {string} */
+            reason: "tuned_away";
+        };
         BandPlan: {
             allocations: components["schemas"]["BandAllocation"][];
             lanes: components["schemas"]["BandLane"][];
@@ -2959,11 +2976,7 @@ export interface components {
              *     rather than the next one of the same kind.
              */
             node?: string | null;
-            /**
-             * @description The radio carrying this decoder is tuned somewhere it cannot hear the decoder's frequency,
-             *     so the channel is alive and set up but silent until the radio comes back over it.
-             */
-            out_of_band?: boolean;
+            out_of_band?: components["schemas"]["BandMiss"] | null;
             settings: components["schemas"]["ChannelSettings"];
             /** Format: int32 */
             stream?: number;

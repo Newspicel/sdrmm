@@ -20,6 +20,7 @@ export type Range = components["schemas"]["Range"];
 export type ExtraSetting = components["schemas"]["ExtraSetting"];
 export type DevicesResponse = components["schemas"]["DevicesResponse"];
 export type ChannelInfo = components["schemas"]["ChannelInfo"];
+export type BandMiss = components["schemas"]["BandMiss"];
 export type ChannelLevel = components["schemas"]["ChannelLevel"];
 export type OccupancyReport = components["schemas"]["OccupancyReport"];
 export type OccupancyBucket = components["schemas"]["OccupancyBucket"];

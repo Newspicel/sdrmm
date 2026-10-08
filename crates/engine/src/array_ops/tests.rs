@@ -251,7 +251,7 @@ fn snapshot_lists_virtual_lanes_and_held_lanes() {
         .find(|info| info.id == channel)
         .expect("the channel is listed");
     assert_eq!(heard.stream, beam);
-    assert!(!heard.out_of_band);
+    assert!(heard.out_of_band.is_none());
     assert!(matches!(
         engine.add_channel(ds, 9, nfm_at(433.92e6)),
         Err(EngineError::StreamOutOfRange {

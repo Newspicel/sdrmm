@@ -845,7 +845,7 @@ mod tests {
             stream: 0,
             node: node.map(str::to_owned),
             settings: ChannelSettings::default_for("dmr").expect("dmr"),
-            out_of_band: false,
+            out_of_band: None,
             audio_recordings: Vec::new(),
             baseband_recording: None,
             network_export: None,

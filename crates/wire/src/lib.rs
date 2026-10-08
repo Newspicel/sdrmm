@@ -66,9 +66,9 @@ pub use bandplan::{
 };
 pub use channel::{
     AcarsParams, AdsbParams, AeroChannel, AisChannel, AisParams, AmParams, AprsMode, AprsParams,
-    AtvColor, AtvModulation, AtvParams, AtvStandard, ChannelDescriptor, ChannelInfo, ChannelParams,
-    ChannelSettings, CwSkimmerParams, DECT_CARRIER_SPACING_HZ, DEFAULT_FREQUENCY_HZ, DabMode,
-    DabParams, DabTransmissionMode, DatvCodeRate, DatvParams, DatvRollOff, DatvStandard,
+    AtvColor, AtvModulation, AtvParams, AtvStandard, BandMiss, ChannelDescriptor, ChannelInfo,
+    ChannelParams, ChannelSettings, CwSkimmerParams, DECT_CARRIER_SPACING_HZ, DEFAULT_FREQUENCY_HZ,
+    DabMode, DabParams, DabTransmissionMode, DatvCodeRate, DatvParams, DatvRollOff, DatvStandard,
     DecoderFamily, DectBand, DectParams, DectSides, DectSpan, DmrParams, DmrSlots, DpmrParams,
     DrmMode, DrmParams, DscParams, DstarParams, DvbtBandwidth, DvbtParams, DvbtStandard, EotParams,
     ErmesParams, FlexParams, FreeDvMode, FreeDvParams, GnssParams, HfdlParams, IdentParams,

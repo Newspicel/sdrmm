@@ -120,7 +120,7 @@ async fn scan_finds_a_carrier_and_holds() {
         "the decoder stays where the scan left it"
     );
     assert!(
-        !after.channels[0].out_of_band,
+        after.channels[0].out_of_band.is_none(),
         "the radio follows the decoder once the scan lets go"
     );
     engine
@@ -226,7 +226,7 @@ async fn the_decoder_follows_the_sweep_and_stays_where_the_scan_stops() {
         let decoder_hz = set.channels[0].settings.frequency_hz;
         if targets.contains(&decoder_hz) {
             assert!(
-                !set.channels[0].out_of_band,
+                set.channels[0].out_of_band.is_none(),
                 "the decoder follows the scan into the radio's window"
             );
             break;

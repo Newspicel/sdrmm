@@ -1,7 +1,7 @@
-use sdrmm_wire::StreamSettings;
+use sdrmm_wire::{BandMiss, StreamSettings};
 
 use super::*;
-use crate::planning::plan_center;
+use crate::planning::{band_miss, plan_center};
 
 fn tuned(center_hz: f64) -> DeviceSettings {
     DeviceSettings {
@@ -308,9 +308,9 @@ async fn tuning_one_stream_by_hand_leaves_the_other_following_its_decoders() {
         Some(TEST_CENTER_HZ - 500_000.0),
         "the stream tuned by hand moved"
     );
-    assert!(set.channels[1].out_of_band);
+    assert_eq!(set.channels[1].out_of_band, Some(BandMiss::TunedAway));
     assert!(
-        !set.channels[0].out_of_band,
+        set.channels[0].out_of_band.is_none(),
         "the stream left in auto did not follow its decoder"
     );
     engine.remove_device_set(ds).unwrap();
@@ -326,7 +326,7 @@ async fn a_decoder_added_off_the_window_pulls_an_auto_radio_over_to_it() {
 
     let set = &engine.snapshot().device_sets[0];
     assert!(
-        !set.channels[0].out_of_band,
+        set.channels[0].out_of_band.is_none(),
         "auto tuning left the decoder outside the window"
     );
     assert_eq!(
@@ -356,9 +356,13 @@ async fn a_decoder_beyond_the_window_is_left_silent_rather_than_costing_the_othe
         engine.add_channel(ds, 0, nfm_settings(offset_hz)).unwrap();
     }
     let set = &engine.snapshot().device_sets[0];
-    let silent = set.channels.iter().filter(|c| c.out_of_band).count();
+    let silent = set
+        .channels
+        .iter()
+        .filter(|c| c.out_of_band.is_some())
+        .count();
     assert_eq!(silent, 1, "the radio gave up a decoder it could have kept");
-    assert!(set.channels[2].out_of_band);
+    assert_eq!(set.channels[2].out_of_band, Some(BandMiss::Crowded));
     engine.remove_device_set(ds).unwrap();
 }
 
@@ -431,4 +435,42 @@ async fn switching_one_lane_to_auto_leaves_the_others_alone() {
     let mut expected = vec![Some(Tuning::Manual); 5];
     expected[2] = Some(Tuning::Auto);
     assert_eq!(tunings, expected);
+}
+
+#[test]
+fn a_decoder_wider_than_the_window_names_the_width_it_needs() {
+    let capabilities = Capabilities {
+        sample_rates: vec![250_000.0, 2_400_000.0],
+        ..tuner_caps()
+    };
+    let wfm = ChannelSettings {
+        frequency_hz: TEST_CENTER_HZ,
+        ..ChannelSettings::default_for("wfm").expect("wfm")
+    };
+    let (low, high) = sdrmm_channels::occupied_band(&wfm.params);
+    assert_eq!(
+        band_miss(&capabilities, 100_000.0, true, &wfm),
+        BandMiss::TooWide {
+            needs_hz: high - low,
+            top_rate_hz: Some(2_400_000.0),
+        }
+    );
+}
+
+#[test]
+fn a_decoder_below_the_tuner_is_named_off_the_tuner() {
+    let below = nfm_settings(10e6 - TEST_CENTER_HZ);
+    assert_eq!(
+        band_miss(&tuner_caps(), 2_400_000.0, true, &below),
+        BandMiss::OffTuner
+    );
+}
+
+#[test]
+fn a_decoder_just_past_the_tuner_edge_is_still_in_reach() {
+    let edge = nfm_settings(24e6 - 500_000.0 - TEST_CENTER_HZ);
+    assert_eq!(
+        band_miss(&tuner_caps(), 2_400_000.0, false, &edge),
+        BandMiss::TunedAway
+    );
 }

@@ -41,11 +41,12 @@ async fn validate_honors_configured_bandwidth_and_sideband() {
 
     let set = &engine.snapshot().device_sets[0];
     let heard = |id: u32| {
-        !set.channels
+        set.channels
             .iter()
             .find(|channel| channel.id == id)
             .expect("the channel opened")
             .out_of_band
+            .is_none()
     };
     assert!(!heard(past_the_edge), "usb sideband runs past the edge");
     assert!(!heard(too_wide), "a 25 kHz channel does not fit there");

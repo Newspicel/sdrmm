@@ -494,7 +494,7 @@ async fn the_lane_a_scan_is_not_using_keeps_following_its_decoders() {
         .find(|c| c.stream == 0)
         .expect("lane 1 decoder");
     assert!(
-        !lane1.out_of_band,
+        lane1.out_of_band.is_none(),
         "lane 1 stopped following its decoder during a scan on lane 2"
     );
     engine.stop_scan(ds, scanned).unwrap();

@@ -126,7 +126,7 @@ async fn channel_create_patch_and_error_mapping_over_http() {
         "a decoder may sit where the radio is not listening"
     );
     let snap = get_state(&app).await;
-    assert!(snap.device_sets[0].channels[0].out_of_band);
+    assert!(snap.device_sets[0].channels[0].out_of_band.is_some());
 
     let valid = r#"{"params":{"type":"nfm","settings":{}}}"#;
     let (status, _) = request(

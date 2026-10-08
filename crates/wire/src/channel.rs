@@ -1914,6 +1914,18 @@ pub(crate) fn current_channel_settings<'de, D: serde::Deserializer<'de>>(
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "reason", rename_all = "snake_case")]
+pub enum BandMiss {
+    TooWide {
+        needs_hz: f64,
+        top_rate_hz: Option<f64>,
+    },
+    OffTuner,
+    Crowded,
+    TunedAway,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelInfo {
     pub id: u32,
@@ -1924,10 +1936,10 @@ pub struct ChannelInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node: Option<String>,
     pub settings: ChannelSettings,
-    /// The radio carrying this decoder is tuned somewhere it cannot hear the decoder's frequency,
-    /// so the channel is alive and set up but silent until the radio comes back over it.
-    #[serde(default)]
-    pub out_of_band: bool,
+    /// Why the radio carrying this decoder cannot hear it, so the channel is alive and set up but
+    /// silent until the radio comes back over it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub out_of_band: Option<BandMiss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub audio_recordings: Vec<AudioRecordingStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

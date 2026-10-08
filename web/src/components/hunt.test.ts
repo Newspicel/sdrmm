@@ -82,9 +82,12 @@ describe("huntRefusal", () => {
   it("names why a hunt cannot start in a word and explains it in the title", () => {
     expect(huntRefusal(null)).toBeNull();
     expect(huntRefusal({ set: deviceSet(), channel: CHANNEL })).toBeNull();
-    expect(huntRefusal({ set: deviceSet(), channel: { ...CHANNEL, out_of_band: true } })).toBe(
-      TUNED_AWAY,
-    );
+    expect(
+      huntRefusal({
+        set: deviceSet(),
+        channel: { ...CHANNEL, out_of_band: { reason: "tuned_away" } },
+      }),
+    ).toBe(TUNED_AWAY);
     const scan = {
       state: "scanning",
       settings: { channel: CHANNEL.id } as never,

@@ -129,7 +129,7 @@ async fn a_channel_the_radio_cannot_reach_opens_silent_rather_than_refused() {
 
     let set = &engine.snapshot().device_sets[0];
     assert!(
-        set.channels[0].out_of_band,
+        set.channels[0].out_of_band.is_some(),
         "the channel claims to be heard"
     );
     assert_eq!(
@@ -149,7 +149,7 @@ async fn a_channel_the_radio_cannot_reach_opens_silent_rather_than_refused() {
         .unwrap();
     let set = &engine.snapshot().device_sets[0];
     assert!(
-        !set.channels[0].out_of_band,
+        set.channels[0].out_of_band.is_none(),
         "tuning the radio over the decoder did not bring it back"
     );
     assert_eq!(set.channels[0].id, ch);
@@ -284,7 +284,7 @@ async fn narrowing_the_window_past_a_channel_mutes_it_without_moving_it() {
     let set = &engine.snapshot().device_sets[0];
     assert_eq!(set.settings.sample_rate, Some(250_000.0));
     assert_eq!(set.channels[0].id, ch, "the channel was dropped");
-    assert!(set.channels[0].out_of_band);
+    assert!(set.channels[0].out_of_band.is_some());
     assert_eq!(
         set.channels[0].settings.frequency_hz,
         TEST_CENTER_HZ + 900_000.0,

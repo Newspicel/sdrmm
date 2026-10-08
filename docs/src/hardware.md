@@ -306,7 +306,7 @@ limits a password lifts, takes `password@host:8073`. The password becomes part o
 address in the workspace.
 
 A Kiwi streams 12 or 20 kHz of IQ anywhere in 0 to 30 MHz: enough for SSB, CW, AM and the
-narrowband decoders. Wider channels show out of band. Gain is the Kiwi's AGC or a manual RF gain.
+narrowband decoders. Wider channels show the width they need. Gain is the Kiwi's AGC or a manual RF gain.
 
 Public Kiwis are shared. When one is full, kicks you, or hits its time limit, SDR-- stops and does
 not reconnect. A dropped connection is retried.

@@ -343,10 +343,10 @@ describe("lockStream", () => {
 });
 
 function carrying(out: boolean[], stream = 0): DeviceSet["channels"] {
-  return out.map((out_of_band, id) => ({
+  return out.map((missed, id) => ({
     id,
     stream,
-    out_of_band,
+    out_of_band: missed ? { reason: "tuned_away" } : null,
     settings: {
       frequency_hz: 100_000_000,
       params: { type: "nfm", settings: {} },

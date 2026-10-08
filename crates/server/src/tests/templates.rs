@@ -92,7 +92,9 @@ async fn templates_list_and_apply_over_http() {
     );
     let set = &get_state(&app).await.device_sets[0];
     assert!(
-        set.channels.iter().all(|channel| !channel.out_of_band),
+        set.channels
+            .iter()
+            .all(|channel| channel.out_of_band.is_none()),
         "the radio did not settle over the template's channels"
     );
     assert_eq!(
@@ -145,7 +147,9 @@ async fn every_template_runs_on_the_signal_generator() {
         );
         let set = &get_state(&app).await.device_sets[0];
         assert!(
-            set.channels.iter().all(|channel| !channel.out_of_band),
+            set.channels
+                .iter()
+                .all(|channel| channel.out_of_band.is_none()),
             "{}: the radio did not settle over the template's channels",
             template.id
         );

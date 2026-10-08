@@ -994,7 +994,7 @@ async fn a_radio_nobody_tuned_opens_over_the_decoder_wired_into_it() {
         center_hz, 1_090_000_000.0,
         "the decoder was left on the DC spike"
     );
-    assert!(!set.channels[0].out_of_band);
+    assert!(set.channels[0].out_of_band.is_none());
 }
 
 #[tokio::test]
@@ -1012,7 +1012,7 @@ async fn a_decoder_keeps_its_own_frequency_and_the_radio_comes_to_it() {
         set.channels[0].settings.frequency_hz, default_hz,
         "the radio moved the decoder instead of following it"
     );
-    assert!(!set.channels[0].out_of_band);
+    assert!(set.channels[0].out_of_band.is_none());
 }
 
 #[tokio::test]
@@ -1143,7 +1143,10 @@ async fn cutting_a_decoders_wire_closes_it_and_hands_the_window_to_the_rest() {
     let set = &get_state(&app).await.device_sets[0];
     assert_eq!(set.channels.len(), 2);
     assert_eq!(
-        set.channels.iter().filter(|c| c.out_of_band).count(),
+        set.channels
+            .iter()
+            .filter(|c| c.out_of_band.is_some())
+            .count(),
         1,
         "one window cannot hold both of these decoders at once"
     );
@@ -1157,7 +1160,7 @@ async fn cutting_a_decoders_wire_closes_it_and_hands_the_window_to_the_rest() {
     let set = &get_state(&app).await.device_sets[0];
     assert_eq!(set.channels.len(), 1);
     assert!(
-        !set.channels[0].out_of_band,
+        set.channels[0].out_of_band.is_none(),
         "the radio stayed on the decoder that was cut away, at {:?}",
         set.settings.center_hz
     );
@@ -1326,7 +1329,7 @@ async fn a_decoder_wired_to_two_radios_opens_on_one_of_them() {
     let opened: usize = state.device_sets.iter().map(|set| set.channels.len()).sum();
     assert_eq!(opened, 1);
     let (_, channel) = carrier_of(&state, "voice").expect("the decoder is on a radio");
-    assert!(!channel.out_of_band);
+    assert!(channel.out_of_band.is_none());
 
     let again = apply(&app, workspace).await;
     assert_eq!(again.created, 0, "{again:?}");
@@ -1349,7 +1352,7 @@ async fn a_decoder_moves_to_the_radio_that_can_still_hear_it() {
         second, first,
         "the decoder stayed on a radio that cannot hear it"
     );
-    assert!(!moved.out_of_band);
+    assert!(moved.out_of_band.is_none());
     assert_eq!(moved.settings.frequency_hz, channel.settings.frequency_hz);
     let opened: usize = state.device_sets.iter().map(|set| set.channels.len()).sum();
     assert_eq!(opened, 1, "the decoder was copied, not moved");
@@ -1377,7 +1380,7 @@ async fn a_retuned_decoder_finds_the_radio_that_hears_its_new_frequency() {
     let state = get_state(&app).await;
     let (now, moved) = carrier_of(&state, "voice").expect("the decoder is still on a radio");
     assert_eq!(now, other);
-    assert!(!moved.out_of_band);
+    assert!(moved.out_of_band.is_none());
     assert_eq!(moved.settings.frequency_hz, 400.1e6);
 }
 
@@ -1397,7 +1400,7 @@ async fn two_self_tuning_radios_share_a_crowd_one_window_cannot_hold() {
     let state = get_state(&app).await;
     for node in ["low", "high", "low2"] {
         let (_, channel) = carrier_of(&state, node).expect("every decoder is on a radio");
-        assert!(!channel.out_of_band, "{node} is out of band");
+        assert!(channel.out_of_band.is_none(), "{node} is out of band");
     }
     let (low, _) = carrier_of(&state, "low").expect("low");
     let (low2, _) = carrier_of(&state, "low2").expect("low2");
@@ -1432,7 +1435,7 @@ async fn a_decoder_wired_to_one_radio_keeps_it_while_the_flexible_ones_move_asid
         .id;
     assert_eq!(fixed_on, siggen);
     assert_ne!(flex_on, siggen);
-    assert!(!fixed.out_of_band && !flex.out_of_band);
+    assert!(fixed.out_of_band.is_none() && flex.out_of_band.is_none());
 }
 
 #[tokio::test]

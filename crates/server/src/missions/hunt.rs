@@ -33,7 +33,7 @@ pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built 
             if scanning {
                 problems.push(MissionProblem::Scanning);
             }
-            if info.out_of_band {
+            if info.out_of_band.is_some() {
                 problems.push(MissionProblem::OutOfBand);
             }
             mission.status = set

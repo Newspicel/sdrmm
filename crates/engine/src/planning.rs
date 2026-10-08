@@ -1,8 +1,8 @@
 use sdrmm_channels::ChannelError;
 use sdrmm_device::{DeviceError, check_stream_settings};
 use sdrmm_wire::{
-    Capabilities, ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings, DcArtifact,
-    DeviceSettings, StreamSettings,
+    BandMiss, Capabilities, ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings,
+    DcArtifact, DeviceSettings, StreamSettings,
 };
 
 use crate::{DEFAULT_CENTER_HZ, EngineError, center_of, sample_rate_of};
@@ -66,6 +66,50 @@ pub(crate) fn tuner_reaches(capabilities: &Capabilities, hz: f64) -> bool {
             .freq_ranges
             .iter()
             .any(|r| hz >= r.min && hz <= r.max)
+}
+
+pub(crate) fn band_miss(
+    capabilities: &Capabilities,
+    rate: f64,
+    follows_decoders: bool,
+    settings: &ChannelSettings,
+) -> BandMiss {
+    let (low, high) = sdrmm_channels::occupied_band(&settings.params);
+    let Some(span) = tuning_span(settings.frequency_hz, low, high, rate) else {
+        return BandMiss::TooWide {
+            needs_hz: high - low,
+            top_rate_hz: top_rate_hz(capabilities),
+        };
+    };
+    if !tuner_meets(capabilities, span) {
+        BandMiss::OffTuner
+    } else if follows_decoders {
+        BandMiss::Crowded
+    } else {
+        BandMiss::TunedAway
+    }
+}
+
+fn top_rate_hz(capabilities: &Capabilities) -> Option<f64> {
+    capabilities
+        .sample_rates
+        .iter()
+        .copied()
+        .chain(
+            capabilities
+                .sample_rate_ranges
+                .iter()
+                .map(|range| range.max),
+        )
+        .reduce(f64::max)
+}
+
+fn tuner_meets(capabilities: &Capabilities, (low, high): Span) -> bool {
+    capabilities.freq_ranges.is_empty()
+        || capabilities
+            .freq_ranges
+            .iter()
+            .any(|range| range.min <= high && low <= range.max)
 }
 
 /// Room left between the DC term at the centre and the edge of a channel it must not sit in.

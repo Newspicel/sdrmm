@@ -8697,6 +8697,78 @@
           "application"
         ]
       },
+      "BandMiss": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "needs_hz",
+              "reason"
+            ],
+            "properties": {
+              "needs_hz": {
+                "type": "number",
+                "format": "double"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "too_wide"
+                ]
+              },
+              "top_rate_hz": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "off_tuner"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "crowded"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "tuned_away"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "BandPlan": {
         "type": "object",
         "required": [
@@ -10182,8 +10254,15 @@
             "description": "The patch node this decoder was opened for, so a workspace finds its own decoder again\nrather than the next one of the same kind."
           },
           "out_of_band": {
-            "type": "boolean",
-            "description": "The radio carrying this decoder is tuned somewhere it cannot hear the decoder's frequency,\nso the channel is alive and set up but silent until the radio comes back over it."
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BandMiss",
+                "description": "Why the radio carrying this decoder cannot hear it, so the channel is alive and set up but\nsilent until the radio comes back over it."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "settings": {
             "$ref": "#/components/schemas/ChannelSettings"

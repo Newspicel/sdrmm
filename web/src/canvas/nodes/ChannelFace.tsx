@@ -19,13 +19,14 @@ import { useBroadcast } from "../../lib/broadcast";
 import { heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, usePipelineHealth } from "../../lib/pipeline";
 import { trackedBy, useSatelliteStore } from "../../lib/satellite";
-import type { BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
+import type { BandMiss, BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
 import { hasWire, iqLanesOf, tuningControllerOf } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { nodeOf, patchNode } from "../graph";
 import { deviceSetOf, laneOf } from "../workspaceDevice";
+import { bandMissOf, bandMissSaid } from "./bandMiss";
 import {
   type ChannelBinding,
   channelBinding,
@@ -75,10 +76,10 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const frequencyHz = settings === null ? null : heardHz(settings.frequency_hz, level);
   const spanHz = set === null ? undefined : laneRateHz(set, source?.stream ?? 0);
   const window = radioWindowHz(centerHz, spanHz, descriptor);
-  const unreachable =
-    set !== null &&
-    frequencyHz !== null &&
-    (channel?.out_of_band ?? !reachesHz(frequencyHz, window));
+  const miss = bandMissOf({
+    reported: channel === null ? undefined : (channel.out_of_band ?? null),
+    reaches: set === null || frequencyHz === null || reachesHz(frequencyHz, window),
+  });
   const locked = node.data.tuning_locked ?? false;
   const scanned =
     channel !== null &&
@@ -102,7 +103,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const status = faceStatus({
     live: live !== null,
     binding,
-    unreachable,
+    miss,
     driver: scanned ? "scanning" : (tracked?.name ?? (tracked === null ? null : "satellite")),
     carrier,
   });
@@ -182,13 +183,13 @@ export function ChannelFace({ node }: { node: PatchNode }) {
 function faceStatus({
   live,
   binding,
-  unreachable,
+  miss,
   driver,
   carrier,
 }: {
   live: boolean;
   binding: ChannelBinding;
-  unreachable: boolean;
+  miss: BandMiss | null;
   driver: string | null;
   carrier: string | null;
 }) {
@@ -200,8 +201,13 @@ function faceStatus({
   if (driver !== null) {
     return <span title="Tuned by the node on its control input">{driver}</span>;
   }
-  if (unreachable) {
-    return <span className="text-warn">out of band</span>;
+  if (miss !== null) {
+    const said = bandMissSaid(miss);
+    return (
+      <span className="text-warn" title={said.title}>
+        {said.label}
+      </span>
+    );
   }
   if (carrier !== null) {
     return <span title="The radio carrying this decoder now">{carrier}</span>;

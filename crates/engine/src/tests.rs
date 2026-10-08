@@ -1182,7 +1182,7 @@ fn parked(id: u32, offset_hz: f64) -> ChannelInfo {
         stream: 0,
         node: None,
         settings: nfm_settings(offset_hz),
-        out_of_band: false,
+        out_of_band: None,
         audio_recordings: Vec::new(),
         baseband_recording: None,
         network_export: None,

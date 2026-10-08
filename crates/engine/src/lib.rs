@@ -18,8 +18,8 @@ use sdrmm_device_siggen::SigGenDriver;
 use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_recorder::{data_path, meta_path};
 use sdrmm_wire::{
-    AudioRecordingStatus, AudioRoute, Capabilities, ChannelInfo, ChannelSettings, DecodedRecord,
-    DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus, DeviceSettings, HeldLane,
+    AudioRecordingStatus, AudioRoute, BandMiss, Capabilities, ChannelInfo, ChannelSettings,
+    DecodedRecord, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus, DeviceSettings, HeldLane,
     NetworkExportSettings, NetworkExportStatus, PositionFix, RecordingStatus, ServerEvent,
     SettingsRefused, StateScope, StateSnapshot, StreamScope, TrunkSystemStatus, VirtualLane,
 };
@@ -632,6 +632,26 @@ impl DeviceSetState {
         self.hears(channel.stream, &channel.settings)
     }
 
+    fn band_miss(&self, channel: &ChannelInfo) -> Option<BandMiss> {
+        (!self.reaches_channel(channel)).then(|| {
+            planning::band_miss(
+                &self.capabilities,
+                self.lane_rate(channel.stream),
+                self.follows_decoders(channel.stream),
+                &channel.settings,
+            )
+        })
+    }
+
+    fn follows_decoders(&self, stream: u32) -> bool {
+        !self.virtual_lanes.contains_key(&stream)
+            && !self.held.contains_key(&stream)
+            && self
+                .settings
+                .for_stream(stream, &self.capabilities.per_stream)
+                .tunes_itself()
+    }
+
     fn hears(&self, stream: u32, settings: &ChannelSettings) -> bool {
         self.hears_with(&self.settings, stream, settings)
     }
@@ -672,7 +692,7 @@ impl DeviceSetState {
                 .channels
                 .iter()
                 .map(|channel| ChannelInfo {
-                    out_of_band: !self.reaches_channel(channel),
+                    out_of_band: self.band_miss(channel),
                     audio_recordings: self.audio_recording_statuses(channel.id),
                     baseband_recording: self
                         .baseband_recordings
