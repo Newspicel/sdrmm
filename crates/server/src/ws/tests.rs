@@ -10,6 +10,7 @@ use tokio_tungstenite::tungstenite;
 use super::*;
 
 mod phone;
+mod presence;
 mod stress;
 
 const WAIT: Duration = Duration::from_secs(5);

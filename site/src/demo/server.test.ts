@@ -92,7 +92,9 @@ describe("DemoServer", () => {
   it("merges a retune into the state", async () => {
     const target = server();
     await call(target, "PATCH", "/api/devicesets/0/device", { center_hz: 200 });
-    await call(target, "PATCH", "/api/devicesets/0/channels/1", { frequency_hz: 9 });
+    await call(target, "PATCH", "/api/devicesets/0/channels/1", {
+      settings: { frequency_hz: 9 },
+    });
     const state = await call(target, "GET", "/api/state");
     expect(state.body.device_sets[0].settings.center_hz).toBe(200);
     expect(state.body.device_sets[0].channels[0].settings.frequency_hz).toBe(9);

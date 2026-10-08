@@ -42,7 +42,12 @@ Errors are JSON with `error`, an optional `detail`, and an optional stable `code
 Clients subscribe to streams over `/api/ws`. The server sends decoded records, scanner and hunt
 progress, levels, node updates, state-change notices, and binary spectrum, audio, video, IQ,
 symbol and surface frames. When it says some state changed, fetch that state again through REST.
-Stream IDs belong to one connection. The messages are `ClientCommand` and `ServerEvent` in the
+Stream IDs belong to one connection. A client that sends `Present` joins the list of people
+here and can send `Point` to share its pointer, selection, and drags.
+
+A workspace `PUT` sent against an older revision is merged with what others wrote since. A channel
+`PATCH` with a `base` lands only the fields changed from it. Undo and redo act on the caller's own
+steps, named by the `x-sdrmm-author` header. The messages are `ClientCommand` and `ServerEvent` in the
 OpenAPI schema; the web client in `web/src` is the reference implementation.
 
 ## MCP

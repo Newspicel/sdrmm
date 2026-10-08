@@ -38,7 +38,7 @@ export const BINDINGS: readonly Binding[] = [
   { keys: "p", what: "Pin / unpin on the rack", group: "Canvas" },
   { keys: "v", what: "Swap patch and rack", group: "Canvas" },
   { keys: "z", what: "Fill the window, Esc returns", group: "Canvas" },
-  { keys: "Ctrl / ⌘ Z", what: "Undo, shared by every client", group: "Edit" },
+  { keys: "Ctrl / ⌘ Z", what: "Undo your last change", group: "Edit" },
   { keys: "Ctrl / ⌘ Shift Z", what: "Redo", group: "Edit" },
   { keys: "Ctrl / ⌘ C", what: "Copy nodes and their wires", group: "Edit" },
   { keys: "Ctrl / ⌘ V", what: "Paste beside the originals", group: "Edit" },

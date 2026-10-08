@@ -262,6 +262,7 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
                 name: None,
                 snapshot: Some(WorkspaceSnapshot::new(graph, RackLayout::default())),
             },
+            None,
         )
         .expect("update workspace");
 
@@ -1247,6 +1248,7 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
                 name: None,
                 snapshot: Some(WorkspaceSnapshot::new(graph, RackLayout::default())),
             },
+            None,
         )
         .unwrap();
     let routing = resolve(&store).unwrap();

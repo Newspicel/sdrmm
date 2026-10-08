@@ -432,6 +432,7 @@ mod tests {
                     name: None,
                     snapshot: Some(detail.snapshot),
                 },
+                None,
             )
             .expect("store the patch");
 

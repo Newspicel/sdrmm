@@ -1021,7 +1021,7 @@ async fn a_radar_left_behind_is_forgotten() {
     let (status, body) = bench
         .call("POST", &format!("/api/workspaces/{other}/activate"))
         .await;
-    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    assert_eq!(status, StatusCode::OK, "{body}");
     let (status, _) = bench.call("GET", "/api/radar/radar").await;
     assert_eq!(status, StatusCode::NOT_FOUND, "a switch forgets the radar");
 

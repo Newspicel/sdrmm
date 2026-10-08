@@ -212,3 +212,47 @@ fn socket_constants_match_the_contract() {
     assert_eq!(WS_BEARER_PROTOCOL_PREFIX, "sdrmm.bearer.");
     assert_eq!(WS_CLOSE_REVOKED, 4003);
 }
+
+#[test]
+fn presence_round_trips() {
+    use crate::{
+        patch::Position,
+        presence::{DraggedNode, Peer, Pointer},
+        workspace::PatchApplyReport,
+    };
+    let pointer = Pointer {
+        at: Some(Position { x: 1.0, y: 2.0 }),
+        selected: vec!["scope".to_owned()],
+        dragging: vec![DraggedNode {
+            node: "scope".to_owned(),
+            position: Position { x: 3.0, y: 4.0 },
+        }],
+    };
+    round_trip(&ServerEvent::Peers {
+        you: 2,
+        peers: vec![Peer {
+            id: 2,
+            name: "Ann".to_owned(),
+            hue: 120,
+        }],
+    });
+    round_trip(&ServerEvent::PeerPointer {
+        peer: 3,
+        pointer: pointer.clone(),
+    });
+    round_trip(&ServerEvent::WorkspaceSwitched {
+        id: 4,
+        by: Some("Ann".to_owned()),
+        report: PatchApplyReport::default(),
+    });
+    round_trip(&ServerEvent::StateChanged {
+        scope: StateScope::Workspace(4),
+    });
+    round_trip(&ClientCommand::Present {
+        author: "k".to_owned(),
+        name: "Ann".to_owned(),
+    });
+    let json = round_trip(&ClientCommand::Point(Pointer::default()));
+    assert_eq!(json, json!({ "type": "Point", "data": {} }));
+    round_trip(&ClientCommand::Point(pointer));
+}

@@ -14,8 +14,8 @@ export function useChannelPatch(): {
 } {
   const queryClient = useQueryClient();
   const patchMut = useMutation({
-    mutationFn: (v: { ds: number; ch: number; settings: ChannelSettings }) =>
-      patchChannel(v.ds, v.ch, v.settings),
+    mutationFn: (v: { ds: number; ch: number; settings: ChannelSettings; base: ChannelSettings }) =>
+      patchChannel(v.ds, v.ch, v.settings, v.base),
     onError: (error) => toastError(error),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: STATE_KEY }),
   });
@@ -50,7 +50,7 @@ export function useChannelPatch(): {
           : set,
       ),
     });
-    patchMut.mutate({ ds, ch, settings });
+    patchMut.mutate({ ds, ch, settings, base: current });
   };
 
   return { applyEdit, cachedChannel };

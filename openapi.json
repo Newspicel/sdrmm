@@ -2548,7 +2548,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChannelSettings"
+                "$ref": "#/components/schemas/PatchChannelRequest"
               }
             }
           },
@@ -2556,7 +2556,7 @@
         },
         "responses": {
           "204": {
-            "description": "Settings applied"
+            "description": "Settings applied. With a base, only the fields changed from it land, so another client's edit to other fields survives"
           },
           "400": {
             "description": "Invalid channel settings",
@@ -5277,11 +5277,11 @@
         },
         "responses": {
           "200": {
-            "description": "Workspace updated",
+            "description": "The workspace as stored. A snapshot sent against an older revision is merged with what other clients wrote since",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkspaceInfo"
+                  "$ref": "#/components/schemas/WorkspaceDetail"
                 }
               }
             }
@@ -5307,7 +5307,7 @@
             }
           },
           "409": {
-            "description": "Another client wrote first (stale revision) or the name is taken; reload and reapply",
+            "description": "The revision is too old to merge, the merge broke the layout, or the name is taken",
             "content": {
               "application/json": {
                 "schema": {
@@ -5385,8 +5385,15 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Workspace activated for every client. The hardware is reconciled to it: radios this workspace does not name are closed, channels it does not draw are dropped, and the radios it keeps are put back where it was left. Apply opens the rest"
+          "200": {
+            "description": "Workspace activated for every client and brought up once: radios it does not name are closed, channels it does not draw are dropped, the rest are opened where it was left. Every client hears WorkspaceSwitched with the same report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchApplyReport"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid path parameter",
@@ -5659,7 +5666,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The workspace an undo had stepped out of",
+            "description": "Puts back the caller's last undone change",
             "content": {
               "application/json": {
                 "schema": {
@@ -5718,7 +5725,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The workspace as it was before its last change, with the history it can still walk. The step is stored, so every client is told to reload it: one workspace, one history, whichever browser pressed undo",
+            "description": "Takes back the caller's own last change, keeping what others did since. Callers are told apart by the x-sdrmm-author header",
             "content": {
               "application/json": {
                 "schema": {
@@ -11954,6 +11961,53 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "author"
+                ],
+                "properties": {
+                  "author": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Present"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Pointer"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Point"
+                ]
+              }
+            }
           }
         ]
       },
@@ -16556,6 +16610,21 @@
       },
       "DpmrParams": {
         "type": "object"
+      },
+      "DraggedNode": {
+        "type": "object",
+        "required": [
+          "node",
+          "position"
+        ],
+        "properties": {
+          "node": {
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/components/schemas/Position"
+          }
+        }
       },
       "DrmMode": {
         "type": "string",
@@ -23844,6 +23913,27 @@
           }
         }
       },
+      "PatchChannelRequest": {
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "properties": {
+          "base": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChannelSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ChannelSettings"
+          }
+        }
+      },
       "PatchEdge": {
         "type": "object",
         "required": [
@@ -23928,6 +24018,29 @@
             "type": "string"
           },
           "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "Peer": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "hue"
+        ],
+        "properties": {
+          "hue": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "name": {
             "type": "string"
           }
         }
@@ -24354,6 +24467,33 @@
           "numeric",
           "alpha"
         ]
+      },
+      "Pointer": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Position"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dragging": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DraggedNode"
+            }
+          },
+          "selected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "PolarimeterNode": {
         "type": "object",
@@ -28984,6 +29124,110 @@
               "data": {
                 "type": "object",
                 "required": [
+                  "you",
+                  "peers"
+                ],
+                "properties": {
+                  "peers": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Peer"
+                    }
+                  },
+                  "you": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Peers"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "peer",
+                  "pointer"
+                ],
+                "properties": {
+                  "peer": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "pointer": {
+                    "$ref": "#/components/schemas/Pointer"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "PeerPointer"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "report"
+                ],
+                "properties": {
+                  "by": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "report": {
+                    "$ref": "#/components/schemas/PatchApplyReport"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "WorkspaceSwitched"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
                   "message"
                 ],
                 "properties": {
@@ -29602,6 +29846,25 @@
                 "type": "string",
                 "enum": [
                   "workspaces"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "scope"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "workspace"
                 ]
               }
             }

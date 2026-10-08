@@ -33,6 +33,8 @@ mod canvas;
 mod live;
 mod schema;
 
+pub(crate) const MCP_AUTHOR: &str = "mcp";
+const MCP_NAME: &str = "MCP";
 const SPECTRUM_BINS: usize = 128;
 const SPECTRUM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 const MAX_MCP_SWEEP_POINTS: u32 = 401;
@@ -100,14 +102,12 @@ impl SdrMcp {
         structured(&Applied { node, report })
     }
 
-    async fn step(
-        &self,
-        step: fn(&Store, i64) -> Result<crate::store::SteppedWorkspace, crate::store::StoreError>,
-    ) -> Result<CallToolResult, ErrorData> {
+    async fn step(&self, step: rest::HistoryStep) -> Result<CallToolResult, ErrorData> {
         let id = self
             .blocking(|state| Ok(canvas::active(state)?.info.id))
             .await?;
-        let detail = rest::step_history(self.state.clone(), id, step).await?;
+        let detail =
+            rest::step_history(self.state.clone(), id, Some(MCP_AUTHOR.to_owned()), step).await?;
         structured(&detail.0)
     }
 }
@@ -167,8 +167,7 @@ impl SdrMcp {
         let report = self
             .blocking(move |state| {
                 let _serialized = rest::lock_gate(&state.apply_gate);
-                rest::activate(state, args.workspace)?;
-                rest::bring_up_active(state, args.workspace)
+                rest::switch(state, args.workspace, Some(MCP_NAME.to_owned()))
             })
             .await?;
         rest::reconcile_graph(self.state.clone()).await?;

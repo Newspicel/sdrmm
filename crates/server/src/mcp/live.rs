@@ -87,7 +87,7 @@ pub(super) fn tune(
     settings: DeviceSettings,
 ) -> Result<DeviceSettings, AppError> {
     let device_set = radio_of(state, id)?;
-    rest::patch_device_live(state, device_set, settings)?;
+    rest::patch_device_live(state, device_set, settings, Some(super::MCP_AUTHOR))?;
     set(&state.engine.snapshot(), device_set)
         .map(|set| set.settings.clone())
         .ok_or_else(|| AppError::bad_request(format!("{id} closed its radio")))
@@ -103,7 +103,7 @@ pub(super) fn set_channel(
     rest::check_channel_node(graph, id, &settings)?;
     match decoder_of(&workspace::bind(graph, &state.engine.snapshot()), id) {
         Some((ds, ch)) => {
-            rest::patch_channel_live(state, ds, ch, settings)?;
+            rest::patch_channel_live(state, ds, ch, settings, Some(super::MCP_AUTHOR))?;
             Ok(true)
         }
         None => {

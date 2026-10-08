@@ -25,9 +25,11 @@ use tokio::sync::{broadcast, watch};
 
 mod outbox;
 mod phone;
+mod presence;
 mod surfaces;
 use outbox::Outbox;
 use phone::{PhoneLink, RateBudget, revoked};
+use presence::PeerLink;
 use surfaces::Surfaces;
 
 use crate::{
@@ -52,9 +54,13 @@ pub(crate) async fn handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
+    relayed: Option<Extension<sdrmm_tunnel::Relayed>>,
 ) -> Response {
+    let fallback = relayed
+        .map(|Extension(relayed)| relayed.user)
+        .unwrap_or_default();
     ws.protocols([WS_SUBPROTOCOL])
-        .on_upgrade(move |socket| handle_socket(socket, state, identity))
+        .on_upgrade(move |socket| handle_socket(socket, state, identity, fallback))
 }
 
 pub(crate) fn start_decoded_encoder(state: &AppState) {
@@ -101,10 +107,17 @@ struct Session {
     identity: Identity,
     pose_budget: RateBudget,
     last_limit_error: Option<Instant>,
+    peer: PeerLink,
 }
 
 impl Session {
-    fn new(engine: Arc<Engine>, state: AppState, out: Outbox, identity: Identity) -> Self {
+    fn new(
+        engine: Arc<Engine>,
+        state: AppState,
+        out: Outbox,
+        identity: Identity,
+        peer: PeerLink,
+    ) -> Self {
         Self {
             engine,
             state,
@@ -121,6 +134,7 @@ impl Session {
             identity,
             pose_budget: RateBudget::new(f64::from(POSE_BURST), f64::from(POSE_RATE_HZ)),
             last_limit_error: None,
+            peer,
         }
     }
 
@@ -227,6 +241,8 @@ impl Session {
             }
             ClientCommand::UnsubscribeSurface { node } => self.unsubscribe_surface(&node).await,
             ClientCommand::PublishPose { fix, error } => self.publish_pose(fix, error).await,
+            ClientCommand::Present { author, name } => self.present(&author, &name).await,
+            ClientCommand::Point(pointer) => self.point(pointer).await,
         }
     }
 
@@ -261,6 +277,7 @@ impl Session {
     }
 
     fn abort_streams(self) {
+        self.peer.abort();
         if let Some(task) = self.diagnostics {
             task.abort();
         }
@@ -581,7 +598,7 @@ impl Session {
     }
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity) {
+async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, fallback: String) {
     let engine = state.engine.clone();
     let live = state.clients.fetch_add(1, atomic::Ordering::Relaxed) + 1;
     tracing::debug!(clients = live, "client connected");
@@ -602,7 +619,14 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity) {
         (!for_phone).then(|| spawn_decoded(state.decoded_text.subscribe(), out_tx.clone()));
     let positions = spawn_positions(position_rx, out_tx.clone());
 
-    let mut session = Session::new(engine.clone(), state.clone(), out_tx.clone(), identity);
+    let peer = state.presence.connect();
+    let mut session = Session::new(
+        engine.clone(),
+        state.clone(),
+        out_tx.clone(),
+        identity,
+        PeerLink::new(peer, fallback),
+    );
     let mut revocation: Option<watch::Receiver<bool>> = link.as_ref().map(PhoneLink::revoked);
     let mut writer_done = false;
 
@@ -646,6 +670,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity) {
     {
         writer.abort();
     }
+    state.presence.leave(peer);
     if let Some(link) = link {
         link.leave(&state).await;
     }

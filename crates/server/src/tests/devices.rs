@@ -93,7 +93,7 @@ async fn channel_create_patch_and_error_mapping_over_http() {
         app.clone(),
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{ch}"),
-        Some(r#"{"frequency_hz":99800000.0,"params":{"type":"am","settings":{"agc":false}}}"#),
+        Some(r#"{"settings":{"frequency_hz":99800000.0,"params":{"type":"am","settings":{"agc":false}}}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -107,7 +107,7 @@ async fn channel_create_patch_and_error_mapping_over_http() {
         app.clone(),
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{ch}"),
-        Some(r#"{"params":{"type":"zzz","settings":{}}}"#),
+        Some(r#"{"settings":{"params":{"type":"zzz","settings":{}}}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -117,7 +117,7 @@ async fn channel_create_patch_and_error_mapping_over_http() {
         app.clone(),
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{ch}"),
-        Some(r#"{"frequency_hz":900000000.0,"params":{"type":"nfm","settings":{}}}"#),
+        Some(r#"{"settings":{"frequency_hz":900000000.0,"params":{"type":"nfm","settings":{}}}}"#),
     )
     .await;
     assert_eq!(
@@ -128,7 +128,7 @@ async fn channel_create_patch_and_error_mapping_over_http() {
     let snap = get_state(&app).await;
     assert!(snap.device_sets[0].channels[0].out_of_band.is_some());
 
-    let valid = r#"{"params":{"type":"nfm","settings":{}}}"#;
+    let valid = r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#;
     let (status, _) = request(
         app.clone(),
         "PATCH",
@@ -209,7 +209,7 @@ async fn dab_transmission_modes_round_trip_over_http() {
         ("iii", sdrmm_wire::DabTransmissionMode::Iii),
         ("iv", sdrmm_wire::DabTransmissionMode::Iv),
     ] {
-        let body = serde_json::json!({"params": {"type": "dab", "settings": {"transmission_mode": name, "service_id": 49569}}}).to_string();
+        let body = serde_json::json!({"settings": {"params": {"type": "dab", "settings": {"transmission_mode": name, "service_id": 49569}}}}).to_string();
         let (status, _) = request(
             app.clone(),
             "PATCH",
@@ -231,7 +231,7 @@ async fn dab_transmission_modes_round_trip_over_http() {
         app,
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{ch}"),
-        Some(r#"{"params":{"type":"dab","settings":{"transmission_mode":"v"}}}"#),
+        Some(r#"{"settings":{"params":{"type":"dab","settings":{"transmission_mode":"v"}}}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -284,7 +284,7 @@ async fn terrestrial_bandwidth_priority_and_service_round_trip_over_http() {
         ("dvb_t2", "mhz10"),
     ] {
         let params = serde_json::json!({"type":"dvbt","settings":{"standard":standard,"bandwidth":bandwidth,"low_priority":true,"program":42}});
-        let body = serde_json::json!({"params":params}).to_string();
+        let body = serde_json::json!({"settings":{"params":params}}).to_string();
         let (status, _) = request(
             app.clone(),
             "PATCH",
@@ -304,7 +304,7 @@ async fn terrestrial_bandwidth_priority_and_service_round_trip_over_http() {
         app,
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{ch}"),
-        Some(r#"{"params":{"type":"dvbt","settings":{"bandwidth":"mhz9"}}}"#),
+        Some(r#"{"settings":{"params":{"type":"dvbt","settings":{"bandwidth":"mhz9"}}}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -321,7 +321,7 @@ async fn satellite_superframes_and_stream_selection_round_trip_over_http() {
         .expect("created channel")
         .id;
     for enabled in [true, false] {
-        let body = serde_json::json!({"params":{"type":"datv","settings":{"standard":"dvb_s2","superframes":enabled,"program":42,"input_stream":7}}}).to_string();
+        let body = serde_json::json!({"settings":{"params":{"type":"datv","settings":{"standard":"dvb_s2","superframes":enabled,"program":42,"input_stream":7}}}}).to_string();
         let (status, _) = request(
             app.clone(),
             "PATCH",
@@ -340,4 +340,47 @@ async fn satellite_superframes_and_stream_selection_round_trip_over_http() {
         assert_eq!(params.input_stream, Some(7));
         assert_eq!(params.program, Some(42));
     }
+}
+
+#[tokio::test]
+async fn two_clients_change_different_fields_of_one_channel() {
+    let app = test_router();
+    let ds = create_virtual_set(&app).await;
+    let base = r#"{"frequency_hz":100100000.0,"params":{"type":"nfm","settings":{}}}"#;
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        &format!("/api/devicesets/{ds}/channels"),
+        Some(&format!(r#"{{"settings":{base}}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let ch = serde_json::from_slice::<CreatedId>(&body).expect("json").id;
+    let uri = format!("/api/devicesets/{ds}/channels/{ch}");
+    let retuned = r#"{"frequency_hz":100200000.0,"params":{"type":"nfm","settings":{}}}"#;
+    let squelched = r#"{"frequency_hz":100100000.0,"squelch":{"mode":"manual","level_db":-60.0},"params":{"type":"nfm","settings":{}}}"#;
+    for settings in [retuned, squelched] {
+        let (status, body) = request(
+            app.clone(),
+            "PATCH",
+            &uri,
+            Some(&format!(r#"{{"base":{base},"settings":{settings}}}"#)),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::NO_CONTENT,
+            "{}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let channel = &get_state(&app).await.device_sets[0].channels[0].settings;
+    assert_eq!(
+        channel.frequency_hz, 100_200_000.0,
+        "the first edit survived"
+    );
+    assert!(
+        matches!(channel.squelch, sdrmm_wire::Squelch::Manual { .. }),
+        "the second edit landed"
+    );
 }

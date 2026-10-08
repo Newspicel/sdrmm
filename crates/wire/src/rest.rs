@@ -115,6 +115,13 @@ pub struct CreateChannelRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PatchChannelRequest {
+    pub settings: ChannelSettings,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<ChannelSettings>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelTypesResponse {
     pub types: Vec<ChannelDescriptor>,
     #[serde(default)]

@@ -25,14 +25,14 @@ use sdrmm_wire::{
     LicenseTextResponse, LocateQuery, LogGroupKey, MAX_RECORDING_UPLOAD_BYTES,
     MAX_SATELLITE_QUERY_LEN, NetworkExportAction, NetworkExportRequest, NetworkExportStatus,
     NmeaDevicesResponse, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport,
-    PatchBinding, PatchCatalog, PatchGraph, PatchRefusal, PlaybackRequest, PlaybackStatus,
-    PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery,
-    RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse, SatelliteCatalogQuery,
-    SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScanAction, ScanRequest, ScanSettings,
-    ScannerStatus, ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo,
-    TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus, ToolRequest,
-    ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest, VoiceCallsResponse,
-    WorkspaceDetail, WorkspaceExport, WorkspaceInfo, WorkspaceSnapshot, WorkspaceState,
+    PatchBinding, PatchCatalog, PatchChannelRequest, PatchGraph, PatchRefusal, PlaybackRequest,
+    PlaybackStatus, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
+    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
+    SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScanAction,
+    ScanRequest, ScanSettings, ScannerStatus, ServerEvent, ServerStatus, StateScope, StateSnapshot,
+    TemplateInfo, TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus,
+    ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest,
+    VoiceCallsResponse, WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspaceState,
     WorkspacesResponse, WriteSerialRequest, WrittenSerial,
 };
 use utoipa::OpenApi;
@@ -76,7 +76,8 @@ pub(crate) use scanning::scan;
 use scanning::*;
 use workspaces::*;
 pub(crate) use workspaces::{
-    activate, bring_up_active, check_channel_node, reconcile_graph, save_channel, step_history,
+    HistoryStep, bring_up_active, check_channel_node, reconcile_graph, save_channel, step_history,
+    switch,
 };
 
 use crate::{
@@ -212,6 +213,63 @@ impl<S: Send + Sync> FromRequestParts<S> for LocalOnly {
 #[derive(FromRequestParts)]
 #[from_request(via(axum::extract::Query), rejection(AppError))]
 pub(crate) struct Query<T>(pub T);
+
+pub(crate) struct Author {
+    key: Option<String>,
+    phone: Option<String>,
+}
+
+impl Author {
+    pub(crate) fn as_deref(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    pub(crate) fn into_key(self) -> Option<String> {
+        self.key
+    }
+
+    pub(crate) fn name(&self, state: &AppState) -> Option<String> {
+        match &self.phone {
+            Some(phone) => state.phones.one(phone, None).ok().map(|phone| phone.name),
+            None => self
+                .key
+                .as_deref()
+                .and_then(|key| state.presence.name_of(key)),
+        }
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for Author {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let phone = parts
+            .extensions
+            .get::<crate::auth::Identity>()
+            .and_then(|identity| identity.phone())
+            .map(str::to_owned);
+        let Some(value) = parts.headers.get(sdrmm_wire::AUTHOR_HEADER) else {
+            let key = phone.as_ref().map(|phone| format!("phone-{phone}"));
+            return Ok(Self {
+                key: key.filter(|key| sdrmm_wire::valid_author(key)),
+                phone,
+            });
+        };
+        match value.to_str() {
+            Ok(author) if sdrmm_wire::valid_author(author) => Ok(Self {
+                key: Some(author.to_owned()),
+                phone,
+            }),
+            _ => Err(AppError::bad_request(format!(
+                "{} must be a short url-safe key",
+                sdrmm_wire::AUTHOR_HEADER
+            ))),
+        }
+    }
+}
 
 impl From<JsonRejection> for AppError {
     fn from(rej: JsonRejection) -> Self {

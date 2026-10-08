@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { PHONES_KEY, STATE_KEY } from "./api";
+import { PHONES_KEY, STATE_KEY, WORKSPACES_KEY } from "./api";
 import { invalidateScope } from "./useSdrSocket";
 
 function seeded(): QueryClient {
@@ -23,5 +23,16 @@ describe("invalidateScope", () => {
     invalidateScope(client, { scope: "missions" });
     expect(client.getQueryState(PHONES_KEY)?.isInvalidated).toBe(false);
     expect(client.getQueryState(STATE_KEY)?.isInvalidated).toBe(false);
+  });
+
+  it("refreshes only the one workspace a dial step touched", () => {
+    const client = seeded();
+    client.setQueryData(WORKSPACES_KEY, { workspaces: [] });
+    client.setQueryData([...WORKSPACES_KEY, 1], {});
+    client.setQueryData([...WORKSPACES_KEY, 2], {});
+    invalidateScope(client, { scope: "workspace", id: 1 });
+    expect(client.getQueryState([...WORKSPACES_KEY, 1])?.isInvalidated).toBe(true);
+    expect(client.getQueryState([...WORKSPACES_KEY, 2])?.isInvalidated).toBe(false);
+    expect(client.getQueryState(WORKSPACES_KEY)?.isInvalidated).toBe(false);
   });
 });

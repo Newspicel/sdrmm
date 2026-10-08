@@ -11,10 +11,12 @@ import {
 import { Icon } from "../components/Icon";
 import { Popover } from "../components/Popover";
 import { ThemeControl } from "../components/ThemeControl";
+import { usePeople } from "../lib/presence";
 import type { WorkspaceInfo } from "../lib/types";
 import { useWorkspaceContext } from "./context";
 import { Library } from "./Library";
 import { NodePalette } from "./NodePalette";
+import { Peers } from "./Peers";
 import { useAddNode } from "./useAddNode";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 
@@ -64,6 +66,7 @@ export function WorkspaceBar({
   const add = useAddNode();
   const active = workspaces.find((entry) => entry.id === activeWorkspace) ?? null;
   const pinned = workspace.rack.slots?.length ?? 0;
+  const others = usePeople().others.length;
 
   return (
     <header className="flex h-9 shrink-0 items-center gap-1 border-b border-line bg-linear-to-b from-panel-3 to-panel px-2">
@@ -79,6 +82,7 @@ export function WorkspaceBar({
           <WorkspaceMenu
             workspaces={workspaces}
             activeWorkspace={activeWorkspace}
+            others={others}
             onActivate={(id) => {
               onActivate(id);
               close();
@@ -149,11 +153,13 @@ export function WorkspaceBar({
       </Popover>
 
       <span className="ml-auto flex items-center gap-1">
+        <Peers />
+        <Rule />
         <span className="flex items-center" role="group" aria-label="History">
           <Button
             type="button"
             className={ICON_BTN}
-            aria-label="Undo the last change to the workspace"
+            aria-label="Undo your last change"
             disabled={!canUndo}
             onClick={onUndo}
           >
@@ -162,7 +168,7 @@ export function WorkspaceBar({
           <Button
             type="button"
             className={ICON_BTN}
-            aria-label="Redo the last undone change"
+            aria-label="Redo your last undone change"
             disabled={!canRedo}
             onClick={onRedo}
           >

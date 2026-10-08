@@ -112,8 +112,8 @@ fn heading_array() -> ArrayNode {
     }
 }
 
-async fn put_and_apply(app: &Router, graph: PatchGraph, revision: u64) -> PatchApplyReport {
-    let workspace = put_workspace_revision(app, &snapshot(graph), revision).await;
+async fn put_and_apply(app: &Router, graph: PatchGraph) -> PatchApplyReport {
+    let workspace = put_workspace(app, &snapshot(graph)).await;
     apply(app, workspace).await
 }
 
@@ -219,7 +219,7 @@ async fn a_gap_in_the_lanes_is_refused_visibly() {
     let mut graph = kraken_graph(ArrayNode::default());
     graph.edges.retain(|edge| edge.to.port != "lane2");
 
-    let report = put_and_apply(&app, graph.clone(), 1).await;
+    let report = put_and_apply(&app, graph.clone()).await;
 
     assert_eq!(
         report.refused,
@@ -235,7 +235,7 @@ async fn a_gap_in_the_lanes_is_refused_visibly() {
     assert_eq!(error.error, "Lane 2 unwired");
 
     graph.edges.push(lane_wire(RADIO, 1, ARRAY, 1));
-    let report = put_and_apply(&app, graph, 2).await;
+    let report = put_and_apply(&app, graph).await;
     assert!(report.refused.is_empty(), "{:?}", report.refused);
     assert!(status_of(&state, ARRAY).is_some());
 }
@@ -258,7 +258,7 @@ async fn processors_bind_to_the_array_they_are_wired_from() {
         .edges
         .push(wire(("second", "array"), ("df2", "array")));
 
-    let report = put_and_apply(&app, graph.clone(), 1).await;
+    let report = put_and_apply(&app, graph.clone()).await;
     assert!(report.refused.is_empty(), "{:?}", report.refused);
 
     let processors = |array: &str| -> Vec<String> {
@@ -283,7 +283,7 @@ async fn processors_bind_to_the_array_they_are_wired_from() {
     graph
         .edges
         .push(wire(("second", "array"), ("df1", "array")));
-    put_and_apply(&app, graph.clone(), 2).await;
+    put_and_apply(&app, graph.clone()).await;
     assert!(processors(ARRAY).is_empty());
     let mut moved = processors("second");
     moved.sort();
@@ -295,7 +295,7 @@ async fn processors_bind_to_the_array_they_are_wired_from() {
 
     graph.nodes.retain(|node| node.id != "df2");
     graph.edges.retain(|edge| edge.to.node != "df2");
-    put_and_apply(&app, graph, 3).await;
+    put_and_apply(&app, graph).await;
     assert_eq!(processors("second"), vec!["df1"]);
     assert_eq!(array::processor_array(&state, "df2"), None);
 }
@@ -323,7 +323,7 @@ fn beam_graph(listened: bool) -> PatchGraph {
 async fn channels_on_a_lane_port_bind_to_that_processors_virtual_lane() {
     let (app, state) = test_router_with_state();
 
-    let first = put_and_apply(&app, beam_graph(true), 1).await;
+    let first = put_and_apply(&app, beam_graph(true)).await;
     assert!(first.refused.is_empty(), "{:?}", first.refused);
     assert_eq!(first.created, 1);
 
@@ -346,7 +346,7 @@ async fn channels_on_a_lane_port_bind_to_that_processors_virtual_lane() {
         vec![("voice".to_owned(), voice[0].id)]
     );
 
-    let again = put_and_apply(&app, beam_graph(true), 2).await;
+    let again = put_and_apply(&app, beam_graph(true)).await;
     assert_eq!(again.created, 0, "the lane channel is kept, not reopened");
     assert_eq!(again.closed, 0);
     let live = get_state(&app).await;
@@ -359,7 +359,7 @@ async fn channels_on_a_lane_port_bind_to_that_processors_virtual_lane() {
         1
     );
 
-    put_and_apply(&app, beam_graph(false), 3).await;
+    put_and_apply(&app, beam_graph(false)).await;
     let live = get_state(&app).await;
     assert!(live.device_sets[0].virtual_lanes.is_empty());
     assert!(
@@ -381,7 +381,7 @@ async fn channels_on_a_lane_port_bind_to_that_processors_virtual_lane() {
 async fn an_unwired_position_sends_no_pose() {
     let (app, state) = test_router_with_state();
     let unwired = with_gps(kraken_graph(ArrayNode::default()), fixed(48.1, 11.5), false);
-    put_and_apply(&app, unwired.clone(), 1).await;
+    put_and_apply(&app, unwired.clone()).await;
     wait_for("the GPS fix", || state.gps.fix("gps")).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(
@@ -392,10 +392,10 @@ async fn an_unwired_position_sends_no_pose() {
     assert!(array::array_pose(&state, ARRAY).is_none());
 
     let wired = with_gps(kraken_graph(ArrayNode::default()), fixed(48.1, 11.5), true);
-    put_and_apply(&app, wired, 2).await;
+    put_and_apply(&app, wired).await;
     wait_for("the wired fix", || status_of(&state, ARRAY)?.position).await;
 
-    put_and_apply(&app, unwired, 3).await;
+    put_and_apply(&app, unwired).await;
     assert_eq!(status_of(&state, ARRAY).expect("running").position, None);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(status_of(&state, ARRAY).expect("running").position, None);
@@ -412,7 +412,7 @@ async fn a_gps_wired_into_an_array_moves_its_pose() {
         },
         true,
     );
-    put_and_apply(&app, graph, 1).await;
+    put_and_apply(&app, graph).await;
 
     let publish = |fix: PositionFix| {
         state
@@ -463,7 +463,7 @@ async fn a_lost_pose_is_reported() {
         },
         true,
     );
-    put_and_apply(&app, graph, 1).await;
+    put_and_apply(&app, graph).await;
     state
         .engine
         .remove_array(ARRAY)
@@ -598,7 +598,7 @@ fn solution(lanes: &[LaneKey], center_hz: f64, sample_rate: f64) -> ArrayCalReco
 #[tokio::test(flavor = "multi_thread")]
 async fn a_solved_calibration_is_stored_and_offered_as_warm_start() {
     let (app, state) = test_router_with_state();
-    put_and_apply(&app, kraken_graph(ArrayNode::default()), 1).await;
+    put_and_apply(&app, kraken_graph(ArrayNode::default())).await;
     let binding = state.arrays.binding(ARRAY).expect("bound");
     assert_eq!(
         binding.spec.as_ref().and_then(|spec| spec.warm.clone()),
@@ -671,7 +671,7 @@ async fn array_status_reaches_clients_as_array_update() {
         .await
         .expect("connect");
 
-    put_and_apply(&app, kraken_graph(ArrayNode::default()), 1).await;
+    put_and_apply(&app, kraken_graph(ArrayNode::default())).await;
 
     let status = tokio::time::timeout(WAIT, async {
         loop {
@@ -717,8 +717,7 @@ async fn calibrate(app: &Router, node: &str) -> (StatusCode, String) {
 #[tokio::test(flavor = "multi_thread")]
 async fn calibrate_and_tune_endpoints_reach_the_engine() {
     let (app, state) = test_router_with_state();
-    let workspace =
-        put_workspace_revision(&app, &snapshot(kraken_graph(ArrayNode::default())), 1).await;
+    let workspace = put_workspace(&app, &snapshot(kraken_graph(ArrayNode::default()))).await;
     apply(&app, workspace).await;
 
     let (status, body) = tune(
@@ -758,7 +757,7 @@ async fn calibrate_and_tune_endpoints_reach_the_engine() {
 
     let mut settings = ArrayNode::default();
     settings.cal.source = ArrayCalSource::Off;
-    put_and_apply(&app, kraken_graph(settings.clone()), 2).await;
+    put_and_apply(&app, kraken_graph(settings.clone())).await;
     let (status, body) = calibrate(&app, ARRAY).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert!(body.contains("Cal is off"), "{body}");
@@ -776,7 +775,7 @@ async fn an_array_records_every_lane_until_stopped() {
     let state = recording_state(dir.path());
     let (app, background) = router_with_state(state, &ServerOptions::default());
     background.detach();
-    put_and_apply(&app, kraken_graph(ArrayNode::default()), 1).await;
+    put_and_apply(&app, kraken_graph(ArrayNode::default())).await;
 
     let record = |method: &'static str| {
         let app = app.clone();
@@ -818,7 +817,7 @@ async fn a_recorded_collection_feeds_an_array_through_its_lane_outputs() {
             .collect(),
     };
 
-    let report = put_and_apply(&app, graph, 1).await;
+    let report = put_and_apply(&app, graph).await;
 
     assert!(report.refused.is_empty(), "{:?}", report.refused);
     let status = wait_for("the replayed array", || status_of(&state, ARRAY)).await;
@@ -865,7 +864,7 @@ fn draw(state: &AppState, seq: u32, surface: Arc<SurfaceFrame>) -> bool {
 #[tokio::test(flavor = "multi_thread")]
 async fn processor_reports_and_surfaces_are_forwarded() {
     let (app, state) = test_router_with_state();
-    put_and_apply(&app, radar_graph(), 1).await;
+    put_and_apply(&app, radar_graph()).await;
     let mut events = state.engine.subscribe_events();
     let (_, mut surface) = state.surfaces.subscribe("radar").expect("an open surface");
     let update = RadarUpdate {
@@ -926,7 +925,7 @@ async fn processor_reports_and_surfaces_are_forwarded() {
     .await
     .expect("the frame reaches the surface");
 
-    put_and_apply(&app, kraken_graph(ArrayNode::default()), 2).await;
+    put_and_apply(&app, kraken_graph(ArrayNode::default())).await;
     assert!(state.surfaces.subscribe("radar").is_none());
     assert!(draw(&state, 10, grid(10)));
     assert!(
@@ -953,8 +952,7 @@ async fn lagged_array_events_are_reported() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_array_comes_back_tuned_and_keeps_its_tune_through_edits() {
     let (app, state) = test_router_with_state();
-    let workspace =
-        put_workspace_revision(&app, &snapshot(kraken_graph(ArrayNode::default())), 1).await;
+    let workspace = put_workspace(&app, &snapshot(kraken_graph(ArrayNode::default()))).await;
     apply(&app, workspace).await;
     let (status, body) = tune(&app, ARRAY, r#"{"center_hz":868000000}"#).await;
     assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
@@ -977,7 +975,7 @@ async fn an_array_comes_back_tuned_and_keeps_its_tune_through_edits() {
     assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
     let mut edited = ArrayNode::default();
     edited.cal.check_s = 0;
-    put_and_apply(&again, kraken_graph(edited), 2).await;
+    put_and_apply(&again, kraken_graph(edited)).await;
     assert_eq!(
         center(&restarted),
         Some(433.92e6),
@@ -988,7 +986,7 @@ async fn an_array_comes_back_tuned_and_keeps_its_tune_through_edits() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_rewired_array_keeps_its_live_tune() {
     let (app, state) = test_router_with_state();
-    put_and_apply(&app, kraken_graph(ArrayNode::default()), 1).await;
+    put_and_apply(&app, kraken_graph(ArrayNode::default())).await;
     let (status, body) = tune(
         &app,
         ARRAY,
@@ -1001,7 +999,7 @@ async fn a_rewired_array_keeps_its_live_tune() {
     fewer
         .edges
         .retain(|edge| edge.to.port != sdrmm_wire::patch::stream_port("lane", 4));
-    let report = put_and_apply(&app, fewer, 2).await;
+    let report = put_and_apply(&app, fewer).await;
 
     assert!(report.refused.is_empty(), "{:?}", report.refused);
     let status = status_of(&state, ARRAY).expect("running");
@@ -1017,7 +1015,7 @@ async fn switching_workspaces_stops_the_old_arrays() {
         .nodes
         .push(node("df1", NodeBody::Df(DfNode::default())));
     graph.edges.push(wire((ARRAY, "array"), ("df1", "array")));
-    put_and_apply(&app, graph, 1).await;
+    put_and_apply(&app, graph).await;
     assert!(status_of(&state, ARRAY).is_some());
     assert!(state.surfaces.subscribe("radar").is_some());
 

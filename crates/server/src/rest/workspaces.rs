@@ -129,7 +129,7 @@ pub(super) fn apply_template_patch(
         name: None,
         snapshot: Some(active.snapshot),
     };
-    match store.update_workspace(active.info.id, &update) {
+    match store.update_workspace(active.info.id, &update, None) {
         Ok(_) => {
             engine.emit_scope(StateScope::Workspaces);
             Ok(())
@@ -345,9 +345,11 @@ pub(super) async fn create_workspace(
 pub(super) async fn get_workspace(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    author: Author,
 ) -> Result<Json<WorkspaceDetail>, AppError> {
     let store = state.store.clone();
-    let workspace = tokio::task::spawn_blocking(move || store.workspace(id)).await??;
+    let workspace =
+        tokio::task::spawn_blocking(move || store.workspace_for(id, author.as_deref())).await??;
     Ok(Json(workspace))
 }
 
@@ -489,13 +491,18 @@ pub(super) async fn dismiss_workspace_notice(
     params(("id" = i64, Path, description = "Workspace id")),
     request_body = UpdateWorkspaceRequest,
     responses(
-        (status = 200, description = "Workspace updated", body = WorkspaceInfo),
+        (
+            status = 200,
+            description = "The workspace as stored. A snapshot sent against an older revision is \
+                           merged with what other clients wrote since",
+            body = WorkspaceDetail,
+        ),
         (status = 400, description = "Layout rejected", body = ApiError),
         (status = 404, description = "Workspace not found", body = ApiError),
         (
             status = 409,
-            description = "Another client wrote first (stale revision) or the name is taken; \
-                           reload and reapply",
+            description = "The revision is too old to merge, the merge broke the layout, or the \
+                           name is taken",
             body = ApiError,
         ),
         (status = 422, description = "Malformed request body", body = ApiError),
@@ -504,23 +511,21 @@ pub(super) async fn dismiss_workspace_notice(
 pub(super) async fn update_workspace(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    author: Author,
     Json(req): Json<UpdateWorkspaceRequest>,
-) -> Result<Json<WorkspaceInfo>, AppError> {
+) -> Result<Json<WorkspaceDetail>, AppError> {
     let engine = state.engine.clone();
     let store = state.store.clone();
     let app = state.clone();
-    let info = tokio::task::spawn_blocking(move || -> Result<WorkspaceInfo, AppError> {
-        let _serialized = app
-            .apply_gate
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let info = store.update_workspace(id, &req)?;
+    let detail = tokio::task::spawn_blocking(move || -> Result<WorkspaceDetail, AppError> {
+        let _serialized = lock_gate(&app.apply_gate);
+        let detail = store.update_workspace(id, &req, author.as_deref())?;
         engine.emit_scope(StateScope::Workspaces);
-        Ok(info)
+        Ok(detail)
     })
     .await??;
     reconcile_graph(state).await?;
-    Ok(Json(info))
+    Ok(Json(detail))
 }
 
 #[utoipa::path(
@@ -535,19 +540,23 @@ pub(super) async fn update_workspace(
 pub(super) async fn delete_workspace(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    author: Author,
 ) -> Result<StatusCode, AppError> {
     let gps_state = state.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let _serialized = state
-            .apply_gate
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _serialized = lock_gate(&state.apply_gate);
         let before = state.store.active_workspace_id()?;
         let after = state.store.delete_workspace(id)?;
         if let Some(promoted) = after.filter(|promoted| Some(*promoted) != before) {
             let detail = state.store.workspace(promoted)?;
             let saved = state.store.workspace_state(promoted)?;
             workspace::reconcile(&state, &detail.snapshot.graph, &saved);
+            let report = bring_up_active(&state, promoted)?;
+            state.engine.emit_event(ServerEvent::WorkspaceSwitched {
+                id: promoted,
+                by: author.name(&state),
+                report,
+            });
         }
         state.engine.emit_scope(StateScope::Workspaces);
         Ok(())
@@ -562,11 +571,12 @@ pub(super) async fn delete_workspace(
     params(("id" = i64, Path, description = "Workspace id")),
     responses(
         (
-            status = 204,
-            description = "Workspace activated for every client. The hardware is reconciled to \
-                           it: radios this workspace does not name are closed, channels it does \
-                           not draw are dropped, and the radios it keeps are put back where it \
-                           was left. Apply opens the rest",
+            status = 200,
+            description = "Workspace activated for every client and brought up once: radios it \
+                           does not name are closed, channels it does not draw are dropped, the \
+                           rest are opened where it was left. Every client hears \
+                           WorkspaceSwitched with the same report",
+            body = PatchApplyReport,
         ),
         (status = 400, description = "Invalid path parameter", body = ApiError),
         (status = 404, description = "Workspace not found", body = ApiError),
@@ -575,15 +585,32 @@ pub(super) async fn delete_workspace(
 pub(super) async fn activate_workspace(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-) -> Result<StatusCode, AppError> {
+    author: Author,
+) -> Result<Json<PatchApplyReport>, AppError> {
     let gps_state = state.clone();
-    tokio::task::spawn_blocking(move || {
+    let report = tokio::task::spawn_blocking(move || {
         let _serialized = lock_gate(&state.apply_gate);
-        activate(&state, id)
+        let by = author.name(&state);
+        switch(&state, id, by)
     })
     .await??;
     reconcile_graph(gps_state).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(Json(report))
+}
+
+pub(crate) fn switch(
+    state: &AppState,
+    id: i64,
+    by: Option<String>,
+) -> Result<PatchApplyReport, AppError> {
+    activate(state, id)?;
+    let report = bring_up_active(state, id)?;
+    state.engine.emit_event(ServerEvent::WorkspaceSwitched {
+        id,
+        by,
+        report: report.clone(),
+    });
+    Ok(report)
 }
 
 pub(crate) fn activate(state: &AppState, id: i64) -> Result<(), AppError> {
@@ -611,9 +638,8 @@ pub(crate) fn activate(state: &AppState, id: i64) -> Result<(), AppError> {
     responses(
         (
             status = 200,
-            description = "The workspace as it was before its last change, with the history it \
-                           can still walk. The step is stored, so every client is told to reload \
-                           it: one workspace, one history, whichever browser pressed undo",
+            description = "Takes back the caller's own last change, keeping what others did \
+                           since. Callers are told apart by the x-sdrmm-author header",
             body = WorkspaceDetail,
         ),
         (status = 400, description = "Invalid path parameter", body = ApiError),
@@ -624,15 +650,16 @@ pub(crate) fn activate(state: &AppState, id: i64) -> Result<(), AppError> {
 pub(super) async fn undo_workspace(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    author: Author,
 ) -> Result<Json<WorkspaceDetail>, AppError> {
-    step_history(state, id, Store::undo_workspace).await
+    step_history(state, id, author.into_key(), Store::undo_workspace).await
 }
 
 #[utoipa::path(
     post, path = "/api/workspaces/{id}/redo",
     params(("id" = i64, Path, description = "Workspace id")),
     responses(
-        (status = 200, description = "The workspace an undo had stepped out of", body = WorkspaceDetail),
+        (status = 200, description = "Puts back the caller's last undone change", body = WorkspaceDetail),
         (status = 400, description = "Invalid path parameter", body = ApiError),
         (status = 404, description = "Workspace not found", body = ApiError),
         (status = 409, description = "Nothing left to redo", body = ApiError),
@@ -641,23 +668,27 @@ pub(super) async fn undo_workspace(
 pub(super) async fn redo_workspace(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    author: Author,
 ) -> Result<Json<WorkspaceDetail>, AppError> {
-    step_history(state, id, Store::redo_workspace).await
+    step_history(state, id, author.into_key(), Store::redo_workspace).await
 }
+
+pub(crate) type HistoryStep = fn(&Store, i64, Option<&str>) -> Result<SteppedWorkspace, StoreError>;
 
 pub(crate) async fn step_history(
     state: AppState,
     id: i64,
-    step: fn(&Store, i64) -> Result<SteppedWorkspace, StoreError>,
+    author: Option<String>,
+    step: HistoryStep,
 ) -> Result<Json<WorkspaceDetail>, AppError> {
     let gps_state = state.clone();
     let detail = tokio::task::spawn_blocking(move || -> Result<WorkspaceDetail, AppError> {
-        let _serialized = state
-            .apply_gate
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _serialized = lock_gate(&state.apply_gate);
         let before = state.store.workspace(id)?;
-        let stepped = step(&state.store, id)?;
+        if state.store.active_workspace_id()? == Some(id) {
+            workspace::save_active(&state)?;
+        }
+        let stepped = step(&state.store, id, author.as_deref())?;
         let detail = stepped.detail;
         if state.store.active_workspace_id()? == Some(id) {
             if !before.snapshot.graph.same_topology(&detail.snapshot.graph) {
@@ -768,6 +799,7 @@ pub(crate) fn save_channel(
     let mut saved = state.store.workspace_state(id)?;
     saved.put_channel(node, settings);
     state.store.put_workspace_state(id, &saved)?;
+    state.engine.emit_scope(StateScope::Workspace(id));
     Ok(())
 }
 

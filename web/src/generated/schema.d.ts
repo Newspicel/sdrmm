@@ -3382,6 +3382,17 @@ export interface components {
             };
             /** @enum {string} */
             type: "UnsubscribeSurface";
+        } | {
+            data: {
+                author: string;
+                name?: string;
+            };
+            /** @enum {string} */
+            type: "Present";
+        } | {
+            data: components["schemas"]["Pointer"];
+            /** @enum {string} */
+            type: "Point";
         };
         ClientsResponse: {
             /** Format: int32 */
@@ -4620,6 +4631,10 @@ export interface components {
         /** @enum {string} */
         DopplerWindow: "hann" | "blackman_harris" | "rectangular";
         DpmrParams: Record<string, never>;
+        DraggedNode: {
+            node: string;
+            position: components["schemas"]["Position"];
+        };
         /** @enum {string} */
         DrmMode: "auto" | "drm30" | "drm_plus";
         DrmParams: {
@@ -6524,6 +6539,10 @@ export interface components {
         PatchCatalog: {
             nodes: components["schemas"]["NodeTypeInfo"][];
         };
+        PatchChannelRequest: {
+            base?: components["schemas"]["ChannelSettings"] | null;
+            settings: components["schemas"]["ChannelSettings"];
+        };
         PatchEdge: {
             from: components["schemas"]["PortRef"];
             to: components["schemas"]["PortRef"];
@@ -6541,6 +6560,13 @@ export interface components {
         PatchRefusal: {
             node: string;
             reason: string;
+        };
+        Peer: {
+            /** Format: int32 */
+            hue: number;
+            /** Format: int32 */
+            id: number;
+            name: string;
         };
         Phone: {
             created_at: string;
@@ -6653,6 +6679,11 @@ export interface components {
         };
         /** @enum {string} */
         PocsagPayload: "tone" | "numeric" | "alpha";
+        Pointer: {
+            at?: components["schemas"]["Position"] | null;
+            dragging?: components["schemas"]["DraggedNode"][];
+            selected?: string[];
+        };
         PolarimeterNode: {
             settings?: components["schemas"]["PolarimeterParams"];
         };
@@ -7932,6 +7963,31 @@ export interface components {
             type: "SurveyUpdate";
         } | {
             data: {
+                peers: components["schemas"]["Peer"][];
+                /** Format: int32 */
+                you: number;
+            };
+            /** @enum {string} */
+            type: "Peers";
+        } | {
+            data: {
+                /** Format: int32 */
+                peer: number;
+                pointer: components["schemas"]["Pointer"];
+            };
+            /** @enum {string} */
+            type: "PeerPointer";
+        } | {
+            data: {
+                by?: string | null;
+                /** Format: int64 */
+                id: number;
+                report: components["schemas"]["PatchApplyReport"];
+            };
+            /** @enum {string} */
+            type: "WorkspaceSwitched";
+        } | {
+            data: {
                 message: string;
             };
             /** @enum {string} */
@@ -8136,6 +8192,11 @@ export interface components {
         } | {
             /** @enum {string} */
             scope: "workspaces";
+        } | {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            scope: "workspace";
         } | {
             /** @enum {string} */
             scope: "arrays";
@@ -10919,11 +10980,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChannelSettings"];
+                "application/json": components["schemas"]["PatchChannelRequest"];
             };
         };
         responses: {
-            /** @description Settings applied */
+            /** @description Settings applied. With a base, only the fields changed from it land, so another client's edit to other fields survives */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -13325,13 +13386,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Workspace updated */
+            /** @description The workspace as stored. A snapshot sent against an older revision is merged with what other clients wrote since */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkspaceInfo"];
+                    "application/json": components["schemas"]["WorkspaceDetail"];
                 };
             };
             /** @description Layout rejected */
@@ -13352,7 +13413,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Another client wrote first (stale revision) or the name is taken; reload and reapply */
+            /** @description The revision is too old to merge, the merge broke the layout, or the name is taken */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13423,12 +13484,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Workspace activated for every client. The hardware is reconciled to it: radios this workspace does not name are closed, channels it does not draw are dropped, and the radios it keeps are put back where it was left. Apply opens the rest */
-            204: {
+            /** @description Workspace activated for every client and brought up once: radios it does not name are closed, channels it does not draw are dropped, the rest are opened where it was left. Every client hears WorkspaceSwitched with the same report */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PatchApplyReport"];
+                };
             };
             /** @description Invalid path parameter */
             400: {
@@ -13648,7 +13711,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The workspace an undo had stepped out of */
+            /** @description Puts back the caller's last undone change */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -13698,7 +13761,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The workspace as it was before its last change, with the history it can still walk. The step is stored, so every client is told to reload it: one workspace, one history, whichever browser pressed undo */
+            /** @description Takes back the caller's own last change, keeping what others did since. Callers are told apart by the x-sdrmm-author header */
             200: {
                 headers: {
                     [name: string]: unknown;

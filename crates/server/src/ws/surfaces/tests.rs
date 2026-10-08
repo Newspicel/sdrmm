@@ -349,6 +349,7 @@ async fn a_socket_out_of_stream_ids_refuses_the_surface_by_name() {
         state.clone(),
         out,
         crate::auth::Identity::Open,
+        super::super::PeerLink::new(0, String::new()),
     );
     for id in MEDIA_ID_BASE..=u16::MAX {
         let task = tokio::spawn(async {});

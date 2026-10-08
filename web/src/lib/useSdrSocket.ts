@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { switchNotice, useSwitchStore } from "../canvas/switches";
 import {
   AUDIO_RECORDINGS_KEY,
   BOOKMARKS_KEY,
@@ -28,6 +29,7 @@ import { useLevelStore } from "./levels";
 import { AGE_OUT_INTERVAL_MS, TARGET_MAX_AGE_MS } from "./map/layers";
 import { usePipelineHealth } from "./pipeline";
 import { usePositionStore } from "./position";
+import { authorKey, savedName, usePresenceStore } from "./presence";
 import { useProcessorStore } from "./processors";
 import { useSatelliteStore } from "./satellite";
 import { useScannerStore } from "./scanner";
@@ -43,7 +45,9 @@ import type {
   StateScope,
   VoiceCall,
   VoiceCallsResponse,
+  WorkspacesResponse,
 } from "./types";
+import { retryNodeState } from "./useNodeStateSync";
 import { videoHub } from "./video";
 import { SdrSocket } from "./ws";
 
@@ -66,6 +70,17 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
         case "ImageCaptured":
           appendImage(queryClient, event.data);
           break;
+        case "WorkspaceSwitched": {
+          const switched = useSwitchStore.getState().observe(event);
+          retryNodeState(queryClient);
+          if (switched !== null && !switched.mine) {
+            pushToast(
+              switchNotice(switched, queryClient.getQueryData<WorkspacesResponse>(WORKSPACES_KEY)),
+              "info",
+            );
+          }
+          break;
+        }
         case "Error":
           if (audioEngine.claimServerError(event.data.message)) {
             recordEvent("error", "socket", event.data.message);
@@ -94,8 +109,13 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
       } else if (!up && now) {
         recordEvent("info", "socket", "connected");
       }
-      if (now) s.send({ type: "SubscribeDiagnostics", data: { enabled: true } });
-      else usePipelineHealth.getState().reset();
+      if (now) {
+        s.send({ type: "SubscribeDiagnostics", data: { enabled: true } });
+        s.send({ type: "Present", data: { author: authorKey(), name: savedName() } });
+      } else {
+        usePipelineHealth.getState().reset();
+        usePresenceStore.getState().reset();
+      }
       up = now;
     });
     s.on("event", usePipelineHealth.getState().observe);
@@ -111,6 +131,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", useBearingStore.getState().observe);
     s.on("event", useFusionStore.getState().observe);
     s.on("event", useSurveyStore.getState().observe);
+    s.on("event", usePresenceStore.getState().observe);
     const ageOut = setInterval(
       () => useDecodedStore.getState().ageOut(TARGET_MAX_AGE_MS),
       AGE_OUT_INTERVAL_MS,
@@ -200,6 +221,9 @@ export function invalidateScope(queryClient: QueryClient, scope: StateScope): vo
       break;
     case "workspaces":
       void queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY });
+      break;
+    case "workspace":
+      void queryClient.invalidateQueries({ queryKey: [...WORKSPACES_KEY, scope.id], exact: true });
       break;
     case "decoder_log":
       void queryClient.invalidateQueries({ queryKey: DECODER_LOG_KEY });

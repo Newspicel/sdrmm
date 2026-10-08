@@ -16,6 +16,8 @@ import { WorkspaceProvider } from "./canvas/context";
 import { FullFace } from "./canvas/FullFace";
 import { pruneRack } from "./canvas/graph";
 import { Rack } from "./canvas/Rack";
+import { useSwitchStore } from "./canvas/switches";
+import { useScopedState } from "./canvas/useScopedState";
 import { useWorkspace } from "./canvas/useWorkspace";
 import { type View, WorkspaceBar } from "./canvas/WorkspaceBar";
 import { WorkspaceNotices } from "./canvas/WorkspaceNotices";
@@ -42,8 +44,6 @@ import { ToolsDialog } from "./tools/ToolsDialog";
 
 export function App() {
   const queryClient = useQueryClient();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [view, setView] = useState<View>("patch");
   const [stepHz, setStepHz] = useState(100_000);
   const [showHelp, setShowHelp] = useState(false);
@@ -55,6 +55,10 @@ export function App() {
   const channelTypes = useQuery(channelTypesQuery());
   const catalog = useQuery(patchCatalogQuery());
   const workspace = useWorkspace();
+  const activeId = workspace.active?.id ?? null;
+  const [selected, setSelected] = useScopedState<string | null>(activeId, null);
+  const [expanded, setExpanded] = useScopedState<string | null>(activeId, null);
+  const applied = useSwitchStore((held) => held.report);
   const { cachedSettings } = useDevicePatch();
   const { tuneRadio } = useRadioTune();
   const { applyEdit } = useChannelPatch();
@@ -70,18 +74,17 @@ export function App() {
   );
   const announced = useRef<PatchApplyReport | null>(null);
   useEffect(() => {
-    const report = workspace.applied;
-    if (report === null || report === announced.current) {
+    if (applied === null || applied === announced.current) {
       return;
     }
-    announced.current = report;
-    for (const message of applyToasts(report, graph.nodes)) {
+    announced.current = applied;
+    for (const message of applyToasts(applied, graph.nodes)) {
       pushToast(message);
     }
-    useRefusalStore.getState().fromReport(report);
-  }, [workspace.applied, graph.nodes]);
+    useRefusalStore.getState().fromReport(applied);
+  }, [applied, graph.nodes]);
 
-  useNodeStateSync(workspace.active?.id ?? null, graph.nodes, state.data?.arrays);
+  useNodeStateSync(activeId, graph.nodes, state.data?.arrays);
 
   const rack = useMemo(() => pruneRack(snapshot?.rack ?? {}, graph), [snapshot?.rack, graph]);
   const settings = useMemo(() => snapshot?.settings ?? {}, [snapshot?.settings]);
@@ -180,7 +183,7 @@ export function App() {
                 view={view}
                 onView={setView}
                 workspaces={workspace.workspaces}
-                activeWorkspace={workspace.active?.id ?? null}
+                activeWorkspace={activeId}
                 onActivate={workspace.activate}
                 onCreate={workspace.create}
                 onRename={workspace.rename}
@@ -202,7 +205,7 @@ export function App() {
                 />
               )}
               <div className="relative flex min-h-0 flex-1 flex-col">
-                {view === "patch" ? <Canvas /> : <Rack />}
+                {view === "patch" ? <Canvas key={activeId} /> : <Rack />}
                 <FullFace />
               </div>
             </ReactFlowProvider>

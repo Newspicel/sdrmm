@@ -145,6 +145,8 @@ async fn bench(graph: PatchGraph) -> (Router, AppState, i64) {
     bench_on(fresh(), graph, false).await
 }
 
+const OPERATOR: &str = "operator";
+
 async fn send(
     app: &Router,
     method: &str,
@@ -153,8 +155,9 @@ async fn send(
     bearer: Option<&str>,
 ) -> (StatusCode, Bytes) {
     let mut builder = Request::builder().method(method).uri(uri);
-    if let Some(token) = bearer {
-        builder = builder.header("authorization", format!("Bearer {token}"));
+    match bearer {
+        Some(token) => builder = builder.header("authorization", format!("Bearer {token}")),
+        None => builder = builder.header(sdrmm_wire::AUTHOR_HEADER, OPERATOR),
     }
     let body = match body {
         Some(json) => {
@@ -461,7 +464,10 @@ async fn tuning_a_hunt_moves_its_decoder_and_records_history() {
     let target = hunt_of(&tuned).target.clone().expect("a target");
     assert_eq!(target.frequency_hz, wanted);
     assert_eq!(voice(&state).1.settings.frequency_hz, wanted);
-    let detail = state.store.workspace(id).expect("workspace");
+    let detail = state
+        .store
+        .workspace_for(id, Some(OPERATOR))
+        .expect("workspace");
     assert!(detail.history.can_undo, "the tune is in the history");
 
     let (status, body) = try_act(&app, HUNT, r#"{"action":"tune","frequency_hz":-5}"#, None).await;
