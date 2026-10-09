@@ -1468,6 +1468,9 @@ pub enum DecoderEvent {
     Radiosonde(crate::weather::RadiosondeFrame),
     Lora(crate::lora::LoraFrame),
     RemoteId(crate::remote_id::RemoteIdFrame),
+    Ble(crate::ble::BleAdvert),
+    WifiOccupancy(crate::airtime::WifiOccupancyReport),
+    IsmSurvey(crate::airtime::IsmSurveyReport),
 }
 
 fn dect_summary(f: &DectFrame) -> String {
@@ -1730,6 +1733,9 @@ impl DecoderEvent {
             Self::Radiosonde(_) => "radiosonde",
             Self::Lora(_) => "lora",
             Self::RemoteId(_) => "remote_id",
+            Self::Ble(_) => "ble",
+            Self::WifiOccupancy(_) => "wifi_occupancy",
+            Self::IsmSurvey(_) => "ism_survey",
         }
     }
 
@@ -1914,6 +1920,9 @@ impl DecoderEvent {
             Self::Radiosonde(f) => crate::weather::radiosonde_summary(f),
             Self::Lora(f) => f.summary(),
             Self::RemoteId(f) => f.summary(),
+            Self::Ble(a) => a.summary(),
+            Self::WifiOccupancy(r) => r.summary(),
+            Self::IsmSurvey(r) => r.summary(),
         }
     }
 
@@ -1992,6 +2001,8 @@ impl DecoderEvent {
             Self::Radiosonde(f) => Some(f.serial.clone()),
             Self::Lora(f) => f.station(),
             Self::RemoteId(f) => Some(f.station()),
+            Self::Ble(a) => a.station(),
+            Self::WifiOccupancy(_) | Self::IsmSurvey(_) => None,
         }
     }
 }

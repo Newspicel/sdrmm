@@ -9,7 +9,10 @@ use sdrmm_test_support::{CountingAlloc, assert_no_alloc, measure_throughput};
 
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc::new();
-use sdrmm_wire::{ChannelParams, ChannelSettings, RemoteIdLink, RemoteIdParams};
+use sdrmm_wire::{
+    AirtimeSpan, BleLink, BleParams, ChannelParams, ChannelSettings, IsmSurveyParams,
+    RemoteIdLink, RemoteIdParams, WifiOccupancyParams,
+};
 
 const BLOCK: usize = 2_048;
 const SURVEY_SECONDS: f64 = 0.1;
@@ -318,5 +321,69 @@ fn remote_id_allocates_nothing_while_every_link_searches() {
             drive(rx.as_mut(), &iq, &mut outputs);
         }
         assert_no_alloc("remote_id", || drive(rx.as_mut(), &iq, &mut outputs));
+    }
+}
+
+#[test]
+fn ble_allocates_nothing_once_every_device_is_known() {
+    for link in [BleLink::Channel, BleLink::Band] {
+        let settings = ChannelSettings {
+            params: ChannelParams::Ble(BleParams { link }),
+            ..ChannelSettings::default_for("ble").expect("settings")
+        };
+        let rate = link.input_rate_hz();
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = busy_bluetooth(rate, link == BleLink::Band);
+        let mut outputs = ChannelOutputs::default();
+        drive(rx.as_mut(), &iq, &mut outputs);
+        assert_no_alloc("ble", || drive(rx.as_mut(), &iq, &mut outputs));
+        assert!(outputs.events.is_empty());
+    }
+}
+
+fn airtime_settings(type_id: &str, span: AirtimeSpan) -> ChannelSettings {
+    let params = match type_id {
+        "wifi_occupancy" => ChannelParams::WifiOccupancy(WifiOccupancyParams {
+            span,
+            ..WifiOccupancyParams::default()
+        }),
+        _ => ChannelParams::IsmSurvey(IsmSurveyParams {
+            span,
+            ..IsmSurveyParams::default()
+        }),
+    };
+    ChannelSettings {
+        params,
+        ..ChannelSettings::default_for(type_id).expect("settings")
+    }
+}
+
+#[test]
+fn airtime_decoders_allocate_nothing_and_keep_up_at_every_span() {
+    for type_id in ["wifi_occupancy", "ism_survey"] {
+        for span in [AirtimeSpan::Mhz20, AirtimeSpan::Mhz40, AirtimeSpan::Mhz80] {
+            let settings = airtime_settings(type_id, span);
+            let rate = span.sample_rate_hz();
+            let mut rx = sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings)
+                .expect("receiver");
+            let mut iq = busy_wifi(rate);
+            iq.resize((rate * 0.02) as usize, Complex::new(0.0, 0.0));
+            sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, 0.02);
+            let mut outputs = ChannelOutputs::default();
+            for _ in 0..8 {
+                drive(rx.as_mut(), &iq, &mut outputs);
+            }
+            assert_no_alloc(type_id, || drive(rx.as_mut(), &iq, &mut outputs));
+            if cfg!(debug_assertions) {
+                continue;
+            }
+            let msps =
+                measure_throughput(4, iq.len() as u64, || drive(rx.as_mut(), &iq, &mut outputs));
+            assert!(
+                msps * 1e6 / rate >= 1.5,
+                "{type_id} at {rate} Hz fell below 1.5x realtime: {msps} MS/s"
+            );
+        }
     }
 }

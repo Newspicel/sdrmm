@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-pub const BLUETOOTH_RATE_HZ: f64 = 4_000_000.0;
-pub const WIDE_RATE_HZ: f64 = 20_000_000.0;
-pub const BLUETOOTH_CHANNEL_WIDTH_HZ: f64 = 2_000_000.0;
+use crate::ble::{BLUETOOTH_BAND_RATE_HZ, BLUETOOTH_CHANNEL_WIDTH_HZ, BLUETOOTH_RATE_HZ};
+
+pub const WIDE_RATE_HZ: f64 = BLUETOOTH_BAND_RATE_HZ;
 pub const WIFI_CHANNEL_WIDTH_HZ: f64 = 20_000_000.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]

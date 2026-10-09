@@ -9,7 +9,7 @@ use sdrmm_device_recording::RecordingDriver;
 use sdrmm_engine::Engine;
 use sdrmm_recorder::SigmfWriter;
 use sdrmm_wire::{
-    AcarsParams, AdsbParams, AisChannel, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
+    AcarsParams, AdsbParams, AisChannel, BleBeacon, BleParams, IsmKind, IsmSurveyParams, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
     BroadcastStatus, BroadcastSystem, ChannelParams, ChannelSettings, CwSkimmerParams, DabParams,
     DatvParams, DatvStandard, DecodedRecord, DecoderEvent, DectBand, DectCapability,
     DectCipherState, DectParams, DectSpan, DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode,
@@ -2122,4 +2122,74 @@ async fn a_remote_id_wifi_beacon_reaches_the_decoded_stream() {
     assert_eq!(frame.transport, RemoteIdTransport::WifiBeacon);
     assert_eq!(frame.channel, Some(6));
     assert_eq!(frame.uas_id.as_deref(), Some("1581F5FJD239C00DW22E"));
+}
+
+#[tokio::test]
+async fn a_ble_beacon_survives_the_ddc() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let center_hz = 2_430_000_000.0;
+    let channel_hz = 2_426_000_000.0;
+    let mut iq = synth::ble::scene(HACKRF_DEVICE_RATE);
+    synth::scale(&mut iq, 0.3);
+    synth::shift(&mut iq, channel_hz - center_hz, HACKRF_DEVICE_RATE);
+    let device = plant_at(dir.path(), "ble", iq, HACKRF_DEVICE_RATE, center_hz);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: channel_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Ble(BleParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Ble(_)),
+    )
+    .await;
+    let DecoderEvent::Ble(advert) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(advert.channel, Some(38));
+    assert!(matches!(
+        advert.beacon,
+        Some(BleBeacon::Ibeacon { major: 7, minor: 300, .. })
+    ));
+}
+
+#[tokio::test]
+async fn the_2_4_ghz_survey_reports_each_second() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let channel_hz = 2_437_000_000.0;
+    let scene = synth::ism::scene();
+    let mut iq = Vec::with_capacity(scene.len() * 11);
+    for _ in 0..11 {
+        iq.extend_from_slice(&scene);
+    }
+    synth::add_noise(&mut iq, 9, 0.01);
+    let device = plant_at(dir.path(), "ism", iq, HACKRF_DEVICE_RATE, channel_hz);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: channel_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::IsmSurvey(IsmSurveyParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::IsmSurvey(_)),
+    )
+    .await;
+    let DecoderEvent::IsmSurvey(report) = record.event else {
+        unreachable!("filtered above")
+    };
+    let kinds: Vec<IsmKind> = report.kinds.iter().map(|load| load.kind).collect();
+    for kind in [
+        IsmKind::Wifi,
+        IsmKind::Bluetooth,
+        IsmKind::Ieee802154,
+        IsmKind::MicrowaveOven,
+    ] {
+        assert!(kinds.contains(&kind), "{kind:?} missing from {report:?}");
+    }
 }

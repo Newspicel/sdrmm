@@ -313,6 +313,18 @@ pub static SIGNALS: &[Signal] = &[
         render: remote_id_wifi,
     },
     Signal {
+        id: "ble_beacons",
+        label: "BLE beacons",
+        rate_hz: 4_000_000.0,
+        render: ble_beacons,
+    },
+    Signal {
+        id: "ism_24",
+        label: "2.4 GHz traffic",
+        rate_hz: 20_000_000.0,
+        render: ism_24,
+    },
+    Signal {
         id: "gnss",
         label: "GPS L1 C/A",
         rate_hz: 2_048_000.0,
@@ -802,6 +814,14 @@ fn remote_id_bluetooth() -> Vec<Complex<f32>> {
 
 fn remote_id_wifi() -> Vec<Complex<f32>> {
     synth::remote_id::wifi_scene().unwrap_or_default()
+}
+
+fn ble_beacons() -> Vec<Complex<f32>> {
+    synth::ble::scene(4_000_000.0)
+}
+
+fn ism_24() -> Vec<Complex<f32>> {
+    synth::ism::scene()
 }
 
 fn dect() -> Vec<Complex<f32>> {

@@ -1,3 +1,4 @@
+pub mod channel;
 pub mod dsss;
 pub mod ofdm;
 mod receiver;

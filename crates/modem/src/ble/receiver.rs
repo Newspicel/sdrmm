@@ -119,11 +119,17 @@ impl Scratch {
 
 enum Attempt {
     Done(usize, usize, BlePhy, usize),
+    Corrupt(usize),
     Wait(usize),
     Miss,
 }
 
-type Stage = Result<Option<(usize, usize)>, usize>;
+enum Outcome {
+    Good(usize, usize),
+    Corrupt(usize),
+}
+
+type Stage = Result<Option<Outcome>, usize>;
 
 pub struct Lane {
     rf: Option<u8>,
@@ -140,6 +146,8 @@ pub struct Lane {
     consumed: u64,
     cursor: usize,
     ready_at: usize,
+    suspect: Option<usize>,
+    rejected: u32,
     patterns: Patterns,
     scratch: Scratch,
 }
@@ -196,6 +204,8 @@ impl Lane {
             consumed: 0,
             cursor: 0,
             ready_at: 0,
+            suspect: None,
+            rejected: 0,
             patterns: Patterns::new(),
             scratch: Scratch::new(),
         })
@@ -212,6 +222,12 @@ impl Lane {
         self.consumed = 0;
         self.cursor = 0;
         self.ready_at = 0;
+        self.suspect = None;
+    }
+
+    #[must_use]
+    pub fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
@@ -256,6 +272,7 @@ impl Lane {
         }
         let mut at = self.cursor;
         while at < self.y.len() {
+            self.settle_suspect(at);
             let patterns = &self.patterns;
             let one = ((self.rising[at] ^ patterns.one_rising) & patterns.one_turns).count_ones()
                 <= ONE_SCREEN_ERRORS
@@ -282,6 +299,9 @@ impl Lane {
             }
             match attempt {
                 Attempt::Done(start, end, phy, length) => {
+                    if self.suspect.is_some_and(|suspect| start < suspect) {
+                        self.suspect = None;
+                    }
                     let start = start.min(end.saturating_sub(1));
                     let window = &self.raw[start..end.min(self.raw.len())];
                     let mean = window.iter().map(Complex::norm_sqr).sum::<f32>()
@@ -299,11 +319,19 @@ impl Lane {
                     self.ready_at = needed;
                     break;
                 }
-                Attempt::Miss => at += 1,
+                Attempt::Miss | Attempt::Corrupt(_) => at += 1,
             }
         }
         self.cursor = at.min(self.y.len());
+        self.settle_suspect(self.cursor);
         self.trim();
+    }
+
+    fn settle_suspect(&mut self, at: usize) {
+        if self.suspect.is_some_and(|end| at >= end) {
+            self.rejected = self.rejected.saturating_add(1);
+            self.suspect = None;
+        }
     }
 
     fn best_coded_anchor(&self, at: usize) -> Option<usize> {
@@ -343,6 +371,11 @@ impl Lane {
             Attempt::Wait(needed) if needed + base <= anchor + longest => {
                 Attempt::Wait(needed + base)
             }
+            Attempt::Corrupt(end) => {
+                let end = end + base;
+                self.suspect = Some(self.suspect.map_or(end, |suspect| suspect.max(end)));
+                Attempt::Miss
+            }
             _ => Attempt::Miss,
         }
     }
@@ -363,6 +396,7 @@ impl Lane {
         self.consumed += drop as u64;
         self.cursor = self.cursor.saturating_sub(drop);
         self.ready_at = self.ready_at.saturating_sub(drop);
+        self.suspect = self.suspect.map(|end| end.saturating_sub(drop));
     }
 }
 
@@ -411,7 +445,7 @@ impl Decoder<'_> {
                 total - CRC_BYTES,
             )
         } else {
-            Attempt::Miss
+            Attempt::Corrupt(detector.position() as usize)
         }
     }
 
@@ -456,7 +490,8 @@ impl Decoder<'_> {
             _ => self.s2(&acquired, &blocks, header_coded),
         };
         match outcome {
-            Ok(Some((end, length))) => Attempt::Done(start, end, phy, length),
+            Ok(Some(Outcome::Good(end, length))) => Attempt::Done(start, end, phy, length),
+            Ok(Some(Outcome::Corrupt(end))) => Attempt::Corrupt(end),
             Ok(None) => Attempt::Miss,
             Err(needed) => Attempt::Wait(needed),
         }
@@ -557,7 +592,7 @@ impl Decoder<'_> {
         coded: usize,
         length: usize,
         end: f64,
-    ) -> Option<(usize, usize)> {
+    ) -> Option<Outcome> {
         let scratch = &mut self.scratch;
         let soft = scratch.soft.get(first..first + coded)?;
         scratch.bits.clear();
@@ -570,7 +605,11 @@ impl Decoder<'_> {
         {
             *slot = whitener.byte(byte_of(bits));
         }
-        crc_ok(&scratch.pdu[..total]).then_some((end as usize, total - CRC_BYTES))
+        Some(if crc_ok(&scratch.pdu[..total]) {
+            Outcome::Good(end as usize, total - CRC_BYTES)
+        } else {
+            Outcome::Corrupt(end as usize)
+        })
     }
 }
 

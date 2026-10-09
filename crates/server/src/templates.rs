@@ -3,13 +3,14 @@ use std::sync::LazyLock;
 mod array;
 
 use sdrmm_wire::{
-    AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, ChannelNode,
+    AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink, BleParams,
+    ChannelNode,
     ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams, EotParams,
-    ErmesParams, FlexParams, GnssParams, LrptParams, M17Params, MorseParams, NavtexParams,
+    ErmesParams, FlexParams, GnssParams, IsmSurveyParams, LrptParams, M17Params, MorseParams, NavtexParams,
     NfmParams, NodeBody, PatchEdge, PatchGraph, PatchNode, PocsagParams, PortRef, Position,
     PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams,
-    Squelch, SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams, WsjtParams, WsprParams,
-    YsfParams,
+    Squelch, SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams, WifiOccupancyParams,
+    WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -364,6 +365,48 @@ static TEMPLATES: &[Entry] = &[
                 })
             },
             TRACK_READ,
+        )],
+    },
+    Entry {
+        id: "ble-devices",
+        name: "BLE devices",
+        description: "Bluetooth LE devices, beacons and trackers.",
+        explainer: "Phones, tags and sensors advertise on channel 38. A 20 MS/s window also \
+                    hears long range adverts on the data channels around it.",
+        center_hz: 2_426_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_426_000_000.0,
+            || ChannelParams::Ble(BleParams { link: BleLink::Band }),
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "ism-survey",
+        name: "2.4 GHz survey",
+        description: "Who uses 2.4 GHz: Wi-Fi, Bluetooth, Zigbee, ovens.",
+        explainer: "Sorts every burst by width, length and channel grid, from energy alone. \
+                    One report per second.",
+        center_hz: 2_442_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_442_000_000.0,
+            || ChannelParams::IsmSurvey(IsmSurveyParams::default()),
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "wifi-occupancy",
+        name: "Wi-Fi occupancy",
+        description: "How busy each Wi-Fi channel is.",
+        explainer: "Busy time from energy alone, once a second. A 20 MS/s radio sees one \
+                    channel; 80 MS/s sees all of 2.4 GHz.",
+        center_hz: 2_437_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_437_000_000.0,
+            || ChannelParams::WifiOccupancy(WifiOccupancyParams::default()),
+            LOG_READ,
         )],
     },
     Entry {

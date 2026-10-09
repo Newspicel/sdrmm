@@ -1,9 +1,11 @@
 pub mod monitor;
 pub use monitor::{EventOrigin, SpectrumMonitorNode, Transmission, TransmissionState};
 pub mod about;
+pub mod airtime;
 pub mod array;
 pub mod audio;
 pub mod bandplan;
+pub mod ble;
 pub mod channel;
 pub mod cps;
 pub mod decode;
@@ -45,6 +47,11 @@ pub mod workspace_state;
 pub mod ws;
 
 pub use about::{API_PROTOCOL, AboutResponse, Attribution, ComponentSource, LicenseTextResponse};
+pub use airtime::{
+    AIRTIME_REPORT_MS, AirtimeSpan, IsmKind, IsmKindLoad, IsmSurveyParams, IsmSurveyReport,
+    MAX_AIRTIME_MARGIN_DB, MIN_AIRTIME_MARGIN_DB, WifiBand, WifiChannelLoad, WifiOccupancyParams,
+    WifiOccupancyReport,
+};
 pub use array::{
     ArrayCal, ArrayCalRecord, ArrayCalSource, ArrayElement, ArrayFailure, ArrayGain, ArrayGeometry,
     ArrayLaneStatus, ArrayNode, ArrayOrientation, ArrayRecordingRequest, ArrayRecordingStarted,
@@ -64,6 +71,10 @@ pub use bandplan::{
     BandAllocation, BandBlock, BandChannel, BandLane, BandLayerInfo, BandLayerKind, BandPlan,
     BandProvision, BandRegion, BandRegionMatch, BandRegionsResponse, BandService, ItuRegion,
     LocateQuery,
+};
+pub use ble::{
+    BleAddress, BleAddressKind, BleAdi, BleAdvert, BleAuxPointer, BleBeacon, BleFlags, BleLink,
+    BleManufacturer, BleParams, BlePdu, BlePhy, BleService,
 };
 pub use channel::{
     AcarsParams, AdsbParams, AeroChannel, AisChannel, AisParams, AmParams, AprsMode, AprsParams,

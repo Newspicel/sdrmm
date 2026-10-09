@@ -3,6 +3,7 @@ pub mod adsb;
 pub mod ais;
 pub mod apt;
 pub mod atv;
+pub mod ble;
 pub mod dab;
 mod dab_packet;
 mod dab_pad;
@@ -15,6 +16,7 @@ pub mod eot;
 pub mod ermes;
 pub mod flex;
 pub mod gnss;
+pub mod ism;
 #[cfg(any(test, feature = "fixtures"))]
 pub mod ident_fixtures;
 pub mod lora;
