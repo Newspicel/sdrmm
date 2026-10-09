@@ -234,7 +234,8 @@ user to `dialout`.
 
 SDR-- talks to the iiod server of the AntSDR's Pluto firmware directly, with no libiio. The E310
 has two receive lanes on one synthesizer, so they are phase coherent. UHD firmware is not
-supported.
+supported. MicroPhase ships UHD images for the E200 and E316 only; the `e310v2` target in
+antsdr_uhd is the E316 and does not run on an E310.
 
 **USB:** connect the USB 2.0 port and the board appears with no network setup. Windows needs the
 [PlutoSDR drivers](https://wiki.analog.com/university/tools/pluto/drivers/windows).
