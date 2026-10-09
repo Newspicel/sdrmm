@@ -25,6 +25,7 @@ members = [
     "crates/device-rtltcp",
     "crates/device-spyserver",
     "crates/usb-stream",
+    "crates/iqlink",
     "crates/channels",
     "crates/cps",
     "crates/recorder",
@@ -34,6 +35,7 @@ members = [
     "crates/server",
     "crates/mobile-core",
     "apps/sdrmm",
+    "apps/iqlinkd",
     "apps/desktop",
     "xtask",
     "xtask/release",
@@ -64,6 +66,7 @@ default-members = [
     "crates/device-rtltcp",
     "crates/device-spyserver",
     "crates/usb-stream",
+    "crates/iqlink",
     "crates/channels",
     "crates/cps",
     "crates/recorder",
@@ -73,6 +76,7 @@ default-members = [
     "crates/server",
     "crates/mobile-core",
     "apps/sdrmm",
+    "apps/iqlinkd",
     "xtask",
     "xtask/release",
 ]
@@ -112,6 +116,7 @@ sdrmm-device-hackrf = { path = "crates/device-hackrf" }
 sdrmm-device-rtltcp = { path = "crates/device-rtltcp" }
 sdrmm-device-spyserver = { path = "crates/device-spyserver" }
 sdrmm-usb-stream = { path = "crates/usb-stream" }
+sdrmm-iqlink = { path = "crates/iqlink" }
 sdrmm-channels = { path = "crates/channels" }
 sdrmm-cps = { path = "crates/cps" }
 sdrmm-recorder = { path = "crates/recorder" }
@@ -223,6 +228,7 @@ qrcodegen = "1.8.0"
 
 # Errors / logging / util
 libc = "0.2"
+socket2 = { version = "0.6", features = ["all"] }
 rustix = { version = "1.1.5", default-features = false, features = ["std", "fs", "process", "thread"] }
 thiserror = "2"
 anyhow = "1"

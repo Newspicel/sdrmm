@@ -30,6 +30,7 @@ mod caps;
 mod convert;
 mod discovery;
 mod iio;
+mod iqlink;
 mod layout;
 mod pace;
 mod rx;
@@ -568,7 +569,7 @@ mod tests {
             Endpoint::parse("192.168.2.1", DEFAULT_PORT).expect("endpoint"),
             identity,
         );
-        let listed = driver.probe();
+        let listed = driver.endpoints(&[]);
         assert_eq!(listed.len(), 1, "{listed:?}");
         assert_eq!(
             listed[0].serial.as_deref(),

@@ -9,8 +9,8 @@ use sdrmm_device::{
 };
 use sdrmm_device_ad936x::Ad936xDriver;
 use sdrmm_wire::{
-    Agc, AgcSetting, BandwidthSetting, Coherence, DcArtifact, DeviceSettings, Duplex, GainKind,
-    GainValue, StreamSettings,
+    Agc, AgcSetting, BandwidthSetting, Coherence, DcArtifact, DeviceInfo, DeviceSettings, Duplex,
+    GainKind, GainValue, StreamSettings,
 };
 
 const SERIAL: &str = "1044734c960500111e002e0041984fc267";
@@ -844,7 +844,7 @@ fn a_radio_that_is_not_an_ad936x_is_refused_by_name() {
 fn a_radio_at_an_address_it_was_told_about_is_listed_without_a_search() {
     let server = FakeIiod::spawn(1);
     let driver = Ad936xDriver::searching([]);
-    assert!(driver.probe().is_empty());
+    assert!(networked(driver.probe()).is_empty());
     let info = driver.resolve(&server.endpoint()).expect("addressable");
     assert_eq!(info.driver, "ad936x");
     assert!(driver.probe().contains(&info));
@@ -856,10 +856,10 @@ fn a_search_tries_the_addresses_it_was_given_and_names_what_it_finds_by_serial()
     let server = FakeIiod::spawn(1);
     let driver = Ad936xDriver::searching([server.endpoint(), "127.0.0.1:1".to_string()]);
     assert!(
-        driver.probe().is_empty(),
+        networked(driver.probe()).is_empty(),
         "nothing is known before a search"
     );
-    let found = driver.probe_deep();
+    let found = networked(driver.probe_deep());
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].key, server.endpoint());
     assert_eq!(found[0].serial.as_deref(), Some(SERIAL));
@@ -886,7 +886,14 @@ fn opening_a_radio_by_two_addresses_lists_it_once_by_its_serial() {
         .expect("addressable");
     drop(driver.open(&by_address).expect("opens"));
     drop(driver.open(&by_name).expect("opens"));
-    let listed = driver.probe();
+    let listed = networked(driver.probe());
     assert_eq!(listed.len(), 1, "{listed:?}");
     assert_eq!(listed[0].serial.as_deref(), Some(SERIAL));
+}
+
+fn networked(listed: Vec<DeviceInfo>) -> Vec<DeviceInfo> {
+    listed
+        .into_iter()
+        .filter(|info| !info.key.starts_with("usb-"))
+        .collect()
 }

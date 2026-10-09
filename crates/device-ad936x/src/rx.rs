@@ -17,6 +17,7 @@ use crate::{
         Link, Stopper, close_buffer, mask, mask_len, open_buffer, parse_answer, read_buf,
         remaining, set_remote_timeout,
     },
+    iqlink::{self, IqlinkStream},
     layout::Stream,
     pace::{LiveRate, Pace},
     source::Source,
@@ -103,6 +104,37 @@ impl CaptureRadio for RxRadio {
     type Stream = RxStream;
 
     fn arm(&self) -> Result<RxStream, DeviceError> {
+        if let Some(stream) = self.arm_iqlink()? {
+            *lock(&self.armed) = Some(stream.stopper());
+            return Ok(RxStream::Iqlink(Box::new(stream)));
+        }
+        self.arm_iiod()
+            .map(|stream| RxStream::Iiod(Box::new(stream)))
+    }
+
+    fn disarm(&self) {
+        if let Some(stopper) = lock(&self.armed).take() {
+            sdrmm_device::StopHandle::stop(&stopper);
+        }
+    }
+}
+
+impl RxRadio {
+    fn arm_iqlink(&self) -> Result<Option<IqlinkStream>, DeviceError> {
+        let Source::Net(endpoint) = &self.source else {
+            return Ok(None);
+        };
+        let request = iqlink::Request {
+            device: &self.stream.device,
+            elements: self.stream.elements(self.first, self.lanes),
+            frames: self.samples,
+            frame_bytes: self.stream.sample_bytes(self.lanes),
+            lanes: self.lanes,
+        };
+        iqlink::open(endpoint, request, self.pool.clone())
+    }
+
+    fn arm_iiod(&self) -> Result<IiodStream, DeviceError> {
         let mut link = Link::new(self.source.open()?);
         let stopper = link.stopper();
         set_remote_timeout(&mut link, REMOTE_TIMEOUT)?;
@@ -118,7 +150,7 @@ impl CaptureRadio for RxRadio {
             "ad936x receive buffer opened"
         );
         let refill = self.samples * self.stream.sample_bytes(self.lanes);
-        Ok(RxStream {
+        Ok(IiodStream {
             inner: Mutex::new(Inner {
                 link,
                 pending: None,
@@ -135,15 +167,52 @@ impl CaptureRadio for RxRadio {
             overran: AtomicBool::new(false),
         })
     }
+}
 
-    fn disarm(&self) {
-        if let Some(stopper) = lock(&self.armed).take() {
-            sdrmm_device::StopHandle::stop(&stopper);
+#[derive(Debug)]
+pub(crate) enum RxStream {
+    Iiod(Box<IiodStream>),
+    Iqlink(Box<IqlinkStream>),
+}
+
+impl CaptureStream for RxStream {
+    type Block = Block;
+    type Stop = Stopper;
+
+    fn stop_handle(&self) -> Stopper {
+        match self {
+            Self::Iiod(stream) => stream.stop_handle(),
+            Self::Iqlink(stream) => stream.stopper(),
+        }
+    }
+
+    fn next_block(&self, timeout: Duration) -> Next<Block> {
+        match self {
+            Self::Iiod(stream) => stream.next_block(timeout),
+            Self::Iqlink(stream) => stream.next_block(timeout),
+        }
+    }
+
+    fn dropped(&self) -> u64 {
+        0
+    }
+
+    fn block_gap(&self, block: &Block, bytes_per_sample: u64) -> Option<BlockGap> {
+        match self {
+            Self::Iiod(stream) => stream.block_gap(block, bytes_per_sample),
+            Self::Iqlink(stream) => stream.block_gap(),
+        }
+    }
+
+    fn failure(&self) -> StreamFailure {
+        match self {
+            Self::Iiod(stream) => stream.failure(),
+            Self::Iqlink(stream) => stream.failure(),
         }
     }
 }
 
-pub(crate) struct RxStream {
+pub(crate) struct IiodStream {
     inner: Mutex<Inner>,
     device: String,
     command: String,
@@ -162,9 +231,9 @@ struct Inner {
     pending: Option<Refill>,
 }
 
-impl std::fmt::Debug for RxStream {
+impl std::fmt::Debug for IiodStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RxStream")
+        f.debug_struct("IiodStream")
             .field("device", &self.device)
             .finish_non_exhaustive()
     }
@@ -281,7 +350,7 @@ impl Refill {
     }
 }
 
-impl RxStream {
+impl IiodStream {
     fn advance(
         &self,
         link: &mut Link,
@@ -319,10 +388,7 @@ impl RxStream {
     }
 }
 
-impl CaptureStream for RxStream {
-    type Block = Block;
-    type Stop = Stopper;
-
+impl IiodStream {
     fn stop_handle(&self) -> Stopper {
         self.stopper.clone()
     }
@@ -342,10 +408,6 @@ impl CaptureStream for RxStream {
                 Next::Ended
             }
         }
-    }
-
-    fn dropped(&self) -> u64 {
-        0
     }
 
     fn block_gap(&self, block: &Block, _bytes_per_sample: u64) -> Option<BlockGap> {
@@ -373,7 +435,7 @@ impl CaptureStream for RxStream {
     }
 }
 
-impl Drop for RxStream {
+impl Drop for IiodStream {
     fn drop(&mut self) {
         let inner = &mut *lock(&self.inner);
         inner.pending = None;
@@ -547,8 +609,8 @@ mod tests {
 
     const POLL: Duration = Duration::from_millis(20);
 
-    fn stream(transport: &Arc<Scripted>, refill: usize) -> RxStream {
-        RxStream {
+    fn stream(transport: &Arc<Scripted>, refill: usize) -> IiodStream {
+        IiodStream {
             inner: Mutex::new(Inner {
                 link: Link::new(transport.clone()),
                 pending: None,
