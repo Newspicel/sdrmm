@@ -17,6 +17,7 @@ export interface RefusalStore {
   byNode: Readonly<Record<string, readonly Refusal[]>>;
   fromReport: (report: PatchApplyReport) => void;
   flag: (node: string, reason: string, source: RefusalSource, action?: string) => void;
+  connected: (nodes: Iterable<string>) => void;
   dismiss: (node: string) => void;
   forget: (nodes: readonly string[]) => void;
   reset: () => void;
@@ -75,6 +76,15 @@ export const useRefusalStore = create<RefusalStore>((set) => ({
         ...(action === undefined ? {} : { action }),
       }),
     })),
+  connected: (nodes) => {
+    const radios = new Set(nodes);
+    set((state) => ({
+      byNode: kept(
+        state.byNode,
+        (refusal, node) => !(radios.has(node) && refusal.reason === NOT_CONNECTED),
+      ),
+    }));
+  },
   dismiss: (node) => set((state) => ({ byNode: omitNodes(state.byNode, [node]) })),
   forget: (nodes) => set((state) => ({ byNode: omitNodes(state.byNode, nodes) })),
   reset: () => set({ byNode: {} }),

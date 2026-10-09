@@ -30,6 +30,7 @@ mod mcp_canvas;
 mod openapi;
 mod phones;
 mod presets;
+mod rebind;
 mod recordings;
 mod remote;
 mod scanning;

@@ -54,6 +54,7 @@ pub mod phones;
 mod placement;
 mod presence;
 mod radar;
+mod rebind;
 mod reconcile;
 mod recorders;
 mod remote;
@@ -352,6 +353,10 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
         let feed = state.decoded.clone();
         spawn_task("sdrmm-decoded", move || decoded::run(engine, store, feed))
     };
+    let rebind = {
+        let state = state.clone();
+        spawn_task("sdrmm-rebind", move || rebind::run(state))
+    };
     let log = {
         let engine = Arc::downgrade(&state.engine);
         let store = state.store.clone();
@@ -409,6 +414,7 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
     Background {
         tasks: vec![
             decoded,
+            rebind,
             log,
             patch,
             calls,

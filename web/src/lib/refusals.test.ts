@@ -34,6 +34,20 @@ describe("useRefusalStore", () => {
     expect(listOf("df")?.map((refusal) => refusal.source)).toEqual(["action"]);
   });
 
+  it("drops radio not connected once the node has its radio", () => {
+    const store = useRefusalStore.getState();
+    store.fromReport({
+      bound: [],
+      created: 0,
+      opened: 0,
+      refused: [{ node: "df", reason: "array has no lanes" }],
+      absent: ["dev"],
+    });
+    store.connected(["dev", "df"]);
+    expect(listOf("dev")).toBeUndefined();
+    expect(listOf("df")?.map((refusal) => refusal.reason)).toEqual(["array has no lanes"]);
+  });
+
   it("hides wire refusals after six seconds", () => {
     useRefusalStore.getState().flag("arr", "that lane is in North", "wire");
     const [wire] = listOf("arr") ?? [];
