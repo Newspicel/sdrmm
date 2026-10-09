@@ -23,13 +23,26 @@ impl Scene {
         }
     }
 
-    pub(crate) fn at(&mut self, start_s: f64, offset_hz: f64, gain: f32, mut burst: Vec<Complex<f32>>) {
+    pub(crate) fn at(
+        &mut self,
+        start_s: f64,
+        offset_hz: f64,
+        gain: f32,
+        mut burst: Vec<Complex<f32>>,
+    ) {
         synth::shift(&mut burst, offset_hz, self.rate);
         synth::scale(&mut burst, gain);
         self.bursts.push(((start_s * self.rate) as usize, burst));
     }
 
-    pub(crate) fn every(&mut self, period_s: f64, until_s: f64, offset_hz: f64, gain: f32, burst: &[Complex<f32>]) {
+    pub(crate) fn every(
+        &mut self,
+        period_s: f64,
+        until_s: f64,
+        offset_hz: f64,
+        gain: f32,
+        burst: &[Complex<f32>],
+    ) {
         let mut start = period_s / 2.0;
         while start < until_s {
             self.at(start, offset_hz, gain, burst.to_vec());
@@ -52,7 +65,8 @@ impl Scene {
             for &(offset, amplitude) in &self.carriers {
                 let step = TAU * offset / self.rate;
                 for (index, sample) in chunk.iter_mut().enumerate() {
-                    *sample += Complex::from_polar(amplitude, (step * (start + index) as f64) as f32);
+                    *sample +=
+                        Complex::from_polar(amplitude, (step * (start + index) as f64) as f32);
                 }
             }
             for (at, burst) in &self.bursts {

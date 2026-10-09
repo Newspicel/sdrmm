@@ -29,9 +29,7 @@ impl Repeats {
 
     pub(crate) fn admit(&mut self, key: u64, content: u64, now: u64) -> Option<u32> {
         if let Some(seen) = self.seen.iter_mut().find(|seen| seen.key == key) {
-            let fresh = seen.content != content
-                || now < seen.last
-                || now - seen.last >= self.hold;
+            let fresh = seen.content != content || now < seen.last || now - seen.last >= self.hold;
             if !fresh {
                 seen.quiet = seen.quiet.saturating_add(1);
                 return None;
@@ -69,11 +67,9 @@ impl Fnv {
     }
 
     pub(crate) fn bytes(self, bytes: &[u8]) -> Self {
-        Self(
-            bytes
-                .iter()
-                .fold(self.0, |hash, &byte| (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)),
-        )
+        Self(bytes.iter().fold(self.0, |hash, &byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+        }))
     }
 
     pub(crate) fn finish(self) -> u64 {

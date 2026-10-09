@@ -10,8 +10,8 @@ use sdrmm_test_support::{CountingAlloc, assert_no_alloc, measure_throughput};
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc::new();
 use sdrmm_wire::{
-    AirtimeSpan, BleLink, BleParams, ChannelParams, ChannelSettings, IsmSurveyParams,
-    RemoteIdLink, RemoteIdParams, WifiOccupancyParams,
+    AirtimeSpan, BleLink, BleParams, ChannelParams, ChannelSettings, IsmSurveyParams, RemoteIdLink,
+    RemoteIdParams, WifiOccupancyParams,
 };
 
 const BLOCK: usize = 2_048;

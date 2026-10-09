@@ -1,3 +1,5 @@
+import { ismSurveySummary, wifiOccupancySummary } from "../lib/airtime";
+import { bleStation, bleSummary } from "../lib/ble";
 import { loraPosition, loraStation, loraSummary } from "../lib/lora";
 import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
 import type { DecoderEvent, HotCommand } from "../lib/types";
@@ -377,6 +379,12 @@ export function eventSummary(event: DecoderEvent): string {
       return loraSummary(event.data);
     case "remote_id":
       return remoteIdSummary(event.data);
+    case "ble":
+      return bleSummary(event.data);
+    case "wifi_occupancy":
+      return wifiOccupancySummary(event.data);
+    case "ism_survey":
+      return ismSurveySummary(event.data);
   }
 }
 
@@ -467,6 +475,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return loraStation(event.data);
     case "remote_id":
       return remoteIdStation(event.data);
+    case "ble":
+      return bleStation(event.data);
     case "apt":
       return "APT";
     case "lrpt":
@@ -483,6 +493,8 @@ export function eventStation(event: DecoderEvent): string | null {
     case "scrambler":
     case "ident":
     case "ils":
+    case "wifi_occupancy":
+    case "ism_survey":
       return null;
     case "sstv":
       return SSTV_MODE_LABELS[event.data.mode];

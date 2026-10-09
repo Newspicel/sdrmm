@@ -32,7 +32,9 @@ fn frame_power_sums_to_the_sample_power() {
 fn a_tone_lands_in_its_shifted_bin() {
     let out = frames(&complex_tone(-0.25, 64 * 4), 64);
     for frame in &out {
-        let peak = (0..64).max_by(|&a, &b| frame[a].total_cmp(&frame[b])).unwrap();
+        let peak = (0..64)
+            .max_by(|&a, &b| frame[a].total_cmp(&frame[b]))
+            .unwrap();
         assert_eq!(peak, 16);
         assert!((frame.iter().sum::<f32>() - 1.0).abs() < 0.01);
     }
@@ -88,7 +90,11 @@ fn the_floor_falls_at_once_and_rises_slowly() {
     assert!(QuietFloor::new(2.0, 1.0).settle().is_none());
 }
 
-fn block(bins: usize, on: &[(std::ops::RangeInclusive<usize>, std::ops::Range<u64>)], frame: u64) -> Vec<f32> {
+fn block(
+    bins: usize,
+    on: &[(std::ops::RangeInclusive<usize>, std::ops::Range<u64>)],
+    frame: u64,
+) -> Vec<f32> {
     (0..bins)
         .map(|bin| {
             let lit = on
@@ -109,7 +115,9 @@ fn run(
     let floor = vec![0.1; bins];
     let mut out = Vec::new();
     for frame in 0..total {
-        bursts.frame(&block(bins, on, frame), &floor, 10.0, |burst| out.push(burst));
+        bursts.frame(&block(bins, on, frame), &floor, 10.0, |burst| {
+            out.push(burst)
+        });
     }
     bursts.flush(|burst| out.push(burst));
     (out, bursts.dropped())
@@ -121,7 +129,10 @@ fn a_block_of_energy_is_one_burst() {
     assert_eq!(dropped, 0);
     assert_eq!(out.len(), 1);
     let burst = out[0];
-    assert_eq!((burst.first, burst.frames, burst.low, burst.high), (5, 30, 10, 14));
+    assert_eq!(
+        (burst.first, burst.frames, burst.low, burst.high),
+        (5, 30, 10, 14)
+    );
     assert!((burst.centre - 12.0).abs() < 1e-3);
     assert!((burst.mean - 49.5).abs() < 1e-3);
     assert!((burst.peak - 50.0).abs() < 1e-3);
@@ -153,7 +164,12 @@ fn blips_are_not_bursts() {
 
 #[test]
 fn bursts_beyond_capacity_are_counted() {
-    let (out, dropped) = run(64, 2, &[(2..=4, 0..10), (20..=24, 0..10), (40..=44, 0..10)], 20);
+    let (out, dropped) = run(
+        64,
+        2,
+        &[(2..=4, 0..10), (20..=24, 0..10), (40..=44, 0..10)],
+        20,
+    );
     assert_eq!(out.len(), 2);
     assert_eq!(dropped, 10);
 }
@@ -164,9 +180,14 @@ fn an_endless_carrier_is_cut_into_pieces() {
     let floor = vec![0.1; 16];
     let mut out = Vec::new();
     for frame in 0..250 {
-        bursts.frame(&block(16, &[(5..=6, 0..1_000)], frame), &floor, 10.0, |burst| {
-            out.push(burst);
-        });
+        bursts.frame(
+            &block(16, &[(5..=6, 0..1_000)], frame),
+            &floor,
+            10.0,
+            |burst| {
+                out.push(burst);
+            },
+        );
     }
     assert_eq!(out.len(), 2);
     assert!(out.iter().all(|burst| burst.cut && burst.frames == 100));
@@ -179,9 +200,14 @@ fn a_burst_against_unusable_bins_touches_the_edge() {
     floor[..3].fill(f32::INFINITY);
     let mut out = Vec::new();
     for frame in 0..20 {
-        bursts.frame(&block(16, &[(3..=6, 0..10)], frame), &floor, 10.0, |burst| {
-            out.push(burst);
-        });
+        bursts.frame(
+            &block(16, &[(3..=6, 0..10)], frame),
+            &floor,
+            10.0,
+            |burst| {
+                out.push(burst);
+            },
+        );
     }
     assert_eq!(out.len(), 1);
     assert!(out[0].edge);

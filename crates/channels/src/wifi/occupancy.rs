@@ -14,8 +14,8 @@ use sdrmm_wire::{
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
     airtime::{
-        self, FLOOR_RISE_DB, REPORT_FRAMES, WARMUP_FRAMES, bins_between, fft_len, gated,
-        threshold, usable_half_hz,
+        self, FLOOR_RISE_DB, REPORT_FRAMES, WARMUP_FRAMES, bins_between, fft_len, gated, threshold,
+        usable_half_hz,
     },
     check_rate,
 };
@@ -209,15 +209,20 @@ impl ChannelRx for WifiOccupancyChannel {
                 lanes.iter_mut().for_each(|lane| lane.frame(power));
             }
             if *frame == WARMUP_FRAMES && lanes.iter().all(|lane| !lane.threshold.is_finite()) {
-                lanes.iter_mut().for_each(|lane| lane.settle(params.margin_db));
+                lanes
+                    .iter_mut()
+                    .for_each(|lane| lane.settle(params.margin_db));
             }
             if *frame % REPORT_FRAMES == 0 {
-                out.events.push(DecoderEvent::WifiOccupancy(WifiOccupancyReport {
-                    window_ms: AIRTIME_REPORT_MS,
-                    measured: (*measured as f64 / REPORT_FRAMES as f64) as f32,
-                    channels: lanes.iter_mut().map(Lane::load).collect(),
-                }));
-                lanes.iter_mut().for_each(|lane| lane.settle(params.margin_db));
+                out.events
+                    .push(DecoderEvent::WifiOccupancy(WifiOccupancyReport {
+                        window_ms: AIRTIME_REPORT_MS,
+                        measured: (*measured as f64 / REPORT_FRAMES as f64) as f32,
+                        channels: lanes.iter_mut().map(Lane::load).collect(),
+                    }));
+                lanes
+                    .iter_mut()
+                    .for_each(|lane| lane.settle(params.margin_db));
                 *measured = 0;
             }
         });

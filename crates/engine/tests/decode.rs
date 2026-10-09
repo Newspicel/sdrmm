@@ -9,17 +9,17 @@ use sdrmm_device_recording::RecordingDriver;
 use sdrmm_engine::Engine;
 use sdrmm_recorder::SigmfWriter;
 use sdrmm_wire::{
-    AcarsParams, AdsbParams, AisChannel, BleBeacon, BleParams, IsmKind, IsmSurveyParams, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
-    BroadcastStatus, BroadcastSystem, ChannelParams, ChannelSettings, CwSkimmerParams, DabParams,
-    DatvParams, DatvStandard, DecodedRecord, DecoderEvent, DectBand, DectCapability,
-    DectCipherState, DectParams, DectSpan, DmrParams, DrmMode, DrmParams, DvFrameKind, DvMode,
-    EotArming, EotBattery, EotParams, EotReport, EotStatus, ErmesParams, FlexParams, FreeDvParams,
-    GnssParams, IdentParams, LoraBandwidth, LoraParams, LrptMode, LrptParams, Modulation,
-    MorseParams, NavtexParams, NfmParams, NfmToneMode, PipelineStage, PocsagBaud, PocsagParams,
-    PskBaud, PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
-    RemoteIdTransport, RttyParams, SelcallParams, SelcallSystem, ServerEvent, SondeType,
-    SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams,
-    WsjtParams, WsprParams, YsfParams,
+    AcarsParams, AdsbParams, AisChannel, AisParams, AprsMode, AprsParams, AptParams, AvhrrChannel,
+    BleBeacon, BleParams, BroadcastStatus, BroadcastSystem, ChannelParams, ChannelSettings,
+    CwSkimmerParams, DabParams, DatvParams, DatvStandard, DecodedRecord, DecoderEvent, DectBand,
+    DectCapability, DectCipherState, DectParams, DectSpan, DmrParams, DrmMode, DrmParams,
+    DvFrameKind, DvMode, EotArming, EotBattery, EotParams, EotReport, EotStatus, ErmesParams,
+    FlexParams, FreeDvParams, GnssParams, IdentParams, IsmKind, IsmSurveyParams, LoraBandwidth,
+    LoraParams, LrptMode, LrptParams, Modulation, MorseParams, NavtexParams, NfmParams,
+    NfmToneMode, PipelineStage, PocsagBaud, PocsagParams, PskBaud, PskParams, RadiosondeParams,
+    RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams, RemoteIdTransport, RttyParams,
+    SelcallParams, SelcallSystem, ServerEvent, SondeType, SymbolPlane, UaType, UasIdType,
+    VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -2152,7 +2152,11 @@ async fn a_ble_beacon_survives_the_ddc() {
     assert_eq!(advert.channel, Some(38));
     assert!(matches!(
         advert.beacon,
-        Some(BleBeacon::Ibeacon { major: 7, minor: 300, .. })
+        Some(BleBeacon::Ibeacon {
+            major: 7,
+            minor: 300,
+            ..
+        })
     ));
 }
 

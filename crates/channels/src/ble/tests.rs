@@ -61,7 +61,10 @@ fn an_extended_advert_points_at_its_auxiliary_packet() {
     assert_eq!(parsed.sender, None);
     let extended = parsed.extended.unwrap();
     let aux = extended.aux.unwrap();
-    assert_eq!((aux.channel, aux.phy, aux.offset_us), (5, BlePhy::LeCoded, 40 * 30));
+    assert_eq!(
+        (aux.channel, aux.phy, aux.offset_us),
+        (5, BlePhy::LeCoded, 40 * 30)
+    );
     let adi = extended.adi.unwrap();
     assert_eq!((adi.set, adi.data_id), (0, 0xE75));
     assert_eq!(parse(&pdu, Some(5)).unwrap().kind, BlePdu::AuxAdvInd);
@@ -74,7 +77,9 @@ fn advertising_data_reads_into_fields() {
     data.extend([0x05, 0x03, 0x0F, 0x18, 0x0A, 0x18]);
     data.extend([0x03, 0x19, 0x41, 0x03]);
     data.extend([0x06, 0xFF, 0x59, 0x00, 0xAA, 0xBB, 0xCC]);
-    data.extend([0x0B, 0x24, 0x17, b'/', b'/', b'e', b'x', b'.', b'i', b'o', b'/', b'x']);
+    data.extend([
+        0x0B, 0x24, 0x17, b'/', b'/', b'e', b'x', b'.', b'i', b'o', b'/', b'x',
+    ]);
     let fields = Fields::read(&data);
     assert_eq!(fields.name.as_deref(), Some("Sensor"));
     assert!(fields.flags.unwrap().general && fields.flags.unwrap().le_only);
@@ -87,9 +92,15 @@ fn advertising_data_reads_into_fields() {
         .collect();
     assert_eq!(
         uuids,
-        vec![("180F", Some("Battery")), ("180A", Some("Device Information"))]
+        vec![
+            ("180F", Some("Battery")),
+            ("180A", Some("Device Information"))
+        ]
     );
-    assert_eq!(fields.manufacturer[0].company.as_deref(), Some("Nordic Semiconductor"));
+    assert_eq!(
+        fields.manufacturer[0].company.as_deref(),
+        Some("Nordic Semiconductor")
+    );
     assert_eq!(fields.manufacturer[0].data, "aabbcc");
     assert_eq!(fields.uri.as_deref(), Some("https://ex.io/x"));
 }
@@ -106,7 +117,9 @@ fn beacons_are_recognised() {
             measured_dbm: -59,
         })
     );
-    let url = [0x0D, 0x16, 0xAA, 0xFE, 0x10, 0xEB, 0x03, b'e', b'x', 0x07, b'/', b'a', b'b', b'c'];
+    let url = [
+        0x0D, 0x16, 0xAA, 0xFE, 0x10, 0xEB, 0x03, b'e', b'x', 0x07, b'/', b'a', b'b', b'c',
+    ];
     assert_eq!(
         Fields::read(&url).beacon,
         Some(BleBeacon::EddystoneUrl {
@@ -199,7 +212,11 @@ fn a_beacon_on_channel_38_is_heard_once_per_hold() {
     assert_eq!(first.address.as_ref().unwrap().address, "C0:11:22:33:44:55");
     assert_eq!(first.beacon.as_ref().unwrap().label(), "iBeacon");
     assert_eq!(first.manufacturer[0].company.as_deref(), Some("Apple"));
-    assert!(first.level_dbfs > -20.0 && first.level_dbfs < -5.0, "{}", first.level_dbfs);
+    assert!(
+        first.level_dbfs > -20.0 && first.level_dbfs < -5.0,
+        "{}",
+        first.level_dbfs
+    );
 }
 
 #[test]

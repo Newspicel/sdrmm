@@ -102,8 +102,11 @@ impl Floors {
 
     fn typical_db(&mut self) -> Option<f32> {
         self.sorted.clear();
-        self.sorted
-            .extend(self.usable.clone().filter_map(|bin| self.bins[bin].floor_db()));
+        self.sorted.extend(
+            self.usable
+                .clone()
+                .filter_map(|bin| self.bins[bin].floor_db()),
+        );
         if self.sorted.is_empty() {
             return None;
         }

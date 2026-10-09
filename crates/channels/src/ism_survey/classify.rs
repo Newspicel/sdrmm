@@ -61,7 +61,13 @@ fn oven(shape: &Shape) -> bool {
 }
 
 fn narrow(shape: &Shape) -> IsmKind {
-    let ble = on_grid(shape.centre_hz, BLE_START_HZ, BLE_GRID_HZ, BLE_CHANNELS, ON_GRID_HZ);
+    let ble = on_grid(
+        shape.centre_hz,
+        BLE_START_HZ,
+        BLE_GRID_HZ,
+        BLE_CHANNELS,
+        ON_GRID_HZ,
+    );
     let classic = on_grid(
         shape.centre_hz,
         BLE_START_HZ,
@@ -140,12 +146,18 @@ mod tests {
         assert_eq!(classify(&shape(2_425.0, 2.2, 1_200.0)), IsmKind::Ieee802154);
         assert_eq!(classify(&shape(2_420.0, 2.2, 1_200.0)), IsmKind::Bluetooth);
         assert_eq!(classify(&shape(2_420.0, 2.2, 4_000.0)), IsmKind::Ieee802154);
-        assert_eq!(classify(&shape(2_430.5, 0.6, 50_000.0)), IsmKind::Narrowband);
+        assert_eq!(
+            classify(&shape(2_430.5, 0.6, 50_000.0)),
+            IsmKind::Narrowband
+        );
     }
 
     #[test]
     fn long_and_broad_is_an_oven_and_a_cut_burst_is_continuous() {
-        assert_eq!(classify(&shape(2_455.0, 8.0, 9_000.0)), IsmKind::MicrowaveOven);
+        assert_eq!(
+            classify(&shape(2_455.0, 8.0, 9_000.0)),
+            IsmKind::MicrowaveOven
+        );
         let carrier = Shape {
             cut: true,
             ..shape(2_440.0, 0.3, 100_000.0)

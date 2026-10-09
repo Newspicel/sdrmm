@@ -1,3 +1,4 @@
+import { BLE_BEACON_LABELS, BLE_PDU_LABELS, bleStation, bleVendor } from "../lib/ble";
 import type { StationOf } from "../lib/decoded";
 import { loraMessage, loraName, loraProtocol, loraStation } from "../lib/lora";
 import {
@@ -234,6 +235,48 @@ export function remoteIdDrones(records: readonly DecodedRecordOf<"remote_id">[])
   return [...states.values()]
     .map((state) => state.drone)
     .toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+export interface BleDevice {
+  key: string;
+  name: string | null;
+  vendor: string | null;
+  beacon: string | null;
+  kind: string;
+  channel: number | null;
+  levelDbfs: number;
+  heard: number;
+  at: string;
+}
+
+export function bleDevices(records: readonly DecodedRecordOf<"ble">[]): BleDevice[] {
+  const devices = new Map<string, BleDevice>();
+  for (const record of chronological(records)) {
+    const advert = record.event.data;
+    const key = bleStation(advert) ?? `${BLE_PDU_LABELS[advert.pdu]} ${advert.data.slice(0, 12)}`;
+    const previous = devices.get(key);
+    devices.set(key, {
+      key,
+      name: advert.name ?? previous?.name ?? null,
+      vendor: bleVendor(advert) ?? previous?.vendor ?? null,
+      beacon:
+        advert.beacon == null ? (previous?.beacon ?? null) : BLE_BEACON_LABELS[advert.beacon.type],
+      kind: BLE_PDU_LABELS[advert.pdu],
+      channel: advert.channel ?? null,
+      levelDbfs: advert.level_dbfs,
+      heard: (previous?.heard ?? 0) + 1 + (advert.repeats ?? 0),
+      at: record.at,
+    });
+  }
+  return [...devices.values()].toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+export function latestRecord<R extends { at: string }>(records: readonly R[]): R | null {
+  return records.reduce<R | null>(
+    (latest, record) =>
+      latest === null || Date.parse(record.at) > Date.parse(latest.at) ? record : latest,
+    null,
+  );
 }
 
 export interface LoraStation {

@@ -16,9 +16,9 @@ pub mod eot;
 pub mod ermes;
 pub mod flex;
 pub mod gnss;
-pub mod ism;
 #[cfg(any(test, feature = "fixtures"))]
 pub mod ident_fixtures;
+pub mod ism;
 pub mod lora;
 pub mod lrpt;
 pub mod morse;

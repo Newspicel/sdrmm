@@ -586,13 +586,7 @@ impl Decoder<'_> {
         Some(usize::from(whitener.byte(byte_of(&scratch.bits[8..16]))))
     }
 
-    fn finish(
-        &mut self,
-        first: usize,
-        coded: usize,
-        length: usize,
-        end: f64,
-    ) -> Option<Outcome> {
+    fn finish(&mut self, first: usize, coded: usize, length: usize, end: f64) -> Option<Outcome> {
         let scratch = &mut self.scratch;
         let soft = scratch.soft.get(first..first + coded)?;
         scratch.bits.clear();

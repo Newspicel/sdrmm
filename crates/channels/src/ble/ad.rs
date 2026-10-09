@@ -81,7 +81,10 @@ impl Fields {
             MANUFACTURER => {
                 if let [low, high, data @ ..] = body {
                     let company_id = u16::from_le_bytes([*low, *high]);
-                    self.beacon = self.beacon.take().or_else(|| beacon::maker(company_id, data));
+                    self.beacon = self
+                        .beacon
+                        .take()
+                        .or_else(|| beacon::maker(company_id, data));
                     self.manufacturer.push(BleManufacturer {
                         company_id,
                         company: names::company(company_id).map(str::to_owned),

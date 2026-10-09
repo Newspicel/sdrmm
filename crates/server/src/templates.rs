@@ -4,13 +4,12 @@ mod array;
 
 use sdrmm_wire::{
     AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink, BleParams,
-    ChannelNode,
-    ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams, EotParams,
-    ErmesParams, FlexParams, GnssParams, IsmSurveyParams, LrptParams, M17Params, MorseParams, NavtexParams,
-    NfmParams, NodeBody, PatchEdge, PatchGraph, PatchNode, PocsagParams, PortRef, Position,
-    PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams,
-    Squelch, SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams, WifiOccupancyParams,
-    WsjtParams, WsprParams, YsfParams,
+    ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
+    EotParams, ErmesParams, FlexParams, GnssParams, IsmSurveyParams, LrptParams, M17Params,
+    MorseParams, NavtexParams, NfmParams, NodeBody, PatchEdge, PatchGraph, PatchNode, PocsagParams,
+    PortRef, Position, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
+    RttyParams, Squelch, SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams,
+    WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -377,7 +376,11 @@ static TEMPLATES: &[Entry] = &[
         sample_rate: 20_000_000.0,
         channels: &[Channel::at(
             2_426_000_000.0,
-            || ChannelParams::Ble(BleParams { link: BleLink::Band }),
+            || {
+                ChannelParams::Ble(BleParams {
+                    link: BleLink::Band,
+                })
+            },
             LOG_READ,
         )],
     },

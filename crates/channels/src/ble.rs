@@ -221,11 +221,18 @@ fn key(pdu: &AdvPdu<'_>) -> u64 {
 }
 
 fn content(pdu: &AdvPdu<'_>) -> u64 {
-    let target = pdu.target.map_or([0; pdu::ADDRESS_BYTES], |target| target.bytes);
+    let target = pdu
+        .target
+        .map_or([0; pdu::ADDRESS_BYTES], |target| target.bytes);
     Fnv::new().bytes(&target).bytes(pdu.data).finish()
 }
 
-pub(crate) fn advert(pdu: &AdvPdu<'_>, packet: &Packet<'_>, repeats: u32, rejected: u32) -> BleAdvert {
+pub(crate) fn advert(
+    pdu: &AdvPdu<'_>,
+    packet: &Packet<'_>,
+    repeats: u32,
+    rejected: u32,
+) -> BleAdvert {
     let fields = Fields::read(pdu.data);
     let extended = pdu.extended.unwrap_or_default();
     BleAdvert {

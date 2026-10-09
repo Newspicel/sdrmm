@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { bleStation } from "./ble";
 import { loraStation, withLoraPosition } from "./lora";
 import { remoteIdStation, withRemoteIdState } from "./remoteId";
 import { clearTrails, dropTrail, recordTrail } from "./trails";
@@ -308,7 +309,11 @@ function stationId(event: DecoderEvent): string | null {
     case "apt":
     case "lrpt":
     case "wefax":
+    case "wifi_occupancy":
+    case "ism_survey":
       return null;
+    case "ble":
+      return bleStation(event.data);
     case "radiosonde":
       return event.data.serial;
     case "lora":

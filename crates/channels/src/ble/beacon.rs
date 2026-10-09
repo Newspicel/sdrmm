@@ -15,13 +15,15 @@ const TLM_NO_TEMPERATURE: u16 = 0x8000;
 const DECISECONDS: f64 = 10.0;
 const URL_SCHEMES: [&str; 4] = ["http://www.", "https://www.", "http://", "https://"];
 const URL_EXPANSIONS: [&str; 14] = [
-    ".com/", ".org/", ".edu/", ".net/", ".info/", ".biz/", ".gov/", ".com", ".org", ".edu",
-    ".net", ".info", ".biz", ".gov",
+    ".com/", ".org/", ".edu/", ".net/", ".info/", ".biz/", ".gov/", ".com", ".org", ".edu", ".net",
+    ".info", ".biz", ".gov",
 ];
 
 pub(super) fn maker(company: u16, data: &[u8]) -> Option<BleBeacon> {
     match (company, data) {
-        (APPLE, [a, b, uuid @ .., m1, m2, n1, n2, power]) if [*a, *b] == IBEACON && uuid.len() == 16 => {
+        (APPLE, [a, b, uuid @ .., m1, m2, n1, n2, power])
+            if [*a, *b] == IBEACON && uuid.len() == 16 =>
+        {
             Some(BleBeacon::Ibeacon {
                 uuid: uuid_text(uuid),
                 major: u16::from_be_bytes([*m1, *m2]),

@@ -1,6 +1,5 @@
 use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, IsmKind, IsmSurveyParams,
-    IsmSurveyReport,
+    ChannelParams, ChannelSettings, DecoderEvent, IsmKind, IsmSurveyParams, IsmSurveyReport,
 };
 
 use super::IsmSurveyChannel;
@@ -19,7 +18,8 @@ fn report(scene: &Scene) -> IsmSurveyReport {
         frequency_hz: CENTRE_HZ,
         ..settings(ChannelParams::IsmSurvey(IsmSurveyParams::default()))
     };
-    let mut channel = IsmSurveyChannel::new(ChannelCtx { input_rate: RATE }, tuned).expect("builds");
+    let mut channel =
+        IsmSurveyChannel::new(ChannelCtx { input_rate: RATE }, tuned).expect("builds");
     let mut reports: Vec<IsmSurveyReport> = scene
         .run(1.01, &mut channel)
         .events
@@ -42,7 +42,9 @@ fn bursts(report: &IsmSurveyReport, kind: IsmKind) -> u32 {
 }
 
 fn starts(first_s: f64, period_s: f64) -> impl Iterator<Item = f64> {
-    (0..).map(move |k| first_s + f64::from(k) * period_s).take_while(|&t| t < 1.0)
+    (0..)
+        .map(move |k| first_s + f64::from(k) * period_s)
+        .take_while(|&t| t < 1.0)
 }
 
 #[test]
@@ -82,7 +84,11 @@ fn wifi_bluetooth_and_802_15_4_are_told_apart() {
         .unwrap();
     assert_eq!(ble.centres_mhz[0], 2_440.0);
     assert!((150.0..400.0).contains(&ble.mean_us), "{ble:?}");
-    let wifi = report.kinds.iter().find(|load| load.kind == IsmKind::Wifi).unwrap();
+    let wifi = report
+        .kinds
+        .iter()
+        .find(|load| load.kind == IsmKind::Wifi)
+        .unwrap();
     assert_eq!(wifi.centres_mhz[0], 2_437.0);
 }
 

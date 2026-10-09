@@ -18,7 +18,7 @@ covers the modes that need more than a frequency.
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora) | [LoRaWAN, Meshtastic, MeshCore](#lora) | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [LoRaWAN, Meshtastic, MeshCore](#lora) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -271,3 +271,43 @@ distance to them. Frames that fail their checksum after the header are counted a
 Tested on real Bluetooth and Wi-Fi captures and on real Remote ID frames from packet captures. No
 public IQ recording of a real Remote ID transmission exists yet.
 
+## BLE advertisements
+
+The BLE channel lists Bluetooth LE devices: address and its type, name, vendor, services, Tx
+power, and beacons: iBeacon, AltBeacon, Eddystone, Find My, Fast Pair and Exposure Notification.
+Scan requests and connection requests show who asked whom.
+
+| Link | Hears | Rate |
+|---|---|---|
+| Channel | One Bluetooth channel | 4 MS/s |
+| Band | Every Bluetooth channel in reach, including long range on the data channels | 20 MS/s |
+
+Tune Channel to an advertising channel: 2402, 2426 or 2480 MHz. A device that repeats itself is
+shown once a second, with the count of repeats. Packets that fail their CRC are counted as
+rejected. The **BLE devices** template sets this up.
+
+## 2.4 GHz survey and Wi-Fi occupancy
+
+Both read energy only and report once a second. Neither decodes a packet.
+
+**2.4 GHz survey** sorts every burst by width, length and channel grid into Wi-Fi, Bluetooth,
+802.15.4 (Zigbee, Thread), microwave oven, narrowband, wideband and continuous. It reports bursts,
+airtime, typical length and where they sit. A carrier that never stops shows as continuous.
+
+**Wi-Fi occupancy** gives the busy time of each 20 MHz Wi-Fi channel fully in view, with its level
+and noise floor. It works on 2.4, 5 and 6 GHz.
+
+| Span | Rate | Sees |
+|---|---|---|
+| 20 | 20 MS/s | One Wi-Fi channel |
+| 40 | 40 MS/s | Five channels at 2.4 GHz |
+| 80 | 80 MS/s | All of 2.4 GHz |
+
+**Margin** sets how far over the noise floor counts as busy. The floor is learnt in the first
+eighth of a second and follows the band slowly upward, at once downward. The **2.4 GHz survey**
+and **Wi-Fi occupancy** templates set them up. The signal generator sends BLE beacons and mixed
+2.4 GHz traffic.
+
+Tested on recordings: a USRP X310 at 100 MS/s beside a DJI Mini 4 Pro (RFUAV) and a 40 MS/s
+Bluetooth capture with OmniSIG labels, where the survey counted 138 Bluetooth bursts against 137
+labelled.

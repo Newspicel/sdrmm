@@ -146,7 +146,7 @@ them, and `cargo xtask test` regenerates them.
 |---|---|
 | `cargo xtask excerpt` | Trims a capture into a fixture; see `fixtures/README.md` |
 | `cargo xtask net-capture` | Records a public KiwiSDR or SpyServer to SigMF |
-| `cargo xtask replay` | Runs a capture through one channel; `--images` saves pictures |
+| `cargo xtask replay` | Runs a capture through one channel; `--center` sets the RF centre of a raw file, `--images` saves pictures |
 | `cargo xtask ber <entry>` | Bit error rate curves into `target/ber` |
 | `cargo xtask ident-matrix` | Signal identifier against the fixtures |
 | `cargo xtask compare <dsp\|decoders\|apps>` | Compares with other SDR software; `--ours` measures SDR-- alone, `decoders --signal <id>` one signal |

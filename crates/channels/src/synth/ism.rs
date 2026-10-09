@@ -76,7 +76,9 @@ pub fn oven_burst(rate: f64, seconds: f64) -> Vec<Complex<f32>> {
             tones
                 .iter()
                 .enumerate()
-                .map(|(k, &hz)| Complex::from_polar(0.05, (TAU * hz * n as f64 / rate + k as f64) as f32))
+                .map(|(k, &hz)| {
+                    Complex::from_polar(0.05, (TAU * hz * n as f64 / rate + k as f64) as f32)
+                })
                 .sum()
         })
         .collect()
@@ -92,7 +94,14 @@ fn place(iq: &mut [Complex<f32>], start_s: f64, offset_hz: f64, gain: f32, burst
     }
 }
 
-fn every(iq: &mut [Complex<f32>], first_s: f64, period_s: f64, offset_hz: f64, gain: f32, burst: &[Complex<f32>]) {
+fn every(
+    iq: &mut [Complex<f32>],
+    first_s: f64,
+    period_s: f64,
+    offset_hz: f64,
+    gain: f32,
+    burst: &[Complex<f32>],
+) {
     let mut start = first_s;
     while start < SCENE_S {
         place(iq, start, offset_hz, gain, burst);
@@ -104,8 +113,29 @@ fn every(iq: &mut [Complex<f32>], first_s: f64, period_s: f64, offset_hz: f64, g
 pub fn scene() -> Vec<Complex<f32>> {
     let mut iq = vec![Complex::new(0.0, 0.0); (SCENE_S * SCENE_RATE) as usize];
     every(&mut iq, 0.001, WIFI_PERIOD_S, 0.0, 0.1, &wifi_frame(300));
-    every(&mut iq, 0.0025, BLE_PERIOD_S, BLE_OFFSET_HZ, 0.1, &ble_advert(SCENE_RATE));
-    every(&mut iq, 0.012, ZIGBEE_PERIOD_S, ZIGBEE_OFFSET_HZ, 0.1, &zigbee_frame(SCENE_RATE, ZIGBEE_S));
-    every(&mut iq, 0.03, MAINS_S * 4.0, OVEN_OFFSET_HZ, 1.0, &oven_burst(SCENE_RATE, OVEN_S));
+    every(
+        &mut iq,
+        0.0025,
+        BLE_PERIOD_S,
+        BLE_OFFSET_HZ,
+        0.1,
+        &ble_advert(SCENE_RATE),
+    );
+    every(
+        &mut iq,
+        0.012,
+        ZIGBEE_PERIOD_S,
+        ZIGBEE_OFFSET_HZ,
+        0.1,
+        &zigbee_frame(SCENE_RATE, ZIGBEE_S),
+    );
+    every(
+        &mut iq,
+        0.03,
+        MAINS_S * 4.0,
+        OVEN_OFFSET_HZ,
+        1.0,
+        &oven_burst(SCENE_RATE, OVEN_S),
+    );
     iq
 }

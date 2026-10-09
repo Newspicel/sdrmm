@@ -94,7 +94,10 @@ mod tests {
         assert_eq!(address_text(frame.transmitter), "02:11:22:33:44:55");
         let elements = frame.elements().unwrap();
         assert_eq!(element(elements, |id, _| id == SSID), Some(&b"home"[..]));
-        assert_eq!(element(elements, |id, _| id == VENDOR), Some(&[1, 2, 3][..]));
+        assert_eq!(
+            element(elements, |id, _| id == VENDOR),
+            Some(&[1, 2, 3][..])
+        );
         assert_eq!(super::elements(&[SSID, 9, 1]).count(), 0);
     }
 }

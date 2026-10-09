@@ -101,8 +101,8 @@ impl Track {
         }
         self.reach_low = self.reach_low.min(from);
         self.reach_high = self.reach_high.max(to);
-        self.edge |= unusable(floor, segment.low.checked_sub(1))
-            || unusable(floor, Some(segment.high + 1));
+        self.edge |=
+            unusable(floor, segment.low.checked_sub(1)) || unusable(floor, Some(segment.high + 1));
     }
 
     fn close(&mut self) -> Option<Burst> {
@@ -199,7 +199,13 @@ impl Bursts {
         self.frame = 0;
     }
 
-    pub fn frame(&mut self, power: &[f32], floor: &[f32], margin: f32, mut done: impl FnMut(Burst)) {
+    pub fn frame(
+        &mut self,
+        power: &[f32],
+        floor: &[f32],
+        margin: f32,
+        mut done: impl FnMut(Burst),
+    ) {
         self.find_segments(power, floor, margin);
         let frame = self.frame;
         for index in 0..self.segments.len() {
@@ -231,10 +237,10 @@ impl Bursts {
                 if let Some(burst) = track.close() {
                     done(burst);
                 }
-            } else if frame - track.first + 1 >= self.longest {
-                if let Some(burst) = track.close() {
-                    done(Burst { cut: true, ..burst });
-                }
+            } else if frame - track.first + 1 >= self.longest
+                && let Some(burst) = track.close()
+            {
+                done(Burst { cut: true, ..burst });
             }
         }
         self.frame += 1;

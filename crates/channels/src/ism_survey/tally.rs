@@ -75,8 +75,18 @@ impl Tally {
         tally.frames += burst.frames;
         tally.peak = tally.peak.max(fast_power_db(burst.peak));
         tally.centres[slot] += 1;
-        cover(&mut tally.covered, &mut tally.until, burst.first, burst.frames);
-        cover(&mut self.covered, &mut self.until, burst.first, burst.frames);
+        cover(
+            &mut tally.covered,
+            &mut tally.until,
+            burst.first,
+            burst.frames,
+        );
+        cover(
+            &mut self.covered,
+            &mut self.until,
+            burst.first,
+            burst.frames,
+        );
     }
 
     pub(crate) fn raised(&mut self, bins: impl Iterator<Item = (usize, f32)>) {
