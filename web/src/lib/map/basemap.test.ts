@@ -5,6 +5,7 @@ import {
   chooseBasemap,
   DEFAULT_BASEMAP,
   fetchStyle,
+  groundOf,
   isTileTemplate,
   loadBasemap,
   presetUrl,
@@ -81,6 +82,15 @@ describe("loadBasemap", () => {
     const chosen = await loadBasemap({ preset: "custom", custom: "file:///x" }, BACKGROUND);
     expect(chosen.kind).toBe("blank");
     expect(clientEvents()).toContainEqual(expect.objectContaining({ source: "map" }));
+  });
+});
+
+describe("groundOf", () => {
+  it("is the land of the preset that loaded, else the page behind a blank map", () => {
+    expect(groundOf({ preset: "dark", custom: "" }, "online", BACKGROUND)).toBe("#0c0c0c");
+    expect(groundOf(DEFAULT_BASEMAP, "online", BACKGROUND)).toBe("#f8f4f0");
+    expect(groundOf({ preset: "custom", custom: "x" }, "online", BACKGROUND)).toBe("#f8f4f0");
+    expect(groundOf(DEFAULT_BASEMAP, "blank", BACKGROUND)).toBe(BACKGROUND);
   });
 });
 

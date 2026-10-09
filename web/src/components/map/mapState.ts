@@ -38,6 +38,7 @@ export interface MapCore {
   ready: boolean;
   generation: number;
   edge: string;
+  ground: string;
   accent: string;
   framing: { targets: FrameFlag; position: FrameFlag; signal: FrameFlag };
   selected: Selection | null;

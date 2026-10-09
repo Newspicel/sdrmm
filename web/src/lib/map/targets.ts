@@ -115,23 +115,42 @@ function addHeadingLayer(map: MapLibreMap, kind: MapKind, edge: string): boolean
   return true;
 }
 
-function addLabelLayer(map: MapLibreMap, kind: MapKind, edge: string): void {
+const DARK_INK = { text: "#15171a", halo: "#ffffff" } as const;
+const LIGHT_INK = { text: "#f4f6f8", halo: "#0c0d0f" } as const;
+const LIGHT_GROUND = 0.4;
+
+export function labelInk(ground: string): { text: string; halo: string } {
+  const hex = /^#?([0-9a-f]{6})$/i.exec(ground.trim())?.[1];
+  if (hex === undefined) {
+    return DARK_INK;
+  }
+  const [r, g, b] = [0, 2, 4].map((at) => {
+    const channel = Number.parseInt(hex.slice(at, at + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
+  return luminance > LIGHT_GROUND ? DARK_INK : LIGHT_INK;
+}
+
+function addLabelLayer(map: MapLibreMap, kind: MapKind, ground: string): void {
+  const ink = labelInk(ground);
   map.addLayer({
     id: layerId(kind, "label"),
     type: "symbol",
     source: sourceId(kind),
     layout: {
       "text-field": ["get", "label"],
-      "text-font": ["Noto Sans Regular"],
-      "text-size": 11,
+      "text-font": ["Noto Sans Bold"],
+      "text-size": 12,
       "text-anchor": "top",
       "text-offset": [0, LABEL_OFFSET_EM[kind]],
       "text-optional": true,
     },
     paint: {
-      "text-color": KIND_STYLE[kind].color,
-      "text-halo-color": edge,
-      "text-halo-width": 1.4,
+      "text-color": ink.text,
+      "text-halo-color": ink.halo,
+      "text-halo-width": 1.6,
+      "text-halo-blur": 0.4,
     },
   });
 }
@@ -139,6 +158,7 @@ function addLabelLayer(map: MapLibreMap, kind: MapKind, edge: string): void {
 export function installTargetLayers(
   map: MapLibreMap,
   edge: string,
+  ground: string,
   kinds: readonly MapKind[],
 ): boolean {
   removeTargetLayers(map);
@@ -162,7 +182,7 @@ export function installTargetLayers(
     headings = addHeadingLayer(map, kind, edge) && headings;
   }
   for (const kind of kinds) {
-    addLabelLayer(map, kind, edge);
+    addLabelLayer(map, kind, ground);
   }
   if (!headings) {
     recordEvent("warn", "map", "heading icons failed");

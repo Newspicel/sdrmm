@@ -10,6 +10,7 @@ import { describeError, recordEvent } from "../../lib/diagnostics";
 import {
   type BasemapChoice,
   type BasemapKind,
+  groundOf,
   loadBasemap,
   sameBasemap,
 } from "../../lib/map/basemap";
@@ -55,7 +56,7 @@ function themeColor(element: Element, token: string, fallback: string): string {
 function installAll(core: MapCore, inputs: MapInputs, sinks: MapSinks): void {
   const { map, accent, edge } = core;
   installReferenceLayer(map, accent, edge, inputs.references);
-  sinks.setHeadings(installTargetLayers(map, edge, inputs.kinds));
+  sinks.setHeadings(installTargetLayers(map, edge, core.ground, inputs.kinds));
   installSignalLayers(map, edge, inputs.signalSamples !== null);
   installPropagationLayers(map, edge, accent, inputs.propagation?.layer ?? null);
   installPositionLayers(map, accent, edge, inputs.positionNodes.length > 0);
@@ -103,6 +104,7 @@ async function buildCore(
     ready: false,
     generation: 0,
     edge,
+    ground: groundOf(choice, chosen.kind, edge),
     accent,
     framing: {
       targets: { current: false },
@@ -209,6 +211,7 @@ function useBasemapSwitch(
           return;
         }
         core.ready = false;
+        core.ground = groundOf(choice, chosen.kind, core.edge);
         core.map.setStyle(chosen.style, { diff: false });
         setBasemap(chosen.kind);
       })
@@ -241,7 +244,7 @@ export function useLayerSync(
       return;
     }
     const wired = mapKindsOf(kindsKey.split(" "));
-    sinks.setHeadings(installTargetLayers(core.map, core.edge, wired));
+    sinks.setHeadings(installTargetLayers(core.map, core.edge, core.ground, wired));
     core.generation += 1;
     if (core.selected !== null && !wired.includes(core.selected.kind)) {
       core.selected = null;
