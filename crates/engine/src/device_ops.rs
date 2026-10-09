@@ -105,6 +105,10 @@ impl Engine {
         self.probe_bus(known, missing_once, gate, woken)
     }
 
+    pub(crate) fn sink_tick(&self) {
+        self.report_sinks(self.poll_sinks());
+    }
+
     fn read_agc_gains(&self) {
         let running: Vec<(u32, bool, Arc<DeviceRuntime>)> = self
             .lock()

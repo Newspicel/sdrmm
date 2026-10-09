@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sdrmm_device::usb::BusWatch;
 
@@ -37,6 +37,12 @@ impl ProbeGate {
     }
 }
 
+pub(crate) const SINK_POLL: Duration = Duration::from_secs(1);
+
+pub(crate) fn probe_is_due(woken: bool, due: Option<Instant>, now: Instant) -> bool {
+    woken || due.is_none_or(|at| now >= at)
+}
+
 /// Paces the hotplug thread: it wakes on the interval for the housekeeping every tick does, and
 /// at once when a radio is plugged or unplugged.
 pub(crate) enum Pace {
@@ -64,6 +70,16 @@ impl Pace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_bus_is_probed_first_on_its_interval_and_when_it_wakes_the_thread() {
+        let now = Instant::now();
+        let later = now + Duration::from_secs(5);
+        assert!(probe_is_due(false, None, now));
+        assert!(!probe_is_due(false, Some(later), now));
+        assert!(probe_is_due(true, Some(later), now));
+        assert!(probe_is_due(false, Some(later), later));
+    }
 
     #[test]
     fn the_first_tick_always_probes() {

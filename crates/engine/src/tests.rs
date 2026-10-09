@@ -227,6 +227,37 @@ impl DeviceDriver for VanishingDriver {
     }
 }
 
+#[derive(Default)]
+struct AdoptingDriver {
+    adopted: AtomicBool,
+}
+
+impl DeviceDriver for AdoptingDriver {
+    fn id(&self) -> &'static str {
+        "mock"
+    }
+
+    fn probe(&self) -> Vec<DeviceInfo> {
+        if self.adopted.load(Ordering::SeqCst) {
+            vec![mock_info("adopted", None)]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn probe_deep(&self) -> Vec<DeviceInfo> {
+        self.adopted.store(true, Ordering::SeqCst);
+        self.probe()
+    }
+
+    fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        Ok(Box::new(SilentDevice {
+            capabilities: empty_capabilities(),
+            settings: mock_settings(),
+        }))
+    }
+}
+
 struct CountingDriver {
     probes: Arc<AtomicUsize>,
 }
