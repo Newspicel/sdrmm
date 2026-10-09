@@ -64,7 +64,7 @@ async function amend(
       continue;
     }
     const response = await page.request.patch(`/api/devicesets/${set.id}/channels/${open.id}`, {
-      data: { ...open.settings, ...change(open) },
+      data: { settings: { ...open.settings, ...change(open) } },
     });
     if (!response.ok()) {
       throw new Error(`setting channel ${open.id}: ${await response.text()}`);

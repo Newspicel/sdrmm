@@ -278,11 +278,17 @@ pub(crate) struct SettingsEdit {
     node: String,
     graph: PatchGraph,
     before: WorkspaceState,
+    author: Option<String>,
 }
 
 /// Opens a settings change for the node the patch lands on, or `None` when it lands on a radio the
 /// active workspace does not draw: an ad-hoc device has no node whose history could hold it.
-pub(crate) fn begin_edit(state: &AppState, ds: u32, channel: Option<u32>) -> Option<SettingsEdit> {
+pub(crate) fn begin_edit(
+    state: &AppState,
+    ds: u32,
+    channel: Option<u32>,
+    author: Option<&str>,
+) -> Option<SettingsEdit> {
     let active = state.store.active_workspace().ok()??;
     let graph = active.snapshot.graph;
     let binding = bind(&graph, &state.engine.snapshot())
@@ -303,6 +309,7 @@ pub(crate) fn begin_edit(state: &AppState, ds: u32, channel: Option<u32>) -> Opt
         node,
         graph,
         before,
+        author: author.map(str::to_owned),
     })
 }
 
@@ -319,8 +326,13 @@ pub(crate) fn finish_edit(state: &AppState, edit: SettingsEdit) {
         before: &edit.before,
         after: &after,
     };
-    match state.store.record_settings(edit.workspace, &step) {
-        Ok(true) => state.engine.emit_scope(StateScope::Workspaces),
+    match state
+        .store
+        .record_settings(edit.workspace, &step, edit.author.as_deref())
+    {
+        Ok(true) => state
+            .engine
+            .emit_scope(StateScope::Workspace(edit.workspace)),
         Ok(false) => {}
         Err(err) => tracing::warn!(%err, "could not record a settings change in the history"),
     }

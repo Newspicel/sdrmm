@@ -35,6 +35,7 @@ pub fn about(server_id: &str, server_name: &str) -> AboutResponse {
         repository: NOTICES.repository.clone(),
         components: NOTICES.components.clone(),
         reveal: false,
+        notify: false,
     }
 }
 

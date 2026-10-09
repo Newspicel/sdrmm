@@ -891,6 +891,7 @@ fn about() -> AboutResponse {
         repository: String::new(),
         components: Vec::new(),
         reveal: false,
+        notify: false,
     }
 }
 

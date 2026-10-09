@@ -9,14 +9,24 @@ import {
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "../components/BaseControls";
 import { BTN_QUIET, SURFACE } from "../components/controls";
 import { CANVAS_MOVED } from "../components/Popover";
-import type { PatchGraph, PatchNode } from "../lib/types";
+import { createPointerSender, draggedByOthers, othersOf, usePresenceStore } from "../lib/presence";
+import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types";
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
 import { useClipboard } from "./clipboard";
 import { useWorkspaceContext } from "./context";
+import { movedGeometry, withGeometry } from "./geometry";
 import {
   edgeKey,
   type GraphContext,
@@ -36,6 +46,7 @@ import { useConnections, useGraphChanges } from "./handlers";
 import { type MenuPlace, menuPlace } from "./menuPlace";
 import { NODE_TYPES } from "./nodes";
 import { ReplaceDecoder } from "./nodes/ReplaceDecoder";
+import { PeerLayer } from "./PeerLayer";
 import { focusNode } from "./selection";
 import { isTyping } from "./useHotkeys";
 
@@ -84,7 +95,11 @@ export function Canvas() {
       toFlowNodes(workspace.graph).map((node) => {
         const mounted = previous.find((candidate) => candidate.id === node.id);
         const selected = arrived ? fresh.has(node.id) : (mounted?.selected ?? false);
-        return mounted === undefined ? { ...node, selected } : { ...mounted, ...node, selected };
+        if (mounted === undefined) {
+          return { ...node, selected };
+        }
+        const position = mounted.dragging === true ? mounted.position : node.position;
+        return { ...mounted, ...node, position, selected };
       }),
     );
     setEdges(toFlowEdges(workspace.graph, context));
@@ -101,33 +116,23 @@ export function Canvas() {
     flowRef.current = nodes;
   });
 
+  const edit = workspace.edit;
   const commitGeometry = useCallback(() => {
-    workspace.edit((snapshot) => ({
-      ...snapshot,
-      graph: {
-        ...snapshot.graph,
-        nodes: snapshot.graph.nodes.map((node) => {
-          const flow = flowRef.current.find((candidate) => candidate.id === node.id);
-          if (flow === undefined) {
-            return node;
-          }
-          const natural = NODE_SIZE[node.kind];
-          const { width: w, height: h } = flow;
-          const resized =
-            isResizable(node.kind) &&
-            w != null &&
-            h != null &&
-            (w !== natural.w || h !== natural.h);
-          const { size: _dropped, ...rest } = node;
-          return {
-            ...rest,
-            position: { x: flow.position.x, y: flow.position.y },
-            ...(resized ? { size: { w, h } } : {}),
-          };
-        }),
-      },
-    }));
-  }, [workspace]);
+    const moved = movedGeometry(flowRef.current, held.current);
+    if (moved.size === 0) {
+      return;
+    }
+    edit((snapshot) => ({ ...snapshot, graph: withGeometry(snapshot.graph, moved) }));
+  }, [edit]);
+
+  const publish = usePointer(workspace.socket);
+  const selectionKey = (selection.length > 0 ? selection : [workspace.selected ?? ""])
+    .filter((id) => id !== "")
+    .join("\n");
+  useEffect(() => {
+    publish({ selected: selectionKey === "" ? [] : selectionKey.split("\n") });
+  }, [publish, selectionKey]);
+  usePeerDrags(setNodes);
 
   const { handleNodesChange, handleEdgesChange, onBeforeDelete } = useGraphChanges(
     workspace,
@@ -138,6 +143,7 @@ export function Canvas() {
 
   const { isValidConnection, onConnect, onConnectEnd } = useConnections(workspace);
   useFitOnceMeasured();
+  const { screenToFlowPosition } = useReactFlow();
 
   const [menu, setMenu] = useState<Menu | null>(null);
   const [replacing, setReplacing] = useState<string | null>(null);
@@ -170,6 +176,10 @@ export function Canvas() {
   return (
     <div
       className="relative flex min-h-0 flex-1 flex-col"
+      onPointerMove={(event) =>
+        publish({ at: screenToFlowPosition({ x: event.clientX, y: event.clientY }) })
+      }
+      onPointerLeave={() => publish({ at: null })}
       onDoubleClick={(event) => {
         if (
           event.target instanceof Element &&
@@ -185,7 +195,15 @@ export function Canvas() {
         nodeTypes={NODE_TYPES}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
-        onNodeDragStop={commitGeometry}
+        onNodeDrag={(_event, _node, dragged) =>
+          publish({
+            dragging: dragged.map((node) => ({ node: node.id, position: node.position })),
+          })
+        }
+        onNodeDragStop={() => {
+          publish({ dragging: [] });
+          commitGeometry();
+        }}
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
         onBeforeDelete={onBeforeDelete}
@@ -215,6 +233,7 @@ export function Canvas() {
         className="min-h-0 flex-1 bg-bg"
       >
         <Background variant={BackgroundVariant.Dots} gap={grid.step} size={1} className="!bg-bg" />
+        <PeerLayer nodes={nodes} />
       </ReactFlow>
       {menu !== null && (
         <ContextMenu
@@ -236,6 +255,43 @@ interface Menu {
   x: number;
   y: number;
   target: { kind: "node"; id: string } | { kind: "edge"; id: string } | { kind: "pane" };
+}
+
+function usePointer(socket: { send: (command: ClientCommand) => void }) {
+  const held = useRef<Pointer>({});
+  const send = useMemo(
+    () => createPointerSender((pointer) => socket.send({ type: "Point", data: pointer })),
+    [socket],
+  );
+  const publish = useCallback(
+    (change: Partial<Pointer>) => {
+      held.current = { ...held.current, ...change };
+      const { peers, you } = usePresenceStore.getState();
+      if (othersOf(peers, you).length > 0) {
+        send(held.current);
+      }
+    },
+    [send],
+  );
+  useEffect(() => () => send({}), [send]);
+  return publish;
+}
+
+function usePeerDrags(setNodes: ReturnType<typeof useNodesState<Node<FlowData>>>[1]) {
+  const pointers = usePresenceStore((state) => state.pointers);
+  const you = usePresenceStore((state) => state.you);
+  const dragged = useMemo(() => draggedByOthers(pointers, you), [pointers, you]);
+  useEffect(() => {
+    if (dragged.size === 0) {
+      return;
+    }
+    setNodes((previous) =>
+      previous.map((node) => {
+        const position = dragged.get(node.id);
+        return position === undefined || node.dragging === true ? node : { ...node, position };
+      }),
+    );
+  }, [dragged, setNodes]);
 }
 
 function useFitOnceMeasured() {

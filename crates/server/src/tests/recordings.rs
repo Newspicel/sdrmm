@@ -784,7 +784,7 @@ async fn a_server_with_no_file_manager_refuses_to_show_anything() {
     let (status, body) = request(app, "GET", "/api/about", None).await;
     assert_eq!(status, StatusCode::OK);
     let about: sdrmm_wire::AboutResponse = serde_json::from_slice(&body).expect("json");
-    assert!(!about.reveal);
+    assert!(!about.reveal && !about.notify);
 }
 
 #[tokio::test]

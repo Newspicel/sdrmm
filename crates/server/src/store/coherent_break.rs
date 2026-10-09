@@ -169,8 +169,7 @@ fn write_upgrade(
         .map_or(0, Vec::len);
     let tx = conn.unchecked_transaction()?;
     tx.execute(
-        "UPDATE workspaces SET snapshot = ?2, nodes = ?3, revision = revision + 1, \
-         history_at = 0 WHERE id = ?1",
+        "UPDATE workspaces SET snapshot = ?2, nodes = ?3, revision = revision + 1 WHERE id = ?1",
         params![id, serde_json::to_string(snapshot)?, nodes as i64],
     )?;
     tx.execute(

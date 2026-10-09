@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { Chips, ChoiceChip, NumberChip } from "../../components/face/Chips";
 import { TextChip } from "../../components/face/TextChip";
+import { aboutQuery } from "../../lib/api";
 import type { EventOutputTarget, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -7,7 +9,7 @@ import { BeastOutputControls } from "./BeastOutputControls";
 import {
   eventOutputConfigured,
   newOutputTarget,
-  OUTPUT_SERVICES,
+  outputServices,
   WEBHOOK_FORMATS,
 } from "./eventOutput";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
@@ -22,6 +24,7 @@ export function EventOutputFace({ node }: { node: PatchNode }) {
 
 function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   const workspace = useWorkspaceContext();
+  const notify = useQuery(aboutQuery(true)).data?.notify === true;
   const target = node.data.target;
   const inputs = (workspace.graph.edges ?? []).filter(
     (edge) => edge.to.node === node.id && edge.to.port === "events",
@@ -43,7 +46,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
             label="Service"
             title="Output service"
             value={target.service}
-            options={OUTPUT_SERVICES}
+            options={outputServices(notify, target.service)}
             onChange={(service) => editTarget(newOutputTarget(service))}
           />
           <TargetChips target={target} onEdit={editTarget} />
@@ -72,6 +75,12 @@ function emptyHint(inputs: number, configured: boolean, target: EventOutputTarge
   }
   if (target.service === "recordings") {
     return "One WAV per call in Recordings";
+  }
+  if (target.service === "desktop") {
+    return "One notification per event";
+  }
+  if (target.service === "csv") {
+    return configured ? "One row per event in Recordings" : "Enter a file name";
   }
   if (target.service === "tunnel") {
     return configured ? "Received IPv4 and IPv6 datagrams" : "Enter the interface name";
@@ -107,7 +116,18 @@ function TargetChips({
 }) {
   switch (target.service) {
     case "recordings":
+    case "desktop":
       return null;
+    case "csv":
+      return (
+        <TextChip
+          label="File"
+          name="CSV file name"
+          title="Appended in Recordings/events. Letters, digits, - _ and ."
+          value={target.file}
+          onCommit={(file) => onEdit({ ...target, file })}
+        />
+      );
     case "beast":
       return (
         <TextChip

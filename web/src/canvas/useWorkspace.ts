@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import {
   activateWorkspace,
   applyWorkspace,
@@ -18,23 +26,22 @@ import {
 import { toastError } from "../lib/toasts";
 import type {
   ChannelSettings,
-  PatchApplyReport,
   WorkspaceDetail,
   WorkspaceInfo,
   WorkspaceSnapshot,
-  WorkspacesResponse,
 } from "../lib/types";
 import { retryNodeState } from "../lib/useNodeStateSync";
 import { pruneRack } from "./graph";
 import { savedChannelsOf, withSavedChannel } from "./savedChannels";
-import { WorkspaceDrafts } from "./workspaceDrafts";
+import { useSwitchStore } from "./switches";
+import { type Edit, newer, WorkspaceEdits } from "./workspaceEdits";
 import { parseWorkspaceExport } from "./workspaceExport";
 
 export interface WorkspaceStore {
   workspaces: WorkspaceInfo[];
   active: WorkspaceDetail | null;
   error: string | null;
-  save: (edit: (snapshot: WorkspaceSnapshot) => WorkspaceSnapshot) => void;
+  save: (edit: Edit) => void;
   activate: (id: number) => void;
   create: (name: string) => void;
   rename: (id: number, name: string) => void;
@@ -42,7 +49,6 @@ export interface WorkspaceStore {
   importFile: (file: File) => void;
   remove: (id: number) => void;
   apply: () => void;
-  applied: PatchApplyReport | null;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -59,46 +65,33 @@ export function useWorkspace(): WorkspaceStore {
   const activeId = list.data?.active ?? null;
   const detail = useQuery(workspaceQuery(activeId));
 
-  const [drafts] = useState(() => new WorkspaceDrafts());
+  const [edits] = useState(() => new WorkspaceEdits(fitRack));
+  const [, bump] = useReducer((count: number) => count + 1, 0);
 
+  const store = useCallback(
+    (stored: WorkspaceDetail) =>
+      queryClient.setQueryData<WorkspaceDetail>([...WORKSPACES_KEY, stored.id], (cached) =>
+        newer(cached, stored),
+      ),
+    [queryClient],
+  );
   const update = useMutation({
     mutationFn: (variables: { id: number; revision: number; snapshot: WorkspaceSnapshot }) =>
       updateWorkspace(variables.id, {
         revision: variables.revision,
         snapshot: variables.snapshot,
       }),
-    onSuccess: (info, variables) => {
-      const snapshot = drafts.accepted(variables.id, info.revision) ?? variables.snapshot;
-      queryClient.setQueryData<WorkspaceDetail>([...WORKSPACES_KEY, variables.id], (previous) =>
-        previous
-          ? {
-              ...previous,
-              ...info,
-              snapshot,
-            }
-          : previous,
-      );
-    },
+    onSuccess: store,
   });
-  const revisionOf = useCallback(
-    (id: number): number =>
-      drafts.get(id)?.revision ??
-      queryClient.getQueryData<WorkspaceDetail>([...WORKSPACES_KEY, id])?.revision ??
-      queryClient
-        .getQueryData<WorkspacesResponse>(WORKSPACES_KEY)
-        ?.workspaces.find((entry) => entry.id === id)?.revision ??
-      0,
-    [drafts, queryClient],
-  );
   const renameMut = useMutation({
     mutationFn: (variables: { id: number; name: string }) =>
-      updateWorkspace(variables.id, { revision: revisionOf(variables.id), name: variables.name }),
-    onSuccess: (info, variables) => {
-      drafts.accepted(variables.id, info.revision);
-      queryClient.setQueryData<WorkspaceDetail>([...WORKSPACES_KEY, variables.id], (previous) =>
-        previous ? { ...previous, ...info } : previous,
-      );
-    },
+      updateWorkspace(variables.id, {
+        revision:
+          queryClient.getQueryData<WorkspaceDetail>([...WORKSPACES_KEY, variables.id])?.revision ??
+          0,
+        name: variables.name,
+      }),
+    onSuccess: store,
     onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
   });
   const cloneMut = useMutation({
@@ -106,7 +99,14 @@ export function useWorkspace(): WorkspaceStore {
     onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
   });
   const activateMut = useMutation({
-    mutationFn: activateWorkspace,
+    mutationFn: (id: number) => {
+      useSwitchStore.getState().expect(id);
+      return activateWorkspace(id);
+    },
+    onSuccess: (report) => {
+      useSwitchStore.getState().publish(report);
+      retryNodeState(queryClient);
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
   });
   const createMut = useMutation({
@@ -125,7 +125,10 @@ export function useWorkspace(): WorkspaceStore {
   });
   const applyMut = useMutation({
     mutationFn: applyWorkspace,
-    onSuccess: () => retryNodeState(queryClient),
+    onSuccess: (report) => {
+      useSwitchStore.getState().publish(report);
+      retryNodeState(queryClient);
+    },
   });
   const applyAsync = applyMut.mutateAsync;
   const stepMut = useMutation({
@@ -160,70 +163,53 @@ export function useWorkspace(): WorkspaceStore {
     },
     [activeId, queryClient, saveChannelAsync],
   );
-  const draft = queried === null ? undefined : drafts.get(queried.id);
-  const active =
-    queried !== null && draft !== undefined ? { ...queried, snapshot: draft.snapshot } : queried;
+  const active = queried === null ? null : edits.view(queried);
   const activeIdRef = useRef<number | null>(null);
   useLayoutEffect(() => {
     activeIdRef.current = active?.id ?? null;
   });
   const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const refreshOwed = useRef(false);
-  const finishQueue = useCallback(
-    (task: Promise<unknown>) => {
-      queue.current = task;
-      void task
-        .then(() => {
-          if (queue.current === task && refreshOwed.current) {
-            refreshOwed.current = false;
-            return queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY });
-          }
-        })
-        .catch(() => undefined);
-    },
-    [queryClient],
-  );
+  const finishQueue = useCallback((task: Promise<unknown>) => {
+    queue.current = task;
+  }, []);
 
-  const save = useCallback(
-    (edit: (snapshot: WorkspaceSnapshot) => WorkspaceSnapshot) => {
-      const id = activeIdRef.current;
-      if (id === null) {
-        return;
-      }
+  const flush = useCallback(
+    (id: number) => {
       const key = [...WORKSPACES_KEY, id] as const;
-      const current = queryClient.getQueryData<WorkspaceDetail>(key);
-      if (current === undefined) {
-        return;
-      }
-      const base = drafts.get(id)?.snapshot ?? current.snapshot;
-      const snapshot = fitRack(edit(base));
-      const write = drafts.stage(id, snapshot, current.revision);
-      queryClient.setQueryData<WorkspaceDetail>(key, {
-        ...current,
-        snapshot,
-      });
       const task = queue.current
         .catch(() => undefined)
         .then(async () => {
+          const base = queryClient.getQueryData<WorkspaceDetail>(key);
+          const outgoing = base === undefined ? null : edits.take(id, base);
+          if (outgoing === null) {
+            return;
+          }
           try {
-            const latest = queryClient.getQueryData<WorkspaceDetail>(key);
-            if (latest !== undefined) {
-              await update.mutateAsync({
-                id,
-                revision: drafts.get(id)?.revision ?? latest.revision,
-                snapshot,
-              });
-            }
+            await update.mutateAsync({ id, ...outgoing });
           } catch {
+            await queryClient.invalidateQueries({ queryKey: key });
           } finally {
-            const finished = drafts.finish(id, write.generation);
-            refreshOwed.current = refreshOwed.current || finished;
+            edits.landed(id);
+            bump();
           }
         })
         .catch(() => undefined);
       finishQueue(task);
     },
-    [drafts, finishQueue, queryClient, update],
+    [edits, finishQueue, queryClient, update],
+  );
+
+  const save = useCallback(
+    (edit: Edit) => {
+      const id = activeIdRef.current;
+      if (id === null) {
+        return;
+      }
+      edits.push(id, edit);
+      bump();
+      flush(id);
+    },
+    [edits, flush],
   );
 
   const apply = useCallback(() => {
@@ -279,11 +265,11 @@ export function useWorkspace(): WorkspaceStore {
     [cloneAsync, finishQueue],
   );
 
-  const applied = useRef<number | null>(null);
+  const broughtUp = useRef(false);
   const loaded = active?.id ?? null;
   useEffect(() => {
-    if (loaded !== null && applied.current !== loaded) {
-      applied.current = loaded;
+    if (loaded !== null && !broughtUp.current) {
+      broughtUp.current = true;
       apply();
     }
   }, [loaded, apply]);
@@ -308,7 +294,6 @@ export function useWorkspace(): WorkspaceStore {
     importFile: importMut.mutate,
     remove: removeMut.mutate,
     apply,
-    applied: applyMut.data ?? null,
     undo,
     redo,
     canUndo: queried?.history?.can_undo ?? false,

@@ -386,5 +386,9 @@
       "min": -180.0,
       "max": 180.0
     }
+  },
+  "presence": {
+    "name_len": 32,
+    "pointer_rate_hz": 30
   }
 }

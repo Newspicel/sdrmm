@@ -53,8 +53,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 
 ## 3. Receive DSP
 - Multi-site: TDOA and one triangulation across several servers
-- Auto-squelch: tell a floor step from a signal. Today a floor that jumps in one step reads as a
-  signal until the channel next falls quiet
 
 ## 4. Decoders
 
@@ -77,6 +75,5 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - Layers for sondes, satellites, beacons
 
 ## 7. Automation & API
-- Desktop and push notifications from Event filter
 - WASM plugin SDK
 - Offline bundles for TLE snapshots and callsign prefixes

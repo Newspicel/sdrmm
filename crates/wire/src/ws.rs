@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{decode::DecodedRecord, position::PositionFix};
+use crate::{
+    decode::DecodedRecord,
+    position::PositionFix,
+    presence::{Peer, Pointer},
+    workspace::PatchApplyReport,
+};
 
 pub const WS_SUBPROTOCOL: &str = "sdrmm";
 pub const WS_BEARER_PROTOCOL_PREFIX: &str = "sdrmm.bearer.";
@@ -22,6 +27,7 @@ pub enum StateScope {
     Calls,
     Images,
     Workspaces,
+    Workspace(i64),
     Arrays,
     Phones,
     Missions,
@@ -179,6 +185,20 @@ pub enum ServerEvent {
         node: String,
         update: Box<crate::survey::SurveyUpdate>,
     },
+    Peers {
+        you: u32,
+        peers: Vec<Peer>,
+    },
+    PeerPointer {
+        peer: u32,
+        pointer: Pointer,
+    },
+    WorkspaceSwitched {
+        id: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        by: Option<String>,
+        report: PatchApplyReport,
+    },
     Error {
         message: String,
     },
@@ -252,6 +272,12 @@ pub enum ClientCommand {
     UnsubscribeSurface {
         node: String,
     },
+    Present {
+        author: String,
+        #[serde(default)]
+        name: String,
+    },
+    Point(Pointer),
 }
 
 #[cfg(test)]

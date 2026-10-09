@@ -53,9 +53,12 @@ pub(super) async fn list_missions(
 pub(super) async fn run_mission_action(
     State(state): State<AppState>,
     Path(node): Path<String>,
+    author: Author,
     Json(action): Json<MissionAction>,
 ) -> Result<Json<MissionActionResponse>, AppError> {
-    let mission = tokio::task::spawn_blocking(move || act(&state, &node, action)).await??;
+    let mission =
+        tokio::task::spawn_blocking(move || act(&state, &node, action, author.as_deref()))
+            .await??;
     Ok(Json(MissionActionResponse { mission }))
 }
 
@@ -70,18 +73,22 @@ pub(super) async fn run_mission_action(
 )]
 pub(super) async fn switch_mission_workspace(
     State(state): State<AppState>,
+    author: Author,
     Json(request): Json<SwitchWorkspaceRequest>,
 ) -> Result<Json<MissionsResponse>, AppError> {
     let switched = state.clone();
-    tokio::task::spawn_blocking(move || switch(&switched, request.workspace)).await??;
+    tokio::task::spawn_blocking(move || {
+        let by = author.name(&switched);
+        switch_for_phone(&switched, request.workspace, by)
+    })
+    .await??;
     reconcile_graph(state.clone()).await?;
     Ok(Json(listing(state).await?))
 }
 
-fn switch(state: &AppState, workspace: i64) -> Result<(), AppError> {
+fn switch_for_phone(state: &AppState, workspace: i64, by: Option<String>) -> Result<(), AppError> {
     let _serialized = lock_gate(&state.apply_gate);
-    activate(state, workspace)?;
-    let report = bring_up_active(state, workspace)?;
+    let report = switch(state, workspace, by)?;
     for refusal in &report.refused {
         tracing::warn!(
             workspace,

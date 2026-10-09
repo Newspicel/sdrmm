@@ -125,6 +125,34 @@ impl WorkspaceSnapshot {
         Self::new(PatchGraph::default(), RackLayout::default())
     }
 
+    pub fn drop_dangling(&mut self) {
+        let ids: Vec<String> = self
+            .graph
+            .nodes
+            .iter()
+            .map(|node| node.id.clone())
+            .collect();
+        let known = |id: &String| ids.contains(id);
+        let mut wires = Vec::with_capacity(self.graph.edges.len());
+        for edge in std::mem::take(&mut self.graph.edges) {
+            if known(&edge.from.node) && known(&edge.to.node) && !wires.contains(&edge) {
+                wires.push(edge);
+            }
+        }
+        self.graph.edges = wires;
+        let mut slots: Vec<crate::patch::RackSlot> = Vec::with_capacity(self.rack.slots.len());
+        for slot in std::mem::take(&mut self.rack.slots) {
+            if known(&slot.node)
+                && slots
+                    .iter()
+                    .all(|kept| kept.node != slot.node && !kept.cell.overlaps(slot.cell))
+            {
+                slots.push(slot);
+            }
+        }
+        self.rack.slots = slots;
+    }
+
     #[must_use]
     pub fn starter() -> Self {
         let node = |id: &str, body: NodeBody, x: f32, y: f32| PatchNode {
@@ -635,6 +663,46 @@ mod tests {
             pinned_ghost.validate(),
             Err(WorkspaceError::Patch(PatchError::UnknownNode(_)))
         ));
+    }
+
+    #[test]
+    fn dropping_dangling_parts_leaves_a_valid_snapshot() {
+        let mut snapshot = WorkspaceSnapshot::starter();
+        let kept = snapshot.graph.edges[0].clone();
+        snapshot.graph.edges.push(kept.clone());
+        snapshot
+            .graph
+            .edges
+            .push(wire(("device", "iq"), ("ghost", "iq")));
+        let cell = RackCell {
+            x: 0,
+            y: 0,
+            w: 2,
+            h: 2,
+        };
+        for node in ["ghost", "scope", "speaker"] {
+            snapshot.rack.slots.push(RackSlot {
+                node: node.to_owned(),
+                cell,
+            });
+        }
+        snapshot.drop_dangling();
+        assert_eq!(snapshot.validate(), Ok(()));
+        assert_eq!(
+            snapshot
+                .graph
+                .edges
+                .iter()
+                .filter(|edge| **edge == kept)
+                .count(),
+            1
+        );
+        assert_eq!(
+            snapshot.rack.slots.len(),
+            1,
+            "overlapping pins keep the first"
+        );
+        assert_eq!(snapshot.rack.slots[0].node, "scope");
     }
 
     #[test]

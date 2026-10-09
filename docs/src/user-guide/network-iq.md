@@ -8,7 +8,9 @@ Send live IQ or decoded events to other programs.
 | Network IQ | rtl_tcp server | rtl_433 and other rtl_tcp clients |
 | Event output | ADS-B Beast TCP | Flight tracking feeders |
 | Event output | Webhook, Matrix, MQTT | Chat, automation and alerts |
+| Event output | Notification | Alerts in the desktop app |
 | Event output | PostgreSQL, InfluxDB | Databases |
+| Event output | CSV file | Spreadsheets and logs |
 | Event output | Network interface | IP packets from DAB and DVB-S2 |
 
 Network IQ and Beast ports skip the server's token and TLS. Keep them on trusted networks. A
@@ -78,17 +80,22 @@ Wire `events` to an **Event output** and pick a **Service**. Each event is sent 
 | Webhook, Discord | The text as a message, with any audio attached |
 | Matrix | The text to a room, with any audio uploaded |
 | MQTT | The JSON payload to a topic, at least once. Use `mqtt://` or `mqtts://`. |
+| Notification | The text as a system notification. Desktop app only. |
 
 Long messages are cut at 1,900 characters. A rate-limited send is retried up to four times.
 Failures go to the server log.
 
-## Databases
+## Databases and files
 
-Wire `events` to an **Event output** and choose **PostgreSQL** or **InfluxDB**.
+Wire `events` to an **Event output** and choose **PostgreSQL**, **InfluxDB** or **CSV file**.
 
 **PostgreSQL** creates the table (default `sdrmm_events`) on first write: one row per event with time, kind, frequency,
 station, summary, and the full record as `jsonb`. Add `?sslmode=disable` to the URL for a server
 without TLS.
+
+**CSV file** appends one row per event to `Recordings/events/<file>.csv`: time, kind, output,
+device set, channel, frequency, station, summary, and the event data as JSON. Text that starts
+like a formula gets a leading `'`.
 
 **InfluxDB** 2 and 3 take one point per event. The measurement is the event kind, and numbers,
 flags, and short text from the event become fields.

@@ -215,7 +215,7 @@ for (const { fallback, delayOutput, wideband } of [
         frequency_hz: (device.settings.center_hz ?? 100_000_000) + 300_000,
         squelch: { mode: "off" as const },
       };
-      expect((await page.request.patch(channelUrl, { data: settings })).ok()).toBe(true);
+      expect((await page.request.patch(channelUrl, { data: { settings } })).ok()).toBe(true);
       const speaker = page.locator('.react-flow__node[data-id="speaker"]');
       await speaker.locator("header").click();
       await speaker.getByRole("button", { name: "Play", exact: true }).click();

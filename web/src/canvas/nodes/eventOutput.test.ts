@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventOutputConfigured, newOutputTarget } from "./eventOutput";
+import { eventOutputConfigured, newOutputTarget, outputServices } from "./eventOutput";
 
 const matrix = (access_token: string) =>
   eventOutputConfigured({
@@ -18,10 +18,27 @@ const postgres = (url: string, table: string, username: string) =>
 const influx = (url: string, bucket: string) =>
   eventOutputConfigured({ service: "influx", url, bucket, org: "", token: "" });
 
+const offered = (notify: boolean, current: "desktop" | "mqtt") =>
+  outputServices(notify, current).some((option) => option.value === "desktop");
+
 describe("event output configuration", () => {
   it("saves recordings with nothing to configure", () => {
     expect(newOutputTarget("recordings")).toEqual({ service: "recordings" });
     expect(eventOutputConfigured({ service: "recordings" })).toBe(true);
+  });
+
+  it("offers notifications only in the desktop app", () => {
+    expect(newOutputTarget("desktop")).toEqual({ service: "desktop" });
+    expect(eventOutputConfigured({ service: "desktop" })).toBe(true);
+    expect(offered(true, "mqtt")).toBe(true);
+    expect(offered(false, "mqtt")).toBe(false);
+    expect(offered(false, "desktop")).toBe(true);
+  });
+
+  it("appends CSV once a file name is set", () => {
+    expect(newOutputTarget("csv")).toEqual({ service: "csv", file: "events" });
+    expect(eventOutputConfigured({ service: "csv", file: "events" })).toBe(true);
+    expect(eventOutputConfigured({ service: "csv", file: " " })).toBe(false);
   });
 
   it("opens Beast only after an address and explicit enable", () => {

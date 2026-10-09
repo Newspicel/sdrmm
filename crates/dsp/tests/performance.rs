@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use num_complex::Complex;
 use sdrmm_dsp::{
-    FracResampler, NoiseFloor, SpectrumAnalyzer,
+    FracResampler, NoiseFloor, SpectrumAnalyzer, Squelch,
     radar::{
         cfar::Hit,
         cluster::{Cluster, Clusterer},
@@ -84,6 +84,27 @@ fn the_local_noise_floor_reuses_scratch_and_keeps_up_with_the_skimmer() {
         msps > 1.0,
         "a skimmer needs a floor every 2048 samples: {msps} MS/s"
     );
+}
+
+#[test]
+fn a_guarded_squelch_reuses_storage_and_keeps_up_with_a_wide_channel() {
+    let mut squelch = Squelch::new(240_000.0, 0.0, 2.0, 0.1).with_guard_band(-6_250.0, 6_250.0);
+    squelch.set_auto_margin_db(Some(8.0));
+    let input: Vec<Complex<f32>> = (0..4099)
+        .map(|k| Complex::new((k % 7) as f32 * 1e-3, (k % 11) as f32 * 1e-3))
+        .collect();
+    assert_no_alloc("guarded squelch", || {
+        for size in [1, 17, 2048, 4099] {
+            for chunk in input.chunks(size) {
+                let _ = squelch.process(chunk, chunk);
+            }
+            squelch.reset();
+        }
+    });
+    let msps = measure_throughput(30, input.len() as u64, || {
+        black_box(squelch.process(black_box(&input), black_box(&input)));
+    });
+    assert!(msps > 10.0, "guarded squelch: {msps} MS/s");
 }
 
 #[test]

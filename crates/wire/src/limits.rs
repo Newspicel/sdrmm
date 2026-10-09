@@ -87,7 +87,19 @@ pub struct Limits {
     pub correlator: CorrelatorLimits,
     pub polarimeter: PolarimeterLimits,
     pub hunt: HuntLimits,
+    pub presence: PresenceLimits,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct PresenceLimits {
+    pub name_len: usize,
+    pub pointer_rate_hz: u32,
+}
+
+pub const PRESENCE_LIMITS: PresenceLimits = PresenceLimits {
+    name_len: crate::presence::MAX_PEER_NAME_LEN,
+    pointer_rate_hz: crate::presence::POINTER_RATE_HZ,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct ArrayLimits {
@@ -380,6 +392,7 @@ pub const LIMITS: Limits = Limits {
     correlator: CORRELATOR_LIMITS,
     polarimeter: POLARIMETER_LIMITS,
     hunt: HUNT_LIMITS,
+    presence: PRESENCE_LIMITS,
 };
 
 pub fn generated() -> Result<String, serde_json::Error> {

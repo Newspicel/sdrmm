@@ -163,6 +163,7 @@ mod tests {
                         repository: String::new(),
                         components: Vec::new(),
                         reveal: false,
+                        notify: false,
                     },
                 ),
                 ("GET", "/api/missions") => StubResponse::json(

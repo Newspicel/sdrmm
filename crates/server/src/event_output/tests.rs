@@ -262,6 +262,7 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
                 name: None,
                 snapshot: Some(WorkspaceSnapshot::new(graph, RackLayout::default())),
             },
+            None,
         )
         .expect("update workspace");
 
@@ -876,19 +877,86 @@ async fn delivery_outcomes_reach_the_output_status() {
         .expect("queued");
     drop(sender);
 
-    deliver_all(
-        Client::new(),
-        receiver,
-        std::sync::Weak::new(),
-        statuses.clone(),
-    )
-    .await;
+    deliver_all(senders(None), receiver, statuses.clone()).await;
 
     let good = statuses.get("good").expect("good status");
     assert_eq!((good.delivered, good.failed, good.error), (1, 0, None));
     let bad = statuses.get("bad").expect("bad status");
     assert_eq!((bad.delivered, bad.failed), (0, 1));
     assert!(bad.error.expect("failure").starts_with("Webhook request:"));
+}
+
+fn senders(shell: Option<Arc<dyn NativeShell>>) -> Senders {
+    Senders {
+        client: Client::new(),
+        engine: std::sync::Weak::new(),
+        shell,
+    }
+}
+
+#[derive(Debug, Default)]
+struct Notifications(Mutex<Vec<(String, String)>>);
+
+impl NativeShell for Notifications {
+    fn reveal(&self, _: &std::path::Path) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn notify(&self, title: &str, body: &str) -> std::io::Result<()> {
+        self.0
+            .lock()
+            .expect("notifications")
+            .push((title.to_owned(), body.to_owned()));
+        Ok(())
+    }
+}
+
+async fn notify_once(shell: Option<Arc<dyn NativeShell>>) -> status::Statuses {
+    let statuses = status::Statuses::default();
+    statuses.configure(&[Binding {
+        node: "desk".to_owned(),
+        target: EventOutputTarget::Desktop,
+    }]);
+    let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
+    sender
+        .send(delivery_to("desk", EventOutputTarget::Desktop, &decoded()))
+        .await
+        .expect("queued");
+    drop(sender);
+    deliver_all(senders(shell), receiver, statuses.clone()).await;
+    statuses
+}
+
+#[tokio::test]
+async fn a_desktop_output_shows_one_notification_per_event() {
+    let shell = Arc::new(Notifications::default());
+    let statuses = notify_once(Some(shell.clone())).await;
+
+    assert_eq!(statuses.get("desk").expect("status").delivered, 1);
+    let shown = shell.0.lock().expect("notifications").clone();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].0, "RTTY decode");
+    assert!(shown[0].1.contains("Frequency:"), "{}", shown[0].1);
+}
+
+#[tokio::test]
+async fn a_desktop_output_without_the_desktop_app_reports_why() {
+    let status = notify_once(None).await.get("desk").expect("status");
+
+    assert_eq!(status.failed, 1);
+    assert_eq!(
+        status.error.as_deref(),
+        Some("Notifications need the desktop app")
+    );
+}
+
+#[test]
+fn a_call_notification_is_titled_by_its_mode() {
+    assert_eq!(
+        notification_text("DMR call · talkgroup 91 · 2.0 s"),
+        ("DMR call", "talkgroup 91 · 2.0 s")
+    );
+    assert_eq!(notification_text("plain"), ("plain", ""));
 }
 
 #[test]
@@ -1247,6 +1315,7 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
                 name: None,
                 snapshot: Some(WorkspaceSnapshot::new(graph, RackLayout::default())),
             },
+            None,
         )
         .unwrap();
     let routing = resolve(&store).unwrap();
@@ -1455,4 +1524,77 @@ async fn an_unreachable_postgres_surfaces_the_failure() {
         .to_string();
 
     assert!(error.starts_with("Postgres connect:"), "{error}");
+}
+
+#[test]
+fn a_csv_row_quotes_text_and_defuses_formulas() {
+    let record = DecodedRecord {
+        event: DecoderEvent::Rtty(RttyText {
+            text: "=HYPERLINK(\"x\"), hi".to_owned(),
+        }),
+        ..decoded()
+    };
+    let message = decoded_message("log", &record, 1);
+
+    let row = csv::row("log", &message.facts);
+
+    assert_eq!(
+        row,
+        "2026-08-15T10:00:02Z,rtty,log,1,2,14080000,,\"'=HYPERLINK(\"\"x\"\"), hi\",\
+         \"{\"\"text\"\":\"\"=HYPERLINK(\\\"\"x\\\"\"), hi\"\"}\"\r\n"
+    );
+}
+
+#[tokio::test]
+async fn csv_appends_rows_under_one_header() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let engine = Engine::with_registry(
+        sdrmm_device::DeviceRegistry::new(),
+        Some(dir.path().to_path_buf()),
+    );
+    let target = EventOutputTarget::Csv {
+        file: "log".to_owned(),
+    };
+    let batch = [
+        delivery_to("log", target.clone(), &decoded()),
+        delivery_to("log", target, &decoded()),
+    ];
+    let weak = Arc::downgrade(&engine);
+
+    csv::append(&weak, "log", &batch).await.expect("first");
+    csv::append(&weak, "log", &batch[..1])
+        .await
+        .expect("second");
+
+    let text = std::fs::read_to_string(csv::events_dir(dir.path()).join("log.csv")).expect("read");
+    let lines: Vec<_> = text.lines().collect();
+    assert_eq!(lines.len(), 4);
+    assert!(lines[0].starts_with("at,kind,output"));
+    assert_eq!(
+        lines.iter().filter(|line| line.starts_with("at,")).count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn csv_refuses_a_path_and_a_missing_library() {
+    let engine = Engine::with_registry(sdrmm_device::DeviceRegistry::new(), None);
+    let weak = Arc::downgrade(&engine);
+    let batch = [delivery_to(
+        "log",
+        EventOutputTarget::Csv {
+            file: "log".to_owned(),
+        },
+        &decoded(),
+    )];
+
+    let escape = csv::append(&weak, "../log", &batch)
+        .await
+        .expect_err("path");
+    let missing = csv::append(&weak, "log", &batch)
+        .await
+        .expect_err("no library");
+
+    assert!(escape.to_string().contains("plain name"), "{escape}");
+    assert!(missing.to_string().contains("recordings"), "{missing}");
 }

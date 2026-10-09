@@ -2,6 +2,8 @@ import type { EventOutputTarget } from "../../lib/types";
 
 export const OUTPUT_SERVICES = [
   { value: "recordings", label: "Recordings" },
+  { value: "desktop", label: "Notification" },
+  { value: "csv", label: "CSV file" },
   { value: "beast", label: "ADS-B Beast TCP" },
   { value: "webhook", label: "Webhook" },
   { value: "matrix", label: "Matrix" },
@@ -11,6 +13,12 @@ export const OUTPUT_SERVICES = [
   { value: "tunnel", label: "Network interface" },
 ] as const;
 
+export function outputServices(notify: boolean, current: EventOutputTarget["service"]) {
+  return OUTPUT_SERVICES.filter(
+    (option) => option.value !== "desktop" || notify || current === "desktop",
+  );
+}
+
 export const WEBHOOK_FORMATS = [
   { value: "json", label: "JSON" },
   { value: "discord", label: "Discord" },
@@ -19,7 +27,10 @@ export const WEBHOOK_FORMATS = [
 export function newOutputTarget(service: EventOutputTarget["service"]): EventOutputTarget {
   switch (service) {
     case "recordings":
+    case "desktop":
       return { service };
+    case "csv":
+      return { service, file: "events" };
     case "beast":
       return { service, address: "127.0.0.1:30005", enabled: false };
     case "tunnel":
@@ -40,7 +51,10 @@ export function newOutputTarget(service: EventOutputTarget["service"]): EventOut
 export function eventOutputConfigured(target: EventOutputTarget): boolean {
   switch (target.service) {
     case "recordings":
+    case "desktop":
       return true;
+    case "csv":
+      return target.file.trim() !== "";
     case "beast":
       return target.enabled === true && target.address.trim() !== "";
     case "tunnel":

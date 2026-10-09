@@ -1254,7 +1254,7 @@ impl RackLayout {
         for (i, slot) in self.slots.iter().enumerate() {
             if self.slots[..i]
                 .iter()
-                .any(|other| overlaps(other.cell, slot.cell))
+                .any(|other| other.cell.overlaps(slot.cell))
             {
                 return Err(PatchError::RackOverlap(slot.node.clone()));
             }
@@ -1263,8 +1263,14 @@ impl RackLayout {
     }
 }
 
-fn overlaps(a: RackCell, b: RackCell) -> bool {
-    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+impl RackCell {
+    #[must_use]
+    pub fn overlaps(self, other: Self) -> bool {
+        self.x < other.x + other.w
+            && other.x < self.x + self.w
+            && self.y < other.y + other.h
+            && other.y < self.y + self.h
+    }
 }
 
 impl ChannelParams {

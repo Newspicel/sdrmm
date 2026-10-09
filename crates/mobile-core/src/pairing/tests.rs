@@ -27,6 +27,7 @@ fn about(protocol: u32) -> AboutResponse {
         repository: String::new(),
         components: Vec::new(),
         reveal: false,
+        notify: false,
     }
 }
 

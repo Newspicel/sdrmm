@@ -22,6 +22,18 @@ describe("EventOutputFace", () => {
     expect(html).not.toMatch(/<(?:select)/);
   });
 
+  it("names a notification output", () => {
+    const html = render({ service: "desktop" });
+    expect(html).toContain(">Notification<");
+  });
+
+  it("shows the CSV file name", () => {
+    const html = render({ service: "csv", file: "adsb" });
+    expect(html).toContain(">CSV file<");
+    expect(html).toContain(">File<");
+    expect(html).toContain(">adsb<");
+  });
+
   it("never shows a secret on its chip", () => {
     const html = render({ service: "webhook", url: "https://hooks.example/abc", format: "json" });
     expect(html).not.toContain("hooks.example");

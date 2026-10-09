@@ -47,6 +47,8 @@ pub struct AboutResponse {
     pub components: Vec<Attribution>,
     #[serde(default)]
     pub reveal: bool,
+    #[serde(default)]
+    pub notify: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -72,6 +74,7 @@ mod tests {
             repository: String::new(),
             components: Vec::new(),
             reveal: false,
+            notify: false,
         };
         let value = serde_json::to_value(&about).unwrap();
         assert_eq!(value["protocol"], API_PROTOCOL);

@@ -28,6 +28,7 @@ pub mod network;
 pub mod patch;
 pub mod phone;
 pub mod position;
+pub mod presence;
 pub mod processor;
 pub mod propagation;
 pub mod radar;
@@ -130,9 +131,10 @@ pub use device::{
 pub use diagnostics::{DiagnosticsReport, LogLevel, LogLine, MAX_LOG_LINES, MAX_LOG_MESSAGE_LEN};
 pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};
 pub use event_output::{
-    DEFAULT_POSTGRES_TABLE, EventOutputNode, EventOutputTarget, MAX_INFLUX_NAME_LEN,
-    MAX_MATRIX_ROOM_ID_LEN, MAX_MQTT_TOPIC_LEN, MAX_MQTT_USERNAME_LEN, MAX_OUTPUT_SECRET_LEN,
-    MAX_OUTPUT_URL_LEN, MAX_SQL_IDENTIFIER_LEN, WebhookFormat, valid_sql_identifier,
+    DEFAULT_POSTGRES_TABLE, EventOutputNode, EventOutputTarget, MAX_CSV_FILE_LEN,
+    MAX_INFLUX_NAME_LEN, MAX_MATRIX_ROOM_ID_LEN, MAX_MQTT_TOPIC_LEN, MAX_MQTT_USERNAME_LEN,
+    MAX_OUTPUT_SECRET_LEN, MAX_OUTPUT_URL_LEN, MAX_SQL_IDENTIFIER_LEN, WebhookFormat,
+    csv_file_name, valid_csv_file, valid_sql_identifier,
 };
 pub use filter::{
     EventFacet, EventFilterNode, EventKindFacets, FilterMode, MAX_FILTER_DURATION_MS,
@@ -200,6 +202,10 @@ pub use position::{
     MAX_POSITION_ENDPOINT_LEN, MAX_YAW_RATE_DPS, MIN_NMEA_BAUD, MIN_NMEA_UPDATE_INTERVAL_MS,
     NmeaDeviceInfo, NmeaDevicesResponse, PositionFix, PositionSource, normalize_heading,
 };
+pub use presence::{
+    AUTHOR_HEADER, DraggedNode, MAX_AUTHOR_LEN, MAX_PEER_NAME_LEN, MAX_POINTER_NODES,
+    POINTER_BURST, POINTER_RATE_HZ, Peer, Pointer, author_hue, peer_name, valid_author,
+};
 pub use processor::{
     ProcessorParams, ProcessorReading,
     beamformer::{
@@ -243,10 +249,10 @@ pub use rest::{
     ErrorCode, EventAudio, EventImage, ExportFormat, LogGroupKey, LogScope, MAX_LOG_SOURCES,
     MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS,
     MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket, OccupancyReport, PRESET_SNAPSHOT_VERSION,
-    PlaybackAction, PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
-    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
-    SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo, TemplatesResponse, VoiceCall,
-    VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
+    PatchChannelRequest, PlaybackAction, PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot,
+    RecordingAnnotation, RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload,
+    RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo,
+    TemplatesResponse, VoiceCall, VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
 };
 pub use satellite::{
     CatalogSatellite, MAX_CATALOG_RESULTS, MAX_SATELLITE_HZ, MAX_SATELLITE_QUERY_LEN, MAX_TLE_LEN,

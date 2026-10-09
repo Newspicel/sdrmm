@@ -13,14 +13,23 @@ Create, switch, rename, duplicate, export, and delete workspaces from the name i
 new database starts with a Device wired to a Scope, and a Speaker. Later workspaces start empty.
 Changes save automatically.
 
-Switching changes the active workspace for every client, including [phones](phones.md), which can
-switch it too.
+One workspace runs per server. Switching changes it for every client, including
+[phones](phones.md), which can switch it too. When others are connected you confirm first, and
+they see who switched.
+
+### Working together
+
+Everyone on the same server edits the same workspace. The top bar shows who is here; click your own
+circle to set your name. Other people's pointers, selections, and drags show live on the canvas.
+Edits to different nodes, or different settings of one node, never overwrite each other. When two
+people change the same setting, the later one wins.
 
 ### Undo
 
-Use the top-bar arrows, `Ctrl`/`⌘ Z`, and `Ctrl`/`⌘ Shift Z`. Undo changes the running receiver
-for every client: undoing an added channel closes it, and undoing a dial move tunes back. Moves of
-one control within a second count as one step. The server keeps 100 steps per workspace.
+Use the top-bar arrows, `Ctrl`/`⌘ Z`, and `Ctrl`/`⌘ Shift Z`. Undo takes back your own last change
+and keeps what others did since. It changes the running receiver: undoing an added channel closes
+it, and undoing a dial move tunes back. Moves of one control within a second count as one step.
+The server keeps 100 steps per workspace.
 
 ### Copy and paste
 

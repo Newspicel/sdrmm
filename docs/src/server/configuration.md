@@ -60,7 +60,8 @@ WebSocket and download URLs can use `?token=...`.
 
 Everything needs the token except the page itself, `/api/auth`, `/api/status`, `/api/about`,
 `/api/openapi.json` and `/api/docs`. Every client with the token can do everything. There are no
-user accounts or read-only roles.
+user accounts or read-only roles. Browsers tell themselves apart with an `x-sdrmm-author` key,
+which only scopes undo and names who switched workspaces.
 
 ## HTTPS
 

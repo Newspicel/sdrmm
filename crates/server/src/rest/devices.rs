@@ -110,9 +110,11 @@ pub(super) async fn delete_device_set(
 pub(super) async fn patch_device(
     State(state): State<AppState>,
     Path(ds): Path<u32>,
+    author: Author,
     Json(settings): Json<DeviceSettings>,
 ) -> Result<StatusCode, AppError> {
-    tokio::task::spawn_blocking(move || patch_device_live(&state, ds, settings)).await??;
+    tokio::task::spawn_blocking(move || patch_device_live(&state, ds, settings, author.as_deref()))
+        .await??;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -120,9 +122,10 @@ pub(crate) fn patch_device_live(
     state: &AppState,
     ds: u32,
     settings: DeviceSettings,
+    author: Option<&str>,
 ) -> Result<(), AppError> {
     let _serialized = lock_gate(&state.apply_gate);
-    let edit = workspace::begin_edit(state, ds, None);
+    let edit = workspace::begin_edit(state, ds, None, author);
     let calibrates = settings.ppm.is_some() || settings.offset_hz.is_some();
     state.engine.patch_device(ds, settings)?;
     if calibrates {
@@ -163,9 +166,13 @@ pub(super) async fn create_channel(
         ("ds" = u32, Path, description = "Device set id"),
         ("ch" = u32, Path, description = "Channel id"),
     ),
-    request_body = ChannelSettings,
+    request_body = PatchChannelRequest,
     responses(
-        (status = 204, description = "Settings applied"),
+        (
+            status = 204,
+            description = "Settings applied. With a base, only the fields changed from it land, \
+                           so another client's edit to other fields survives",
+        ),
         (status = 400, description = "Invalid channel settings", body = ApiError),
         (status = 404, description = "Device set or channel not found", body = ApiError),
         (status = 422, description = "Malformed request body", body = ApiError),
@@ -174,10 +181,39 @@ pub(super) async fn create_channel(
 pub(super) async fn patch_channel(
     State(state): State<AppState>,
     Path((ds, ch)): Path<(u32, u32)>,
-    Json(settings): Json<ChannelSettings>,
+    author: Author,
+    Json(req): Json<PatchChannelRequest>,
 ) -> Result<StatusCode, AppError> {
-    tokio::task::spawn_blocking(move || patch_channel_live(&state, ds, ch, settings)).await??;
+    tokio::task::spawn_blocking(move || {
+        let _serialized = lock_gate(&state.apply_gate);
+        let settings = match &req.base {
+            Some(base) => rebase_channel(&state, ds, ch, base, &req.settings)?,
+            None => req.settings,
+        };
+        patch_channel_locked(&state, ds, ch, settings, author.as_deref())
+    })
+    .await??;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn rebase_channel(
+    state: &AppState,
+    ds: u32,
+    ch: u32,
+    base: &ChannelSettings,
+    ours: &ChannelSettings,
+) -> Result<ChannelSettings, AppError> {
+    let held = state
+        .engine
+        .snapshot()
+        .device_sets
+        .iter()
+        .find(|set| set.id == ds)
+        .and_then(|set| set.channels.iter().find(|channel| channel.id == ch))
+        .map(|channel| channel.settings.clone())
+        .ok_or_else(|| AppError::not_found(format!("channel {ch} on device set {ds}")))?;
+    crate::merge::merge_typed(base, ours, &held)
+        .map_err(|err| AppError::bad_request(format!("settings do not merge: {err}")))
 }
 
 pub(crate) fn patch_channel_live(
@@ -185,9 +221,20 @@ pub(crate) fn patch_channel_live(
     ds: u32,
     ch: u32,
     settings: ChannelSettings,
+    author: Option<&str>,
 ) -> Result<(), AppError> {
     let _serialized = lock_gate(&state.apply_gate);
-    let edit = workspace::begin_edit(state, ds, Some(ch));
+    patch_channel_locked(state, ds, ch, settings, author)
+}
+
+fn patch_channel_locked(
+    state: &AppState,
+    ds: u32,
+    ch: u32,
+    settings: ChannelSettings,
+    author: Option<&str>,
+) -> Result<(), AppError> {
+    let edit = workspace::begin_edit(state, ds, Some(ch), author);
     state.engine.patch_channel(ds, ch, settings)?;
     if let Some(edit) = edit {
         workspace::finish_edit(state, edit);

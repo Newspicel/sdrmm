@@ -5,6 +5,8 @@ use sdrmm_wire::{
 
 use super::*;
 
+const ME: Option<&str> = Some("me");
+
 fn snapshot() -> PresetSnapshot {
     PresetSnapshot {
         version: PRESET_SNAPSHOT_VERSION,
@@ -152,7 +154,7 @@ fn signal_finders_load_from_active_workspaces_exports_and_undo_history() {
     migrated.validate().unwrap();
     assert_eq!(store.export_workspace(id).unwrap().snapshot, migrated);
     write(&store, id, &WorkspaceSnapshot::starter());
-    let undone = store.undo_workspace(id).unwrap().detail.snapshot;
+    let undone = store.undo_workspace(id, ME).unwrap().detail.snapshot;
     assert_eq!(undone, migrated);
     let saved: String = store
         .lock()
@@ -164,7 +166,7 @@ fn signal_finders_load_from_active_workspaces_exports_and_undo_history() {
         .unwrap();
     assert!(!saved.contains("signal_finder"));
     assert_eq!(
-        store.redo_workspace(id).unwrap().detail.snapshot,
+        store.redo_workspace(id, ME).unwrap().detail.snapshot,
         WorkspaceSnapshot::starter()
     );
 }
@@ -1530,8 +1532,10 @@ fn workspace_crud_roundtrip() {
                 name: Some("Bench 2".to_string()),
                 snapshot: Some(edited.clone()),
             },
+            ME,
         )
-        .expect("update");
+        .expect("update")
+        .info;
     assert_eq!(info.revision, 2);
     assert_eq!(info.name, "Bench 2");
     assert_eq!(info.nodes, 2);
@@ -1576,8 +1580,10 @@ fn write(store: &Store, id: i64, snapshot: &WorkspaceSnapshot) -> u64 {
                 name: None,
                 snapshot: Some(snapshot.clone()),
             },
+            ME,
         )
         .expect("update")
+        .info
         .revision
 }
 
@@ -1587,39 +1593,42 @@ fn workspace_history_walks_back_out_of_its_own_edits() {
     let id = store.list_workspaces().expect("list").workspaces[0].id;
     let starter = WorkspaceSnapshot::starter();
 
-    let fresh = store.workspace(id).expect("read");
-    assert_eq!(fresh.history, WorkspaceHistory::default());
+    let fresh = store.workspace_for(id, ME).expect("read");
+    assert_eq!(fresh.history, sdrmm_wire::WorkspaceHistory::default());
     assert!(matches!(
-        store.undo_workspace(id),
+        store.undo_workspace(id, ME),
         Err(StoreError::WorkspaceHistoryEnd { step: "undo", .. })
     ));
 
     write(&store, id, &without("speaker"));
     write(&store, id, &without("scope"));
 
-    let back = store.undo_workspace(id).expect("undo").detail;
+    let back = store.undo_workspace(id, ME).expect("undo").detail;
     assert_eq!(back.snapshot, without("speaker"));
     assert!(back.history.can_undo && back.history.can_redo);
     assert!(back.info.revision > 3);
     assert_eq!(back.info.nodes, 2);
 
-    let base = store.undo_workspace(id).expect("undo to the start").detail;
+    let base = store
+        .undo_workspace(id, ME)
+        .expect("undo to the start")
+        .detail;
     assert_eq!(base.snapshot, starter, "the state the first edit left");
     assert!(!base.history.can_undo && base.history.can_redo);
     assert!(matches!(
-        store.undo_workspace(id),
+        store.undo_workspace(id, ME),
         Err(StoreError::WorkspaceHistoryEnd { step: "undo", .. })
     ));
 
     assert_eq!(
-        store.redo_workspace(id).expect("redo").detail.snapshot,
+        store.redo_workspace(id, ME).expect("redo").detail.snapshot,
         without("speaker")
     );
-    let forward = store.redo_workspace(id).expect("redo").detail;
+    let forward = store.redo_workspace(id, ME).expect("redo").detail;
     assert_eq!(forward.snapshot, without("scope"));
     assert!(!forward.history.can_redo);
     assert!(matches!(
-        store.redo_workspace(id),
+        store.redo_workspace(id, ME),
         Err(StoreError::WorkspaceHistoryEnd { step: "redo", .. })
     ));
 }
@@ -1630,14 +1639,14 @@ fn an_edit_after_an_undo_drops_what_redo_would_have_reached() {
     let id = store.list_workspaces().expect("list").workspaces[0].id;
     write(&store, id, &without("speaker"));
     write(&store, id, &without("scope"));
-    store.undo_workspace(id).expect("undo");
+    store.undo_workspace(id, ME).expect("undo");
 
     write(&store, id, &without("device"));
-    let now = store.workspace(id).expect("read");
+    let now = store.workspace_for(id, ME).expect("read");
     assert_eq!(now.snapshot, without("device"));
     assert!(now.history.can_undo && !now.history.can_redo);
     assert_eq!(
-        store.undo_workspace(id).expect("undo").detail.snapshot,
+        store.undo_workspace(id, ME).expect("undo").detail.snapshot,
         without("speaker"),
         "the branch it was made from"
     );
@@ -1648,11 +1657,11 @@ fn a_write_that_changes_nothing_is_not_a_step() {
     let store = Store::open(None).expect("open");
     let id = store.list_workspaces().expect("list").workspaces[0].id;
     write(&store, id, &WorkspaceSnapshot::starter());
-    assert!(!store.workspace(id).expect("read").history.can_undo);
+    assert!(!store.workspace_for(id, ME).expect("read").history.can_undo);
     write(&store, id, &without("speaker"));
     write(&store, id, &without("speaker"));
     assert_eq!(
-        store.undo_workspace(id).expect("undo").detail.snapshot,
+        store.undo_workspace(id, ME).expect("undo").detail.snapshot,
         WorkspaceSnapshot::starter()
     );
 }
@@ -1666,7 +1675,7 @@ fn the_history_forgets_its_oldest_arrangements() {
         snapshot.graph.nodes[1].label = Some(format!("scope {at}"));
         snapshot
     };
-    let writes = usize::try_from(WORKSPACE_HISTORY_DEPTH).expect("depth fits") + 20;
+    let writes = usize::try_from(history::WORKSPACE_HISTORY_DEPTH).expect("depth fits") + 20;
     for at in 0..writes {
         write(&store, id, &labelled(at));
     }
@@ -1678,19 +1687,20 @@ fn the_history_forgets_its_oldest_arrangements() {
             |row| row.get(0),
         )
         .expect("count");
-    assert_eq!(entries, WORKSPACE_HISTORY_DEPTH);
+    assert_eq!(entries, history::WORKSPACE_HISTORY_DEPTH);
 
-    for at in (writes - usize::try_from(WORKSPACE_HISTORY_DEPTH).expect("depth fits")..writes)
+    for at in (writes - usize::try_from(history::WORKSPACE_HISTORY_DEPTH).expect("depth fits")
+        ..writes)
         .rev()
         .skip(1)
     {
         assert_eq!(
-            store.undo_workspace(id).expect("undo").detail.snapshot,
+            store.undo_workspace(id, ME).expect("undo").detail.snapshot,
             labelled(at)
         );
     }
     assert!(matches!(
-        store.undo_workspace(id),
+        store.undo_workspace(id, ME),
         Err(StoreError::WorkspaceHistoryEnd { .. })
     ));
 }
@@ -1708,6 +1718,11 @@ fn tuned(node: &str, center_hz: f64) -> WorkspaceState {
 }
 
 fn dial(store: &Store, id: i64, node: &str, from: f64, to: f64) -> bool {
+    let mut live = store.workspace_state(id).expect("state");
+    live.merge(tuned(node, to).devices);
+    store
+        .put_workspace_state(id, &live)
+        .expect("the radio moved");
     store
         .record_settings(
             id,
@@ -1716,6 +1731,7 @@ fn dial(store: &Store, id: i64, node: &str, from: f64, to: f64) -> bool {
                 before: &tuned(node, from),
                 after: &tuned(node, to),
             },
+            ME,
         )
         .expect("record")
 }
@@ -1730,9 +1746,9 @@ fn the_history_walks_back_out_of_a_dial_move() {
     let id = store.list_workspaces().expect("list").workspaces[0].id;
 
     assert!(dial(&store, id, "device", 100e6, 101e6));
-    assert!(store.workspace(id).expect("read").history.can_undo);
+    assert!(store.workspace_for(id, ME).expect("read").history.can_undo);
 
-    let back = store.undo_workspace(id).expect("undo");
+    let back = store.undo_workspace(id, ME).expect("undo");
     assert_eq!(center_of(&back.settings, "device"), Some(100e6));
     assert_eq!(
         store
@@ -1744,7 +1760,7 @@ fn the_history_walks_back_out_of_a_dial_move() {
         "the settings the step reached are the ones a restart would come back to"
     );
 
-    let forward = store.redo_workspace(id).expect("redo");
+    let forward = store.redo_workspace(id, ME).expect("redo");
     assert_eq!(center_of(&forward.settings, "device"), Some(101e6));
 }
 
@@ -1757,17 +1773,17 @@ fn an_arrangement_step_between_two_dial_moves_leaves_the_dial_alone() {
     write(&store, id, &without("speaker"));
     assert!(dial(&store, id, "device", 101e6, 102e6));
 
-    let to_layout = store.undo_workspace(id).expect("undo");
+    let to_layout = store.undo_workspace(id, ME).expect("undo");
     assert_eq!(center_of(&to_layout.settings, "device"), Some(101e6));
 
-    let to_first_dial = store.undo_workspace(id).expect("undo");
+    let to_first_dial = store.undo_workspace(id, ME).expect("undo");
     assert_eq!(to_first_dial.detail.snapshot, WorkspaceSnapshot::starter());
     assert!(
         to_first_dial.settings.is_none(),
         "an arrangement step moved a radio that had not been touched"
     );
 
-    let to_start = store.undo_workspace(id).expect("undo");
+    let to_start = store.undo_workspace(id, ME).expect("undo");
     assert_eq!(center_of(&to_start.settings, "device"), Some(100e6));
 }
 
@@ -1785,11 +1801,17 @@ fn a_drag_of_one_dial_is_one_step_and_a_second_dial_is_another() {
     assert!(dial(&store, id, "scope", 1e6, 2e6));
 
     assert_eq!(
-        center_of(&store.undo_workspace(id).expect("undo").settings, "device"),
+        center_of(
+            &store.undo_workspace(id, ME).expect("undo").settings,
+            "device"
+        ),
         Some(100.3e6)
     );
     assert_eq!(
-        center_of(&store.undo_workspace(id).expect("undo").settings, "device"),
+        center_of(
+            &store.undo_workspace(id, ME).expect("undo").settings,
+            "device"
+        ),
         Some(100e6),
         "the whole drag walks back at once"
     );
@@ -1803,11 +1825,15 @@ fn walking_back_past_the_first_dial_move_leaves_the_radios_alone() {
     write(&store, id, &without("scope"));
     assert!(dial(&store, id, "device", 100e6, 101e6));
 
-    let off_the_dial = store.undo_workspace(id).expect("undo");
+    let off_the_dial = store.undo_workspace(id, ME).expect("undo");
     assert_eq!(center_of(&off_the_dial.settings, "device"), Some(100e6));
     for _ in 0..2 {
         assert!(
-            store.undo_workspace(id).expect("undo").settings.is_none(),
+            store
+                .undo_workspace(id, ME)
+                .expect("undo")
+                .settings
+                .is_none(),
             "an arrangement older than the first dial move moved a radio"
         );
     }
@@ -1818,17 +1844,29 @@ fn a_dial_move_that_lands_where_it_started_is_not_a_step() {
     let store = Store::open(None).expect("open");
     let id = store.list_workspaces().expect("list").workspaces[0].id;
     assert!(!dial(&store, id, "device", 100e6, 100e6));
-    assert!(!store.workspace(id).expect("read").history.can_undo);
+    assert!(!store.workspace_for(id, ME).expect("read").history.can_undo);
 }
 
 #[test]
 fn a_burst_coalesces_only_while_it_is_still_the_same_gesture() {
     let start = "2026-08-18T10:00:00.000000000Z";
-    assert!(within_coalesce(start, "2026-08-18T10:00:00.016000000Z"));
-    assert!(within_coalesce(start, "2026-08-18T10:00:01.000000000Z"));
-    assert!(!within_coalesce(start, "2026-08-18T10:00:01.500000000Z"));
-    assert!(!within_coalesce(start, "2026-08-18T09:59:59.000000000Z"));
-    assert!(!within_coalesce("not a time", start));
+    assert!(history::within_coalesce(
+        start,
+        "2026-08-18T10:00:00.016000000Z"
+    ));
+    assert!(history::within_coalesce(
+        start,
+        "2026-08-18T10:00:01.000000000Z"
+    ));
+    assert!(!history::within_coalesce(
+        start,
+        "2026-08-18T10:00:01.500000000Z"
+    ));
+    assert!(!history::within_coalesce(
+        start,
+        "2026-08-18T09:59:59.000000000Z"
+    ));
+    assert!(!history::within_coalesce("not a time", start));
 }
 
 #[test]
@@ -1853,25 +1891,182 @@ fn the_history_keeps_a_deleted_nodes_settings_reachable() {
     assert_eq!(rows, 0, "deleting a workspace takes its history with it");
 }
 
+fn labelled(node: &str, label: &str) -> WorkspaceSnapshot {
+    let mut snapshot = WorkspaceSnapshot::starter();
+    if let Some(held) = snapshot.graph.nodes.iter_mut().find(|held| held.id == node) {
+        held.label = Some(label.to_owned());
+    }
+    snapshot
+}
+
+fn send(
+    store: &Store,
+    id: i64,
+    revision: u64,
+    snapshot: WorkspaceSnapshot,
+    author: &str,
+) -> WorkspaceDetail {
+    store
+        .update_workspace(
+            id,
+            &UpdateWorkspaceRequest {
+                revision,
+                name: None,
+                snapshot: Some(snapshot),
+            },
+            Some(author),
+        )
+        .expect("write")
+}
+
 #[test]
-fn workspace_update_refuses_a_stale_revision() {
+fn a_stale_write_lands_on_top_of_what_others_wrote() {
     let store = Store::open(None).expect("open");
     let id = store.list_workspaces().expect("list").workspaces[0].id;
-    let update = |revision| UpdateWorkspaceRequest {
-        revision,
-        name: None,
-        snapshot: Some(WorkspaceSnapshot::starter()),
-    };
-    store.update_workspace(id, &update(1)).expect("first write");
+    send(&store, id, 1, without("speaker"), "ann");
+    let merged = send(&store, id, 1, labelled("scope", "Mine"), "bob");
+    let mut wanted = without("speaker");
+    if let Some(scope) = wanted
+        .graph
+        .nodes
+        .iter_mut()
+        .find(|node| node.id == "scope")
+    {
+        scope.label = Some("Mine".to_owned());
+    }
+    assert_eq!(merged.snapshot, wanted);
+    assert_eq!(merged.info.revision, 3);
+}
+
+#[test]
+fn a_write_against_a_forgotten_revision_is_refused() {
+    let store = Store::open(None).expect("open");
+    let id = store.list_workspaces().expect("list").workspaces[0].id;
+    send(&store, id, 1, without("speaker"), "ann");
     assert!(matches!(
-        store.update_workspace(id, &update(1)),
+        store.update_workspace(
+            id,
+            &UpdateWorkspaceRequest {
+                revision: 99,
+                name: None,
+                snapshot: Some(WorkspaceSnapshot::starter()),
+            },
+            ME,
+        ),
         Err(StoreError::WorkspaceConflict {
-            sent: 1,
+            sent: 99,
             current: 2,
             ..
         })
     ));
-    store.update_workspace(id, &update(2)).expect("fresh write");
+}
+
+#[test]
+fn a_write_that_changes_nothing_keeps_the_revision() {
+    let store = Store::open(None).expect("open");
+    let id = store.list_workspaces().expect("list").workspaces[0].id;
+    let same = send(&store, id, 1, WorkspaceSnapshot::starter(), "ann");
+    assert_eq!(same.info.revision, 1);
+}
+
+#[test]
+fn undo_takes_back_only_the_callers_change() {
+    let store = Store::open(None).expect("open");
+    let id = store.list_workspaces().expect("list").workspaces[0].id;
+    send(&store, id, 1, labelled("scope", "Ann"), "ann");
+    let bob = send(
+        &store,
+        id,
+        2,
+        {
+            let mut both = labelled("scope", "Ann");
+            if let Some(speaker) = both
+                .graph
+                .nodes
+                .iter_mut()
+                .find(|node| node.id == "speaker")
+            {
+                speaker.label = Some("Bob".to_owned());
+            }
+            both
+        },
+        "bob",
+    );
+    assert!(bob.history.can_undo);
+
+    let undone = store.undo_workspace(id, Some("ann")).expect("undo").detail;
+    let mut wanted = WorkspaceSnapshot::starter();
+    if let Some(speaker) = wanted
+        .graph
+        .nodes
+        .iter_mut()
+        .find(|node| node.id == "speaker")
+    {
+        speaker.label = Some("Bob".to_owned());
+    }
+    assert_eq!(undone.snapshot, wanted, "Bob's label stays");
+    assert!(!undone.history.can_undo && undone.history.can_redo);
+    assert!(
+        store
+            .workspace_for(id, Some("bob"))
+            .expect("read")
+            .history
+            .can_undo,
+        "Bob can still undo his own"
+    );
+    assert!(matches!(
+        store.undo_workspace(id, Some("eve")),
+        Err(StoreError::WorkspaceHistoryEnd { .. })
+    ));
+
+    let redone = store.redo_workspace(id, Some("ann")).expect("redo").detail;
+    assert_eq!(
+        redone
+            .snapshot
+            .graph
+            .node("scope")
+            .and_then(|node| node.label.clone()),
+        Some("Ann".to_owned())
+    );
+    assert_eq!(
+        redone
+            .snapshot
+            .graph
+            .node("speaker")
+            .and_then(|node| node.label.clone()),
+        Some("Bob".to_owned())
+    );
+}
+
+#[test]
+fn a_dial_undo_keeps_another_radios_newer_setting() {
+    let store = Store::open(None).expect("open");
+    let id = store.list_workspaces().expect("list").workspaces[0].id;
+    let mut both = tuned("device", 100e6);
+    both.merge(tuned("other", 5e6).devices);
+    store.put_workspace_state(id, &both).expect("seed");
+    let mut moved = both.clone();
+    moved.merge(tuned("device", 101e6).devices);
+    store
+        .record_settings(
+            id,
+            &SettingsStep {
+                node: "device",
+                before: &both,
+                after: &moved,
+            },
+            Some("ann"),
+        )
+        .expect("record");
+    let mut later = moved.clone();
+    later.merge(tuned("other", 7e6).devices);
+    store
+        .put_workspace_state(id, &later)
+        .expect("bob turns another dial");
+
+    let back = store.undo_workspace(id, Some("ann")).expect("undo");
+    assert_eq!(center_of(&back.settings, "device"), Some(100e6));
+    assert_eq!(center_of(&back.settings, "other"), Some(7e6));
 }
 
 #[test]
@@ -1900,7 +2095,8 @@ fn workspace_writes_reject_a_bad_layout_and_a_taken_name() {
                 revision: 1,
                 name: None,
                 snapshot: Some(dangling),
-            }
+            },
+            ME,
         ),
         Err(StoreError::WorkspaceLayout(WorkspaceError::Patch(_)))
     ));
@@ -1930,7 +2126,8 @@ fn workspace_writes_reject_a_bad_layout_and_a_taken_name() {
                 revision: 1,
                 name: Some("Workspace".to_string()),
                 snapshot: None,
-            }
+            },
+            ME,
         ),
         Err(StoreError::WorkspaceNameTaken(_))
     ));
@@ -2297,7 +2494,12 @@ fn a_stored_retired_decoder_event_leaves_the_log() {
             "DROP TABLE saved_radios; DROP TABLE radio_calibrations; DROP TABLE remote_access; \
              DROP TABLE workspace_notices; DROP TABLE phones; DROP TABLE phone_offers; \
              DROP TABLE server_meta; DROP TABLE array_calibrations; \
-             ALTER TABLE recordings DROP COLUMN lanes;",
+             ALTER TABLE recordings DROP COLUMN lanes; \
+             ALTER TABLE workspace_history DROP COLUMN revision; \
+             ALTER TABLE workspace_history DROP COLUMN author; \
+             ALTER TABLE workspace_history DROP COLUMN kind; \
+             ALTER TABLE workspace_history DROP COLUMN undone_by; \
+             ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0;",
         )
         .expect("drop the later tables");
     }
@@ -2328,6 +2530,14 @@ fn a_stored_broadcast_status_leaves_the_log() {
             .expect("the retiring migration");
         conn.pragma_update(None, "user_version", retiring as i64)
             .expect("rewind");
+        conn.execute_batch(
+            "ALTER TABLE workspace_history DROP COLUMN revision; \
+             ALTER TABLE workspace_history DROP COLUMN author; \
+             ALTER TABLE workspace_history DROP COLUMN kind; \
+             ALTER TABLE workspace_history DROP COLUMN undone_by; \
+             ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0;",
+        )
+        .expect("undo the later migrations");
     }
 
     let store = Store::open(Some(file.path())).expect("reopen");
@@ -2394,6 +2604,7 @@ fn forgetting_a_radio_drops_the_settings_it_left_on_the_node() {
                     name: None,
                     snapshot: Some(snapshot),
                 },
+                ME,
             )
             .expect("write")
     };
@@ -2417,7 +2628,7 @@ fn forgetting_a_radio_drops_the_settings_it_left_on_the_node() {
             .is_some()
     );
 
-    write(3, holding(None).1);
+    write(2, holding(None).1);
     assert!(
         store
             .workspace_state(id)
@@ -2426,4 +2637,64 @@ fn forgetting_a_radio_drops_the_settings_it_left_on_the_node() {
             .is_none(),
         "the next radio picked here must not inherit the ppm of the last"
     );
+}
+
+#[test]
+fn the_author_migration_keeps_the_head_and_drops_the_redo_tail() {
+    let file = tempfile::NamedTempFile::new().expect("temp db");
+    let id;
+    {
+        let store = Store::open(Some(file.path())).expect("open");
+        id = store.list_workspaces().expect("list").workspaces[0].id;
+        let conn = store.lock();
+        let migration = MIGRATIONS
+            .iter()
+            .position(|migration| migration.contains("ADD COLUMN undone_by"))
+            .expect("the author migration");
+        conn.execute_batch(
+            "DELETE FROM workspace_history; \
+             ALTER TABLE workspace_history DROP COLUMN revision; \
+             ALTER TABLE workspace_history DROP COLUMN author; \
+             ALTER TABLE workspace_history DROP COLUMN kind; \
+             ALTER TABLE workspace_history DROP COLUMN undone_by; \
+             ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0;",
+        )
+        .expect("back to the shared history");
+        let starter = serde_json::to_string(&WorkspaceSnapshot::starter()).expect("json");
+        for seq in 1..=3 {
+            conn.execute(
+                "INSERT INTO workspace_history (workspace_id, seq, created_at, snapshot) \
+                 VALUES (?1, ?2, 't', ?3)",
+                params![id, seq, starter],
+            )
+            .expect("an old entry");
+        }
+        conn.execute(
+            "UPDATE workspaces SET history_at = 2 WHERE id = ?1",
+            params![id],
+        )
+        .expect("one step undone");
+        conn.pragma_update(None, "user_version", migration as i64)
+            .expect("rewind");
+    }
+
+    let store = Store::open(Some(file.path())).expect("reopen");
+    let rows: Vec<(i64, String, Option<i64>)> = {
+        let conn = store.lock();
+        let mut stmt = conn
+            .prepare("SELECT seq, kind, revision FROM workspace_history ORDER BY seq")
+            .expect("query");
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .expect("rows")
+            .collect::<Result<_, _>>()
+            .expect("read")
+    };
+    assert_eq!(
+        rows,
+        vec![
+            (1, "edit".to_owned(), None),
+            (2, "base".to_owned(), Some(1))
+        ]
+    );
+    assert!(!store.workspace_for(id, ME).expect("read").history.can_undo);
 }

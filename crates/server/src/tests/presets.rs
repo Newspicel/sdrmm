@@ -20,7 +20,7 @@ async fn preset_capture_apply_delete_roundtrip() {
         app.clone(),
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{channel}"),
-        Some(r#"{"frequency_hz":145525000.0,"squelch":{"mode":"manual","level_db":-70.0},"params":{"type":"nfm","settings":{}}}"#),
+        Some(r#"{"settings":{"frequency_hz":145525000.0,"squelch":{"mode":"manual","level_db":-70.0},"params":{"type":"nfm","settings":{}}}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);

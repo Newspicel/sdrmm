@@ -3,6 +3,7 @@ import createClient from "openapi-fetch";
 import { migrateSnapshot } from "../canvas/graph";
 import type { paths } from "../generated/schema";
 import { getToken, rejectToken, withToken } from "./auth";
+import { authorKey } from "./presence";
 import type {
   AboutResponse,
   ApiError,
@@ -88,12 +89,13 @@ import type {
   VoiceCallsResponse,
   WorkspaceDetail,
   WorkspaceExport,
-  WorkspaceInfo,
   WorkspaceSnapshot,
   WorkspacesResponse,
 } from "./types";
 
 export const client = createClient<paths>({ baseUrl: "/" });
+
+export const AUTHOR_HEADER = "x-sdrmm-author";
 
 client.use({
   onRequest({ request }) {
@@ -101,6 +103,7 @@ client.use({
     if (token !== null) {
       request.headers.set("Authorization", `Bearer ${token}`);
     }
+    request.headers.set(AUTHOR_HEADER, authorKey());
     return request;
   },
   onResponse({ response }) {
@@ -289,11 +292,12 @@ export async function patchChannel(
   ds: number,
   ch: number,
   settings: ChannelSettings,
+  base?: ChannelSettings,
 ): Promise<void> {
   unwrap(
     await client.PATCH("/api/devicesets/{ds}/channels/{ch}", {
       params: { path: { ds, ch } },
-      body: settings,
+      body: base === undefined ? { settings } : { settings, base },
     }),
   );
 }
@@ -636,13 +640,14 @@ export async function createWorkspace(name: string, snapshot?: WorkspaceSnapshot
 export async function updateWorkspace(
   id: number,
   update: { revision: number; name?: string; snapshot?: WorkspaceSnapshot },
-): Promise<WorkspaceInfo> {
-  return unwrap(
+): Promise<WorkspaceDetail> {
+  const detail = unwrap(
     await client.PUT("/api/workspaces/{id}", {
       params: { path: { id } },
       body: update,
     }),
   );
+  return { ...detail, snapshot: migrateSnapshot(detail.snapshot) };
 }
 
 export function workspaceExportUrl(id: number): string {
@@ -672,8 +677,8 @@ export async function deleteWorkspace(id: number): Promise<void> {
   unwrap(await client.DELETE("/api/workspaces/{id}", { params: { path: { id } } }));
 }
 
-export async function activateWorkspace(id: number): Promise<void> {
-  unwrap(await client.POST("/api/workspaces/{id}/activate", { params: { path: { id } } }));
+export async function activateWorkspace(id: number): Promise<PatchApplyReport> {
+  return unwrap(await client.POST("/api/workspaces/{id}/activate", { params: { path: { id } } }));
 }
 
 export async function applyWorkspace(id: number): Promise<PatchApplyReport> {

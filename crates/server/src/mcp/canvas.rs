@@ -1,7 +1,7 @@
 use sdrmm_wire::{
-    NodeBody, NodeCategory, PatchApplyReport, PatchEdge, PatchGraph, PatchNode, PatchRefusal,
-    Position, StateScope, StateSnapshot, TimeMachineAction, TimeMachineNode,
-    UpdateWorkspaceRequest, WorkspaceDetail, WorkspaceSnapshot,
+    NodeCategory, PatchApplyReport, PatchEdge, PatchGraph, PatchNode, PatchRefusal, Position,
+    StateScope, StateSnapshot, TimeMachineAction, TimeMachineNode, UpdateWorkspaceRequest,
+    WorkspaceDetail, WorkspaceSnapshot,
 };
 
 use super::args::{PutNodeArgs, WireArgs};
@@ -48,7 +48,9 @@ pub(super) fn edit<T>(
         name: None,
         snapshot: Some(snapshot),
     };
-    state.store.update_workspace(info.id, &update)?;
+    state
+        .store
+        .update_workspace(info.id, &update, Some(super::MCP_AUTHOR))?;
     state.engine.emit_scope(StateScope::Workspaces);
     let released = release(state, &before, &after);
     let mut report = rest::bring_up_active(state, info.id)?;
@@ -264,6 +266,8 @@ fn stop_dropped_captures(
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_wire::NodeBody;
+
     use super::*;
 
     fn graph() -> PatchGraph {

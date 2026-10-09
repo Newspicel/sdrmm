@@ -24,6 +24,44 @@ Packaged builds include every driver here except CR-8:
 
 Making a radio? Write to [hi@jhaag.me](mailto:hi@jhaag.me) to get it supported and tested.
 
+## Compare radios
+
+| Radio | Tunes | Max rate | Bandwidth | Bits | RX | TX | DC spike |
+|---|---|---:|---:|---:|---:|---:|---|
+| RTL-SDR | 24 MHz to 1.766 GHz | 3.2 MS/s | 3.2 MHz | 8 | 1 | 0 | Small |
+| RTL-SDR Blog V4 | 500 kHz to 1.766 GHz | 3.2 MS/s | 3.2 MHz | 8 | 1 | 0 | Small |
+| KrakenSDR | 24 MHz to 1.766 GHz | 2.56 MS/s | 2.56 MHz | 8 | 5 | 0 | Small |
+| HackRF One | 1 MHz to 6 GHz | 20 MS/s | 20 MHz | 8 | 1 | 1 | Yes |
+| Airspy R2 | 24 MHz to 1.8 GHz | 10 MS/s | 9 MHz | 12 | 1 | 0 | No |
+| Airspy Mini | 24 MHz to 1.8 GHz | 10 MS/s | 6 MHz | 12 | 1 | 0 | No |
+| Airspy HF+ Discovery | 1 kHz to 31 MHz, 60 to 260 MHz | 768 kS/s | 660 kHz | 16 | 1 | 0 | Some rates |
+| ESP32 with ESP-SDR | 2.4 GHz, 5 GHz on C5 | 80 MS/s, bursts | Per chip, up to 69 MHz | 8 or 10 | 1 | 0 | Yes |
+| AntSDR E200, E310 | 70 MHz to 6 GHz | 61.44 MS/s | 56 MHz | 12 | 2 | 2 | Yes |
+| ADALM-Pluto | 325 MHz to 3.8 GHz | 61.44 MS/s | 20 MHz | 12 | 1 | 1 | Yes |
+| SDRplay RSP1, RSP2 | 10 kHz to 2 GHz | 10.66 MS/s | 8 MHz | 12 | 1 | 0 | Corrected |
+| SDRplay RSP1A, RSP1B, RSPdx, RSPdx-R2 | 1 kHz to 2 GHz | 10.66 MS/s | 8 MHz | 14 | 1 | 0 | Corrected |
+| SDRplay RSPduo | 1 kHz to 2 GHz | 10.66 MS/s | 8 MHz | 14 | 2 | 0 | Corrected |
+| KiwiSDR | 0 to 30 MHz | 20 kS/s | 20 kHz | 14 | 1 | 0 | No |
+| Dragon Labs CR-8 | 24 MHz to 1.766 GHz | 12.5 MS/s | 8 MHz | 12 | 8 | 0 | Unknown |
+| bladeRF 2.0 micro | 70 MHz to 6 GHz | 61.44 MS/s | 56 MHz | 12 | 2 | 2 | Yes |
+| LimeSDR USB | 100 kHz to 3.8 GHz | 61.44 MS/s | 61.44 MHz | 12 | 2 | 2 | Yes |
+| LimeSDR Mini 2.0 | 10 MHz to 3.5 GHz | 30.72 MS/s | 30.72 MHz | 12 | 1 | 1 | Yes |
+| USRP B200, B205mini | 70 MHz to 6 GHz | 61.44 MS/s | 56 MHz | 12 | 1 | 1 | Yes |
+| USRP B210 | 70 MHz to 6 GHz | 61.44 MS/s | 56 MHz | 12 | 2 | 2 | Yes |
+
+- **Max rate** is what the radio delivers. USB or Ethernet often carries less: a Pluto over USB
+  streams about 4 MS/s without loss.
+- **Bandwidth** is the widest span received at once, set by the analog filter or the rate. RSPduo
+  with both tuners gets 1.536 MHz each.
+- **Bits** are the ADC's. SDRplay drops to 12 bits above 6 MS/s and to 8 above 9.2 MS/s. The HF+
+  sends 16 bits after its own decimation.
+- **RX** counts lanes one Device node streams.
+- **TX** counts transmit channels on the hardware.
+- **DC spike:** **Yes** and **Small** start with [DC block](#device-controls) on, except through
+  SoapySDR. **Corrected** means the SDRplay API removes it. On HF+ it appears only at
+  rates that leave a spike at the centre.
+- Boards with an AD9363 instead of an AD9361 tune 325 MHz to 3.8 GHz.
+
 ## Connect a radio
 
 ### USB
@@ -154,8 +192,6 @@ Tested on hardware provided by [KrakenRF](https://www.krakenrf.com). Thank you.
 | Amp | +14 dB RF amplifier |
 | BW | Baseband filter, or auto |
 | Bias tee | Antenna-port power |
-
-Rates: 2 to 20 MS/s. Tunes 1 MHz to 6 GHz.
 
 ## Airspy
 

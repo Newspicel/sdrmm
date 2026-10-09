@@ -9,12 +9,13 @@ pub(crate) fn act(
     state: &AppState,
     node: &str,
     action: MissionAction,
+    author: Option<&str>,
 ) -> Result<Mission, AppError> {
     let (graph, mission) = current(state, node)?;
     if !mission.controls.contains(&action.control()) {
         return Err(MissionRefusal::NotAControl.into());
     }
-    dispatch(state, &graph, &mission, action)?;
+    dispatch(state, &graph, &mission, action, author)?;
     Ok(current(state, node)?.1)
 }
 
@@ -27,9 +28,10 @@ fn dispatch(
     graph: &PatchGraph,
     mission: &Mission,
     action: MissionAction,
+    author: Option<&str>,
 ) -> Result<(), AppError> {
     match &mission.body {
-        MissionBody::Hunt(hunt) => hunt_action(state, graph, &mission.node, hunt, action),
+        MissionBody::Hunt(hunt) => hunt_action(state, graph, (&mission.node, hunt), action, author),
         MissionBody::Df(df) => array_action(state, df.array.as_deref(), action),
         MissionBody::Radar(radar) => array_action(state, radar.array.as_deref(), action),
         MissionBody::Survey(_) => survey_action(state, &mission.node, action),
@@ -43,15 +45,17 @@ fn dispatch(
 fn hunt_action(
     state: &AppState,
     graph: &PatchGraph,
-    node: &str,
-    hunt: &HuntMission,
+    (node, hunt): (&str, &HuntMission),
     action: MissionAction,
+    author: Option<&str>,
 ) -> Result<(), AppError> {
     let target = hunt.target.as_ref().ok_or(MissionRefusal::NotRunning)?;
     let (ds, ch) = (target.device_set, target.channel);
     let engine = &state.engine;
     match action {
-        MissionAction::Tune { frequency_hz } => return tune_channel(state, ds, ch, frequency_hz),
+        MissionAction::Tune { frequency_hz } => {
+            return tune_channel(state, (ds, ch), frequency_hz, author);
+        }
         MissionAction::StartHunt | MissionAction::StopSweep => {
             engine.start_hunt(ds, hunt::settings(graph, node, ch))?;
         }
@@ -69,10 +73,15 @@ fn hunt_action(
     Ok(())
 }
 
-fn tune_channel(state: &AppState, ds: u32, ch: u32, frequency_hz: f64) -> Result<(), AppError> {
+fn tune_channel(
+    state: &AppState,
+    (ds, ch): (u32, u32),
+    frequency_hz: f64,
+    author: Option<&str>,
+) -> Result<(), AppError> {
     let frequency_hz = positive(frequency_hz)?;
     let _serialized = crate::rest::lock_gate(&state.apply_gate);
-    let edit = workspace::begin_edit(state, ds, Some(ch));
+    let edit = workspace::begin_edit(state, ds, Some(ch), author);
     state.engine.tune_channel(ds, ch, frequency_hz)?;
     if let Some(edit) = edit {
         workspace::finish_edit(state, edit);

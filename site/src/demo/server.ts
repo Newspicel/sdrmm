@@ -75,7 +75,8 @@ export class DemoServer {
     }
     const channel = CHANNEL.exec(path);
     if (channel !== null && method === "PATCH" && body !== null) {
-      this.patchChannel(Number(channel[1]), Number(channel[2]), JSON.parse(body));
+      const patch = JSON.parse(body) as { settings: ChannelSettings };
+      this.patchChannel(Number(channel[1]), Number(channel[2]), patch.settings);
       return empty();
     }
     return null;
@@ -84,13 +85,14 @@ export class DemoServer {
   private update(
     detail: WorkspaceDetail,
     change: { name?: string; snapshot?: WorkspaceSnapshot },
-  ): WorkspaceInfo {
+  ): WorkspaceDetail {
     if (change.snapshot !== undefined) {
       const history = this.history(detail.id);
       history.past.push(detail.snapshot);
       history.future = [];
     }
-    return this.store(detail, change.snapshot ?? detail.snapshot, change.name ?? detail.name);
+    this.store(detail, change.snapshot ?? detail.snapshot, change.name ?? detail.name);
+    return this.details.get(detail.id) ?? detail;
   }
 
   private step(id: number, undo: boolean): WorkspaceDetail | null {

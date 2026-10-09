@@ -19,9 +19,10 @@ use tokio::sync::{
     mpsc,
 };
 
-use crate::{Store, calls::Calls, decoded::Decoded};
+use crate::{NativeShell, Store, calls::Calls, decoded::Decoded};
 
 mod beast;
+mod csv;
 mod influx;
 mod postgres;
 mod status;
@@ -113,6 +114,7 @@ pub(crate) async fn run(
     engine: std::sync::Weak<Engine>,
     store: Arc<Store>,
     calls: Arc<Calls>,
+    shell: Option<Arc<dyn NativeShell>>,
 ) {
     let Some(strong) = engine.upgrade() else {
         return;
@@ -134,9 +136,12 @@ pub(crate) async fn run(
     let statuses = status::Statuses::default();
     let (delivery_tx, delivery_rx) = mpsc::channel(DELIVERY_QUEUE);
     let worker = tokio::spawn(deliver_all(
-        client,
+        Senders {
+            client,
+            engine: engine.clone(),
+            shell,
+        },
         delivery_rx,
-        engine.clone(),
         statuses.clone(),
     ));
     let mut routing = load_routing(store.clone()).await;
@@ -354,10 +359,15 @@ fn resolve(store: &Store) -> Result<Routing, crate::StoreError> {
     Ok(Routing { bindings })
 }
 
-async fn deliver_all(
+struct Senders {
     client: Client,
-    mut deliveries: mpsc::Receiver<Delivery>,
     engine: std::sync::Weak<Engine>,
+    shell: Option<Arc<dyn NativeShell>>,
+}
+
+async fn deliver_all(
+    senders: Senders,
+    mut deliveries: mpsc::Receiver<Delivery>,
     statuses: status::Statuses,
 ) {
     let mut databases = postgres::Connections::default();
@@ -365,9 +375,10 @@ async fn deliver_all(
     while deliveries.recv_many(&mut pending, DELIVERY_QUEUE).await > 0 {
         for batch in pending.chunk_by(same_batch) {
             let outputs = Outputs {
-                client: &client,
+                client: &senders.client,
                 databases: &mut databases,
-                engine: &engine,
+                engine: &senders.engine,
+                shell: senders.shell.as_ref(),
             };
             let Some(first) = batch.first() else {
                 continue;
@@ -384,7 +395,9 @@ async fn deliver_all(
 fn same_batch(first: &Delivery, next: &Delivery) -> bool {
     matches!(
         first.target,
-        EventOutputTarget::Postgres { .. } | EventOutputTarget::Influx { .. }
+        EventOutputTarget::Postgres { .. }
+            | EventOutputTarget::Influx { .. }
+            | EventOutputTarget::Csv { .. }
     ) && first.node == next.node
         && first.target == next.target
 }
@@ -400,6 +413,7 @@ struct Outputs<'a> {
     client: &'a Client,
     databases: &'a mut postgres::Connections,
     engine: &'a std::sync::Weak<Engine>,
+    shell: Option<&'a Arc<dyn NativeShell>>,
 }
 
 async fn deliver_with_retries(
@@ -450,6 +464,8 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
     let client = outputs.client;
     match &delivery.target {
         EventOutputTarget::Recordings => save_recording(outputs.engine, &delivery.message).await,
+        EventOutputTarget::Desktop => notify(outputs.shell, &delivery.message).await,
+        EventOutputTarget::Csv { file } => csv::append(outputs.engine, file, batch).await,
         EventOutputTarget::Tunnel { .. } | EventOutputTarget::Beast { .. } => Err(
             DeliveryError::Failed("Network streams use the dedicated writer".to_owned()),
         ),
@@ -541,6 +557,27 @@ async fn save_recording(
     .map_err(|error| DeliveryError::Failed(format!("saving audio failed: {error}")))?;
     engine.emit_scope(StateScope::Recordings);
     Ok(())
+}
+
+async fn notify(
+    shell: Option<&Arc<dyn NativeShell>>,
+    message: &OutputMessage,
+) -> Result<(), DeliveryError> {
+    let shell = shell
+        .cloned()
+        .ok_or_else(|| DeliveryError::Failed("Notifications need the desktop app".to_owned()))?;
+    let (title, body) = notification_text(&message.body);
+    let (title, body) = (title.to_owned(), body.to_owned());
+    tokio::task::spawn_blocking(move || shell.notify(&title, &body))
+        .await
+        .map_err(|error| DeliveryError::Failed(format!("Notification stopped: {error}")))?
+        .map_err(|error| DeliveryError::Failed(format!("Notification failed: {error}")))
+}
+
+fn notification_text(body: &str) -> (&str, &str) {
+    body.split_once('\n')
+        .or_else(|| body.split_once(" · "))
+        .unwrap_or((body, ""))
 }
 
 async fn send_webhook(

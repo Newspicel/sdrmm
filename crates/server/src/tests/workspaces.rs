@@ -136,7 +136,7 @@ async fn undoing_a_dial_move_puts_the_frequency_back() {
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{ch}"),
         Some(&format!(
-            r#"{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}"#,
+            r#"{{"settings":{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}}}"#,
             was_center + 1_025_000.0
         )),
     )
@@ -231,7 +231,7 @@ async fn workspace_crud_over_http() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(workspaces(&app).await.active, Some(created.id));
 
     let (status, body) = request(
@@ -267,14 +267,14 @@ async fn workspace_crud_over_http() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let info: sdrmm_wire::WorkspaceInfo = serde_json::from_slice(&body).expect("json");
-    assert_eq!(info.revision, 2);
+    let stored: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
+    assert_eq!(stored.info.revision, 2);
 
     let (status, _) = request(
         app.clone(),
         "PUT",
         &format!("/api/workspaces/{}", created.id),
-        Some(&format!(r#"{{"revision":1,"snapshot":{snapshot}}}"#)),
+        Some(&format!(r#"{{"revision":77,"snapshot":{snapshot}}}"#)),
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -325,7 +325,7 @@ async fn a_workspace_comes_back_tuned_the_way_it_was_left() {
         app.clone(),
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{channel}"),
-        Some(r#"{"frequency_hz":145512500.0,"squelch":{"mode":"manual","level_db":-42.0},"params":{"type":"nfm","settings":{}}}"#),
+        Some(r#"{"settings":{"frequency_hz":145512500.0,"squelch":{"mode":"manual","level_db":-42.0},"params":{"type":"nfm","settings":{}}}}"#),
     )
     .await;
     assert_eq!(
@@ -511,12 +511,13 @@ async fn switching_between_workspaces_sharing_a_radio_restores_each_ones_setting
     let sets = get_state(&app).await.device_sets;
     assert_eq!(sets.len(), 1, "the shared radio was closed and reopened");
     assert_eq!(sets[0].id, ds, "the shared radio was closed and reopened");
-    assert!(
-        sets[0].channels.is_empty(),
-        "the previous workspace's channel is still running"
+    assert_eq!(
+        sets[0].channels.len(),
+        1,
+        "the switch brought the new one up"
     );
+    assert_eq!(sets[0].channels[0].settings.params.type_id(), "am");
 
-    apply(&app, second).await;
     tune(162_000_000.0).await;
     let sets = get_state(&app).await.device_sets;
     assert_eq!(sets[0].channels.len(), 1);
@@ -529,14 +530,12 @@ async fn switching_between_workspaces_sharing_a_radio_restores_each_ones_setting
         Some(145_500_000.0),
         "the first workspace came back on the second one's frequency"
     );
-    assert!(
-        sets[0].channels.is_empty(),
-        "the second workspace's channel is still running"
-    );
-
-    apply(&app, first).await;
     let sets = get_state(&app).await.device_sets;
-    assert_eq!(sets[0].channels.len(), 1);
+    assert_eq!(
+        sets[0].channels.len(),
+        1,
+        "the second workspace's channel is gone"
+    );
     assert_eq!(sets[0].channels[0].settings.params.type_id(), "nfm");
     assert_eq!(sets[0].settings.center_hz, Some(145_500_000.0));
 }
@@ -680,7 +679,7 @@ async fn capture_and_restore_pair_same_type_channels_by_stream() {
             "PATCH",
             &format!("/api/devicesets/{}/channels/{}", set.id, channel.id),
             Some(&format!(
-                r#"{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}"#,
+                r#"{{"settings":{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}}}"#,
                 frequency_for(channel.stream)
             )),
         )
@@ -877,15 +876,15 @@ async fn an_imported_workspace_lands_next_to_the_one_it_came_from_and_opens_its_
         Some(Some(145_500_000.0))
     );
 
-    let (status, _) = request(
+    let (status, body) = request(
         app.clone(),
         "POST",
         &format!("/api/workspaces/{imported}/activate"),
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let report = apply(&app, imported).await;
+    assert_eq!(status, StatusCode::OK);
+    let report: sdrmm_wire::PatchApplyReport = serde_json::from_slice(&body).expect("report");
     assert_eq!(report.opened, 1);
     assert_eq!(report.created, 1);
     assert_eq!(
@@ -1114,10 +1113,9 @@ async fn an_open_radio_holds_its_frequency_when_a_decoder_is_wired_in() {
     apply(&app, workspace).await;
     let opened = get_state(&app).await.device_sets[0].settings.center_hz;
 
-    put_workspace_revision(
+    put_workspace(
         &app,
         &virtual_snapshot("band", &[("voice", "nfm", "iq"), ("air", "adsb", "iq")]),
-        2,
     )
     .await;
     let report = apply(&app, workspace).await;
@@ -1153,7 +1151,7 @@ async fn cutting_a_decoders_wire_closes_it_and_hands_the_window_to_the_rest() {
 
     snapshot.graph.edges.retain(|edge| edge.to.node != "planes");
     snapshot.graph.nodes.retain(|node| node.id != "planes");
-    put_workspace_revision(&app, &snapshot, 2).await;
+    put_workspace(&app, &snapshot).await;
     let report = apply(&app, workspace).await;
     assert_eq!(report.closed, 1, "the unwired decoder went on running");
 
@@ -1172,7 +1170,7 @@ async fn retune(app: &Router, set: u32, channel: u32, frequency_hz: f64) {
         "PATCH",
         &format!("/api/devicesets/{set}/channels/{channel}"),
         Some(&format!(
-            r#"{{"frequency_hz":{frequency_hz},"params":{{"type":"nfm","settings":{{}}}}}}"#
+            r#"{{"settings":{{"frequency_hz":{frequency_hz},"params":{{"type":"nfm","settings":{{}}}}}}}}"#
         )),
     )
     .await;
@@ -1207,7 +1205,7 @@ async fn cutting_one_of_two_alike_decoders_leaves_the_other_where_it_was_set() {
 
     snapshot.graph.edges.retain(|edge| edge.to.node != "first");
     snapshot.graph.nodes.retain(|node| node.id != "first");
-    put_workspace_revision(&app, &snapshot, 2).await;
+    put_workspace(&app, &snapshot).await;
     let report = apply(&app, workspace).await;
     assert_eq!(report.closed, 1, "{report:?}");
 
@@ -1693,4 +1691,93 @@ async fn dismissing_a_notice_removes_it() {
         StatusCode::NOT_FOUND,
         "deleting a workspace takes its notices"
     );
+}
+
+async fn as_author(
+    app: &Router,
+    author: &str,
+    method: &str,
+    uri: &str,
+    body: Option<&str>,
+) -> (StatusCode, Bytes) {
+    let (status, _, bytes) = request_parts(
+        app.clone(),
+        method,
+        uri,
+        body,
+        &[(sdrmm_wire::AUTHOR_HEADER, author)],
+    )
+    .await;
+    (status, bytes)
+}
+
+fn renamed(snapshot: &sdrmm_wire::WorkspaceSnapshot, node: &str, label: &str) -> String {
+    let mut snapshot = snapshot.clone();
+    if let Some(held) = snapshot.graph.nodes.iter_mut().find(|held| held.id == node) {
+        held.label = Some(label.to_owned());
+    }
+    serde_json::to_string(&snapshot).expect("snapshot")
+}
+
+#[tokio::test]
+async fn two_browsers_edit_from_one_revision_and_undo_only_their_own() {
+    let app = test_router();
+    let workspace = workspaces(&app).await.active.expect("seeded");
+    let base = workspace_detail(&app, workspace).await;
+    let uri = format!("/api/workspaces/{workspace}");
+    for (author, node, label) in [("ann", "scope", "Ann"), ("bob", "speaker", "Bob")] {
+        let body = format!(
+            r#"{{"revision":{},"snapshot":{}}}"#,
+            base.info.revision,
+            renamed(&base.snapshot, node, label)
+        );
+        let (status, body) = as_author(&app, author, "PUT", &uri, Some(&body)).await;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    }
+    let label = |detail: &sdrmm_wire::WorkspaceDetail, node: &str| {
+        detail
+            .snapshot
+            .graph
+            .node(node)
+            .and_then(|node| node.label.clone())
+    };
+    let both = workspace_detail(&app, workspace).await;
+    assert_eq!(label(&both, "scope").as_deref(), Some("Ann"));
+    assert_eq!(label(&both, "speaker").as_deref(), Some("Bob"));
+
+    let (status, body) = as_author(&app, "ann", "POST", &format!("{uri}/undo"), None).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let undone: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
+    assert_eq!(label(&undone, "scope"), None);
+    assert_eq!(label(&undone, "speaker").as_deref(), Some("Bob"));
+}
+
+#[tokio::test]
+async fn a_switch_tells_every_client_who_made_it() {
+    let (app, state) = test_router_with_state();
+    let mut events = state.engine.subscribe_events();
+    let peer = state.presence.connect();
+    state.presence.present(peer, "ann", "Ann", "");
+    let second = store_second_workspace(&app, "Marine", "am").await;
+    let (status, body) = as_author(
+        &app,
+        "ann",
+        "POST",
+        &format!("/api/workspaces/{second}/activate"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let switched = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Ok(sdrmm_wire::ServerEvent::WorkspaceSwitched { id, by, .. }) =
+                events.recv().await
+            {
+                return (id, by);
+            }
+        }
+    })
+    .await
+    .expect("announced");
+    assert_eq!(switched, (second, Some("Ann".to_owned())));
 }

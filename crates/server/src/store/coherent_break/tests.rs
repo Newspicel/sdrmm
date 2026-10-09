@@ -5,6 +5,8 @@ use sdrmm_wire::{
 use serde_json::{Value, json};
 
 use super::*;
+
+const ME: Option<&str> = Some("me");
 use crate::store::parse_workspace_snapshot;
 
 fn at(x: f64, y: f64) -> Value {
@@ -324,7 +326,7 @@ fn history_rows_of_an_upgraded_workspace_are_dropped() {
             .expect("an old history row");
         }
         conn.execute(
-            "UPDATE workspaces SET history_at = 2, snapshot = ?2 WHERE id = ?1",
+            "UPDATE workspaces SET snapshot = ?2 WHERE id = ?1",
             params![id, with_gps_and_triangulation(kraken_df()).to_string()],
         )
         .expect("back to v3");
@@ -344,7 +346,7 @@ fn history_rows_of_an_upgraded_workspace_are_dropped() {
     let detail = store.workspace(id).expect("read");
     assert!(!detail.history.can_undo && !detail.history.can_redo);
     assert!(matches!(
-        store.undo_workspace(id),
+        store.undo_workspace(id, ME),
         Err(StoreError::WorkspaceHistoryEnd { .. })
     ));
 }

@@ -44,6 +44,7 @@ mod images;
 mod ionosonde;
 mod json;
 mod mcp;
+mod merge;
 mod missions;
 mod monitor;
 mod net;
@@ -51,6 +52,7 @@ pub mod notices;
 mod packed;
 pub mod phones;
 mod placement;
+mod presence;
 mod radar;
 mod reconcile;
 mod recorders;
@@ -72,6 +74,7 @@ pub use store::{RemotePairing, Store, StoreError};
 
 pub trait NativeShell: Send + Sync + std::fmt::Debug {
     fn reveal(&self, path: &Path) -> std::io::Result<()>;
+    fn notify(&self, title: &str, body: &str) -> std::io::Result<()>;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -102,6 +105,7 @@ pub(crate) struct AppState {
     pub(crate) unrestored: Arc<std::sync::Mutex<Vec<String>>>,
     pub(crate) restored: Arc<std::sync::Mutex<HashSet<(i64, String, u32)>>>,
     pub(crate) gps: Arc<gps::GpsHub>,
+    pub(crate) presence: Arc<presence::Presence>,
     pub(crate) satellites: Arc<satellites::SatelliteHub>,
     pub(crate) cps: Arc<cps::CpsHub>,
     pub(crate) fusion: df_fusion::SharedFusion,
@@ -145,6 +149,7 @@ impl AppState {
             unrestored: Arc::new(std::sync::Mutex::new(Vec::new())),
             restored: Arc::new(std::sync::Mutex::new(HashSet::new())),
             gps: Arc::new(gps::GpsHub::default()),
+            presence: Arc::default(),
             satellites: Arc::new(satellites::SatelliteHub::default()),
             cps: Arc::new(cps::CpsHub::default()),
             fusion: Arc::new(df_fusion::FusionHub::default()),
@@ -386,8 +391,9 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
         let store = state.store.clone();
         let calls = state.calls.clone();
         let records = state.decoded.subscribe();
+        let shell = state.shell.clone();
         spawn_task("sdrmm-event-output", move || {
-            event_output::run(records, engine, store, calls)
+            event_output::run(records, engine, store, calls, shell)
         })
     };
     let audio_fx = {

@@ -154,6 +154,9 @@ impl NativeShell for FakeShell {
             .push(path.to_path_buf());
         Ok(())
     }
+    fn notify(&self, _: &str, _: &str) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 fn recording_router_with_shell(dir: &Path) -> (Router, Arc<FakeShell>) {
@@ -200,13 +203,22 @@ fn recording_state(dir: &Path) -> AppState {
     )
 }
 
+const TEST_AUTHOR: &str = "test";
+
 pub(crate) async fn request(
     app: Router,
     method: &str,
     uri: &str,
     body: Option<&str>,
 ) -> (StatusCode, Bytes) {
-    let (status, _, bytes) = request_parts(app, method, uri, body, &[]).await;
+    let (status, _, bytes) = request_parts(
+        app,
+        method,
+        uri,
+        body,
+        &[(sdrmm_wire::AUTHOR_HEADER, TEST_AUTHOR)],
+    )
+    .await;
     (status, bytes)
 }
 
@@ -352,7 +364,7 @@ async fn record(app: &Router, ds: u32, on: bool) -> Option<sdrmm_wire::Recording
             port: "iq".to_owned(),
         },
     });
-    put_workspace_revision(app, &snapshot, detail.info.revision).await;
+    put_workspace(app, &snapshot).await;
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let live = get_state(app)
@@ -698,15 +710,12 @@ fn virtual_snapshot(key: &str, taps: &[(&str, &str, &str)]) -> sdrmm_wire::Works
 }
 
 async fn put_active_workspace(app: &Router, snapshot: &sdrmm_wire::WorkspaceSnapshot) -> i64 {
-    put_workspace_revision(app, snapshot, 1).await
+    put_workspace(app, snapshot).await
 }
 
-async fn put_workspace_revision(
-    app: &Router,
-    snapshot: &sdrmm_wire::WorkspaceSnapshot,
-    revision: u64,
-) -> i64 {
+async fn put_workspace(app: &Router, snapshot: &sdrmm_wire::WorkspaceSnapshot) -> i64 {
     let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let revision = workspace_detail(app, workspace).await.info.revision;
     let (status, body) = request(
         app.clone(),
         "PUT",
@@ -762,10 +771,5 @@ async fn activate(app: &Router, workspace: i64) {
         Some("{}"),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::NO_CONTENT,
-        "{}",
-        String::from_utf8_lossy(&body)
-    );
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 }

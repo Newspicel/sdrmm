@@ -43,6 +43,7 @@ struct Queue {
     decoded: VecDeque<Packet>,
     audio: VecDeque<Packet>,
     media: VecDeque<Packet>,
+    pointers: VecDeque<(u32, Packet)>,
     bytes: usize,
     dropped: u64,
     lost: u64,
@@ -177,6 +178,22 @@ impl Queue {
         Ok(())
     }
 
+    fn push_pointer(&mut self, peer: u32, packet: Packet) -> Result<(), ()> {
+        if self.closed {
+            return Err(());
+        }
+        let len = packet.len();
+        if let Some((_, held)) = self.pointers.iter_mut().find(|(held, _)| *held == peer) {
+            self.bytes -= held.len();
+            self.dropped += 1;
+            *held = packet;
+        } else {
+            self.pointers.push_back((peer, packet));
+        }
+        self.bytes += len;
+        Ok(())
+    }
+
     fn push_lossy(&mut self, packet: Packet) {
         let len = packet.len();
         while self.decoded.len() >= DECODED_LIMIT || self.bytes + len > BYTE_LIMIT {
@@ -216,6 +233,7 @@ impl Queue {
         let packet = control
             .and_then(|index| self.control.remove(index))
             .or_else(|| self.audio.pop_front())
+            .or_else(|| self.pointers.pop_front().map(|(_, packet)| packet))
             .or_else(|| self.decoded.pop_front())
             .or_else(|| self.media.pop_front())?;
         self.bytes -= packet.len();
@@ -260,6 +278,17 @@ impl Outbox {
 
     pub(super) async fn send_decoded(&self, message: Message) -> Result<(), ()> {
         self.enqueue(decoded_packet(message))
+    }
+
+    pub(super) fn send_pointer(&self, peer: u32, message: Message) -> Result<(), ()> {
+        let result = self
+            .0
+            .queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push_pointer(peer, packet(message));
+        self.0.ready.notify_one();
+        result
     }
 
     fn enqueue(&self, packet: Packet) -> Result<(), ()> {
@@ -368,6 +397,25 @@ mod tests {
         assert_eq!(rx.recv().await, Some(Message::Text("control".into())));
         assert_eq!(rx.recv().await, Some(media(FrameKind::AudioOpus, 2, 3)));
         assert_eq!(rx.recv().await, Some(media(FrameKind::Spectrum, 1, 2)));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn a_pointer_keeps_only_its_latest_position_and_never_closes_the_socket() {
+        let (tx, mut rx) = channel();
+        for step in 0..(CONTROL_LIMIT * 4) {
+            tx.send_pointer(1, Message::Text(format!("a{step}").into()))
+                .expect("pointer");
+        }
+        tx.send_pointer(2, Message::Text("b".into()))
+            .expect("pointer");
+        tx.send(Message::Text("control".into()))
+            .await
+            .expect("control");
+        assert_eq!(rx.recv().await, Some(Message::Text("control".into())));
+        let last = format!("a{}", CONTROL_LIMIT * 4 - 1);
+        assert_eq!(rx.recv().await, Some(Message::Text(last.into())));
+        assert_eq!(rx.recv().await, Some(Message::Text("b".into())));
         assert!(rx.try_recv().is_err());
     }
 

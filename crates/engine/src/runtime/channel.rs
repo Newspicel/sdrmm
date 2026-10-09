@@ -212,7 +212,8 @@ impl ChannelHost {
             settings.squelch.manual_level_db().unwrap_or(0.0),
             SQUELCH_HYSTERESIS_DB,
             SQUELCH_HOLD_S,
-        );
+        )
+        .with_guard_band(band_low_hz, band_high_hz);
         squelch.set_auto_margin_db(settings.squelch.auto_margin_db());
         let publisher =
             ChannelPublisher::new(input_rate, device_rate, settings, sinks.clone(), decoded)
@@ -404,7 +405,7 @@ impl ChannelHost {
             .store(self.meter.peak_db().to_bits(), Ordering::Relaxed);
         let baseband_start = self.baseband_pos;
         self.sink_baseband();
-        let open = !self.squelched || self.squelch.process(&self.filtered);
+        let open = !self.squelched || self.squelch.process(&self.filtered, &self.scratch);
         self.sinks.squelch_db.store(
             if self.squelched {
                 self.squelch.threshold_db().to_bits()
