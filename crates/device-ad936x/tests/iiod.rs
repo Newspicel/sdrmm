@@ -121,6 +121,17 @@ fn opening_reads_the_radios_own_limits_rather_than_assuming_them() {
 }
 
 #[test]
+fn a_local_oscillator_a_few_hertz_off_reads_back_as_the_frequency_asked_for() {
+    let mut attributes = common::attributes(1);
+    attributes.insert(
+        "ad9361-phy/OUTPUT/altvoltage0/frequency".to_string(),
+        "97999998".to_string(),
+    );
+    let server = FakeIiod::with(common::context_xml(1), attributes);
+    assert_eq!(open(&server).settings().center_hz, Some(98_000_000.0));
+}
+
+#[test]
 fn the_settings_that_come_back_are_the_ones_the_radio_is_holding() {
     let server = FakeIiod::spawn(1);
     let device = open(&server);
@@ -512,9 +523,10 @@ fn applying_settings_reaches_the_radio_as_the_attributes_it_understands() {
         server.attribute("ad9361-phy/INPUT/voltage0/rf_bandwidth"),
         Some("3000000".to_string())
     );
-    assert_eq!(
+    assert_ne!(
         server.attribute("ad9361-phy/INPUT/voltage0/hardwaregain"),
-        Some("30.000000".to_string())
+        Some("30.000000".to_string()),
+        "the AGC holds the receive gain, so it is not written"
     );
     assert_eq!(
         server.attribute("ad9361-phy/INPUT/voltage0/rf_port_select"),
@@ -851,6 +863,10 @@ fn a_search_tries_the_addresses_it_was_given_and_names_what_it_finds_by_serial()
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].key, server.endpoint());
     assert_eq!(found[0].serial.as_deref(), Some(SERIAL));
+    assert_eq!(
+        found[0].label,
+        format!("AntSDR AD9361 {}", server.endpoint())
+    );
     assert!(driver.probe().contains(&found[0]), "and it stays known");
 }
 

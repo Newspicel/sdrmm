@@ -16,7 +16,7 @@ use sdrmm_wire::{
 use crate::{
     caps::{Front, parse_range},
     convert::IqConverter,
-    discovery::USB_PREFIX,
+    discovery::{Identity, USB_PREFIX},
     iio::{Client, DEFAULT_PORT, Direction as Way, UsbBus},
     layout::{HARDWAREGAIN, Layout, available},
     pace::LiveRate,
@@ -45,7 +45,7 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(10);
 #[derive(Debug)]
 pub struct Ad936xDriver {
     adopted: Adopted,
-    serials: Mutex<BTreeMap<Endpoint, String>>,
+    identities: Mutex<BTreeMap<Endpoint, Identity>>,
     well_known: Vec<Endpoint>,
     swept: Mutex<Option<Instant>>,
 }
@@ -66,14 +66,14 @@ impl Ad936xDriver {
     pub fn searching(hosts: impl IntoIterator<Item = String>) -> Self {
         Self {
             adopted: Adopted::default(),
-            serials: Mutex::new(BTreeMap::new()),
+            identities: Mutex::new(BTreeMap::new()),
             well_known: discovery::endpoints(hosts),
             swept: Mutex::new(None),
         }
     }
 
     fn endpoints(&self, listed: &[DeviceInfo]) -> Vec<DeviceInfo> {
-        let serials = lock(&self.serials);
+        let identities = lock(&self.identities);
         let mut known: Vec<String> = listed
             .iter()
             .filter_map(|info| info.serial.clone())
@@ -82,21 +82,21 @@ impl Ad936xDriver {
             .list()
             .into_iter()
             .filter_map(|endpoint| {
-                let serial = serials.get(&endpoint).cloned();
-                if let Some(serial) = &serial {
+                let identity = identities.get(&endpoint).cloned().unwrap_or_default();
+                if let Some(serial) = &identity.serial {
                     if known.contains(serial) {
                         return None;
                     }
                     known.push(serial.clone());
                 }
-                Some(net_info(&endpoint, serial))
+                Some(net_info(&endpoint, identity))
             })
             .collect()
     }
 
-    fn remember(&self, endpoint: Endpoint, serial: Option<&str>) {
-        if let Some(serial) = serial {
-            lock(&self.serials).insert(endpoint, serial.to_string());
+    fn remember(&self, endpoint: Endpoint, identity: Identity) {
+        if identity != Identity::default() {
+            lock(&self.identities).insert(endpoint, identity);
         }
     }
 
@@ -110,12 +110,13 @@ impl Ad936xDriver {
     }
 }
 
-fn net_info(endpoint: &Endpoint, serial: Option<String>) -> DeviceInfo {
+fn net_info(endpoint: &Endpoint, identity: Identity) -> DeviceInfo {
+    let name = identity.name.as_deref().unwrap_or("AD936x");
     DeviceInfo {
         driver: DRIVER_ID.to_string(),
         key: endpoint.to_string(),
-        label: format!("AD936x {endpoint}"),
-        serial,
+        label: format!("{name} {endpoint}"),
+        serial: identity.serial,
         profile: None,
     }
 }
@@ -153,7 +154,7 @@ impl DeviceDriver for Ad936xDriver {
             for found in discovery::sweep(untried) {
                 tracing::info!(endpoint = %found.endpoint, "found an AD936x radio at a well-known address");
                 self.adopted.adopt(found.endpoint.clone());
-                self.remember(found.endpoint, found.serial.as_deref());
+                self.remember(found.endpoint, found.identity);
             }
         }
         self.probe()
@@ -162,7 +163,7 @@ impl DeviceDriver for Ad936xDriver {
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
         let device = Ad936xDevice::open(source(&info.key)?)?;
         if let Source::Net(endpoint) = &device.source {
-            self.remember(endpoint.clone(), device.serial.as_deref());
+            self.remember(endpoint.clone(), device.identity.clone());
         }
         Ok(Box::new(device))
     }
@@ -178,8 +179,11 @@ impl DeviceDriver for Ad936xDriver {
             tracing::warn!(%endpoint, "too many ad936x endpoints; refusing to adopt another");
             return None;
         }
-        let serial = lock(&self.serials).get(&endpoint).cloned();
-        Some(net_info(&endpoint, serial))
+        let identity = lock(&self.identities)
+            .get(&endpoint)
+            .cloned()
+            .unwrap_or_default();
+        Some(net_info(&endpoint, identity))
     }
 }
 
@@ -231,7 +235,7 @@ fn source(key: &str) -> Result<Source, DeviceError> {
 pub struct Ad936xDevice {
     client: Arc<Client>,
     source: Source,
-    serial: Option<String>,
+    identity: Identity,
     layout: Layout,
     front: Front,
     capabilities: Capabilities,
@@ -270,7 +274,7 @@ impl Ad936xDevice {
             duplex: Arc::new(Mutex::new(DuplexState::new(capabilities.duplex))),
             client: Arc::new(client),
             source,
-            serial: context.attribute("hw_serial").map(str::to_string),
+            identity: Identity::of(&context),
             layout,
             front,
             capabilities,
@@ -552,19 +556,27 @@ mod tests {
         let driver = Ad936xDriver::searching([]);
         let by_name = driver.resolve("pluto.local").expect("addressable");
         let by_address = driver.resolve("192.168.2.1").expect("addressable");
+        let identity = Identity {
+            serial: Some("1044734c960500111e002e0041984fc267".to_string()),
+            name: Some("PlutoSDR AD9363".to_string()),
+        };
         driver.remember(
             Endpoint::parse("pluto.local", DEFAULT_PORT).expect("endpoint"),
-            Some("1044734c960500111e002e0041984fc267"),
+            identity.clone(),
         );
         driver.remember(
             Endpoint::parse("192.168.2.1", DEFAULT_PORT).expect("endpoint"),
-            Some("1044734c960500111e002e0041984fc267"),
+            identity,
         );
         let listed = driver.probe();
         assert_eq!(listed.len(), 1, "{listed:?}");
         assert_eq!(
             listed[0].serial.as_deref(),
             Some("1044734c960500111e002e0041984fc267")
+        );
+        assert!(
+            listed[0].label.starts_with("PlutoSDR AD9363 "),
+            "{listed:?}"
         );
         assert!(
             driver.resolve(&by_name.key).is_some() && driver.resolve(&by_address.key).is_some(),

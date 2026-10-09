@@ -7,7 +7,7 @@ use nusb::MaybeFuture;
 use sdrmm_device::{DeviceError, net::Endpoint};
 
 use crate::{
-    iio::{Client, DEFAULT_PORT, NetTransport, named_interface},
+    iio::{Client, Context, DEFAULT_PORT, NetTransport, named_interface},
     layout::Layout,
 };
 
@@ -47,7 +47,41 @@ pub(crate) struct UsbRadio {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Found {
     pub(crate) endpoint: Endpoint,
+    pub(crate) identity: Identity,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Identity {
     pub(crate) serial: Option<String>,
+    pub(crate) name: Option<String>,
+}
+
+impl Identity {
+    pub(crate) fn of(context: &Context) -> Self {
+        Self {
+            serial: context.attribute("hw_serial").map(str::to_string),
+            name: context.attribute("hw_model").and_then(model_name),
+        }
+    }
+}
+
+pub(crate) fn model_name(hw_model: &str) -> Option<String> {
+    let model = hw_model.trim();
+    let model = model.strip_prefix("Analog Devices ").unwrap_or(model);
+    let board = match model.split_whitespace().next()? {
+        "ANTSDR" => "AntSDR",
+        board => board,
+    };
+    let chip = model
+        .rsplit_once('(')
+        .and_then(|(_, inside)| inside.strip_suffix(')'))
+        .and_then(|inside| inside.rsplit('-').next())
+        .map(|chip| chip.trim_end_matches(|c: char| c.is_ascii_alphabetic()))
+        .filter(|chip| chip.starts_with("AD936"));
+    Some(match chip {
+        Some(chip) => format!("{board} {chip}"),
+        None => board.to_string(),
+    })
 }
 
 /// Whether this USB device serves iiod. The interface name is the reliable answer and the
@@ -174,7 +208,7 @@ fn greet(endpoint: Endpoint) -> Option<Found> {
         .ok()?;
     Some(Found {
         endpoint,
-        serial: context.attribute("hw_serial").map(str::to_string),
+        identity: Identity::of(&context),
     })
 }
 
@@ -245,6 +279,24 @@ mod tests {
         });
         let endpoint = Endpoint::parse(&server.endpoint(), DEFAULT_PORT).expect("endpoint");
         assert!(sweep(vec![endpoint]).is_empty());
+    }
+
+    #[test]
+    fn a_board_is_named_by_its_model_and_rf_chip() {
+        assert_eq!(
+            model_name("Analog Devices ANTSDR Rev.C (Z7020-AD9361)").as_deref(),
+            Some("AntSDR AD9361")
+        );
+        assert_eq!(
+            model_name("Analog Devices ANTSDR Rev.C (Z7020-AD9363A)").as_deref(),
+            Some("AntSDR AD9363")
+        );
+        assert_eq!(
+            model_name("Analog Devices PlutoSDR Rev.C (Z7010-AD9363A)").as_deref(),
+            Some("PlutoSDR AD9363")
+        );
+        assert_eq!(model_name("LibreSDR").as_deref(), Some("LibreSDR"));
+        assert_eq!(model_name("  "), None);
     }
 
     #[test]
