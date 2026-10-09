@@ -237,16 +237,18 @@ for (const { fallback, delayOutput, wideband } of [
           (
             await page.request.patch(channelUrl, {
               data: {
-                ...settings,
-                frequency_hz: settings.frequency_hz + offset,
-                params:
-                  settings.params.type === "wfm"
-                    ? {
-                        ...settings.params,
-                        settings: { ...settings.params.settings, stereo: offset === -100 },
-                      }
-                    : settings.params,
-              } satisfies ChannelSettings,
+                settings: {
+                  ...settings,
+                  frequency_hz: settings.frequency_hz + offset,
+                  params:
+                    settings.params.type === "wfm"
+                      ? {
+                          ...settings.params,
+                          settings: { ...settings.params.settings, stereo: offset === -100 },
+                        }
+                      : settings.params,
+                } satisfies ChannelSettings,
+              },
             })
           ).ok(),
         ).toBe(true);

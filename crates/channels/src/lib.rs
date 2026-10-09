@@ -1113,13 +1113,20 @@ mod tests {
         }
     }
 
+    fn home_settings(type_id: &str) -> ChannelSettings {
+        ChannelSettings {
+            frequency_hz: sdrmm_wire::home_frequency_hz(type_id).unwrap_or_default(),
+            ..settings(default_params(type_id))
+        }
+    }
+
     #[test]
     fn create_builds_every_registered_type() {
         for d in descriptors() {
             let ctx = ChannelCtx {
                 input_rate: d.input_rate_hz,
             };
-            let built = create(ctx, &settings(default_params(&d.type_id)));
+            let built = create(ctx, &home_settings(&d.type_id));
             assert!(built.is_ok(), "{}: {:?}", d.type_id, built.err());
         }
     }
@@ -1130,7 +1137,7 @@ mod tests {
             let ctx = ChannelCtx {
                 input_rate: d.input_rate_hz,
             };
-            let built = create_tx(ctx, &settings(default_params(&d.type_id)));
+            let built = create_tx(ctx, &home_settings(&d.type_id));
             assert_eq!(
                 built.is_ok(),
                 d.can_transmit,

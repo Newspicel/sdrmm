@@ -92,10 +92,12 @@ for (const system of ["dab", "dvbt", "dvbs", "dvbs2", "dvbs2x", "dvbs2sf"] as co
         `/api/devicesets/${device.id}/channels/${channel.id}`,
         {
           data: {
-            ...channel.settings,
-            frequency_hz: 220_352_000,
-            squelch: { mode: "off" },
-            params: { type: params.type, settings },
+            settings: {
+              ...channel.settings,
+              frequency_hz: 220_352_000,
+              squelch: { mode: "off" },
+              params: { type: params.type, settings },
+            },
           },
         },
       );
