@@ -377,7 +377,15 @@ export function ExportFace({ node }: { node: PatchNode }) {
   );
 }
 
-function RecorderSwitch({ node, title }: { node: RecorderNodeOf; title: string }) {
+function RecorderSwitch({
+  node,
+  title,
+  unwired,
+}: {
+  node: RecorderNodeOf;
+  title: string;
+  unwired: string | null;
+}) {
   const workspace = useWorkspaceContext();
   const recording = node.data?.recording ?? false;
   const switchTo = (next: boolean) => {
@@ -390,7 +398,8 @@ function RecorderSwitch({ node, title }: { node: RecorderNodeOf; title: string }
     <Button
       type="button"
       className={recording ? BTN_DANGER : BTN}
-      title={recording ? undefined : title}
+      title={recording ? undefined : (unwired ?? title)}
+      disabled={unwired !== null && !recording}
       onClick={() => switchTo(!recording)}
     >
       {recording ? (
@@ -415,30 +424,32 @@ function FileReadout({ label, file }: { label: string; file: string }) {
   );
 }
 
+const IDLE = "-";
+
 function RecordStats({
   elapsedS,
   bytes,
   samples,
   overruns,
 }: {
-  elapsedS?: number;
-  bytes: number;
-  samples?: number;
+  elapsedS?: number | null;
+  bytes: number | null;
+  samples?: number | null;
   overruns: number;
 }) {
   return (
     <FaceStats>
       {elapsedS !== undefined && (
         <Stat label="Time" title="Recording length">
-          {formatDuration(elapsedS)}
+          {elapsedS === null ? IDLE : formatDuration(elapsedS)}
         </Stat>
       )}
       <Stat label="Written" title="Bytes on disk">
-        {formatBytes(bytes)}
+        {bytes === null ? IDLE : formatBytes(bytes)}
       </Stat>
       {samples !== undefined && (
         <Stat label="Samples" title="Samples written">
-          {formatCount(samples)}
+          {samples === null ? IDLE : formatCount(samples)}
         </Stat>
       )}
       {overruns > 0 && (
@@ -461,42 +472,44 @@ function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
   const workspace = useWorkspaceContext();
   const set = deviceSetOf(workspace, node.id);
   const status = set?.recording ?? null;
-  const waiting = (node.data?.recording ?? false) && status === null;
+  const recording = node.data?.recording ?? false;
   return (
     <NodeShell node={node} title="Recorder" category="output">
       <FaceBody>
-        {status === null ? (
-          <FaceEmpty
-            hint={set === null ? "Wire a device's IQ in" : waiting ? "Waiting" : undefined}
-          />
-        ) : (
-          <>
-            <Readouts ruled={false}>
-              <FileReadout label="File" file={status.file} />
-            </Readouts>
-            {status.error != null && <FaceFault message={status.error} />}
-          </>
-        )}
-      </FaceBody>
-      {set !== null && (
-        <FaceFooter>
-          {status !== null && (
-            <IqRecordStats status={status} sampleRate={set.settings.sample_rate ?? 0} />
+        <Readouts ruled={false}>
+          {status === null ? (
+            <Readout label="File">{recording && set !== null ? "Waiting" : IDLE}</Readout>
+          ) : (
+            <FileReadout label="File" file={status.file} />
           )}
-          <RecorderSwitch node={node} title="Record IQ to a SigMF pair" />
-        </FaceFooter>
-      )}
+        </Readouts>
+        {status?.error != null && <FaceFault message={status.error} />}
+      </FaceBody>
+      <FaceFooter>
+        <IqRecordStats status={status} sampleRate={set?.settings.sample_rate ?? 0} />
+        <RecorderSwitch
+          node={node}
+          title="Record IQ to a SigMF pair"
+          unwired={set === null ? "Wire a device's IQ in" : null}
+        />
+      </FaceFooter>
     </NodeShell>
   );
 }
 
-function IqRecordStats({ status, sampleRate }: { status: RecordingStatus; sampleRate: number }) {
+function IqRecordStats({
+  status,
+  sampleRate,
+}: {
+  status: RecordingStatus | null;
+  sampleRate: number;
+}) {
   const now = useNow(1000);
   return (
     <RecordStats
-      elapsedS={recordingElapsedS(status, now, sampleRate)}
-      bytes={status.bytes}
-      overruns={status.overruns}
+      elapsedS={status === null ? null : recordingElapsedS(status, now, sampleRate)}
+      bytes={status?.bytes ?? null}
+      overruns={status?.overruns ?? 0}
     />
   );
 }
@@ -544,44 +557,43 @@ function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
   return (
     <NodeShell node={node} title="Audio recorder" category="output">
       <FaceBody>
-        {inputs.length === 0 ? (
-          <FaceEmpty hint="Wire a channel's audio in" />
-        ) : (
-          <>
-            <Chips>
-              <SkipSilenceChip node={node} />
-            </Chips>
-            <Readouts ruled={false}>
-              {takes.map(({ input, status }) =>
-                status === null ? (
-                  <Readout key={inputKey(input)} label={nameOf(input)}>
-                    {recording ? "Waiting" : "-"}
-                  </Readout>
-                ) : (
-                  <FileReadout key={inputKey(input)} label={nameOf(input)} file={status.file} />
-                ),
-              )}
-            </Readouts>
-            {takes.map(({ input, status }) =>
-              status?.error == null ? null : (
-                <FaceFault key={inputKey(input)} message={`${nameOf(input)}: ${status.error}`} />
-              ),
-            )}
-          </>
+        <Chips>
+          <SkipSilenceChip node={node} />
+        </Chips>
+        <Readouts ruled={false}>
+          {takes.length === 0 && <Readout label="File">{IDLE}</Readout>}
+          {takes.map(({ input, status }) =>
+            status === null ? (
+              <Readout key={inputKey(input)} label={nameOf(input)}>
+                {recording ? "Waiting" : IDLE}
+              </Readout>
+            ) : (
+              <FileReadout key={inputKey(input)} label={nameOf(input)} file={status.file} />
+            ),
+          )}
+        </Readouts>
+        {takes.map(({ input, status }) =>
+          status?.error == null ? null : (
+            <FaceFault key={inputKey(input)} message={`${nameOf(input)}: ${status.error}`} />
+          ),
         )}
       </FaceBody>
-      {inputs.length > 0 && (
-        <FaceFooter>
-          {held.length > 0 && (
-            <RecordStats
-              elapsedS={Math.max(...held.map((status) => status.frames)) / AUDIO_RATE_HZ}
-              bytes={sum(held.map((status) => status.bytes))}
-              overruns={0}
-            />
-          )}
-          <RecorderSwitch node={node} title="Record every wired input to its own WAV file" />
-        </FaceFooter>
-      )}
+      <FaceFooter>
+        <RecordStats
+          elapsedS={
+            held.length === 0
+              ? null
+              : Math.max(...held.map((status) => status.frames)) / AUDIO_RATE_HZ
+          }
+          bytes={held.length === 0 ? null : sum(held.map((status) => status.bytes))}
+          overruns={0}
+        />
+        <RecorderSwitch
+          node={node}
+          title="Record every wired input to its own WAV file"
+          unwired={inputs.length === 0 ? "Wire a channel's audio in" : null}
+        />
+      </FaceFooter>
     </NodeShell>
   );
 }
@@ -609,44 +621,36 @@ function BasebandRecorder({ node }: { node: PatchNodeOf<"baseband_recorder"> }) 
   return (
     <NodeShell node={node} title="Baseband recorder" category="output">
       <FaceBody>
-        {inputs.length === 0 ? (
-          <FaceEmpty hint="Wire a channel's baseband in" />
-        ) : (
-          <>
-            <Readouts ruled={false}>
-              {takes.map(({ input, status }) =>
-                status === null ? (
-                  <Readout key={input.node} label={nameOf(input)}>
-                    {recording ? "Waiting" : "-"}
-                  </Readout>
-                ) : (
-                  <FileReadout key={input.node} label={nameOf(input)} file={status.file} />
-                ),
-              )}
-            </Readouts>
-            {takes.map(({ input, status }) =>
-              status?.error == null ? null : (
-                <FaceFault key={input.node} message={`${nameOf(input)}: ${status.error}`} />
-              ),
-            )}
-          </>
+        <Readouts ruled={false}>
+          {takes.length === 0 && <Readout label="File">{IDLE}</Readout>}
+          {takes.map(({ input, status }) =>
+            status === null ? (
+              <Readout key={input.node} label={nameOf(input)}>
+                {recording ? "Waiting" : IDLE}
+              </Readout>
+            ) : (
+              <FileReadout key={input.node} label={nameOf(input)} file={status.file} />
+            ),
+          )}
+        </Readouts>
+        {takes.map(({ input, status }) =>
+          status?.error == null ? null : (
+            <FaceFault key={input.node} message={`${nameOf(input)}: ${status.error}`} />
+          ),
         )}
       </FaceBody>
-      {inputs.length > 0 && (
-        <FaceFooter>
-          {held.length > 0 && (
-            <RecordStats
-              bytes={sum(held.map((status) => status.bytes))}
-              samples={sum(held.map((status) => status.samples))}
-              overruns={sum(held.map((status) => status.overruns))}
-            />
-          )}
-          <RecorderSwitch
-            node={node}
-            title="Record every wired channel's baseband to its own SigMF pair"
-          />
-        </FaceFooter>
-      )}
+      <FaceFooter>
+        <RecordStats
+          bytes={held.length === 0 ? null : sum(held.map((status) => status.bytes))}
+          samples={held.length === 0 ? null : sum(held.map((status) => status.samples))}
+          overruns={sum(held.map((status) => status.overruns))}
+        />
+        <RecorderSwitch
+          node={node}
+          title="Record every wired channel's baseband to its own SigMF pair"
+          unwired={inputs.length === 0 ? "Wire a channel's baseband in" : null}
+        />
+      </FaceFooter>
     </NodeShell>
   );
 }

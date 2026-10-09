@@ -6,6 +6,7 @@ const PREFIXES: ReadonlyArray<readonly [number, string]> = [
 ];
 
 const DECIMALS = 9;
+const BYTE_DECIMALS = 1;
 
 const COUNT = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 
@@ -15,13 +16,13 @@ export function formatCount(count: number): string {
   return COUNT.format(count);
 }
 
-export function si(value: number, unit: string): string {
+export function si(value: number, unit: string, decimals = DECIMALS): string {
   if (!Number.isFinite(value)) {
     return `? ${unit}`;
   }
   const magnitude = Math.abs(value);
   const [scale, prefix] = PREFIXES.find(([step]) => magnitude >= step) ?? [1, ""];
-  return `${trimZeros((value / scale).toFixed(DECIMALS))} ${prefix}${unit}`;
+  return `${trimZeros((value / scale).toFixed(decimals))} ${prefix}${unit}`;
 }
 
 export function formatHz(hz: number): string {
@@ -45,7 +46,7 @@ export function formatBaud(symbolsPerSecond: number): string {
 }
 
 export function formatBytes(bytes: number): string {
-  return si(bytes, "B");
+  return si(bytes, "B", BYTE_DECIMALS);
 }
 
 export function formatMhz(hz: number): string {

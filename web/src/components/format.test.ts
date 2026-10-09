@@ -49,6 +49,8 @@ describe("unit wrappers", () => {
     expect(formatBaud(1_200)).toBe("1.2 kBd");
     expect(formatBytes(32_800_000)).toBe("32.8 MB");
     expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(167_317_504)).toBe("167.3 MB");
+    expect(formatBytes(6_744_064)).toBe("6.7 MB");
   });
 
   it("signs an offset with a real minus, not a hyphen", () => {
