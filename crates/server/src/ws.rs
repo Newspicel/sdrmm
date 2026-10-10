@@ -612,11 +612,11 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
 
     let event_rx = engine.subscribe_events();
     let position_rx = state.gps.subscribe();
+    let decoded_rx = (!for_phone).then(|| state.decoded_text.subscribe());
     greet(&state, &out_tx, &identity).await;
 
     let events = spawn_events(event_rx, out_tx.clone(), for_phone);
-    let decoded =
-        (!for_phone).then(|| spawn_decoded(state.decoded_text.subscribe(), out_tx.clone()));
+    let decoded = decoded_rx.map(|rx| spawn_decoded(rx, out_tx.clone()));
     let positions = spawn_positions(position_rx, out_tx.clone());
 
     let peer = state.presence.connect();
