@@ -6,21 +6,17 @@ pub(crate) mod wifi;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
+use sdrmm_modem::wifi::{Receiver as Wifi, channel::channel_at};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, RemoteIdLink, RemoteIdParams,
-};
-
-use sdrmm_modem::{
-    ble::{self as bluetooth, Lane, band::Band},
-    wifi::Receiver as Wifi,
+    BleLink, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, RemoteIdLink,
+    RemoteIdParams,
 };
 
 use self::tracker::Tracker;
 use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_rate, datalink,
+    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, ble as bluetooth,
+    check_rate,
 };
-
-const PASSBAND: f64 = 0.55;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "remote_id".to_owned(),
@@ -54,17 +50,22 @@ pub(crate) fn occupied_band(params: &RemoteIdParams) -> (f64, f64) {
 }
 
 pub(crate) fn channel_filter(params: &RemoteIdParams) -> ChannelFilter {
-    match params.link {
-        RemoteIdLink::Bluetooth => {
-            datalink::channel_filter(input_rate(params), input_rate(params) * PASSBAND / 2.0)
-        }
-        RemoteIdLink::BluetoothBand | RemoteIdLink::Wifi => ChannelFilter::Passthrough,
+    match bluetooth_link(params.link) {
+        Some(link) => bluetooth::channel_filter(link),
+        None => ChannelFilter::Passthrough,
+    }
+}
+
+fn bluetooth_link(link: RemoteIdLink) -> Option<BleLink> {
+    match link {
+        RemoteIdLink::Bluetooth => Some(BleLink::Channel),
+        RemoteIdLink::BluetoothBand => Some(BleLink::Band),
+        RemoteIdLink::Wifi => None,
     }
 }
 
 enum Front {
-    Bluetooth(Box<Lane>),
-    BluetoothBand(Box<Band>),
+    Bluetooth(bluetooth::Front),
     Wifi(Box<Wifi>),
 }
 
@@ -74,29 +75,15 @@ fn invalid(error: impl std::fmt::Display) -> ChannelError {
 
 impl Front {
     fn new(link: RemoteIdLink, frequency_hz: f64) -> Result<Self, ChannelError> {
-        Ok(match link {
-            RemoteIdLink::Bluetooth => {
-                let rf = bluetooth::rf_channel_at(frequency_hz).ok_or_else(|| {
-                    ChannelError::InvalidSettings(format!(
-                        "{:.3} MHz is not a Bluetooth channel: 2402 to 2480 MHz in 2 MHz steps",
-                        frequency_hz / 1e6
-                    ))
-                })?;
-                Self::Bluetooth(Box::new(
-                    Lane::new(Some(rf), bluetooth::channel_index(rf)).map_err(invalid)?,
-                ))
-            }
-            RemoteIdLink::BluetoothBand => Self::BluetoothBand(Box::new(
-                Band::new(link.input_rate_hz(), frequency_hz).map_err(invalid)?,
-            )),
-            RemoteIdLink::Wifi => Self::Wifi(Box::new(Wifi::new().map_err(invalid)?)),
+        Ok(match bluetooth_link(link) {
+            Some(link) => Self::Bluetooth(bluetooth::Front::new(link, frequency_hz)?),
+            None => Self::Wifi(Box::new(Wifi::new().map_err(invalid)?)),
         })
     }
 
     fn reset(&mut self) {
         match self {
-            Self::Bluetooth(lane) => lane.reset(),
-            Self::BluetoothBand(band) => band.reset(),
+            Self::Bluetooth(front) => front.reset(),
             Self::Wifi(wifi) => wifi.reset(),
         }
     }
@@ -149,14 +136,7 @@ impl ChannelRx for RemoteIdChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         match &mut self.front {
-            Front::Bluetooth(lane) => lane.process(
-                iq,
-                &mut ble::Events {
-                    tracker: &mut self.tracker,
-                    events: &mut out.events,
-                },
-            ),
-            Front::BluetoothBand(band) => band.process(
+            Front::Bluetooth(front) => front.process(
                 iq,
                 &mut ble::Events {
                     tracker: &mut self.tracker,
@@ -172,7 +152,7 @@ impl ChannelRx for RemoteIdChannel {
                     &mut wifi::Events {
                         tracker: &mut self.tracker,
                         events: &mut out.events,
-                        channel: wifi::channel_number(self.frequency_hz),
+                        channel: channel_at(self.frequency_hz).map(|channel| channel.number),
                     },
                 );
             }

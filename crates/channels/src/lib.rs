@@ -1,5 +1,6 @@
 mod acars;
 mod adsb;
+mod airtime;
 mod ais;
 mod am;
 mod aprs;
@@ -9,6 +10,7 @@ mod atv;
 pub mod audio_chain;
 pub mod band;
 pub mod beamformer;
+mod ble;
 mod broadcast_audio;
 mod broadcast_media;
 pub mod correlator;
@@ -32,6 +34,7 @@ mod ils;
 mod inmarsat_aero;
 mod inmarsat_stdc;
 mod iridium;
+mod ism_survey;
 mod lora;
 mod lrpt;
 pub mod monitor;
@@ -64,6 +67,7 @@ mod vor;
 mod weak_signal;
 mod wefax;
 mod wfm;
+mod wifi;
 #[cfg(test)]
 mod xng_adapter;
 
@@ -81,6 +85,7 @@ pub use aprs::{AprsChannel, AprsTx, MicE, MicEBit};
 pub use apt::AptChannel;
 pub use atv::AtvChannel;
 pub use audio_chain::{AudioChain, ClickProfile};
+pub use ble::BleChannel;
 pub use cw_skimmer::CwSkimmerChannel;
 pub use dab::DabChannel;
 #[cfg(any(test, feature = "synth"))]
@@ -106,6 +111,7 @@ pub use ils::IlsChannel;
 pub use inmarsat_aero::InmarsatAeroChannel;
 pub use inmarsat_stdc::InmarsatStdcChannel;
 pub use iridium::IridiumChannel;
+pub use ism_survey::IsmSurveyChannel;
 pub use lora::LoraChannel;
 pub use lrpt::LrptChannel;
 pub use morse::MorseChannel;
@@ -132,6 +138,7 @@ pub use vor::VorChannel;
 pub use weak_signal::{Ft4Channel, Ft8Channel, WsprChannel};
 pub use wefax::WefaxChannel;
 pub use wfm::WfmChannel;
+pub use wifi::WifiOccupancyChannel;
 
 pub const AUDIO_RATE: u32 = 48_000;
 
@@ -216,6 +223,9 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Radiosonde(p) => radiosonde::occupied_band(p),
         ChannelParams::Lora(p) => lora::occupied_band(p),
         ChannelParams::RemoteId(p) => remote_id::occupied_band(p),
+        ChannelParams::Ble(p) => ble::occupied_band(p.link),
+        ChannelParams::WifiOccupancy(p) => wifi::occupied_band(p),
+        ChannelParams::IsmSurvey(p) => ism_survey::occupied_band(p),
     }
 }
 
@@ -301,6 +311,9 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Radiosonde(p) => radiosonde::channel_filter(p),
         ChannelParams::Lora(p) => Ok(lora::channel_filter(p)),
         ChannelParams::RemoteId(p) => Ok(remote_id::channel_filter(p)),
+        ChannelParams::Ble(p) => Ok(ble::channel_filter(p.link)),
+        ChannelParams::WifiOccupancy(p) => Ok(wifi::channel_filter(p)),
+        ChannelParams::IsmSurvey(p) => Ok(ism_survey::channel_filter(p)),
     }
 }
 
@@ -703,6 +716,21 @@ const REGISTRY: &[Registration] = &[
         create: boxed::<RemoteIdChannel>,
         create_tx: None,
     },
+    Registration {
+        descriptor: BleChannel::descriptor,
+        create: boxed::<BleChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: WifiOccupancyChannel::descriptor,
+        create: boxed::<WifiOccupancyChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: IsmSurveyChannel::descriptor,
+        create: boxed::<IsmSurveyChannel>,
+        create_tx: None,
+    },
 ];
 
 static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::LazyLock::new(|| {
@@ -775,6 +803,9 @@ pub fn input_rate(params: &ChannelParams) -> f64 {
         ChannelParams::Dect(p) => dect::input_rate(p),
         ChannelParams::Lora(p) => lora::input_rate(p),
         ChannelParams::RemoteId(p) => remote_id::input_rate(p),
+        ChannelParams::Ble(p) => p.link.input_rate_hz(),
+        ChannelParams::WifiOccupancy(p) => wifi::input_rate(p),
+        ChannelParams::IsmSurvey(p) => ism_survey::input_rate(p),
         other => descriptor_of(other.type_id()).map_or(0.0, |d| d.input_rate_hz),
     }
 }
@@ -874,6 +905,11 @@ mod tests {
             "radiosonde" => ChannelParams::Radiosonde(RadiosondeParams::default()),
             "lora" => ChannelParams::Lora(sdrmm_wire::LoraParams::default()),
             "remote_id" => ChannelParams::RemoteId(sdrmm_wire::RemoteIdParams::default()),
+            "ble" => ChannelParams::Ble(sdrmm_wire::BleParams::default()),
+            "wifi_occupancy" => {
+                ChannelParams::WifiOccupancy(sdrmm_wire::WifiOccupancyParams::default())
+            }
+            "ism_survey" => ChannelParams::IsmSurvey(sdrmm_wire::IsmSurveyParams::default()),
             other => panic!("unexpected type id {other}"),
         }
     }
@@ -922,7 +958,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 53);
+        assert_eq!(all.len(), 56);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -980,6 +1016,9 @@ mod tests {
                 "radiosonde",
                 "lora",
                 "remote_id",
+                "ble",
+                "wifi_occupancy",
+                "ism_survey",
             ])
         );
         for d in &all {
@@ -1028,7 +1067,8 @@ mod tests {
                 "wefax" => (1_600.0, 12_000.0),
                 "radiosonde" => (20_000.0, 48_000.0),
                 "lora" => (125_000.0, 250_000.0),
-                "remote_id" => (2_000_000.0, 4_000_000.0),
+                "remote_id" | "ble" => (2_000_000.0, 4_000_000.0),
+                "wifi_occupancy" | "ism_survey" => (17_000_000.0, 20_000_000.0),
                 other => panic!("unexpected type id {other}"),
             };
             assert_eq!(d.bandwidth_hz, bandwidth, "{}", d.type_id);

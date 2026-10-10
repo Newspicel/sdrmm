@@ -125,12 +125,12 @@ async fn templates_list_and_apply_over_http() {
 
 #[tokio::test]
 async fn every_template_runs_on_the_signal_generator() {
-    let app = test_router();
-    let ds = create_virtual_set(&app).await;
-    let (_, body) = request(app.clone(), "GET", "/api/templates", None).await;
+    let (_, body) = request(test_router(), "GET", "/api/templates", None).await;
     let listed: sdrmm_wire::TemplatesResponse = serde_json::from_slice(&body).expect("json");
 
     for template in listed.templates.iter().filter(|t| t.min_lanes <= 1) {
+        let app = test_router();
+        let ds = create_virtual_set(&app).await;
         let (status, body) = request(
             app.clone(),
             "POST",

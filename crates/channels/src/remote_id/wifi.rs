@@ -8,17 +8,11 @@ use super::{
     odid::APP_CODE,
     tracker::{Heard, Tracker},
 };
+use crate::wifi::mac::{
+    ACTION, BEACON, SSID, TYPE_MASK, VENDOR, WFA_OUI, address_text, element, management, text,
+};
 
-const FCS_BYTES: usize = 4;
-const HEADER_BYTES: usize = 24;
-const BEACON_FIXED: usize = 12;
-const BEACON: u16 = 0x0080;
-const ACTION: u16 = 0x00D0;
-const TYPE_MASK: u16 = 0x00FC;
-const SSID: u8 = 0;
-const VENDOR: u8 = 221;
 const ASTM_OUI: [u8; 3] = [0xFA, 0x0B, 0xBC];
-const WFA_OUI: [u8; 3] = [0x50, 0x6F, 0x9A];
 const NAN_TYPE: u8 = 0x13;
 const PUBLIC_ACTION: u8 = 4;
 const VENDOR_ACTION: u8 = 9;
@@ -28,26 +22,6 @@ const BINDING_BITMAP: u8 = 0x40;
 const MATCHING_FILTER: u8 = 0x04;
 const RESPONSE_FILTER: u8 = 0x08;
 const SERVICE_INFO: u8 = 0x10;
-const BAND_24_START_MHZ: f64 = 2_407.0;
-const BAND_5_START_MHZ: f64 = 5_000.0;
-const CHANNEL_14_MHZ: f64 = 2_484.0;
-
-#[must_use]
-pub(crate) fn channel_number(frequency_hz: f64) -> Option<u8> {
-    let mhz = frequency_hz / 1e6;
-    if (mhz - CHANNEL_14_MHZ).abs() < 2.5 {
-        return Some(14);
-    }
-    let start = if (2_400.0..2_500.0).contains(&mhz) {
-        BAND_24_START_MHZ
-    } else if (5_000.0..5_900.0).contains(&mhz) {
-        BAND_5_START_MHZ
-    } else {
-        return None;
-    };
-    let number = ((mhz - start) / 5.0).round();
-    (1.0..=196.0).contains(&number).then_some(number as u8)
-}
 
 #[must_use]
 pub(crate) fn wanted_control(control: u8) -> bool {
@@ -62,24 +36,20 @@ pub(crate) struct Mpdu<'a> {
 }
 
 pub(crate) fn frame(mpdu: &Mpdu<'_>, tracker: &mut Tracker) -> Option<RemoteIdFrame> {
-    let bytes = mpdu.bytes;
-    let body_end = bytes.len().checked_sub(FCS_BYTES)?;
-    let header = bytes.get(..HEADER_BYTES)?;
-    let control = u16::from_le_bytes([header[0], header[1]]) & TYPE_MASK;
-    let body = bytes.get(HEADER_BYTES..body_end)?;
+    let parsed = management(mpdu.bytes)?;
     let heard = |transport, counter, ssid: Option<&[u8]>, payload| Heard {
         transport,
         phy: mpdu.phy,
-        address: address_text(&header[10..16]),
+        address: address_text(parsed.transmitter),
         channel: mpdu.channel,
         counter,
         ssid: ssid.map(text),
         level_dbfs: mpdu.level_dbfs,
         payload,
     };
-    match control {
+    match parsed.kind {
         BEACON => {
-            let elements = body.get(BEACON_FIXED..)?;
+            let elements = parsed.elements()?;
             let ssid = element(elements, |id, _| id == SSID);
             if let Some(found) = element(elements, |id, data| {
                 id == VENDOR && data.starts_with(&ASTM_OUI) && data.get(3) == Some(&APP_CODE)
@@ -111,23 +81,11 @@ pub(crate) fn frame(mpdu: &Mpdu<'_>, tracker: &mut Tracker) -> Option<RemoteIdFr
             ))
         }
         ACTION => {
-            let (counter, pack) = nan_service_info(body)?;
+            let (counter, pack) = nan_service_info(parsed.body)?;
             tracker.frame(heard(RemoteIdTransport::WifiNan, Some(counter), None, pack))
         }
         _ => None,
     }
-}
-
-fn element(elements: &[u8], wanted: impl Fn(u8, &[u8]) -> bool) -> Option<&[u8]> {
-    let mut rest = elements;
-    while let [id, length, tail @ ..] = rest {
-        let (data, next) = tail.split_at_checked(usize::from(*length))?;
-        if wanted(*id, data) {
-            return Some(data);
-        }
-        rest = next;
-    }
-    None
 }
 
 fn nan_service_info(body: &[u8]) -> Option<(u8, &[u8])> {
@@ -177,21 +135,6 @@ fn service_info(descriptor: &[u8]) -> Option<&[u8]> {
     }
     let length = usize::from(*descriptor.get(at)?);
     descriptor.get(at + 1..at + 1 + length)
-}
-
-fn address_text(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .map(|byte| format!("{byte:02X}"))
-        .collect::<Vec<_>>()
-        .join(":")
-}
-
-fn text(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes)
-        .chars()
-        .map(|c| if c.is_control() { '?' } else { c })
-        .collect()
 }
 
 fn wire_phy(phy: WifiPhy) -> RemoteIdPhy {

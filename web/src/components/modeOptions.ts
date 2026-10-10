@@ -12,6 +12,15 @@ export const NXDN_WIDTHS: Options<NonNullable<ChannelParamsOf<"nxdn">["bandwidth
   { value: "narrow", label: "6.25" },
   { value: "wide", label: "12.5" },
 ];
+export const BLE_LINKS: Options<NonNullable<ChannelParamsOf<"ble">["link"]>> = [
+  { value: "channel", label: "Channel", title: "One Bluetooth channel at 4 MS/s" },
+  { value: "band", label: "Band", title: "Every Bluetooth channel in a 20 MS/s window" },
+];
+export const AIRTIME_SPANS: Options<NonNullable<ChannelParamsOf<"wifi_occupancy">["span"]>> = [
+  { value: "mhz20", label: "20", title: "20 MS/s" },
+  { value: "mhz40", label: "40", title: "40 MS/s" },
+  { value: "mhz80", label: "80", title: "80 MS/s, all of 2.4 GHz" },
+];
 export const REMOTE_ID_LINKS: Options<NonNullable<ChannelParamsOf<"remote_id">["link"]>> = [
   { value: "bluetooth", label: "Bluetooth", title: "One Bluetooth channel at 4 MS/s" },
   {

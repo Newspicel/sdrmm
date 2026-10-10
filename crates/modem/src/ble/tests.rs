@@ -191,3 +191,29 @@ fn each_packet_is_reported_once() {
         }
     }
 }
+
+#[test]
+fn a_packet_that_fails_its_crc_is_counted_once() {
+    for (phy, damage) in [(BlePhy::Le1m, 400), (BlePhy::CodedS8, 3_000)] {
+        let mut iq = on_air(&pdu(60), 12, phy, 0.0, 30.0, 5);
+        let clean = {
+            let mut lane = Lane::new(Some(12), channel_index(12)).unwrap();
+            let mut sink = Collect::default();
+            lane.process(&iq, &mut sink);
+            lane.process(&vec![Complex::new(0.0, 0.0); 40_000], &mut sink);
+            assert_eq!(sink.packets.len(), 1, "{phy:?}");
+            lane.rejected()
+        };
+        assert_eq!(clean, 0, "{phy:?}");
+        let middle = iq.len() / 2;
+        for sample in &mut iq[middle..middle + damage] {
+            *sample = sample.conj();
+        }
+        let mut lane = Lane::new(Some(12), channel_index(12)).unwrap();
+        let mut sink = Collect::default();
+        lane.process(&iq, &mut sink);
+        lane.process(&vec![Complex::new(0.0, 0.0); 40_000], &mut sink);
+        assert!(sink.packets.is_empty(), "{phy:?}");
+        assert_eq!(lane.rejected(), 1, "{phy:?}");
+    }
+}

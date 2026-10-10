@@ -366,6 +366,54 @@ describe("eventDetail", () => {
           messages: [],
         },
       },
+      ble: {
+        kind: "ble",
+        data: {
+          pdu: "adv_ind",
+          phy: "le1m",
+          channel: 38,
+          address: { address: "C0:11:22:33:44:55", kind: "random_static" },
+          level_dbfs: -41,
+          name: "Thermo",
+          flags: { limited: false, general: true, le_only: true },
+          services: [{ uuid: "180F", name: "Battery", data: "57" }],
+          manufacturer: [{ company_id: 76, company: "Apple", data: "1005" }],
+          beacon: { type: "eddystone_tlm", battery_mv: 3000, adverts: 5, uptime_s: 12 },
+          aux: { channel: 8, phy: "le_coded", offset_us: 1200 },
+          data: "020106",
+        },
+      },
+      wifi_occupancy: {
+        kind: "wifi_occupancy",
+        data: {
+          window_ms: 1000,
+          measured: 1,
+          channels: [
+            { band: "ghz2_4", number: 6, centre_hz: 2_437e6, busy: 0.31, floor_dbfs: -70 },
+          ],
+        },
+      },
+      ism_survey: {
+        kind: "ism_survey",
+        data: {
+          window_ms: 1000,
+          low_hz: 2_433.5e6,
+          high_hz: 2_450.5e6,
+          measured: 1,
+          busy: 0.2,
+          kinds: [
+            {
+              kind: "bluetooth",
+              bursts: 12,
+              airtime: 0.004,
+              mean_us: 376,
+              peak_dbfs: -30,
+              centres_mhz: [2_440],
+            },
+          ],
+          dropped: 0,
+        },
+      },
     };
     for (const kind of DECODER_KINDS) {
       expect(() => eventDetail(sample[kind]), kind).not.toThrow();

@@ -24,6 +24,8 @@ pub struct Replay {
     #[arg(long)]
     pub input_rate: Option<f64>,
     #[arg(long)]
+    pub center: Option<f64>,
+    #[arg(long)]
     pub quiet_tail: Option<f64>,
     #[arg(long)]
     pub speed: Option<f64>,
@@ -36,7 +38,7 @@ pub struct Replay {
 pub fn run(args: &Replay) -> Result<()> {
     let params: ChannelParams =
         serde_json::from_str(&args.params).context("read the channel parameters as JSON")?;
-    let mut source = Source::open(&args.input, args.input_rate, None)?;
+    let mut source = Source::open(&args.input, args.input_rate, args.center)?;
     let device_rate = source.rate;
 
     let type_id = params.type_id().to_owned();
@@ -48,7 +50,7 @@ pub fn run(args: &Replay) -> Result<()> {
     );
     let input_rate = sdrmm_channels::input_rate(&params);
     let settings = ChannelSettings {
-        frequency_hz: args.offset,
+        frequency_hz: source.center + args.offset,
         squelch: sdrmm_wire::Squelch::Off,
         params,
         blanker: Default::default(),

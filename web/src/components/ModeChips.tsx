@@ -13,11 +13,13 @@ import { formatHz } from "./format";
 import { LoraKeysChip } from "./LoraKeysChip";
 import {
   AERO_CHANNELS,
+  AIRTIME_SPANS,
   AIS_CHANNELS,
   APRS_MODES,
   ATV_COLORS,
   ATV_MODULATIONS,
   ATV_STANDARDS,
+  BLE_LINKS,
   CTCSS_DEFAULT_HZ,
   CTCSS_OPTIONS,
   DAB_MODES,
@@ -184,6 +186,11 @@ export function ModeChips({
       return <LoraChips params={params} {...mode} />;
     case "remote_id":
       return <RemoteIdChips params={params} {...mode} />;
+    case "ble":
+      return <BleChips params={params} {...mode} />;
+    case "wifi_occupancy":
+    case "ism_survey":
+      return <AirtimeChips params={params} {...mode} />;
     case "dstar":
     case "ysf":
     case "p25":
@@ -1326,6 +1333,41 @@ function RadiosondeChips({ params, onParams }: Mode<"radiosonde">) {
         })
       }
     />
+  );
+}
+
+function BleChips({ params, onParams }: Mode<"ble">) {
+  return (
+    <ChoiceChip
+      label="Link"
+      title="Bluetooth channels to listen on"
+      value={params.settings.link ?? "channel"}
+      options={BLE_LINKS}
+      onChange={(link) => onParams({ type: "ble", settings: { ...params.settings, link } })}
+    />
+  );
+}
+
+function AirtimeChips({ params, limits, onParams }: Mode<"wifi_occupancy" | "ism_survey">) {
+  const { type, settings } = params;
+  return (
+    <>
+      <ChoiceChip
+        label="Span"
+        title="Width of the window measured, in MHz"
+        value={settings.span ?? "mhz20"}
+        options={AIRTIME_SPANS}
+        onChange={(span) => onParams({ type, settings: { ...settings, span } })}
+      />
+      <NumberChip
+        label="Margin"
+        title="How far over the noise floor counts as busy"
+        value={settings.margin_db ?? (type === "wifi_occupancy" ? 6 : 10)}
+        {...limitOf(limits, "margin_db")}
+        unit="dB"
+        onCommit={(margin_db) => onParams({ type, settings: { ...settings, margin_db } })}
+      />
+    </>
   );
 }
 

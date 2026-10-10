@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ISM_KIND_LABELS, percentOf, WIFI_BAND_LABELS } from "../lib/airtime";
 import { capturedImageUrl, imagesQuery } from "../lib/api";
 import { useBroadcastStore } from "../lib/broadcast";
 import { copyText } from "../lib/copyText";
@@ -14,6 +15,8 @@ import {
   ageClass,
   aircraftRow,
   aprsWeatherStations,
+  type BleDevice,
+  bleDevices,
   buildTranscript,
   candidateScore,
   cwSignalRows,
@@ -30,6 +33,7 @@ import {
   inScope,
   isAtBottom,
   type LoraStation,
+  latestRecord,
   latestVorReadings,
   latestWpm,
   loraStations,
@@ -709,6 +713,181 @@ function RemoteIdView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
+function BleRow({ device, now }: { device: BleDevice; now: number }) {
+  const ageMs = now - Date.parse(device.at);
+  return (
+    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <td className={`${TABLE_CELL} font-mono`}>{device.key}</td>
+      <td className={`${TABLE_CELL} max-w-40 truncate`} title={device.name ?? undefined}>
+        {device.name ?? "-"}
+      </td>
+      <td className={TABLE_CELL}>{device.vendor ?? "-"}</td>
+      <td className={TABLE_CELL}>{device.beacon ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{device.channel ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{device.levelDbfs.toFixed(0)}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{device.heard}</td>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+    </tr>
+  );
+}
+
+function BleView({ scope = {} }: { scope?: DecoderScope }) {
+  const now = useNow();
+  const devices = bleDevices(recordsInScope(useDecodedKind("ble"), scope));
+  if (devices.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No Bluetooth devices heard yet.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Address</th>
+              <th className={TABLE_HEAD}>Name</th>
+              <th className={TABLE_HEAD}>Vendor</th>
+              <th className={TABLE_HEAD}>Beacon</th>
+              <th className={TABLE_HEAD}>Ch</th>
+              <th className={TABLE_HEAD}>
+                Level <Unit symbol="dBFS" />
+              </th>
+              <th className={TABLE_HEAD} title="Adverts heard, repeats included">
+                Adverts
+              </th>
+              <th className={TABLE_HEAD}>Heard</th>
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((device) => (
+              <BleRow key={device.key} device={device} now={now} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LoadBar({ share }: { share: number }) {
+  return (
+    <div className="h-2 w-24 overflow-hidden rounded bg-line">
+      <div className="h-full bg-accent" style={{ width: `${Math.min(100, share * 100)}%` }} />
+    </div>
+  );
+}
+
+function WifiOccupancyView({ scope = {} }: { scope?: DecoderScope }) {
+  const latest = latestRecord(recordsInScope(useDecodedKind("wifi_occupancy"), scope));
+  if (latest === null || latest.event.data.channels.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>
+          {latest === null ? "First report after one second." : "No Wi-Fi channel in view."}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <table className="w-full border-collapse text-left text-xs">
+        <thead>
+          <tr className="border-b border-line">
+            <th className={TABLE_HEAD}>Channel</th>
+            <th className={TABLE_HEAD}>Busy</th>
+            <th className={TABLE_HEAD} />
+            <th className={TABLE_HEAD} title="Mean level while busy">
+              Level <Unit symbol="dBFS" />
+            </th>
+            <th className={TABLE_HEAD}>
+              Floor <Unit symbol="dBFS" />
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {latest.event.data.channels.map((channel) => (
+            <tr key={`${channel.band}-${channel.number}`} className="border-b border-line/50">
+              <td className={TABLE_CELL} title={WIFI_BAND_LABELS[channel.band]}>
+                {channel.number}
+              </td>
+              <td className={`${TABLE_CELL} tabular-nums`}>{percentOf(channel.busy)}</td>
+              <td className={TABLE_CELL}>
+                <LoadBar share={channel.busy} />
+              </td>
+              <td className={`${TABLE_CELL} tabular-nums`}>
+                {channel.level_dbfs == null ? "-" : channel.level_dbfs.toFixed(0)}
+              </td>
+              <td className={`${TABLE_CELL} tabular-nums`}>
+                {channel.floor_dbfs == null ? "-" : channel.floor_dbfs.toFixed(0)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IsmSurveyView({ scope = {} }: { scope?: DecoderScope }) {
+  const latest = latestRecord(recordsInScope(useDecodedKind("ism_survey"), scope));
+  if (latest === null) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>First report after one second.</span>
+      </div>
+    );
+  }
+  const report = latest.event.data;
+  return (
+    <div className={PANE}>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="legend">Busy</span>
+        <span className="tabular-nums">{percentOf(report.busy)}</span>
+        <LoadBar share={report.busy} />
+      </div>
+      {report.kinds.length === 0 ? (
+        <span className={EMPTY}>Nothing on air.</span>
+      ) : (
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Kind</th>
+              <th className={TABLE_HEAD}>Bursts</th>
+              <th className={TABLE_HEAD}>Airtime</th>
+              <th className={TABLE_HEAD}>
+                Length <Unit symbol="µs" />
+              </th>
+              <th className={TABLE_HEAD}>
+                Peak <Unit symbol="dBFS" />
+              </th>
+              <th className={TABLE_HEAD}>
+                Where <Unit symbol="MHz" />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.kinds.map((load) => (
+              <tr key={load.kind} className="border-b border-line/50">
+                <td className={TABLE_CELL}>{ISM_KIND_LABELS[load.kind]}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{load.bursts}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{percentOf(load.airtime)}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{Math.round(load.mean_us)}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{load.peak_dbfs.toFixed(0)}</td>
+                <td className={`${TABLE_CELL} max-w-40 truncate tabular-nums`}>
+                  {(load.centres_mhz ?? []).join(", ")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function LoraView({ scope = {} }: { scope?: DecoderScope }) {
   const now = useNow();
   const stations = loraStations(recordsInScope(useDecodedKind("lora"), scope));
@@ -1172,6 +1351,9 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   dect: (scope) => <DectView scope={scope} />,
   lora: (scope) => <LoraView scope={scope} />,
   remote_id: (scope) => <RemoteIdView scope={scope} />,
+  ble: (scope) => <BleView scope={scope} />,
+  wifi_occupancy: (scope) => <WifiOccupancyView scope={scope} />,
+  ism_survey: (scope) => <IsmSurveyView scope={scope} />,
 };
 
 function isDecoderKind(kind: string): kind is DecoderKind {

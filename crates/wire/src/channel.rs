@@ -121,6 +121,12 @@ pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
             navaid_report_limit(),
         ],
         "ils" => vec![navaid_report_limit()],
+        "wifi_occupancy" | "ism_survey" => vec![limit(
+            "margin_db",
+            f64::from(crate::airtime::MIN_AIRTIME_MARGIN_DB),
+            f64::from(crate::airtime::MAX_AIRTIME_MARGIN_DB),
+            0.5,
+        )],
         "atv" => vec![limit(
             "sound_subcarrier_hz",
             500_000.0,
@@ -1630,6 +1636,9 @@ pub enum ChannelParams {
     Radiosonde(crate::weather::RadiosondeParams),
     Lora(crate::lora::LoraParams),
     RemoteId(crate::remote_id::RemoteIdParams),
+    Ble(crate::ble::BleParams),
+    WifiOccupancy(crate::airtime::WifiOccupancyParams),
+    IsmSurvey(crate::airtime::IsmSurveyParams),
 }
 
 impl ChannelParams {
@@ -1689,6 +1698,9 @@ impl ChannelParams {
             Self::Radiosonde(_) => "radiosonde",
             Self::Lora(_) => "lora",
             Self::RemoteId(_) => "remote_id",
+            Self::Ble(_) => "ble",
+            Self::WifiOccupancy(_) => "wifi_occupancy",
+            Self::IsmSurvey(_) => "ism_survey",
         }
     }
 }
@@ -1793,7 +1805,9 @@ pub fn home_frequency_hz(type_id: &str) -> Option<f64> {
         "lrpt" => 137_900_000.0,
         "radio_clock" => 77_500.0,
         "dab" => 227_360_000.0,
-        "remote_id" => 2_426_000_000.0,
+        "remote_id" | "ble" => 2_426_000_000.0,
+        "wifi_occupancy" => 2_437_000_000.0,
+        "ism_survey" => 2_442_000_000.0,
         _ => return None,
     };
     Some(hz)

@@ -4,10 +4,7 @@ use sdrmm_modem::{
     wifi::{self, WifiPhy},
 };
 
-use crate::{
-    remote_id::ble::{address_text, advert},
-    testutil::cf32_le,
-};
+use crate::{ble::pdu::parse, testutil::cf32_le};
 
 const FLUSH: usize = 80_000;
 
@@ -84,7 +81,7 @@ fn a_dji_mini_4_pro_names_itself_on_bluetooth_channel_38() {
     assert!(packets.iter().all(|packet| packet.phy == BlePhy::Le1m));
     let response = packets
         .iter()
-        .filter_map(|packet| advert(&packet.bytes))
+        .filter_map(|packet| parse(&packet.bytes, Some(38)))
         .find(|advert| {
             advert
                 .data
@@ -93,7 +90,7 @@ fn a_dji_mini_4_pro_names_itself_on_bluetooth_channel_38() {
         })
         .expect("the scan response carries the drone's name");
     assert_eq!(
-        address_text(&response.address.expect("an address")),
+        response.sender.expect("an address").text(),
         "E4:7A:2C:AB:98:F9"
     );
 }

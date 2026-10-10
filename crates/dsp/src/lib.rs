@@ -1,4 +1,5 @@
 pub mod agc;
+pub mod airtime;
 pub mod array_sync;
 pub mod beamform;
 pub mod bits;

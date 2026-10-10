@@ -1,3 +1,11 @@
+import { ISM_KIND_LABELS, percentOf, WIFI_BAND_LABELS } from "../lib/airtime";
+import {
+  BLE_ADDRESS_KIND_LABELS,
+  BLE_BEACON_LABELS,
+  BLE_PDU_LABELS,
+  BLE_PHY_LABELS,
+  bleBeaconText,
+} from "../lib/ble";
 import {
   LORA_INTEGRITY_LABELS,
   LORA_PROTOCOL_LABELS,
@@ -15,12 +23,14 @@ import {
 } from "../lib/remoteId";
 import type {
   AprsPacket,
+  BleAdvert,
   DataLinkMessage,
   DecoderEvent,
   DecoderKind,
   DectFrame,
   DvFrame,
   EotBattery,
+  IsmSurveyReport,
   LoraFrame,
   LorawanFrame,
   MeshcoreContent,
@@ -28,6 +38,7 @@ import type {
   MeshtasticContent,
   MeshtasticPacket,
   RemoteIdFrame,
+  WifiOccupancyReport,
 } from "../lib/types";
 import { hex5 } from "./decoderLog";
 import {
@@ -529,6 +540,9 @@ const DETAIL: {
   dect: dectDetail,
   lora: loraDetail,
   remote_id: remoteIdDetail,
+  ble: bleDetail,
+  wifi_occupancy: wifiOccupancyDetail,
+  ism_survey: ismSurveyDetail,
   apt: (p) => ({
     fields: fields([
       ["Channels", avhrrChannels(p)],
@@ -969,6 +983,92 @@ function remoteIdDetail(frame: RemoteIdFrame): EventDetail {
     ["Rejected", frame.rejected ? String(frame.rejected) : undefined],
   ];
   return { fields: fields(rows), body: remoteIdText(frame) };
+}
+
+function bleFlags(flags: NonNullable<BleAdvert["flags"]>): string {
+  return (
+    [
+      flags.limited ? "limited" : null,
+      flags.general ? "general" : null,
+      flags.le_only ? "LE only" : null,
+    ]
+      .filter((name) => name !== null)
+      .join(", ") || "none"
+  );
+}
+
+function bleDetail(advert: BleAdvert): EventDetail {
+  const services = advert.services ?? [];
+  const makers = advert.manufacturer ?? [];
+  const rows: Rows = [
+    ["Address", advert.address?.address],
+    ["Address type", advert.address ? BLE_ADDRESS_KIND_LABELS[advert.address.kind] : undefined],
+    ["Target", advert.target?.address],
+    ["Name", advert.name],
+    ["Beacon", advert.beacon == null ? undefined : BLE_BEACON_LABELS[advert.beacon.type]],
+    ["Beacon data", advert.beacon == null ? undefined : bleBeaconText(advert.beacon)],
+    ...makers.map((maker): readonly [string, string] => [
+      maker.company ?? `Company 0x${maker.company_id.toString(16).padStart(4, "0")}`,
+      maker.data,
+    ]),
+    ...services.map((service): readonly [string, string] => [
+      service.name ?? `Service ${service.uuid}`,
+      service.data == null ? service.uuid : `${service.uuid} ${service.data}`,
+    ]),
+    ["URI", advert.uri],
+    ["Flags", advert.flags == null ? undefined : bleFlags(advert.flags)],
+    ["Tx power", advert.tx_power_dbm == null ? undefined : `${advert.tx_power_dbm} dBm`],
+    [
+      "Appearance",
+      advert.appearance == null
+        ? undefined
+        : `0x${advert.appearance.toString(16).padStart(4, "0")}`,
+    ],
+    ["PDU", BLE_PDU_LABELS[advert.pdu]],
+    ["PHY", BLE_PHY_LABELS[advert.phy]],
+    ["Channel", advert.channel == null ? undefined : String(advert.channel)],
+    ["Set", advert.adi == null ? undefined : `${advert.adi.set} · data ${advert.adi.data_id}`],
+    [
+      "Aux",
+      advert.aux == null
+        ? undefined
+        : `channel ${advert.aux.channel} · ${BLE_PHY_LABELS[advert.aux.phy]} · +${advert.aux.offset_us} µs`,
+    ],
+    ["Level", `${advert.level_dbfs.toFixed(1)} dBFS`],
+    ["Repeats", advert.repeats ? String(advert.repeats) : undefined],
+    ["Rejected", advert.rejected ? String(advert.rejected) : undefined],
+  ];
+  return { fields: fields(rows), body: advert.data || null };
+}
+
+function wifiOccupancyDetail(report: WifiOccupancyReport): EventDetail {
+  const rows: Rows = report.channels.map((channel) => [
+    `${WIFI_BAND_LABELS[channel.band]} ch ${channel.number}`,
+    [
+      `${percentOf(channel.busy)} busy`,
+      channel.level_dbfs == null ? null : `${channel.level_dbfs.toFixed(0)} dBFS`,
+      channel.floor_dbfs == null ? null : `floor ${channel.floor_dbfs.toFixed(0)} dBFS`,
+    ]
+      .filter((part) => part !== null)
+      .join(" · "),
+  ]);
+  rows.push(["Measured", percentOf(report.measured)]);
+  return { fields: fields(rows), body: null };
+}
+
+function ismSurveyDetail(report: IsmSurveyReport): EventDetail {
+  const rows: Rows = [
+    ["Window", `${formatHz(report.low_hz)} to ${formatHz(report.high_hz)}`],
+    ["Busy", percentOf(report.busy)],
+    ...report.kinds.map((load): readonly [string, string] => [
+      ISM_KIND_LABELS[load.kind],
+      `${load.bursts} bursts · ${percentOf(load.airtime)} · ${Math.round(load.mean_us)} µs · ${(load.centres_mhz ?? []).join(", ")} MHz`,
+    ]),
+    ["Floor", report.floor_dbfs == null ? undefined : `${report.floor_dbfs.toFixed(0)} dBFS`],
+    ["Measured", percentOf(report.measured)],
+    ["Dropped", report.dropped ? String(report.dropped) : undefined],
+  ];
+  return { fields: fields(rows), body: null };
 }
 
 function lorawanRows(frame: LorawanFrame): Rows {
