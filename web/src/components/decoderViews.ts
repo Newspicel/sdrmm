@@ -17,6 +17,7 @@ import type {
   AdsbMessage,
   AisMessage,
   AprsWeather,
+  BleAdvert,
   DecodedRecord,
   DecodedRecordOf,
   DvFrame,
@@ -249,11 +250,18 @@ export interface BleDevice {
   at: string;
 }
 
+function bleAnonymousKey(advert: BleAdvert): string {
+  const label = BLE_PDU_LABELS[advert.pdu];
+  return advert.adi == null
+    ? `${label} ${advert.data.slice(0, 12)}`
+    : `${label} SID ${advert.adi.set} DID ${advert.adi.data_id.toString(16).toUpperCase()}`;
+}
+
 export function bleDevices(records: readonly DecodedRecordOf<"ble">[]): BleDevice[] {
   const devices = new Map<string, BleDevice>();
   for (const record of chronological(records)) {
     const advert = record.event.data;
-    const key = bleStation(advert) ?? `${BLE_PDU_LABELS[advert.pdu]} ${advert.data.slice(0, 12)}`;
+    const key = bleStation(advert) ?? bleAnonymousKey(advert);
     const previous = devices.get(key);
     devices.set(key, {
       key,

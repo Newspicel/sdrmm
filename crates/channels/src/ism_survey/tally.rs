@@ -5,12 +5,12 @@ use crate::airtime::{bin_offset_hz, fft_len, frame_s};
 
 const MHZ: f64 = 1e6;
 const SLOTS: usize = 128;
+const WINDOW_WORDS: usize = 512;
+const WINDOW_FRAMES: u64 = WINDOW_WORDS as u64 * 64;
 
 #[derive(Clone, Copy)]
 struct Kind {
     bursts: u32,
-    covered: u64,
-    until: u64,
     frames: u64,
     peak: f32,
     steady: bool,
@@ -20,8 +20,6 @@ struct Kind {
 impl Kind {
     const EMPTY: Self = Self {
         bursts: 0,
-        covered: 0,
-        until: 0,
         frames: 0,
         peak: f32::NEG_INFINITY,
         steady: false,
@@ -33,12 +31,41 @@ impl Kind {
     }
 }
 
-fn cover(covered: &mut u64, until: &mut u64, first: u64, frames: u64) {
-    let end = first + frames;
-    let start = first.max(*until);
-    if end > start {
-        *covered += end - start;
-        *until = end;
+struct Coverage {
+    marked: Vec<u64>,
+    horizon: u64,
+    covered: u64,
+}
+
+impl Coverage {
+    fn new() -> Self {
+        Self {
+            marked: vec![0; WINDOW_WORDS],
+            horizon: 0,
+            covered: 0,
+        }
+    }
+
+    fn slot(frame: u64) -> (usize, u64) {
+        ((frame / 64) as usize % WINDOW_WORDS, 1 << (frame % 64))
+    }
+
+    fn mark(&mut self, first: u64, frames: u64) {
+        let end = first + frames;
+        if end > self.horizon {
+            for frame in self.horizon.max(end.saturating_sub(WINDOW_FRAMES))..end {
+                let (word, bit) = Self::slot(frame);
+                self.marked[word] &= !bit;
+            }
+            self.horizon = end;
+        }
+        for frame in first.max(self.horizon.saturating_sub(WINDOW_FRAMES))..end {
+            let (word, bit) = Self::slot(frame);
+            if self.marked[word] & bit == 0 {
+                self.marked[word] |= bit;
+                self.covered += 1;
+            }
+        }
     }
 }
 
@@ -47,8 +74,8 @@ pub(crate) struct Tally {
     len: usize,
     base_mhz: f64,
     kinds: [Kind; IsmKind::ALL.len()],
-    covered: u64,
-    until: u64,
+    kind_coverage: [Coverage; IsmKind::ALL.len()],
+    coverage: Coverage,
 }
 
 impl Tally {
@@ -58,8 +85,8 @@ impl Tally {
             len: fft_len(span),
             base_mhz: ((frequency_hz - span.sample_rate_hz() / 2.0) / MHZ).floor(),
             kinds: [Kind::EMPTY; IsmKind::ALL.len()],
-            covered: 0,
-            until: 0,
+            kind_coverage: std::array::from_fn(|_| Coverage::new()),
+            coverage: Coverage::new(),
         }
     }
 
@@ -75,18 +102,8 @@ impl Tally {
         tally.frames += burst.frames;
         tally.peak = tally.peak.max(fast_power_db(burst.peak));
         tally.centres[slot] += 1;
-        cover(
-            &mut tally.covered,
-            &mut tally.until,
-            burst.first,
-            burst.frames,
-        );
-        cover(
-            &mut self.covered,
-            &mut self.until,
-            burst.first,
-            burst.frames,
-        );
+        self.kind_coverage[kind as usize].mark(burst.first, burst.frames);
+        self.coverage.mark(burst.first, burst.frames);
     }
 
     pub(crate) fn raised(&mut self, bins: impl Iterator<Item = (usize, f32)>) {
@@ -105,7 +122,7 @@ impl Tally {
         if steady {
             1.0
         } else {
-            share(self.covered, measured)
+            share(self.coverage.covered, measured)
         }
     }
 
@@ -113,14 +130,15 @@ impl Tally {
         let loads = IsmKind::ALL
             .iter()
             .zip(&self.kinds)
-            .filter(|(_, tally)| tally.active())
-            .map(|(&kind, tally)| IsmKindLoad {
+            .zip(&self.kind_coverage)
+            .filter(|((_, tally), _)| tally.active())
+            .map(|((&kind, tally), coverage)| IsmKindLoad {
                 kind,
                 bursts: tally.bursts,
                 airtime: if tally.steady {
                     1.0
                 } else {
-                    share(tally.covered, measured)
+                    share(coverage.covered, measured)
                 },
                 mean_us: (tally.frames as f64 * frame_s() * 1e6 / f64::from(tally.bursts.max(1)))
                     as f32,
@@ -128,14 +146,11 @@ impl Tally {
                 centres_mhz: self.centres(&tally.centres),
             })
             .collect();
-        for tally in &mut self.kinds {
-            let until = tally.until;
-            *tally = Kind {
-                until,
-                ..Kind::EMPTY
-            };
+        self.kinds = [Kind::EMPTY; IsmKind::ALL.len()];
+        for coverage in &mut self.kind_coverage {
+            coverage.covered = 0;
         }
-        self.covered = 0;
+        self.coverage.covered = 0;
         loads
     }
 

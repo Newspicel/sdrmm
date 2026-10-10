@@ -1,8 +1,10 @@
+use sdrmm_dsp::airtime::Burst;
 use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, IsmKind, IsmSurveyParams, IsmSurveyReport,
+    AirtimeSpan, ChannelParams, ChannelSettings, DecoderEvent, IsmKind, IsmSurveyParams,
+    IsmSurveyReport,
 };
 
-use super::IsmSurveyChannel;
+use super::{IsmSurveyChannel, tally::Tally};
 use crate::{
     ChannelCtx, ChannelRx,
     airtime::scene::Scene,
@@ -122,4 +124,38 @@ fn an_oven_pulses_with_the_mains() {
         .find(|load| load.kind == IsmKind::MicrowaveOven)
         .unwrap();
     assert!((0.35..0.5).contains(&oven.airtime), "{oven:?}");
+}
+
+fn burst(first: u64, frames: u64) -> Burst {
+    Burst {
+        first,
+        frames,
+        low: 10,
+        high: 20,
+        centre: 15.0,
+        mean: 1.0,
+        peak: 1.0,
+        edge: false,
+        cut: false,
+    }
+}
+
+#[test]
+fn a_short_burst_closing_inside_a_long_one_keeps_the_long_one_whole() {
+    let mut tally = Tally::new(CENTRE_HZ, AirtimeSpan::Mhz20);
+    tally.add(&burst(300, 118), IsmKind::Bluetooth);
+    tally.add(&burst(100, 626), IsmKind::Wifi);
+    tally.add(&burst(200, 50), IsmKind::Wifi);
+    assert!((tally.busy(1_000) - 0.626).abs() < 1e-6);
+    let loads = tally.report(1_000);
+    let airtime = |kind| {
+        loads
+            .iter()
+            .find(|load| load.kind == kind)
+            .map(|load| load.airtime)
+    };
+    assert!(airtime(IsmKind::Wifi).is_some_and(|share| (share - 0.626).abs() < 1e-6));
+    assert!(airtime(IsmKind::Bluetooth).is_some_and(|share| (share - 0.118).abs() < 1e-6));
+    tally.add(&burst(600, 300), IsmKind::Wifi);
+    assert!((tally.busy(1_000) - 0.174).abs() < 1e-6);
 }

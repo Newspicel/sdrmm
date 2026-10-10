@@ -9,8 +9,8 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_modem::ble::{self as phy, Lane, Packet, Sink, band::Band};
 use sdrmm_wire::{
-    BleAdvert, BleLink, BleParams, BlePhy, ChannelDescriptor, ChannelParams, ChannelSettings,
-    DecoderEvent, DecoderFamily,
+    BleAdi, BleAdvert, BleLink, BleParams, BlePhy, ChannelDescriptor, ChannelParams,
+    ChannelSettings, DecoderEvent, DecoderFamily,
 };
 
 use self::{
@@ -205,18 +205,19 @@ impl Sink for Events<'_> {
     }
 }
 
+fn adi(pdu: &AdvPdu<'_>) -> Option<BleAdi> {
+    pdu.extended.and_then(|extended| extended.adi)
+}
+
 fn key(pdu: &AdvPdu<'_>) -> u64 {
-    let set = pdu
-        .extended
-        .and_then(|extended| extended.adi)
-        .map_or(u8::MAX, |adi| adi.set);
+    let set = adi(pdu).map_or(u8::MAX, |adi| adi.set);
     let kind = Fnv::new().bytes(&[pdu.kind as u8, set]);
     match pdu.sender {
         Some(sender) => kind
             .bytes(&sender.bytes)
             .bytes(&[u8::from(sender.random)])
             .finish(),
-        None => kind.bytes(pdu.data).finish(),
+        None => kind.bytes(&data_id(pdu)).bytes(pdu.data).finish(),
     }
 }
 
@@ -224,7 +225,15 @@ fn content(pdu: &AdvPdu<'_>) -> u64 {
     let target = pdu
         .target
         .map_or([0; pdu::ADDRESS_BYTES], |target| target.bytes);
-    Fnv::new().bytes(&target).bytes(pdu.data).finish()
+    Fnv::new()
+        .bytes(&target)
+        .bytes(&data_id(pdu))
+        .bytes(pdu.data)
+        .finish()
+}
+
+fn data_id(pdu: &AdvPdu<'_>) -> [u8; 2] {
+    adi(pdu).map_or([0xFF; 2], |adi| adi.data_id.to_le_bytes())
 }
 
 pub(crate) fn advert(

@@ -822,6 +822,17 @@ describe("remoteIdDrones", () => {
   });
 });
 
+function anonymousAdvert(data_id: number) {
+  return record("ble", {
+    pdu: "adv_ext_ind",
+    phy: "le1m",
+    channel: 37,
+    level_dbfs: -60,
+    adi: { set: 0, data_id },
+    data: "",
+  });
+}
+
 describe("bleDevices", () => {
   it("joins a device's advert and scan response into one row", () => {
     const address = { address: "C0:11:22:33:44:55", kind: "random_static" as const };
@@ -863,6 +874,14 @@ describe("bleDevices", () => {
       levelDbfs: -48,
       heard: 6,
     });
+  });
+
+  it("keeps anonymous extended advertisers apart by their data ID", () => {
+    const devices = bleDevices([anonymousAdvert(0xe75), anonymousAdvert(0x31a)]);
+    expect(devices.map((device) => device.key).toSorted()).toEqual([
+      "ADV_EXT_IND SID 0 DID 31A",
+      "ADV_EXT_IND SID 0 DID E75",
+    ]);
   });
 });
 

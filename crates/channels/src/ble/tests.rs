@@ -5,7 +5,7 @@ use sdrmm_wire::{
     ChannelSettings, DecoderEvent,
 };
 
-use super::{BleChannel, ad::Fields, pdu::parse};
+use super::{BleChannel, ad::Fields, content, key, pdu::parse};
 use crate::{
     ChannelCtx, ChannelOutputs, ChannelRx, channel_filter,
     synth::{self, remote_id::bluetooth},
@@ -68,6 +68,16 @@ fn an_extended_advert_points_at_its_auxiliary_packet() {
     let adi = extended.adi.unwrap();
     assert_eq!((adi.set, adi.data_id), (0, 0xE75));
     assert_eq!(parse(&pdu, Some(5)).unwrap().kind, BlePdu::AuxAdvInd);
+}
+
+#[test]
+fn anonymous_extended_adverts_are_told_apart_by_their_data_id() {
+    let first = [0x07, 0x07, 0x06, 0x18, 0x75, 0x0E, 0x05, 0x28, 0x40];
+    let other = [0x07, 0x07, 0x06, 0x18, 0x31, 0x0A, 0x05, 0x28, 0x40];
+    let first = parse(&first, Some(37)).unwrap();
+    let other = parse(&other, Some(37)).unwrap();
+    assert_ne!(key(&first), key(&other));
+    assert_ne!(content(&first), content(&other));
 }
 
 #[test]
