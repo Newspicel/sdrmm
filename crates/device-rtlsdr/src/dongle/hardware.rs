@@ -245,9 +245,8 @@ fn check_gains(dongle: &mut Dongle) {
     let mut levels = Vec::new();
     for tenths in [0, 297, 496] {
         dongle.set_manual_gain(tenths).expect("manual gain");
-        let read = dongle.measured_gain().expect("gain");
         let level = level(dongle);
-        println!("manual gain={tenths} level={level:.2} agc_status={read}");
+        println!("manual gain={tenths} level={level:.2}");
         levels.push(level);
     }
     assert!(
@@ -255,10 +254,6 @@ fn check_gains(dongle: &mut Dongle) {
         "gain does not reach the samples: {levels:?}"
     );
     dongle.set_auto_gain().expect("auto gain");
-    std::thread::sleep(Duration::from_millis(100));
-    let read = dongle.measured_gain().expect("gain");
-    println!("auto gain read={read}");
-    assert!((0..=496).contains(&read));
 }
 
 fn check_bandwidth_and_ppm(dongle: &mut Dongle) {

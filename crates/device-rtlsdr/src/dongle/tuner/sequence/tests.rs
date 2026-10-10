@@ -334,14 +334,6 @@ fn auto_gain_hands_both_stages_to_the_agc() {
 }
 
 #[test]
-fn gain_reads_back_from_the_status() {
-    let (tuner, mut bus) = tuner(TunerKind::R820T, Board::Generic);
-    bus.status[3] = 0x88;
-    assert_eq!(tuner.gain(&mut bus).unwrap(), 297);
-    assert_eq!(bus.messages.last(), Some(&vec![0x00]));
-}
-
-#[test]
 fn a_masked_write_keeps_the_shadowed_bits() {
     let (mut tuner, mut bus) = tuner(TunerKind::R820T, Board::Generic);
     let before = tuner.shadow[usize::from(0x0c - FIRST_REG)];

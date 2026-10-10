@@ -3,7 +3,7 @@ use std::time::Duration;
 use super::{
     TunerBus, TunerKind,
     filter::{self, DEFAULT_IF_HZ},
-    gain::{self, Stages},
+    gain,
     input::{self, Band, Step},
     mux, pll,
 };
@@ -311,10 +311,6 @@ impl Tuner {
         let stages = gain::stages_for(tenths);
         self.masked(bus, 0x05, stages.lna, 0x0f)?;
         self.masked(bus, 0x07, stages.mixer, 0x0f)
-    }
-
-    pub(crate) fn gain(&self, bus: &mut impl TunerBus) -> Result<i32> {
-        Ok(Stages::from_status(self.status(bus, 4)?[3]).tenths())
     }
 
     #[cfg(test)]

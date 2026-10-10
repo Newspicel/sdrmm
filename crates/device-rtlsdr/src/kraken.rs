@@ -8,8 +8,8 @@ use sdrmm_device::{
 };
 use sdrmm_usb_stream::RxStream;
 use sdrmm_wire::{
-    AgcGain, AgcSetting, BandwidthSetting, Capabilities, DeviceInfo, DeviceSettings, GainKind,
-    GainValue, StreamSettings,
+    AgcSetting, BandwidthSetting, Capabilities, DeviceInfo, DeviceSettings, GainKind, GainValue,
+    StreamSettings,
 };
 
 use crate::{
@@ -402,21 +402,6 @@ impl SdrDevice for KrakenDevice {
             convert::converter,
         )?);
         Ok(())
-    }
-
-    fn agc_gains(&self) -> Result<Vec<AgcGain>, DeviceError> {
-        let mut read = Vec::new();
-        for (stream, (lane, settled)) in self.lanes.iter().zip(&self.lane_settings).enumerate() {
-            if !settled.agc.as_ref().is_some_and(|agc| agc.on) {
-                continue;
-            }
-            let tenths = lock(lane).measured_gain()?;
-            read.push(AgcGain {
-                stream: stream as u32,
-                value_db: f64::from(tenths) / 10.0,
-            });
-        }
-        Ok(read)
     }
 
     fn rx_stop(&mut self) {

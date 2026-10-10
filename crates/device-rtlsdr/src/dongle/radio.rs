@@ -209,11 +209,6 @@ impl<T: Transport> Radio<T> {
         self.on_tuner(|tuner, bus| tuner.manual_gain(bus, tenths))
     }
 
-    pub(crate) fn measured_gain(&mut self) -> Result<i32> {
-        self.require_tuner()?;
-        self.on_tuner(|tuner, bus| tuner.gain(bus))
-    }
-
     pub(crate) fn set_direct_sampling(&mut self, mode: DirectSampling) -> Result<()> {
         if mode != DirectSampling::Off && self.board.has_upconverter() {
             return Err(Invalid::NoDirectSampling.into());

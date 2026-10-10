@@ -274,7 +274,6 @@ fn a_bypassed_tuner_refuses_gain_and_bandwidth() {
         |outcome: Result<()>| matches!(outcome, Err(Error::Invalid(Invalid::TunerBypassed)));
     assert!(bypassed(radio.set_auto_gain()));
     assert!(bypassed(radio.set_manual_gain(297)));
-    assert!(bypassed(radio.measured_gain().map(|_| ())));
     assert!(bypassed(radio.set_bandwidth(1_000_000).map(|_| ())));
 }
 
@@ -365,8 +364,6 @@ fn gain_goes_through_the_repeater() {
     let (mut radio, fake) = generic();
     radio.set_manual_gain(297).unwrap();
     assert_eq!(fake.tuner_value(0x05).map(|value| value & 0x1f), Some(0x18));
-    fake.set_status(3, 0x88);
-    assert_eq!(radio.measured_gain().unwrap(), 297);
     radio.set_auto_gain().unwrap();
     assert_eq!(fake.tuner_value(0x05).map(|value| value & 0x10), Some(0x00));
 }

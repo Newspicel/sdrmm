@@ -111,10 +111,6 @@ impl Fake {
         self.state.borrow_mut().failing.clear();
     }
 
-    pub(crate) fn set_status(&self, byte: usize, value: u8) {
-        self.state.borrow_mut().status[byte] = value;
-    }
-
     pub(crate) fn set_eeprom(&self, offset: usize, value: u8) {
         self.state.borrow_mut().eeprom[offset] = value;
     }

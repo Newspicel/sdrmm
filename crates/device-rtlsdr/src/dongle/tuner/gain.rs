@@ -13,23 +13,6 @@ pub(crate) struct Stages {
     pub(crate) mixer: u8,
 }
 
-impl Stages {
-    pub(crate) fn tenths(self) -> i32 {
-        stage_sum(&LNA_STEPS, self.lna) + stage_sum(&MIXER_STEPS, self.mixer)
-    }
-
-    pub(crate) const fn from_status(status: u8) -> Self {
-        Self {
-            lna: status & 0x0f,
-            mixer: status >> 4,
-        }
-    }
-}
-
-fn stage_sum(steps: &[i32; 16], index: u8) -> i32 {
-    steps.iter().skip(1).take(usize::from(index)).sum()
-}
-
 pub(crate) fn stages_for(target_tenths: i32) -> Stages {
     let mut stages = Stages { lna: 0, mixer: 0 };
     let mut total = 0;
@@ -51,6 +34,14 @@ pub(crate) fn stages_for(target_tenths: i32) -> Stages {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stage_sum(steps: &[i32; 16], index: u8) -> i32 {
+        steps.iter().skip(1).take(usize::from(index)).sum()
+    }
+
+    fn tenths(stages: Stages) -> i32 {
+        stage_sum(&LNA_STEPS, stages.lna) + stage_sum(&MIXER_STEPS, stages.mixer)
+    }
 
     #[test]
     fn manual_gain_matches_the_vectors() {
@@ -93,21 +84,14 @@ mod tests {
         ] {
             let stages = stages_for(target);
             assert_eq!(stages, Stages { lna, mixer }, "{target}");
-            assert_eq!(stages.tenths(), total, "{target}");
+            assert_eq!(tenths(stages), total, "{target}");
         }
     }
 
     #[test]
-    fn every_offered_gain_reads_back_as_itself() {
+    fn every_offered_gain_is_reached_exactly() {
         for &gain in GAINS {
-            let stages = stages_for(gain);
-            let status = stages.lna | (stages.mixer << 4);
-            assert_eq!(Stages::from_status(status).tenths(), gain);
+            assert_eq!(tenths(stages_for(gain)), gain);
         }
-    }
-
-    #[test]
-    fn a_zero_status_is_zero_gain() {
-        assert_eq!(Stages::from_status(0).tenths(), 0);
     }
 }
