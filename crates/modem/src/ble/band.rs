@@ -97,6 +97,13 @@ impl Band {
         self.lanes.iter_mut().for_each(Lane::reset);
     }
 
+    #[must_use]
+    pub fn rejected(&self) -> u32 {
+        self.lanes
+            .iter()
+            .fold(0, |total, lane| total.saturating_add(lane.rejected()))
+    }
+
     pub fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
         let input = match &mut self.shift {
             Some(nco) => {

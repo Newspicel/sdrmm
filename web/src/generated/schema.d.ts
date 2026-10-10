@@ -1832,6 +1832,8 @@ export interface components {
             on: boolean;
         };
         /** @enum {string} */
+        AirtimeSpan: "mhz20" | "mhz40" | "mhz80";
+        /** @enum {string} */
         AisChannel: "a" | "b";
         AisMessage: {
             ais_channel: string;
@@ -2704,6 +2706,136 @@ export interface components {
             listening: boolean;
             node: string;
         };
+        BleAddress: {
+            address: string;
+            kind: components["schemas"]["BleAddressKind"];
+        };
+        /** @enum {string} */
+        BleAddressKind: "public" | "random_static" | "resolvable_private" | "non_resolvable_private" | "reserved";
+        BleAdi: {
+            /** Format: int32 */
+            data_id: number;
+            /** Format: int32 */
+            set: number;
+        };
+        BleAdvert: {
+            address?: components["schemas"]["BleAddress"] | null;
+            adi?: components["schemas"]["BleAdi"] | null;
+            /** Format: int32 */
+            appearance?: number | null;
+            aux?: components["schemas"]["BleAuxPointer"] | null;
+            beacon?: components["schemas"]["BleBeacon"] | null;
+            /** Format: int32 */
+            channel?: number | null;
+            data: string;
+            flags?: components["schemas"]["BleFlags"] | null;
+            /** Format: float */
+            level_dbfs: number;
+            manufacturer?: components["schemas"]["BleManufacturer"][];
+            name?: string | null;
+            pdu: components["schemas"]["BlePdu"];
+            phy: components["schemas"]["BlePhy"];
+            /** Format: int32 */
+            rejected?: number;
+            /** Format: int32 */
+            repeats?: number;
+            services?: components["schemas"]["BleService"][];
+            target?: components["schemas"]["BleAddress"] | null;
+            /** Format: int32 */
+            tx_power_dbm?: number | null;
+            uri?: string | null;
+        };
+        BleAuxPointer: {
+            /** Format: int32 */
+            channel: number;
+            /** Format: int32 */
+            offset_us: number;
+            phy: components["schemas"]["BlePhy"];
+        };
+        BleBeacon: {
+            /** Format: int32 */
+            major: number;
+            /** Format: int32 */
+            measured_dbm: number;
+            /** Format: int32 */
+            minor: number;
+            /** @enum {string} */
+            type: "ibeacon";
+            uuid: string;
+        } | {
+            id: string;
+            /** Format: int32 */
+            measured_dbm: number;
+            /** @enum {string} */
+            type: "alt_beacon";
+        } | {
+            instance: string;
+            namespace: string;
+            /** Format: int32 */
+            tx_power_dbm: number;
+            /** @enum {string} */
+            type: "eddystone_uid";
+        } | {
+            /** Format: int32 */
+            tx_power_dbm: number;
+            /** @enum {string} */
+            type: "eddystone_url";
+            url: string;
+        } | {
+            /** Format: int32 */
+            adverts: number;
+            /** Format: int32 */
+            battery_mv?: number | null;
+            /** Format: float */
+            temperature_c?: number | null;
+            /** @enum {string} */
+            type: "eddystone_tlm";
+            /** Format: double */
+            uptime_s: number;
+        } | {
+            eid: string;
+            /** Format: int32 */
+            tx_power_dbm: number;
+            /** @enum {string} */
+            type: "eddystone_eid";
+        } | {
+            maintained: boolean;
+            /** @enum {string} */
+            type: "find_my";
+        } | {
+            identifier: string;
+            /** @enum {string} */
+            type: "exposure_notification";
+        } | {
+            model: string;
+            /** @enum {string} */
+            type: "fast_pair";
+        };
+        BleFlags: {
+            general: boolean;
+            le_only: boolean;
+            limited: boolean;
+        };
+        /** @enum {string} */
+        BleLink: "channel" | "band";
+        BleManufacturer: {
+            company?: string | null;
+            /** Format: int32 */
+            company_id: number;
+            data: string;
+        };
+        BleParams: {
+            link?: components["schemas"]["BleLink"];
+        };
+        /** @enum {string} */
+        BlePdu: "adv_ind" | "adv_direct_ind" | "adv_nonconn_ind" | "scan_req" | "scan_rsp" | "connect_ind" | "adv_scan_ind" | "adv_ext_ind" | "aux_adv_ind" | "aux_connect_rsp";
+        /** @enum {string} */
+        BlePhy: "le1m" | "le2m" | "le_coded_s8" | "le_coded_s2" | "le_coded";
+        BleService: {
+            data?: string | null;
+            name?: string | null;
+            uuid: string;
+        };
         Bookmark: {
             /** Format: double */
             freq_hz: number;
@@ -3226,6 +3358,18 @@ export interface components {
             settings: components["schemas"]["RemoteIdParams"];
             /** @enum {string} */
             type: "remote_id";
+        } | {
+            settings: components["schemas"]["BleParams"];
+            /** @enum {string} */
+            type: "ble";
+        } | {
+            settings: components["schemas"]["WifiOccupancyParams"];
+            /** @enum {string} */
+            type: "wifi_occupancy";
+        } | {
+            settings: components["schemas"]["IsmSurveyParams"];
+            /** @enum {string} */
+            type: "ism_survey";
         };
         ChannelSettings: {
             blanker?: components["schemas"]["NoiseBlankerSettings"];
@@ -4018,6 +4162,18 @@ export interface components {
             data: components["schemas"]["RemoteIdFrame"];
             /** @enum {string} */
             kind: "remote_id";
+        } | {
+            data: components["schemas"]["BleAdvert"];
+            /** @enum {string} */
+            kind: "ble";
+        } | {
+            data: components["schemas"]["WifiOccupancyReport"];
+            /** @enum {string} */
+            kind: "wifi_occupancy";
+        } | {
+            data: components["schemas"]["IsmSurveyReport"];
+            /** @enum {string} */
+            kind: "ism_survey";
         };
         /** @enum {string} */
         DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
@@ -5347,6 +5503,42 @@ export interface components {
         };
         /** @enum {string} */
         IridiumSpan: "channel" | "mhz1" | "mhz2_5" | "mhz5" | "mhz10";
+        /** @enum {string} */
+        IsmKind: "wifi" | "bluetooth" | "ieee802154" | "microwave_oven" | "narrowband" | "wideband" | "continuous";
+        IsmKindLoad: {
+            /** Format: float */
+            airtime: number;
+            /** Format: int32 */
+            bursts: number;
+            centres_mhz?: number[];
+            kind: components["schemas"]["IsmKind"];
+            /** Format: float */
+            mean_us: number;
+            /** Format: float */
+            peak_dbfs: number;
+        };
+        IsmSurveyParams: {
+            /** Format: float */
+            margin_db?: number;
+            span?: components["schemas"]["AirtimeSpan"];
+        };
+        IsmSurveyReport: {
+            /** Format: float */
+            busy: number;
+            /** Format: int32 */
+            dropped?: number;
+            /** Format: float */
+            floor_dbfs?: number | null;
+            /** Format: double */
+            high_hz: number;
+            kinds: components["schemas"]["IsmKindLoad"][];
+            /** Format: double */
+            low_hz: number;
+            /** Format: float */
+            measured: number;
+            /** Format: int32 */
+            window_ms: number;
+        };
         /** @enum {string} */
         IssueScope: "settings" | "radio_id" | "contact" | "group_list" | "channel" | "zone" | "scan_list" | "extension";
         /** @enum {string} */
@@ -8816,6 +9008,35 @@ export interface components {
             /** Format: float */
             deemphasis_us?: number;
             stereo?: boolean;
+        };
+        /** @enum {string} */
+        WifiBand: "ghz2_4" | "ghz5" | "ghz6";
+        WifiChannelLoad: {
+            band: components["schemas"]["WifiBand"];
+            /** Format: float */
+            busy: number;
+            /** Format: double */
+            centre_hz: number;
+            /** Format: float */
+            floor_dbfs?: number | null;
+            /** Format: float */
+            level_dbfs?: number | null;
+            /** Format: int32 */
+            number: number;
+            /** Format: float */
+            peak_dbfs?: number | null;
+        };
+        WifiOccupancyParams: {
+            /** Format: float */
+            margin_db?: number;
+            span?: components["schemas"]["AirtimeSpan"];
+        };
+        WifiOccupancyReport: {
+            channels: components["schemas"]["WifiChannelLoad"][];
+            /** Format: float */
+            measured: number;
+            /** Format: int32 */
+            window_ms: number;
         };
         /** @enum {string} */
         Winding: "clockwise" | "counter_clockwise";

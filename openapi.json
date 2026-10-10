@@ -6260,6 +6260,14 @@
           }
         }
       },
+      "AirtimeSpan": {
+        "type": "string",
+        "enum": [
+          "mhz20",
+          "mhz40",
+          "mhz80"
+        ]
+      },
       "AisChannel": {
         "type": "string",
         "enum": [
@@ -9317,6 +9325,548 @@
           }
         }
       },
+      "BleAddress": {
+        "type": "object",
+        "required": [
+          "address",
+          "kind"
+        ],
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BleAddressKind"
+          }
+        }
+      },
+      "BleAddressKind": {
+        "type": "string",
+        "enum": [
+          "public",
+          "random_static",
+          "resolvable_private",
+          "non_resolvable_private",
+          "reserved"
+        ]
+      },
+      "BleAdi": {
+        "type": "object",
+        "required": [
+          "set",
+          "data_id"
+        ],
+        "properties": {
+          "data_id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "set": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "BleAdvert": {
+        "type": "object",
+        "required": [
+          "pdu",
+          "phy",
+          "level_dbfs",
+          "data"
+        ],
+        "properties": {
+          "address": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BleAddress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "adi": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BleAdi"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "appearance": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "aux": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BleAuxPointer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "beacon": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BleBeacon"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channel": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "data": {
+            "type": "string"
+          },
+          "flags": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BleFlags"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "level_dbfs": {
+            "type": "number",
+            "format": "float"
+          },
+          "manufacturer": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BleManufacturer"
+            }
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pdu": {
+            "$ref": "#/components/schemas/BlePdu"
+          },
+          "phy": {
+            "$ref": "#/components/schemas/BlePhy"
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "repeats": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BleService"
+            }
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BleAddress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tx_power_dbm": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BleAuxPointer": {
+        "type": "object",
+        "required": [
+          "channel",
+          "phy",
+          "offset_us"
+        ],
+        "properties": {
+          "channel": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "offset_us": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "phy": {
+            "$ref": "#/components/schemas/BlePhy"
+          }
+        }
+      },
+      "BleBeacon": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "uuid",
+              "major",
+              "minor",
+              "measured_dbm",
+              "type"
+            ],
+            "properties": {
+              "major": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "measured_dbm": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "minor": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ibeacon"
+                ]
+              },
+              "uuid": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "measured_dbm",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "measured_dbm": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "alt_beacon"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "namespace",
+              "instance",
+              "tx_power_dbm",
+              "type"
+            ],
+            "properties": {
+              "instance": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "tx_power_dbm": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "eddystone_uid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "url",
+              "tx_power_dbm",
+              "type"
+            ],
+            "properties": {
+              "tx_power_dbm": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "eddystone_url"
+                ]
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "adverts",
+              "uptime_s",
+              "type"
+            ],
+            "properties": {
+              "adverts": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "battery_mv": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "temperature_c": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "float"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "eddystone_tlm"
+                ]
+              },
+              "uptime_s": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "eid",
+              "tx_power_dbm",
+              "type"
+            ],
+            "properties": {
+              "eid": {
+                "type": "string"
+              },
+              "tx_power_dbm": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "eddystone_eid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "maintained",
+              "type"
+            ],
+            "properties": {
+              "maintained": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "find_my"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "identifier",
+              "type"
+            ],
+            "properties": {
+              "identifier": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "exposure_notification"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "model",
+              "type"
+            ],
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "fast_pair"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "BleFlags": {
+        "type": "object",
+        "required": [
+          "limited",
+          "general",
+          "le_only"
+        ],
+        "properties": {
+          "general": {
+            "type": "boolean"
+          },
+          "le_only": {
+            "type": "boolean"
+          },
+          "limited": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BleLink": {
+        "type": "string",
+        "enum": [
+          "channel",
+          "band"
+        ]
+      },
+      "BleManufacturer": {
+        "type": "object",
+        "required": [
+          "company_id",
+          "data"
+        ],
+        "properties": {
+          "company": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "company_id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "data": {
+            "type": "string"
+          }
+        }
+      },
+      "BleParams": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "$ref": "#/components/schemas/BleLink"
+          }
+        }
+      },
+      "BlePdu": {
+        "type": "string",
+        "enum": [
+          "adv_ind",
+          "adv_direct_ind",
+          "adv_nonconn_ind",
+          "scan_req",
+          "scan_rsp",
+          "connect_ind",
+          "adv_scan_ind",
+          "adv_ext_ind",
+          "aux_adv_ind",
+          "aux_connect_rsp"
+        ]
+      },
+      "BlePhy": {
+        "type": "string",
+        "enum": [
+          "le1m",
+          "le2m",
+          "le_coded_s8",
+          "le_coded_s2",
+          "le_coded"
+        ]
+      },
+      "BleService": {
+        "type": "object",
+        "required": [
+          "uuid"
+        ],
+        "properties": {
+          "data": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uuid": {
+            "type": "string"
+          }
+        }
+      },
       "Bookmark": {
         "type": "object",
         "required": [
@@ -11371,6 +11921,60 @@
                 "type": "string",
                 "enum": [
                   "remote_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/BleParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ble"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/WifiOccupancyParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "wifi_occupancy"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/IsmSurveyParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ism_survey"
                 ]
               }
             }
@@ -14324,6 +14928,60 @@
                 "type": "string",
                 "enum": [
                   "remote_id"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/BleAdvert"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ble"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/WifiOccupancyReport"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "wifi_occupancy"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/IsmSurveyReport"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ism_survey"
                 ]
               }
             }
@@ -19225,6 +19883,121 @@
           "mhz5",
           "mhz10"
         ]
+      },
+      "IsmKind": {
+        "type": "string",
+        "enum": [
+          "wifi",
+          "bluetooth",
+          "ieee802154",
+          "microwave_oven",
+          "narrowband",
+          "wideband",
+          "continuous"
+        ]
+      },
+      "IsmKindLoad": {
+        "type": "object",
+        "required": [
+          "kind",
+          "bursts",
+          "airtime",
+          "mean_us",
+          "peak_dbfs"
+        ],
+        "properties": {
+          "airtime": {
+            "type": "number",
+            "format": "float"
+          },
+          "bursts": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "centres_mhz": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "kind": {
+            "$ref": "#/components/schemas/IsmKind"
+          },
+          "mean_us": {
+            "type": "number",
+            "format": "float"
+          },
+          "peak_dbfs": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "IsmSurveyParams": {
+        "type": "object",
+        "properties": {
+          "margin_db": {
+            "type": "number",
+            "format": "float"
+          },
+          "span": {
+            "$ref": "#/components/schemas/AirtimeSpan"
+          }
+        }
+      },
+      "IsmSurveyReport": {
+        "type": "object",
+        "required": [
+          "window_ms",
+          "low_hz",
+          "high_hz",
+          "measured",
+          "busy",
+          "kinds"
+        ],
+        "properties": {
+          "busy": {
+            "type": "number",
+            "format": "float"
+          },
+          "dropped": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "floor_dbfs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "high_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IsmKindLoad"
+            }
+          },
+          "low_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "measured": {
+            "type": "number",
+            "format": "float"
+          },
+          "window_ms": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "IssueScope": {
         "type": "string",
@@ -32018,6 +32791,99 @@
           },
           "stereo": {
             "type": "boolean"
+          }
+        }
+      },
+      "WifiBand": {
+        "type": "string",
+        "enum": [
+          "ghz2_4",
+          "ghz5",
+          "ghz6"
+        ]
+      },
+      "WifiChannelLoad": {
+        "type": "object",
+        "required": [
+          "band",
+          "number",
+          "centre_hz",
+          "busy"
+        ],
+        "properties": {
+          "band": {
+            "$ref": "#/components/schemas/WifiBand"
+          },
+          "busy": {
+            "type": "number",
+            "format": "float"
+          },
+          "centre_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "floor_dbfs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "level_dbfs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "peak_dbfs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          }
+        }
+      },
+      "WifiOccupancyParams": {
+        "type": "object",
+        "properties": {
+          "margin_db": {
+            "type": "number",
+            "format": "float"
+          },
+          "span": {
+            "$ref": "#/components/schemas/AirtimeSpan"
+          }
+        }
+      },
+      "WifiOccupancyReport": {
+        "type": "object",
+        "required": [
+          "window_ms",
+          "measured",
+          "channels"
+        ],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WifiChannelLoad"
+            }
+          },
+          "measured": {
+            "type": "number",
+            "format": "float"
+          },
+          "window_ms": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

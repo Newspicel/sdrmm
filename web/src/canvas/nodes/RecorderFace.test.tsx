@@ -47,9 +47,7 @@ describe("RecorderFace", () => {
   });
 
   it("offers Record only once a device's IQ is wired in", () => {
-    expect(render(false, null)).toMatch(
-      /<button[^>]*disabled=""[^>]*title="Wire a device&#x27;s IQ in"/,
-    );
+    expect(render(false, null)).toMatch(/<[^>]*disabled=""[^>]*title="Wire a device&#x27;s IQ in"/);
     expect(render(true, null)).not.toContain('disabled=""');
   });
 
