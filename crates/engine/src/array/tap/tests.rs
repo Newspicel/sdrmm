@@ -121,6 +121,22 @@ fn a_full_ring_records_an_exact_gap() {
 }
 
 #[test]
+fn half_a_second_behind_a_stalled_sibling_fits_without_a_gap() {
+    let rate = 1_024_000.0;
+    let (port, mut writer) = TapPort::new();
+    let mut feed = port.lease(rate).expect("lease");
+    let behind = (rate / 2.0) as usize;
+    let mut at = 0;
+    while at < behind {
+        let len = BLOCK.min(behind - at);
+        writer.samples(&block(len, 1.0), at as u64);
+        at += len;
+    }
+    assert!(settle(&mut feed).is_empty());
+    assert_eq!(feed.skippable(), behind);
+}
+
+#[test]
 fn a_long_stall_is_one_gap_not_one_per_block() {
     let (port, mut writer) = TapPort::new();
     let mut feed = port.lease(RATE).expect("lease");

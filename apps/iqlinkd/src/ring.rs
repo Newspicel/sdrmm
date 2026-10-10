@@ -58,11 +58,8 @@ impl Ring {
         }
     }
 
-    pub fn release(&mut self, lease: Lease) -> Result<(), SessionError> {
-        if self.free.send(lease.bytes).is_err() {
-            self.join_filler()?;
-        }
-        Ok(())
+    pub fn release(&self, lease: Lease) {
+        let _ = self.free.send(lease.bytes);
     }
 
     pub fn finish(self) -> Result<(), SessionError> {
@@ -132,5 +129,39 @@ impl Status {
             self.rate = buffer.rate();
         }
         self.rate
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::iio::fake;
+
+    #[test]
+    fn chunks_read_before_the_radio_runs_dry_are_all_delivered() {
+        let samples: Vec<u8> = (0..1_200u32).map(|i| (i % 251) as u8).collect();
+        let root = tempfile::tempdir().expect("tempdir");
+        let paths = fake::radio(root.path(), &samples);
+        let buffer = Buffer::open(&paths, fake::NAME, &[0, 1], 100).expect("open");
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut ring = Ring::start(buffer, &stop).expect("ring");
+        let first = ring.acquire(POLL).expect("acquire").expect("first chunk");
+        while !ring.filler.as_ref().is_some_and(JoinHandle::is_finished) {
+            thread::sleep(Duration::from_millis(1));
+        }
+        let mut got = first.bytes.clone();
+        ring.release(first);
+        let ended = loop {
+            match ring.acquire(POLL) {
+                Ok(Some(lease)) => {
+                    got.extend_from_slice(&lease.bytes);
+                    ring.release(lease);
+                }
+                Ok(None) => {}
+                Err(e) => break e,
+            }
+        };
+        assert_eq!(got, samples);
+        assert!(matches!(ended, SessionError::Radio(_)), "{ended:?}");
     }
 }

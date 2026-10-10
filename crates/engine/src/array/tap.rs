@@ -14,7 +14,7 @@ use super::{
 };
 use crate::EngineError;
 
-pub(crate) const TAP_SECONDS: f64 = 0.1;
+pub(crate) const TAP_SECONDS: f64 = 0.5;
 pub(crate) const TAP_MIN: usize = 1 << 16;
 pub(crate) const TAP_MAX: usize = 1 << 22;
 pub(crate) const TAP_EVENT_SLOTS: usize = 256;

@@ -181,7 +181,7 @@ fn pump_until_stopped(
         sender
             .send(packets.datagrams(&lease.bytes))
             .map_err(SessionError::Network)?;
-        ring.release(lease)?;
+        ring.release(lease);
     }
     Ok(())
 }
