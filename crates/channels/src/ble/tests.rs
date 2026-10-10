@@ -171,6 +171,10 @@ fn beacons_are_recognised() {
 }
 
 fn decode(link: BleLink, frequency_hz: f64, iq: &[Complex<f32>]) -> Vec<BleAdvert> {
+    run(link, frequency_hz, iq).0
+}
+
+fn run(link: BleLink, frequency_hz: f64, iq: &[Complex<f32>]) -> (Vec<BleAdvert>, u32) {
     let channel_params = ChannelParams::Ble(BleParams { link });
     let ctx = ChannelCtx {
         input_rate: link.input_rate_hz(),
@@ -193,7 +197,7 @@ fn decode(link: BleLink, frequency_hz: f64, iq: &[Complex<f32>]) -> Vec<BleAdver
             _ => None,
         }));
     }
-    found
+    (found, channel.rejected())
 }
 
 fn air(packets: &[Vec<Complex<f32>>], rate: f64, gap_s: f64) -> Vec<Complex<f32>> {
@@ -207,6 +211,34 @@ fn air(packets: &[Vec<Complex<f32>>], rate: f64, gap_s: f64) -> Vec<Complex<f32>
     }
     synth::add_noise(&mut iq, 3, 0.02);
     iq
+}
+
+#[test]
+fn packets_that_fail_their_crc_are_counted_with_nothing_heard() {
+    let rate = BleLink::Channel.input_rate_hz();
+    let mut packet = bluetooth(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);
+    let middle = packet.len() / 2;
+    for sample in &mut packet[middle..middle + 400] {
+        *sample = sample.conj();
+    }
+    let iq = air(&vec![packet; 3], rate, 0.01);
+    let (adverts, rejected) = run(BleLink::Channel, CHANNEL_38_HZ, &iq);
+    assert!(adverts.is_empty(), "{adverts:?}");
+    assert_eq!(rejected, 3);
+}
+
+#[test]
+fn noise_alone_rejects_nothing() {
+    for (link, frequency_hz) in [
+        (BleLink::Channel, CHANNEL_38_HZ),
+        (BleLink::Band, CHANNEL_38_HZ),
+    ] {
+        let mut iq = synth::silence(2_000_000);
+        synth::add_noise(&mut iq, 0xB1E, 0.3);
+        let (adverts, rejected) = run(link, frequency_hz, &iq);
+        assert!(adverts.is_empty(), "{link:?}");
+        assert_eq!(rejected, 0, "{link:?}");
+    }
 }
 
 #[test]

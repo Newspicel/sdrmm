@@ -125,7 +125,6 @@ pub(crate) fn empty_frame(sonde: SondeType, serial: String) -> RadiosondeFrame {
         satellites: None,
         battery_v: None,
         errors_corrected: 0,
-        rejected: 0,
     }
 }
 

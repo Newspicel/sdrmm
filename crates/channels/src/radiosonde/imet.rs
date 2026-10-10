@@ -323,8 +323,7 @@ impl Imet {
             self.packets.reject();
             return Some(1);
         }
-        if let Some(mut frame) = self.packets.packet(packet) {
-            frame.rejected = self.packets.rejected();
+        if let Some(frame) = self.packets.packet(packet) {
             out.push(DecoderEvent::Radiosonde(frame));
         }
         Some(need)

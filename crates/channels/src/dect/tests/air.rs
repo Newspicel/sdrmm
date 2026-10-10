@@ -169,7 +169,21 @@ fn reads_every_carrier_of_the_eu_band_at_once() {
         let rfpi = format!("{:010X}", CLASS_A_RFPI + u64::from(carrier));
         assert_eq!(seen.get(&rfpi), Some(&Some(carrier)), "{rfpi}");
     }
-    assert!(frames.iter().all(|frame| frame.crc_errors == 0));
+    assert_eq!(chan.rejected(), 0);
+}
+
+#[test]
+fn wideband_noise_alone_rejects_nothing() {
+    let band = DectBand::Eu;
+    let params = DectParams {
+        span: DectSpan::Band,
+        ..DectParams::default()
+    };
+    let mut chan = build(params, band.center_hz());
+    let noise = crate::testutil::complex_noise(0xBA5D, 0.3, input_rate(&params) as usize);
+    let (frames, _) = run(&mut chan, &noise);
+    assert!(frames.is_empty(), "{frames:?}");
+    assert_eq!(chan.rejected(), 0);
 }
 
 #[test]
@@ -349,7 +363,12 @@ fn decodes_two_real_base_stations_off_air() {
     assert_eq!(strong.security.dsaa2_supported, Some(false));
     assert_eq!(strong.security.dsc2_supported, Some(false));
     assert_eq!(strong.carrier, Some(7));
-    assert!(strong.crc_errors * 20 < strong.bursts, "{strong:?}");
+    let heard: u32 = stations.values().map(|frame| frame.bursts).sum();
+    assert!(
+        chan.rejected() * 20 < heard,
+        "{} of {heard}",
+        chan.rejected()
+    );
 }
 
 fn relocate(iq: &[Complex<f32>], rate: f64, band: DectBand, carrier: u8) -> Vec<Complex<f32>> {
@@ -392,7 +411,7 @@ fn separates_real_bases_moved_onto_two_carriers_of_a_wideband_capture() {
     let mut seen = BTreeMap::new();
     for frame in &frames {
         if let Some(id) = &frame.identity {
-            seen.insert((id.rfpi.clone(), frame.carrier), frame.crc_errors);
+            seen.insert((id.rfpi.clone(), frame.carrier), frame.bursts);
         }
     }
     for carrier in [1, 8] {

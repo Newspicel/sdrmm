@@ -150,7 +150,6 @@ describe("eventDetail", () => {
             chaining: 3,
           },
           errors_corrected: 1,
-          rejected: 2,
         },
       },
       adsb: { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } },
@@ -318,7 +317,6 @@ describe("eventDetail", () => {
           security: { cipher_state: "clear", encryption_events: 0 },
           extended_carriers: false,
           bursts: 12,
-          crc_errors: 0,
           level_dbfs: -31.5,
         },
       },
@@ -449,7 +447,6 @@ describe("eventDetail", () => {
         },
         extended_carriers: false,
         bursts: 40,
-        crc_errors: 2,
         level_dbfs: -28.25,
       },
     });
@@ -463,7 +460,6 @@ describe("eventDetail", () => {
     expect(shown.Ciphering).toBe("yes");
     expect(shown.Encryption).toBe("encryption active");
     expect(shown["Carriers available"]).toBe("0, 1, 2, 3, 4, 5, 6, 7, 8, 9");
-    expect(shown["A-field CRC errors"]).toBe("2");
     expect(detail.body).toContain("standard ciphering (DSC)");
   });
 
@@ -483,7 +479,6 @@ describe("eventDetail", () => {
         voice: { frames: 120, playing: true, x_crc_errors: 3, unsynced: 0, encrypted: 0, late: 0 },
         extended_carriers: false,
         bursts: 140,
-        crc_errors: 0,
         level_dbfs: -40,
       },
     });
@@ -545,20 +540,18 @@ describe("eventDetail", () => {
           chaining: 3,
         },
         errors_corrected: 1,
-        rejected: 2,
       },
     });
     expect(rear["Brake pipe"]).toBe("87 psig");
     expect(rear.Battery).toBe("low");
     expect(rear.Repaired).toBe("1");
-    expect(rear.Rejected).toBe("2");
+    expect(rear.Rejected).toBeUndefined();
     const head = fieldsOf({
       kind: "eot",
       data: {
         unit_address: 23456,
         report: { unit: "head", command: "other", code: 0x3c, copies: 2 },
         errors_corrected: 0,
-        rejected: 0,
       },
     });
     expect(head.Command).toBe("command 0x3c");
@@ -943,7 +936,6 @@ describe("eventDetail", () => {
           satellites: 9,
           battery_v: 2.9,
           errors_corrected: 3,
-          rejected: 2,
         },
       }),
     ).toMatchObject({
@@ -960,7 +952,6 @@ describe("eventDetail", () => {
       Satellites: "9",
       Battery: "2.90 V",
       Repaired: "3",
-      "Frames lost": "2",
     });
   });
 

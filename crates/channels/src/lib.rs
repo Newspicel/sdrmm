@@ -404,6 +404,10 @@ pub trait ChannelRx: Send {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs);
+
+    fn rejected(&self) -> u32 {
+        0
+    }
 }
 
 pub enum TxPayload {

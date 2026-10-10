@@ -362,8 +362,7 @@ impl Rs41 {
                     let len = *len;
                     self.receive = Receive::Hunt;
                     self.sync.clear();
-                    if let Some(mut frame) = self.frames.decode(&mut self.frame, len) {
-                        frame.rejected = self.frames.rejected();
+                    if let Some(frame) = self.frames.decode(&mut self.frame, len) {
                         out.push(DecoderEvent::Radiosonde(frame));
                     }
                 }

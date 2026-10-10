@@ -332,7 +332,6 @@ impl EotChannel {
             unit_address: decoded.unit_address,
             report: decoded.report,
             errors_corrected: decoded.errors,
-            rejected: self.rejected,
         }));
     }
 
@@ -384,6 +383,10 @@ impl ChannelRx for EotChannel {
             self.symbol(symbol, out);
         }
         self.symbols = symbols;
+    }
+
+    fn rejected(&self) -> u32 {
+        self.rejected
     }
 }
 

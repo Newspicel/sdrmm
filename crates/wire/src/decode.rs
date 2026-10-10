@@ -146,7 +146,6 @@ pub struct EotMessage {
     pub unit_address: u32,
     pub report: EotReport,
     pub errors_corrected: u32,
-    pub rejected: u32,
 }
 
 impl EotMessage {
@@ -1385,7 +1384,6 @@ pub struct DectFrame {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice: Option<DectVoice>,
     pub bursts: u32,
-    pub crc_errors: u32,
     pub level_dbfs: f32,
 }
 
@@ -2084,7 +2082,6 @@ mod tests {
                 copies: 3,
             }),
             errors_corrected: 0,
-            rejected: 0,
         };
         let json = serde_json::to_value(&message).unwrap();
         assert_eq!(json["report"]["unit"], "head");
@@ -2147,7 +2144,6 @@ mod tests {
                     copies: 3,
                 }),
                 errors_corrected: 0,
-                rejected: 0,
             }),
             DecoderEvent::Adsb(AdsbMessage::default()),
             DecoderEvent::Ais(AisMessage::default()),

@@ -87,6 +87,13 @@ impl Front {
             Self::Wifi(wifi) => wifi.reset(),
         }
     }
+
+    fn rejected(&self) -> u32 {
+        match self {
+            Self::Bluetooth(front) => front.rejected(),
+            Self::Wifi(wifi) => wifi.rejected(),
+        }
+    }
 }
 
 pub struct RemoteIdChannel {
@@ -94,7 +101,6 @@ pub struct RemoteIdChannel {
     frequency_hz: f64,
     front: Front,
     tracker: Tracker,
-    rejected: u32,
 }
 
 impl ChannelRx for RemoteIdChannel {
@@ -110,7 +116,6 @@ impl ChannelRx for RemoteIdChannel {
             frequency_hz: settings.frequency_hz,
             front: Front::new(params.link, settings.frequency_hz)?,
             tracker: Tracker::default(),
-            rejected: 0,
         })
     }
 
@@ -123,7 +128,7 @@ impl ChannelRx for RemoteIdChannel {
         }
         if params.link != self.link || settings.frequency_hz != self.frequency_hz {
             self.front = Front::new(params.link, settings.frequency_hz)?;
-            self.rejected = 0;
+            self.tracker.clear_rejected();
             self.link = params.link;
             self.frequency_hz = settings.frequency_hz;
         }
@@ -143,20 +148,21 @@ impl ChannelRx for RemoteIdChannel {
                     events: &mut out.events,
                 },
             ),
-            Front::Wifi(receiver) => {
-                let rejected = receiver.rejected();
-                self.tracker.reject(rejected.saturating_sub(self.rejected));
-                self.rejected = rejected;
-                receiver.process(
-                    iq,
-                    &mut wifi::Events {
-                        tracker: &mut self.tracker,
-                        events: &mut out.events,
-                        channel: channel_at(self.frequency_hz).map(|channel| channel.number),
-                    },
-                );
-            }
+            Front::Wifi(receiver) => receiver.process(
+                iq,
+                &mut wifi::Events {
+                    tracker: &mut self.tracker,
+                    events: &mut out.events,
+                    channel: channel_at(self.frequency_hz).map(|channel| channel.number),
+                },
+            ),
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        self.front
+            .rejected()
+            .saturating_add(self.tracker.rejected())
     }
 }
 

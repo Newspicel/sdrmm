@@ -15,6 +15,9 @@ const MAX_HANDSETS: usize = 16;
 const MULTIFRAME: u64 = 16;
 const QT_FRAME: u64 = 8;
 const ANCHOR_LIFETIME: u64 = FRAME_SAMPLES * 400;
+const SLOT_JITTER: f64 = 4.0;
+const DRIFT_PER_FRAME: f64 = FRAME_SAMPLES as f64 * 50e-6;
+const EXPECTED_FRAMES: f64 = 8.0;
 
 pub(super) fn set<T: PartialEq>(slot: &mut T, value: T, dirty: &mut bool) {
     if *slot != value {
@@ -52,8 +55,6 @@ pub(super) struct Track {
     pmid: Option<u32>,
     handsets: Vec<u32>,
     pub bursts: u32,
-    pub crc_errors: u32,
-    pub pending_errors: bool,
     pub level_dbfs: f32,
     qt_sample: Option<u64>,
     pub voice: Option<DectVoice>,
@@ -77,6 +78,16 @@ impl Track {
             && self.side == side
             && self.tuned_carrier == carrier
             && slot_distance(sample, self.anchor) <= SLOT_TOLERANCE
+    }
+
+    pub fn expects(&self, sample: u64, side: DectSide, carrier: Option<u8>) -> bool {
+        let frames = (sample.saturating_sub(self.anchor) as f64 / FRAME_SAMPLES as f64).round();
+        self.used
+            && self.bursts > 0
+            && self.side == side
+            && self.tuned_carrier == carrier
+            && frames <= EXPECTED_FRAMES
+            && slot_distance(sample, self.anchor) as f64 <= SLOT_JITTER + frames * DRIFT_PER_FRAME
     }
 
     pub fn mark_multiframe_start(&mut self, sample: u64) {
@@ -227,8 +238,38 @@ impl Track {
             handsets: self.handsets.clone(),
             voice: self.voice,
             bursts: self.bursts,
-            crc_errors: self.crc_errors,
             level_dbfs: self.level_dbfs,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn heard_at(anchor: u64) -> Track {
+        let mut track = Track::default();
+        track.reset(anchor, DectSide::Rfp, None);
+        track.bursts = 1;
+        track
+    }
+
+    #[test]
+    fn a_known_slot_is_expected_only_close_by_and_soon() {
+        let track = heard_at(1_000);
+        let at = |frames: u64, skew: u64| 1_000 + frames * FRAME_SAMPLES + skew;
+        assert!(track.expects(at(1, 4), DectSide::Rfp, None));
+        assert!(track.expects(at(8, 12), DectSide::Rfp, None));
+        assert!(!track.expects(at(1, 20), DectSide::Rfp, None));
+        assert!(!track.expects(at(9, 0), DectSide::Rfp, None));
+        assert!(!track.expects(at(1, 0), DectSide::Pp, None));
+        assert!(!track.expects(at(1, 0), DectSide::Rfp, Some(3)));
+    }
+
+    #[test]
+    fn a_slot_never_decoded_is_not_expected() {
+        let mut track = heard_at(1_000);
+        track.bursts = 0;
+        assert!(!track.expects(1_000 + FRAME_SAMPLES, DectSide::Rfp, None));
     }
 }

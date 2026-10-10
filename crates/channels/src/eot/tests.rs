@@ -36,12 +36,7 @@ fn channel() -> EotChannel {
     .unwrap()
 }
 
-fn messages(iq: &[Complex<f32>]) -> Vec<EotMessage> {
-    let mut channel = channel();
-    let mut out = ChannelOutputs::default();
-    for chunk in iq.chunks(991) {
-        channel.process(chunk, &mut out);
-    }
+fn eot(out: ChannelOutputs) -> Vec<EotMessage> {
     out.events
         .into_iter()
         .filter_map(|event| match event {
@@ -51,19 +46,30 @@ fn messages(iq: &[Complex<f32>]) -> Vec<EotMessage> {
         .collect()
 }
 
-fn bit_messages(bits: impl IntoIterator<Item = bool>) -> Vec<EotMessage> {
+fn run(iq: &[Complex<f32>]) -> (Vec<EotMessage>, u32) {
+    let mut channel = channel();
+    let mut out = ChannelOutputs::default();
+    for chunk in iq.chunks(991) {
+        channel.process(chunk, &mut out);
+    }
+    (eot(out), channel.rejected())
+}
+
+fn messages(iq: &[Complex<f32>]) -> Vec<EotMessage> {
+    run(iq).0
+}
+
+fn bit_run(bits: impl IntoIterator<Item = bool>) -> (Vec<EotMessage>, u32) {
     let mut channel = channel();
     let mut out = ChannelOutputs::default();
     for bit in bits {
         channel.symbol(if bit { 1.0 } else { -1.0 }, &mut out);
     }
-    out.events
-        .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Eot(message) => Some(message),
-            _ => None,
-        })
-        .collect()
+    (eot(out), channel.rejected())
+}
+
+fn bit_messages(bits: impl IntoIterator<Item = bool>) -> Vec<EotMessage> {
+    bit_run(bits).0
 }
 
 #[test]
@@ -75,7 +81,6 @@ fn decodes_a_rear_unit_burst_once_despite_its_repeat() {
             unit_address: 23_456,
             report: EotReport::Rear(status()),
             errors_corrected: 0,
-            rejected: 0,
         }]
     );
 }
@@ -97,7 +102,6 @@ fn decodes_a_head_unit_emergency() {
                 copies: 3,
             }),
             errors_corrected: 0,
-            rejected: 0,
         }]
     );
 }
@@ -128,14 +132,10 @@ fn a_broken_block_is_counted_not_emitted() {
         bits[at] = !bits[at];
         bits[half + at] = !bits[half + at];
     }
-    assert!(bit_messages(bits.iter().copied()).is_empty());
-    let mut stream = bits;
-    let mut next = rear();
-    next.status.pressure_psig = 0;
-    stream.extend(synth::eot::rear_bits(&next));
-    let got = bit_messages(stream);
-    assert_eq!(got.len(), 1);
-    assert_eq!(got[0].rejected, 2);
+    bits.extend([false; 400]);
+    let (got, rejected) = bit_run(bits);
+    assert!(got.is_empty(), "{got:?}");
+    assert_eq!(rejected, 2);
 }
 
 #[test]
@@ -150,13 +150,13 @@ fn corrected_bits_are_reported() {
 }
 
 #[test]
-fn noise_alone_emits_nothing() {
+fn noise_alone_emits_and_rejects_nothing() {
     let mut iq = synth::silence(RATE as usize * 20);
     synth::add_noise(&mut iq, 0xBAD, 1.0);
-    assert!(messages(&iq).is_empty());
+    assert_eq!(run(&iq), (Vec::new(), 0));
 }
 
-fn weak_copies(sync_lost: bool) -> Vec<EotMessage> {
+fn weak_copies(sync_lost: bool) -> (Vec<EotMessage>, u32) {
     let bits = synth::eot::rear_bits(&rear());
     let half = bits.len() / 2;
     let mut symbols = bits
@@ -179,26 +179,20 @@ fn weak_copies(sync_lost: bool) -> Vec<EotMessage> {
     for symbol in symbols {
         channel.symbol(symbol, &mut out);
     }
-    out.events
-        .into_iter()
-        .filter_map(|event| match event {
-            DecoderEvent::Eot(message) => Some(message),
-            _ => None,
-        })
-        .collect()
+    (eot(out), channel.rejected())
 }
 
 #[test]
 fn two_weak_copies_add_up_to_one_good_frame() {
-    let got = weak_copies(false);
+    let (got, rejected) = weak_copies(false);
     assert_eq!(got.len(), 1, "{got:?}");
     assert_eq!(got[0].report, EotReport::Rear(status()));
-    assert_eq!(got[0].rejected, 0);
+    assert_eq!(rejected, 0);
 }
 
 #[test]
 fn a_repeat_that_never_syncs_still_joins_the_first_copy() {
-    let got = weak_copies(true);
+    let (got, _) = weak_copies(true);
     assert_eq!(got.len(), 1, "{got:?}");
     assert_eq!(got[0].report, EotReport::Rear(status()));
 }

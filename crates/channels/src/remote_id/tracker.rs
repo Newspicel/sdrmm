@@ -24,8 +24,12 @@ pub(crate) struct Tracker {
 }
 
 impl Tracker {
-    pub(crate) fn reject(&mut self, count: u32) {
-        self.rejected = self.rejected.saturating_add(count);
+    pub(crate) fn rejected(&self) -> u32 {
+        self.rejected
+    }
+
+    pub(crate) fn clear_rejected(&mut self) {
+        self.rejected = 0;
     }
 
     pub(crate) fn frame(&mut self, heard: Heard<'_>) -> Option<RemoteIdFrame> {
@@ -50,7 +54,6 @@ impl Tracker {
             ssid: heard.ssid,
             level_dbfs: heard.level_dbfs,
             messages,
-            rejected: self.rejected,
         })
     }
 
@@ -73,7 +76,6 @@ impl Tracker {
             ssid: heard.ssid,
             level_dbfs: heard.level_dbfs,
             messages,
-            rejected: self.rejected,
         }
     }
 

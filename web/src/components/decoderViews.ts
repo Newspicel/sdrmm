@@ -81,7 +81,6 @@ export interface DectStation {
   voice: "playing" | "muted" | null;
   handsets: number;
   bursts: number;
-  crcErrors: number;
   levelDbfs: number;
   at: string;
 }
@@ -115,7 +114,6 @@ export function dectStations(records: readonly DecodedRecordOf<"dect">[]): DectS
       voice: voice ?? previous?.voice ?? null,
       handsets: (frame.handsets ?? []).length,
       bursts: frame.bursts,
-      crcErrors: frame.crc_errors,
       levelDbfs: frame.level_dbfs,
       at: record.at,
     });

@@ -168,7 +168,6 @@ const DETAIL: {
             ["Command", hotCommand(m.report)],
             ["Copies", `${m.report.copies}/3`],
             ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
-            ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
           ]
         : [
             ["Unit", "Rear (EOT)"],
@@ -184,7 +183,6 @@ const DETAIL: {
             ["Arming", m.report.arming],
             ["Message type", String(m.report.message_type)],
             ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
-            ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
           ],
     ),
     body: null,
@@ -593,7 +591,6 @@ const DETAIL: {
       ["Satellites", f.satellites == null ? undefined : String(f.satellites)],
       ["Battery", f.battery_v == null ? undefined : `${f.battery_v.toFixed(2)} V`],
       ["Repaired", f.errors_corrected > 0 ? String(f.errors_corrected) : undefined],
-      ["Frames lost", (f.rejected ?? 0) > 0 ? String(f.rejected) : undefined],
     ]),
     body: null,
   }),
@@ -868,7 +865,6 @@ function dectDetail(frame: DectFrame): EventDetail {
       ["Voice encrypted", count(frame.voice?.encrypted)],
       ["Voice late", count(frame.voice?.late)],
       ["Bursts", String(frame.bursts)],
-      ["A-field CRC errors", String(frame.crc_errors)],
       ["Level", `${frame.level_dbfs.toFixed(1)} dBFS`],
     ]),
     body: capabilities.length === 0 ? null : capabilities.join("\n"),
@@ -980,7 +976,6 @@ function remoteIdDetail(frame: RemoteIdFrame): EventDetail {
     ["SSID", frame.ssid],
     ["Counter", frame.counter == null ? undefined : String(frame.counter)],
     ["Level", `${frame.level_dbfs.toFixed(1)} dBFS`],
-    ["Rejected", frame.rejected ? String(frame.rejected) : undefined],
   ];
   return { fields: fields(rows), body: remoteIdText(frame) };
 }
@@ -1036,7 +1031,6 @@ function bleDetail(advert: BleAdvert): EventDetail {
     ],
     ["Level", `${advert.level_dbfs.toFixed(1)} dBFS`],
     ["Repeats", advert.repeats ? String(advert.repeats) : undefined],
-    ["Rejected", advert.rejected ? String(advert.rejected) : undefined],
   ];
   return { fields: fields(rows), body: advert.data || null };
 }

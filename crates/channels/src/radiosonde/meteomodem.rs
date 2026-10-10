@@ -170,8 +170,7 @@ impl Meteomodem {
         if *len == *expected {
             let len = *len;
             self.restart();
-            if let Some(mut frame) = self.frames.decode(&self.frame[..len], self.accept) {
-                frame.rejected = self.frames.rejected();
+            if let Some(frame) = self.frames.decode(&self.frame[..len], self.accept) {
                 out.push(DecoderEvent::Radiosonde(frame));
             }
         }
