@@ -51,6 +51,7 @@ fn run(channel: &mut DrmChannel, iq: &[Complex<f32>]) -> ChannelOutputs {
     let mut out = ChannelOutputs::default();
     for block in iq.chunks(9_973) {
         channel.process(block, &mut out);
+        wait_for_media(channel);
     }
     let until = Instant::now() + Duration::from_secs(3);
     while channel.media.audio_frames < 20 && Instant::now() < until {
@@ -59,6 +60,13 @@ fn run(channel: &mut DrmChannel, iq: &[Complex<f32>]) -> ChannelOutputs {
     }
     channel.report(&mut out);
     out
+}
+
+fn wait_for_media(channel: &DrmChannel) {
+    let until = Instant::now() + Duration::from_secs(1);
+    while !channel.media.input_idle() && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 fn two_services(mode: Robustness) -> Config {

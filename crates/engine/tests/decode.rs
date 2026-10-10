@@ -2143,7 +2143,13 @@ async fn a_ble_beacon_survives_the_ddc() {
             params: ChannelParams::Ble(BleParams::default()),
             blanker: Default::default(),
         },
-        |event| matches!(event, DecoderEvent::Ble(_)),
+        |event| {
+            matches!(
+                event,
+                DecoderEvent::Ble(advert)
+                    if matches!(advert.beacon, Some(BleBeacon::Ibeacon { .. }))
+            )
+        },
     )
     .await;
     let DecoderEvent::Ble(advert) = record.event else {

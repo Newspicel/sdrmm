@@ -388,6 +388,11 @@ impl BroadcastMedia {
         self.video_error = None;
     }
 
+    #[cfg(test)]
+    pub fn input_idle(&self) -> bool {
+        self.input.slots() == INPUT_SLOTS
+    }
+
     pub fn audio_gap(&mut self, count: u32, reason: &str) {
         self.epoch = self.epoch.wrapping_add(1);
         self.audio_errors = self.audio_errors.saturating_add(count);
