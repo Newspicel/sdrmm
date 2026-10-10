@@ -103,7 +103,7 @@ fn teardown_of(store: Store, graph: &PatchGraph, id: &str) -> Option<Teardown> {
                     action: TimeMachineAction::Disarm,
                     node: id.to_owned(),
                     stream,
-                    settings: machine.clone(),
+                    settings: *machine,
                 },
             })
         }

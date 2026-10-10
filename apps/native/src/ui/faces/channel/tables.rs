@@ -3,7 +3,7 @@ use sdrmm_wire::channel::{
     DabTransmissionMode, DatvCodeRate, DatvRollOff, DatvStandard, DectBand, DectSides, DmrSlots,
     DrmMode, DvbtBandwidth, DvbtStandard, IlsComponent, IridiumSpan, NfmScramblerMode, NfmToneMode,
     NxdnBandwidth, PocsagBaud, PskBaud, RadioClockStandard, RttyStopBits, SelcallSystem, Sideband,
-    SstvMode, SubghzModulation,
+    SstvMode,
 };
 
 use super::settings::SquelchMode;
@@ -157,10 +157,6 @@ pub const DRM_MODES: Options<DrmMode> = &[
 pub const DEEMPHASIS_US: Options<u32> = &[(50, "50 µs"), (75, "75 µs")];
 pub const RTTY_BAUDS: &[(f64, &str)] = &[(45.45, "45.45"), (50.0, "50"), (75.0, "75")];
 pub const RTTY_SHIFTS_HZ: &[(f64, &str)] = &[(170.0, "170"), (450.0, "450"), (850.0, "850")];
-pub const SUBGHZ_MODULATIONS: Options<SubghzModulation> = &[
-    (SubghzModulation::Ook, "OOK/ASK"),
-    (SubghzModulation::Fsk, "FSK"),
-];
 pub const PSK_BAUDS: Options<PskBaud> = &[
     (PskBaud::Psk31, "PSK31"),
     (PskBaud::Psk63, "PSK63"),

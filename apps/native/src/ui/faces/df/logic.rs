@@ -1,7 +1,12 @@
 use sdrmm_wire::{
-    coherent::{ArrayGeometry, CalState},
-    device::Coherence,
+    array::ProcessorGate,
+    processor::df::{DfPeak, DfReading},
 };
+
+use crate::ui::faces::processor::Chip;
+
+pub const NEEDS_HEADING: &str = "Needs heading";
+const MAX_WEDGE_DEG: f64 = 179.9;
 
 pub const COMPASS_MARKS: [(f64, &str); 8] = [
     (0.0, "N"),
@@ -14,6 +19,65 @@ pub const COMPASS_MARKS: [(f64, &str); 8] = [
     (315.0, "NW"),
 ];
 
+pub const TRUE_MARKS: [(f64, &str); 4] = [(0.0, "N"), (90.0, "E"), (180.0, "S"), (270.0, "W")];
+pub const RELATIVE_MARKS: [(f64, &str); 4] = [(0.0, "F"), (90.0, "R"), (180.0, "B"), (270.0, "L")];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BearingFrame {
+    Relative,
+    True,
+}
+
+#[must_use]
+pub fn frame_options(true_available: bool) -> Vec<(BearingFrame, &'static str)> {
+    let mut options = vec![(BearingFrame::Relative, "Rel")];
+    if true_available {
+        options.push((BearingFrame::True, "True"));
+    }
+    options
+}
+
+#[must_use]
+pub fn frame_title(true_available: bool) -> &'static str {
+    if true_available {
+        "Relative to the array or from true north"
+    } else {
+        NEEDS_HEADING
+    }
+}
+
+#[must_use]
+pub fn shown_frame(picked: Option<BearingFrame>, true_available: bool) -> BearingFrame {
+    if true_available {
+        picked.unwrap_or(BearingFrame::True)
+    } else {
+        BearingFrame::Relative
+    }
+}
+
+#[must_use]
+pub fn rose_letters(frame: BearingFrame) -> &'static [(f64, &'static str)] {
+    match frame {
+        BearingFrame::True => &TRUE_MARKS,
+        BearingFrame::Relative => &RELATIVE_MARKS,
+    }
+}
+
+#[must_use]
+pub fn frame_rotation(reading: Option<&DfReading>, frame: BearingFrame) -> f64 {
+    match frame {
+        BearingFrame::True => reading.and_then(|found| found.azimuth_deg).unwrap_or(0.0),
+        BearingFrame::Relative => 0.0,
+    }
+}
+
+#[must_use]
+pub fn heading_tick(reading: Option<&DfReading>, frame: BearingFrame) -> Option<f64> {
+    (frame == BearingFrame::True)
+        .then(|| reading.and_then(|found| found.azimuth_deg))
+        .flatten()
+}
+
 #[must_use]
 pub fn polar_point(bearing_deg: f64, radius: f64, centre: f64) -> (f64, f64) {
     let angle = (bearing_deg - 90.0).to_radians();
@@ -21,305 +85,542 @@ pub fn polar_point(bearing_deg: f64, radius: f64, centre: f64) -> (f64, f64) {
 }
 
 #[must_use]
-pub fn spectrum_points(spectrum: &[u8], centre: f64, inner: f64, outer: f64) -> Vec<(f64, f64)> {
+pub fn spectrum_points(
+    spectrum: &[u8],
+    centre: f64,
+    inner: f64,
+    outer: f64,
+    rotate_deg: f64,
+) -> Vec<(f64, f64)> {
     let points = spectrum.len() as f64;
     spectrum
         .iter()
         .enumerate()
         .map(|(index, level)| {
             let radius = inner + (outer - inner) * f64::from(*level) / 255.0;
-            polar_point(index as f64 * 360.0 / points, radius, centre)
+            polar_point(index as f64 * 360.0 / points + rotate_deg, radius, centre)
         })
         .collect()
 }
 
 #[must_use]
-pub fn bearing_label(bearing_deg: f32) -> String {
-    format!("{bearing_deg:05.1}\u{b0}")
+pub fn peak_deg(peak: &DfPeak, frame: BearingFrame) -> Option<f64> {
+    match frame {
+        BearingFrame::True => peak.true_deg.map(f64::from),
+        BearingFrame::Relative => Some(f64::from(peak.relative_deg)),
+    }
+}
+
+fn mirror_deg(peak: &DfPeak, frame: BearingFrame) -> Option<f64> {
+    match frame {
+        BearingFrame::True => peak.mirror_true_deg,
+        BearingFrame::Relative => peak.mirror_deg,
+    }
+    .map(f64::from)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CalVerdict {
-    Injecting,
-    PhaseUnknown,
-    Solving,
-    Solved,
+pub enum NeedleWeight {
+    Primary,
+    Secondary,
+    Mirror,
 }
 
-impl CalVerdict {
-    #[must_use]
-    pub fn of(cal: Option<&CalState>) -> Self {
-        match cal {
-            Some(cal) if cal.reference_on => Self::Injecting,
-            Some(cal) if !cal.phase_unknown && cal.solved => Self::Solved,
-            Some(cal) if !cal.phase_unknown => Self::Solving,
-            _ => Self::PhaseUnknown,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Needle {
+    pub deg: f64,
+    pub weight: NeedleWeight,
+}
+
+#[must_use]
+pub fn rose_needles(peaks: &[DfPeak], frame: BearingFrame) -> Vec<Needle> {
+    let mut needles = Vec::new();
+    for (rank, peak) in peaks.iter().enumerate() {
+        if let Some(deg) = peak_deg(peak, frame) {
+            let weight = if rank == 0 {
+                NeedleWeight::Primary
+            } else {
+                NeedleWeight::Secondary
+            };
+            needles.push(Needle { deg, weight });
+        }
+        if let Some(deg) = mirror_deg(peak, frame) {
+            needles.push(Needle {
+                deg,
+                weight: NeedleWeight::Mirror,
+            });
         }
     }
+    distinct_needles(needles)
+}
 
-    #[must_use]
-    pub fn text(self) -> &'static str {
-        match self {
-            Self::Injecting => "noise source in: paused",
-            Self::PhaseUnknown => "phase unknown: calibrate",
-            Self::Solving => "calibrating",
-            Self::Solved => "calibrated",
+#[must_use]
+pub fn distinct_needles(needles: Vec<Needle>) -> Vec<Needle> {
+    let same = |a: &Needle, b: &Needle| {
+        a.weight == b.weight && (a.deg * 100.0).round() == (b.deg * 100.0).round()
+    };
+    let mut kept: Vec<Needle> = Vec::with_capacity(needles.len());
+    for needle in needles {
+        if !kept.iter().any(|held| same(held, &needle)) {
+            kept.push(needle);
         }
     }
+    kept
+}
 
-    #[must_use]
-    pub fn trusts_bearing(self) -> bool {
-        matches!(self, Self::Solving | Self::Solved)
-    }
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Wedge {
+    pub deg: f64,
+    pub sigma_deg: f64,
 }
 
 #[must_use]
-pub fn tier_label(cal: Option<&CalState>) -> &'static str {
-    match cal.map(|cal| cal.tier) {
-        Some(Coherence::PhaseCoherent) => "shared LO",
-        Some(Coherence::TimeSync) => "shared clock",
-        _ => "not coherent",
-    }
+pub fn rose_wedge(peaks: &[DfPeak], frame: BearingFrame) -> Option<Wedge> {
+    let first = peaks.first()?;
+    Some(Wedge {
+        deg: peak_deg(first, frame)?,
+        sigma_deg: f64::from(first.sigma_deg),
+    })
 }
 
 #[must_use]
-pub fn lane_quality_percent(quality: f32) -> u32 {
-    (quality.clamp(0.0, 1.0) * 100.0).round() as u32
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Shape {
-    Circle,
-    Line,
-}
-
-#[must_use]
-pub fn shape_of(geometry: &ArrayGeometry) -> Option<Shape> {
-    match geometry {
-        ArrayGeometry::Uca { .. } => Some(Shape::Circle),
-        ArrayGeometry::Ula { .. } => Some(Shape::Line),
-        ArrayGeometry::Explicit { .. } => None,
-    }
+pub fn wedge_points(wedge: Wedge, centre: f64, radius: f64) -> Vec<(f64, f64)> {
+    let half = wedge.sigma_deg.clamp(0.0, MAX_WEDGE_DEG);
+    let steps = (half * 2.0).ceil().max(1.0) as usize;
+    let start = wedge.deg - half;
+    let arc = (0..=steps).map(|step| {
+        polar_point(
+            start + 2.0 * half * step as f64 / steps as f64,
+            radius,
+            centre,
+        )
+    });
+    std::iter::once((centre, centre)).chain(arc).collect()
 }
 
 #[must_use]
-pub fn geometry_of(shape: Shape, current: &ArrayGeometry) -> ArrayGeometry {
-    let count = current.count();
-    match shape {
-        Shape::Line => ArrayGeometry::Ula {
-            spacing_m: 0.5,
-            count,
-        },
-        Shape::Circle => ArrayGeometry::Uca {
-            radius_m: 0.35,
-            count,
-        },
-    }
+pub fn bearing_label(deg: impl Into<f64>) -> String {
+    let wrapped = deg.into().round().rem_euclid(360.0);
+    format!("{:03}\u{b0}", wrapped as u32 % 360)
 }
 
 #[must_use]
-pub fn with_count(geometry: &ArrayGeometry, count: u32) -> ArrayGeometry {
-    match geometry {
-        ArrayGeometry::Uca { radius_m, .. } => ArrayGeometry::Uca {
-            radius_m: *radius_m,
-            count,
-        },
-        ArrayGeometry::Ula { spacing_m, .. } => ArrayGeometry::Ula {
-            spacing_m: *spacing_m,
-            count,
-        },
-        explicit @ ArrayGeometry::Explicit { .. } => explicit.clone(),
-    }
+pub fn peak_text(peak: &DfPeak, frame: BearingFrame) -> String {
+    peak_deg(peak, frame).map_or_else(|| "-".to_owned(), bearing_label)
 }
 
 #[must_use]
-pub fn with_extent(geometry: &ArrayGeometry, metres: f64) -> ArrayGeometry {
-    match geometry {
-        ArrayGeometry::Uca { count, .. } => ArrayGeometry::Uca {
-            radius_m: metres,
-            count: *count,
-        },
-        ArrayGeometry::Ula { count, .. } => ArrayGeometry::Ula {
-            spacing_m: metres,
-            count: *count,
-        },
-        explicit @ ArrayGeometry::Explicit { .. } => explicit.clone(),
-    }
-}
-
-#[must_use]
-pub fn extent_of(geometry: &ArrayGeometry) -> Option<f64> {
-    match geometry {
-        ArrayGeometry::Uca { radius_m, .. } => Some(*radius_m),
-        ArrayGeometry::Ula { spacing_m, .. } => Some(*spacing_m),
-        ArrayGeometry::Explicit { .. } => None,
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Beam {
-    Follow,
-    Fixed,
-}
-
-#[must_use]
-pub fn beam_mode(beam_bearing_deg: Option<f64>) -> Beam {
-    if beam_bearing_deg.is_some() {
-        Beam::Fixed
+pub fn sigma_text(sigma_deg: f32) -> String {
+    if sigma_deg < 1.0 {
+        format!("{sigma_deg:.1}\u{b0}")
     } else {
-        Beam::Follow
+        format!("{}\u{b0}", sigma_deg.round())
     }
 }
 
 #[must_use]
-pub fn beam_azimuth(mode: Beam, bearing_deg: Option<f64>) -> Option<f64> {
-    match mode {
-        Beam::Follow => None,
-        Beam::Fixed => Some(bearing_deg.unwrap_or(0.0).round().rem_euclid(360.0)),
+pub fn percent_text(fraction: f32) -> String {
+    format!("{}%", (fraction.clamp(0.0, 1.0) * 100.0).round())
+}
+
+#[must_use]
+pub fn peak_summary(peak: &DfPeak, frame: BearingFrame) -> String {
+    format!(
+        "{} {} \u{b1}{}",
+        peak_text(peak, frame),
+        percent_text(peak.confidence),
+        sigma_text(peak.sigma_deg)
+    )
+}
+
+#[must_use]
+pub fn readout_rows(
+    reading: Option<&DfReading>,
+    frame: BearingFrame,
+    age: String,
+) -> Vec<(String, String)> {
+    let first = reading.and_then(|found| found.peaks.first());
+    let dash = || "-".to_owned();
+    let mut rows = vec![
+        (
+            "Bearing".to_owned(),
+            first.map_or_else(dash, |peak| peak_text(peak, frame)),
+        ),
+        (
+            "\u{b1}".to_owned(),
+            first.map_or_else(dash, |peak| sigma_text(peak.sigma_deg)),
+        ),
+        (
+            "Fit".to_owned(),
+            reading.map_or_else(dash, |found| percent_text(found.fit)),
+        ),
+        (
+            "SNR".to_owned(),
+            reading.map_or_else(dash, |found| format!("{} dB", found.snr_db.round())),
+        ),
+        ("Src".to_owned(), reading.map_or_else(dash, sources_text)),
+        ("Age".to_owned(), age),
+    ];
+    let others = reading.map_or(&[][..], |found| found.peaks.get(1..).unwrap_or_default());
+    rows.extend(
+        others
+            .iter()
+            .enumerate()
+            .map(|(index, peak)| (format!("#{}", index + 2), peak_summary(peak, frame))),
+    );
+    rows
+}
+
+fn sources_text(reading: &DfReading) -> String {
+    let rule = if reading.sources_auto {
+        "auto"
+    } else {
+        "fixed"
+    };
+    format!("{} {rule}", reading.sources)
+}
+
+struct ReadingChip {
+    on: fn(&DfReading) -> bool,
+    label: &'static str,
+    title: &'static str,
+}
+
+const READING_CHIPS: [ReadingChip; 9] = [
+    ReadingChip {
+        on: |reading| reading.squelched,
+        label: "Squelch",
+        title: "Peak below squelch",
+    },
+    ReadingChip {
+        on: |reading| reading.azimuth_deg.is_none(),
+        label: "No heading",
+        title: "Wire a GPS with heading",
+    },
+    ReadingChip {
+        on: |reading| reading.station.is_none(),
+        label: "No position",
+        title: "Wire a GPS to the array to send bearings",
+    },
+    ReadingChip {
+        on: |reading| reading.aliasing,
+        label: "Aliased",
+        title: "Elements more than half a wavelength apart",
+    },
+    ReadingChip {
+        on: |reading| reading.mode_aliasing,
+        label: "Mode alias",
+        title: "Too high for phase modes on this circle",
+    },
+    ReadingChip {
+        on: |reading| reading.mirror,
+        label: "Mirror",
+        title: "A line array cannot tell front from back",
+    },
+    ReadingChip {
+        on: |reading| reading.rotating,
+        label: "Rotating",
+        title: "Turning too fast, blocks skipped",
+    },
+    ReadingChip {
+        on: |reading| reading.singular,
+        label: "Singular",
+        title: "Covariance could not be inverted",
+    },
+    ReadingChip {
+        on: |reading| reading.table_out_of_range,
+        label: "Table off",
+        title: "Outside the calibration table",
+    },
+];
+
+#[must_use]
+pub fn df_chips(
+    reading: Option<&DfReading>,
+    gate: Option<ProcessorGate>,
+    stale: bool,
+) -> Vec<Chip> {
+    let mut chips = Vec::new();
+    if let Some(gate) = gate {
+        chips.push(Chip::danger(gate.label(), "The array holds this finder"));
     }
+    if stale {
+        chips.push(Chip::danger("Stale", "No reading for three report periods"));
+    }
+    if let Some(reading) = reading {
+        chips.extend(
+            READING_CHIPS
+                .iter()
+                .filter(|chip| (chip.on)(reading))
+                .map(|chip| Chip::warn(chip.label, chip.title)),
+        );
+    }
+    chips
 }
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::coherent::{ArrayElement, DfParams};
+    use sdrmm_wire::geo::LatLon;
 
     use super::*;
 
-    fn cal(phase_unknown: bool, solved: bool, reference_on: bool, tier: Coherence) -> CalState {
-        CalState {
-            tier,
-            lanes: Vec::new(),
-            phase_unknown,
-            solved,
-            reference_on,
+    fn peak() -> DfPeak {
+        DfPeak {
+            relative_deg: 47.0,
+            true_deg: Some(137.0),
+            power_db: -40.0,
+            confidence: 0.82,
+            sigma_deg: 3.1,
+            ..DfPeak::default()
         }
     }
 
-    fn solved() -> CalState {
-        cal(false, true, false, Coherence::PhaseCoherent)
+    fn reading() -> DfReading {
+        DfReading {
+            peaks: vec![peak()],
+            azimuth_deg: Some(90.0),
+            station: Some(LatLon {
+                lat: 52.0,
+                lon: 13.0,
+            }),
+            sources: 1,
+            sources_auto: true,
+            ..DfReading::default()
+        }
     }
 
-    #[test]
-    fn keeps_the_element_count_when_the_shape_changes() {
-        let line = geometry_of(
-            Shape::Line,
-            &ArrayGeometry::Uca {
-                radius_m: 0.35,
-                count: 6,
-            },
-        );
-        assert_eq!(
-            line,
-            ArrayGeometry::Ula {
-                spacing_m: 0.5,
-                count: 6
-            }
-        );
-        assert_eq!(geometry_of(Shape::Circle, &line).count(), 6);
-    }
-
-    #[test]
-    fn leaves_explicit_positions_alone_when_the_count_is_edited() {
-        let explicit = ArrayGeometry::Explicit {
-            positions: vec![ArrayElement { x_m: 0.0, y_m: 0.0 }],
-        };
-        assert_eq!(with_count(&explicit, 8), explicit);
-        assert_eq!(with_extent(&explicit, 2.0), explicit);
-        assert_eq!(
-            with_count(
-                &ArrayGeometry::Uca {
-                    radius_m: 1.0,
-                    count: 2
-                },
-                8
-            ),
-            ArrayGeometry::Uca {
-                radius_m: 1.0,
-                count: 8
-            }
-        );
-        assert_eq!(shape_of(&explicit), None);
-        assert_eq!(extent_of(&explicit), None);
+    fn close(a: (f64, f64), b: (f64, f64)) -> bool {
+        (a.0 - b.0).abs() < 1e-6 && (a.1 - b.1).abs() < 1e-6
     }
 
     #[test]
     fn puts_north_at_the_top_and_runs_clockwise() {
-        let close =
-            |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-6 && (a.1 - b.1).abs() < 1e-6;
         assert!(close(polar_point(0.0, 50.0, 100.0), (100.0, 50.0)));
         assert!(close(polar_point(90.0, 50.0, 100.0), (150.0, 100.0)));
         assert!((polar_point(180.0, 50.0, 100.0).1 - 150.0).abs() < 1e-6);
     }
 
     #[test]
-    fn a_pseudospectrum_is_one_point_per_sample_between_the_rings() {
-        let points = spectrum_points(&[0, 128, 255, 128], 100.0, 20.0, 80.0);
-        assert_eq!(points.len(), 4);
-        assert!((points[0].1 - 80.0).abs() < 1e-6);
-        assert!((points[2].1 - 180.0).abs() < 1e-6);
-        assert!(spectrum_points(&[], 100.0, 20.0, 80.0).is_empty());
+    fn the_spectrum_turns_with_the_array_azimuth() {
+        let spectrum = [255, 0, 0, 0];
+        let rotation = frame_rotation(Some(&reading()), BearingFrame::True);
+        assert!((rotation - 90.0).abs() < 1e-9);
+        assert!(close(
+            spectrum_points(&spectrum, 50.0, 10.0, 40.0, rotation)[0],
+            (90.0, 50.0)
+        ));
+        let still = frame_rotation(Some(&reading()), BearingFrame::Relative);
+        assert!(close(
+            spectrum_points(&spectrum, 50.0, 10.0, 40.0, still)[0],
+            (50.0, 10.0)
+        ));
+        assert!(spectrum_points(&[], 50.0, 10.0, 40.0, 0.0).is_empty());
     }
 
     #[test]
-    fn refuses_to_call_an_unknown_phase_anything_else() {
-        assert_eq!(CalVerdict::of(None), CalVerdict::PhaseUnknown);
-        let unknown = cal(true, true, false, Coherence::PhaseCoherent);
-        assert_eq!(CalVerdict::of(Some(&unknown)), CalVerdict::PhaseUnknown);
-        let solving = cal(false, false, false, Coherence::PhaseCoherent);
-        assert_eq!(CalVerdict::of(Some(&solving)), CalVerdict::Solving);
-        let injecting = cal(false, true, true, Coherence::PhaseCoherent);
-        assert_eq!(CalVerdict::of(Some(&injecting)), CalVerdict::Injecting);
-        let both = cal(true, true, true, Coherence::PhaseCoherent);
-        assert_eq!(CalVerdict::of(Some(&both)), CalVerdict::Injecting);
-        assert_eq!(CalVerdict::of(Some(&solved())), CalVerdict::Solved);
-        assert!(CalVerdict::PhaseUnknown.text().contains("calibrate"));
-        assert!(CalVerdict::Injecting.text().contains("paused"));
-        assert!(!CalVerdict::Injecting.trusts_bearing());
-        assert!(CalVerdict::Solving.trusts_bearing());
+    fn true_is_offered_and_picked_only_with_a_heading() {
+        assert_eq!(frame_options(false), vec![(BearingFrame::Relative, "Rel")]);
+        assert_eq!(frame_options(true).len(), 2);
+        assert_eq!(frame_title(false), NEEDS_HEADING);
+        assert_eq!(shown_frame(None, true), BearingFrame::True);
+        assert_eq!(
+            shown_frame(Some(BearingFrame::Relative), true),
+            BearingFrame::Relative
+        );
+        assert_eq!(
+            shown_frame(Some(BearingFrame::True), false),
+            BearingFrame::Relative
+        );
     }
 
     #[test]
-    fn says_what_the_hardware_actually_shares() {
-        assert_eq!(tier_label(Some(&solved())), "shared LO");
-        let clock = cal(false, true, false, Coherence::TimeSync);
-        assert_eq!(tier_label(Some(&clock)), "shared clock");
-        let none = cal(false, true, false, Coherence::None);
-        assert_eq!(tier_label(Some(&none)), "not coherent");
-        assert_eq!(tier_label(None), "not coherent");
+    fn the_letters_switch_with_the_frame() {
+        let labels = |frame| {
+            rose_letters(frame)
+                .iter()
+                .map(|(_, label)| *label)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(labels(BearingFrame::Relative), ["F", "R", "B", "L"]);
+        assert_eq!(labels(BearingFrame::True), ["N", "E", "S", "W"]);
+        assert_eq!(
+            heading_tick(Some(&reading()), BearingFrame::True),
+            Some(90.0)
+        );
+        assert_eq!(heading_tick(Some(&reading()), BearingFrame::Relative), None);
     }
 
     #[test]
-    fn pads_a_bearing_so_the_readout_never_jumps_width() {
-        assert_eq!(bearing_label(7.24), "007.2\u{b0}");
-        assert_eq!(bearing_label(137.5), "137.5\u{b0}");
+    fn each_peak_gets_a_needle_and_a_mirror_in_the_chosen_frame() {
+        let first = DfPeak {
+            mirror_deg: Some(313.0),
+            mirror_true_deg: Some(43.0),
+            ..peak()
+        };
+        let second = DfPeak {
+            relative_deg: 200.0,
+            true_deg: Some(290.0),
+            confidence: 0.4,
+            sigma_deg: 0.42,
+            ..peak()
+        };
+        let needles = rose_needles(&[first.clone(), second.clone()], BearingFrame::True);
+        assert_eq!(
+            needles,
+            vec![
+                Needle {
+                    deg: 137.0,
+                    weight: NeedleWeight::Primary
+                },
+                Needle {
+                    deg: 43.0,
+                    weight: NeedleWeight::Mirror
+                },
+                Needle {
+                    deg: 290.0,
+                    weight: NeedleWeight::Secondary
+                },
+            ]
+        );
+        assert_eq!(peak_text(&first, BearingFrame::True), "137\u{b0}");
+        assert_eq!(peak_text(&first, BearingFrame::Relative), "047\u{b0}");
+        let unheaded = DfPeak {
+            true_deg: None,
+            ..peak()
+        };
+        assert_eq!(peak_text(&unheaded, BearingFrame::True), "-");
+        assert_eq!(
+            peak_summary(&second, BearingFrame::True),
+            "290\u{b0} 40% \u{b1}0.4\u{b0}"
+        );
     }
 
     #[test]
-    fn clamps_a_lane_quality_to_a_bar_width() {
-        assert_eq!(lane_quality_percent(-1.0), 0);
-        assert_eq!(lane_quality_percent(0.5), 50);
-        assert_eq!(lane_quality_percent(3.0), 100);
+    fn identical_needles_are_drawn_once() {
+        let twice = vec![
+            Needle {
+                deg: 10.001,
+                weight: NeedleWeight::Mirror,
+            },
+            Needle {
+                deg: 10.0,
+                weight: NeedleWeight::Mirror,
+            },
+            Needle {
+                deg: 10.0,
+                weight: NeedleWeight::Primary,
+            },
+        ];
+        assert_eq!(distinct_needles(twice).len(), 2);
     }
 
     #[test]
-    fn the_default_array_is_one_the_server_accepts() {
-        let params = DfParams::default();
-        assert!(params.geometry.count() >= 2);
-        assert!(params.sources < params.geometry.count());
-        assert!(params.report_ms >= 100);
+    fn the_wedge_spans_one_sigma_either_side_and_never_closes_the_circle() {
+        let wedge = rose_wedge(&[peak()], BearingFrame::Relative);
+        assert_eq!(
+            wedge,
+            Some(Wedge {
+                deg: 47.0,
+                sigma_deg: f64::from(3.1_f32)
+            })
+        );
+        assert_eq!(rose_wedge(&[], BearingFrame::True), None);
+        let points = wedge_points(
+            Wedge {
+                deg: 0.0,
+                sigma_deg: 10.0,
+            },
+            100.0,
+            50.0,
+        );
+        assert!(close(points[0], (100.0, 100.0)));
+        assert!(close(points[1], polar_point(-10.0, 50.0, 100.0)));
+        assert!(close(
+            points[points.len() - 1],
+            polar_point(10.0, 50.0, 100.0)
+        ));
+        let wide = wedge_points(
+            Wedge {
+                deg: 0.0,
+                sigma_deg: 400.0,
+            },
+            100.0,
+            50.0,
+        );
+        assert!(!close(wide[1], wide[wide.len() - 1]));
     }
 
     #[test]
-    fn follows_the_bearing_until_the_operator_pins_it() {
-        assert_eq!(beam_mode(None), Beam::Follow);
-        assert_eq!(beam_mode(Some(0.0)), Beam::Fixed);
-        assert_eq!(beam_azimuth(Beam::Follow, Some(137.0)), None);
+    fn bearings_read_as_three_whole_degrees() {
+        assert_eq!(bearing_label(359.7), "000\u{b0}");
+        assert_eq!(bearing_label(-5.0), "355\u{b0}");
+        assert_eq!(bearing_label(7.24_f32), "007\u{b0}");
+        assert_eq!(sigma_text(3.1), "3\u{b0}");
+        assert_eq!(sigma_text(0.42), "0.4\u{b0}");
+        assert_eq!(percent_text(1.7), "100%");
     }
 
     #[test]
-    fn pins_the_beam_where_the_array_is_already_pointing() {
-        assert_eq!(beam_azimuth(Beam::Fixed, Some(137.4)), Some(137.0));
-        assert_eq!(beam_azimuth(Beam::Fixed, Some(359.7)), Some(0.0));
-        assert_eq!(beam_azimuth(Beam::Fixed, None), Some(0.0));
+    fn the_readout_lists_the_first_peak_then_the_rest() {
+        let mut found = reading();
+        found.fit = 0.9;
+        found.snr_db = 17.6;
+        found.peaks.push(DfPeak {
+            relative_deg: 200.0,
+            true_deg: Some(290.0),
+            ..peak()
+        });
+        let rows = readout_rows(Some(&found), BearingFrame::True, "1.0 s".to_owned());
+        let value = |label: &str| {
+            rows.iter()
+                .find(|(name, _)| name == label)
+                .map(|(_, value)| value.clone())
+        };
+        assert_eq!(value("Bearing").as_deref(), Some("137\u{b0}"));
+        assert_eq!(value("Fit").as_deref(), Some("90%"));
+        assert_eq!(value("SNR").as_deref(), Some("18 dB"));
+        assert_eq!(value("Src").as_deref(), Some("1 auto"));
+        assert!(value("#2").is_some_and(|text| text.starts_with("290")));
+        let empty = readout_rows(None, BearingFrame::Relative, "-".to_owned());
+        assert_eq!(empty.len(), 6);
+        assert!(empty.iter().all(|(_, value)| value == "-"));
+    }
+
+    #[test]
+    fn chips_list_the_gate_first_then_stale_then_every_flag() {
+        let everything = DfReading {
+            squelched: true,
+            azimuth_deg: None,
+            station: None,
+            aliasing: true,
+            mode_aliasing: true,
+            mirror: true,
+            rotating: true,
+            singular: true,
+            table_out_of_range: true,
+            ..reading()
+        };
+        let chips = df_chips(Some(&everything), Some(ProcessorGate::Phase), true);
+        let labels: Vec<&str> = chips.iter().map(|chip| chip.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Needs cal",
+                "Stale",
+                "Squelch",
+                "No heading",
+                "No position",
+                "Aliased",
+                "Mode alias",
+                "Mirror",
+                "Rotating",
+                "Singular",
+                "Table off"
+            ]
+        );
+        assert!(chips[0].danger && chips[1].danger && !chips[2].danger);
+        assert!(chips.iter().all(|chip| !chip.title.is_empty()));
+        assert!(df_chips(Some(&reading()), None, false).is_empty());
+        assert!(df_chips(None, None, false).is_empty());
     }
 }

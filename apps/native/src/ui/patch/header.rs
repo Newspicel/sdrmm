@@ -68,7 +68,7 @@ fn button(
     }
 }
 
-pub fn header(store: Store, id: String, drag: Attrs, remove: impl Fn() + 'static) -> impl IntoView {
+pub fn header(store: Store, id: String, remove: impl Fn() + 'static) -> impl IntoView {
     install_stylesheet("node-header", SHEET);
     let title = {
         let id = id.clone();
@@ -119,7 +119,7 @@ pub fn header(store: Store, id: String, drag: Attrs, remove: impl Fn() + 'static
         })
     });
     view! {
-        row(class = "node__bar", {..drag}) {
+        row(class = "node__bar") {
             box(class = "node__dot")
             text(class = "node__title") {{title}}
             spacer()

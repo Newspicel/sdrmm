@@ -1,14 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
-import { callAudioUrl, clearDecoderLog, DECODER_LOG_KEY, decoderLogQuery } from "../lib/api";
+import {
+  clearDecoderLog,
+  DECODER_LOG_KEY,
+  decoderLogGroupsQuery,
+  decoderLogQuery,
+} from "../lib/api";
 import { useDecodedStore } from "../lib/decoded";
+import type { LogGroupKey } from "../lib/types";
 import { Button, Input } from "./BaseControls";
-import { BroadcastDataView } from "./BroadcastDataView";
-import { ALERT, BTN, FIELD, TABLE_CELL, TABLE_HEAD } from "./controls";
-import { DevOnly } from "./DevOnly";
+import { BTN, FIELD, TABLE_CELL, TABLE_HEAD } from "./controls";
+import { DecoderLogGroups } from "./DecoderLogGroups";
 import { DownloadMenu } from "./DownloadMenu";
-import { eventDetail } from "./decoderDetail";
 import {
   buildRows,
   COLUMN_STEP,
@@ -33,22 +37,35 @@ import {
   writeColumnWidths,
 } from "./decoderLog";
 import { formatClock } from "./decoderViews";
+import { ChoiceChip } from "./face/Chips";
+import { FaceFault } from "./face/Fault";
+import { FaceStats, Stat } from "./face/Stats";
 import { formatMhz } from "./format";
-import { Select } from "./Select";
+import { RowDetail } from "./LogRowDetail";
+import { groupOf, groupRows, VIEW_CHOICES, viewOf } from "./logGroups";
 
 const SEARCH_DEBOUNCE_MS = 250;
 const CLEAR_ARM_MS = 3000;
 
 const NO_FRAMES = {};
 
-export function DecoderLogPanel({ wires }: { wires: WireScope }) {
+const LIMIT_CHOICES = LIMIT_OPTIONS.map((n) => ({ value: n, label: String(n) }));
+
+export function DecoderLogPanel({
+  wires,
+  group,
+  onGroup,
+}: {
+  wires: WireScope;
+  group: LogGroupKey | null;
+  onGroup: (group: LogGroupKey | null) => void;
+}) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<LogFilter>(DEFAULT_LOG_FILTER);
   const [search, setSearch] = useState(DEFAULT_LOG_FILTER.q);
   const [armed, setArmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cleared, setCleared] = useState<number | null>(null);
-  const [opened, setOpened] = useState<string | null>(null);
   const [widths, setWidths] = useState<ColumnWidths>(readColumnWidths);
   const commit = (): void => writeColumnWidths(widths);
 
@@ -72,7 +89,15 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
   }, [armed]);
 
   const query = toQuery(filter, wires);
-  const log = useQuery(decoderLogQuery(query));
+  const log = useQuery({ ...decoderLogQuery(query), enabled: group === null });
+  const grouped = useQuery({
+    ...decoderLogGroupsQuery(query, group ?? "frequency"),
+    enabled: group !== null,
+  });
+  const groups = useMemo(
+    () => (group === null ? [] : groupRows(grouped.data?.groups ?? [], group)),
+    [grouped.data, group],
+  );
   const frames = useDecodedStore((s) => (wires.wired ? s.frames : NO_FRAMES));
   const lost = useDecodedStore((s) => s.lost);
 
@@ -99,11 +124,15 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
 
   const patch = (next: Partial<LogFilter>): void => {
     setCleared(null);
+    setError(null);
     setFilter((f) => ({ ...f, ...next }));
   };
 
-  const dropped = droppedNotice(lost, log.data?.dropped ?? 0);
-  const total = log.data?.total ?? 0;
+  const source = group === null ? log : grouped;
+  const droppedRows = source.data?.dropped ?? 0;
+  const dropped = droppedNotice(lost, droppedRows);
+  const total = source.data?.total ?? 0;
+  const shown = group === null ? rows.length : groups.length;
 
   return (
     <>
@@ -117,138 +146,32 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search decoder log"
             />
-            <Select
-              label="Row limit"
-              className="w-28 shrink-0"
+            <ChoiceChip
+              label="Group"
+              title="One row per frequency or station"
+              value={viewOf(group)}
+              options={VIEW_CHOICES}
+              onChange={(view) => onGroup(groupOf(view))}
+            />
+            <ChoiceChip
+              label="Rows"
+              title="Row limit"
               value={filter.limit}
-              options={LIMIT_OPTIONS.map((n) => ({ value: n, label: `${n} rows` }))}
+              options={LIMIT_CHOICES}
               onChange={(limit) => patch({ limit })}
             />
           </div>
 
-          {error !== null && (
-            <div role="alert" className={`${ALERT} flex items-center justify-between gap-3`}>
-              <span>Rejected: {error}</span>
-              <Button type="button" className="shrink-0 underline" onClick={() => setError(null)}>
-                dismiss
-              </Button>
-            </div>
-          )}
-
-          {log.isError && (
-            <div role="alert" className={ALERT}>
-              Log unavailable: {log.error.message}
-            </div>
-          )}
-
-          <DevOnly>
-            {dropped !== null && (
-              <div role="status" className={`${ALERT} bg-transparent tabular-nums`}>
-                {dropped}
-              </div>
-            )}
-          </DevOnly>
-
-          <div className="flex flex-wrap items-center gap-x-3 font-mono text-[10px] tabular-nums text-ink-dim">
-            <span>
-              {rows.length} shown · {total} stored
-            </span>
-            {armed && (
-              <span className="text-danger">Clear removes every stored row this node can see.</span>
-            )}
-            {cleared !== null && <span>{cleared} rows cleared.</span>}
-          </div>
-
           <div className="min-h-0 flex-1 overflow-auto rounded border border-line">
-            <table
-              className="table-fixed border-collapse font-mono text-xs"
-              style={{ width: totalColumnWidth(widths), minWidth: "100%" }}
-            >
-              <colgroup>
-                {LOG_COLUMNS.map((column) => (
-                  <col
-                    key={column.key}
-                    style={column.key === FLEX_COLUMN ? undefined : { width: widths[column.key] }}
-                  />
-                ))}
-              </colgroup>
-              <thead className="sticky top-0 bg-panel">
-                <tr className="border-b border-line">
-                  {LOG_COLUMNS.map((column) => {
-                    const last = column.key === FLEX_COLUMN;
-                    return (
-                      <th
-                        key={column.key}
-                        className={`${TABLE_HEAD} relative ${last ? "" : "border-r border-line"} ${
-                          column.key === "freq" ? "text-right" : ""
-                        }`}
-                      >
-                        <span className="block truncate">{column.label}</span>
-                        {!last && (
-                          <ColumnHandle
-                            label={column.label}
-                            width={widths[column.key]}
-                            onResize={(px) => setWidths((w) => resizeColumn(w, column.key, px))}
-                            onCommit={commit}
-                          />
-                        )}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <Fragment key={row.key}>
-                    <tr
-                      className="cursor-pointer border-b border-line/50 hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent"
-                      aria-expanded={opened === row.key}
-                      tabIndex={0}
-                      onClick={() => setOpened(opened === row.key ? null : row.key)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setOpened(opened === row.key ? null : row.key);
-                        }
-                      }}
-                    >
-                      <td
-                        className={`${TABLE_CELL} truncate tabular-nums text-ink-dim`}
-                        title={row.at}
-                      >
-                        {formatClock(row.at)}
-                      </td>
-                      <td className={`${TABLE_CELL} truncate text-ink-dim`}>
-                        {kindLabel(row.kind)}
-                      </td>
-                      <td className={`${TABLE_CELL} truncate text-right tabular-nums text-ink`}>
-                        {formatMhz(row.freqHz)}
-                      </td>
-                      <td
-                        className={`${TABLE_CELL} truncate text-ink`}
-                        title={row.station ?? undefined}
-                      >
-                        {row.station ?? "-"}
-                      </td>
-                      <td className={`${TABLE_CELL} truncate text-ink`} title={row.summary}>
-                        {row.summary}
-                      </td>
-                    </tr>
-                    {opened === row.key && (
-                      <tr className="border-b border-line/50 bg-panel-2">
-                        <td colSpan={LOG_COLUMNS.length} className="px-3 py-2">
-                          <RowDetail row={row} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
+            {group === null ? (
+              <LogTable rows={rows} widths={widths} setWidths={setWidths} commit={commit} />
+            ) : (
+              <DecoderLogGroups rows={groups} by={group} />
+            )}
 
-            {rows.length === 0 && (
+            {shown === 0 && (
               <div className="px-3 py-2 text-sm text-ink-dim">
-                {log.isPending
+                {source.isPending
                   ? "Loading…"
                   : isFiltered(filter)
                     ? "No rows match this filter."
@@ -257,8 +180,31 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
             )}
           </div>
         </div>
+        {error !== null && <FaceFault message={`Rejected: ${error}`} />}
+        {source.isError && <FaceFault message={`Log unavailable: ${source.error.message}`} />}
       </FaceBody>
       <FaceFooter>
+        <FaceStats>
+          <Stat label="Shown" title="Rows in this view">
+            {shown}
+          </Stat>
+          <Stat
+            label={group === null ? "Stored" : "Groups"}
+            title={group === null ? "Rows stored for this node" : "Groups in the stored rows"}
+          >
+            {total}
+          </Stat>
+          {cleared !== null && (
+            <Stat label="Cleared" title="Rows removed by the last clear">
+              {cleared}
+            </Stat>
+          )}
+          {dropped !== null && (
+            <Stat label="Dropped" title={dropped} tone="warn">
+              {lost + droppedRows}
+            </Stat>
+          )}
+        </FaceStats>
         <DownloadMenu choices={logDownloads(query)} />
         <Button
           type="button"
@@ -266,12 +212,77 @@ export function DecoderLogPanel({ wires }: { wires: WireScope }) {
             armed ? "border-danger text-danger" : ""
           }`}
           disabled={clearMut.isPending}
+          title={armed ? "Removes every stored row this node can see" : undefined}
           onClick={() => (armed ? clearMut.mutate() : setArmed(true))}
         >
           {armed ? "Confirm clear" : "Clear"}
         </Button>
       </FaceFooter>
     </>
+  );
+}
+
+function LogTable({
+  rows,
+  widths,
+  setWidths,
+  commit,
+}: {
+  rows: readonly LogRow[];
+  widths: ColumnWidths;
+  setWidths: (update: (widths: ColumnWidths) => ColumnWidths) => void;
+  commit: () => void;
+}) {
+  const [opened, setOpened] = useState<string | null>(null);
+  return (
+    <table
+      className="table-fixed border-collapse font-mono text-xs"
+      style={{ width: totalColumnWidth(widths), minWidth: "100%" }}
+    >
+      <colgroup>
+        {LOG_COLUMNS.map((column) => (
+          <col
+            key={column.key}
+            style={column.key === FLEX_COLUMN ? undefined : { width: widths[column.key] }}
+          />
+        ))}
+      </colgroup>
+      <thead className="sticky top-0 bg-panel">
+        <tr className="border-b border-line">
+          {LOG_COLUMNS.map((column) => {
+            const last = column.key === FLEX_COLUMN;
+            return (
+              <th
+                key={column.key}
+                className={`${TABLE_HEAD} relative ${last ? "" : "border-r border-line"} ${
+                  column.key === "freq" ? "text-right" : ""
+                }`}
+              >
+                <span className="block truncate">{column.label}</span>
+                {!last && (
+                  <ColumnHandle
+                    label={column.label}
+                    width={widths[column.key]}
+                    onResize={(px) => setWidths((w) => resizeColumn(w, column.key, px))}
+                    onCommit={commit}
+                  />
+                )}
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <LogRows
+            key={row.key}
+            row={row}
+            open={opened === row.key}
+            onToggle={() => setOpened(opened === row.key ? null : row.key)}
+          />
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -338,38 +349,42 @@ function ColumnHandle({
   );
 }
 
-function RowDetail({ row }: { row: LogRow }) {
-  const detail = eventDetail(row.event);
+function LogRows({ row, open, onToggle }: { row: LogRow; open: boolean; onToggle: () => void }) {
   return (
-    <div className="flex flex-col gap-2">
-      {(row.event.kind === "call" || row.event.kind === "transmission") &&
-        row.event.data.audio != null && (
-          <audio
-            className="h-8 w-full min-w-0"
-            controls
-            preload="none"
-            src={callAudioUrl(row.event.data.audio.url)}
-          />
-        )}
-      {row.event.kind === "broadcast_data" && <BroadcastDataView data={row.event.data} />}
-      {detail.fields.length > 0 && (
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
-          {detail.fields.map(([label, value]) => (
-            <Fragment key={label}>
-              <dt className="text-ink-dim">{label}</dt>
-              <dd className="min-w-0 break-all text-ink">{value}</dd>
-            </Fragment>
-          ))}
-        </dl>
+    <>
+      <tr
+        className="cursor-pointer border-b border-line/50 hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent"
+        aria-expanded={open}
+        tabIndex={0}
+        onClick={onToggle}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+      >
+        <td className={`${TABLE_CELL} truncate tabular-nums text-ink-dim`} title={row.at}>
+          {formatClock(row.at)}
+        </td>
+        <td className={`${TABLE_CELL} truncate text-ink-dim`}>{kindLabel(row.kind)}</td>
+        <td className={`${TABLE_CELL} truncate text-right tabular-nums text-ink`}>
+          {formatMhz(row.freqHz)}
+        </td>
+        <td className={`${TABLE_CELL} truncate text-ink`} title={row.station ?? undefined}>
+          {row.station ?? "-"}
+        </td>
+        <td className={`${TABLE_CELL} truncate text-ink`} title={row.summary}>
+          {row.summary}
+        </td>
+      </tr>
+      {open && (
+        <tr className="border-b border-line/50 bg-panel-2">
+          <td colSpan={LOG_COLUMNS.length} className="px-3 py-2">
+            <RowDetail row={row} />
+          </td>
+        </tr>
       )}
-      {detail.body !== null && (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded border border-line bg-panel px-2 py-1.5 text-ink">
-          {detail.body}
-        </pre>
-      )}
-      {detail.fields.length === 0 && detail.body === null && (
-        <span className="text-ink-dim">This frame carried nothing beyond its summary.</span>
-      )}
-    </div>
+    </>
   );
 }

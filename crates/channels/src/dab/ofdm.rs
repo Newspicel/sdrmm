@@ -1,8 +1,7 @@
-use std::{f32::consts::PI, sync::Arc};
+use std::f32::consts::PI;
 
 use num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
-use sdrmm_dsp::{CONFIDENT, Soft};
+use sdrmm_dsp::{CONFIDENT, Soft, fft::Transform};
 use sdrmm_wire::DabTransmissionMode;
 
 use super::mode::Mode;
@@ -26,13 +25,12 @@ pub const SYMBOL_BITS: usize = 2 * CARRIERS;
 
 const NULL_WINDOW: usize = 64;
 
-const NULL_POWER_RATIO: f32 = 0.25;
+const NULL_POWER_RATIO: f32 = 0.5;
 
 const CARRIER_AVERAGE_RATE: f32 = 0.00002;
 
 const LEVEL_RATE: f32 = 0.15;
 
-#[cfg(any(test, feature = "test-signals"))]
 const PHASE_STEPS: [(i16, i16, u8, u8); 48] = [
     (-768, -737, 0, 1),
     (-736, -705, 1, 2),
@@ -84,7 +82,6 @@ const PHASE_STEPS: [(i16, i16, u8, u8); 48] = [
     (737, 768, 1, 1),
 ];
 
-#[cfg(any(test, feature = "test-signals"))]
 const H: [[u8; 32]; 4] = [
     [
         0, 2, 0, 0, 0, 0, 1, 1, 2, 0, 0, 0, 2, 2, 1, 1, 0, 2, 0, 0, 0, 0, 1, 1, 2, 0, 0, 0, 2, 2,
@@ -110,7 +107,6 @@ pub fn reference_phase(carrier: i16) -> Option<f32> {
     reference_phase_for_mode(DabTransmissionMode::I, carrier)
 }
 
-#[cfg(any(test, feature = "test-signals"))]
 #[must_use]
 pub fn reference_phase_for_mode(mode: DabTransmissionMode, carrier: i16) -> Option<f32> {
     const II: [(u8, u8); 12] = [
@@ -165,7 +161,7 @@ pub fn reference_phase_for_mode(mode: DabTransmissionMode, carrier: i16) -> Opti
     })
     .ok()?;
     let (table, offset) = match mode {
-        DabTransmissionMode::I => {
+        DabTransmissionMode::I | DabTransmissionMode::Auto => {
             let &(_, _, table, offset) = PHASE_STEPS.get(index / 32)?;
             (table, offset)
         }
@@ -182,7 +178,6 @@ pub fn reference_symbol() -> Vec<Complex<f32>> {
     reference_symbol_for_mode(DabTransmissionMode::I)
 }
 
-#[cfg(any(test, feature = "test-signals"))]
 #[must_use]
 pub fn reference_symbol_for_mode(transmission_mode: DabTransmissionMode) -> Vec<Complex<f32>> {
     let mode = Mode::new(transmission_mode);
@@ -230,8 +225,7 @@ fn clamp(value: f32) -> Soft {
 
 pub struct SymbolDemod {
     mode: Mode,
-    fft_scratch: Vec<Complex<f32>>,
-    fft: Arc<dyn Fft<f32>>,
+    fft: Transform,
     bins: Vec<usize>,
     scratch: Vec<Complex<f32>>,
     previous: Vec<Complex<f32>>,
@@ -252,13 +246,9 @@ impl SymbolDemod {
     #[must_use]
     pub fn for_mode(transmission_mode: DabTransmissionMode) -> Self {
         let mode = Mode::new(transmission_mode);
-        let mut planner = FftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(mode.useful);
-        let fft_scratch = vec![Complex::new(0.0, 0.0); fft.get_inplace_scratch_len()];
         Self {
             mode,
-            fft,
-            fft_scratch,
+            fft: Transform::forward(mode.useful),
             bins: interleaving_for_mode(transmission_mode),
             scratch: vec![Complex::new(0.0, 0.0); mode.useful],
             previous: vec![Complex::new(0.0, 0.0); mode.useful],
@@ -286,21 +276,31 @@ impl SymbolDemod {
         (10.0 * (self.signal / self.noise).log10()).clamp(0.0, 40.0) as f32
     }
 
-    fn transform(&mut self, symbol: &[Complex<f32>]) {
+    fn transform(&mut self, useful: &[Complex<f32>], fraction: f32) {
         std::mem::swap(&mut self.previous, &mut self.current);
-        self.scratch.clear();
-        self.scratch
-            .extend_from_slice(&symbol[self.mode.guard..self.mode.symbol()]);
-        self.fft
-            .process_with_scratch(&mut self.scratch, &mut self.fft_scratch);
-        self.current.copy_from_slice(&self.scratch);
+        self.scratch.copy_from_slice(useful);
+        self.fft.process(&mut self.scratch);
+        let half = self.mode.carriers() as i16 / 2;
+        let turn = 2.0 * PI * fraction / self.mode.useful as f32;
+        let step = Complex::from_polar(1.0, turn);
+        let mut rotation = Complex::from_polar(1.0, -turn * f32::from(half));
+        for carrier in -half..=half {
+            let bin = self.mode.carrier_bin(carrier);
+            self.current[bin] = self.scratch[bin] * rotation;
+            rotation *= step;
+        }
     }
 
-    pub fn demodulate(&mut self, symbol: &[Complex<f32>], out: &mut Vec<Soft>) -> bool {
-        if symbol.len() < self.mode.symbol() {
+    pub fn demodulate(
+        &mut self,
+        useful: &[Complex<f32>],
+        fraction: f32,
+        out: &mut Vec<Soft>,
+    ) -> bool {
+        if useful.len() != self.mode.useful {
             return false;
         }
-        self.transform(symbol);
+        self.transform(useful, fraction);
         if !self.have_reference {
             self.have_reference = true;
             return false;
@@ -346,7 +346,7 @@ pub fn map_symbol(bits: &[bool]) -> Vec<Complex<f32>> {
     map_symbol_for_mode(DabTransmissionMode::I, bits)
 }
 
-#[cfg(any(test, feature = "test-signals"))]
+#[cfg(any(test, feature = "synth"))]
 #[must_use]
 pub fn map_symbol_for_mode(
     transmission_mode: DabTransmissionMode,
@@ -369,7 +369,8 @@ pub fn map_symbol_for_mode(
 }
 
 pub struct FrameSync {
-    null: usize,
+    shortest: usize,
+    longest: usize,
     window: [f32; NULL_WINDOW],
     at: usize,
     filled: usize,
@@ -387,8 +388,22 @@ impl FrameSync {
 
     #[must_use]
     pub const fn for_mode(mode: DabTransmissionMode) -> Self {
+        let null = Mode::new(mode).null;
+        Self::between(null / 2, 2 * null)
+    }
+
+    #[must_use]
+    pub const fn any_mode() -> Self {
+        Self::between(
+            Mode::new(DabTransmissionMode::Iii).null / 2,
+            2 * Mode::new(DabTransmissionMode::I).null,
+        )
+    }
+
+    const fn between(shortest: usize, longest: usize) -> Self {
         Self {
-            null: Mode::new(mode).null,
+            shortest,
+            longest,
             window: [0.0; NULL_WINDOW],
             at: 0,
             filled: 0,
@@ -428,7 +443,7 @@ impl FrameSync {
             return None;
         }
         self.average += CARRIER_AVERAGE_RATE * (smoothed - self.average);
-        let ended = self.started && (self.null / 2..2 * self.null).contains(&self.quiet);
+        let ended = self.started && (self.shortest..self.longest).contains(&self.quiet);
         self.quiet = 0;
         self.started = true;
         ended.then_some(NULL_WINDOW)
@@ -439,32 +454,6 @@ impl Default for FrameSync {
     fn default() -> Self {
         Self::new()
     }
-}
-
-#[cfg(test)]
-#[must_use]
-pub fn prefix_offset(frame: &[Complex<f32>]) -> Option<(f32, f32)> {
-    prefix_offset_for_mode(Mode::new(DabTransmissionMode::I), frame)
-}
-
-#[must_use]
-pub fn prefix_offset_for_mode(mode: Mode, frame: &[Complex<f32>]) -> Option<(f32, f32)> {
-    if frame.len() < mode.symbol() {
-        return None;
-    }
-    let mut correlation = Complex::new(0.0f32, 0.0);
-    let mut energy = 0.0f32;
-    for index in 0..mode.guard {
-        let prefix = frame[index];
-        let tail = frame[mode.useful + index];
-        correlation += prefix * tail.conj();
-        energy += prefix.norm_sqr() + tail.norm_sqr();
-    }
-    let coherence = 2.0 * correlation.norm() / energy.max(1e-20);
-    Some((
-        coherence,
-        -correlation.arg() / (2.0 * PI * mode.useful as f32),
-    ))
 }
 
 #[cfg(test)]
@@ -525,22 +514,20 @@ mod tests {
 
     fn modulate(symbols: &[Vec<bool>]) -> Vec<Complex<f32>> {
         let table = interleaving();
-        let mut planner = FftPlanner::<f32>::new();
-        let inverse = planner.plan_fft_inverse(USEFUL);
+        let mut inverse = Transform::inverse(USEFUL);
         let mut previous: Vec<Complex<f32>> = {
             let reference = reference_symbol();
             table.iter().map(|&bin| reference[bin]).collect()
         };
         let mut iq = vec![Complex::new(0.0, 0.0); NULL];
-        let emit = |points: &[Complex<f32>], table: &[usize], out: &mut Vec<Complex<f32>>| {
+        let mut emit = |points: &[Complex<f32>], table: &[usize], out: &mut Vec<Complex<f32>>| {
             let mut bins = vec![Complex::new(0.0, 0.0); USEFUL];
             for (index, &bin) in table.iter().enumerate() {
                 bins[bin] = points[index];
             }
-            inverse.process(&mut bins);
-            let scale = 1.0 / (USEFUL as f32).sqrt();
-            out.extend(bins[USEFUL - GUARD..].iter().map(|&value| value * scale));
-            out.extend(bins.iter().map(|&value| value * scale));
+            inverse.process_unitary(&mut bins);
+            out.extend_from_slice(&bins[USEFUL - GUARD..]);
+            out.extend_from_slice(&bins);
         };
         emit(&previous, &table, &mut iq);
         for bits in symbols {
@@ -575,8 +562,8 @@ mod tests {
         let mut demod = SymbolDemod::new();
         let mut bits = Vec::new();
         for index in 0..=sent.len() {
-            let start = NULL + index * SYMBOL;
-            demod.demodulate(&iq[start..start + SYMBOL], &mut bits);
+            let start = NULL + index * SYMBOL + GUARD;
+            demod.demodulate(&iq[start..start + USEFUL], 0.0, &mut bits);
         }
         assert_eq!(bits.len(), sent.len() * SYMBOL_BITS);
         for (index, expected) in sent.iter().enumerate() {
@@ -606,34 +593,6 @@ mod tests {
             (expected - NULL_WINDOW..=expected).contains(&starts[0]),
             "found the frame at {} rather than within a window before {expected}",
             starts[0]
-        );
-    }
-
-    #[test]
-    fn the_cyclic_prefix_reports_a_clean_symbol_and_no_offset() {
-        let iq = modulate(&(0..2).map(payload).collect::<Vec<_>>());
-        let (coherence, offset) = prefix_offset(&iq[NULL..]).expect("a full symbol");
-        assert!(coherence > 0.9, "coherence {coherence}");
-        assert!(offset.abs() < 1e-6, "offset {offset}");
-    }
-
-    #[test]
-    fn a_frequency_offset_shows_up_in_the_prefix_phase() {
-        let iq = modulate(&(0..2).map(payload).collect::<Vec<_>>());
-        let shift = 120.0f32;
-        let rate = 2_048_000.0f32;
-        let turned: Vec<Complex<f32>> = iq
-            .iter()
-            .enumerate()
-            .map(|(index, &value)| {
-                value * Complex::from_polar(1.0, 2.0 * PI * shift * index as f32 / rate)
-            })
-            .collect();
-        let (_, offset) = prefix_offset(&turned[NULL..]).expect("a full symbol");
-        assert!(
-            (offset * rate - shift).abs() < 2.0,
-            "estimated {} Hz for {shift} Hz",
-            offset * rate
         );
     }
 }

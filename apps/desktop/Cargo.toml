@@ -16,32 +16,34 @@ path = "src/main.rs"
 workspace = true
 
 [features]
-default = ["soapy", "sdrplay", "rtlsdr", "hackrf", "airspy", "airspyhf", "ad936x", "net-client", "gpu-fft"]
+default = ["soapy", "sdrplay", "rtlsdr", "hackrf", "airspy", "airspyhf", "espsdr", "ad936x", "net-client", "gpu-fft"]
 soapy = ["sdrmm-server/soapy", "sdrmm-engine/soapy", "dep:sdrmm-device-soapy"]
 sdrplay = ["sdrmm-server/sdrplay", "sdrmm-engine/sdrplay"]
 rtlsdr = ["sdrmm-server/rtlsdr", "sdrmm-engine/rtlsdr"]
 hackrf = ["sdrmm-server/hackrf", "sdrmm-engine/hackrf"]
 airspy = ["sdrmm-server/airspy", "sdrmm-engine/airspy"]
 airspyhf = ["sdrmm-server/airspyhf", "sdrmm-engine/airspyhf"]
+espsdr = ["sdrmm-server/espsdr", "sdrmm-engine/espsdr"]
 ad936x = ["sdrmm-server/ad936x", "sdrmm-engine/ad936x"]
 net-client = ["sdrmm-server/net-client", "sdrmm-engine/net-client"]
 gpu-fft = ["sdrmm-server/gpu-fft", "sdrmm-engine/gpu-fft"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 sdrmm-server.workspace = true
 sdrmm-engine.workspace = true
 sdrmm-device-soapy = { workspace = true, optional = true }
 anyhow.workspace = true
-tauri = { version = "2", features = [] }
-tauri-plugin-updater = { version = "2.12", default-features = false, features = ["zip", "system-proxy"] }
+tauri = { version = "2.12", features = [] }
+tauri-plugin-updater = { version = "2.13", default-features = false, features = ["zip", "system-proxy"] }
 tauri-plugin-dialog = "2"
-# Not used directly: `generate_context!` expands the config's `plugins` section into
-# `serde_json` paths resolved against this crate's root.
+tauri-plugin-notification = "2.5.1"
 serde_json.workspace = true
-axum = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "net"] }
 tracing.workspace = true
-tauri-plugin-opener = "2.5.5"
+tauri-plugin-opener = "2.7.0"
+
+[dev-dependencies]
+tempfile.workspace = true

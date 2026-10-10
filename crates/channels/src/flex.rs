@@ -1,7 +1,7 @@
-use std::{f32::consts::TAU, sync::LazyLock};
+use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass, hamming_distance, pocsag_bch_decode};
+use sdrmm_dsp::{Decimator, design_lowpass, hamming_distance};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, FlexMessage,
     FlexParams, PagerPayload,
@@ -9,14 +9,23 @@ use sdrmm_wire::{
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
 
+mod codeword;
+mod tones;
+
+use codeword::{PHASE_BITS, WORDS, Word, decode_word};
+use tones::{Afc, Bank, Powers, TONES};
+
 const RATE: f64 = 48_000.0;
 const CHANNEL_TAPS: usize = 129;
 const SYNC_MARKER: u32 = 0xA6C6_AAAA;
 const SEARCH_SPS: usize = 30;
+const FAST_SPS: usize = 15;
+const LATE: usize = 2;
+const HISTORY: usize = 2 * LATE + 1;
+const TIMING_GAIN: f32 = 0.15;
 const SYNC_TOLERANCE: u32 = 3;
-const WORDS: usize = 88;
-const PHASE_BITS: usize = WORDS * 32;
 const MAX_TEXT: usize = 256;
+const MAX_SOFT_ADDRESS_ERRORS: u32 = 3;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "flex".to_owned(),
@@ -30,7 +39,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Mode {
     symbol_rate: u16,
     levels: u8,
@@ -50,6 +59,14 @@ impl Mode {
             _ => &[],
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct Candidate {
+    mode: Mode,
+    polarity: bool,
+    first: u64,
+    last: u64,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -78,19 +95,21 @@ enum State {
         errors: u32,
         symbols: usize,
         toggle: bool,
-        phases: [Vec<bool>; 4],
+        phases: [Vec<f32>; 4],
     },
 }
 
 pub struct FlexChannel {
     invert: bool,
-    last: Option<Complex<f32>>,
+    afc: Afc,
+    slow: Bank,
+    fast: Bank,
+    history: [Powers; HISTORY],
     sample: u64,
-    search_window: [f32; SEARCH_SPS],
-    search_sum: f32,
     search_lanes: [SearchLane; SEARCH_SPS],
+    candidate: Option<Candidate>,
     state: State,
-    symbol_sum: f32,
+    timing: f32,
     symbol_samples: usize,
     symbol_target: usize,
     polarity: bool,
@@ -196,21 +215,6 @@ fn sync_match(register: u64) -> Option<(Mode, bool)> {
     None
 }
 
-fn reverse31(word: u32) -> u32 {
-    word.reverse_bits() >> 1
-}
-
-fn reverse21(word: u32) -> u32 {
-    word.reverse_bits() >> 11
-}
-
-fn decode_word(word: u32) -> Option<(u32, u32)> {
-    let parity = word >> 31;
-    let pocsag = reverse31(word) << 1 | parity;
-    let (corrected, errors) = pocsag_bch_decode(pocsag)?;
-    Some((reverse21(corrected >> 11), errors))
-}
-
 fn checksum(word: u32) -> bool {
     let sum = (0..5).map(|index| word >> (index * 4) & 0xF).sum::<u32>() + (word >> 20);
     sum & 0xF == 0xF
@@ -219,54 +223,116 @@ fn checksum(word: u32) -> bool {
 impl FlexChannel {
     fn reset(&mut self) {
         self.state = State::Search;
-        self.symbol_sum = 0.0;
+        self.candidate = None;
+        self.timing = 0.0;
         self.symbol_samples = 0;
         self.symbol_target = SEARCH_SPS;
     }
 
-    fn search(&mut self, frequency: f32) {
+    fn search(&mut self, powers: Powers) {
         let position = self.sample as usize % SEARCH_SPS;
-        self.search_sum += frequency - self.search_window[position];
-        self.search_window[position] = frequency;
-        if self.sample >= SEARCH_SPS as u64 {
-            let bit = self.search_sum < 0.0;
-            let lane = &mut self.search_lanes[position];
-            lane.register = lane.register << 1 | u64::from(bit);
-            if let Some((mode, polarity)) = sync_match(lane.register) {
-                self.polarity = polarity ^ self.invert;
-                self.state = State::Fiw {
+        if self.sample < SEARCH_SPS as u64 {
+            return;
+        }
+        let bit = powers[0] > powers[TONES - 1];
+        let lane = &mut self.search_lanes[position];
+        lane.register = lane.register << 1 | u64::from(bit);
+        let found = sync_match(lane.register);
+        match (&mut self.candidate, found) {
+            (None, Some((mode, polarity))) => {
+                self.candidate = Some(Candidate {
                     mode,
-                    count: 0,
-                    word: 0,
-                };
-                self.symbol_sum = 0.0;
-                self.symbol_samples = 0;
-                self.symbol_target = SEARCH_SPS;
+                    polarity,
+                    first: self.sample,
+                    last: self.sample,
+                });
             }
+            (Some(candidate), Some(found)) if found == (candidate.mode, candidate.polarity) => {
+                candidate.last = self.sample;
+            }
+            _ => {}
+        }
+        if let Some(candidate) = self.candidate
+            && self.sample - candidate.first + 1 >= SEARCH_SPS as u64
+        {
+            self.lock(candidate);
         }
     }
 
-    fn push_frequency(&mut self, frequency: f32, out: &mut ChannelOutputs) {
-        if matches!(self.state, State::Search) {
-            self.search(frequency);
+    fn lock(&mut self, candidate: Candidate) {
+        let centre = candidate.first + (candidate.last - candidate.first) / 2;
+        self.candidate = None;
+        self.polarity = candidate.polarity ^ self.invert;
+        self.state = State::Fiw {
+            mode: candidate.mode,
+            count: 0,
+            word: 0,
+        };
+        self.timing = 0.0;
+        self.symbol_samples = (self.sample - centre) as usize;
+        self.symbol_target = SEARCH_SPS;
+    }
+
+    fn push_sample(&mut self, sample: Complex<f32>, out: &mut ChannelOutputs) {
+        let searching = matches!(self.state, State::Search);
+        let centred = self.afc.centre(sample, searching);
+        let slow = self.slow.push(centred);
+        if searching {
+            self.search(slow);
             return;
         }
-        self.symbol_sum += frequency;
+        let fast = self.fast.push(centred);
+        self.history.rotate_left(1);
+        self.history[HISTORY - 1] = if self.symbol_target == FAST_SPS {
+            fast
+        } else {
+            slow
+        };
         self.symbol_samples += 1;
-        if self.symbol_samples < self.symbol_target {
+        if self.symbol_samples < self.symbol_target + LATE {
             return;
         }
-        let average = self.symbol_sum / self.symbol_samples as f32;
-        self.symbol_sum = 0.0;
-        self.symbol_samples = 0;
-        self.symbol(average, out);
+        let levels = self.levels();
+        let tone = tones::decide(self.history[LATE], levels);
+        self.symbol_samples = LATE.saturating_add_signed(-self.retime(tone));
+        let (tone, powers) = if self.polarity {
+            let mut powers = self.history[LATE];
+            powers.reverse();
+            (TONES - 1 - tone, powers)
+        } else {
+            (tone, self.history[LATE])
+        };
+        self.symbol(tone, powers, out);
     }
 
-    fn symbol(&mut self, mut frequency: f32, out: &mut ChannelOutputs) {
-        if self.polarity {
-            frequency = -frequency;
+    fn levels(&self) -> u8 {
+        match &self.state {
+            State::Data { mode, .. } => mode.levels,
+            _ => 2,
         }
-        let bit = frequency < 0.0;
+    }
+
+    fn retime(&mut self, tone: usize) -> isize {
+        let early = self.history[0][tone];
+        let late = self.history[HISTORY - 1][tone];
+        let total = early + late;
+
+        if total > 0.0 {
+            self.timing += TIMING_GAIN * (late - early) / total;
+        }
+        if self.timing >= 1.0 {
+            self.timing -= 1.0;
+            return 1;
+        }
+        if self.timing <= -1.0 {
+            self.timing += 1.0;
+            return -1;
+        }
+        0
+    }
+
+    fn symbol(&mut self, tone: usize, powers: Powers, out: &mut ChannelOutputs) {
+        let bit = tone >= TONES / 2;
         let mut next = None;
         match &mut self.state {
             State::Search => {}
@@ -318,7 +384,7 @@ impl FlexChannel {
                 toggle,
                 phases,
             } => {
-                let pair = flex_bits(frequency, mode.levels);
+                let pair = soft_bits(powers, mode.levels);
                 let group = if mode.symbol_rate == 3_200 && *toggle {
                     2
                 } else {
@@ -350,40 +416,28 @@ impl FlexChannel {
     }
 }
 
-fn flex_bits(frequency: f32, levels: u8) -> [bool; 2] {
-    if levels == 2 {
-        return [frequency < 0.0, false];
-    }
-    if frequency < -3_000.0 {
-        [true, false]
-    } else if frequency < 0.0 {
-        [true, true]
-    } else if frequency < 3_000.0 {
-        [false, true]
+fn contrast(high: f32, low: f32, total: f32) -> f32 {
+    if total > 0.0 {
+        (high - low) / total
     } else {
-        [false, false]
+        0.0
     }
 }
 
-fn deinterleave(bits: &[bool]) -> Option<[u32; WORDS]> {
-    if bits.len() != PHASE_BITS {
-        return None;
+fn soft_bits(powers: Powers, levels: u8) -> [f32; 2] {
+    if levels == 2 {
+        let total = powers[0] + powers[TONES - 1];
+        return [contrast(powers[TONES - 1], powers[0], total), 0.0];
     }
-    let mut words = [0u32; WORDS];
-    let mut at = 0;
-    for block in 0..11 {
-        for bit in 0..32 {
-            for word in 0..8 {
-                words[block * 8 + word] |= u32::from(bits[at]) << bit;
-                at += 1;
-            }
-        }
-    }
-    Some(words)
+    let total = powers.iter().sum();
+    [
+        contrast(powers[2].max(powers[3]), powers[0].max(powers[1]), total),
+        contrast(powers[1].max(powers[2]), powers[0].max(powers[3]), total),
+    ]
 }
 
 fn decode_phase(
-    bits: &[bool],
+    bits: &[f32],
     mode: Mode,
     cycle: u8,
     frame: u8,
@@ -391,55 +445,133 @@ fn decode_phase(
     phase: usize,
     out: &mut ChannelOutputs,
 ) {
-    let Some(encoded) = deinterleave(bits) else {
+    let Some(received) = codeword::deinterleave(bits) else {
         return;
     };
-    let mut words = [0u32; WORDS];
-    let mut errors = fiw_errors;
-    for (destination, encoded) in words.iter_mut().zip(encoded) {
-        let Some((data, repaired)) = decode_word(encoded) else {
-            return;
-        };
-        *destination = data;
-        errors += repaired;
-    }
-    let biw = words[0];
+    let words = received.map(|word| codeword::decode(&word));
+    let errors = fiw_errors + words.iter().map(|word| word.errors()).sum::<u32>();
+    let Some(biw) = trusted_biw(words[0]) else {
+        return;
+    };
     let address_start = usize::from(((biw >> 8) & 3) as u8) + 1;
     let vector_start = usize::from(((biw >> 10) & 0x3F) as u8);
     if address_start >= vector_start || vector_start >= WORDS {
         return;
     }
+    let info = FrameInfo {
+        mode,
+        cycle,
+        frame,
+        phase,
+        errors,
+    };
     for address_index in address_start..vector_start {
         let vector_index = vector_start + address_index - address_start;
-        let Some(&vector) = words.get(vector_index) else {
+        if vector_index >= WORDS {
             break;
-        };
-        let address_word = words[address_index];
-        if matches!(address_word, 0 | 0x1F_FFFF) || !checksum(vector) {
-            continue;
         }
-        let address = u64::from(address_word.wrapping_sub(0x8000));
-        let kind = (vector >> 4) & 7;
-        let start = usize::from(((vector >> 7) & 0x7F) as u8);
-        let len = usize::from(((vector >> 14) & 0x7F) as u8);
-        let (payload, text) = match kind {
-            2 => (PagerPayload::Tone, String::new()),
-            3 | 4 | 7 => (PagerPayload::Numeric, numeric(&words, vector_index, kind)),
-            5 => (PagerPayload::Alpha, alpha(&words, start, len)),
-            6 => (PagerPayload::Binary, binary(&words, start, len)),
-            _ => continue,
-        };
-        out.events.push(DecoderEvent::Flex(FlexMessage {
-            address,
-            payload,
-            text,
-            baud: mode.payload_baud(),
-            levels: mode.levels,
-            cycle,
-            frame,
-            phase: char::from(b'A' + phase as u8),
-            errors_corrected: errors,
-        }));
+        if let Some(message) = page(&words, address_index, vector_index, &info) {
+            out.events.push(DecoderEvent::Flex(message));
+        }
+    }
+}
+
+struct FrameInfo {
+    mode: Mode,
+    cycle: u8,
+    frame: u8,
+    phase: usize,
+    errors: u32,
+}
+
+fn trusted_biw(word: Word) -> Option<u32> {
+    match word {
+        Word::Hard { data, .. } => Some(data),
+        Word::Soft { data, .. } => checksum(data).then_some(data),
+        Word::Lost => None,
+    }
+}
+
+fn trusted_address(word: Word) -> Option<u32> {
+    match word {
+        Word::Hard { data, .. } => Some(data),
+        Word::Soft { data, errors } => (errors <= MAX_SOFT_ADDRESS_ERRORS).then_some(data),
+        Word::Lost => None,
+    }
+}
+
+fn page(
+    words: &[Word; WORDS],
+    address_index: usize,
+    vector_index: usize,
+    info: &FrameInfo,
+) -> Option<FlexMessage> {
+    let address_word = trusted_address(words[address_index])?;
+    let vector = words[vector_index].data()?;
+    if matches!(address_word, 0 | 0x1F_FFFF) || !checksum(vector) {
+        return None;
+    }
+    let data = words.map(|word| word.data().unwrap_or(0));
+    let kind = (vector >> 4) & 7;
+    let start = usize::from(((vector >> 7) & 0x7F) as u8);
+    let len = usize::from(((vector >> 14) & 0x7F) as u8);
+    let (payload, text) = match kind {
+        2 => (PagerPayload::Tone, String::new()),
+        3 | 4 | 7 => (PagerPayload::Numeric, numeric(&data, vector_index, kind)),
+        5 => (PagerPayload::Alpha, alpha(&data, start, len)),
+        6 => (PagerPayload::Binary, binary(&data, start, len)),
+        _ => return None,
+    };
+    if !content_trusted(words, vector, kind) {
+        return None;
+    }
+    Some(FlexMessage {
+        address: u64::from(address_word.wrapping_sub(0x8000)),
+        payload,
+        text,
+        baud: info.mode.payload_baud(),
+        levels: info.mode.levels,
+        cycle: info.cycle,
+        frame: info.frame,
+        phase: char::from(b'A' + info.phase as u8),
+        errors_corrected: info.errors,
+    })
+}
+
+fn content_trusted(words: &[Word; WORDS], vector: u32, kind: u32) -> bool {
+    let range = content(vector, kind);
+    let Some(used) = words.get(range) else {
+        return false;
+    };
+    if used.contains(&Word::Lost) {
+        return false;
+    }
+    if kind == 5 {
+        return alpha_checksum_holds(used);
+    }
+    !used.iter().any(|word| word.is_soft())
+}
+
+fn alpha_checksum_holds(used: &[Word]) -> bool {
+    let Some((first, rest)) = used.split_first() else {
+        return false;
+    };
+    let Some(header) = first.data() else {
+        return false;
+    };
+    let sum = std::iter::once(header & !0x3FF)
+        .chain(rest.iter().filter_map(|word| word.data()))
+        .map(|word| (word & 0xFF) + (word >> 8 & 0xFF) + (word >> 16 & 0x1F))
+        .sum::<u32>();
+    !sum & 0x3FF == header & 0x3FF
+}
+
+fn content(vector: u32, kind: u32) -> std::ops::Range<usize> {
+    let start = ((vector >> 7) & 0x7F) as usize;
+    match kind {
+        3 | 4 | 7 => start..start + ((vector >> 14) & 7) as usize + 1,
+        5 | 6 => start..start + ((vector >> 14) & 0x7F) as usize,
+        _ => 0..0,
     }
 }
 
@@ -517,13 +649,15 @@ impl ChannelRx for FlexChannel {
         check_params(params)?;
         Ok(Self {
             invert: params.invert,
-            last: None,
+            afc: Afc::new(RATE),
+            slow: Bank::new(RATE, SEARCH_SPS),
+            fast: Bank::new(RATE, FAST_SPS),
+            history: [[0.0; TONES]; HISTORY],
             sample: 0,
-            search_window: [0.0; SEARCH_SPS],
-            search_sum: 0.0,
             search_lanes: [SearchLane::default(); SEARCH_SPS],
+            candidate: None,
             state: State::Search,
-            symbol_sum: 0.0,
+            timing: 0.0,
             symbol_samples: 0,
             symbol_target: SEARCH_SPS,
             polarity: false,
@@ -539,17 +673,15 @@ impl ChannelRx for FlexChannel {
 
     fn retuned(&mut self) {
         self.reset();
-        self.last = None;
+        self.afc = Afc::new(RATE);
+        self.slow.reset();
+        self.fast.reset();
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         for &sample in iq {
-            if let Some(last) = self.last {
-                let frequency = (sample * last.conj()).arg() * RATE as f32 / TAU;
-                self.push_frequency(frequency, out);
-                self.sample = self.sample.wrapping_add(1);
-            }
-            self.last = Some(sample);
+            self.push_sample(sample, out);
+            self.sample = self.sample.wrapping_add(1);
         }
     }
 }
@@ -557,21 +689,114 @@ impl ChannelRx for FlexChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{testgen, testutil::settings};
+    use crate::{synth, testutil::settings};
+
+    #[test]
+    fn decodes_a_p2000_page_off_air() {
+        let iq = crate::testutil::cf32_le(include_bytes!(
+            "../../../fixtures/flex_p2000_offair_48k.sigmf-data"
+        ));
+        let params = FlexParams::default();
+        let mut filtered = Vec::new();
+        channel_filter(&params).unwrap().process(&iq, &mut filtered);
+        let mut channel = FlexChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::Flex(params)),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        for chunk in filtered.chunks(997) {
+            channel.process(chunk, &mut out);
+        }
+        let messages = out
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Flex(message) => Some(message),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].address, 2_029_574);
+        assert_eq!(
+            messages[0].text,
+            "A2 DP2 Leidschendam-Voorburg Via Donizetti VOORB VWS 15123"
+        );
+        assert_eq!((messages[0].cycle, messages[0].frame), (0, 72));
+    }
+
+    fn active_power(iq: &[Complex<f32>]) -> f64 {
+        let powers: Vec<f64> = iq
+            .chunks(48)
+            .map(|block| {
+                block.iter().map(|s| f64::from(s.norm_sqr())).sum::<f64>() / block.len() as f64
+            })
+            .collect();
+        let top = powers.iter().copied().fold(0.0, f64::max);
+        let active: Vec<f64> = powers.into_iter().filter(|&p| p >= top / 100.0).collect();
+        active.iter().sum::<f64>() / active.len() as f64
+    }
+
+    fn gaussian_noise(iq: &mut [Complex<f32>], snr_db: f64, seed: u64) {
+        let sigma = (active_power(iq) / 10f64.powf(snr_db / 10.0) / 2.0).sqrt();
+        let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+        let mut uniform = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        for sample in iq {
+            let radius = (-2.0 * uniform().ln()).sqrt() * sigma;
+            let angle = std::f64::consts::TAU * uniform();
+            *sample += Complex::from_polar(radius as f32, angle as f32);
+        }
+    }
+
+    #[test]
+    fn the_p2000_page_survives_extra_noise_on_a_weak_recording() {
+        let clean = crate::testutil::cf32_le(include_bytes!(
+            "../../../fixtures/flex_p2000_offair_48k.sigmf-data"
+        ));
+        for seed in 1..=8 {
+            let mut iq = clean.clone();
+            gaussian_noise(&mut iq, 35.0, seed);
+            let messages = received(&iq);
+            assert_eq!(messages.len(), 1, "seed {seed}: {messages:?}");
+            assert_eq!(
+                messages[0].text,
+                "A2 DP2 Leidschendam-Voorburg Via Donizetti VOORB VWS 15123"
+            );
+        }
+    }
+
+    #[test]
+    fn an_alpha_page_with_a_wrong_k_checksum_is_dropped() {
+        let header = 3 << 11 | 1 << 19;
+        let text = [0x12_3456, 0x0A_BCDE];
+        let sum = [header, text[0], text[1]]
+            .iter()
+            .map(|word| (word & 0xFF) + (word >> 8 & 0xFF) + (word >> 16 & 0x1F))
+            .sum::<u32>();
+        let words =
+            |k: u32| [header | k, text[0], text[1]].map(|data| Word::Hard { data, errors: 0 });
+        assert!(alpha_checksum_holds(&words(!sum & 0x3FF)));
+        assert!(!alpha_checksum_holds(&words(!sum & 0x3FF ^ 1)));
+    }
 
     #[test]
     fn decodes_all_flex_modes_from_recorded_iq_in_ragged_blocks() {
-        let page = testgen::flex::Page {
+        let page = synth::flex::Page {
             address: 123_456,
             text: "FLEX ALPHA PAGE".to_owned(),
         };
         for (mode, baud, levels) in [
-            (testgen::flex::Mode::Flex1600_2, 1_600, 2),
-            (testgen::flex::Mode::Flex1600_4, 3_200, 4),
-            (testgen::flex::Mode::Flex3200_2, 3_200, 2),
-            (testgen::flex::Mode::Flex3200_4, 6_400, 4),
+            (synth::flex::Mode::Flex1600_2, 1_600, 2),
+            (synth::flex::Mode::Flex1600_4, 3_200, 4),
+            (synth::flex::Mode::Flex3200_2, 3_200, 2),
+            (synth::flex::Mode::Flex3200_4, 6_400, 4),
         ] {
-            let iq = testgen::flex::transmission_mode(&page, 7, 83, RATE, mode);
+            let iq = synth::flex::transmission_mode(&page, 7, 83, RATE, mode);
             let mut channel = FlexChannel::new(
                 ChannelCtx { input_rate: RATE },
                 settings(ChannelParams::Flex(FlexParams::default())),
@@ -597,5 +822,77 @@ mod tests {
             assert_eq!(messages[0].cycle, 7);
             assert_eq!(messages[0].frame, 83);
         }
+    }
+
+    fn page() -> synth::flex::Page {
+        synth::flex::Page {
+            address: 123_456,
+            text: "FLEX ALPHA PAGE".to_owned(),
+        }
+    }
+
+    fn received(iq: &[Complex<f32>]) -> Vec<FlexMessage> {
+        let Ok(ChannelFilter::Symmetric(mut filter)) = channel_filter(&FlexParams::default())
+        else {
+            panic!("flex filters symmetrically");
+        };
+        let mut filtered = Vec::new();
+        filter.process(iq, &mut filtered);
+        let mut channel = FlexChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::Flex(FlexParams::default())),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        for chunk in filtered.chunks(997) {
+            channel.process(chunk, &mut out);
+        }
+        out.events
+            .into_iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Flex(message) => Some(message),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_detuned_pager_with_a_drifting_clock_decodes_in_noise() {
+        for mode in [
+            synth::flex::Mode::Flex1600_2,
+            synth::flex::Mode::Flex1600_4,
+            synth::flex::Mode::Flex3200_2,
+            synth::flex::Mode::Flex3200_4,
+        ] {
+            for seed in [0x1357_9bdf, 0x2468_ace1] {
+                let mut iq = synth::silence(3_000);
+                iq.extend(synth::flex::transmission_mode(&page(), 7, 83, RATE, mode));
+                iq.extend(synth::silence(3_000));
+                let mut iq = synth::resample(&iq, RATE, RATE * 1.000_15);
+                synth::shift(&mut iq, 800.0, RATE);
+                synth::add_noise(&mut iq, seed, 1.5);
+                let messages = received(&iq);
+                assert!(
+                    messages.iter().any(|m| m.text == "FLEX ALPHA PAGE"),
+                    "{mode:?} seed {seed:#x}: {messages:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_uncorrectable_word_drops_only_the_messages_that_use_it() {
+        let mut iq = synth::flex::transmission(&page(), 7, 83, RATE);
+        let data_start = (1_072 + 40) * 30;
+        let last_word_bits = (10 * 256 + 7..10 * 256 + 7 + 3 * 8).step_by(8);
+        for symbol in last_word_bits {
+            let start = data_start + symbol * 30;
+            for sample in &mut iq[start..start + 30] {
+                *sample = sample.conj();
+            }
+        }
+        let messages = received(&iq);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].text, "FLEX ALPHA PAGE");
     }
 }

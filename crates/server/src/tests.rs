@@ -10,24 +10,29 @@ use sdrmm_wire::{
     ChannelSettings, ChannelTypesResponse, CreatedId, CreatedRowId, DecodedRecord, DecoderEvent,
     DecoderLogEntry, DecoderLogResponse, DeletedCount, DeviceSettings, NetworkExportStatus,
     NfmParams, NmeaDevicesResponse, PresetInfo, PresetSnapshot, RecordingStatus,
-    RecordingsResponse, StateSnapshot, TimeMachineStatus, VoiceCallsResponse,
+    RecordingsResponse, SavedRadio, StateSnapshot, TimeMachineStatus, VoiceCallsResponse,
 };
 use tower::ServiceExt;
 
 use super::*;
 
+mod array;
 mod auth_mcp;
 mod calls;
 mod catalog;
 mod channel_capture;
-mod coherent;
 mod cps;
 mod decoderlog;
 mod devices;
 mod diagnostics;
+mod fusion;
+mod mcp_canvas;
 mod openapi;
+mod phones;
 mod presets;
+mod rebind;
 mod recordings;
+mod remote;
 mod scanning;
 mod templates;
 mod tls;
@@ -92,12 +97,31 @@ fn test_router_with_state() -> (Router, AppState) {
     (router, state)
 }
 
-fn state_over(store: Arc<Store>) -> AppState {
-    let arrays = sdrmm_engine::ArrayCatalog::new();
+fn test_router_with_options(options: &ServerOptions) -> Router {
+    let mut registry = sdrmm_device::DeviceRegistry::new();
+    registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
+    let state = AppState::new(
+        Engine::with_registry(registry, None),
+        Arc::new(Store::open(None).expect("in-memory store")),
+    );
+    let (router, background) = router_with_state(state, options);
+    background.detach();
+    router
+}
+
+fn tls_router_with_state() -> (Router, AppState) {
+    let store = Arc::new(Store::open(None).expect("in-memory store"));
+    let state = state_over(store);
+    let (router, background) = main_router(state.clone(), &ServerOptions::default(), true);
+    background.detach();
+    (router, state)
+}
+
+pub(crate) fn state_over(store: Arc<Store>) -> AppState {
     let mut registry = sdrmm_device::DeviceRegistry::new();
     registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
     registry.register(1, Box::new(sdrmm_device_siggen::SigGenDriver::new()));
-    let mut state = AppState::new(Engine::with_arrays(registry, None, arrays), store);
+    let mut state = AppState::new(Engine::with_registry(registry, None), store);
     let mut tools = sdrmm_tools::ToolRegistry::default();
     tools
         .register(Box::new(sdrmm_tools::AntennaTool))
@@ -129,6 +153,9 @@ impl NativeShell for FakeShell {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(path.to_path_buf());
+        Ok(())
+    }
+    fn notify(&self, _: &str, _: &str) -> std::io::Result<()> {
         Ok(())
     }
 }
@@ -177,8 +204,22 @@ fn recording_state(dir: &Path) -> AppState {
     )
 }
 
-async fn request(app: Router, method: &str, uri: &str, body: Option<&str>) -> (StatusCode, Bytes) {
-    let (status, _, bytes) = request_parts(app, method, uri, body, &[]).await;
+const TEST_AUTHOR: &str = "test";
+
+pub(crate) async fn request(
+    app: Router,
+    method: &str,
+    uri: &str,
+    body: Option<&str>,
+) -> (StatusCode, Bytes) {
+    let (status, _, bytes) = request_parts(
+        app,
+        method,
+        uri,
+        body,
+        &[(sdrmm_wire::AUTHOR_HEADER, TEST_AUTHOR)],
+    )
+    .await;
     (status, bytes)
 }
 
@@ -220,7 +261,7 @@ async fn create_virtual_set(app: &Router) -> u32 {
         app.clone(),
         "POST",
         "/api/devicesets",
-        Some(r#"{"device_id":"virtual:siggen"}"#),
+        Some(r#"{"device_id":"virtual:band"}"#),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -238,7 +279,7 @@ fn preset_250k(channels: Vec<ChannelSettings>) -> PresetSnapshot {
         version: sdrmm_wire::PRESET_SNAPSHOT_VERSION,
         devices: vec![sdrmm_wire::PresetDevice {
             node: "device".to_string(),
-            device_id: "virtual:siggen".to_string(),
+            device_id: "virtual:band".to_string(),
             settings: DeviceSettings {
                 center_hz: Some(100_000_000.0),
                 sample_rate: Some(250_000.0),
@@ -324,7 +365,7 @@ async fn record(app: &Router, ds: u32, on: bool) -> Option<sdrmm_wire::Recording
             port: "iq".to_owned(),
         },
     });
-    put_workspace_revision(app, &snapshot, detail.info.revision).await;
+    put_workspace(app, &snapshot).await;
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let live = get_state(app)
@@ -649,7 +690,6 @@ fn virtual_snapshot(key: &str, taps: &[(&str, &str, &str)]) -> sdrmm_wire::Works
             id: (*id).to_string(),
             body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
                 channel_type: (*channel_type).to_string(),
-                record_calls: false,
                 tuning_locked: false,
             }),
             position: sdrmm_wire::Position { x: 400.0, y: 300.0 },
@@ -671,15 +711,12 @@ fn virtual_snapshot(key: &str, taps: &[(&str, &str, &str)]) -> sdrmm_wire::Works
 }
 
 async fn put_active_workspace(app: &Router, snapshot: &sdrmm_wire::WorkspaceSnapshot) -> i64 {
-    put_workspace_revision(app, snapshot, 1).await
+    put_workspace(app, snapshot).await
 }
 
-async fn put_workspace_revision(
-    app: &Router,
-    snapshot: &sdrmm_wire::WorkspaceSnapshot,
-    revision: u64,
-) -> i64 {
+async fn put_workspace(app: &Router, snapshot: &sdrmm_wire::WorkspaceSnapshot) -> i64 {
     let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let revision = workspace_detail(app, workspace).await.info.revision;
     let (status, body) = request(
         app.clone(),
         "PUT",
@@ -695,7 +732,7 @@ async fn put_workspace_revision(
 }
 
 async fn store_siggen_workspace(app: &Router) -> i64 {
-    put_active_workspace(app, &virtual_snapshot("siggen", &[("voice", "nfm", "iq")])).await
+    put_active_workspace(app, &virtual_snapshot("band", &[("voice", "nfm", "iq")])).await
 }
 
 async fn apply(app: &Router, workspace: i64) -> sdrmm_wire::PatchApplyReport {
@@ -711,7 +748,7 @@ async fn apply(app: &Router, workspace: i64) -> sdrmm_wire::PatchApplyReport {
 }
 
 async fn store_second_workspace(app: &Router, name: &str, channel_type: &str) -> i64 {
-    let snapshot = virtual_snapshot("siggen", &[("other", channel_type, "iq")]);
+    let snapshot = virtual_snapshot("band", &[("other", channel_type, "iq")]);
     let (status, body) = request(
         app.clone(),
         "POST",
@@ -735,10 +772,5 @@ async fn activate(app: &Router, workspace: i64) {
         Some("{}"),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::NO_CONTENT,
-        "{}",
-        String::from_utf8_lossy(&body)
-    );
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 }

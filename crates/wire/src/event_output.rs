@@ -9,6 +9,8 @@ pub const MAX_MQTT_USERNAME_LEN: usize = 255;
 pub const MAX_SQL_IDENTIFIER_LEN: usize = 63;
 pub const MAX_INFLUX_NAME_LEN: usize = 255;
 pub const DEFAULT_POSTGRES_TABLE: &str = "sdrmm_events";
+pub const MAX_CSV_FILE_LEN: usize = 64;
+pub const CSV_SUFFIX: &str = ".csv";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -21,6 +23,11 @@ pub enum WebhookFormat {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "service", rename_all = "snake_case")]
 pub enum EventOutputTarget {
+    Recordings,
+    Desktop,
+    Csv {
+        file: String,
+    },
     Beast {
         address: String,
         #[serde(default)]
@@ -71,6 +78,9 @@ pub enum EventOutputTarget {
 impl std::fmt::Debug for EventOutputTarget {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Recordings => formatter.write_str("Recordings"),
+            Self::Desktop => formatter.write_str("Desktop"),
+            Self::Csv { file } => formatter.debug_struct("Csv").field("file", file).finish(),
             Self::Beast { address, .. } => formatter
                 .debug_struct("Beast")
                 .field("address", address)
@@ -150,6 +160,8 @@ impl EventOutputTarget {
     #[must_use]
     pub fn configured(&self) -> bool {
         match self {
+            Self::Recordings | Self::Desktop => true,
+            Self::Csv { file } => !file.trim().is_empty(),
             Self::Beast { address, enabled } => *enabled && !address.is_empty(),
             Self::Tunnel { interface, .. } => !interface.is_empty(),
             Self::Webhook { url, .. } => !url.trim().is_empty(),
@@ -182,6 +194,8 @@ impl EventOutputTarget {
     #[must_use]
     pub fn valid(&self) -> bool {
         match self {
+            Self::Recordings | Self::Desktop => true,
+            Self::Csv { file } => file.is_empty() || valid_csv_file(file),
             Self::Beast { address, .. } => {
                 address.is_empty()
                     || (address.len() <= crate::MAX_NETWORK_ADDRESS_LEN
@@ -276,6 +290,25 @@ pub fn valid_sql_identifier(value: &str) -> bool {
         && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
+#[must_use]
+pub fn valid_csv_file(value: &str) -> bool {
+    let mut chars = value.chars();
+    value.len() <= MAX_CSV_FILE_LEN
+        && chars
+            .next()
+            .is_some_and(|first| first.is_ascii_alphanumeric())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+#[must_use]
+pub fn csv_file_name(file: &str) -> String {
+    if file.to_ascii_lowercase().ends_with(CSV_SUFFIX) {
+        file.to_owned()
+    } else {
+        format!("{file}{CSV_SUFFIX}")
+    }
+}
+
 fn valid_influx_name(value: &str) -> bool {
     value.len() <= MAX_INFLUX_NAME_LEN && !value.chars().any(char::is_control)
 }
@@ -318,6 +351,14 @@ pub struct BeastExportStatus {
     pub listening: bool,
     pub clients: u32,
     pub frames: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct EventOutputStatus {
+    pub node: String,
+    pub delivered: u64,
+    pub failed: u64,
     pub error: Option<String>,
 }
 
@@ -379,6 +420,40 @@ mod tests {
             }
             .configured()
         );
+    }
+
+    #[test]
+    fn recordings_and_desktop_need_no_settings() {
+        for (target, encoded) in [
+            (EventOutputTarget::Recordings, r#"{"service":"recordings"}"#),
+            (EventOutputTarget::Desktop, r#"{"service":"desktop"}"#),
+        ] {
+            assert!(target.valid() && target.configured());
+            assert_eq!(serde_json::to_string(&target).expect("encode"), encoded);
+            assert_eq!(
+                serde_json::from_str::<EventOutputTarget>(encoded).expect("decode"),
+                target
+            );
+        }
+    }
+
+    #[test]
+    fn a_csv_file_is_a_plain_bounded_name() {
+        let csv = |file: &str| EventOutputTarget::Csv {
+            file: file.to_owned(),
+        };
+        for file in ["events", "adsb-2026.csv", "a_b.c"] {
+            assert!(csv(file).valid() && csv(file).configured(), "{file}");
+        }
+        assert!(!csv(" ").configured());
+        for file in ["../events", "a/b", ".hidden", "a\\b", "a b", "ä"] {
+            assert!(!csv(file).valid(), "{file}");
+        }
+        assert!(!csv(&"e".repeat(MAX_CSV_FILE_LEN + 1)).valid());
+        let encoded = serde_json::to_string(&csv("events")).expect("encode");
+        assert_eq!(encoded, r#"{"service":"csv","file":"events"}"#);
+        assert_eq!(csv_file_name("events"), "events.csv");
+        assert_eq!(csv_file_name("events.CSV"), "events.CSV");
     }
 
     #[test]

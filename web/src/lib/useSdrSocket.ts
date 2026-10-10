@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { switchNotice, useSwitchStore } from "../canvas/switches";
 import {
   AUDIO_RECORDINGS_KEY,
   BOOKMARKS_KEY,
@@ -7,25 +8,34 @@ import {
   DECODER_LOG_KEY,
   DEVICES_KEY,
   IMAGES_KEY,
+  PHONES_KEY,
   PRESETS_KEY,
   RECORDINGS_KEY,
+  SAVED_RADIOS_KEY,
   STATE_KEY,
   TEMPLATES_KEY,
   WORKSPACES_KEY,
 } from "./api";
+import { useArrayStore } from "./arrays";
 import { audioEngine } from "./audio/useChannelAudio";
+import { useBearingStore } from "./bearings";
+import { useBroadcastStore } from "./broadcast";
 import { useDecodedStore } from "./decoded";
-import { useDfStore } from "./df";
 import { recordEvent } from "./diagnostics";
+import { useFusionStore } from "./fusion";
 import { useHuntStore } from "./hunt";
 import { iqHub } from "./iq";
 import { useLevelStore } from "./levels";
+import { AGE_OUT_INTERVAL_MS, TARGET_MAX_AGE_MS } from "./map/layers";
 import { usePipelineHealth } from "./pipeline";
 import { usePositionStore } from "./position";
+import { authorKey, savedName, usePresenceStore } from "./presence";
+import { useProcessorStore } from "./processors";
 import { useSatelliteStore } from "./satellite";
 import { useScannerStore } from "./scanner";
 import { spectrumHub } from "./spectrum";
 import { surfaceHub } from "./surface";
+import { useSurveyStore } from "./survey";
 import { symbolHub } from "./symbols";
 import { pushToast } from "./toasts";
 import type {
@@ -35,7 +45,9 @@ import type {
   StateScope,
   VoiceCall,
   VoiceCallsResponse,
+  WorkspacesResponse,
 } from "./types";
+import { retryNodeState } from "./useNodeStateSync";
 import { videoHub } from "./video";
 import { SdrSocket } from "./ws";
 
@@ -58,6 +70,17 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
         case "ImageCaptured":
           appendImage(queryClient, event.data);
           break;
+        case "WorkspaceSwitched": {
+          const switched = useSwitchStore.getState().observe(event);
+          retryNodeState(queryClient);
+          if (switched !== null && !switched.mine) {
+            pushToast(
+              switchNotice(switched, queryClient.getQueryData<WorkspacesResponse>(WORKSPACES_KEY)),
+              "info",
+            );
+          }
+          break;
+        }
         case "Error":
           if (audioEngine.claimServerError(event.data.message)) {
             recordEvent("error", "socket", event.data.message);
@@ -86,28 +109,53 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
       } else if (!up && now) {
         recordEvent("info", "socket", "connected");
       }
-      if (now) s.send({ type: "SubscribeDiagnostics", data: { enabled: true } });
-      else usePipelineHealth.getState().reset();
+      if (now) {
+        s.send({ type: "SubscribeDiagnostics", data: { enabled: true } });
+        s.send({ type: "Present", data: { author: authorKey(), name: savedName() } });
+      } else {
+        usePipelineHealth.getState().reset();
+        usePresenceStore.getState().reset();
+      }
       up = now;
     });
     s.on("event", usePipelineHealth.getState().observe);
     s.on("event", useDecodedStore.getState().observe);
     s.on("event", useScannerStore.getState().observe);
     s.on("event", useHuntStore.getState().observe);
+    s.on("event", useBroadcastStore.getState().observe);
     s.on("event", usePositionStore.getState().observe);
     s.on("event", useSatelliteStore.getState().observe);
     s.on("event", useLevelStore.getState().observe);
-    s.on("event", useDfStore.getState().observe);
+    s.on("event", useProcessorStore.getState().observe);
+    s.on("event", useArrayStore.getState().observe);
+    s.on("event", useBearingStore.getState().observe);
+    s.on("event", useFusionStore.getState().observe);
+    s.on("event", useSurveyStore.getState().observe);
+    s.on("event", usePresenceStore.getState().observe);
+    const ageOut = setInterval(
+      () => useDecodedStore.getState().ageOut(TARGET_MAX_AGE_MS),
+      AGE_OUT_INTERVAL_MS,
+    );
     spectrumHub.attach(s);
     iqHub.attach(s);
     symbolHub.attach(s);
     videoHub.attach(s);
     surfaceHub.attach(s);
     audioEngine.attach(s);
+    const followVisibility = () => {
+      const visible = document.visibilityState === "visible";
+      for (const hub of [spectrumHub, iqHub, symbolHub, videoHub, surfaceHub]) {
+        hub.setVisible(visible);
+      }
+    };
+    followVisibility();
+    document.addEventListener("visibilitychange", followVisibility);
     // oxlint-disable-next-line react/set-state-in-effect -- the socket is the external system this effect installs, and every consumer reads it from state
     setSocket(s);
     s.connect();
     return () => {
+      clearInterval(ageOut);
+      document.removeEventListener("visibilitychange", followVisibility);
       spectrumHub.detach();
       iqHub.detach();
       symbolHub.detach();
@@ -144,7 +192,7 @@ function appendImage(queryClient: QueryClient, image: CapturedImage) {
   }));
 }
 
-function invalidateScope(queryClient: QueryClient, scope: StateScope): void {
+export function invalidateScope(queryClient: QueryClient, scope: StateScope): void {
   switch (scope.scope) {
     case "all":
       void queryClient.invalidateQueries();
@@ -155,6 +203,7 @@ function invalidateScope(queryClient: QueryClient, scope: StateScope): void {
       void queryClient.invalidateQueries({ queryKey: TEMPLATES_KEY });
       break;
     case "device_set":
+    case "arrays":
       void queryClient.invalidateQueries({ queryKey: STATE_KEY });
       break;
     case "presets":
@@ -163,12 +212,18 @@ function invalidateScope(queryClient: QueryClient, scope: StateScope): void {
     case "bookmarks":
       void queryClient.invalidateQueries({ queryKey: BOOKMARKS_KEY });
       break;
+    case "saved_radios":
+      void queryClient.invalidateQueries({ queryKey: SAVED_RADIOS_KEY });
+      break;
     case "recordings":
       void queryClient.invalidateQueries({ queryKey: RECORDINGS_KEY });
       void queryClient.invalidateQueries({ queryKey: AUDIO_RECORDINGS_KEY });
       break;
     case "workspaces":
       void queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY });
+      break;
+    case "workspace":
+      void queryClient.invalidateQueries({ queryKey: [...WORKSPACES_KEY, scope.id], exact: true });
       break;
     case "decoder_log":
       void queryClient.invalidateQueries({ queryKey: DECODER_LOG_KEY });
@@ -178,6 +233,11 @@ function invalidateScope(queryClient: QueryClient, scope: StateScope): void {
       break;
     case "images":
       void queryClient.invalidateQueries({ queryKey: IMAGES_KEY });
+      break;
+    case "phones":
+      void queryClient.invalidateQueries({ queryKey: PHONES_KEY });
+      break;
+    case "missions":
       break;
   }
 }

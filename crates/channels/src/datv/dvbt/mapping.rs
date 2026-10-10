@@ -1,21 +1,14 @@
 use num_complex::Complex;
 use sdrmm_dsp::{CONFIDENT, Soft};
 
-const CONTINUAL: [usize; 45] = [
-    0, 48, 54, 87, 141, 156, 192, 201, 255, 279, 282, 333, 432, 450, 483, 525, 531, 618, 636, 714,
-    759, 765, 780, 804, 873, 888, 918, 939, 942, 969, 984, 1050, 1101, 1107, 1110, 1137, 1140,
-    1146, 1206, 1269, 1323, 1377, 1491, 1683, 1704,
-];
-const TPS: [usize; 17] = [
-    34, 50, 209, 346, 413, 569, 595, 688, 790, 901, 1073, 1219, 1262, 1286, 1469, 1594, 1687,
-];
+use super::en300744::{CONTINUAL_PILOTS_2K, CONTINUAL_PILOTS_8K, TPS_CARRIERS_2K, TPS_CARRIERS_8K};
+
 const SHIFTS: [usize; 6] = [0, 63, 105, 42, 21, 84];
 
 pub struct Mapping {
     pub fft: usize,
     pub carriers: usize,
     pub data: [Vec<usize>; 4],
-    pub pilots: [Vec<usize>; 4],
     pub continual: Vec<usize>,
     pub tps: Vec<usize>,
     pub reference: Vec<f32>,
@@ -24,16 +17,12 @@ pub struct Mapping {
 
 impl Mapping {
     pub fn new(fft: usize) -> Self {
-        let copies = fft / 2048;
-        let carriers = 1704 * copies + 1;
-        let mut continual: Vec<_> = (0..copies)
-            .flat_map(|i| CONTINUAL.map(|k| k + i * 1704))
-            .collect();
-        continual.sort_unstable();
-        continual.dedup();
-        let tps: Vec<_> = (0..copies)
-            .flat_map(|i| TPS.map(|k| k + i * 1704))
-            .collect();
+        let carriers = 1704 * (fft / 2048) + 1;
+        let (continual, tps) = if fft == 2048 {
+            (CONTINUAL_PILOTS_2K.to_vec(), TPS_CARRIERS_2K.to_vec())
+        } else {
+            (CONTINUAL_PILOTS_8K.to_vec(), TPS_CARRIERS_8K.to_vec())
+        };
         let mut register = 0x7ffu16;
         let reference = (0..carriers)
             .map(|_| {
@@ -42,7 +31,7 @@ impl Mapping {
                 value
             })
             .collect();
-        let pilots = std::array::from_fn(|phase| {
+        let pilots: [Vec<usize>; 4] = std::array::from_fn(|phase| {
             (0..carriers)
                 .filter(|k| k % 12 == 3 * phase || continual.binary_search(k).is_ok())
                 .collect::<Vec<_>>()
@@ -58,7 +47,6 @@ impl Mapping {
             fft,
             carriers,
             data,
-            pilots,
             continual,
             tps,
             reference,
@@ -133,15 +121,24 @@ pub fn point(word: usize, bits: usize, alpha: usize) -> Complex<f32> {
     Complex::new(axis(0), axis(1)) / power.sqrt()
 }
 
-pub fn soften(value: Complex<f32>, table: &[Complex<f32>], bits: usize) -> [Soft; 6] {
+pub fn soften(
+    value: Complex<f32>,
+    table: &[Complex<f32>],
+    bits: usize,
+    scale: f32,
+) -> ([Soft; 6], f32) {
     match bits {
-        2 => soften_axis::<2>(value, table),
-        4 => soften_axis::<4>(value, table),
-        _ => soften_axis::<6>(value, table),
+        2 => soften_axis::<2>(value, table, scale),
+        4 => soften_axis::<4>(value, table, scale),
+        _ => soften_axis::<6>(value, table, scale),
     }
 }
 
-fn soften_axis<const BITS: usize>(value: Complex<f32>, table: &[Complex<f32>]) -> [Soft; 6] {
+fn soften_axis<const BITS: usize>(
+    value: Complex<f32>,
+    table: &[Complex<f32>],
+    scale: f32,
+) -> ([Soft; 6], f32) {
     let bits = BITS;
     let mut costs = [[f32::INFINITY; 2]; 6];
     for axis_word in 0..1 << (bits / 2) {
@@ -158,14 +155,16 @@ fn soften_axis<const BITS: usize>(value: Complex<f32>, table: &[Complex<f32>]) -
             cost[index] = cost[index].min(distances[bit % 2]);
         }
     }
-    std::array::from_fn(|bit| {
+    let nearest = costs[0][0].min(costs[0][1]) + costs[1][0].min(costs[1][1]);
+    let limit = f32::from(CONFIDENT);
+    let soft = std::array::from_fn(|bit| {
         if bit < bits {
-            ((costs[bit][0] - costs[bit][1]) * 2.0 * f32::from(CONFIDENT))
-                .clamp(-f32::from(CONFIDENT), f32::from(CONFIDENT)) as Soft
+            ((costs[bit][0] - costs[bit][1]) * scale).clamp(-limit, limit) as Soft
         } else {
             0
         }
-    })
+    });
+    (soft, nearest)
 }
 
 pub fn deinterleave(

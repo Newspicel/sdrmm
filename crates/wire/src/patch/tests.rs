@@ -20,7 +20,6 @@ fn channel(id: &str, ty: &str) -> PatchNode {
         id,
         NodeBody::Channel(ChannelNode {
             channel_type: ty.to_owned(),
-            record_calls: false,
             tuning_locked: false,
         }),
     )
@@ -61,7 +60,9 @@ fn capabilities(duplex: Duplex, rx_streams: u32, tx_streams: u32) -> Capabilitie
         dc_artifact: DcArtifact::Operator,
         hardware_sweep: false,
         coherence: crate::device::Coherence::None,
-        noise_source: false,
+        noise_source: crate::device::NoiseSource::None,
+        retune_keeps_phase: false,
+        rx_inputs: Vec::new(),
     }
 }
 
@@ -94,45 +95,30 @@ fn descriptors() -> Vec<ChannelDescriptor> {
     ]
 }
 
-fn recording_calls(id: &str, ty: &str, on: bool) -> PatchNode {
-    node(
-        id,
-        NodeBody::Channel(ChannelNode {
-            channel_type: ty.to_owned(),
-            record_calls: on,
-            tuning_locked: false,
-        }),
-    )
-}
-
 #[test]
-fn a_voice_channel_may_record_its_calls() {
-    let graph = PatchGraph {
-        nodes: vec![recording_calls("dmr", "dmr", true)],
-        edges: Vec::new(),
+fn a_channel_offers_events_when_it_decodes_or_carries_audio() {
+    let events = ports_for("channel")
+        .into_iter()
+        .find(|port| port.port_type == PortType::Events)
+        .expect("events port");
+    let analog = ChannelDescriptor {
+        type_id: "nfm".to_owned(),
+        has_audio: true,
+        ..ChannelDescriptor::default()
     };
-    assert!(graph.validate_against(&descriptors()).is_ok());
-}
-
-#[test]
-fn a_channel_that_carries_no_voice_cannot_record_calls() {
-    let graph = PatchGraph {
-        nodes: vec![recording_calls("pager", "adsb", true)],
-        edges: Vec::new(),
+    let silent = ChannelDescriptor {
+        type_id: "scope".to_owned(),
+        has_audio: false,
+        ..ChannelDescriptor::default()
     };
-    assert_eq!(
-        graph.validate_against(&descriptors()),
-        Err(PatchError::NodeSettings("pager".to_owned()))
-    );
-}
-
-#[test]
-fn recording_nothing_is_always_allowed() {
-    let graph = PatchGraph {
-        nodes: vec![recording_calls("pager", "adsb", false)],
-        edges: Vec::new(),
-    };
-    assert!(graph.validate_against(&descriptors()).is_ok());
+    for descriptor in descriptors().iter().chain([&analog]) {
+        assert!(
+            events.applies_to(Some(PortBacking::Channel(descriptor))),
+            "{}",
+            descriptor.type_id
+        );
+    }
+    assert!(!events.applies_to(Some(PortBacking::Channel(&silent))));
 }
 
 #[test]
@@ -177,7 +163,7 @@ fn an_event_filter_passes_events_through_and_bounds_its_lists() {
 fn a_channel_can_reach_an_event_output_through_a_filter() {
     let graph = PatchGraph {
         nodes: vec![
-            recording_calls("dmr", "dmr", true),
+            channel("dmr", "dmr"),
             node("filter", NodeBody::EventFilter(EventFilterNode::default())),
             node(
                 "output",
@@ -233,7 +219,6 @@ fn topology_ignores_where_a_face_sits_and_what_it_is_called() {
     let mut retyped = graph.clone();
     retyped.nodes[1].body = NodeBody::Channel(ChannelNode {
         channel_type: "am".to_owned(),
-        record_calls: false,
         tuning_locked: false,
     });
     assert!(!graph.same_topology(&retyped));
@@ -272,6 +257,7 @@ fn a_device_node_saved_before_the_frequency_lock_existed_still_loads_unlocked() 
     let locked = NodeBody::Device(DeviceNode {
         device: device.device,
         locked_streams: vec![1],
+        split_tuning: false,
     });
     let json = serde_json::to_string(&locked).expect("serialize the body");
     let NodeBody::Device(back) =
@@ -294,7 +280,6 @@ fn a_channel_node_saved_before_the_frequency_lock_existed_still_loads_unlocked()
 
     let locked = NodeBody::Channel(ChannelNode {
         channel_type: channel.channel_type,
-        record_calls: false,
         tuning_locked: true,
     });
     let json = serde_json::to_string(&locked).expect("serialize the body");
@@ -316,11 +301,11 @@ fn a_workspace_validates_structurally_and_against_the_registry() {
 #[test]
 fn an_unknown_channel_type_is_refused_only_against_the_registry() {
     let mut graph = workspace();
-    graph.nodes[2] = channel("ch", "wefax");
+    graph.nodes[2] = channel("ch", "telefax");
     graph.validate().expect("structure alone cannot know");
     assert_eq!(
         graph.validate_against(&descriptors()),
-        Err(PatchError::ChannelType("wefax".to_owned()))
+        Err(PatchError::ChannelType("telefax".to_owned()))
     );
 }
 
@@ -470,22 +455,6 @@ fn an_event_output_accepts_decoder_and_completed_call_events() {
 }
 
 #[test]
-fn a_dmr_trunk_records_calls_by_default_and_can_be_told_not_to() {
-    assert!(DmrTrunkNode::default().record_calls);
-    let graph = PatchGraph {
-        nodes: vec![node(
-            "system",
-            NodeBody::DmrTrunk(DmrTrunkNode {
-                record_calls: false,
-                ..DmrTrunkNode::default()
-            }),
-        )],
-        edges: Vec::new(),
-    };
-    assert!(graph.validate().is_ok());
-}
-
-#[test]
 fn network_export_requires_a_bounded_host_and_nonzero_port() {
     let mut graph = PatchGraph {
         nodes: vec![node(
@@ -589,7 +558,7 @@ fn a_dmr_trunk_system_takes_a_radio_and_hands_out_events() {
         nodes: vec![
             node("radio", NodeBody::Device(DeviceNode::default())),
             node("system", NodeBody::DmrTrunk(DmrTrunkNode::default())),
-            node("log", NodeBody::DecoderLog),
+            node("log", NodeBody::DecoderLog(Default::default())),
         ],
         edges: vec![
             edge(("radio", "iq"), ("system", "iq")),
@@ -723,7 +692,7 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
             .filter(|port| port.direction == PortDirection::Out)
             .any(|out| {
                 to.ports.iter().any(|input| {
-                    input.direction == PortDirection::In && input.port_type == out.port_type
+                    input.direction == PortDirection::In && wire_allowed(from, out, to, input)
                 })
             })
     };
@@ -747,27 +716,37 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
         .collect();
     assert_eq!(
         cycle,
-        vec![
-            "array",
-            "event_filter",
-            "audio_fx",
-            "df",
-            "combiner",
-            "stitch",
-            "triangulation"
-        ]
+        vec!["event_filter", "audio_fx", "passive_radar", "triangulation"]
     );
+}
+
+fn wire_allowed(from: &NodeTypeInfo, out: &PortSpec, to: &NodeTypeInfo, input: &PortSpec) -> bool {
+    if out.port_type != input.port_type {
+        return false;
+    }
+    let body = |info: &NodeTypeInfo| {
+        let mut body = info.default_body.clone();
+        if let NodeBody::Channel(channel) = &mut body {
+            channel.channel_type = "adsb".to_owned();
+        }
+        body
+    };
+    let graph = PatchGraph {
+        nodes: vec![node("a", body(from)), node("b", body(to))],
+        edges: vec![edge(("a", &out.name), ("b", &input.name))],
+    };
+    !matches!(graph.validate(), Err(PatchError::Wire { .. }))
 }
 
 #[test]
 fn every_node_the_palette_offers_round_trips_and_validates_on_its_own() {
     for entry in PatchCatalog::build().nodes {
-        let body = default_body(&entry.kind);
-        let json = serde_json::to_string(&body).expect("serialize the body");
+        let json = serde_json::to_string(&entry.default_body).expect("serialize the body");
         let back: NodeBody = serde_json::from_str(&json).unwrap_or_else(|error| {
             panic!("{} does not survive a round trip: {error}", entry.kind)
         });
         assert_eq!(back.kind(), entry.kind);
+        assert_eq!(back, entry.default_body);
 
         let mut node = node("solo", back);
         if let NodeBody::Channel(channel) = &mut node.body {
@@ -780,50 +759,6 @@ fn every_node_the_palette_offers_round_trips_and_validates_on_its_own() {
         graph
             .validate()
             .unwrap_or_else(|error| panic!("a fresh {} is invalid: {error}", entry.kind));
-    }
-}
-
-fn default_body(kind: &str) -> NodeBody {
-    match kind {
-        "device" => NodeBody::Device(DeviceNode::default()),
-        "recording" => NodeBody::Recording(RecordingNode::default()),
-        "signal_gen" => NodeBody::SignalGen(SignalGenNode::default()),
-        "array" => NodeBody::Array(ArrayNode::default()),
-        "gps" => NodeBody::Gps(GpsNode::default()),
-        "channel" => NodeBody::Channel(ChannelNode {
-            channel_type: "nfm".to_owned(),
-            record_calls: false,
-            tuning_locked: false,
-        }),
-        "scope" => NodeBody::Scope,
-        "baseband_scope" => NodeBody::BasebandScope,
-        "speaker" => NodeBody::Speaker,
-        "map" => NodeBody::Map,
-        "signal_map" => NodeBody::SignalMap(SignalMapNode::default()),
-        "propagation" => NodeBody::Propagation(PropagationNode::default()),
-        "readout" => NodeBody::Readout,
-        "decoder_log" => NodeBody::DecoderLog,
-        "dmr_trunk" => NodeBody::DmrTrunk(DmrTrunkNode::default()),
-        "spectrum_monitor" => NodeBody::SpectrumMonitor(crate::SpectrumMonitorNode::default()),
-        "event_filter" => NodeBody::EventFilter(EventFilterNode::default()),
-        "audio_fx" => NodeBody::AudioFx(crate::AudioFxNode::default()),
-        "event_output" => NodeBody::EventOutput(EventOutputNode::default()),
-        "video" => NodeBody::Video,
-        "recorder" => NodeBody::Recorder(RecorderNode::default()),
-        "audio_recorder" => NodeBody::AudioRecorder(RecorderNode::default()),
-        "baseband_recorder" => NodeBody::BasebandRecorder(RecorderNode::default()),
-        "time_machine" => NodeBody::TimeMachine(TimeMachineNode::default()),
-        "network_export" => NodeBody::NetworkExport(NetworkExportNode::default()),
-        "export" => NodeBody::Export,
-        "scanner" => NodeBody::Scanner(crate::scan::ScannerNode::default()),
-        "hunt" => NodeBody::Hunt(HuntNode::default()),
-        "satellite" => NodeBody::Satellite(crate::SatelliteNode::default()),
-        "df" => NodeBody::Df(DfNode::default()),
-        "passive_radar" => NodeBody::PassiveRadar(PassiveRadarNode::default()),
-        "combiner" => NodeBody::Combiner(CombinerNode::default()),
-        "stitch" => NodeBody::Stitch(crate::StitchNode::default()),
-        "triangulation" => NodeBody::Triangulation,
-        other => panic!("the palette offers {other}, which this test does not build"),
     }
 }
 
@@ -937,12 +872,48 @@ fn only_a_radio_that_can_transmit_shows_a_transmit_input() {
 }
 
 #[test]
+fn a_scanner_keeps_its_settings() {
+    let body: NodeBody =
+        serde_json::from_str(r#"{"kind":"scanner","data":{}}"#).expect("an empty scanner");
+    assert_eq!(body, NodeBody::Scanner(ScannerNode::default()));
+
+    let kept = NodeBody::Scanner(ScannerNode {
+        settings: crate::ScanSettings {
+            mode: crate::ScanMode::All,
+            lockouts: vec![227_360_000.0],
+            ..crate::ScanSettings::default()
+        },
+    });
+    let json = serde_json::to_string(&kept).expect("serialize");
+    assert_eq!(
+        serde_json::from_str::<NodeBody>(&json).expect("round trip"),
+        kept
+    );
+}
+
+#[test]
+fn a_decoder_log_keeps_its_grouping() {
+    let body: NodeBody =
+        serde_json::from_str(r#"{"kind":"decoder_log","data":{}}"#).expect("a plain log");
+    assert_eq!(body, NodeBody::DecoderLog(DecoderLogNode::default()));
+
+    let grouped: NodeBody =
+        serde_json::from_str(r#"{"kind":"decoder_log","data":{"group":"station"}}"#)
+            .expect("a grouped log");
+    assert_eq!(
+        grouped,
+        NodeBody::DecoderLog(DecoderLogNode {
+            group: Some(crate::LogGroupKey::Station)
+        })
+    );
+}
+
+#[test]
 fn a_scanner_owns_the_one_decoder_its_wire_runs_into() {
     let mut driven = workspace();
-    driven.nodes.push(node(
-        "scan",
-        NodeBody::Scanner(crate::scan::ScannerNode::default()),
-    ));
+    driven
+        .nodes
+        .push(node("scan", NodeBody::Scanner(ScannerNode::default())));
     driven
         .edges
         .push(edge(("scan", "control"), ("ch", "control")));
@@ -988,10 +959,9 @@ fn a_scanner_owns_the_one_decoder_its_wire_runs_into() {
     );
 
     let mut two_scanners = driven.clone();
-    two_scanners.nodes.push(node(
-        "scan2",
-        NodeBody::Scanner(crate::scan::ScannerNode::default()),
-    ));
+    two_scanners
+        .nodes
+        .push(node("scan2", NodeBody::Scanner(ScannerNode::default())));
     two_scanners
         .edges
         .push(edge(("scan2", "control"), ("ch", "control")));
@@ -1055,10 +1025,10 @@ fn device_refs_match_by_serial_then_key_then_singleton() {
         serial: None,
         profile: None,
     };
-    let siggen = DeviceInfo {
+    let band = DeviceInfo {
         driver: "virtual".to_owned(),
-        key: "siggen".to_owned(),
-        label: "Signal Generator".to_owned(),
+        key: "band".to_owned(),
+        label: "Test band".to_owned(),
         serial: None,
         profile: None,
     };
@@ -1095,7 +1065,7 @@ fn device_refs_match_by_serial_then_key_then_singleton() {
     assert_eq!(by_key.key.as_deref(), Some("file:/rec/capture"));
     assert!(by_key.matches(&file));
     assert!(
-        !by_key.matches(&siggen),
+        !by_key.matches(&band),
         "two serial-less devices of one backend stay distinct"
     );
 
@@ -1134,27 +1104,6 @@ fn a_channel_takes_every_radio_that_may_carry_it() {
         .map(|device| device.id.as_str())
         .collect();
     assert_eq!(on_both, vec!["dev", "dev2"]);
-}
-
-#[test]
-fn lanes_come_only_from_nodes_that_open_a_radio() {
-    let mut graph = workspace();
-    graph
-        .nodes
-        .push(node("df", NodeBody::Df(DfNode::default())));
-    graph.edges.push(edge(("df", DF_BEAM_PORT), ("ch", "iq")));
-    assert_eq!(
-        graph.validate(),
-        Err(PatchError::PortOccupied(PortRef {
-            node: "ch".to_owned(),
-            port: "iq".to_owned(),
-        }))
-    );
-    graph
-        .edges
-        .retain(|edge| edge.from.node != "dev" || edge.to.node != "ch");
-    graph.validate().expect("a beam feeds a channel alone");
-    assert!(graph.lanes_of("ch").is_empty());
 }
 
 #[test]
@@ -1263,7 +1212,6 @@ fn an_unbacked_node_expands_to_stream_zero_only() {
 
     let body = NodeBody::Channel(ChannelNode {
         channel_type: "nfm".to_owned(),
-        record_calls: false,
         tuning_locked: false,
     });
     let nfm = &descriptors()[0];
@@ -1272,7 +1220,7 @@ fn an_unbacked_node_expands_to_stream_zero_only() {
         .into_iter()
         .map(|port| port.name)
         .collect();
-    assert_eq!(names, vec!["iq", "control", "baseband", "audio"]);
+    assert_eq!(names, vec!["iq", "control", "baseband", "audio", "events"]);
 }
 
 #[test]
@@ -1280,7 +1228,6 @@ fn a_channels_outputs_follow_what_its_type_produces() {
     let names = |descriptor: &ChannelDescriptor| {
         NodeBody::Channel(ChannelNode {
             channel_type: descriptor.type_id.clone(),
-            record_calls: false,
             tuning_locked: false,
         })
         .ports_with(Some(PortBacking::Channel(descriptor)))
@@ -1757,6 +1704,29 @@ fn gps_source_settings_are_structurally_bounded() {
 }
 
 #[test]
+fn a_phone_source_needs_a_valid_id() {
+    let gps = |phone: &str| PatchGraph {
+        nodes: vec![node(
+            "gps",
+            NodeBody::Gps(GpsNode {
+                source: Some(PositionSource::Phone {
+                    phone: phone.to_owned(),
+                }),
+            }),
+        )],
+        edges: Vec::new(),
+    };
+    assert_eq!(gps("p0123456789abcdef").validate(), Ok(()));
+    for bad in ["x", "", "p0123456789ABCDEF", "p0123456789abcde"] {
+        assert_eq!(
+            gps(bad).validate(),
+            Err(PatchError::Gps("phone id is not valid".to_owned())),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
 fn default_params_come_from_the_type_id() {
     let params = ChannelParams::default_for("ssb").expect("ssb is a channel type");
     assert_eq!(params.type_id(), "ssb");
@@ -1764,126 +1734,8 @@ fn default_params_come_from_the_type_id() {
         ChannelSettings::default_for("ssb").expect("ssb is a channel type"),
         serde_json::from_str(r#"{"params":{"type":"ssb","settings":{}}}"#).unwrap()
     );
-    assert_eq!(ChannelParams::default_for("wefax"), None);
-    assert_eq!(ChannelSettings::default_for("wefax"), None);
-}
-
-#[test]
-fn an_array_node_describes_the_composite_it_draws() {
-    let node = ArrayNode {
-        members: 2,
-        coherence: crate::device::Coherence::TimeSync,
-        shared_tuning: true,
-    };
-    let members = vec!["rtlsdr:0001".to_owned(), "rtlsdr:0002".to_owned()];
-    let definition = node.definition("array:9f2c", Some("Roof pair"), members);
-    assert_eq!(definition.key, "array-9f2c");
-    assert_eq!(definition.id(), "array:array-9f2c");
-    assert_eq!(definition.label, "Roof pair");
-    assert!(definition.valid());
-
-    let body = NodeBody::Array(node);
-    assert_eq!(
-        body.device_ref("array:9f2c")
-            .and_then(|reference| reference.key),
-        Some("array-9f2c".to_owned()),
-        "an array opens itself as one radio"
-    );
-    assert!(
-        NodeBody::Array(ArrayNode::default())
-            .device_ref("array:9f2c")
-            .is_none(),
-        "an array with nothing wired in has no radio to open"
-    );
-}
-
-#[test]
-fn an_array_draws_one_more_input_than_it_has_radios() {
-    let ports = |members: u32| {
-        NodeBody::Array(ArrayNode {
-            members,
-            ..ArrayNode::default()
-        })
-        .ports()
-    };
-    let named = |members: u32, direction: PortDirection| {
-        ports(members)
-            .into_iter()
-            .filter(|port| port.direction == direction)
-            .map(|port| port.name)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(named(0, PortDirection::In), vec!["iq".to_owned()]);
-    assert!(named(0, PortDirection::Out).is_empty());
-    assert_eq!(
-        named(2, PortDirection::In),
-        vec!["iq".to_owned(), "iq2".to_owned(), "iq3".to_owned()]
-    );
-    assert_eq!(
-        named(2, PortDirection::Out),
-        vec!["iq".to_owned(), "iq2".to_owned()],
-        "one lane out per radio in"
-    );
-}
-
-#[test]
-fn the_wires_say_which_radios_are_in_an_array_and_in_what_order() {
-    let mut graph = PatchGraph {
-        nodes: vec![
-            node("one", NodeBody::Device(DeviceNode::default())),
-            node("two", NodeBody::Device(DeviceNode::default())),
-            node(
-                "bench",
-                NodeBody::Array(ArrayNode {
-                    members: 2,
-                    ..ArrayNode::default()
-                }),
-            ),
-        ],
-        edges: vec![
-            edge(("two", "iq"), ("bench", "iq2")),
-            edge(("one", "iq"), ("bench", "iq")),
-        ],
-    };
-    assert_eq!(graph.array_members("bench"), vec!["one", "two"]);
-    assert_eq!(graph.array_holding("two"), Some("bench"));
-    assert_eq!(graph.array_holding("bench"), None);
-
-    graph.edges.retain(|wire| wire.from.node != "one");
-    assert_eq!(
-        graph.array_members("bench"),
-        vec!["two"],
-        "a radio taken out leaves the rest where they were wired"
-    );
-    assert_eq!(graph.array_holding("one"), None);
-}
-
-#[test]
-fn an_array_with_one_radio_in_it_is_not_an_array() {
-    let alone = ArrayNode {
-        members: 1,
-        ..ArrayNode::default()
-    };
-    assert!(
-        !alone
-            .definition("array:9f2c", None, vec!["rtlsdr:0001".to_owned()])
-            .valid()
-    );
-    let apart = ArrayNode {
-        members: 2,
-        coherence: crate::device::Coherence::None,
-        shared_tuning: true,
-    };
-    assert!(
-        !apart
-            .definition(
-                "array:9f2c",
-                None,
-                vec!["rtlsdr:0001".to_owned(), "rtlsdr:0002".to_owned()]
-            )
-            .valid(),
-        "radios that share no clock are a bank of receivers, not an array"
-    );
+    assert_eq!(ChannelParams::default_for("telefax"), None);
+    assert_eq!(ChannelSettings::default_for("telefax"), None);
 }
 
 fn recording(id: &str, stem: Option<&str>) -> PatchNode {
@@ -1954,13 +1806,12 @@ fn every_source_that_opens_a_radio_is_bound_like_one() {
             node("dev", NodeBody::Device(DeviceNode::default())),
             recording("rec", Some("take")),
             node("gen", NodeBody::SignalGen(SignalGenNode::default())),
-            node("arr", NodeBody::Array(ArrayNode::default())),
             node("scope", NodeBody::Scope),
         ],
         edges: Vec::new(),
     };
     let bound: Vec<&str> = graph.device_nodes().map(|node| node.id.as_str()).collect();
-    assert_eq!(bound, ["dev", "rec", "gen", "arr"]);
+    assert_eq!(bound, ["dev", "rec", "gen"]);
     assert!(!NodeBody::Scope.opens_device());
 }
 
@@ -2054,7 +1905,7 @@ fn spectrum_monitor_has_only_iq_input_and_event_output() {
         nodes: vec![
             node("radio", NodeBody::Device(DeviceNode::default())),
             node("monitor", monitor),
-            node("log", NodeBody::DecoderLog),
+            node("log", NodeBody::DecoderLog(Default::default())),
         ],
         edges: vec![
             edge(("radio", "iq"), ("monitor", "iq")),
@@ -2093,7 +1944,6 @@ fn a_satellite_drives_many_decoders_but_a_decoder_answers_to_one_controller() {
             id,
             NodeBody::Channel(ChannelNode {
                 channel_type: "nfm".to_owned(),
-                record_calls: false,
                 tuning_locked: false,
             }),
         )
@@ -2111,10 +1961,7 @@ fn a_satellite_drives_many_decoders_but_a_decoder_answers_to_one_controller() {
     let mut graph = PatchGraph {
         nodes: vec![
             node("sat", NodeBody::Satellite(crate::SatelliteNode::default())),
-            node(
-                "scan",
-                NodeBody::Scanner(crate::scan::ScannerNode::default()),
-            ),
+            node("scan", NodeBody::Scanner(ScannerNode::default())),
             decoder("voice"),
             decoder("telemetry"),
         ],
@@ -2180,13 +2027,44 @@ fn audio_fx_with_settings_outside_their_range_is_refused() {
     );
 }
 
-#[test]
-fn every_catalog_kind_has_a_default_body_of_its_own_kind() {
-    for entry in PatchCatalog::build().nodes {
-        let body = NodeBody::default_for(&entry.kind)
-            .unwrap_or_else(|| panic!("no default body for {}", entry.kind));
-        assert_eq!(body.kind(), entry.kind);
-        assert_eq!(body.category(), entry.category);
+fn radio(key: &str) -> DeviceNode {
+    DeviceNode {
+        device: Some(DeviceRef {
+            backend: "rtltcp".to_owned(),
+            serial: None,
+            key: Some(key.to_owned()),
+        }),
+        ..DeviceNode::default()
     }
-    assert!(NodeBody::default_for("no_such_node").is_none());
 }
+
+fn holding(device: DeviceNode) -> PatchGraph {
+    let mut graph = workspace();
+    graph.nodes[0].body = NodeBody::Device(device);
+    graph
+}
+
+#[test]
+fn a_device_node_releases_its_radio_when_it_forgets_or_swaps_it() {
+    let before = holding(radio("a:1234"));
+    assert_eq!(
+        holding(DeviceNode::default()).released_radios(&before),
+        ["dev"]
+    );
+    assert_eq!(holding(radio("b:1234")).released_radios(&before), ["dev"]);
+    assert!(holding(radio("a:1234")).released_radios(&before).is_empty());
+    assert!(before.released_radios(&workspace()).is_empty());
+}
+
+#[test]
+fn triangulation_without_data_loads_with_defaults() {
+    let stored = serde_json::json!({ "kind": "triangulation", "data": {} });
+    let body: NodeBody = serde_json::from_value(stored).expect("deserialize");
+    assert_eq!(body, NodeBody::Triangulation(TriangulationNode::default()));
+    let json = serde_json::to_value(&body).expect("serialize");
+    assert_eq!(json["data"]["settings"]["nav"], "auto");
+    let back: NodeBody = serde_json::from_value(json).expect("deserialize");
+    assert_eq!(back, body);
+}
+
+mod arrays;

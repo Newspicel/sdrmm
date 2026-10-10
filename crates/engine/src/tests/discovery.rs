@@ -7,18 +7,18 @@ async fn probes_virtual_device() {
         engine
             .probe_devices()
             .iter()
-            .any(|d| d.id() == "virtual:siggen")
+            .any(|d| d.id() == "virtual:band")
     );
 }
 
 #[tokio::test]
 async fn one_radio_opens_into_one_device_set() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
-    let refused = engine.create_device_set("virtual:siggen").unwrap_err();
+    let ds = engine.create_device_set("virtual:band").unwrap();
+    let refused = engine.create_device_set("virtual:band").unwrap_err();
     assert!(
         matches!(&refused, EngineError::DeviceAlreadyOpen(device, held)
-            if device == "virtual:siggen" && *held == ds),
+            if device == "virtual:band" && *held == ds),
         "expected a reopen refusal, got {refused}"
     );
     assert!(refused.is_conflict());
@@ -26,13 +26,13 @@ async fn one_radio_opens_into_one_device_set() {
     assert_eq!(engine.snapshot().device_sets.len(), 1);
 
     engine.remove_device_set(ds).unwrap();
-    engine.create_device_set("virtual:siggen").unwrap();
+    engine.create_device_set("virtual:band").unwrap();
 }
 
 #[tokio::test]
 async fn spectrum_flows_with_a_visible_tone() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     let mut rx = engine.subscribe_spectrum(ds, 0).unwrap();
 
     let snap = tokio::time::timeout(Duration::from_secs(3), rx.recv())
@@ -85,5 +85,34 @@ fn soapy_hides_exactly_the_radios_this_build_drives_over_usb() {
     assert!(
         !handled.contains(&"sdrplay"),
         "the SDRplay driver reports unique serials and settles its duplicate by priority instead"
+    );
+}
+
+#[tokio::test]
+async fn a_radio_the_network_search_adopts_announces_itself() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(AdoptingDriver::default()));
+    let engine = Engine::with_registry(registry, None);
+    let mut events = engine.subscribe_events();
+
+    assert!(engine.probe_devices().is_empty());
+
+    let announced = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Ok(ServerEvent::StateChanged {
+                scope: StateScope::Devices,
+            }) = events.recv().await
+            {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(announced.is_ok(), "the adopted radio must announce itself");
+    assert!(
+        engine
+            .probe_devices()
+            .iter()
+            .any(|device| device.id() == "mock:adopted")
     );
 }

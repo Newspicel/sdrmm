@@ -114,7 +114,13 @@ pub fn format_db(db: Option<f32>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::scan::{DEFAULT_SCAN_RANGE, ScanSettings, ScanState};
+    use sdrmm_wire::scan::{ScanSettings, ScanState};
+
+    const DEFAULT_SCAN_RANGE: ScanRange = ScanRange {
+        start_hz: 145_600_000.0,
+        stop_hz: 145_800_000.0,
+        step_hz: 12_500.0,
+    };
 
     use super::*;
 
@@ -186,7 +192,7 @@ mod tests {
             first_hz: 0.0,
             last_hz: 0.0,
             current_hz: 145_500_000.0,
-            current_db: None,
+            current_snr_db: None,
             sweeps: 0,
             hits: 0,
             hardware_sweep: false,

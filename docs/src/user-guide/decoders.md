@@ -5,171 +5,309 @@ covers the modes that need more than a frequency.
 
 ## Catalog
 
-**+ Add** lists the modes in the running build, grouped as below.
+**+ Add** lists every mode under Decoders, grouped as below.
 
 | Group | Tested on air | Fixture only | Experimental |
 |---|---|---|---|
-| Analog voice | AM, NFM, SSB, WFM with stereo and RDS | | |
-| Digital voice | DMR, FreeDV 1600 | D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | |
-| Aviation | ADS-B (1090ES) | ACARS, VDL Mode 2, HFDL, Inmarsat Classic Aero | VOR, ILS localizer and glideslope |
-| Marine | | AIS, NAVTEX, DSC, Inmarsat STD-C and EGC | |
-| Amateur and HF | CW skimmer, FT8, FT4, WSPR | APRS / AX.25, RTTY, PSK31 to PSK250, Morse | |
-| Paging and telemetry | POCSAG | FLEX, ERMES, Selcall (CCIR, ZVEI), Sub-GHz OOK/FSK, [ISM sensors](#ism-sensors), DCF77, WWVB, MSF, JJY | |
-| Pictures and video | | [SSTV](#sstv), ATV | |
-| Broadcast digital | [DAB and DAB+](#dab-and-dab) | | [DVB-T/T2, DATV (DVB-S/S2)](#dvb), DRM30 and DRM+ |
-| Utility | [Signal identifier](scanning.md#identify-a-signal) | Iridium bursts, [DECT survey](#dect) | GNSS lab (GPS L1 C/A) |
+| Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
+| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | | |
+| Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium), [Drone Remote ID](#drone-remote-id) | VOR, ILS localizer / glideslope |
+| Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC | |
+| Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
+| Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager, [End-of-Train](#end-of-train) | |
+| Pictures and video | [SSTV](#sstv) | ATV | |
+| Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
+| Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [LoRaWAN, Meshtastic, MeshCore](#lora) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
-| Tested on air | Verified live, through a real radio and the full receiver |
-| Fixture only | Verified on recordings, generated IQ, or reference vectors. Not yet verified live. |
-| Experimental | Partly works. See the limits below. |
+| Tested on air | Verified on real off-air signals, live or recorded |
+| Fixture only | Verified on recordings, generated IQ, or reference vectors, not yet live |
+| Experimental | Works with the limits below |
 
 Fixtures catch decoding bugs but say little about drift, fading, or interference. The
-[fixture library](https://github.com/Newspicel/sdrminusminus/blob/main/fixtures/README.md) lists
-where each recording came from. VDL Mode 2, HFDL, Inmarsat Classic Aero and STD-C, DSC and
-Iridium started as ports of [xng](https://github.com/airframesio/xng). Inmarsat Classic Aero reads
-the P channel, R/T bursts from aircraft, or a C voice circuit; pick one on the node.
-Iridium decodes one 50 kHz channel, or bursts across 1 to 10 MHz when you set its span to the
-radio's sample rate; it reads the middle 80%.
-
-Have a short on-air recording of a fixture-only mode, with the decoded output? It is the most
-useful contribution there is. See [Build and test](../development/building.md).
+[fixture library](https://github.com/Newspicel/sdrmm/blob/main/fixtures/README.md) lists where each
+recording came from.
 
 ### Experimental limits
 
 | Mode | Works | Missing |
 |---|---|---|
-| DATV | DVB-S/S2/S2X, programme tables, audio, video, GSE | Verified on synthetic IQ only |
-| DVB-T/T2 | DVB-T HP/LP, T2-Base and Lite, SISO/MISO, 1K to 32K, PLP choice, audio, video | Synthetic IQ only. No GSE, no multi-RF TFS. |
-| DRM30 / DRM+ | Lock, SNR, frequency error | No FAC, SDC, or MSC. No services or audio. |
-| GNSS lab | GPS L1 C/A acquisition and navigation data | No position fix |
-| VOR / ILS | Radial, difference in depth of modulation | Tested on generated signals only |
-
-## DAB and DAB+
-
-Wire `audio` to a Speaker. **Auto** plays the first audio service. **Generation** limits the
-choice to DAB or DAB+. **Transmission** picks mode I to IV. All run at 2.048 MS/s. Only mode I
-has been received on air.
-
-A **Readout** shows the dynamic label and slideshow. The **Decoder log** keeps received MOT
-objects with a download link. Files are offered for download, never opened in the interface.
-
-Packet services appear in the same list as audio services. IP services emit datagrams, see
-[IP data](#ip-data).
-
-## DVB
-
-DVB-T/T2 and DVB-S/S2 play the chosen programme's first audio and video streams. Wire `audio` to
-a Speaker and `video` to a **Video** node. Pick a discovered programme or enter its number.
-
-**DVB-T/T2:** set **Standard** and **Bandwidth**. Everything else is read from the signal.
-**Low priority stream** picks DVB-T LP. **PLP** picks a DVB-T2 pipe, or the first TS pipe if left
-empty. **1.7 MHz** fits a 2.048 MS/s radio.
-
-**DVB-S/S2:** set **Symbol rate** from 100 kBd to 4 MBd. The channel rate is twice the symbol
-rate, so a 2 MBd carrier needs a radio that delivers 4 MS/s. Set **Roll-off** to match the
-transmitter. DVB-S is always 0.35. DVB-S2 finds the MODCOD on its own, including VL-SNR.
-**Input stream** picks one stream on a multistream carrier.
-
-**Superframes** enables DVB-S2X Annex E formats 0 and 1. Formats 2 to 7 are not supported.
-
-## IP data
-
-DAB IP services and DVB-S2 GSE carry IP packets. To put them on your network, wire the channel's
-`events` to an **Event output**, choose **Network interface**, and set an interface name, address,
-and prefix. SDR-- creates a TUN interface and writes the packets to it.
-
-| System | Needs |
-|---|---|
-| Linux | `CAP_NET_ADMIN` for the server |
-| macOS | Permission to create a `utun` interface; name it like `utun8` |
-| Windows | Administrator rights and [wintun.dll](https://www.wintun.net/) beside the executable |
-
-Routing and multicast are up to your operating system.
-
-## Databases
-
-Wire `events` to an **Event output** and choose **PostgreSQL** or **InfluxDB**.
-
-**PostgreSQL** creates the table on first write: one row per event with time, kind, frequency,
-station, summary, and the full record as `jsonb`. Add `?sslmode=disable` to the URL for a server
-without TLS.
-
-**InfluxDB** 2 and 3 take one point per event. The measurement is the event kind, and numbers,
-flags, and short text from the event become fields.
+| DVB-T/T2 | DVB-T HP and LP, T2-Base and Lite, SISO and MISO, 1K to 32K, PLP choice, audio, video | GSE, multi-RF TFS |
+| GNSS lab | GPS L1 C/A acquisition, tracking and navigation data, one PRN per channel | Position fix |
 
 ## DMR trunking
 
-Add **DMR trunk system**, wire Device `iq`, and enter the control channel in MHz. Pick the system
-type or leave it on auto. The node creates the DMR channels it needs.
+Add **DMR trunk system**, wire Device `iq`, and enter the control channel in MHz under
+**Control**. Set **Protocol** or leave it on **Auto-detect**. The node runs the DMR channels it
+needs.
 
-| System | Finds its channels by |
+| Protocol | Finds its channels by |
 |---|---|
-| Tier III, including Capacity Max | Reading channel definitions from the control channel |
-| Capacity Plus | Watching for carriers that share rest-channel changes |
-| Hytera XPT | Same as Capacity Plus, with XPT signalling |
+| Tier III / Capacity Max | Reading the channel plan from the control channel |
+| Capacity Plus | **Search**: carriers that follow the same rest channel |
+| Hytera XPT | Same as Capacity Plus |
+
+**Range** narrows the search. Channels can also be entered in the plan table.
 
 Following runs on the server with no browser open. Voice channels must fit inside the Device's
-window. A grant outside it is reported.
+window; a grant outside it is reported. To save call audio, see
+[Record each call](recording.md#record-each-call).
 
-**Record calls** keeps finished calls and their audio in memory. Encrypted calls keep only
-metadata.
+## Inmarsat and Iridium
 
-## SSTV
+Inmarsat Classic Aero reads one **Channel**: P to aircraft, R/T bursts from aircraft, or C voice
+circuit signalling. It plays no audio.
 
-Tune SSTV to the SSB carrier. A picture takes from 36 seconds to four and a half minutes.
-
-| Setting | Does |
-|---|---|
-| Follow VIS | Reads the mode from the transmission |
-| Manual mode | Uses the chosen mode when the header was missed |
-| Slant correction | Straightens pictures from a slightly off clock. Leave it on. |
-| Keep unfinished pictures | Saves a picture cut short by a fade |
-
-Modes: Robot 36 and 72, Martin M1 and M2, Scottie S1, S2 and DX, PD50 to PD180, Wraase SC2-180.
-
-Wire `video` to **Video** to watch a picture arrive. Finished pictures are saved as PNG on the
-server, even with no client open, and kept for 24 hours, up to 512 pictures.
-
-## DECT
-
-The DECT channel surveys base stations: identity, capabilities, and security. It reads signalling
-only, never call audio.
-
-It needs a radio that reaches 1.9 GHz at 2.304 MS/s or more. HackRF and SDRplay work, RTL-SDR does
-not.
-
-| Setting | Choice |
-|---|---|
-| Band | Europe 1880 to 1900 MHz, or US 1920 to 1930 MHz |
-| Side | Base, Handset, or Both |
-
-Carriers are 1.728 MHz apart. European carrier 0 is 1897.344 MHz and the numbers count down.
-US carriers count up from 1921.536 MHz.
-
-Each record lists the base identity (RFPI), system information, capabilities, advertised and
-observed security, and handset IDs seen during encryption setup. Encryption is marked active only
-after a grant is seen. Advertised support does not prove a call was encrypted, and missing
-signalling does not prove it was not.
-
-## ISM sensors
-
-The Sub-GHz channel decodes known sensors and shows raw frames for everything else.
-
-| Coding | Sensors |
-|---|---|
-| Pulse position | Nexus-T/TH, Rubicson (also Solight TE44, EMOS E0107T), Acurite 609TXC and 606TX, Prologue-TH, inFactory-TH, Kedsum-TH, Springfield soil probe |
-| Pulse width | LaCrosse TX141TH-Bv2, Fine Offset WH2, Auriol HG02832, Geevon TX16-3, WS2032, EMOS E6016, Rubicson 48942, WT0124, Opus XT300 |
-| Manchester | Ambient Weather F007TH |
-| FSK | Ambient Weather WH31E, Renault TPMS, Toyota TPMS |
-| Differential Manchester | WT450-TH |
-
-A reading is shown only after its checksum passes. Decoding follows
-[rtl_433](https://github.com/merbanan/rtl_433) (GPL-2.0-or-later).
+Iridium decodes one 50 kHz channel. A **Span** of 1, 2.5, 5 or 10 MHz decodes bursts across a
+radio running at that sample rate, using the middle 80%.
 
 ## Pager text
 
 Some German POCSAG networks send umlauts as `{ | } [ \ ] ~`. SDR-- converts them inside
 lowercase words only: `M}nchen` becomes `München`, `Stra~e` becomes `Straße`. `[ALARM]` and
 all-caps messages stay as sent.
+
+## End-of-Train
+
+The End-of-Train channel reads railroad telemetry. Tune 457.9375 MHz for the rear unit: brake pipe
+pressure, motion, marker light, battery and arming. Tune 452.9375 MHz for the locomotive: status
+requests and emergency brake commands. Australia uses 477.7 MHz, New Zealand 450.2625 MHz. Only
+frames whose BCH check passes are logged; **Rejected** counts the ones that failed.
+
+## SSTV
+
+Tune SSTV to the USB dial frequency. A picture takes from 36 seconds to four and a half minutes.
+
+| Setting | Does |
+|---|---|
+| Mode | **Follow VIS** reads the mode from the transmission. Pick one when the header was missed. |
+| Slant | Straightens pictures from a sender whose clock runs off. Leave it on. |
+| Partial | Keeps a picture cut short by a fade |
+
+Modes: Robot 36 and 72, Martin M1 and M2, Scottie S1, S2 and DX, PD50, PD90, PD120, PD180,
+Wraase SC2-180.
+
+Wire `video` to **Video** to watch a picture arrive. Finished pictures are kept as PNG on the
+server, even with no client open, for 24 hours, up to 512 pictures or 256 MB.
+
+## Weather satellites
+
+**NOAA APT** decodes the analog picture on 137 MHz: both AVHRR channels side by side, with the
+channel numbers read from the telemetry wedges. **Partial** keeps a pass cut short.
+
+**Meteor LRPT** decodes the digital picture from Meteor-M on 137.9 MHz. It composes channels 64
+and 65 into colour, or shows the strongest single channel. Set **Mode** to QPSK 72k, OQPSK 72k or
+OQPSK 80k to match the satellite.
+
+A picture starts when the signal locks and is saved when the pass ends, in the same store as SSTV.
+Use a [Satellite](satellites.md) node to follow Doppler and know when a pass begins.
+
+## WEFAX
+
+Tune WEFAX to the USB carrier, 1.9 kHz below the published frequency. The start tone picks the
+IOC, phasing lines set the line start and straighten the slant, and the stop tone ends the chart.
+
+| Setting | Does |
+|---|---|
+| IOC | 576 or 288, used when a chart starts without a start tone |
+| LPM | Lines per minute: 60, 90, 120 or 240. Most stations use 120. |
+| Partial | Keeps a chart cut short by a fade |
+
+## Radiosondes
+
+The Radiosonde channel reads RS41, DFM, M10, M20 and iMet-4 weather balloons. **Sonde** on
+**Auto** runs every type at once. Each frame gives serial, position, altitude, climb and, where the
+sonde sends it, temperature, humidity and pressure. Wire it to **Map** for the flight track and to
+**Decoder log** or **Readout** for the readings. RS41 temperature and humidity appear once its
+calibration data has arrived, about a minute after first lock.
+
+## Map
+
+Wire ADS-B, AIS, APRS, Radiosonde, LoRa or Drone Remote ID `events` to **Map**. Each target draws its track. The
+gear at the bottom left picks the style, hides tracks, or takes a custom URL: an XYZ template
+(`https://…/{z}/{x}/{y}.png`) or a MapLibre style URL, with any API key in the URL. The choice is
+kept in this browser.
+
+## APRS weather
+
+The APRS channel reads weather reports, positioned or positionless, into wind, gust, temperature,
+rain, snow, humidity, pressure and luminosity in metric units. The APRS readout lists each weather
+station with its latest values and the extremes seen.
+
+## DAB and DAB+
+
+Wire `audio` to a Speaker. **Type** limits the choice to DAB or DAB+. **Mode** picks transmission
+mode I to IV, or **Auto** detects it; it starts on I. **Service** picks a service; Auto plays the
+first playable one. All run at 2.048 MS/s. Tuner offsets up to 40 kHz are corrected and shown as
+frequency error.
+
+A **Readout** shows the dynamic label and slideshow. The **Decoder log** keeps received MOT
+objects with a download link. Files are offered for download, never opened in the interface.
+
+Packet services appear in the same list as audio services. IP services emit datagrams, see
+[IP data](network-iq.md#ip-data).
+
+## DRM
+
+Wire `audio` to a Speaker. **Mode** picks DRM30 (robustness A to D), DRM+ (E) or Auto. Auto
+covers the DRM+ width. **BW** sets the DRM30 channel, 4.5 to 20 kHz; tune to the DRM reference
+frequency. **Service** picks one of up to four services; Auto plays the first playable one.
+
+AAC, HE-AAC, HE-AAC v2 and xHE-AAC play. The dynamic label shows the text message. SDC and text CRC failures count as data failures, broken audio frames as audio
+failures.
+
+## DVB
+
+DVB-T/T2 and DVB-S/S2 play the chosen programme's first audio and video streams. Wire `audio` to
+a Speaker and `video` to a **Video** node. **Service** picks a discovered programme or takes its
+number; Auto plays the first.
+
+**DVB-T/T2:** set **Standard** and **BW**. Everything else is read from the signal.
+**Low priority** picks the DVB-T LP stream. **PLP** picks a DVB-T2 pipe, or the first TS pipe if
+left empty. **1.7 MHz** fits a 2.048 MS/s radio.
+
+**DVB-S/S2:** set **Rate** from 100 kBd to 4 MBd. The radio must be wider than the carrier,
+symbol rate × (1 + roll-off): 2.7 MHz for 2 MBd at 0.35. On DVB-S, **FEC** sets the code rate or
+finds it on Auto, and roll-off is always 0.35. On DVB-S2, set **Roll-off** to match the
+transmitter; the MODCOD is found automatically, including VL-SNR. **Stream** picks one input
+stream on a multistream carrier. GSE packets can go to your network, see
+[IP data](network-iq.md#ip-data).
+
+**Superframes** enables DVB-S2X Annex E, formats 0 to 7. Walsh-Hadamard rows are found
+automatically. Set **Ref code** and **Data code** when the carrier does not use the default
+scrambling, or turn on **Code search** to find them on a clean signal.
+
+## DECT
+
+The DECT channel surveys base stations (identity, capabilities, security) and plays unencrypted
+calls.
+
+It needs a radio that reaches 1.9 GHz and is wider than one 1.728 MHz carrier. HackRF and SDRplay
+work, RTL-SDR does not.
+
+| Setting | Choice |
+|---|---|
+| Band | EU 1880 to 1900 MHz, or US 1920 to 1930 MHz |
+| Span | Carrier: one carrier at 2.304 MS/s. Band: every carrier at once |
+| Side | Base, Handset, or Both |
+
+Carriers are 1.728 MHz apart. EU carrier 0 is 1897.344 MHz and the numbers count down. US
+carriers count up from 1921.536 MHz.
+
+For **Band**, tune the channel to the band centre: 1889.568 MHz (EU) or 1924.992 MHz (US). The
+radio needs 20 MS/s for all ten EU carriers and 10 MS/s for the five US ones. Off centre, the
+channel reads the carriers the radio reaches.
+
+Each record lists the base identity (RFPI), system information, capabilities, advertised and
+observed security, and handset IDs seen during encryption setup. Capabilities include the extended
+messages (Q header 4, C and E); DSAA2 and DSC2 come from part 2. Encryption is marked active only
+after a grant is seen. Advertised support does not prove a call was encrypted, and missing
+signalling does not prove it was not.
+
+Calls use 32 kbit/s ADPCM (G.726). The channel plays both directions of the first clear call it
+hears and holds it until it goes quiet. Encrypted bearers stay muted. Voice before the first
+multiframe marker cannot be descrambled; those frames, X-CRC errors, and late frames are counted
+in the record.
+
+## LoRa
+
+The LoRa channel reads LoRa packets and decodes LoRaWAN, Meshtastic and MeshCore inside them.
+Tune to the centre of the LoRa channel.
+
+| Setting | Does |
+|---|---|
+| Preset | Sets BW, SF, IQ and Protocol for a Meshtastic modem preset, MeshCore EU or US, or LoRaWAN. The frequency stays as tuned. |
+| BW | 7.8 to 500 kHz |
+| SF | One spreading factor, or **All** for SF7 to SF12 at once |
+| IQ | **Inverted** hears LoRaWAN downlinks, **Both** hears both directions |
+| Protocol | **Auto** picks by sync word. **LoRa** shows bytes only. |
+| Keys | Extra channel and session keys |
+| Implicit | Payload length for packets sent without a header, then **CR** and **CRC** |
+
+Meshtastic's default key on every preset channel name and the MeshCore **Public** channel are
+built in. Add others under **Keys**:
+
+| Key | Fields |
+|---|---|
+| Meshtastic | Channel name and base64 PSK. An empty PSK is an open channel. |
+| MeshCore | Channel name and base64 or hex secret. A `#tag` name needs no secret. |
+| ABP | LoRaWAN DevAddr, NwkSKey and AppSKey: checks the MIC and decrypts the payload |
+| OTAA | LoRaWAN AppKey: checks join requests and opens join accepts |
+
+The LoRa readout lists each node heard, keyed by Meshtastic node ID, MeshCore name or LoRaWAN
+DevAddr. Meshtastic positions, waypoints and map reports and MeshCore adverts with a location
+appear on **Map**. Meshtastic direct messages and MeshCore private messages are end-to-end
+encrypted and show as such. The signal generator sends Meshtastic, MeshCore and LoRaWAN test
+packets.
+
+## Drone Remote ID
+
+The Drone Remote ID channel reads what drones broadcast under ASTM F3411 and EN 4709-002: serial
+number, position, height, speed, pilot position, operator ID and self ID. It also reads the French
+beacon format and DJI's own DroneID beacons.
+
+It needs a radio that reaches 2.4 GHz. HackRF, SDRplay and Pluto work, RTL-SDR does not.
+
+| Link | Hears | Rate |
+|---|---|---|
+| Bluetooth | Bluetooth 4 adverts on one channel | 4 MS/s |
+| BT band | Every Bluetooth channel in reach, including long range data | 20 MS/s |
+| Wi-Fi | Beacons and NAN frames on one channel, 802.11b and 802.11g | 20 MS/s |
+
+The **Drone Remote ID** and **Drone Remote ID · Wi-Fi** templates set this up.
+
+Tune Bluetooth to an advertising channel: 2402, 2426 or 2480 MHz. Tune Wi-Fi to the channel
+centre, usually channel 6 at 2437 MHz, or 2412, 2462 or 5745 MHz.
+
+Long range drones send their data on any of 37 data channels. BT band covers about 8 of them, so it
+hears about a fifth of those packets.
+
+A Bluetooth 4 advert carries one message, so the readout joins each drone's adverts into one row
+keyed by serial number. **Map** shows the drone and its track; the detail lists the pilot and the
+distance to them. Frames that fail their checksum after the header are counted as rejected.
+
+Tested on real Bluetooth and Wi-Fi captures and on real Remote ID frames from packet captures. No
+public IQ recording of a real Remote ID transmission exists yet.
+
+## BLE advertisements
+
+The BLE channel lists Bluetooth LE devices: address and its type, name, vendor, services, Tx
+power, and beacons: iBeacon, AltBeacon, Eddystone, Find My, Fast Pair and Exposure Notification.
+Scan requests and connection requests show who asked whom.
+
+| Link | Hears | Rate |
+|---|---|---|
+| Channel | One Bluetooth channel | 4 MS/s |
+| Band | Every Bluetooth channel in reach, including long range on the data channels | 20 MS/s |
+
+Tune Channel to an advertising channel: 2402, 2426 or 2480 MHz. A device that repeats itself is
+shown once a second, with the count of repeats. Packets that fail their CRC are counted as
+rejected. The **BLE devices** template sets this up.
+
+## 2.4 GHz survey and Wi-Fi occupancy
+
+Both read energy only and report once a second. Neither decodes a packet.
+
+**2.4 GHz survey** sorts every burst by width, length and channel grid into Wi-Fi, Bluetooth,
+802.15.4 (Zigbee, Thread), microwave oven, narrowband, wideband and continuous. It reports bursts,
+airtime, typical length and where they sit. A carrier that never stops shows as continuous.
+
+**Wi-Fi occupancy** gives the busy time of each 20 MHz Wi-Fi channel fully in view, with its level
+and noise floor. It works on 2.4, 5 and 6 GHz.
+
+| Span | Rate | Sees |
+|---|---|---|
+| 20 | 20 MS/s | One Wi-Fi channel |
+| 40 | 40 MS/s | Five channels at 2.4 GHz |
+| 80 | 80 MS/s | All of 2.4 GHz |
+
+**Margin** sets how far over the noise floor counts as busy. The floor is learnt in the first
+eighth of a second and follows the band slowly upward, at once downward. The **2.4 GHz survey**
+and **Wi-Fi occupancy** templates set them up. The signal generator sends BLE beacons and mixed
+2.4 GHz traffic.
+
+Tested on recordings: a USRP X310 at 100 MS/s beside a DJI Mini 4 Pro (RFUAV) and a 40 MS/s
+Bluetooth capture with OmniSIG labels, where the survey counted 138 Bluetooth bursts against 137
+labelled.

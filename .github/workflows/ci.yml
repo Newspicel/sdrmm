@@ -11,10 +11,11 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   SAVE_CACHE: ${{ github.ref == 'refs/heads/main' }}
+  CARGO_PROFILE_DEV_OPT_LEVEL: 3
 
 jobs:
   check:
@@ -28,6 +29,17 @@ jobs:
           cache: ubuntu-check
           save: ${{ env.SAVE_CACHE }}
       - run: cargo xtask check
+
+  etsi:
+    name: DVB tables vs ETSI (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      - run: rustup show
+      - run: python3 crates/modem-test-support/scripts/dvbs2_spec_check.py --cache "$RUNNER_TEMP/etsi" --dvbs2 crates/channels/src/datv/dvbs2
+      - run: python3 crates/modem-test-support/scripts/s2x_tables.py --cache "$RUNNER_TEMP/etsi" --out crates/channels/src/datv/dvbs2 --check
+      - run: python3 crates/modem-test-support/scripts/dvbt_tables.py --cache "$RUNNER_TEMP/etsi" --out crates/channels/src/datv/dvbt --check
 
   performance:
     name: Performance gates (ubuntu)
@@ -50,6 +62,7 @@ jobs:
           - label: macos-arm64
             runner: macos-15
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/node
@@ -84,6 +97,100 @@ jobs:
           cargo test -p sdrmm-engine --all-features
           --lib gpu::caf::tests::radar_matches_cpu_across_tiles_and_fractional_doppler
           -- --ignored --exact
+
+  simd:
+    name: x86 SIMD kernels under SDE (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust
+        with:
+          cache: simd
+          save: ${{ env.SAVE_CACHE }}
+      - uses: petarpetrovt/setup-sde@v6.0
+      - run: "cargo test -p sdrmm-dsp --release --lib -- fir:: realiq resamp"
+        env:
+          SDRMM_REQUIRE_AVX512: "1"
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: ${{ env.SDE_PATH }}/sde64 -spr --
+
+  array-realtime:
+    name: Array realtime (ubuntu arm64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust
+        with:
+          cache: array-realtime
+          save: ${{ env.SAVE_CACHE }}
+      - run: cargo test -p sdrmm-engine --release --features probe --test array_realtime -- --nocapture
+        env:
+          SDRMM_RT_SCALE: "2"
+
+  mobile:
+    name: Mobile core (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ndk;30.0.16248370
+      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/30.0.16248370" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/rust
+        with:
+          cache: mobile
+          save: ${{ env.SAVE_CACHE }}
+      - run: cargo xtask mobile check --android
+      - run: cargo xtask mobile bindings
+
+  ios:
+    name: iPhone app (macos)
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo xcode-select -s /Applications/Xcode_27.app
+      - uses: ./.github/actions/rust
+        with:
+          cache: ios
+          save: ${{ env.SAVE_CACHE }}
+      - run: cargo xtask mobile check --ios
+      - run: cargo xtask ios lint
+      - run: cargo xtask ios test
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-results
+          path: target/ios/results
+          retention-days: 7
+
+  android:
+    name: Android app (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platforms;android-37.0 build-tools;37.0.0 ndk;30.0.16248370
+      - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/30.0.16248370" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/rust
+        with:
+          cache: android
+          save: ${{ env.SAVE_CACHE }}
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew -p build-logic test
+        working-directory: apps/android
+      - run: ./gradlew spotlessCheck checkSourceRules lintDebug testDebugUnitTest assembleDebug
+        working-directory: apps/android
+      - run: '"$ANDROID_HOME/build-tools/37.0.0/zipalign" -c -P 16 -v 4 apps/android/app/build/outputs/apk/debug/app-debug.apk'
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-reports
+          path: apps/android/app/build/reports
+          retention-days: 7
 
   smoke:
     name: Browser smoke (ubuntu)
@@ -180,7 +287,7 @@ jobs:
         run: docker run --rm --detach --name sdrmm-ci --publish 8080:8080 sdrmm:ci
       - name: Serve UI
         run: |
-          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://127.0.0.1:8080/api/state
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://127.0.0.1:8080/api/status
           curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root"'
       - if: failure()
         run: docker logs sdrmm-ci
@@ -236,6 +343,8 @@ jobs:
           grep -q 'SOAPY_SDR_PLUGIN_PATH' result/bin/sdrmm-desktop
           grep -q 'soapybladerf' result/bin/sdrmm-desktop
           grep -q 'soapyremote' result/bin/sdrmm-desktop
+          grep -q 'vulkan-loader' result/bin/sdrmm-desktop
+          grep -q 'libglvnd' result/bin/sdrmm-desktop
       - name: Launch
         run: |
           status=0

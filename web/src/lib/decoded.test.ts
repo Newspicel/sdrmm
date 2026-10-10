@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FLUSH_MS, RING_CAPACITY, STATION_CAPACITY, useDecodedStore } from "./decoded";
-import type { AdsbMessage, DecodedRecord, RdsUpdate } from "./types";
+import { trailsOf } from "./trails";
+import type { AdsbMessage, DecodedRecord, LoraFrame, RadiosondeFrame, RdsUpdate } from "./types";
 
 const T0 = Date.parse("2026-08-09T12:00:00Z");
 
@@ -35,6 +36,60 @@ function rtty(text: string, offsetMs = 0): DecodedRecord {
     channel: 3,
     freq_hz: 14_083_000,
     event: { kind: "rtty", data: { text } },
+  };
+}
+
+function sonde(data: Partial<RadiosondeFrame> & { serial: string }, offsetMs = 0): DecodedRecord {
+  return {
+    at: at(offsetMs),
+    device_set: 0,
+    channel: 4,
+    freq_hz: 403_000_000,
+    event: { kind: "radiosonde", data: { sonde: "rs41", errors_corrected: 0, ...data } },
+  };
+}
+
+function meshtastic(
+  content: NonNullable<Extract<LoraFrame["decoded"], { protocol: "meshtastic" }>["content"]>,
+  offsetMs = 0,
+): DecodedRecord {
+  return {
+    at: at(offsetMs),
+    device_set: 0,
+    channel: 5,
+    freq_hz: 869_525_000,
+    event: {
+      kind: "lora",
+      data: {
+        spreading_factor: 11,
+        bandwidth_hz: 250_000,
+        coding_rate: "4/5",
+        sync_word: 0x2b,
+        implicit_header: false,
+        low_data_rate: false,
+        inverted_iq: false,
+        integrity: "crc_ok",
+        fec_corrected: 0,
+        snr_db: 1,
+        frequency_error_hz: 0,
+        payload: "00",
+        decoded: {
+          protocol: "meshtastic",
+          to: 0xffff_ffff,
+          from: 0xa1,
+          id: 1,
+          hop_limit: 3,
+          hop_start: 3,
+          want_ack: false,
+          via_mqtt: false,
+          channel_hash: 8,
+          next_hop: 0,
+          relay_node: 0,
+          encryption: "channel",
+          content,
+        },
+      },
+    },
   };
 }
 
@@ -151,6 +206,32 @@ describe("stations", () => {
     expect(useDecodedStore.getState().stations.rds).toHaveLength(1);
   });
 
+  it("keys radiosondes by serial", () => {
+    push(
+      sonde({ serial: "S1234567", altitude_m: 1_000 }, 0),
+      sonde({ serial: "S1234567", altitude_m: 1_050 }, 1_000),
+    );
+
+    const stations = useDecodedStore.getState().stations.radiosonde ?? [];
+    expect(stations).toHaveLength(1);
+    expect(stations[0]?.id).toBe("S1234567");
+    expect(stations[0]?.event.data.altitude_m).toBe(1_050);
+  });
+
+  it("keeps a LoRa node's last position across frames without one", () => {
+    push(
+      meshtastic({ type: "position", lat: 47.5, lon: 8.25 }, 0),
+      meshtastic({ type: "text", text: "hi" }, 1_000),
+    );
+
+    const stations = useDecodedStore.getState().stations.lora ?? [];
+    expect(stations).toHaveLength(1);
+    expect(stations[0]?.id).toBe("!000000a1");
+    expect(stations[0]?.frames).toBe(2);
+    expect(stations[0]?.event.data.decoded).toMatchObject({ content: { type: "position" } });
+    expect(trailsOf("lora").get("!000000a1")?.points).toEqual([[8.25, 47.5]]);
+  });
+
   it("has no rows for character-stream decoders", () => {
     push(rtty("CQ CQ"));
 
@@ -188,6 +269,28 @@ describe("ageOut", () => {
     expect(stations).toHaveLength(1);
     expect(stations[0]?.frames).toBe(1);
     expect(stations[0]?.event.data.callsign).toBeUndefined();
+  });
+});
+
+describe("trails", () => {
+  it("follows each aircraft and forgets it with its station", () => {
+    push(
+      adsb({ icao: "a", lat: 48, lon: 11 }, 0),
+      adsb({ icao: "a", altitude_ft: 3_000 }, 500),
+      adsb({ icao: "a", lat: 48.1, lon: 11 }, 1_000),
+    );
+    expect(trailsOf("adsb").get("a")?.points).toEqual([
+      [11, 48],
+      [11, 48.1],
+    ]);
+    useDecodedStore.getState().ageOut(30_000, T0 + 60_000);
+    expect(trailsOf("adsb").has("a")).toBe(false);
+  });
+
+  it("clears with the store", () => {
+    push(adsb({ icao: "a", lat: 48, lon: 11 }));
+    useDecodedStore.getState().clear();
+    expect(trailsOf("adsb").size).toBe(0);
   });
 });
 

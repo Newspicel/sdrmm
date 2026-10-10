@@ -1,56 +1,60 @@
-import { Circle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Circle, Play, Square } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN, BTN_DANGER, CHIP } from "../../components/controls";
+import { BTN, BTN_DANGER, ICON_BTN } from "../../components/controls";
 import { DecoderLogPanel } from "../../components/DecoderLogPanel";
 import { DecoderView, hasDecoderView } from "../../components/DecoderPanels";
-import { DevOnly } from "../../components/DevOnly";
 import { DownloadMenu } from "../../components/DownloadMenu";
+import { meterTone } from "../../components/dbfs";
 import {
   DEFAULT_LOG_FILTER,
   logDownloads,
   toQuery,
   type WireScope,
 } from "../../components/decoderLog";
-import { formatBytes } from "../../components/format";
+import { Chips, ToggleChip } from "../../components/face/Chips";
+import { FaceFault } from "../../components/face/Fault";
+import { GainMeter, MeterRow } from "../../components/face/Meter";
+import { Readout, Readouts } from "../../components/face/Readouts";
+import { FaceStats, Stat } from "../../components/face/Stats";
+import { DROPS_HINT, formatBytes, formatCount } from "../../components/format";
 import { HuntPanel } from "../../components/HuntPanel";
 import { Icon } from "../../components/Icon";
-import { MapPanel } from "../../components/MapPanel";
-import { Readout, ReadoutRow } from "../../components/Readout";
 import { formatDuration, recordingElapsedS } from "../../components/recordings";
 import { ScannerPanel } from "../../components/ScannerPanel";
-import { Slider } from "../../components/Slider";
-import { VideoView } from "../../components/VideoView";
-import { callAudioUrl } from "../../lib/api";
+import { Tip } from "../../components/Tip";
+import { type VideoSignal, VideoView, videoSignalText } from "../../components/VideoView";
 import { monitorKey } from "../../lib/audio/monitor";
+import { resumeAudioOutput } from "../../lib/audio/sink";
 import { useChannelAudio } from "../../lib/audio/useChannelAudio";
 import { SAMPLE_RATE as AUDIO_RATE_HZ } from "../../lib/audio/worklet";
-import { useDfStore } from "../../lib/df";
-import {
-  crossingSourcesOf,
-  dfOverlay,
-  dfSourcesOf,
-  type RadarSource,
-  radarSourcesOf,
-} from "../../lib/dfOverlay";
-import { type MapKind, mapKindsOf } from "../../lib/map/layers";
-import { positionSourcesOf, usePositionStore } from "../../lib/position";
+import { overlaySourcesOf } from "../../lib/dfOverlay";
+import { mapKindsOf } from "../../lib/map/layers";
+import { positionSourcesOf } from "../../lib/position";
 import type {
-  AudioRecordingStatus,
+  LogGroupKey,
   PatchNode,
   PatchNodeOf,
   RecordingStatus,
-  VoiceCall,
+  ScanSettings,
 } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { eventSourcesOf, type Input, inputsOf, wiredSourcesOf } from "../binding";
+import { eventSourcesOf, hasWire, type Input, inputsOf, wiredSourcesOf } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { defaultScannerSettings, huntSweepOf } from "../newNode";
 import { decoderOf, deviceSetOf } from "../workspaceDevice";
 import { AudioSpectrogramView } from "./AudioSpectrogramView";
-import { recordingFor } from "./audioRecorder";
+import { type RecorderNodeOf, recordingFor, withRecording, withSkipSilence } from "./audioRecorder";
 import { kindsOffered } from "./eventFilter";
-import { FaceBody, FaceEmpty, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
+import { MapPlot } from "./MapPlot";
+import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
+import {
+  type SpeakerHealth,
+  speakerHealthShown,
+  useAudioPeakDb,
+  useSpeakerHealth,
+} from "./speaker";
 
 function useInputs(node: string, port: string): Input[] {
   const workspace = useWorkspaceContext();
@@ -90,195 +94,166 @@ function useWireScope(sink: string): WireScope {
 
 export function SpeakerFace({ node }: { node: PatchNode }) {
   const inputs = useInputs(node.id, "audio");
-
+  const health = useSpeakerHealth(inputs, import.meta.env.DEV);
   return (
     <NodeShell node={node} title="Speaker" category="output">
       <FaceBody>
         {inputs.length === 0 ? (
           <FaceEmpty hint="Wire a channel's audio in" />
         ) : (
-          inputs.map((input) => <AudioInput key={inputKey(input)} input={input} />)
+          inputs.map((input, index) => (
+            <AudioInput
+              key={inputKey(input)}
+              input={input}
+              port={index === 0 ? "audio" : undefined}
+            />
+          ))
         )}
       </FaceBody>
+      {inputs.length > 0 && speakerHealthShown(health) && (
+        <FaceFooter>
+          <AudioHealth health={health} />
+          {health.suspended && (
+            <Button
+              type="button"
+              className={BTN}
+              onClick={resumeAudioOutput}
+              title="Audio output is suspended"
+            >
+              Resume audio
+            </Button>
+          )}
+        </FaceFooter>
+      )}
     </NodeShell>
   );
 }
 
-function AudioInput({ input }: { input: Input }) {
+function AudioInput({ input, port }: { input: Input; port?: string }) {
   const workspace = useWorkspaceContext();
   const audio = useChannelAudio(workspace.socket, input.deviceSet, input.channel.id, input.fx);
   const active = audio.playing || audio.pending || audio.suspended;
-  const label = workspace.graph.nodes.find((n) => n.id === input.node)?.label;
+  const source = monitorKey(input.deviceSet, input.channel.id, input.fx);
+  const peakDb = useAudioPeakDb(source, audio.playing);
+  const name =
+    workspace.graph.nodes.find((n) => n.id === input.node)?.label ??
+    input.channel.settings.params.type.toUpperCase();
   return (
     <div className="flex flex-col gap-1 border-b border-line p-2 last:border-b-0">
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          className={active ? BTN_DANGER : BTN}
-          onClick={() => {
-            audio.resumeOutput();
-            if (active) {
-              audio.stop();
-            } else {
-              audio.start();
-            }
-          }}
-        >
-          {active ? "Stop" : "Play"}
-        </Button>
-        <span className="legend truncate">
-          {label ?? input.channel.settings.params.type.toUpperCase()}
-        </span>
-      </div>
-      <Slider
-        label="Volume"
-        value={audio.volume}
-        min={0}
-        max={1}
-        step={0.01}
-        onChange={audio.setVolume}
+      <MeterRow
+        label={
+          <span className="legend truncate" title={name}>
+            {name}
+          </span>
+        }
+        port={port}
+        meter={
+          <GainMeter
+            label={`${name} volume`}
+            className="min-w-0 flex-1"
+            min={0}
+            max={1}
+            step={0.01}
+            value={audio.volume}
+            peakDb={peakDb ?? null}
+            tone={meterTone(peakDb, false)}
+            onChange={audio.setVolume}
+          />
+        }
+        readout={`${Math.round(audio.volume * 100)}%`}
+        trailing={
+          <PlayToggle
+            active={active}
+            onToggle={() => {
+              audio.resumeOutput();
+              if (active) {
+                audio.stop();
+              } else {
+                audio.start();
+              }
+            }}
+          />
+        }
       />
-      {audio.suspended && (
-        <Button
-          type="button"
-          className={BTN}
-          onClick={audio.resumeOutput}
-          title="Audio output is suspended"
-        >
-          Resume audio
-        </Button>
-      )}
-      <AudioSpectrogramView
-        source={monitorKey(input.deviceSet, input.channel.id, input.fx)}
-        playing={audio.playing}
-      />
-      <DevOnly>
-        <AudioHealth
-          lostFrames={audio.lostFrames}
-          underruns={audio.underruns}
-          bufferedMs={audio.bufferedMs}
-          trimmedMs={audio.trimmedMs}
-        />
-      </DevOnly>
-      {audio.error !== null && (
-        <p role="alert" className="text-xs text-danger">
-          {audio.error}
-        </p>
-      )}
+      <AudioSpectrogramView source={source} playing={audio.playing} />
+      {audio.error !== null && <FaceFault message={audio.error} />}
     </div>
   );
 }
 
-function AudioHealth({
-  lostFrames,
-  underruns,
-  bufferedMs = 0,
-  trimmedMs = 0,
-}: {
-  lostFrames: number;
-  underruns: number;
-  bufferedMs?: number;
-  trimmedMs?: number;
-}) {
-  if (lostFrames === 0 && underruns === 0 && bufferedMs === 0 && trimmedMs === 0) return null;
+function PlayToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
   return (
-    <span className="flex flex-wrap gap-1">
-      {bufferedMs > 0 && (
-        <span className={CHIP} title="Audio waiting for playback">
-          <span className="legend">Buffer</span>
-          {bufferedMs.toFixed(0)} ms
-        </span>
+    <Tip
+      text={active ? "Stop listening" : "Listen"}
+      render={
+        <Button
+          type="button"
+          className={`${ICON_BTN} ${active ? "bg-accent/15 text-accent" : ""}`}
+          aria-label={active ? "Stop" : "Play"}
+          aria-pressed={active}
+          onClick={onToggle}
+        />
+      }
+    >
+      <Icon glyph={active ? Square : Play} size={14} filled={active} />
+    </Tip>
+  );
+}
+
+function AudioHealth({ health }: { health: SpeakerHealth }) {
+  return (
+    <FaceStats>
+      {health.bufferedMs > 0 && (
+        <Stat label="Buffer" title="Audio waiting for playback">
+          {health.bufferedMs.toFixed(0)} ms
+        </Stat>
       )}
-      {trimmedMs > 0 && (
-        <span className={CHIP} title="Old audio discarded to stay live">
-          <span className="legend">Trimmed</span>
-          {trimmedMs.toFixed(0)} ms
-        </span>
+      {health.trimmedMs > 0 && (
+        <Stat label="Trimmed" title="Old audio discarded to stay live">
+          {health.trimmedMs.toFixed(0)} ms
+        </Stat>
       )}
-      {lostFrames > 0 && (
-        <span
-          className={CHIP}
+      {health.droppedMs > 0 && (
+        <Stat
+          label="Dropped"
+          tone="warn"
           title="Audio lost before playback: dropped at the radio, the encoder or the link, or decoded too late on this machine to be played."
         >
-          <span className="legend">Dropped</span>
-          {(lostFrames / 48).toFixed(0)} ms
-        </span>
+          {health.droppedMs.toFixed(0)} ms
+        </Stat>
       )}
-      {underruns > 0 && (
-        <span
-          className={CHIP}
+      {health.underruns > 0 && (
+        <Stat
+          label="Stalls"
+          tone="warn"
           title="Audio arrived but playback ran dry before it could be played: this machine's scheduling or a clock the buffer could not track. The buffer holds more after each one."
         >
-          <span className="legend">Stalls</span>
-          {underruns}
-        </span>
+          {health.underruns}
+        </Stat>
       )}
-    </span>
+    </FaceStats>
   );
 }
 
 export function MapFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
-  const wired = useWiredKinds(node.id);
-  const kinds = mapKindsOf(wired);
-  const positions = positionSourcesOf(workspace.graph, node.id);
-  const finders = dfSourcesOf(workspace.graph, node.id);
-  const crossings = crossingSourcesOf(workspace.graph, node.id);
-  const radars = radarSourcesOf(workspace.graph, node.id);
+  const kinds = mapKindsOf(useWiredKinds(node.id));
   return (
     <NodeShell node={node} title="Map" category="output">
       <FaceBody scroll={false}>
-        <Plot
+        <MapPlot
           kinds={kinds}
-          positionNodes={positions}
-          finders={finders}
-          crossings={crossings}
-          radars={radars}
+          positionNodes={positionSourcesOf(workspace.graph, node.id)}
+          sources={overlaySourcesOf(workspace.graph, node.id)}
         />
       </FaceBody>
     </NodeShell>
   );
 }
 
-const OVERLAY_TICK_MS = 1_000;
-
-function Plot({
-  kinds,
-  positionNodes,
-  finders,
-  crossings,
-  radars,
-}: {
-  kinds: readonly MapKind[];
-  positionNodes: readonly string[];
-  finders: readonly string[];
-  crossings: readonly string[];
-  radars: readonly RadarSource[];
-}) {
-  const byNode = useDfStore((store) => store.byNode);
-  const now = useNow(OVERLAY_TICK_MS);
-  const here = usePositionStore((store) =>
-    positionNodes.length === 0 ? undefined : store.sources[positionNodes[0] ?? ""]?.fix,
-  );
-  const df = dfOverlay(
-    { finders, crossings, radars },
-    byNode,
-    now,
-    here === undefined || here === null ? null : { lat: here.latitude, lon: here.longitude },
-  );
-  return (
-    <MapPanel
-      kinds={kinds}
-      positionNodes={positionNodes}
-      df={df}
-      active={useFaceActive()}
-      className="h-full min-h-0 w-full flex-1"
-    />
-  );
-}
-
 export function ReadoutFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
+  const [group, setGroup] = useState<LogGroupKey | null>(null);
   const inputs = useInputs(node.id, "events");
   const readable = useWiredDecoders(inputs).filter((wired) => hasDecoderView(wired.kind));
   const wires = useWireScope(node.id);
@@ -290,7 +265,7 @@ export function ReadoutFace({ node }: { node: PatchNode }) {
   if (monitor) {
     return (
       <NodeShell node={node} title="Readout" category="output">
-        <DecoderLogPanel wires={wires} />
+        <DecoderLogPanel wires={wires} group={group} onGroup={setGroup} />
       </NodeShell>
     );
   }
@@ -324,6 +299,8 @@ export function ReadoutFace({ node }: { node: PatchNode }) {
 
 export function VideoFace({ node }: { node: PatchNode }) {
   const inputs = useInputs(node.id, "video");
+  const nameOf = useInputName();
+  const [signals, setSignals] = useState<Readonly<Record<string, VideoSignal | null>>>({});
   return (
     <NodeShell node={node} title="Video" category="output">
       <FaceBody>
@@ -334,61 +311,52 @@ export function VideoFace({ node }: { node: PatchNode }) {
             <VideoView
               key={input.node}
               scope={{ deviceSet: input.deviceSet, channel: input.channel.id }}
+              onSignal={(signal) => setSignals((held) => ({ ...held, [input.node]: signal }))}
             />
           ))
         )}
       </FaceBody>
+      {inputs.length > 0 && (
+        <FaceFooter>
+          <FaceStats>
+            {inputs.map((input) => {
+              const signal = signals[input.node] ?? null;
+              return (
+                <Stat
+                  key={input.node}
+                  label={inputs.length > 1 ? nameOf(input) : "Picture"}
+                  title="Decoded picture size and sync"
+                  tone={signal?.live === true ? undefined : "warn"}
+                >
+                  {videoSignalText(signal)}
+                </Stat>
+              );
+            })}
+          </FaceStats>
+        </FaceFooter>
+      )}
     </NodeShell>
   );
 }
 
 export function DecoderLogFace({ node }: { node: PatchNode }) {
+  const workspace = useWorkspaceContext();
   const wires = useWireScope(node.id);
+  const group = node.kind === "decoder_log" ? (node.data?.group ?? null) : null;
+  const remember = (next: LogGroupKey | null): void => {
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      graph: patchNode(snapshot.graph, node.id, (current) =>
+        current.kind === "decoder_log"
+          ? { ...current, data: { ...current.data, group: next } }
+          : current,
+      ),
+    }));
+  };
   return (
     <NodeShell node={node} title="Decoder log" category="output">
-      <DecoderLogPanel wires={wires} />
+      <DecoderLogPanel wires={wires} group={group} onGroup={remember} />
     </NodeShell>
-  );
-}
-
-export function CallRow({ call }: { call: VoiceCall }) {
-  const destination =
-    call.destination == null ? "Unknown" : `${call.group_call ? "TG" : "ID"} ${call.destination}`;
-  const source = call.source == null ? "Unknown source" : `Radio ${call.source}`;
-  const when = new Date(call.ended_at).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  return (
-    <article className="flex flex-col gap-2 border-b border-line p-2 last:border-b-0">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <strong className="truncate font-mono text-xs text-ink">{destination}</strong>
-        <span className={CHIP}>{source}</span>
-        {call.slot != null && <span className={CHIP}>TS {call.slot}</span>}
-        {call.color_code != null && <span className={CHIP}>CC {call.color_code}</span>}
-        <span className="ml-auto font-mono text-[10px] text-ink-faint">
-          {when} · {(call.duration_ms / 1000).toFixed(1)} s
-        </span>
-      </div>
-      {call.encrypted ? (
-        <span className="text-xs text-warning">Encrypted · metadata only</span>
-      ) : call.audio != null ? (
-        <audio
-          className="h-8 w-full min-w-0"
-          controls
-          preload="none"
-          src={callAudioUrl(call.audio.url)}
-        />
-      ) : (
-        <span className="text-xs text-ink-dim">Audio was not retained.</span>
-      )}
-      {call.audio_error != null && (
-        <p role="alert" className="text-xs text-danger">
-          {call.audio_error}
-        </p>
-      )}
-    </article>
   );
 }
 
@@ -409,30 +377,29 @@ export function ExportFace({ node }: { node: PatchNode }) {
   );
 }
 
-type RecorderNodeOf = PatchNodeOf<"recorder" | "audio_recorder" | "baseband_recorder">;
-
-function isRecorder(node: PatchNode): node is RecorderNodeOf {
-  return (
-    node.kind === "recorder" || node.kind === "audio_recorder" || node.kind === "baseband_recorder"
-  );
-}
-
-function RecorderSwitch({ node, title }: { node: RecorderNodeOf; title: string }) {
+function RecorderSwitch({
+  node,
+  title,
+  unwired,
+}: {
+  node: RecorderNodeOf;
+  title: string;
+  unwired: string | null;
+}) {
   const workspace = useWorkspaceContext();
   const recording = node.data?.recording ?? false;
   const switchTo = (next: boolean) => {
     workspace.edit((snapshot) => ({
       ...snapshot,
-      graph: patchNode(snapshot.graph, node.id, (current) =>
-        isRecorder(current) ? { ...current, data: { ...current.data, recording: next } } : current,
-      ),
+      graph: patchNode(snapshot.graph, node.id, (current) => withRecording(current, next)),
     }));
   };
   return (
     <Button
       type="button"
       className={recording ? BTN_DANGER : BTN}
-      title={recording ? undefined : title}
+      title={recording ? undefined : (unwired ?? title)}
+      disabled={unwired !== null && !recording}
       onClick={() => switchTo(!recording)}
     >
       {recording ? (
@@ -449,6 +416,51 @@ function RecorderSwitch({ node, title }: { node: RecorderNodeOf; title: string }
   );
 }
 
+function FileReadout({ label, file }: { label: string; file: string }) {
+  return (
+    <Readout label={label} title={file}>
+      {file}
+    </Readout>
+  );
+}
+
+const IDLE = "-";
+
+function RecordStats({
+  elapsedS,
+  bytes,
+  samples,
+  overruns,
+}: {
+  elapsedS?: number | null;
+  bytes: number | null;
+  samples?: number | null;
+  overruns: number;
+}) {
+  return (
+    <FaceStats>
+      {elapsedS !== undefined && (
+        <Stat label="Time" title="Recording length">
+          {elapsedS === null ? IDLE : formatDuration(elapsedS)}
+        </Stat>
+      )}
+      <Stat label="Written" title="Bytes on disk">
+        {bytes === null ? IDLE : formatBytes(bytes)}
+      </Stat>
+      {samples !== undefined && (
+        <Stat label="Samples" title="Samples written">
+          {samples === null ? IDLE : formatCount(samples)}
+        </Stat>
+      )}
+      {overruns > 0 && (
+        <Stat label="Drops" title={DROPS_HINT} tone="warn">
+          {formatCount(overruns)}
+        </Stat>
+      )}
+    </FaceStats>
+  );
+}
+
 export function RecorderFace({ node }: { node: PatchNode }) {
   if (node.kind !== "recorder") {
     return null;
@@ -460,59 +472,45 @@ function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
   const workspace = useWorkspaceContext();
   const set = deviceSetOf(workspace, node.id);
   const status = set?.recording ?? null;
-  const waiting = (node.data?.recording ?? false) && status === null;
+  const recording = node.data?.recording ?? false;
   return (
     <NodeShell node={node} title="Recorder" category="output">
       <FaceBody>
-        {status === null ? (
-          <FaceEmpty
-            hint={set === null ? "Wire a device's IQ in" : waiting ? "Waiting" : undefined}
-          />
-        ) : (
-          <>
-            <RecordingReadout status={status} sampleRate={set?.settings.sample_rate ?? 0} />
-            {status.error != null && (
-              <p role="alert" className="border-t border-line p-2 text-xs text-danger">
-                {status.error}
-              </p>
-            )}
-          </>
-        )}
+        <Readouts ruled={false}>
+          {status === null ? (
+            <Readout label="File">{recording && set !== null ? "Waiting" : IDLE}</Readout>
+          ) : (
+            <FileReadout label="File" file={status.file} />
+          )}
+        </Readouts>
+        {status?.error != null && <FaceFault message={status.error} />}
       </FaceBody>
-      {set !== null && (
-        <FaceFooter>
-          <RecorderSwitch node={node} title="Record IQ to a SigMF pair" />
-        </FaceFooter>
-      )}
+      <FaceFooter>
+        <IqRecordStats status={status} sampleRate={set?.settings.sample_rate ?? 0} />
+        <RecorderSwitch
+          node={node}
+          title="Record IQ to a SigMF pair"
+          unwired={set === null ? "Wire a device's IQ in" : null}
+        />
+      </FaceFooter>
     </NodeShell>
   );
 }
 
-function RecordingReadout({ status, sampleRate }: { status: RecordingStatus; sampleRate: number }) {
-  const faulted = status.error != null;
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (faulted) {
-      return;
-    }
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [faulted]);
+function IqRecordStats({
+  status,
+  sampleRate,
+}: {
+  status: RecordingStatus | null;
+  sampleRate: number;
+}) {
+  const now = useNow(1000);
   return (
-    <Readout separated={false}>
-      <ReadoutRow label="Elapsed">
-        {formatDuration(recordingElapsedS(status, now, sampleRate))}
-      </ReadoutRow>
-      <ReadoutRow label="Written">{formatBytes(status.bytes)}</ReadoutRow>
-      <DevOnly>
-        {status.overruns > 0 && <ReadoutRow label="Drops">{status.overruns}</ReadoutRow>}
-      </DevOnly>
-      <ReadoutRow label="File">
-        <span className="block truncate" title={status.file}>
-          {status.file}
-        </span>
-      </ReadoutRow>
-    </Readout>
+    <RecordStats
+      elapsedS={status === null ? null : recordingElapsedS(status, now, sampleRate)}
+      bytes={status?.bytes ?? null}
+      overruns={status?.overruns ?? 0}
+    />
   );
 }
 
@@ -523,63 +521,85 @@ export function AudioRecorderFace({ node }: { node: PatchNode }) {
   return <AudioRecorder node={node} />;
 }
 
+function useInputName(): (input: Input) => string {
+  const workspace = useWorkspaceContext();
+  return (input) =>
+    workspace.graph.nodes.find((n) => n.id === input.node)?.label ??
+    input.channel.settings.params.type.toUpperCase();
+}
+
+function SkipSilenceChip({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
+  const workspace = useWorkspaceContext();
+  const switchTo = (skip_silence: boolean) => {
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      graph: patchNode(snapshot.graph, node.id, (current) =>
+        withSkipSilence(current, skip_silence),
+      ),
+    }));
+  };
+  return (
+    <ToggleChip
+      label="Skip silence"
+      title="Pause while the squelch is closed"
+      on={node.data?.skip_silence ?? false}
+      onChange={switchTo}
+    />
+  );
+}
+
 function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
   const inputs = useInputs(node.id, "audio");
+  const nameOf = useInputName();
   const recording = node.data?.recording ?? false;
+  const takes = inputs.map((input) => ({ input, status: recordingFor(input.channel, input.fx) }));
+  const held = takes.flatMap(({ status }) => (status === null ? [] : [status]));
   return (
     <NodeShell node={node} title="Audio recorder" category="output">
       <FaceBody>
-        {inputs.length === 0 ? (
-          <FaceEmpty hint="Wire a channel's audio in" />
-        ) : (
-          <>
-            <div className="border-b border-line p-2">
-              <RecorderSwitch node={node} title="Record every wired input to its own WAV file" />
-            </div>
-            {inputs.map((input) => (
-              <AudioRecordInput key={inputKey(input)} input={input} recording={recording} />
-            ))}
-          </>
+        <Chips>
+          <SkipSilenceChip node={node} />
+        </Chips>
+        <Readouts ruled={false}>
+          {takes.length === 0 && <Readout label="File">{IDLE}</Readout>}
+          {takes.map(({ input, status }) =>
+            status === null ? (
+              <Readout key={inputKey(input)} label={nameOf(input)}>
+                {recording ? "Waiting" : IDLE}
+              </Readout>
+            ) : (
+              <FileReadout key={inputKey(input)} label={nameOf(input)} file={status.file} />
+            ),
+          )}
+        </Readouts>
+        {takes.map(({ input, status }) =>
+          status?.error == null ? null : (
+            <FaceFault key={inputKey(input)} message={`${nameOf(input)}: ${status.error}`} />
+          ),
         )}
       </FaceBody>
+      <FaceFooter>
+        <RecordStats
+          elapsedS={
+            held.length === 0
+              ? null
+              : Math.max(...held.map((status) => status.frames)) / AUDIO_RATE_HZ
+          }
+          bytes={held.length === 0 ? null : sum(held.map((status) => status.bytes))}
+          overruns={0}
+        />
+        <RecorderSwitch
+          node={node}
+          title="Record every wired input to its own WAV file"
+          unwired={inputs.length === 0 ? "Wire a channel's audio in" : null}
+        />
+      </FaceFooter>
     </NodeShell>
   );
 }
 
-function AudioRecordInput({ input, recording }: { input: Input; recording: boolean }) {
-  const workspace = useWorkspaceContext();
-  const label = workspace.graph.nodes.find((n) => n.id === input.node)?.label;
-  const status = recordingFor(input.channel, input.fx);
-  return (
-    <div className="flex flex-col gap-1 border-b border-line p-2 last:border-b-0">
-      <div className="flex items-center gap-2">
-        <span className="legend truncate">
-          {label ?? input.channel.settings.params.type.toUpperCase()}
-        </span>
-        {recording && status === null && <span className="legend">Waiting</span>}
-      </div>
-      {status !== null && <AudioRecordingReadout status={status} />}
-      {status?.error != null && (
-        <p role="alert" className="text-xs text-danger">
-          {status.error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function AudioRecordingReadout({ status }: { status: AudioRecordingStatus }) {
-  return (
-    <Readout separated={false}>
-      <ReadoutRow label="Elapsed">{formatDuration(status.frames / AUDIO_RATE_HZ)}</ReadoutRow>
-      <ReadoutRow label="Written">{formatBytes(status.bytes)}</ReadoutRow>
-      <ReadoutRow label="File">
-        <span className="block truncate" title={status.file}>
-          {status.file}
-        </span>
-      </ReadoutRow>
-    </Readout>
-  );
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
 }
 
 export function BasebandRecorderFace({ node }: { node: PatchNode }) {
@@ -591,66 +611,47 @@ export function BasebandRecorderFace({ node }: { node: PatchNode }) {
 
 function BasebandRecorder({ node }: { node: PatchNodeOf<"baseband_recorder"> }) {
   const inputs = useInputs(node.id, "baseband");
+  const nameOf = useInputName();
   const recording = node.data?.recording ?? false;
+  const takes = inputs.map((input) => ({
+    input,
+    status: input.channel.baseband_recording ?? null,
+  }));
+  const held = takes.flatMap(({ status }) => (status === null ? [] : [status]));
   return (
     <NodeShell node={node} title="Baseband recorder" category="output">
       <FaceBody>
-        {inputs.length === 0 ? (
-          <FaceEmpty hint="Wire a channel's baseband in" />
-        ) : (
-          <>
-            <div className="border-b border-line p-2">
-              <RecorderSwitch
-                node={node}
-                title="Record every wired channel's baseband to its own SigMF pair"
-              />
-            </div>
-            {inputs.map((input) => (
-              <BasebandRecordInput key={input.node} input={input} recording={recording} />
-            ))}
-          </>
+        <Readouts ruled={false}>
+          {takes.length === 0 && <Readout label="File">{IDLE}</Readout>}
+          {takes.map(({ input, status }) =>
+            status === null ? (
+              <Readout key={input.node} label={nameOf(input)}>
+                {recording ? "Waiting" : IDLE}
+              </Readout>
+            ) : (
+              <FileReadout key={input.node} label={nameOf(input)} file={status.file} />
+            ),
+          )}
+        </Readouts>
+        {takes.map(({ input, status }) =>
+          status?.error == null ? null : (
+            <FaceFault key={input.node} message={`${nameOf(input)}: ${status.error}`} />
+          ),
         )}
       </FaceBody>
+      <FaceFooter>
+        <RecordStats
+          bytes={held.length === 0 ? null : sum(held.map((status) => status.bytes))}
+          samples={held.length === 0 ? null : sum(held.map((status) => status.samples))}
+          overruns={sum(held.map((status) => status.overruns))}
+        />
+        <RecorderSwitch
+          node={node}
+          title="Record every wired channel's baseband to its own SigMF pair"
+          unwired={inputs.length === 0 ? "Wire a channel's baseband in" : null}
+        />
+      </FaceFooter>
     </NodeShell>
-  );
-}
-
-function BasebandRecordInput({ input, recording }: { input: Input; recording: boolean }) {
-  const workspace = useWorkspaceContext();
-  const label = workspace.graph.nodes.find((n) => n.id === input.node)?.label;
-  const status = input.channel.baseband_recording ?? null;
-  return (
-    <div className="flex flex-col gap-1 border-b border-line p-2 last:border-b-0">
-      <div className="flex items-center gap-2">
-        <span className="legend truncate">
-          {label ?? input.channel.settings.params.type.toUpperCase()}
-        </span>
-        {recording && status === null && <span className="legend">Waiting</span>}
-      </div>
-      {status !== null && <BasebandRecordingReadout status={status} />}
-      {status?.error != null && (
-        <p role="alert" className="text-xs text-danger">
-          {status.error}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function BasebandRecordingReadout({ status }: { status: RecordingStatus }) {
-  return (
-    <Readout separated={false}>
-      <ReadoutRow label="Written">{formatBytes(status.bytes)}</ReadoutRow>
-      <ReadoutRow label="Samples">{status.samples.toLocaleString()}</ReadoutRow>
-      <DevOnly>
-        {status.overruns > 0 && <ReadoutRow label="Drops">{status.overruns}</ReadoutRow>}
-      </DevOnly>
-      <ReadoutRow label="File">
-        <span className="block truncate" title={status.file}>
-          {status.file}
-        </span>
-      </ReadoutRow>
-    </Readout>
   );
 }
 
@@ -664,6 +665,7 @@ export function HuntFace({ node }: { node: PatchNode }) {
 function HuntNodeFace({ node }: { node: PatchNodeOf<"hunt"> }) {
   const workspace = useWorkspaceContext();
   const decoder = decoderOf(workspace, node.id);
+  const sweep = huntSweepOf(node, workspace.context.catalog);
   const remember = (data: Partial<PatchNodeOf<"hunt">["data"]>): void => {
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -675,25 +677,52 @@ function HuntNodeFace({ node }: { node: PatchNodeOf<"hunt"> }) {
   return (
     <NodeShell node={node} title="Signal hunt" category="tool">
       <HuntPanel
+        node={node.id}
         target={decoder}
         clicks={node.data.clicks ?? true}
         onClicks={(clicks) => remember({ clicks })}
         hint="Wire this node's control out to a decoder"
+        positionWired={hasWire(workspace.graph, node.id, "position")}
+        sweep={sweep}
+        onSweep={(next) => {
+          if (sweep !== null) {
+            remember({ sweep: { ...sweep, ...next } });
+          }
+        }}
       />
     </NodeShell>
   );
 }
 
 export function ScannerFace({ node }: { node: PatchNode }) {
+  if (node.kind !== "scanner") {
+    return null;
+  }
+  return <ScannerNodeFace node={node} />;
+}
+
+function ScannerNodeFace({ node }: { node: PatchNodeOf<"scanner"> }) {
   const workspace = useWorkspaceContext();
   const decoder = decoderOf(workspace, node.id);
-  const set = decoder?.set ?? null;
+  const settings = node.data?.settings ?? defaultScannerSettings(workspace.context.catalog);
+  const remember = (next: ScanSettings): void => {
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      graph: patchNode(snapshot.graph, node.id, (current) =>
+        current.kind === "scanner"
+          ? { ...current, data: { ...current.data, settings: next } }
+          : current,
+      ),
+    }));
+  };
   return (
     <NodeShell node={node} title="Scanner" category="tool">
       <ScannerPanel
-        active={set}
+        active={decoder?.set ?? null}
         channel={decoder?.channel ?? null}
         hint="Wire this node's control out to a decoder"
+        settings={settings}
+        onSettings={remember}
       />
     </NodeShell>
   );

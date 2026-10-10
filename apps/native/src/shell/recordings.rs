@@ -253,6 +253,7 @@ mod tests {
             created_at: "2026-08-09T12:00:00Z".to_owned(),
             tags: vec!["airband".to_owned(), "tower".to_owned()],
             note: Some("EDDF ground".to_owned()),
+            lanes: 1,
         }
     }
 

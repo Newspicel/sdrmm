@@ -1,9 +1,16 @@
 use num_complex::Complex;
 
-use crate::{CubicInterpolator, Decimator, FracResampler, Nco, fir::design_lowpass};
+use crate::{
+    CubicInterpolator, Decimator, FracResampler, Nco,
+    fir::{design_lowpass_kaiser, kaiser_taps},
+};
 
 const PASSBAND_FRAC: f64 = 0.4;
 const PROTECT_FRAC: f64 = 0.5;
+pub const STOPBAND_DB: f64 = 100.0;
+const CHUNK: usize = 2048;
+const CUBIC_SPAN: f64 = 4.0;
+const MIN_FILTERED_UPSAMPLING: f64 = 2.0;
 
 #[must_use]
 pub fn flat_bandwidth_hz(output_rate: f64) -> f64 {
@@ -19,26 +26,29 @@ pub enum DdcError {
 #[derive(Clone, Debug)]
 enum Fraction {
     None,
-    Down(FracResampler),
-    Up(CubicInterpolator),
+    Resample(Box<FracResampler>),
+    Interpolate(CubicInterpolator),
 }
 
 impl Fraction {
-    fn for_ratio(ratio: f64) -> Self {
+    fn for_ratio(ratio: f64, keep: Option<f64>) -> Self {
         if (ratio - 1.0).abs() <= 1e-12 {
             Self::None
-        } else if ratio < 1.0 {
-            Self::Down(FracResampler::new(ratio))
+        } else if (1.0..MIN_FILTERED_UPSAMPLING).contains(&ratio) {
+            Self::Interpolate(CubicInterpolator::new(ratio))
         } else {
-            Self::Up(CubicInterpolator::new(ratio))
+            Self::Resample(Box::new(keep.map_or_else(
+                || FracResampler::new(ratio),
+                |keep| FracResampler::keeping(ratio, keep),
+            )))
         }
     }
 
     fn reset(&mut self) {
         match self {
             Self::None => {}
-            Self::Down(r) => r.reset(),
-            Self::Up(r) => r.reset(),
+            Self::Resample(r) => r.reset(),
+            Self::Interpolate(r) => r.reset(),
         }
     }
 
@@ -48,8 +58,8 @@ impl Fraction {
                 out.clear();
                 out.extend_from_slice(input);
             }
-            Self::Down(r) => r.process(input, out),
-            Self::Up(r) => r.process(input, out),
+            Self::Resample(r) => r.process(input, out),
+            Self::Interpolate(r) => r.process(input, out),
         }
     }
 }
@@ -63,10 +73,34 @@ pub struct Ddc {
     mixed: Vec<Complex<f32>>,
     work_in: Vec<Complex<f32>>,
     work_out: Vec<Complex<f32>>,
+    settling: usize,
 }
 
 impl Ddc {
     pub fn new(input_rate: f64, output_rate: f64, offset_hz: f64) -> Result<Self, DdcError> {
+        Self::build(input_rate, output_rate, offset_hz, None)
+    }
+
+    pub fn keeping(
+        input_rate: f64,
+        output_rate: f64,
+        offset_hz: f64,
+        keep_hz: f64,
+    ) -> Result<Self, DdcError> {
+        Self::build(
+            input_rate,
+            output_rate,
+            offset_hz,
+            Some(keep_hz / output_rate),
+        )
+    }
+
+    fn build(
+        input_rate: f64,
+        output_rate: f64,
+        offset_hz: f64,
+        keep: Option<f64>,
+    ) -> Result<Self, DdcError> {
         if !input_rate.is_finite()
             || !output_rate.is_finite()
             || input_rate <= 0.0
@@ -80,17 +114,27 @@ impl Ddc {
 
         let mut stages = Vec::new();
         let mut rate = input_rate;
+        let mut span = 0.0;
         if output_rate < input_rate {
             for factor in prime_factors_desc(integer_decimation(input_rate / output_rate)) {
+                let (taps, _) = stage_filter(rate, factor, output_rate);
+                span += (taps - 1) as f64 * input_rate / rate;
                 stages.push(stage(rate, factor, output_rate));
                 rate /= factor as f64;
             }
         }
+        let ratio = output_rate / rate;
+        if (1.0 + 1e-12..MIN_FILTERED_UPSAMPLING).contains(&ratio) {
+            span += CUBIC_SPAN * input_rate / rate;
+        } else if (ratio - 1.0).abs() > 1e-12 {
+            span += crate::resamp::taps_per_phase(ratio) as f64 * input_rate / rate;
+        }
         Ok(Self {
+            settling: (span * output_rate / input_rate).ceil() as usize,
             input_rate,
             nco: Nco::new((-offset_hz) as f32, input_rate as f32),
             stages,
-            fraction: Fraction::for_ratio(output_rate / rate),
+            fraction: Fraction::for_ratio(ratio, keep),
             mixed: Vec::new(),
             work_in: Vec::new(),
             work_out: Vec::new(),
@@ -108,25 +152,47 @@ impl Ddc {
         self.work_out.clear();
     }
 
+    #[must_use]
+    pub fn settling(&self) -> usize {
+        self.settling
+    }
+
     pub fn set_offset(&mut self, offset_hz: f64) {
         self.nco
             .set_freq((-offset_hz) as f32, self.input_rate as f32);
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
-        self.mixed.resize(input.len(), Complex::new(0.0, 0.0));
-        self.nco.mix_into(input, &mut self.mixed);
         let Some((first, rest)) = self.stages.split_first_mut() else {
-            self.fraction.process(&self.mixed, out);
+            let mixed = mix(&mut self.nco, input, &mut self.mixed);
+            self.fraction.process(mixed, out);
             return;
         };
-        first.process(&self.mixed, &mut self.work_in);
+        self.work_in.clear();
+        for chunk in input.chunks(CHUNK) {
+            let mixed = mix(&mut self.nco, chunk, &mut self.mixed);
+            first.process(mixed, &mut self.work_out);
+            self.work_in.extend_from_slice(&self.work_out);
+        }
         for stage in rest {
             stage.process(&self.work_in, &mut self.work_out);
             std::mem::swap(&mut self.work_in, &mut self.work_out);
         }
         self.fraction.process(&self.work_in, out);
     }
+}
+
+fn mix<'a>(
+    nco: &mut Nco,
+    input: &'a [Complex<f32>],
+    mixed: &'a mut Vec<Complex<f32>>,
+) -> &'a [Complex<f32>] {
+    if nco.is_identity() {
+        return input;
+    }
+    mixed.resize(input.len(), Complex::new(0.0, 0.0));
+    nco.mix_into(input, mixed);
+    mixed
 }
 
 fn integer_decimation(quotient: f64) -> usize {
@@ -191,14 +257,14 @@ fn prime_factors_desc(mut n: usize) -> Vec<usize> {
 
 fn stage(input_rate: f64, factor: usize, output_rate: f64) -> Decimator {
     let (taps, cutoff) = stage_filter(input_rate, factor, output_rate);
-    Decimator::new(&design_lowpass(taps, cutoff), factor)
+    Decimator::new(&design_lowpass_kaiser(taps, cutoff, STOPBAND_DB), factor)
 }
 
 fn stage_filter(input_rate: f64, factor: usize, output_rate: f64) -> (usize, f64) {
     let stage_out = input_rate / factor as f64;
     let pass = PASSBAND_FRAC * output_rate / input_rate;
     let stop = (stage_out - PROTECT_FRAC * output_rate) / input_rate;
-    let taps = (((5.5 / (stop - pass)).ceil() as usize) | 1).max(11);
+    let taps = kaiser_taps(stop - pass, STOPBAND_DB).max(11);
     (taps, (pass + stop) / 2.0)
 }
 
@@ -214,6 +280,49 @@ mod tests {
     fn tone_at_rate(freq_hz: f64, rate: f64, len: usize) -> Vec<Complex<f32>> {
         let mut nco = Nco::new(freq_hz as f32, rate as f32);
         (0..len).map(|_| nco.next_sample()).collect()
+    }
+
+    #[test]
+    fn the_start_up_transient_ends_within_the_reported_settling() {
+        for (input_rate, output_rate) in [
+            (2_400_000.0, 48_000.0),
+            (1_024_000.0, 37_000.0),
+            (48_000.0, 48_000.0),
+        ] {
+            let mut ddc = Ddc::new(input_rate, output_rate, 0.0).unwrap();
+            let mut out = Vec::new();
+            ddc.process(&vec![Complex::new(1.0, 0.0); 200_000], &mut out);
+            let settled = &out[ddc.settling()..];
+            let worst = settled
+                .iter()
+                .map(|s| (s.re - 1.0).abs())
+                .fold(0.0f32, f32::max);
+            assert!(
+                worst < 1e-3,
+                "{input_rate} to {output_rate}: {worst} after {}",
+                ddc.settling()
+            );
+        }
+    }
+
+    #[test]
+    fn neighbours_outside_the_channel_stay_a_hundred_db_down() {
+        for (input_rate, output_rate) in [(2_400_000.0, 48_000.0), (10_000_000.0, 48_000.0)] {
+            for offset in [0.6, 0.75, 1.0, 2.0, 7.0, 21.0, 49.0] {
+                for sign in [1.0, -1.0] {
+                    let tone = tone_at_rate(sign * offset * output_rate, input_rate, 120_000);
+                    let mut ddc = Ddc::new(input_rate, output_rate, 0.0).unwrap();
+                    let mut out = Vec::new();
+                    ddc.process(&tone, &mut out);
+                    let leak = 20.0 * rms_c(&out[out.len() / 2..]).log10();
+                    assert!(
+                        leak < -96.0,
+                        "{input_rate} to {output_rate}: {} Hz leaks at {leak} dB",
+                        sign * offset * output_rate
+                    );
+                }
+            }
+        }
     }
 
     fn tone(freq_hz: f64, len: usize) -> Vec<Complex<f32>> {
@@ -303,6 +412,31 @@ mod tests {
                 ),
                 "{input}→{output}"
             );
+        }
+    }
+
+    #[test]
+    fn upsampling_leaves_no_image_of_a_tone_near_the_input_edge() {
+        let (fs_in, fs_out) = (12_000.0f64, 48_000.0f64);
+        let tone_hz = 0.4 * fs_in;
+        let mut ddc = Ddc::new(fs_in, fs_out, 0.0).unwrap();
+        let collected = run(&mut ddc, &tone_at_rate(tone_hz, fs_in, 24_000));
+        let settled = &collected[4_096..];
+        let level = |hz: f64| {
+            let sum: Complex<f64> = settled
+                .iter()
+                .enumerate()
+                .map(|(n, s)| {
+                    let phase = -std::f64::consts::TAU * hz * n as f64 / fs_out;
+                    Complex::new(f64::from(s.re), f64::from(s.im)) * Complex::from_polar(1.0, phase)
+                })
+                .sum();
+            20.0 * (sum.norm() / settled.len() as f64).log10()
+        };
+        let tone = level(tone_hz);
+        for image in [tone_hz - fs_in, tone_hz + fs_in] {
+            let below = tone - level(image);
+            assert!(below > 60.0, "image at {image} Hz only {below:.1} dB down");
         }
     }
 

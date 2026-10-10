@@ -1,7 +1,7 @@
 use std::f32::consts::{PI, TAU};
 
 use num_complex::Complex;
-use sdrmm_dsp::SoftViterbi;
+use sdrmm_dsp::{SoftViterbi, fast_arg};
 
 use super::{
     fec::{self, A, SEGMENT_SYMBOLS, SEQUENCE_LEN, SETTINGS, Setting, T, TRAINING_LEN},
@@ -133,12 +133,12 @@ impl HfdlDemod {
             prev = s;
             let sign = if A[j] != A[j - 1] { -1.0 } else { 1.0 };
             corr += d * sign;
-            norm += d.norm();
+            norm += d.norm_sqr().sqrt();
         }
         if norm < 1e-9 {
             return None;
         }
-        Some((corr.norm() / norm, corr.arg()))
+        Some((corr.norm_sqr().sqrt() / norm, corr.arg()))
     }
 
     fn coherent(&self, pos: f64, bits: &[u8], theta: f32) -> Option<Complex<f32>> {
@@ -165,7 +165,7 @@ impl HfdlDemod {
                 derot
             };
             if (j + 1) % M1_CHUNK == 0 || j + 1 == SEQUENCE_LEN {
-                total += corr.norm();
+                total += corr.norm_sqr().sqrt();
                 corr = Complex::new(0.0, 0.0);
             }
         }
@@ -317,10 +317,10 @@ impl HfdlDemod {
                     walk.signal_power += f64::from(d.norm_sqr());
                     walk.error_power += f64::from((y - d).norm_sqr());
                 }
-                (y * d.conj()).arg()
+                fast_arg(y * d.conj())
             }
             None => {
-                let angle = y.arg();
+                let angle = fast_arg(y);
                 let nearest = (angle / step).round() * step;
                 walk.eq
                     .step(Complex::from_polar(1.0, nearest), y, DECISION_MU);

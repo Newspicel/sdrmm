@@ -6,27 +6,27 @@ fn kinds(names: &[&str]) -> Vec<String> {
     names.iter().map(|name| (*name).to_owned()).collect()
 }
 
-fn descriptor(type_id: &str, decoder_kind: Option<&str>) -> ChannelDescriptor {
+fn descriptor(type_id: &str, decoder_kind: Option<&str>, has_audio: bool) -> ChannelDescriptor {
     serde_json::from_value(json!({
         "type_id": type_id, "name": type_id, "bandwidth_hz": 12_500.0,
-        "input_rate_hz": 48_000.0, "decoder_kind": decoder_kind,
+        "input_rate_hz": 48_000.0, "decoder_kind": decoder_kind, "has_audio": has_audio,
     }))
     .unwrap_or_else(|error| panic!("descriptor: {error}"))
 }
 
 fn descriptors() -> Vec<ChannelDescriptor> {
     vec![
-        descriptor("adsb", Some("adsb")),
-        descriptor("dmr", Some("dv")),
-        descriptor("pocsag", Some("pocsag")),
-        descriptor("am", None),
+        descriptor("adsb", Some("adsb"), false),
+        descriptor("dmr", Some("dv"), false),
+        descriptor("pocsag", Some("pocsag"), false),
+        descriptor("am", None, true),
+        descriptor("raw", None, false),
     ]
 }
 
-fn channel(channel_type: &str, records_calls: bool) -> WiredSource {
+fn channel(channel_type: &str) -> WiredSource {
     WiredSource {
         channel_type: Some(channel_type.to_owned()),
-        records_calls,
         ..WiredSource::default()
     }
 }
@@ -57,24 +57,16 @@ fn a_tri_state_round_trips() {
 #[test]
 fn only_what_wired_decoders_emit_is_offered() {
     let table = descriptors();
-    assert_eq!(kinds_offered(&[channel("adsb", false)], &table), ["adsb"]);
-    assert_eq!(kinds_offered(&[channel("dmr", false)], &table), ["dv"]);
-    assert_eq!(
-        kinds_offered(&[channel("dmr", true)], &table),
-        ["call", "dv"]
-    );
+    assert_eq!(kinds_offered(&[channel("adsb")], &table), ["adsb"]);
+    assert_eq!(kinds_offered(&[channel("dmr")], &table), ["call", "dv"]);
     let trunk = WiredSource {
-        records_calls: true,
         trunk: true,
         ..WiredSource::default()
     };
     assert_eq!(kinds_offered(&[trunk], &table), ["call", "dv"]);
-    assert!(kinds_offered(&[channel("am", false)], &table).is_empty());
-    let many = [
-        channel("adsb", false),
-        channel("adsb", false),
-        channel("pocsag", false),
-    ];
+    assert_eq!(kinds_offered(&[channel("am")], &table), ["call"]);
+    assert!(kinds_offered(&[channel("raw")], &table).is_empty());
+    let many = [channel("adsb"), channel("adsb"), channel("pocsag")];
     assert_eq!(kinds_offered(&many, &table), ["adsb", "pocsag"]);
 }
 

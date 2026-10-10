@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import { bleStation } from "./ble";
+import { loraStation, withLoraPosition } from "./lora";
+import { remoteIdStation, withRemoteIdState } from "./remoteId";
+import { clearTrails, dropTrail, recordTrail } from "./trails";
 import type {
   DecodedRecord,
   DecodedRecordOf,
@@ -109,6 +113,7 @@ export const useDecodedStore = create<DecodedState>((set) => ({
       for (const [id, station] of stations) {
         if (station.lastSeen < cutoff) {
           stations.delete(id);
+          dropTrail(kind, id);
           dropped = true;
         }
       }
@@ -156,6 +161,7 @@ export const useDecodedStore = create<DecodedState>((set) => ({
   clear: () => {
     pending.length = 0;
     stationIndex.clear();
+    clearTrails();
     cancelFlush();
     set({ frames: {}, stations: {}, lost: 0, received: 0 });
   },
@@ -225,27 +231,30 @@ function mergeStation(record: DecodedRecord): boolean {
     stationIndex.set(kind, stations);
   }
   const previous = stations.get(id);
+  const at = recordTime(record);
+  recordTrail(kind, id, record.event, at);
   stations.set(id, {
     kind,
     id,
     event: previous === undefined ? record.event : mergeForward(previous.event, record.event),
-    lastSeen: recordTime(record),
+    lastSeen: at,
     freqHz: record.freq_hz,
     deviceSet: record.device_set,
     channel: record.channel,
     frames: (previous?.frames ?? 0) + 1,
   });
-  evictOldest(stations);
+  evictOldest(kind, stations);
   return true;
 }
 
-function evictOldest(stations: Map<string, Station>): void {
+function evictOldest(kind: DecoderKind, stations: Map<string, Station>): void {
   if (stations.size <= STATION_CAPACITY) {
     return;
   }
   const byAge = [...stations.entries()].toSorted((a, b) => a[1].lastSeen - b[1].lastSeen);
   for (const [id] of byAge.slice(0, stations.size - STATION_CAPACITY)) {
     stations.delete(id);
+    dropTrail(kind, id);
   }
 }
 
@@ -265,12 +274,13 @@ function stationId(event: DecoderEvent): string | null {
       return String(event.data.address);
     case "ermes":
       return String(event.data.local_address);
+    case "eot":
+      return String(event.data.unit_address);
     case "rds":
       return event.data.pi ?? null;
     case "transmission":
     case "navtex":
     case "acars":
-    case "subghz":
     case "selcall":
     case "rtty":
     case "morse":
@@ -284,7 +294,6 @@ function stationId(event: DecoderEvent): string | null {
     case "dv":
     case "ident":
     case "broadcast_data":
-    case "broadcast":
     case "radio_clock":
     case "gnss":
     case "sstv":
@@ -297,16 +306,36 @@ function stationId(event: DecoderEvent): string | null {
     case "hfdl":
     case "iridium":
     case "df_fix":
-    case "radar":
+    case "apt":
+    case "lrpt":
+    case "wefax":
+    case "wifi_occupancy":
+    case "ism_survey":
       return null;
+    case "ble":
+      return bleStation(event.data);
+    case "radiosonde":
+      return event.data.serial;
+    case "lora":
+      return loraStation(event.data);
+    case "remote_id":
+      return remoteIdStation(event.data);
     case "dect":
       return event.data.identity?.rfpi ?? null;
     case "df":
       return event.data.station_id ?? null;
+    case "radar":
+      return event.data.icao ?? null;
   }
 }
 
 function mergeForward(previous: DecoderEvent, next: DecoderEvent): DecoderEvent {
+  if (previous.kind === "lora" && next.kind === "lora") {
+    return { kind: "lora", data: withLoraPosition(previous.data, next.data) };
+  }
+  if (previous.kind === "remote_id" && next.kind === "remote_id") {
+    return { kind: "remote_id", data: withRemoteIdState(previous.data, next.data) };
+  }
   const data: Record<string, unknown> = { ...previous.data };
   for (const [key, value] of Object.entries(next.data)) {
     if (value != null) {

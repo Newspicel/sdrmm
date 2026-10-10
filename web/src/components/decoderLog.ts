@@ -8,9 +8,9 @@ import type {
   DecoderLogFilter,
 } from "../lib/types";
 import type { DownloadChoice } from "./DownloadMenu";
-import { eventStation, eventSummary, hasPosition, hex2, hex5 } from "./eventFacts";
+import { eventStation, eventSummary, hasPosition, hex5 } from "./eventFacts";
 
-export { eventStation, eventSummary, hasPosition, hex2, hex5 };
+export { eventStation, eventSummary, hasPosition, hex5 };
 
 export const KIND_LABELS: Record<DecoderKind, string> = {
   call: "Call",
@@ -21,6 +21,7 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   pocsag: "POCSAG",
   flex: "FLEX",
   ermes: "ERMES",
+  eot: "End-of-Train",
   rds: "RDS",
   rtty: "RTTY",
   morse: "Morse",
@@ -28,7 +29,6 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   selcall: "Selcall",
   navtex: "NAVTEX",
   acars: "ACARS",
-  subghz: "Sub-GHz",
   tone: "Tone",
   scrambler: "Scrambler",
   dv: "Digital voice",
@@ -37,7 +37,6 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   ft4: "FT4",
   psk: "PSK",
   wspr: "WSPR",
-  broadcast: "Digital broadcast",
   broadcast_data: "Broadcast data",
   radio_clock: "Radio clock",
   gnss: "GNSS lab",
@@ -51,6 +50,15 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   hfdl: "HFDL",
   iridium: "Iridium",
   dect: "DECT",
+  apt: "NOAA APT",
+  lrpt: "Meteor LRPT",
+  wefax: "WEFAX",
+  radiosonde: "Radiosonde",
+  lora: "LoRa",
+  remote_id: "Remote ID",
+  ble: "BLE",
+  wifi_occupancy: "Wi-Fi load",
+  ism_survey: "2.4 GHz",
   df: "Bearing",
   df_fix: "Fix",
   radar: "Radar",

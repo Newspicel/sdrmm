@@ -364,6 +364,20 @@ fn position_suppressed_for_null_island_fix() {
 }
 
 #[test]
+fn an_unknown_fix_carries_no_coordinates() {
+    let mut h = vec![0u8; 15];
+    h[0] = 0xFF;
+    h[1] = 0xD5;
+    h[2..8].copy_from_slice(b"SU1326");
+    h[8..13].copy_from_slice(&[0xFF, 0xFF, 0xF7, 0xFF, 0x7F]);
+    let events = parse_hfnpdu_body(&h);
+    let details = &find(&events, "frequency-data").details;
+    assert!(details.get("position").is_none());
+    assert!(details["lat"].is_null());
+    assert!(details["lon"].is_null());
+}
+
+#[test]
 fn position_object_extracted_from_frequency_data() {
     let mut h = vec![0u8; 15];
     h[0] = 0xFF;

@@ -2,7 +2,6 @@ pub mod about;
 pub mod apply_toasts;
 pub mod auto_off;
 pub mod band_plan;
-pub mod field_link;
 pub mod hotkeys;
 pub mod library_target;
 pub mod occupancy;

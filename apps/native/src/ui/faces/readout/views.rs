@@ -372,33 +372,32 @@ fn vor_view(store: Store, scope: DecoderScope) -> impl IntoView {
 }
 
 fn broadcast_view(store: Store, scope: DecoderScope) -> impl IntoView {
-    let statuses = frames_of(store, "broadcast");
     let objects = frames_of(store, "broadcast_data");
     move || {
-        let newest = records(statuses, scope).into_iter().next();
-        let status = newest.as_ref().and_then(|record| match &record.event {
-            DecoderEvent::Broadcast(status) => Some(status.clone()),
-            _ => None,
+        let newest = store.broadcasts.with(|held| {
+            held.iter()
+                .filter(|((set, channel), _)| scope.holds(*set, *channel))
+                .min_by_key(|(at, _)| **at)
+                .map(|(at, status)| (*at, status.clone()))
         });
         let object = newest
             .as_ref()
-            .zip(status.as_ref())
-            .filter(|(_, s)| s.locked)
-            .and_then(|(record, status)| {
+            .filter(|(_, status)| status.locked)
+            .and_then(|((set, channel), status)| {
                 records(objects, scope)
                     .into_iter()
                     .find_map(|candidate| match &candidate.event {
                         DecoderEvent::BroadcastData(data)
                             if data.service_id == status.service_id
-                                && candidate.device_set == record.device_set
-                                && candidate.channel == record.channel
-                                && candidate.freq_hz == record.freq_hz =>
+                                && candidate.device_set == *set
+                                && candidate.channel == *channel =>
                         {
                             Some(data.clone())
                         }
                         _ => None,
                     })
             });
+        let status = newest.map(|(_, status)| status);
         if status.is_none() && object.is_none() {
             return empty("Waiting for a broadcast service.");
         }

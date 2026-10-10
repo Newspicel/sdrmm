@@ -6,11 +6,14 @@ use std::{
 
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::Value};
 use sdrmm_wire::{
-    Bookmark, CreateBookmarkRequest, DecoderLogEntry, DecoderLogQuery, LogScope, PresetInfo,
-    PresetSnapshot, RecordingInfo, UpdateWorkspaceRequest, WorkspaceDetail, WorkspaceError,
-    WorkspaceExport, WorkspaceHistory, WorkspaceInfo, WorkspaceSnapshot, WorkspaceState,
+    Bookmark, CreateBookmarkRequest, DecoderLogEntry, DecoderLogQuery, DeviceSettings, LogScope,
+    PatchGraph, PresetInfo, PresetSnapshot, RecordingInfo, SaveRadioRequest, SavedRadio,
+    UpdateWorkspaceRequest, WORKSPACE_SNAPSHOT_VERSION, WorkspaceDetail, WorkspaceError,
+    WorkspaceExport, WorkspaceInfo, WorkspaceNoticeKind, WorkspaceSnapshot, WorkspaceState,
     WorkspacesResponse,
 };
+
+use history::{RecordedSettings, Step};
 
 use crate::events::Routed;
 
@@ -20,10 +23,18 @@ pub enum StoreError {
     PresetNotFound(i64),
     #[error("bookmark {0} not found")]
     BookmarkNotFound(i64),
+    #[error("saved radio {0} not found")]
+    SavedRadioNotFound(i64),
     #[error("recording {0} not found")]
     RecordingNotFound(i64),
     #[error("workspace {0} not found")]
     WorkspaceNotFound(i64),
+    #[error("notice {0} not found")]
+    NoticeNotFound(i64),
+    #[error("phone {0} not found")]
+    PhoneNotFound(String),
+    #[error("the pairing code is gone")]
+    OfferGone,
     #[error("radio operator {0} not found")]
     CpsUserNotFound(i64),
     #[error("radio {0} not found")]
@@ -50,6 +61,11 @@ pub enum StoreError {
     Db(#[from] rusqlite::Error),
     #[error("stored snapshot corrupt: {0}")]
     Corrupt(#[from] serde_json::Error),
+    #[error(
+        "this database is newer than SDR-- (schema {found}, supported {known}); update SDR-- or \
+         delete the database"
+    )]
+    NewerSchema { found: i64, known: usize },
 }
 
 pub const DECODER_LOG_LIMIT_DEFAULT: u32 = 200;
@@ -286,13 +302,98 @@ const MIGRATIONS: &[&str] = &[
     END;
     ",
     "ALTER TABLE decoder_log ADD COLUMN origin TEXT;",
+    "DELETE FROM decoder_log WHERE kind = 'subghz';",
+    "
+    CREATE TABLE saved_radios (
+        id INTEGER PRIMARY KEY,
+        device_id TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL
+    );
+    ",
+    "
+    CREATE TABLE radio_calibrations (
+        radio TEXT PRIMARY KEY,
+        ppm REAL,
+        offset_hz REAL
+    ) WITHOUT ROWID;
+    ",
+    "
+    CREATE TABLE remote_access (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        device_id TEXT NOT NULL,
+        relay_url TEXT NOT NULL,
+        key BLOB NOT NULL,
+        paired_at TEXT NOT NULL
+    );
+    ",
+    "DELETE FROM decoder_log WHERE kind = 'radar';",
+    "
+    CREATE TABLE workspace_notices (
+        id INTEGER PRIMARY KEY,
+        workspace_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        notice TEXT NOT NULL
+    );
+    CREATE INDEX workspace_notices_workspace ON workspace_notices (workspace_id);
+    ",
+    "
+    CREATE TABLE phones (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        secret_sha256 BLOB NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen TEXT
+    );
+    ",
+    "
+    CREATE TABLE phone_offers (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        name TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        failures INTEGER NOT NULL DEFAULT 0,
+        state TEXT NOT NULL,
+        phone TEXT
+    );
+    ",
+    "
+    CREATE TABLE server_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    ) WITHOUT ROWID;
+    ",
+    "
+    CREATE TABLE array_calibrations (
+        lanes TEXT NOT NULL,
+        sample_rate REAL NOT NULL,
+        center_hz REAL NOT NULL,
+        record TEXT NOT NULL,
+        saved_at TEXT NOT NULL,
+        PRIMARY KEY (lanes, sample_rate, center_hz)
+    ) WITHOUT ROWID;
+    ",
+    "ALTER TABLE recordings ADD COLUMN lanes INTEGER NOT NULL DEFAULT 1;",
+    "DELETE FROM decoder_log WHERE kind = 'broadcast';",
+    "
+    ALTER TABLE workspace_history ADD COLUMN revision INTEGER;
+    ALTER TABLE workspace_history ADD COLUMN author TEXT;
+    ALTER TABLE workspace_history ADD COLUMN kind TEXT NOT NULL DEFAULT 'edit';
+    ALTER TABLE workspace_history ADD COLUMN undone_by INTEGER;
+    DELETE FROM workspace_history WHERE seq > (
+        SELECT history_at FROM workspaces WHERE workspaces.id = workspace_history.workspace_id
+    );
+    UPDATE workspace_history SET kind = 'base', revision = (
+        SELECT revision FROM workspaces WHERE workspaces.id = workspace_history.workspace_id
+    ) WHERE seq = (
+        SELECT history_at FROM workspaces WHERE workspaces.id = workspace_history.workspace_id
+    );
+    ALTER TABLE workspaces DROP COLUMN history_at;
+    ",
 ];
 
-pub const WORKSPACE_HISTORY_DEPTH: i64 = 100;
-
-/// How long one settings entry keeps absorbing further moves of the same dial. A drag sends a
-/// patch every frame; each one is not a step the operator would want to walk back.
-const HISTORY_COALESCE: jiff::SignedDuration = jiff::SignedDuration::from_secs(1);
+const SERVER_ID_KEY: &str = "server_id";
 
 /// A settings change as the history records it: whose dial moved, and where the workspace stood
 /// on either side of the move.
@@ -309,12 +410,6 @@ pub struct SteppedWorkspace {
     pub settings: Option<WorkspaceState>,
 }
 
-struct RecordedSettings<'a> {
-    node: &'a str,
-    before: &'a str,
-    after: &'a str,
-}
-
 pub struct RecordingRow {
     pub stem: String,
     pub name: Option<String>,
@@ -326,11 +421,13 @@ pub struct RecordingRow {
     pub bytes: u64,
     pub tags: Vec<String>,
     pub note: Option<String>,
+    pub lanes: u32,
 }
 
 pub struct Store {
     conn: Mutex<Connection>,
     run_start: String,
+    server_id: std::sync::Arc<str>,
 }
 
 impl Store {
@@ -341,12 +438,19 @@ impl Store {
         };
         migrate(&conn)?;
         audio_fx_lift::lift_audio_chains(&conn)?;
+        coherent_break::break_old_snapshots(&conn)?;
+        let server_id = ensure_server_id(&conn)?.into();
         let store = Self {
             conn: Mutex::new(conn),
             run_start: now_rfc3339(),
+            server_id,
         };
         store.seed_workspaces()?;
         Ok(store)
+    }
+
+    pub(crate) fn server_id(&self) -> std::sync::Arc<str> {
+        self.server_id.clone()
     }
 
     pub fn create_preset(&self, name: &str, snapshot: &PresetSnapshot) -> Result<i64, StoreError> {
@@ -439,16 +543,82 @@ impl Store {
         Ok(())
     }
 
+    pub fn save_radio(&self, req: &SaveRadioRequest) -> Result<i64, StoreError> {
+        Ok(self.lock().query_row(
+            "INSERT INTO saved_radios (device_id, label) VALUES (?1, ?2) \
+             ON CONFLICT(device_id) DO UPDATE SET label = excluded.label RETURNING id",
+            params![req.device_id, req.label],
+            |row| row.get(0),
+        )?)
+    }
+
+    pub fn list_saved_radios(&self) -> Result<Vec<SavedRadio>, StoreError> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, device_id, label FROM saved_radios ORDER BY label COLLATE NOCASE, id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SavedRadio {
+                id: row.get(0)?,
+                device_id: row.get(1)?,
+                label: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn delete_saved_radio(&self, id: i64) -> Result<(), StoreError> {
+        let deleted = self
+            .lock()
+            .execute("DELETE FROM saved_radios WHERE id = ?1", params![id])?;
+        if deleted == 0 {
+            return Err(StoreError::SavedRadioNotFound(id));
+        }
+        Ok(())
+    }
+
+    pub fn radio_calibration(&self, radio: &str) -> Result<DeviceSettings, StoreError> {
+        Ok(self
+            .lock()
+            .query_row(
+                "SELECT ppm, offset_hz FROM radio_calibrations WHERE radio = ?1",
+                params![radio],
+                |row| {
+                    Ok(DeviceSettings {
+                        ppm: row.get(0)?,
+                        offset_hz: row.get(1)?,
+                        ..DeviceSettings::default()
+                    })
+                },
+            )
+            .optional()?
+            .unwrap_or_default())
+    }
+
+    pub fn put_radio_calibration(
+        &self,
+        radio: &str,
+        calibration: &DeviceSettings,
+    ) -> Result<(), StoreError> {
+        self.lock().execute(
+            "INSERT INTO radio_calibrations (radio, ppm, offset_hz) VALUES (?1, ?2, ?3) \
+             ON CONFLICT(radio) DO UPDATE SET ppm = excluded.ppm, offset_hz = excluded.offset_hz",
+            params![radio, calibration.ppm, calibration.offset_hz],
+        )?;
+        Ok(())
+    }
+
     pub fn upsert_recording(&self, row: &RecordingRow) -> Result<(), StoreError> {
         self.lock().execute(
             "INSERT INTO recordings (stem, name, created_at, device_label, center_hz, \
-             sample_rate, samples, bytes, tags, note) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+             sample_rate, samples, bytes, tags, note, lanes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
              ON CONFLICT(stem) DO UPDATE SET name = excluded.name, \
              created_at = excluded.created_at, \
              device_label = excluded.device_label, center_hz = excluded.center_hz, \
              sample_rate = excluded.sample_rate, samples = excluded.samples, \
-             bytes = excluded.bytes, tags = excluded.tags, note = excluded.note",
+             bytes = excluded.bytes, tags = excluded.tags, note = excluded.note, \
+             lanes = excluded.lanes",
             params![
                 row.stem,
                 row.name,
@@ -459,7 +629,8 @@ impl Store {
                 row.samples as i64,
                 row.bytes as i64,
                 serde_json::to_string(&row.tags)?,
-                row.note
+                row.note,
+                row.lanes
             ],
         )?;
         Ok(())
@@ -469,7 +640,7 @@ impl Store {
         let conn = self.lock();
         let mut stmt = conn.prepare(
             "SELECT id, stem, created_at, device_label, center_hz, sample_rate, samples, bytes, \
-             tags, note, name FROM recordings ORDER BY id",
+             tags, note, name, lanes FROM recordings ORDER BY id",
         )?;
         let rows = stmt.query_map([], |row| {
             let stem: String = row.get(1)?;
@@ -499,6 +670,7 @@ impl Store {
                     )
                 })?,
                 note: row.get(9)?,
+                lanes: row.get(11)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -675,8 +847,16 @@ impl Store {
     }
 
     pub fn workspace(&self, id: i64) -> Result<WorkspaceDetail, StoreError> {
+        self.workspace_for(id, None)
+    }
+
+    pub fn workspace_for(
+        &self,
+        id: i64,
+        author: Option<&str>,
+    ) -> Result<WorkspaceDetail, StoreError> {
         let conn = self.lock();
-        read_workspace(&conn, id)
+        read_workspace(&conn, id, author)
     }
 
     pub fn create_workspace(
@@ -700,14 +880,18 @@ impl Store {
 
     pub fn export_workspace(&self, id: i64) -> Result<WorkspaceExport, StoreError> {
         let conn = self.lock();
-        let detail = read_workspace(&conn, id)?;
+        let detail = read_workspace(&conn, id, None)?;
         let state = read_workspace_state(&conn, id)?;
         let mut export = WorkspaceExport::new(detail.info.name, detail.snapshot, state);
         export.forget_absent_nodes();
         Ok(export)
     }
 
-    pub fn import_workspace(&self, export: &WorkspaceExport) -> Result<i64, StoreError> {
+    pub fn import_workspace(
+        &self,
+        export: &WorkspaceExport,
+        notices: &[WorkspaceNoticeKind],
+    ) -> Result<i64, StoreError> {
         export.validate()?;
         let mut document = export.clone();
         document.forget_absent_nodes();
@@ -724,6 +908,7 @@ impl Store {
         .map_err(|err| name_taken(err, &name))?;
         let id = tx.last_insert_rowid();
         write_workspace_state(&tx, id, &document.state)?;
+        coherent_break::insert_notices(&tx, id, notices)?;
         tx.commit()?;
         Ok(id)
     }
@@ -732,7 +917,8 @@ impl Store {
         &self,
         id: i64,
         req: &UpdateWorkspaceRequest,
-    ) -> Result<WorkspaceInfo, StoreError> {
+        author: Option<&str>,
+    ) -> Result<WorkspaceDetail, StoreError> {
         if let Some(snapshot) = &req.snapshot {
             snapshot.validate()?;
         }
@@ -741,74 +927,62 @@ impl Store {
         }
         let mut conn = self.lock();
         let tx = conn.transaction()?;
-        let current: u64 = tx
-            .query_row(
-                "SELECT revision FROM workspaces WHERE id = ?1",
-                params![id],
-                |row| row.get::<_, i64>(0),
-            )
-            .optional()?
-            .ok_or(StoreError::WorkspaceNotFound(id))?
-            .unsigned_abs();
-        if current != req.revision {
-            return Err(StoreError::WorkspaceConflict {
-                id,
-                sent: req.revision,
-                current,
-            });
-        }
-        let revision = i64::try_from(current.saturating_add(1)).unwrap_or(i64::MAX);
-        let now = now_rfc3339();
+        let (current, held) = read_revision(&tx, id)?;
         if let Some(name) = &req.name {
             tx.execute(
-                "UPDATE workspaces SET name = ?2 WHERE id = ?1",
-                params![id, name],
+                "UPDATE workspaces SET name = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, name, now_rfc3339()],
             )
             .map_err(|err| name_taken(err, name))?;
         }
-        if let Some(snapshot) = &req.snapshot {
-            let json = serde_json::to_string(snapshot)?;
-            record_history(&tx, id, &json, None)?;
-            tx.execute(
-                "UPDATE workspaces SET snapshot = ?2, nodes = ?3 WHERE id = ?1",
-                params![id, json, snapshot.graph.nodes.len() as i64],
-            )?;
+        if let Some(ours) = &req.snapshot {
+            let held = parse_workspace_snapshot(&held)?;
+            let merged = rebase(&tx, id, req.revision, current, &held, ours)?;
+            if merged != held {
+                let revision = current.saturating_add(1);
+                forget_released_radios(&tx, id, &merged.graph)?;
+                let json = serde_json::to_string(&merged)?;
+                history::record(&tx, id, &json, None, author, revision)?;
+                write_snapshot(&tx, id, &merged, revision)?;
+            }
         }
-        tx.execute(
-            "UPDATE workspaces SET revision = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, revision, now],
-        )?;
-        let info = read_workspace_info(&tx, id)?;
+        let detail = read_workspace(&tx, id, author)?;
         tx.commit()?;
-        Ok(info)
+        Ok(detail)
     }
 
-    pub fn undo_workspace(&self, id: i64) -> Result<SteppedWorkspace, StoreError> {
-        self.step_history(id, Step::Undo)
+    pub fn undo_workspace(
+        &self,
+        id: i64,
+        author: Option<&str>,
+    ) -> Result<SteppedWorkspace, StoreError> {
+        self.step_history(id, author, Step::Undo)
     }
 
-    pub fn redo_workspace(&self, id: i64) -> Result<SteppedWorkspace, StoreError> {
-        self.step_history(id, Step::Redo)
+    pub fn redo_workspace(
+        &self,
+        id: i64,
+        author: Option<&str>,
+    ) -> Result<SteppedWorkspace, StoreError> {
+        self.step_history(id, author, Step::Redo)
     }
 
     /// Writes down a settings change so undo can reach it, next to the arrangement it belongs to.
     ///
     /// Answers whether the step is a new one: a burst of patches from one drag coalesces into the
     /// entry it started, and a patch that changed nothing records nothing.
-    pub fn record_settings(&self, id: i64, step: &SettingsStep<'_>) -> Result<bool, StoreError> {
+    pub fn record_settings(
+        &self,
+        id: i64,
+        step: &SettingsStep<'_>,
+        author: Option<&str>,
+    ) -> Result<bool, StoreError> {
         let before = serde_json::to_string(step.before)?;
         let after = serde_json::to_string(step.after)?;
         let mut conn = self.lock();
         let tx = conn.transaction()?;
-        let snapshot: String = tx
-            .query_row(
-                "SELECT snapshot FROM workspaces WHERE id = ?1",
-                params![id],
-                |row| row.get(0),
-            )
-            .optional()?
-            .ok_or(StoreError::WorkspaceNotFound(id))?;
-        let recorded = record_history(
+        let (revision, snapshot) = read_revision(&tx, id)?;
+        let recorded = history::record(
             &tx,
             id,
             &snapshot,
@@ -817,51 +991,44 @@ impl Store {
                 before: &before,
                 after: &after,
             }),
+            author,
+            revision,
         )?;
         tx.commit()?;
         Ok(recorded)
     }
 
-    fn step_history(&self, id: i64, step: Step) -> Result<SteppedWorkspace, StoreError> {
+    fn step_history(
+        &self,
+        id: i64,
+        author: Option<&str>,
+        step: Step,
+    ) -> Result<SteppedWorkspace, StoreError> {
+        let end = StoreError::WorkspaceHistoryEnd {
+            id,
+            step: step.name(),
+        };
+        let Some(author) = author else {
+            return Err(end);
+        };
         let mut conn = self.lock();
         let tx = conn.transaction()?;
-        let at = history_at(&tx, id)?;
-        let target: Option<(i64, String)> = tx
-            .query_row(step.query(), params![id, at], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
-            .optional()?;
-        let Some((seq, json)) = target else {
-            return Err(StoreError::WorkspaceHistoryEnd {
-                id,
-                step: step.name(),
-            });
-        };
-        let snapshot = parse_workspace_snapshot(&json)?;
-        let leaving = state_at(&tx, id, at)?;
-        let reaching = state_at(&tx, id, seq)?;
-        let settings = match reaching {
-            Some(reaching) if Some(&reaching) != leaving.as_ref() => {
-                let state = serde_json::from_str::<WorkspaceState>(&reaching)?.current();
-                write_workspace_state(&tx, id, &state)?;
-                Some(state)
-            }
-            _ => None,
-        };
-        tx.execute(
-            "UPDATE workspaces SET snapshot = ?2, nodes = ?3, history_at = ?4, \
-             revision = revision + 1, updated_at = ?5 WHERE id = ?1",
-            params![
-                id,
-                serde_json::to_string(&snapshot)?,
-                snapshot.graph.nodes.len() as i64,
-                seq,
-                now_rfc3339()
-            ],
-        )?;
-        let detail = read_workspace(&tx, id)?;
+        let (current, held) = read_revision(&tx, id)?;
+        let held = parse_workspace_snapshot(&held)?;
+        let saved = read_workspace_state(&tx, id)?;
+        let reached = history::reach(&tx, id, author, step, &held, &saved)?.ok_or(end)?;
+        let revision = current.saturating_add(1);
+        if let Some(settings) = &reached.settings {
+            write_workspace_state(&tx, id, settings)?;
+        }
+        write_snapshot(&tx, id, &reached.snapshot, revision)?;
+        history::record_step(&tx, id, author, step, &reached, revision)?;
+        let detail = read_workspace(&tx, id, Some(author))?;
         tx.commit()?;
-        Ok(SteppedWorkspace { detail, settings })
+        Ok(SteppedWorkspace {
+            detail,
+            settings: reached.settings,
+        })
     }
 
     pub fn history_nodes(&self, workspace_id: i64) -> Result<HashSet<String>, StoreError> {
@@ -914,6 +1081,10 @@ impl Store {
             "DELETE FROM workspace_history WHERE workspace_id = ?1",
             params![id],
         )?;
+        tx.execute(
+            "DELETE FROM workspace_notices WHERE workspace_id = ?1",
+            params![id],
+        )?;
         let active = active_workspace(&tx)?;
         tx.commit()?;
         Ok(active)
@@ -956,7 +1127,7 @@ impl Store {
     pub fn active_workspace(&self) -> Result<Option<WorkspaceDetail>, StoreError> {
         let conn = self.lock();
         match active_workspace(&conn)? {
-            Some(id) => Ok(Some(read_workspace(&conn, id)?)),
+            Some(id) => Ok(Some(read_workspace(&conn, id, None)?)),
             None => Ok(None),
         }
     }
@@ -1050,47 +1221,24 @@ fn read_workspace_info(conn: &Connection, id: i64) -> Result<WorkspaceInfo, Stor
     .ok_or(StoreError::WorkspaceNotFound(id))
 }
 
-fn read_workspace(conn: &Connection, id: i64) -> Result<WorkspaceDetail, StoreError> {
+fn read_workspace(
+    conn: &Connection,
+    id: i64,
+    author: Option<&str>,
+) -> Result<WorkspaceDetail, StoreError> {
     let info = read_workspace_info(conn, id)?;
-    let (json, at): (String, i64) = conn.query_row(
-        "SELECT snapshot, history_at FROM workspaces WHERE id = ?1",
+    let json: String = conn.query_row(
+        "SELECT snapshot FROM workspaces WHERE id = ?1",
         params![id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| row.get(0),
     )?;
     Ok(WorkspaceDetail {
         info,
         snapshot: parse_workspace_snapshot(&json)?,
-        history: read_history(conn, id, at)?,
+        history: history::read(conn, id, author)?,
         state: read_workspace_state(conn, id)?,
+        notices: coherent_break::read_notices(conn, id)?,
     })
-}
-
-#[derive(Clone, Copy)]
-enum Step {
-    Undo,
-    Redo,
-}
-
-impl Step {
-    fn query(self) -> &'static str {
-        match self {
-            Self::Undo => {
-                "SELECT seq, snapshot FROM workspace_history \
-                 WHERE workspace_id = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT 1"
-            }
-            Self::Redo => {
-                "SELECT seq, snapshot FROM workspace_history \
-                 WHERE workspace_id = ?1 AND seq > ?2 ORDER BY seq ASC LIMIT 1"
-            }
-        }
-    }
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Undo => "undo",
-            Self::Redo => "redo",
-        }
-    }
 }
 
 fn read_workspace_state(
@@ -1110,6 +1258,27 @@ fn read_workspace_state(
     }
 }
 
+fn forget_released_radios(
+    conn: &Connection,
+    id: i64,
+    graph: &PatchGraph,
+) -> Result<(), StoreError> {
+    let json: String = conn.query_row(
+        "SELECT snapshot FROM workspaces WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )?;
+    let released = graph.released_radios(&parse_workspace_snapshot(&json)?.graph);
+    if released.is_empty() {
+        return Ok(());
+    }
+    let mut state = read_workspace_state(conn, id)?;
+    for node in &released {
+        state.forget_device(node);
+    }
+    write_workspace_state(conn, id, &state)
+}
+
 fn write_workspace_state(
     conn: &Connection,
     workspace_id: i64,
@@ -1123,175 +1292,59 @@ fn write_workspace_state(
     Ok(())
 }
 
-fn history_at(conn: &Connection, id: i64) -> Result<i64, StoreError> {
+fn read_revision(conn: &Connection, id: i64) -> Result<(u64, String), StoreError> {
     conn.query_row(
-        "SELECT history_at FROM workspaces WHERE id = ?1",
+        "SELECT revision, snapshot FROM workspaces WHERE id = ?1",
         params![id],
-        |row| row.get(0),
+        |row| Ok((row.get::<_, i64>(0)?.unsigned_abs(), row.get(1)?)),
     )
     .optional()?
     .ok_or(StoreError::WorkspaceNotFound(id))
 }
 
-fn read_history(conn: &Connection, id: i64, at: i64) -> Result<WorkspaceHistory, StoreError> {
-    let (undo, redo): (bool, bool) = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM workspace_history WHERE workspace_id = ?1 AND seq < ?2), \
-                EXISTS(SELECT 1 FROM workspace_history WHERE workspace_id = ?1 AND seq > ?2)",
-        params![id, at],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )?;
-    Ok(WorkspaceHistory {
-        can_undo: undo,
-        can_redo: redo,
-    })
-}
-
-fn record_history(
+fn write_snapshot(
     conn: &Connection,
     id: i64,
-    json: &str,
-    settings: Option<RecordedSettings<'_>>,
-) -> Result<bool, StoreError> {
-    let at = history_at(conn, id)?;
-    let now = now_rfc3339();
-    let at = if at == 0 {
-        let previous: String = conn.query_row(
-            "SELECT snapshot FROM workspaces WHERE id = ?1",
-            params![id],
-            |row| row.get(0),
-        )?;
-        conn.execute(
-            "DELETE FROM workspace_history WHERE workspace_id = ?1",
-            params![id],
-        )?;
-        conn.execute(
-            "INSERT INTO workspace_history (workspace_id, seq, created_at, snapshot) \
-             VALUES (?1, 1, ?2, ?3)",
-            params![id, now, previous],
-        )?;
-        1
-    } else {
-        at
-    };
-    if let Some(settings) = &settings {
-        conn.execute(
-            "UPDATE workspace_history SET state = ?3 \
-             WHERE workspace_id = ?1 AND seq = ?2 AND state IS NULL",
-            params![id, at, settings.before],
-        )?;
-    }
-    let head = read_entry(conn, id, at)?;
-    if head.as_ref().is_some_and(|head| head.snapshot == json)
-        && match &settings {
-            None => true,
-            Some(settings) => state_at(conn, id, at)?.as_deref() == Some(settings.after),
-        }
-    {
-        return Ok(false);
-    }
-    if let (Some(head), Some(settings)) = (&head, &settings)
-        && head.node.as_deref() == Some(settings.node)
-        && head.snapshot == json
-        && within_coalesce(&head.created_at, &now)
-    {
-        conn.execute(
-            "UPDATE workspace_history SET state = ?3, created_at = ?4 \
-             WHERE workspace_id = ?1 AND seq = ?2",
-            params![id, at, settings.after, now],
-        )?;
-        return Ok(false);
-    }
+    snapshot: &WorkspaceSnapshot,
+    revision: u64,
+) -> Result<(), StoreError> {
     conn.execute(
-        "DELETE FROM workspace_history WHERE workspace_id = ?1 AND seq > ?2",
-        params![id, at],
-    )?;
-    let seq = at + 1;
-    conn.execute(
-        "INSERT INTO workspace_history (workspace_id, seq, created_at, snapshot, state, node) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "UPDATE workspaces SET snapshot = ?2, nodes = ?3, revision = ?4, updated_at = ?5 \
+         WHERE id = ?1",
         params![
             id,
-            seq,
-            now,
-            json,
-            settings.as_ref().map(|settings| settings.after),
-            settings.as_ref().map(|settings| settings.node)
+            serde_json::to_string(snapshot)?,
+            snapshot.graph.nodes.len() as i64,
+            i64::try_from(revision).unwrap_or(i64::MAX),
+            now_rfc3339()
         ],
     )?;
-    conn.execute(
-        "DELETE FROM workspace_history WHERE workspace_id = ?1 AND seq <= ?2",
-        params![id, seq - WORKSPACE_HISTORY_DEPTH],
-    )?;
-    conn.execute(
-        "UPDATE workspaces SET history_at = ?2 WHERE id = ?1",
-        params![id, seq],
-    )?;
-    Ok(true)
+    Ok(())
 }
 
-struct HistoryEntry {
-    snapshot: String,
-    node: Option<String>,
-    created_at: String,
-}
-
-fn read_entry(conn: &Connection, id: i64, seq: i64) -> Result<Option<HistoryEntry>, StoreError> {
-    Ok(conn
-        .query_row(
-            "SELECT snapshot, node, created_at FROM workspace_history \
-             WHERE workspace_id = ?1 AND seq = ?2",
-            params![id, seq],
-            |row| {
-                Ok(HistoryEntry {
-                    snapshot: row.get(0)?,
-                    node: row.get(1)?,
-                    created_at: row.get(2)?,
-                })
-            },
-        )
-        .optional()?)
-}
-
-fn within_coalesce(entry: &str, now: &str) -> bool {
-    let (Ok(entry), Ok(now)) = (
-        entry.parse::<jiff::Timestamp>(),
-        now.parse::<jiff::Timestamp>(),
-    ) else {
-        return false;
-    };
-    let gap = now.duration_since(entry);
-    gap >= jiff::SignedDuration::ZERO && gap <= HISTORY_COALESCE
-}
-
-/// The settings an entry stands for. Entries that changed none of their own read the nearest one
-/// behind them; an entry older than anything the history knows about the settings reads the
-/// oldest, which is where the radios stood before the first move it recorded.
-fn state_at(conn: &Connection, id: i64, seq: i64) -> Result<Option<String>, StoreError> {
-    let behind: Option<String> = conn
-        .query_row(
-            "SELECT state FROM workspace_history \
-             WHERE workspace_id = ?1 AND seq <= ?2 AND state IS NOT NULL \
-             ORDER BY seq DESC LIMIT 1",
-            params![id, seq],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if behind.is_some() {
-        return Ok(behind);
+fn rebase(
+    conn: &Connection,
+    id: i64,
+    sent: u64,
+    current: u64,
+    held: &WorkspaceSnapshot,
+    ours: &WorkspaceSnapshot,
+) -> Result<WorkspaceSnapshot, StoreError> {
+    if sent == current {
+        return Ok(ours.clone());
     }
-    Ok(conn
-        .query_row(
-            "SELECT state FROM workspace_history \
-             WHERE workspace_id = ?1 AND seq > ?2 AND state IS NOT NULL \
-             ORDER BY seq ASC LIMIT 1",
-            params![id, seq],
-            |row| row.get(0),
-        )
-        .optional()?)
+    let conflict = || StoreError::WorkspaceConflict { id, sent, current };
+    let base = history::snapshot_at(conn, id, sent)?.ok_or_else(conflict)?;
+    let base = parse_workspace_snapshot(&base)?;
+    let mut merged = crate::merge::merge_typed(&base, ours, held).map_err(|_| conflict())?;
+    merged.drop_dangling();
+    merged.validate().map_err(|_| conflict())?;
+    Ok(merged)
 }
 
-pub fn parse_workspace_snapshot(json: &str) -> Result<WorkspaceSnapshot, serde_json::Error> {
+fn parse_workspace_snapshot(json: &str) -> Result<WorkspaceSnapshot, serde_json::Error> {
     let mut value: serde_json::Value = serde_json::from_str(json)?;
+    drop_retired_channels(&mut value);
     migrate_call_buffers(&mut value);
     migrate_trunk_carriers(&mut value);
     migrate_event_outputs(&mut value);
@@ -1300,11 +1353,74 @@ pub fn parse_workspace_snapshot(json: &str) -> Result<WorkspaceSnapshot, serde_j
     migrate_device_locks(&mut value);
     migrate_signal_finders(&mut value);
     migrate_baseband_scopes(&mut value);
-    migrate_recorders(&mut value);
-    crate::json::from_value(&value)
+    migrate_dataless_nodes(&mut value);
+    let snapshot: WorkspaceSnapshot = crate::json::from_value(&value)?;
+    if snapshot.version != WORKSPACE_SNAPSHOT_VERSION {
+        return Err(serde::de::Error::custom(WorkspaceError::Version(
+            snapshot.version,
+        )));
+    }
+    Ok(snapshot)
 }
 
 const SPLIT_SCOPE_OFFSET_Y: f64 = 420.0;
+
+fn drop_retired_channels(snapshot: &mut serde_json::Value) {
+    let retired: HashSet<String> = snapshot
+        .get("graph")
+        .and_then(|graph| graph.get("nodes"))
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|node| node_kind(node) == Some("channel"))
+        .filter(|node| {
+            node.get("data")
+                .and_then(|data| data.get("channel_type"))
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(sdrmm_wire::retired_channel_type)
+        })
+        .filter_map(|node| node.get("id")?.as_str().map(str::to_owned))
+        .collect();
+    remove_nodes(snapshot, &retired);
+}
+
+fn remove_nodes(snapshot: &mut serde_json::Value, retired: &HashSet<String>) {
+    if retired.is_empty() {
+        return;
+    }
+    let named = |value: &serde_json::Value, key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| retired.contains(id))
+    };
+    let touches = |edge: &serde_json::Value| {
+        ["from", "to"]
+            .iter()
+            .any(|end| edge.get(end).is_some_and(|end| named(end, "node")))
+    };
+    if let Some(graph) = snapshot.get_mut("graph") {
+        if let Some(nodes) = graph
+            .get_mut("nodes")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            nodes.retain(|node| !named(node, "id"));
+        }
+        if let Some(edges) = graph
+            .get_mut("edges")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            edges.retain(|edge| !touches(edge));
+        }
+    }
+    if let Some(slots) = snapshot
+        .get_mut("rack")
+        .and_then(|rack| rack.get_mut("slots"))
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        slots.retain(|slot| !named(slot, "node"));
+    }
+}
 
 fn migrate_baseband_scopes(snapshot: &mut serde_json::Value) {
     let Some(graph) = snapshot.get_mut("graph") else {
@@ -1369,7 +1485,7 @@ fn migrate_baseband_scopes(snapshot: &mut serde_json::Value) {
     }
 }
 
-fn migrate_recorders(snapshot: &mut serde_json::Value) {
+fn migrate_dataless_nodes(snapshot: &mut serde_json::Value) {
     for node in snapshot
         .get_mut("graph")
         .and_then(|graph| graph.get_mut("nodes"))
@@ -1377,11 +1493,11 @@ fn migrate_recorders(snapshot: &mut serde_json::Value) {
         .into_iter()
         .flatten()
     {
-        let recorder = matches!(
+        let gained_data = matches!(
             node_kind(node),
-            Some("recorder" | "audio_recorder" | "baseband_recorder")
+            Some("recorder" | "audio_recorder" | "baseband_recorder" | "scanner" | "decoder_log")
         );
-        if recorder && node.get("data").is_none() {
+        if gained_data && node.get("data").is_none() {
             node["data"] = serde_json::json!({});
         }
     }
@@ -1635,37 +1751,17 @@ fn migrate_call_buffers(snapshot: &mut serde_json::Value) {
     let Some(graph) = snapshot.get_mut("graph") else {
         return;
     };
-    let legacy: HashMap<String, serde_json::Value> = graph
+    let legacy_ids: HashSet<String> = graph
         .get("nodes")
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
         .filter(|node| node.get("kind").and_then(serde_json::Value::as_str) == Some("call_buffer"))
-        .filter_map(|node| {
-            Some((
-                node.get("id")?.as_str()?.to_owned(),
-                node.get("data").cloned().unwrap_or_default(),
-            ))
-        })
+        .filter_map(|node| node.get("id")?.as_str().map(str::to_owned))
         .collect();
-    if legacy.is_empty() {
+    if legacy_ids.is_empty() {
         return;
     }
-    let legacy_ids: HashSet<&str> = legacy.keys().map(String::as_str).collect();
-    let system_settings: HashMap<String, serde_json::Value> = graph
-        .get("edges")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|edge| {
-            let source = edge.get("from")?.get("node")?.as_str()?;
-            let target = edge.get("to")?.get("node")?.as_str()?;
-            legacy
-                .get(target)
-                .cloned()
-                .map(|settings| (source.to_owned(), settings))
-        })
-        .collect();
     let systems: HashSet<String> = graph
         .get("nodes")
         .and_then(serde_json::Value::as_array)
@@ -1683,28 +1779,6 @@ fn migrate_call_buffers(snapshot: &mut serde_json::Value) {
                 .and_then(serde_json::Value::as_str)
                 .is_none_or(|id| !legacy_ids.contains(id))
         });
-        for node in nodes {
-            let Some(id) = node.get("id").and_then(serde_json::Value::as_str) else {
-                continue;
-            };
-            let Some(settings) = system_settings
-                .get(id)
-                .and_then(serde_json::Value::as_object)
-            else {
-                continue;
-            };
-            let Some(data) = node
-                .get_mut("data")
-                .and_then(serde_json::Value::as_object_mut)
-            else {
-                continue;
-            };
-            let kept = settings
-                .get("retention_seconds")
-                .and_then(serde_json::Value::as_u64)
-                .is_some_and(|seconds| seconds > 0);
-            data.insert("record_calls".to_owned(), serde_json::Value::Bool(kept));
-        }
     }
     if let Some(edges) = graph
         .get_mut("edges")
@@ -1778,19 +1852,30 @@ struct DecoderLogRow {
     event: String,
 }
 
+const LOG_COLUMNS: &str = "decoder_log.id, decoder_log.at, decoder_log.device_set, \
+     decoder_log.channel, decoder_log.node, decoder_log.kind, decoder_log.freq_hz, \
+     decoder_log.station, decoder_log.summary, decoder_log.event, decoder_log.origin";
+
 fn select_decoder_log(
     conn: &Connection,
     predicate: &DecoderLogPredicate,
     limit: u32,
 ) -> Result<Vec<DecoderLogEntry>, StoreError> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT decoder_log.id, decoder_log.at, decoder_log.device_set, decoder_log.channel, \
-         decoder_log.node, decoder_log.kind, decoder_log.freq_hz, decoder_log.station, \
-         decoder_log.summary, decoder_log.event, decoder_log.origin FROM {}{} ORDER BY {} LIMIT ?",
+    let sql = format!(
+        "SELECT {LOG_COLUMNS} FROM {}{} ORDER BY {} LIMIT ?",
         predicate.from, predicate.clause, predicate.order
-    ))?;
+    );
     let mut params = predicate.params.clone();
     params.push(Value::Integer(i64::from(limit)));
+    read_log_entries(conn, &sql, params)
+}
+
+fn read_log_entries(
+    conn: &Connection,
+    sql: &str,
+    params: Vec<Value>,
+) -> Result<Vec<DecoderLogEntry>, StoreError> {
+    let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map(params_from_iter(params), |row| {
         Ok(DecoderLogRow {
             id: row.get(0)?,
@@ -1984,9 +2069,15 @@ pub(crate) fn rfc3339(ts: jiff::Timestamp) -> String {
     format!("{ts:.9}")
 }
 
-fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
+fn migrate(conn: &Connection) -> Result<(), StoreError> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let done = usize::try_from(version).unwrap_or(0);
+    if done > MIGRATIONS.len() {
+        return Err(StoreError::NewerSchema {
+            found: version,
+            known: MIGRATIONS.len(),
+        });
+    }
     for (i, migration) in MIGRATIONS.iter().enumerate().skip(done) {
         conn.execute_batch(&format!(
             "BEGIN;\n{migration}\nPRAGMA user_version = {};\nCOMMIT;",
@@ -1994,6 +2085,18 @@ fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
         ))?;
     }
     Ok(())
+}
+
+fn ensure_server_id(conn: &Connection) -> Result<String, rusqlite::Error> {
+    conn.execute(
+        "INSERT OR IGNORE INTO server_meta (key, value) VALUES (?1, lower(hex(randomblob(16))))",
+        params![SERVER_ID_KEY],
+    )?;
+    conn.query_row(
+        "SELECT value FROM server_meta WHERE key = ?1",
+        params![SERVER_ID_KEY],
+        |row| row.get(0),
+    )
 }
 
 fn now_rfc3339() -> String {
@@ -2005,8 +2108,18 @@ pub fn rfc3339_now() -> String {
     now_rfc3339()
 }
 
+mod arrays;
 mod audio_fx_lift;
+mod coherent_break;
 mod cps;
+mod history;
+mod log_groups;
+mod phones;
+mod remote;
+
+pub(crate) use coherent_break::upgrade_export;
+pub(crate) use phones::{OfferFailure, OfferRow, PairWrite, PhoneRow};
+pub use remote::RemotePairing;
 
 #[cfg(test)]
 mod tests;

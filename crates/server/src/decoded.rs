@@ -146,7 +146,7 @@ mod tests {
         registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
         let engine = Engine::with_registry(registry, None);
         let set = engine
-            .create_device_set("virtual:siggen")
+            .create_device_set("virtual:band")
             .expect("open the virtual radio");
         let channel = engine
             .add_channel(
@@ -166,7 +166,6 @@ mod tests {
             "channel:adsb",
             NodeBody::Channel(ChannelNode {
                 channel_type: "adsb".to_owned(),
-                record_calls: false,
                 tuning_locked: false,
             }),
         ));
@@ -178,7 +177,10 @@ mod tests {
                 ..EventFilterNode::default()
             }),
         ));
-        snapshot.graph.nodes.push(node("log", NodeBody::DecoderLog));
+        snapshot
+            .graph
+            .nodes
+            .push(node("log", NodeBody::DecoderLog(Default::default())));
         snapshot.graph.nodes.push(node("export", NodeBody::Export));
         snapshot
             .graph
@@ -209,7 +211,7 @@ mod tests {
         device.device = Some(DeviceRef {
             backend: "virtual".to_owned(),
             serial: None,
-            key: Some("siggen".to_owned()),
+            key: Some("band".to_owned()),
         });
         let id = store.create_workspace("bench", &snapshot).expect("create");
         store.activate_workspace(id).expect("activate");

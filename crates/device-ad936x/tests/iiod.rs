@@ -9,8 +9,8 @@ use sdrmm_device::{
 };
 use sdrmm_device_ad936x::Ad936xDriver;
 use sdrmm_wire::{
-    Agc, AgcSetting, BandwidthSetting, Coherence, DcArtifact, DeviceSettings, Duplex, GainKind,
-    GainValue, StreamSettings,
+    Agc, AgcSetting, BandwidthSetting, Coherence, DcArtifact, DeviceInfo, DeviceSettings, Duplex,
+    GainKind, GainValue, StreamSettings,
 };
 
 const SERIAL: &str = "1044734c960500111e002e0041984fc267";
@@ -23,6 +23,17 @@ fn open(server: &FakeIiod) -> Box<dyn SdrDevice> {
         .resolve(&server.endpoint())
         .expect("an addressable radio");
     driver.open(&info).expect("opens")
+}
+
+fn open_both_lanes(server: &FakeIiod) -> Box<dyn SdrDevice> {
+    let mut device = open(server);
+    device
+        .apply(&DeviceSettings {
+            rx_inputs: Some(vec![0, 1]),
+            ..DeviceSettings::default()
+        })
+        .expect("both lanes");
+    device
 }
 
 fn lane_sink(lane: &Lane) -> RxSink {
@@ -54,7 +65,10 @@ fn opening_reads_the_radios_own_limits_rather_than_assuming_them() {
     assert_eq!(caps.freq_ranges.len(), 1);
     assert_eq!(caps.freq_ranges[0].min, 70e6);
     assert_eq!(caps.freq_ranges[0].max, 6e9);
-    assert_eq!(caps.sample_rate_ranges[0].min, 2_083_333.0);
+    assert_eq!(
+        caps.sample_rate_ranges[0].min, 260_417.0,
+        "the FPGA decimator reaches below the transceiver"
+    );
     assert_eq!(caps.bandwidth_ranges[0].max, 56e6);
     assert_eq!(
         caps.gains
@@ -101,10 +115,20 @@ fn opening_reads_the_radios_own_limits_rather_than_assuming_them() {
             "quadrature_tracking",
             "rf_dc_tracking",
             "bb_dc_tracking",
-            "fir_filter",
             "tx_port"
         ]
     );
+}
+
+#[test]
+fn a_local_oscillator_a_few_hertz_off_reads_back_as_the_frequency_asked_for() {
+    let mut attributes = common::attributes(1);
+    attributes.insert(
+        "ad9361-phy/OUTPUT/altvoltage0/frequency".to_string(),
+        "97999998".to_string(),
+    );
+    let server = FakeIiod::with(common::context_xml(1), attributes);
+    assert_eq!(open(&server).settings().center_hz, Some(98_000_000.0));
 }
 
 #[test]
@@ -132,7 +156,7 @@ fn the_settings_that_come_back_are_the_ones_the_radio_is_holding() {
         settings
             .extra
             .iter()
-            .any(|extra| extra.name == "fir_filter"),
+            .any(|extra| extra.name == "quadrature_tracking"),
         "{:?}",
         settings.extra
     );
@@ -141,12 +165,14 @@ fn the_settings_that_come_back_are_the_ones_the_radio_is_holding() {
 #[test]
 fn a_two_by_two_radio_is_recognised_as_one() {
     let server = FakeIiod::spawn(2);
-    let device = open(&server);
+    let device = open_both_lanes(&server);
     let caps = device.capabilities();
     assert_eq!(caps.rx_streams, 2);
     assert_eq!(caps.tx_streams, 2);
     assert_eq!(caps.coherence, Coherence::PhaseCoherent);
     assert!(caps.per_stream.gain);
+    assert!(caps.per_stream.agc);
+    assert!(!caps.per_stream.antenna);
     assert!(!caps.per_stream.tuning);
     assert_eq!(
         device.settings().streams,
@@ -154,9 +180,12 @@ fn a_two_by_two_radio_is_recognised_as_one() {
             stream: 1,
             center_hz: None,
             tuning: None,
-            gains: vec![GainValue::new(GainKind::Tuner, 40.0)],
-            antenna: Some("A_BALANCED".to_string()),
-            agc: None,
+            gains: vec![
+                GainValue::new(GainKind::Tuner, 40.0),
+                GainValue::new(GainKind::Tx, -10.0),
+            ],
+            antenna: None,
+            agc: Some(AgcSetting::off()),
         }],
         "the second lane reports its own state"
     );
@@ -165,7 +194,7 @@ fn a_two_by_two_radio_is_recognised_as_one() {
 #[test]
 fn a_gain_for_the_whole_radio_reaches_both_lanes_and_a_lane_of_its_own_stays_apart() {
     let server = FakeIiod::spawn(2);
-    let mut device = open(&server);
+    let mut device = open_both_lanes(&server);
     device
         .apply(&DeviceSettings {
             gains: vec![GainValue::new(GainKind::Tuner, 30.0)],
@@ -195,6 +224,270 @@ fn a_gain_for_the_whole_radio_reaches_both_lanes_and_a_lane_of_its_own_stays_apa
         .for_stream(1, &device.capabilities().per_stream);
     assert_eq!(lane.gains[0].value_db, 20.0);
     assert_eq!(lane.antenna.as_deref(), Some("B_BALANCED"));
+    assert!(
+        wrote(&server, "WRITE ad9361-phy INPUT voltage1 rf_port_select").is_empty(),
+        "the input switch is set through the first receiver only"
+    );
+}
+
+#[test]
+fn each_lane_runs_its_own_gain_loop_and_reports_the_gain_it_picked() {
+    let server = FakeIiod::spawn(2);
+    let mut device = open_both_lanes(&server);
+    device
+        .apply(&DeviceSettings {
+            streams: vec![
+                StreamSettings {
+                    stream: 0,
+                    agc: Some(AgcSetting::in_mode(true, "slow_attack")),
+                    ..StreamSettings::default()
+                },
+                StreamSettings {
+                    stream: 1,
+                    agc: Some(AgcSetting::off()),
+                    ..StreamSettings::default()
+                },
+            ],
+            ..DeviceSettings::default()
+        })
+        .expect("the radio took it");
+    assert_eq!(
+        server.attribute("ad9361-phy/INPUT/voltage0/gain_control_mode"),
+        Some("slow_attack".to_string())
+    );
+    assert_eq!(
+        server.attribute("ad9361-phy/INPUT/voltage1/gain_control_mode"),
+        Some("manual".to_string())
+    );
+    let gains = device.agc_gains().expect("read back");
+    assert_eq!(gains.len(), 1, "{gains:?}");
+    assert_eq!(gains[0].stream, 0);
+    assert_eq!(gains[0].value_db, 40.0);
+
+    device
+        .apply(&DeviceSettings {
+            agc: Some(AgcSetting::off()),
+            ..DeviceSettings::default()
+        })
+        .expect("the radio took it");
+    assert_eq!(
+        server.attribute("ad9361-phy/INPUT/voltage1/gain_control_mode"),
+        Some("manual".to_string())
+    );
+    assert!(device.agc_gains().expect("read back").is_empty());
+}
+
+#[test]
+fn a_retune_follows_the_gain_limits_of_the_new_band() {
+    let server = FakeIiod::spawn(1);
+    let mut device = open(&server);
+    device
+        .apply(&DeviceSettings {
+            center_hz: Some(100e6),
+            gains: vec![GainValue::new(GainKind::Tuner, 73.0)],
+            ..DeviceSettings::default()
+        })
+        .expect("the low band reaches 73 dB");
+    assert_eq!(device.capabilities().gains[0].range.max, 73.0);
+    assert_eq!(
+        server.attribute("ad9361-phy/INPUT/voltage0/hardwaregain"),
+        Some("73.000000".to_string())
+    );
+
+    device
+        .apply(&DeviceSettings {
+            center_hz: Some(5.8e9),
+            gains: vec![GainValue::new(GainKind::Tuner, 70.0)],
+            ..DeviceSettings::default()
+        })
+        .expect("a gain past the band's reach is clamped to it");
+    assert_eq!(device.capabilities().gains[0].range.max, 62.0);
+    assert_eq!(device.capabilities().gains[0].range.min, -10.0);
+    assert_eq!(
+        server.attribute("ad9361-phy/INPUT/voltage0/hardwaregain"),
+        Some("62.000000".to_string())
+    );
+    assert_eq!(device.settings().gains[0].value_db, 62.0);
+}
+
+#[test]
+fn a_two_by_two_radio_can_give_one_lane_the_whole_link() {
+    let server = FakeIiod::spawn(2);
+    let mut device = open(&server);
+    assert_eq!(device.capabilities().rx_inputs, vec!["RX1", "RX2"]);
+    assert_eq!(
+        device.settings().rx_inputs,
+        Some(vec![0]),
+        "the lanes share one synthesizer, so one is where a radio starts"
+    );
+    device
+        .apply(&DeviceSettings {
+            rx_inputs: Some(vec![0, 1]),
+            ..DeviceSettings::default()
+        })
+        .expect("both lanes");
+    assert_eq!(device.capabilities().tx_streams, 2);
+
+    device
+        .apply(&DeviceSettings {
+            rx_inputs: Some(vec![0]),
+            ..DeviceSettings::default()
+        })
+        .expect("one lane");
+    assert_eq!(device.capabilities().rx_streams, 1);
+    assert_eq!(
+        device.capabilities().tx_streams,
+        1,
+        "the transmit lanes follow"
+    );
+    assert_eq!(device.settings().rx_inputs, Some(vec![0]));
+    assert!(device.settings().streams.is_empty());
+    assert!(
+        device.tx_start_channels(&[0, 1]).is_err(),
+        "the second transmit lane is off too"
+    );
+    assert!(
+        device
+            .rx_start(vec![RxSink::new(|_, _| {}), RxSink::new(|_, _| {})])
+            .is_err(),
+        "the second lane is off"
+    );
+    let lane: Lane = Arc::default();
+    device
+        .rx_start(vec![lane_sink(&lane)])
+        .expect("one lane streams");
+    collected(&lane, 2);
+    device.rx_stop();
+    assert!(
+        server.opened()[0].ends_with("00000003"),
+        "{:?}",
+        server.opened()
+    );
+
+    device
+        .apply(&DeviceSettings {
+            rx_inputs: Some(vec![0, 1]),
+            ..DeviceSettings::default()
+        })
+        .expect("both lanes again");
+    assert_eq!(device.capabilities().rx_streams, 2);
+    assert_eq!(
+        device.settings().streams.len(),
+        1,
+        "the second lane reports again"
+    );
+    assert!(
+        device
+            .apply(&DeviceSettings {
+                rx_inputs: Some(vec![0, 2]),
+                ..DeviceSettings::default()
+            })
+            .is_err()
+    );
+}
+
+fn inputs(picked: &[u32]) -> DeviceSettings {
+    DeviceSettings {
+        rx_inputs: Some(picked.to_vec()),
+        ..DeviceSettings::default()
+    }
+}
+
+#[test]
+fn one_lane_listens_on_either_receiver() {
+    let mut attributes = common::attributes(2);
+    attributes.insert(
+        "ad9361-phy/INPUT/voltage1/hardwaregain".to_string(),
+        "25.000000 dB".to_string(),
+    );
+    let server = FakeIiod::with(common::context_xml(2), attributes);
+    let mut device = open(&server);
+
+    device.apply(&inputs(&[1])).expect("RX2");
+    assert_eq!(device.settings().rx_inputs, Some(vec![1]));
+    assert_eq!(device.capabilities().rx_streams, 1);
+    assert_eq!(
+        device.settings().gains[0],
+        GainValue::new(GainKind::Tuner, 25.0),
+        "the gain read back is the second receiver's"
+    );
+    assert!(device.apply(&inputs(&[2])).is_err());
+    assert!(device.apply(&inputs(&[1, 0])).is_err());
+
+    let lane: Lane = Arc::default();
+    device.rx_start(vec![lane_sink(&lane)]).expect("starts");
+    collected(&lane, 2);
+    device.rx_stop();
+    let opened = server.opened();
+    assert!(opened[0].ends_with("0000000c"), "{opened:?}");
+
+    device.apply(&inputs(&[0, 1])).expect("both");
+    assert_eq!(device.capabilities().rx_streams, 2);
+    device.apply(&inputs(&[0])).expect("RX1");
+    let lane: Lane = Arc::default();
+    device.rx_start(vec![lane_sink(&lane)]).expect("restarts");
+    collected(&lane, 2);
+    device.rx_stop();
+    assert!(server.opened()[1].ends_with("00000003"));
+}
+
+#[test]
+fn a_board_that_locks_its_ports_offers_no_port_to_pick() {
+    let mut attributes = common::attributes(1);
+    for way in ["rx", "tx"] {
+        attributes.insert(
+            format!("ad9361-phy/DEBUG/adi,{way}-rf-port-input-select-lock-enable"),
+            "1".to_string(),
+        );
+    }
+    let server = FakeIiod::with(common::context_xml(1), attributes);
+    let device = open(&server);
+    assert_eq!(device.capabilities().antennas, vec!["A_BALANCED"]);
+    assert!(
+        device
+            .capabilities()
+            .extra
+            .iter()
+            .all(|setting| setting.name() != "tx_port")
+    );
+}
+
+#[test]
+fn a_rate_below_the_transceiver_is_decimated_in_the_fpga() {
+    let server = FakeIiod::spawn(1);
+    let mut device = open(&server);
+    device
+        .apply(&DeviceSettings {
+            sample_rate: Some(500_000.0),
+            ..DeviceSettings::default()
+        })
+        .expect("the radio took it");
+    assert_eq!(
+        server.attribute("ad9361-phy/INPUT/voltage0/sampling_frequency"),
+        Some("4000000".to_string())
+    );
+    assert_eq!(
+        server.attribute("cf-ad9361-lpc/INPUT/voltage0/sampling_frequency"),
+        Some("500000".to_string())
+    );
+    assert_eq!(
+        server.attribute("cf-ad9361-dds-core-lpc/OUTPUT/voltage0/sampling_frequency"),
+        Some("500000".to_string()),
+        "the transmitter interpolates by as much"
+    );
+    assert_eq!(device.settings().sample_rate, Some(500_000.0));
+
+    device
+        .apply(&DeviceSettings {
+            sample_rate: Some(10e6),
+            ..DeviceSettings::default()
+        })
+        .expect("the radio took it");
+    assert_eq!(
+        server.attribute("cf-ad9361-lpc/INPUT/voltage0/sampling_frequency"),
+        Some("10000000".to_string()),
+        "a rate the transceiver makes runs undecimated"
+    );
 }
 
 #[test]
@@ -230,9 +523,10 @@ fn applying_settings_reaches_the_radio_as_the_attributes_it_understands() {
         server.attribute("ad9361-phy/INPUT/voltage0/rf_bandwidth"),
         Some("3000000".to_string())
     );
-    assert_eq!(
+    assert_ne!(
         server.attribute("ad9361-phy/INPUT/voltage0/hardwaregain"),
-        Some("30.000000".to_string())
+        Some("30.000000".to_string()),
+        "the AGC holds the receive gain, so it is not written"
     );
     assert_eq!(
         server.attribute("ad9361-phy/INPUT/voltage0/rf_port_select"),
@@ -401,7 +695,7 @@ fn stopping_gives_the_buffer_back_so_the_next_start_gets_one() {
 #[test]
 fn two_lanes_arrive_split_apart_and_sample_aligned() {
     let server = FakeIiod::spawn(2);
-    let mut device = open(&server);
+    let mut device = open_both_lanes(&server);
     let first: Lane = Arc::default();
     let second: Lane = Arc::default();
     device
@@ -550,7 +844,7 @@ fn a_radio_that_is_not_an_ad936x_is_refused_by_name() {
 fn a_radio_at_an_address_it_was_told_about_is_listed_without_a_search() {
     let server = FakeIiod::spawn(1);
     let driver = Ad936xDriver::searching([]);
-    assert!(driver.probe().is_empty());
+    assert!(networked(driver.probe()).is_empty());
     let info = driver.resolve(&server.endpoint()).expect("addressable");
     assert_eq!(info.driver, "ad936x");
     assert!(driver.probe().contains(&info));
@@ -562,13 +856,17 @@ fn a_search_tries_the_addresses_it_was_given_and_names_what_it_finds_by_serial()
     let server = FakeIiod::spawn(1);
     let driver = Ad936xDriver::searching([server.endpoint(), "127.0.0.1:1".to_string()]);
     assert!(
-        driver.probe().is_empty(),
+        networked(driver.probe()).is_empty(),
         "nothing is known before a search"
     );
-    let found = driver.probe_deep();
+    let found = networked(driver.probe_deep());
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].key, server.endpoint());
     assert_eq!(found[0].serial.as_deref(), Some(SERIAL));
+    assert_eq!(
+        found[0].label,
+        format!("AntSDR AD9361 {}", server.endpoint())
+    );
     assert!(driver.probe().contains(&found[0]), "and it stays known");
 }
 
@@ -588,7 +886,14 @@ fn opening_a_radio_by_two_addresses_lists_it_once_by_its_serial() {
         .expect("addressable");
     drop(driver.open(&by_address).expect("opens"));
     drop(driver.open(&by_name).expect("opens"));
-    let listed = driver.probe();
+    let listed = networked(driver.probe());
     assert_eq!(listed.len(), 1, "{listed:?}");
     assert_eq!(listed[0].serial.as_deref(), Some(SERIAL));
+}
+
+fn networked(listed: Vec<DeviceInfo>) -> Vec<DeviceInfo> {
+    listed
+        .into_iter()
+        .filter(|info| !info.key.starts_with("usb-"))
+        .collect()
 }

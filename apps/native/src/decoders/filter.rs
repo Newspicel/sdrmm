@@ -92,7 +92,6 @@ pub fn station_label(kinds: &[String]) -> &'static str {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WiredSource {
     pub channel_type: Option<String>,
-    pub records_calls: bool,
     pub trunk: bool,
     pub monitor: bool,
 }
@@ -108,20 +107,16 @@ pub fn kinds_offered(sources: &[WiredSource], descriptors: &[ChannelDescriptor])
         }
         if source.trunk {
             kinds.insert("dv".to_owned());
-        }
-        let decoded = descriptors
-            .iter()
-            .find(|d| Some(&d.type_id) == source.channel_type.as_ref())
-            .and_then(|d| d.decoder_kind.clone());
-        if let Some(kind) = decoded {
-            if kind == "broadcast" {
-                kinds.insert("broadcast_data".to_owned());
-            }
-            kinds.insert(kind);
-        }
-        if source.records_calls {
             kinds.insert("call".to_owned());
         }
+        let descriptor = descriptors
+            .iter()
+            .find(|d| Some(&d.type_id) == source.channel_type.as_ref());
+        let decoded = descriptor.and_then(|d| d.decoder_kind.clone());
+        if descriptor.is_some_and(|d| d.has_audio) || decoded.as_deref() == Some("dv") {
+            kinds.insert("call".to_owned());
+        }
+        kinds.extend(decoded);
     }
     kinds.into_iter().collect()
 }

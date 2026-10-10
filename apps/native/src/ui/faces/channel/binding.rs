@@ -183,7 +183,6 @@ mod tests {
     fn channel(kind: &str, locked: bool) -> NodeBody {
         NodeBody::Channel(ChannelNode {
             channel_type: kind.to_owned(),
-            record_calls: false,
             tuning_locked: locked,
         })
     }
@@ -196,6 +195,7 @@ mod tests {
                 key: None,
             }),
             locked_streams: Vec::new(),
+            split_tuning: false,
         })
     }
 
@@ -329,10 +329,9 @@ mod tests {
     fn a_scanner_or_satellite_on_the_control_input_holds_the_tuning() {
         let mut graph = graph();
         assert_eq!(tuning_controller_of(&graph, "nfm"), None);
-        graph.nodes.push(node(
-            "scan",
-            NodeBody::Scanner(sdrmm_wire::scan::ScannerNode::default()),
-        ));
+        graph
+            .nodes
+            .push(node("scan", NodeBody::Scanner(Default::default())));
         graph
             .edges
             .push(edge(("scan", "control"), ("nfm", "control")));

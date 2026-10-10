@@ -5,15 +5,17 @@ mod command;
 mod downconvert;
 mod frontend;
 mod patches;
-mod retire;
+pub(crate) mod retire;
 mod spectrum;
 mod subbands;
 mod worker;
 
 pub use capture::CaptureRuntime;
-#[cfg(test)]
+pub(crate) use capture::VirtualLaneSink;
 pub(crate) use capture::ring_capacity;
-pub(crate) use channel::{ChannelHost, ChannelSinks, DecodedSink, RawDecoded, RawImage, reaches};
+pub(crate) use channel::{
+    ChannelHost, ChannelSinks, DecodedSink, RawDecoded, RawImage, RawPayload, reaches,
+};
 pub(crate) use command::DspCommand;
 pub use frontend::DspMeta;
 pub(crate) use patches::DeviceRuntime;

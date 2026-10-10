@@ -19,40 +19,48 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-wire` | Shared settings, DTOs, events, patch graph, and OpenAPI schemas |
 | `sdrmm-device` | Hardware-independent device traits, capabilities, settings, and registry |
 | `sdrmm-device-recording` | SigMF playback behind the Recording node |
-| `sdrmm-device-siggen` | Test signals behind the Signal generator node |
+| `sdrmm-device-siggen` | Signals for the Signal generator node |
 | `sdrmm-device-virtual` | Synthetic radios for debug builds and tests |
 | `sdrmm-usb-stream` | Bulk USB streaming shared by the native drivers |
 | `sdrmm-device-rtlsdr` | Native RTL-SDR driver |
 | `sdrmm-device-airspy`, `sdrmm-device-airspyhf` | Native Airspy drivers |
 | `sdrmm-device-hackrf` | Native HackRF driver |
+| `sdrmm-device-espsdr` | ESP32 running ESP-SDR firmware, over serial |
 | `sdrmm-device-ad936x` | AntSDR, PlutoSDR and other AD936x boards, speaking iiod over Ethernet or USB |
+| `sdrmm-iqlink` | UDP sample protocol shared by `sdrmm-iqlinkd` and `sdrmm-device-ad936x` |
+| `sdrmm-iqlinkd` | Daemon on AD936x boards that streams samples over UDP |
 | `sdrmm-device-soapy` | Local hardware through SoapySDR |
 | `sdrmm-device-sdrplay` | SDRplay RSP receivers through the vendor API, loaded at runtime |
 | `sdrmm-device-rtltcp` | Direct `rtl_tcp` client |
 | `sdrmm-device-spyserver` | Direct SpyServer client |
 | `sdrmm-device-sdrconnect` | SDRplay SDRconnect over its WebSocket API |
+| `sdrmm-device-kiwisdr` | KiwiSDR over its WebSocket API |
 | `sdrmm-device-cr8` | Dragon Labs CR-8 through the vendor SDK, loaded at runtime |
-| `sdrmm-device-array` | Already-open streams composed as logical lanes; no hardware opens |
-| `sdrmm-channels` | Analog demodulators, protocol decoders, and their descriptors |
+| `sdrmm-channels` | Analog demodulators, protocol decoders, their descriptors, and signal synthesis |
 | `sdrmm-recorder` | SigMF writing, reading, scanning, and export |
 | `sdrmm-orbit` | SGP4, pass prediction, and Doppler |
 | `sdrmm-tools` | Antenna calculator and NanoVNA |
 | `sdrmm-cps` | Codeplug reading, writing, and conversion |
 | `sdrmm-test-support` | Allocation and timing helpers for tests |
 | `sdrmm-engine` | Device supervision, channelization, scanning, streams, recording, and state snapshots |
-| `sdrmm-server` | REST, WebSocket, MCP, persistence, band plans, auth, and embedded assets |
+| `sdrmm-tunnel` | Outbound relay client, device key, and pairing for app.sdrmm.com |
+| `sdrmm-server` | REST, WebSocket, MCP, persistence, band plans, auth, phones, remote access, and embedded assets |
+| `sdrmm-mobile-core` | Pairing, pinned TLS client, missions, and pose fusion for the phone apps |
 
 `apps/sdrmm` is the CLI and owns the process. `apps/desktop` starts the same server on a random
 loopback port and opens it in a Tauri window. Both probe SoapySDR in a short-lived child process.
+`apps/ios` and `apps/android` are native phone apps on `sdrmm-mobile-core`.
 
 The dependency rules:
 
 - `dsp` does no I/O and depends on no project crate.
 - `modem` builds reusable modulation algorithms on `dsp` only.
-- `channels` depends on `dsp`, `modem`, and `wire`.
-- Measurement tooling lives in test-support crates, outside the application graph.
+- `channels` depends on `dsp`, `modem`, `wire`, and `codec2`.
+- `mobile-core` depends on `wire` only. Phone builds pull no engine, server, DSP, USB, FFmpeg,
+  codec2, or SQLite crate.
+- `test-support` and `modem-test-support` never reach the `sdrmm` dependency graph.
 
-`cargo xtask check` enforces them.
+`cargo xtask check` enforces the dependency rules.
 
 ## One source of truth for wire types
 
@@ -73,25 +81,26 @@ It may block and allocate.
 
 Media and recording data leave DSP through preallocated single-producer, single-consumer buffer
 pools. Workers turn them into network payloads. A full queue never blocks DSP: lost media is
-reported and recordings fail loudly. Some decoders still allocate for variable-size results.
+reported and recordings fail loudly. Some decoders allocate for variable-size results.
 
 Spectrum, audio, and video travel as binary WebSocket frames; browser audio is Opus. Decoder
 events are typed JSON. After a WebSocket invalidation, clients fetch durable state over REST.
 
 `cargo xtask perf` measures DSP throughput, allocation, decoder searches, and publication.
 
-## Coherent processing
+## Arrays
 
-Every capture block carries the index of its first sample, so reported hardware gaps are visible.
-Coherent processing buffers each lane and works on the sample range all lanes share. After a gap
-it skips to the next shared index, then applies the calibrated delays and weights.
+Every capture block carries the index and time of its first sample, so hardware gaps are
+visible. Each radio lane has a dormant tap. An Array node wakes the taps of its lanes; the
+engine's array runtime aligns them in time, solves delay, phase and gain on the noise source or a
+pilot, and corrects each lane with one filter. A lane that slips is realigned and reported.
 
-A beam is written to an ordinary capture ring, so channels, recorders, and scopes use it like any
-single-lane source.
+Array processors run on the aligned block, inline or on worker threads. Their lane outputs, such
+as a beam or a stitched band, are virtual lanes of the first member radio, so channels, recorders
+and scopes use them like any radio lane.
 
-An Array node combines streams that Device nodes already own. `device-array` exposes them as
-logical lanes. The engine forwards corrected IQ, coordinates tuning, and recovers members. The
-array never opens hardware itself.
+The Array never opens hardware. Device nodes own the radios; the Array holds the tuning and gain of
+its lanes while it exists.
 
 ## Workspaces and the live engine
 
@@ -146,16 +155,18 @@ Some decoder constants are copied from the standards:
 | DAB phase reference | `crates/channels/src/dab/ofdm.rs` |
 | DVB-S puncturing and Reed-Solomon parameters | `crates/channels/src/datv/dvbs.rs` |
 | DVB-S2 LDPC accumulator addresses | `crates/channels/src/datv/dvbs2/tables/` |
+| DVB-S2X LDPC addresses, constellations and interleavers | `crates/channels/src/datv/dvbs2/s2x/` |
 | VL-SNR header sequence | `crates/channels/src/datv/dvbs2/vlsnr.rs` |
+| DVB-T continual pilot and TPS carriers | `crates/channels/src/datv/dvbt/en300744.rs` |
+| DVB-T2 pilots, reserved carriers, P1, L1 and LDPC tables | `crates/channels/src/datv/dvbt/t2/en302755/` |
 
 Sources: ETSI EN 300 401 (DAB), TS 102 563 (DAB+), EN 300 421 (DVB-S), EN 302 307-1 and -2
-(DVB-S2/S2X), TS 102 606 (GSE), and ES 201 980 (DRM).
+(DVB-S2/S2X), EN 300 744 (DVB-T), EN 302 755 (DVB-T2), TS 102 606 (GSE), and ES 201 980 (DRM).
 
-The values were cross-checked against [welle.io](https://github.com/AlbrechtL/welle.io)
-(GPL-2.0-or-later) and GNU Radio's [gr-dtv](https://github.com/gnuradio/gnuradio)
-(GPL-3.0-or-later). No decoder code was copied. The 7,378 DVB-S2 accumulator addresses were
-converted by script. The VL-SNR seed and Walsh-Hadamard rows were typed from the standard, and the
-sixteen patterns they generate match gr-dtv.
+`s2x_tables.py` and `dvbs2_spec_check.py` in `crates/modem-test-support/scripts/` generate the
+DVB-S2/S2X tables from the ETSI PDF text and check them against it. `dvbt_tables.py` does the same
+for DVB-T and DVB-T2. The CI `etsi` job runs all three. The VL-SNR seed and Walsh-Hadamard rows
+are typed from the standard.
 
 Tests catch transcription errors by checking independent properties: puncturing density,
 polynomial roots, published CRC values, and parity of encoded words.

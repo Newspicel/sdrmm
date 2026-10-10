@@ -1,3 +1,9 @@
+#[cfg(feature = "denoise-models")]
+mod denoise_models;
+
+#[cfg(feature = "denoise-models")]
+pub use denoise_models::denoise_model;
+
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,

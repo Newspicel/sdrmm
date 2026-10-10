@@ -1,7 +1,7 @@
 # --- web UI ------------------------------------------------------------------------------
 FROM node:26-slim AS web
 WORKDIR /web
-RUN npm install -g pnpm@11.15.1
+RUN npm install -g pnpm@12.8.0
 
 # Manifests first: the install layer then survives every UI source edit.
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
@@ -29,8 +29,9 @@ COPY xtask xtask
 RUN find crates apps xtask -type f ! -name Cargo.toml -delete \
     && find crates apps xtask -mindepth 1 -type d -empty -delete \
     && for dir in crates/*/; do mkdir -p "$dir/src" && : > "$dir/src/lib.rs"; done \
-    && for dir in apps/*/ xtask/; do mkdir -p "$dir/src" && echo 'fn main() {}' > "$dir/src/main.rs"; done \
-    && for m in crates/*/Cargo.toml apps/*/Cargo.toml xtask/Cargo.toml; do \
+    && for dir in apps/*/ xtask/ xtask/release/; do mkdir -p "$dir/src" && echo 'fn main() {}' > "$dir/src/main.rs"; done \
+    && : > xtask/release/src/lib.rs \
+    && for m in crates/*/Cargo.toml apps/*/Cargo.toml xtask/Cargo.toml xtask/release/Cargo.toml; do \
          grep -A2 '^\[\[bench\]\]' "$m" | sed -n 's/^name *= *"\([^"]*\)".*/\1/p' \
          | while read -r b; do \
              mkdir -p "$(dirname "$m")/benches" \
@@ -62,7 +63,7 @@ RUN python3 scripts/build-media.py --prefix /opt/sdrmm-media
 ENV FFMPEG_DIR=/opt/sdrmm-media
 RUN rustup show
 
-ARG FEATURES=soapy,sdrplay,rtlsdr,hackrf,airspy,airspyhf,ad936x,net-client,gpu-fft
+ARG FEATURES=soapy,sdrplay,rtlsdr,hackrf,airspy,airspyhf,espsdr,ad936x,net-client,gpu-fft
 # `ci` (Cargo.toml) drops LTO to answer a broken Dockerfile faster on a pull request. Releases
 # must never pass this: the published image is built from the default.
 ARG PROFILE=release
@@ -75,20 +76,23 @@ COPY crates crates
 COPY apps apps
 COPY xtask xtask
 COPY fixtures/broadcast_audio fixtures/broadcast_audio
+COPY fixtures/drm/*.aus fixtures/drm/
 COPY --from=web /web/dist web/dist
 # The touch is load-bearing: cargo decides freshness by mtime, and context files older than the
 # stub rlibs built above would leave those empty stubs in the shipped binary.
 RUN test -f web/dist/index.html \
     && find crates apps xtask -name '*.rs' -exec touch {} + \
     && cargo build --profile "$PROFILE" --locked -p sdrmm --no-default-features --features "$FEATURES" \
-    && install -Dm755 "target/$PROFILE/sdrmm" /out/sdrmm
+    && install -Dm755 "target/$PROFILE/sdrmm" /out/bin/sdrmm \
+    && install -Dm755 -t /out/lib/sdrmm /opt/sdrmm-media/lib/lib*.so.[0-9]*
 
 
 # --- runtime -----------------------------------------------------------------------------
 FROM debian:trixie-slim AS runtime
-LABEL org.opencontainers.image.source="https://github.com/newspicel/sdrminusminus" \
+LABEL org.opencontainers.image.url="https://sdrmm.com" \
+      org.opencontainers.image.source="https://github.com/newspicel/sdrmm" \
       org.opencontainers.image.description="SDR--: headless SDR server with embedded web UI" \
-      org.opencontainers.image.licenses="GPL-3.0-or-later"
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 # SoapySDR comes from Debian, as it would on the host: the modules named here are the ones no
 # native backend in this build covers. Modules are listed one by one rather than through
@@ -103,7 +107,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --user-group --create-home --home-dir /home/sdrmm sdrmm
 
-COPY --from=builder /out/sdrmm /usr/local/bin/sdrmm
+COPY --from=builder /out/ /usr/local/
 COPY THIRD_PARTY_NOTICES.md /usr/share/doc/sdrmm/THIRD_PARTY_NOTICES.md
 
 # Docker seeds a fresh named or anonymous volume from the image path, ownership included, so

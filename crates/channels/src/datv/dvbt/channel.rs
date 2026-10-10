@@ -4,7 +4,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
     BroadcastService, BroadcastServiceKind, ChannelDescriptor, ChannelParams, ChannelSettings,
-    DecoderEvent, DecoderFamily, DvbtParams,
+    DecoderFamily, DvbtParams,
 };
 
 use super::frontend::Frontend;
@@ -29,7 +29,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE,
     has_audio: true,
     has_video: true,
-    decoder_kind: Some("broadcast".to_owned()),
+    decoder_kind: Some("broadcast_data".to_owned()),
     ..ChannelDescriptor::default()
 });
 
@@ -142,7 +142,7 @@ impl DvbtChannel {
         status.video_frames_bad = self.media.video_errors;
         status.video_error = self.media.video_error.clone();
         status.services = services;
-        out.events.push(DecoderEvent::Broadcast(status));
+        out.broadcast = Some(status);
     }
 }
 
@@ -233,19 +233,32 @@ mod tests {
     }
 
     #[test]
-    fn narrow_channel_decodes_from_a_two_megasample_radio() {
-        let bandwidth = sdrmm_wire::DvbtBandwidth::Mhz1_7;
+    fn narrow_channels_decode_from_a_two_and_a_half_megasample_radio() {
+        for bandwidth in [
+            sdrmm_wire::DvbtBandwidth::Khz250,
+            sdrmm_wire::DvbtBandwidth::Khz333,
+            sdrmm_wire::DvbtBandwidth::Khz500,
+            sdrmm_wire::DvbtBandwidth::Mhz1,
+            sdrmm_wire::DvbtBandwidth::Mhz1_7,
+            sdrmm_wire::DvbtBandwidth::Mhz2,
+        ] {
+            decodes_through_radio_chain(bandwidth, 2_500_000.0);
+        }
+    }
+
+    fn decodes_through_radio_chain(bandwidth: sdrmm_wire::DvbtBandwidth, radio_rate: f64) {
         let channel_settings = settings(bandwidth);
         let input_rate = crate::input_rate(&channel_settings.params);
         assert_eq!(input_rate, bandwidth.sample_rate_hz());
+        let half = bandwidth.hz() / 2.0;
         assert_eq!(
             crate::occupied_band(&channel_settings.params),
-            (-850_000.0, 850_000.0)
+            (-half, half)
         );
-        let mut native = crate::testgen::dvbt::waveform(crate::testgen::dvbt::defaults(), 180);
-        crate::testgen::shift(&mut native, 600.0, input_rate);
-        let iq = crate::testgen::resample(&native, input_rate, 2_048_000.0);
-        let mut ddc = sdrmm_dsp::Ddc::new(2_048_000.0, input_rate, 0.0).unwrap();
+        let mut native = crate::synth::dvbt::waveform(crate::synth::dvbt::defaults(), 180);
+        crate::synth::shift(&mut native, 600.0, input_rate);
+        let iq = crate::synth::resample(&native, input_rate, radio_rate);
+        let mut ddc = sdrmm_dsp::Ddc::new(radio_rate, input_rate, 0.0).unwrap();
         let mut filter = crate::channel_filter(&channel_settings.params).unwrap();
         let mut receiver = DvbtChannel::new(ChannelCtx { input_rate }, channel_settings).unwrap();
         let mut baseband = Vec::new();
@@ -257,17 +270,20 @@ mod tests {
             out.reset();
             receiver.process(&filtered, &mut out);
         }
-        assert!(receiver.receiver.locked());
+        assert!(receiver.receiver.locked(), "{bandwidth:?}");
         assert_eq!(
             receiver.demux.program().and_then(|p| p.name.as_deref()),
-            Some("Rust TV")
+            Some("Rust TV"),
+            "{bandwidth:?}"
         );
         out.reset();
         receiver.report(&mut out);
-        let DecoderEvent::Broadcast(status) = &out.events[0] else {
-            panic!("broadcast status");
-        };
-        assert!((status.frequency_error_hz - 600.0).abs() < 30.0);
+        let status = out.broadcast.as_ref().expect("broadcast status");
+        assert!(
+            (status.frequency_error_hz - 600.0).abs() < 30.0,
+            "{bandwidth:?} {}",
+            status.frequency_error_hz
+        );
         assert!(
             DvbtChannel::new(
                 ChannelCtx {
@@ -289,7 +305,7 @@ mod tests {
             settings(sdrmm_wire::DvbtBandwidth::Mhz8),
         )
         .unwrap();
-        let iq = crate::testgen::dvbt::waveform(crate::testgen::dvbt::defaults(), 180);
+        let iq = crate::synth::dvbt::waveform(crate::synth::dvbt::defaults(), 180);
         let mut out = ChannelOutputs::default();
         receiver.process(&iq, &mut out);
         assert!(receiver.receiver.locked());
@@ -304,7 +320,7 @@ mod tests {
 
     #[test]
     fn every_bandwidth_discovers_services_at_its_native_clock() {
-        let iq = crate::testgen::dvbt::waveform(crate::testgen::dvbt::defaults(), 180);
+        let iq = crate::synth::dvbt::waveform(crate::synth::dvbt::defaults(), 180);
         for bandwidth in [
             sdrmm_wire::DvbtBandwidth::Mhz1_7,
             sdrmm_wire::DvbtBandwidth::Mhz6,
@@ -363,7 +379,7 @@ mod tests {
                 )
             })
             .collect();
-        let iq = crate::testgen::resample(&native, rate, 2_048_000.0);
+        let iq = crate::synth::resample(&native, rate, 2_048_000.0);
         let mut ddc = sdrmm_dsp::Ddc::new(2_048_000.0, rate, 0.0).unwrap();
         let mut filter = channel_filter(&params);
         let mut channel =
@@ -379,18 +395,7 @@ mod tests {
             channel.process(&filtered, &mut out);
         }
         channel.report(&mut out);
-        let status = out
-            .events
-            .iter()
-            .rev()
-            .find_map(|event| {
-                if let DecoderEvent::Broadcast(status) = event {
-                    Some(status)
-                } else {
-                    None
-                }
-            })
-            .unwrap();
+        let status = out.broadcast.as_ref().unwrap();
         assert_eq!(status.system, sdrmm_wire::BroadcastSystem::DvbT2);
         assert_eq!(status.frames_ok, 4, "{status:?}");
         assert_eq!(status.frames_bad, 0, "{status:?}");
@@ -450,5 +455,85 @@ mod tests {
         assert!(channel.media.audio_frames > 0);
         assert!(channel.media.video_frames > 0);
         assert!(out.audio_pcm.iter().any(|&sample| sample.abs() > 0.01));
+    }
+
+    fn t2_frames(bytes: &[u8], paths: &[(usize, f32, f32)], snr_db: f32) -> (u32, u32) {
+        let native: Vec<Complex<f32>> = bytes
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|&[a, b, c, d, e, f, g, h]| {
+                Complex::new(
+                    f32::from_le_bytes([a, b, c, d]),
+                    f32::from_le_bytes([e, f, g, h]),
+                )
+            })
+            .collect();
+        let power = native.iter().map(|s| s.norm_sqr()).sum::<f32>() / native.len() as f32;
+        let clean: Vec<_> = native.iter().chain(&native).copied().collect();
+        let mut iq = clean.clone();
+        for (i, sample) in iq.iter_mut().enumerate() {
+            for &(delay, re, im) in paths {
+                if i >= delay {
+                    *sample += clean[i - delay] * Complex::new(re, im);
+                }
+            }
+        }
+        crate::synth::add_noise(
+            &mut iq,
+            0x77,
+            (power / 10f32.powf(snr_db / 10.0) * 1.5).sqrt(),
+        );
+        let params = DvbtParams {
+            standard: sdrmm_wire::DvbtStandard::DvbT2,
+            bandwidth: sdrmm_wire::DvbtBandwidth::Mhz1_7,
+            plp: None,
+            ..Default::default()
+        };
+        let mut config = settings(params.bandwidth);
+        config.params = ChannelParams::Dvbt(params);
+        let rate = crate::input_rate(&config.params);
+        let mut channel = DvbtChannel::new(ChannelCtx { input_rate: rate }, config).unwrap();
+        let mut out = ChannelOutputs::default();
+        for block in iq.chunks(1009) {
+            channel.process(block, &mut out);
+        }
+        channel.report(&mut out);
+        out.broadcast
+            .as_ref()
+            .map_or((0, 0), |status| (status.frames_ok, status.frames_bad))
+    }
+
+    #[test]
+    fn t2_decodes_near_its_code_threshold_and_through_long_echoes() {
+        let qpsk = include_bytes!("../../../../../fixtures/dvbt2/rf_2k_qpsk.f32").as_slice();
+        let lite = include_bytes!("../../../../../fixtures/dvbt2/rf_2k_lite.f32").as_slice();
+        for (name, bytes, paths, snr_db) in [
+            ("QPSK in noise", qpsk, &[][..], 6.0),
+            (
+                "QPSK past the 3-carrier pilot reach",
+                qpsk,
+                &[(300, 0.0, 0.5)][..],
+                6.0,
+            ),
+            (
+                "QPSK under a strong long echo",
+                qpsk,
+                &[(300, 0.0, 0.8)][..],
+                12.0,
+            ),
+            (
+                "rotated 16-QAM in a deep notch channel",
+                lite,
+                &[(7, -0.9, 0.0)][..],
+                12.0,
+            ),
+        ] {
+            let (ok, bad) = t2_frames(bytes, paths, snr_db);
+            assert!(
+                ok >= 4 && bad == 0,
+                "{name} at {snr_db} dB: {ok} good, {bad} bad frames"
+            );
+        }
     }
 }

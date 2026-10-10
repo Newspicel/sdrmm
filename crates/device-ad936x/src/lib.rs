@@ -9,14 +9,17 @@ use sdrmm_device::{
     TxStream, lock,
     net::{Adopted, Endpoint},
 };
-use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings, Duplex};
+use sdrmm_wire::{
+    AgcGain, Capabilities, DeviceInfo, DeviceSettings, Duplex, GainKind, StreamSettings,
+};
 
 use crate::{
-    caps::Front,
+    caps::{Front, parse_range},
     convert::IqConverter,
-    discovery::USB_PREFIX,
-    iio::{Client, DEFAULT_PORT, UsbBus},
-    layout::Layout,
+    discovery::{Identity, USB_PREFIX},
+    iio::{Client, DEFAULT_PORT, Direction as Way, UsbBus},
+    layout::{HARDWAREGAIN, Layout, available},
+    pace::LiveRate,
     rx::{RxRadio, fan_out},
     source::Source,
     tx::Ad936xTx,
@@ -27,28 +30,23 @@ mod caps;
 mod convert;
 mod discovery;
 mod iio;
+mod iqlink;
 mod layout;
+mod pace;
 mod rx;
 mod source;
 mod tx;
 
 const DRIVER_ID: &str = "ad936x";
 
-/// Samples of one lane pushed to a sink at a time. A buffer holds several of these, so a decoder
-/// sees the signal while the rest of the buffer is still being taken apart.
 const SINK_BLOCK_SAMPLES: usize = 32_768;
 
-/// How long the well-known addresses are left alone after a search tried them. A search is what
-/// every open goes through, and a radio being reconnected to must not dial the whole network on
-/// each attempt.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(10);
 
-/// Every AD936x board that serves libiio, over its own ethernet or usb: AntSDR, PlutoSDR,
-/// and anything else built around the same transceiver.
 #[derive(Debug)]
 pub struct Ad936xDriver {
     adopted: Adopted,
-    serials: Mutex<BTreeMap<Endpoint, String>>,
+    identities: Mutex<BTreeMap<Endpoint, Identity>>,
     well_known: Vec<Endpoint>,
     swept: Mutex<Option<Instant>>,
 }
@@ -65,21 +63,18 @@ impl Ad936xDriver {
         Self::searching(discovery::WELL_KNOWN.iter().map(|host| host.to_string()))
     }
 
-    /// A driver whose search tries these addresses instead of the ones the boards ship on.
     #[must_use]
     pub fn searching(hosts: impl IntoIterator<Item = String>) -> Self {
         Self {
             adopted: Adopted::default(),
-            serials: Mutex::new(BTreeMap::new()),
+            identities: Mutex::new(BTreeMap::new()),
             well_known: discovery::endpoints(hosts),
             swept: Mutex::new(None),
         }
     }
 
-    /// The adopted addresses, less any that turned out to be a radio already listed: a board
-    /// reachable by name, by address and over usb is one radio.
     fn endpoints(&self, listed: &[DeviceInfo]) -> Vec<DeviceInfo> {
-        let serials = lock(&self.serials);
+        let identities = lock(&self.identities);
         let mut known: Vec<String> = listed
             .iter()
             .filter_map(|info| info.serial.clone())
@@ -88,21 +83,21 @@ impl Ad936xDriver {
             .list()
             .into_iter()
             .filter_map(|endpoint| {
-                let serial = serials.get(&endpoint).cloned();
-                if let Some(serial) = &serial {
+                let identity = identities.get(&endpoint).cloned().unwrap_or_default();
+                if let Some(serial) = &identity.serial {
                     if known.contains(serial) {
                         return None;
                     }
                     known.push(serial.clone());
                 }
-                Some(net_info(&endpoint, serial))
+                Some(net_info(&endpoint, identity))
             })
             .collect()
     }
 
-    fn remember(&self, endpoint: Endpoint, serial: Option<&str>) {
-        if let Some(serial) = serial {
-            lock(&self.serials).insert(endpoint, serial.to_string());
+    fn remember(&self, endpoint: Endpoint, identity: Identity) {
+        if identity != Identity::default() {
+            lock(&self.identities).insert(endpoint, identity);
         }
     }
 
@@ -116,12 +111,13 @@ impl Ad936xDriver {
     }
 }
 
-fn net_info(endpoint: &Endpoint, serial: Option<String>) -> DeviceInfo {
+fn net_info(endpoint: &Endpoint, identity: Identity) -> DeviceInfo {
+    let name = identity.name.as_deref().unwrap_or("AD936x");
     DeviceInfo {
         driver: DRIVER_ID.to_string(),
         key: endpoint.to_string(),
-        label: format!("AD936x {endpoint}"),
-        serial,
+        label: format!("{name} {endpoint}"),
+        serial: identity.serial,
         profile: None,
     }
 }
@@ -147,8 +143,6 @@ impl DeviceDriver for Ad936xDriver {
         found
     }
 
-    /// Tries the addresses these radios ship on as well, so one straight out of its box is found
-    /// without the operator having to know where it lives.
     fn probe_deep(&self) -> Vec<DeviceInfo> {
         if self.due_for_a_sweep() {
             let known = self.adopted.list();
@@ -161,7 +155,7 @@ impl DeviceDriver for Ad936xDriver {
             for found in discovery::sweep(untried) {
                 tracing::info!(endpoint = %found.endpoint, "found an AD936x radio at a well-known address");
                 self.adopted.adopt(found.endpoint.clone());
-                self.remember(found.endpoint, found.serial.as_deref());
+                self.remember(found.endpoint, found.identity);
             }
         }
         self.probe()
@@ -170,7 +164,7 @@ impl DeviceDriver for Ad936xDriver {
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
         let device = Ad936xDevice::open(source(&info.key)?)?;
         if let Source::Net(endpoint) = &device.source {
-            self.remember(endpoint.clone(), device.serial.as_deref());
+            self.remember(endpoint.clone(), device.identity.clone());
         }
         Ok(Box::new(device))
     }
@@ -186,8 +180,48 @@ impl DeviceDriver for Ad936xDriver {
             tracing::warn!(%endpoint, "too many ad936x endpoints; refusing to adopt another");
             return None;
         }
-        let serial = lock(&self.serials).get(&endpoint).cloned();
-        Some(net_info(&endpoint, serial))
+        let identity = lock(&self.identities)
+            .get(&endpoint)
+            .cloned()
+            .unwrap_or_default();
+        Some(net_info(&endpoint, identity))
+    }
+}
+
+fn split_gains(delta: &DeviceSettings) -> (DeviceSettings, DeviceSettings) {
+    let front = DeviceSettings {
+        gains: Vec::new(),
+        streams: delta
+            .streams
+            .iter()
+            .map(|stream| StreamSettings {
+                gains: Vec::new(),
+                ..stream.clone()
+            })
+            .filter(|stream| *stream != lane_only(stream.stream))
+            .collect(),
+        ..delta.clone()
+    };
+    let gains = DeviceSettings {
+        gains: delta.gains.clone(),
+        streams: delta
+            .streams
+            .iter()
+            .filter(|stream| !stream.gains.is_empty())
+            .map(|stream| StreamSettings {
+                gains: stream.gains.clone(),
+                ..lane_only(stream.stream)
+            })
+            .collect(),
+        ..DeviceSettings::default()
+    };
+    (front, gains)
+}
+
+fn lane_only(stream: u32) -> StreamSettings {
+    StreamSettings {
+        stream,
+        ..StreamSettings::default()
     }
 }
 
@@ -202,13 +236,14 @@ fn source(key: &str) -> Result<Source, DeviceError> {
 pub struct Ad936xDevice {
     client: Arc<Client>,
     source: Source,
-    serial: Option<String>,
+    identity: Identity,
     layout: Layout,
     front: Front,
     capabilities: Capabilities,
     settings: DeviceSettings,
     duplex: Arc<Mutex<DuplexState>>,
     capture: Capture<RxRadio>,
+    rate: LiveRate,
 }
 
 impl Ad936xDevice {
@@ -222,12 +257,11 @@ impl Ad936xDevice {
         let layout = Layout::read(&context)?;
         let front = Front::read(&client, &context, &layout)?;
         let mut capabilities = caps::capabilities(&front, &layout);
-        // A transmit buffer needs a conversation of its own. Over usb those are the endpoint
-        // couples the board built, and a board with only two cannot hold both directions open.
         if capabilities.duplex == Duplex::Full && !source.full_duplex() {
             capabilities.duplex = Duplex::Half;
         }
-        let settings = apply::read_settings(&client, &capabilities, &front, &layout);
+        let mut settings = apply::read_settings(&client, &capabilities, &front, &layout);
+        settings.rx_inputs = (!capabilities.rx_inputs.is_empty()).then(|| vec![0]);
         tracing::info!(
             radio = context
                 .attribute("hw_model")
@@ -241,21 +275,125 @@ impl Ad936xDevice {
             duplex: Arc::new(Mutex::new(DuplexState::new(capabilities.duplex))),
             client: Arc::new(client),
             source,
-            serial: context.attribute("hw_serial").map(str::to_string),
+            identity: Identity::of(&context),
             layout,
             front,
             capabilities,
+            rate: LiveRate::new(settings.sample_rate),
             settings,
             capture: Capture::new(),
         })
     }
 
+    fn apply_all(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
+        if let Some(inputs) = &settings.rx_inputs {
+            self.receive_on(inputs)?;
+        }
+        let (front, gains) = split_gains(settings);
+        self.apply_planned(&front)?;
+        if settings.center_hz.is_some() {
+            self.follow_band();
+        }
+        if gains != DeviceSettings::default() {
+            self.apply_planned(&gains)?;
+        }
+        Ok(())
+    }
+
+    fn apply_planned(&mut self, delta: &DeviceSettings) -> Result<(), DeviceError> {
+        let (next, writes) = apply::plan(
+            delta,
+            &self.capabilities,
+            &self.front,
+            &self.layout,
+            &self.settings,
+        )?;
+        match apply::execute(&self.client, &self.layout.phy, &writes) {
+            Ok(()) => {
+                self.settings = next;
+                Ok(())
+            }
+            Err(e) => {
+                self.reread();
+                Err(e)
+            }
+        }
+    }
+
+    fn reread(&mut self) {
+        let held =
+            apply::read_settings(&self.client, &self.capabilities, &self.front, &self.layout);
+        self.settings.merge_from(&held);
+    }
+
+    fn follow_band(&mut self) {
+        let Some(port) = self.layout.port(false, 0) else {
+            return;
+        };
+        let range = self
+            .client
+            .read_channel_attr(&self.layout.phy, Way::In, port, &available(HARDWAREGAIN))
+            .inspect_err(|e| tracing::debug!("{port} gain range: {e}"))
+            .ok()
+            .and_then(|text| parse_range(&text));
+        let Some(stage) = self
+            .capabilities
+            .gains
+            .iter_mut()
+            .find(|stage| stage.kind == GainKind::Tuner)
+        else {
+            return;
+        };
+        if let Some(range) = range.filter(|range| *range != stage.range) {
+            stage.range = range;
+            self.front.rx_gain = range;
+            self.reread();
+        }
+    }
+
+    fn read_gain(&self, lane: usize) -> Result<f64, DeviceError> {
+        let port = self.layout.port(false, lane).ok_or_else(|| {
+            DeviceError::Unsupported(format!("this radio has no receive lane {lane}"))
+        })?;
+        let text = self
+            .client
+            .read_channel_attr(&self.layout.phy, Way::In, port, HARDWAREGAIN)?;
+        text.split_whitespace()
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or_else(|| DeviceError::Io(format!("{port} gain reads {text:?}")))
+    }
+
+    fn receive_on(&mut self, inputs: &[u32]) -> Result<(), DeviceError> {
+        if self.settings.rx_inputs.as_deref() == Some(inputs) {
+            return Ok(());
+        }
+        let first = inputs.first().copied().unwrap_or_default();
+        let contiguous = inputs
+            .iter()
+            .copied()
+            .eq(first..first + inputs.len() as u32);
+        if !self.capabilities.admits_rx_inputs(inputs) || !contiguous {
+            return Err(DeviceError::Unsupported(format!(
+                "this radio receives on {:?}, got inputs {inputs:?}",
+                self.capabilities.rx_inputs
+            )));
+        }
+        let lanes = inputs.len() as u32;
+        caps::stream_lanes(&mut self.capabilities, lanes, &self.layout);
+        self.layout.rx_input = first as usize;
+        self.settings.rx_inputs = Some(inputs.to_vec());
+        self.settings.streams.retain(|lane| lane.stream < lanes);
+        self.reread();
+        Ok(())
+    }
+
     fn lanes(&self, output: bool, wanted: usize) -> Result<usize, DeviceError> {
         let have = if output {
-            self.layout.tx_streams()
+            self.capabilities.tx_streams
         } else {
-            self.layout.rx_streams()
-        };
+            self.capabilities.rx_streams
+        } as usize;
         if wanted == 0 || wanted > have {
             return Err(DeviceError::Unsupported(format!(
                 "this radio has {have} {} streams, got {wanted}",
@@ -275,32 +413,35 @@ impl SdrDevice for Ad936xDevice {
         &self.settings
     }
 
-    /// Writes reach the radio one at a time, so one it refuses part-way leaves the ones before
-    /// it in place. What is reported afterwards is read back rather than assumed either way.
+    fn in_flight_samples(&self) -> u64 {
+        self.layout.rx.as_ref().map_or(0, |stream| {
+            rx::in_flight_samples(
+                self.settings.sample_rate.unwrap_or(0.0),
+                stream.sample_bytes(self.layout.rx_streams()),
+            )
+        })
+    }
+
     fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
-        let (next, writes) = apply::plan(
-            settings,
-            &self.capabilities,
-            &self.front,
-            &self.layout,
-            &self.settings,
-        )?;
-        match apply::execute(&self.client, &self.layout.phy, &writes) {
-            Ok(()) => {
-                self.settings = next;
-                Ok(())
-            }
-            Err(e) => {
-                let held = apply::read_settings(
-                    &self.client,
-                    &self.capabilities,
-                    &self.front,
-                    &self.layout,
-                );
-                self.settings.merge_from(&held);
-                Err(e)
+        let applied = self.apply_all(settings);
+        self.rate.set(self.settings.sample_rate);
+        applied
+    }
+
+    fn agc_gains(&self) -> Result<Vec<AgcGain>, DeviceError> {
+        let mut gains = Vec::new();
+        for lane in 0..self.capabilities.rx_streams as usize {
+            let resolved = self
+                .settings
+                .for_stream(lane as u32, &self.capabilities.per_stream);
+            if resolved.agc.as_ref().is_some_and(|agc| agc.on) {
+                gains.push(AgcGain {
+                    stream: lane as u32,
+                    value_db: self.read_gain(lane)?,
+                });
             }
         }
+        Ok(gains)
     }
 
     fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
@@ -314,8 +455,9 @@ impl SdrDevice for Ad936xDevice {
         let radio = Arc::new(RxRadio::new(
             self.source.clone(),
             stream,
+            self.layout.rx_input,
             lanes,
-            self.settings.sample_rate,
+            self.rate.clone(),
         ));
         let converter = IqConverter::new(format, radio.buffer_samples() * lanes);
         let started = self.capture.start(
@@ -323,8 +465,6 @@ impl SdrDevice for Ad936xDevice {
             converter,
             fan_out(sinks, SINK_BLOCK_SAMPLES),
             CaptureConfig {
-                // Lanes share one buffer, so the block the supervisor cuts must hold whole
-                // frames of every lane and the rate it counts a gap in is the frame rate.
                 block_samples: SINK_BLOCK_SAMPLES * lanes,
                 ..CaptureConfig::new("sdrmm-ad936x-rx", DRIVER_ID)
                     .with_sample_rate(self.settings.sample_rate.map(|rate| rate * lanes as f64))
@@ -417,24 +557,66 @@ mod tests {
         let driver = Ad936xDriver::searching([]);
         let by_name = driver.resolve("pluto.local").expect("addressable");
         let by_address = driver.resolve("192.168.2.1").expect("addressable");
+        let identity = Identity {
+            serial: Some("1044734c960500111e002e0041984fc267".to_string()),
+            name: Some("PlutoSDR AD9363".to_string()),
+        };
         driver.remember(
             Endpoint::parse("pluto.local", DEFAULT_PORT).expect("endpoint"),
-            Some("1044734c960500111e002e0041984fc267"),
+            identity.clone(),
         );
         driver.remember(
             Endpoint::parse("192.168.2.1", DEFAULT_PORT).expect("endpoint"),
-            Some("1044734c960500111e002e0041984fc267"),
+            identity,
         );
-        let listed = driver.probe();
+        let listed = driver.endpoints(&[]);
         assert_eq!(listed.len(), 1, "{listed:?}");
         assert_eq!(
             listed[0].serial.as_deref(),
             Some("1044734c960500111e002e0041984fc267")
         );
         assert!(
+            listed[0].label.starts_with("PlutoSDR AD9363 "),
+            "{listed:?}"
+        );
+        assert!(
             driver.resolve(&by_name.key).is_some() && driver.resolve(&by_address.key).is_some(),
             "either spelling still opens the radio"
         );
+    }
+
+    #[test]
+    fn gains_are_set_apart_from_the_rest_so_they_land_in_the_new_bands_limits() {
+        let delta = DeviceSettings {
+            center_hz: Some(5.8e9),
+            gains: vec![sdrmm_wire::GainValue::new(GainKind::Tuner, 70.0)],
+            streams: vec![
+                StreamSettings {
+                    stream: 1,
+                    gains: vec![sdrmm_wire::GainValue::new(GainKind::Tuner, 60.0)],
+                    ..lane_only(1)
+                },
+                StreamSettings {
+                    agc: Some(sdrmm_wire::AgcSetting::off()),
+                    ..lane_only(0)
+                },
+            ],
+            ..DeviceSettings::default()
+        };
+        let (front, gains) = split_gains(&delta);
+        assert_eq!(front.center_hz, Some(5.8e9));
+        assert!(front.gains.is_empty());
+        assert_eq!(
+            front.streams.len(),
+            1,
+            "a lane left with nothing is dropped"
+        );
+        assert_eq!(front.streams[0].stream, 0);
+        assert_eq!(gains.center_hz, None);
+        assert_eq!(gains.gains, delta.gains);
+        assert_eq!(gains.streams.len(), 1);
+        assert_eq!(gains.streams[0].gains[0].value_db, 60.0);
+        assert_eq!(gains.streams[0].agc, None);
     }
 
     #[test]

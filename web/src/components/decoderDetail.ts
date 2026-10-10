@@ -1,13 +1,48 @@
+import { ISM_KIND_LABELS, percentOf, WIFI_BAND_LABELS } from "../lib/airtime";
+import {
+  BLE_ADDRESS_KIND_LABELS,
+  BLE_BEACON_LABELS,
+  BLE_PDU_LABELS,
+  BLE_PHY_LABELS,
+  bleBeaconText,
+} from "../lib/ble";
+import {
+  LORA_INTEGRITY_LABELS,
+  LORA_PROTOCOL_LABELS,
+  LORAWAN_TYPE_LABELS,
+  MESHCORE_TYPE_LABELS,
+  meshtasticNode,
+} from "../lib/lora";
+import {
+  REMOTE_ID_TRANSPORT_LABELS,
+  remoteIdLocation,
+  remoteIdSystem,
+  remoteIdText,
+  UA_STATUS_LABELS,
+  UA_TYPE_LABELS,
+} from "../lib/remoteId";
 import type {
   AprsPacket,
+  BleAdvert,
   DataLinkMessage,
   DecoderEvent,
   DecoderKind,
   DectFrame,
   DvFrame,
+  EotBattery,
+  IsmSurveyReport,
+  LoraFrame,
+  LorawanFrame,
+  MeshcoreContent,
+  MeshcorePacket,
+  MeshtasticContent,
+  MeshtasticPacket,
+  RemoteIdFrame,
+  WifiOccupancyReport,
 } from "../lib/types";
-import { hex2, hex5 } from "./decoderLog";
+import { hex5 } from "./decoderLog";
 import {
+  callMode,
   candidateScore,
   dvChecksum,
   dvMode,
@@ -19,9 +54,24 @@ import {
   modulationLabel,
   signalFrequency,
 } from "./decoderViews";
-import { DECT_CIPHER_LABELS } from "./eventFacts";
+import { DECT_CIPHER_LABELS, hotCommand } from "./eventFacts";
 import { formatHz } from "./format";
 import { SSTV_MODE_LABELS } from "./sstvModes";
+import {
+  aprsWeatherRows,
+  avhrrChannels,
+  celsius,
+  climbRate,
+  hectopascal,
+  LRPT_MODE_LABELS,
+  metres,
+  metresPerSecond,
+  percent,
+  SONDE_LABELS,
+  seconds,
+  WEFAX_IOC_VALUES,
+  WEFAX_LPM_VALUES,
+} from "./weatherFormat";
 
 export type DetailField = readonly [label: string, value: string];
 
@@ -109,6 +159,37 @@ const DETAIL: {
     body: p.text || null,
   }),
 
+  eot: (m) => ({
+    fields: fields(
+      m.report.unit === "head"
+        ? [
+            ["Unit", "Head (HOT)"],
+            ["Address", String(m.unit_address)],
+            ["Command", hotCommand(m.report)],
+            ["Copies", `${m.report.copies}/3`],
+            ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
+            ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
+          ]
+        : [
+            ["Unit", "Rear (EOT)"],
+            ["Address", String(m.unit_address)],
+            ["Brake pipe", `${m.report.pressure_psig} psig`],
+            ["Motion", flag(m.report.motion)],
+            ["Marker light", m.report.marker_light ? "on" : "off"],
+            ["Marker battery", m.report.marker_battery_low ? "low" : "ok"],
+            ["Battery", EOT_BATTERY_LABELS[m.report.battery]],
+            ["Charge", `${m.report.battery_charge_pct}%`],
+            ["Valve circuit", m.report.valve_ok ? "ok" : "fail"],
+            ["Turbine", flag(m.report.turbine)],
+            ["Arming", m.report.arming],
+            ["Message type", String(m.report.message_type)],
+            ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
+            ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
+          ],
+    ),
+    body: null,
+  }),
+
   adsb: (a) => ({
     fields: fields([
       ["ICAO", a.icao.toUpperCase()],
@@ -155,6 +236,7 @@ const DETAIL: {
       ["Altitude", feet(p.altitude_ft)],
       ["Mic-E message", p.mic_e_message],
       ["Comment", p.comment?.trim()],
+      ...(p.weather == null ? [] : aprsWeatherRows(p.weather)),
     ]),
     body: monitorLine(p),
   }),
@@ -243,58 +325,6 @@ const DETAIL: {
     body: a.text || null,
   }),
 
-  subghz: (f) => ({
-    fields: fields([
-      ["Model", f.reading?.model],
-      ["Sensor id", f.reading == null ? undefined : hex2(f.reading.id)],
-      ["Channel", f.reading?.channel == null ? undefined : String(f.reading.channel)],
-      [
-        "Temperature",
-        f.reading?.temperature_c == null ? undefined : `${f.reading.temperature_c.toFixed(1)} °C`,
-      ],
-      [
-        "Humidity",
-        f.reading?.humidity_pct == null ? undefined : `${f.reading.humidity_pct.toFixed(0)} %`,
-      ],
-      [
-        "Soil moisture",
-        f.reading?.moisture_pct == null ? undefined : `${f.reading.moisture_pct.toFixed(0)} %`,
-      ],
-      [
-        "Tyre pressure",
-        f.reading?.pressure_kpa == null ? undefined : `${f.reading.pressure_kpa.toFixed(0)} kPa`,
-      ],
-      [
-        "Wind average",
-        f.reading?.wind_avg_kmh == null ? undefined : `${f.reading.wind_avg_kmh.toFixed(1)} km/h`,
-      ],
-      [
-        "Wind gust",
-        f.reading?.wind_max_kmh == null ? undefined : `${f.reading.wind_max_kmh.toFixed(1)} km/h`,
-      ],
-      [
-        "Wind direction",
-        f.reading?.wind_dir_deg == null ? undefined : `${f.reading.wind_dir_deg.toFixed(0)}\u00b0`,
-      ],
-      ["Rain", f.reading?.rain_mm == null ? undefined : `${f.reading.rain_mm.toFixed(1)} mm`],
-      ["Power", f.reading?.power_w == null ? undefined : `${f.reading.power_w.toFixed(0)} W`],
-      [
-        "Energy",
-        f.reading?.energy_kwh == null ? undefined : `${f.reading.energy_kwh.toFixed(2)} kWh`,
-      ],
-      ["Battery", flag(f.reading?.battery_ok)],
-      ["Modulation", f.modulation],
-      ["Encoding", f.encoding],
-      ["Payload", f.bits === 0 ? undefined : `${f.data} (${f.bits} bit)`],
-      ["EV1527 address", f.address == null ? undefined : hex5(f.address)],
-      ["EV1527 button", f.button == null ? undefined : f.button.toString(16).toUpperCase()],
-      ["PT2262 tri-state", f.tri_state],
-      ["Base period", f.short_us > 0 ? `${f.short_us} µs` : undefined],
-      ["Repeats", f.repeats > 1 ? `×${f.repeats}` : undefined],
-    ]),
-    body: timings(f.timings_us ?? []),
-  }),
-
   ident: (r) => {
     const loudest = r.signals?.[0];
     if (loudest == null) {
@@ -342,7 +372,7 @@ const DETAIL: {
 
   call: (c) => ({
     fields: fields([
-      ["Mode", c.mode.toUpperCase()],
+      ["Mode", callMode(c.mode)],
       [
         "Destination",
         c.destination == null
@@ -411,40 +441,6 @@ const DETAIL: {
         ? new TextDecoder().decode(new Uint8Array(data.bytes))
         : null,
   }),
-  broadcast: (status) => ({
-    fields: fields([
-      ["System", broadcastSystem(status.system)],
-      ["Lock", status.locked ? "locked" : "searching"],
-      ["SNR", status.locked ? `${status.snr_db.toFixed(1)} dB` : undefined],
-      [
-        "Frequency error",
-        status.locked
-          ? `${status.frequency_error_hz >= 0 ? "+" : ""}${status.frequency_error_hz.toFixed(0)} Hz`
-          : undefined,
-      ],
-      ["Symbol rate", status.symbol_rate == null ? undefined : `${status.symbol_rate} Bd`],
-      ["Ensemble ID", status.ensemble_id == null ? undefined : hex(status.ensemble_id, 4)],
-      ["Service ID", status.service_id == null ? undefined : hex(status.service_id, 4)],
-      ["Label", status.label],
-      [
-        "Audio frames",
-        (status.audio_frames_ok ?? 0) > 0 ? String(status.audio_frames_ok) : undefined,
-      ],
-      [
-        "Audio failures",
-        (status.audio_frames_bad ?? 0) > 0 ? String(status.audio_frames_bad) : undefined,
-      ],
-      ["Audio error", status.audio_error],
-      ["Video frames", status.video_frames_ok ? String(status.video_frames_ok) : undefined],
-      ["Video failures", status.video_frames_bad ? String(status.video_frames_bad) : undefined],
-      ["Video error", status.video_error],
-      ["Data groups", status.data_groups_ok ? String(status.data_groups_ok) : undefined],
-      ["Data failures", status.data_groups_bad ? String(status.data_groups_bad) : undefined],
-      ["Data error", status.data_error],
-      ["Dynamic label", status.dynamic_label],
-    ]),
-    body: null,
-  }),
   radio_clock: (r) => ({
     fields: fields([
       ["Service", r.standard.toUpperCase()],
@@ -501,21 +497,26 @@ const DETAIL: {
     ]),
     body: null,
   }),
+  radar: (t) => ({
+    fields: fields([
+      ["Track", `T${t.track_id}`],
+      ["Change", t.change],
+      ["Range", `${t.range_km.toFixed(2)} km`],
+      ["Range rate", `${signed(t.range_rate_mps, 0)} m/s`],
+      ["Doppler", `${signed(t.doppler_hz, 1)} Hz`],
+      ["SNR", `${t.snr_db.toFixed(1)} dB`],
+      ["Bearing", t.bearing_deg == null ? undefined : `${t.bearing_deg.toFixed(1)}°`],
+      ["Position", position(t.lat, t.lon)],
+      ["ICAO", t.icao],
+    ]),
+    body: null,
+  }),
   df_fix: (e) => ({
     fields: fields([
       ["Position", position(e.lat, e.lon)],
       ["Uncertainty", `${Math.round(e.ellipse_major_m)} × ${Math.round(e.ellipse_minor_m)} m`],
       ["Ellipse bearing", `${e.ellipse_bearing_deg.toFixed(1)}°`],
       ["Bearings used", String(e.samples)],
-    ]),
-    body: null,
-  }),
-  radar: (d) => ({
-    fields: fields([
-      ["Range bin", String(d.range_bin)],
-      ["Bistatic range", `${d.range_km.toFixed(2)} km`],
-      ["Doppler", `${signed(d.doppler_hz, 1)} Hz`],
-      ["SNR", `${d.snr_db.toFixed(1)} dB`],
     ]),
     body: null,
   }),
@@ -537,6 +538,65 @@ const DETAIL: {
   hfdl: dataLinkDetail,
   iridium: dataLinkDetail,
   dect: dectDetail,
+  lora: loraDetail,
+  remote_id: remoteIdDetail,
+  ble: bleDetail,
+  wifi_occupancy: wifiOccupancyDetail,
+  ism_survey: ismSurveyDetail,
+  apt: (p) => ({
+    fields: fields([
+      ["Channels", avhrrChannels(p)],
+      ["Lines received", String(p.lines)],
+      ["State", p.complete ? "complete" : "cut short"],
+      ["Took", seconds(p.duration_ms)],
+    ]),
+    body: null,
+  }),
+  lrpt: (p) => ({
+    fields: fields([
+      ["Mode", LRPT_MODE_LABELS[p.mode]],
+      ["Size", `${p.width} \u00d7 ${p.lines}`],
+      ["APIDs", p.apids.join(", ")],
+      ["Frames", String(p.frames)],
+      ["Frames repaired", String(p.frames_corrected)],
+      ["Frames failed", String(p.frames_failed)],
+      ["Packets lost", String(p.packets_lost)],
+      ["State", p.complete ? "complete" : "cut short"],
+      ["Took", seconds(p.duration_ms)],
+    ]),
+    body: null,
+  }),
+  wefax: (p) => ({
+    fields: fields([
+      ["IOC", String(WEFAX_IOC_VALUES[p.ioc])],
+      ["Speed", `${WEFAX_LPM_VALUES[p.lpm]} LPM`],
+      ["Size", `${p.width} \u00d7 ${p.lines}`],
+      ["State", p.complete ? "complete" : "cut short"],
+      ["Took", seconds(p.duration_ms)],
+    ]),
+    body: null,
+  }),
+  radiosonde: (f) => ({
+    fields: fields([
+      ["Serial", f.serial],
+      ["Type", SONDE_LABELS[f.sonde]],
+      ["Frame", f.frame == null ? undefined : String(f.frame)],
+      ["Time", f.time],
+      ["Position", position(f.lat, f.lon)],
+      ["Altitude", metres(f.altitude_m)],
+      ["Climb", climbRate(f.climb_ms)],
+      ["Speed", metresPerSecond(f.speed_ms)],
+      ["Heading", degrees(f.heading_deg)],
+      ["Temperature", celsius(f.temperature_c)],
+      ["Humidity", percent(f.humidity_pct)],
+      ["Pressure", hectopascal(f.pressure_hpa)],
+      ["Satellites", f.satellites == null ? undefined : String(f.satellites)],
+      ["Battery", f.battery_v == null ? undefined : `${f.battery_v.toFixed(2)} V`],
+      ["Repaired", f.errors_corrected > 0 ? String(f.errors_corrected) : undefined],
+      ["Frames lost", (f.rejected ?? 0) > 0 ? String(f.rejected) : undefined],
+    ]),
+    body: null,
+  }),
 };
 
 function dataLinkDetail(message: DataLinkMessage): EventDetail {
@@ -569,20 +629,6 @@ function utcOffset(minutes: number | null | undefined): string | undefined {
   const sign = minutes < 0 ? "−" : "+";
   const absolute = Math.abs(minutes);
   return `UTC${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
-}
-
-function broadcastSystem(system: string): string {
-  const labels: Record<string, string> = {
-    dab: "DAB",
-    dab_plus: "DAB+",
-    dvb_s: "DVB-S",
-    dvb_s2: "DVB-S2",
-    dvb_t: "DVB-T",
-    dvb_t2: "DVB-T2",
-    drm30: "DRM30",
-    drm_plus: "DRM+",
-  };
-  return labels[system] ?? system;
 }
 
 function dvVendor(frame: DvFrame): string | undefined {
@@ -686,6 +732,79 @@ const DECT_CAPABILITY_LABELS: Record<string, string> = {
   access_rights_requests: "access rights requests",
   external_handover: "external handover",
   connection_handover: "connection handover",
+  crfp_encryption: "CRFP encryption",
+  relay_v2: "relay stations V2",
+  prolonged_preamble: "prolonged preamble",
+  frequency_replacement: "frequency replacement",
+  mac_suspend_resume: "MAC suspend and resume",
+  ipq_service: "IPQ service",
+  extended_fp_info2: "extended FP info part 2",
+  f_mms_interworking: "F-MMS interworking",
+  basic_odap: "basic ODAP",
+  gme_transport: "DPRS media encapsulation",
+  ip_roaming: "IP roaming",
+  ethernet: "Ethernet",
+  token_ring: "Token Ring",
+  ip: "IP",
+  ppp: "PPP",
+  v24: "V.24",
+  rap_part1: "RAP part 1",
+  isdn_intermediate_system: "ISDN intermediate system",
+  gps_synchronized: "GPS synchronized",
+  tpui_registration: "location registration with TPUI",
+  emergency_call: "emergency call",
+  asymmetric_bearers: "asymmetric bearers",
+  lrms: "LRMS",
+  data_service_profile_d: "data service profile D",
+  dprs_class3_or4: "DPRS class 3 or 4",
+  dprs_class2: "DPRS class 2",
+  isdn_data_services: "ISDN data services",
+  long_slot640: "long slot 640",
+  long_slot672: "long slot 672",
+  eu_mux: "E+U-type mux",
+  ipf_advanced: "IPF advanced",
+  sipf_channel: "SIPF channel",
+  gf_channel: "GF channel",
+  ule_wrs_delayed_paging: "ULE relay delayed paging",
+  extended_fp_info3: "extended FP info part 3",
+  no_emission_any_carrier: "no-emission on any carrier",
+  wideband_voice: "NG-DECT wideband voice",
+  packet_data1: "packet data category 1",
+  packet_data2: "packet data category 2",
+  packet_data3: "packet data category 3",
+  packet_data4: "packet data category 4",
+  packet_data5: "packet data category 5",
+  extended_wideband_voice: "extended wideband voice",
+  permanent_clir: "permanent CLIR",
+  third_party_conference: "third party conference",
+  intrusion_call: "intrusion call",
+  call_deflection: "call deflection",
+  multiple_lines: "multiple lines",
+  no_emission: "no-emission mode",
+  ng_dect5: "NG-DECT part 5",
+  u_nemo: "U-NEMo",
+  u_nemo_opportunistic: "U-NEMo opportunistic transfer",
+  ule_phase1: "ULE phase 1",
+  ule_phase1_revised: "ULE phase 1 v1.2",
+  ule_phase2: "ULE phase 2",
+  ule_phase3: "ULE phase 3",
+  re_keying: "re-keying and early encryption",
+  dsaa2: "DSAA2 authentication",
+  dsc2: "DSC2 ciphering",
+  light_data: "light data services",
+  half_slot_second_half: "half slot setup on second half",
+  modulation_bpsk: "BPSK",
+  modulation_qpsk: "up to QPSK",
+  modulation8psk: "up to 8PSK",
+  modulation16qam: "up to 16QAM",
+  modulation64qam: "up to 64QAM",
+  high_level_a_field: "high level modulation in A-field",
+  wireless_microphone: "wireless microphone profile 1",
+  audio_microphone: "advanced audio microphone",
+  audio_low_latency_microphone: "advanced audio low latency microphone",
+  audio_speaker: "advanced audio speaker or headphone",
+  audio_high_resolution: "advanced audio high resolution headphone",
+  audio_gaming_headset: "advanced audio gaming headset",
 };
 
 export function dectCarriers(mask: number | null | undefined): string | undefined {
@@ -730,6 +849,8 @@ function dectDetail(frame: DectFrame): EventDetail {
         "Encryption",
         DECT_CIPHER_LABELS[frame.security.cipher_state] ?? frame.security.cipher_state,
       ],
+      ["DSAA2", flag(frame.security.dsaa2_supported)],
+      ["DSC2", flag(frame.security.dsc2_supported)],
       ["Last cipher command", frame.security.last_command],
       [
         "Cipher key index",
@@ -740,12 +861,420 @@ function dectDetail(frame: DectFrame): EventDetail {
       ["FMID", frame.fmid == null ? undefined : hex4(frame.fmid)],
       ["PMID", frame.pmid == null ? undefined : hex5(frame.pmid)],
       ["Handsets", (frame.handsets ?? []).map(hex5).join(", ")],
+      ["Voice", frame.voice ? (frame.voice.playing ? "playing" : "muted") : undefined],
+      ["Voice frames", frame.voice ? String(frame.voice.frames) : undefined],
+      ["Voice X-CRC errors", count(frame.voice?.x_crc_errors)],
+      ["Voice before sync", count(frame.voice?.unsynced)],
+      ["Voice encrypted", count(frame.voice?.encrypted)],
+      ["Voice late", count(frame.voice?.late)],
       ["Bursts", String(frame.bursts)],
       ["A-field CRC errors", String(frame.crc_errors)],
       ["Level", `${frame.level_dbfs.toFixed(1)} dBFS`],
     ]),
     body: capabilities.length === 0 ? null : capabilities.join("\n"),
   };
+}
+
+function count(value: number | undefined): string | undefined {
+  return value ? String(value) : undefined;
+}
+
+type Rows = (readonly [string, string | null | undefined])[];
+
+const MESHCORE_ROUTES: Record<MeshcorePacket["route"], string> = {
+  transport_flood: "flood with transport codes",
+  flood: "flood",
+  direct: "direct",
+  transport_direct: "direct with transport codes",
+};
+
+function loraDetail(frame: LoraFrame): EventDetail {
+  const decoded = frame.decoded;
+  const rows: Rows = [
+    ["Protocol", decoded == null ? undefined : LORA_PROTOCOL_LABELS[decoded.protocol]],
+    ["Spreading factor", `SF${frame.spreading_factor}`],
+    ["Bandwidth", formatHz(frame.bandwidth_hz)],
+    ["Coding rate", frame.coding_rate],
+    ["Sync word", hex(frame.sync_word, 2)],
+    ["Header", frame.implicit_header ? "implicit" : "explicit"],
+    ["Low data rate", frame.low_data_rate ? "on" : undefined],
+    ["IQ", frame.inverted_iq ? "inverted" : "normal"],
+    ["Integrity", LORA_INTEGRITY_LABELS[frame.integrity]],
+    ["FEC repaired", frame.fec_corrected > 0 ? String(frame.fec_corrected) : undefined],
+    ["SNR", `${signed(frame.snr_db, 1)} dB`],
+    ["Frequency error", `${signed(frame.frequency_error_hz, 0)} Hz`],
+  ];
+  let body: string | null = null;
+  if (decoded?.protocol === "lorawan") {
+    rows.push(...lorawanRows(decoded));
+  } else if (decoded?.protocol === "meshtastic") {
+    rows.push(...meshtasticRows(decoded));
+    body = decoded.content?.type === "text" ? decoded.content.text : null;
+  } else if (decoded?.protocol === "meshcore") {
+    rows.push(...meshcoreRows(decoded));
+    body = decoded.content.type === "group_text" ? (decoded.content.text ?? null) : null;
+  }
+  rows.push(["Payload", frame.payload]);
+  return { fields: fields(rows), body: body || null };
+}
+
+const REMOTE_ID_PHY_LABELS: Record<RemoteIdFrame["phy"], string> = {
+  le1m: "LE 1M",
+  le_coded_s8: "LE Coded S8",
+  le_coded_s2: "LE Coded S2",
+  dsss1m: "DSSS 1 Mb/s",
+  dsss2m: "DSSS 2 Mb/s",
+  cck5m5: "CCK 5.5 Mb/s",
+  cck11m: "CCK 11 Mb/s",
+  ofdm: "OFDM",
+};
+
+function lengthM(value: number | null | undefined, digits = 0): string | undefined {
+  return value == null ? undefined : `${value.toFixed(digits)} m`;
+}
+
+function remoteIdDetail(frame: RemoteIdFrame): EventDetail {
+  const location = remoteIdLocation(frame);
+  const system = remoteIdSystem(frame);
+  const basic = frame.messages.find((message) => message.type === "basic_id");
+  const operator = frame.messages.find((message) => message.type === "operator_id");
+  const pages = frame.messages.filter((message) => message.type === "authentication").length;
+  const classification = system?.classification;
+  const rows: Rows = [
+    ["UAS ID", frame.uas_id],
+    ["Type", basic?.type === "basic_id" ? UA_TYPE_LABELS[basic.ua_type] : undefined],
+    ["Status", location ? UA_STATUS_LABELS[location.status] : undefined],
+    ["Position", position(location?.lat, location?.lon)],
+    ["Height", lengthM(location?.height_m, 1)],
+    ["Altitude", lengthM(location?.geodetic_altitude_m, 1)],
+    ["Pressure altitude", lengthM(location?.pressure_altitude_m, 1)],
+    ["Speed", location?.speed_mps == null ? undefined : `${location.speed_mps.toFixed(2)} m/s`],
+    ["Track", location?.track_deg == null ? undefined : `${location.track_deg.toFixed(0)}°`],
+    [
+      "Climb",
+      location?.vertical_speed_mps == null
+        ? undefined
+        : `${signed(location.vertical_speed_mps, 1)} m/s`,
+    ],
+    ["Accuracy", lengthM(location?.horizontal_accuracy_m, 0)],
+    [
+      "Time",
+      location?.seconds_after_hour == null
+        ? undefined
+        : `${location.seconds_after_hour.toFixed(1)} s past the hour`,
+    ],
+    ["Pilot", position(system?.operator_lat, system?.operator_lon)],
+    ["Pilot altitude", lengthM(system?.operator_altitude_m, 0)],
+    [
+      "EU class",
+      classification == null
+        ? undefined
+        : `${classification.category}${classification.class == null ? "" : ` C${classification.class}`}`,
+    ],
+    ["Operator", operator?.type === "operator_id" ? operator.operator_id : undefined],
+    ["Auth pages", pages > 0 ? String(pages) : undefined],
+    ["Link", REMOTE_ID_TRANSPORT_LABELS[frame.transport]],
+    ["PHY", REMOTE_ID_PHY_LABELS[frame.phy]],
+    ["Address", frame.address],
+    ["Channel", frame.channel == null ? undefined : String(frame.channel)],
+    ["SSID", frame.ssid],
+    ["Counter", frame.counter == null ? undefined : String(frame.counter)],
+    ["Level", `${frame.level_dbfs.toFixed(1)} dBFS`],
+    ["Rejected", frame.rejected ? String(frame.rejected) : undefined],
+  ];
+  return { fields: fields(rows), body: remoteIdText(frame) };
+}
+
+function bleFlags(flags: NonNullable<BleAdvert["flags"]>): string {
+  return (
+    [
+      flags.limited ? "limited" : null,
+      flags.general ? "general" : null,
+      flags.le_only ? "LE only" : null,
+    ]
+      .filter((name) => name !== null)
+      .join(", ") || "none"
+  );
+}
+
+function bleDetail(advert: BleAdvert): EventDetail {
+  const services = advert.services ?? [];
+  const makers = advert.manufacturer ?? [];
+  const rows: Rows = [
+    ["Address", advert.address?.address],
+    ["Address type", advert.address ? BLE_ADDRESS_KIND_LABELS[advert.address.kind] : undefined],
+    ["Target", advert.target?.address],
+    ["Name", advert.name],
+    ["Beacon", advert.beacon == null ? undefined : BLE_BEACON_LABELS[advert.beacon.type]],
+    ["Beacon data", advert.beacon == null ? undefined : bleBeaconText(advert.beacon)],
+    ...makers.map((maker): readonly [string, string] => [
+      maker.company ?? `Company 0x${maker.company_id.toString(16).padStart(4, "0")}`,
+      maker.data,
+    ]),
+    ...services.map((service): readonly [string, string] => [
+      service.name ?? `Service ${service.uuid}`,
+      service.data == null ? service.uuid : `${service.uuid} ${service.data}`,
+    ]),
+    ["URI", advert.uri],
+    ["Flags", advert.flags == null ? undefined : bleFlags(advert.flags)],
+    ["Tx power", advert.tx_power_dbm == null ? undefined : `${advert.tx_power_dbm} dBm`],
+    [
+      "Appearance",
+      advert.appearance == null
+        ? undefined
+        : `0x${advert.appearance.toString(16).padStart(4, "0")}`,
+    ],
+    ["PDU", BLE_PDU_LABELS[advert.pdu]],
+    ["PHY", BLE_PHY_LABELS[advert.phy]],
+    ["Channel", advert.channel == null ? undefined : String(advert.channel)],
+    ["Set", advert.adi == null ? undefined : `${advert.adi.set} · data ${advert.adi.data_id}`],
+    [
+      "Aux",
+      advert.aux == null
+        ? undefined
+        : `channel ${advert.aux.channel} · ${BLE_PHY_LABELS[advert.aux.phy]} · +${advert.aux.offset_us} µs`,
+    ],
+    ["Level", `${advert.level_dbfs.toFixed(1)} dBFS`],
+    ["Repeats", advert.repeats ? String(advert.repeats) : undefined],
+    ["Rejected", advert.rejected ? String(advert.rejected) : undefined],
+  ];
+  return { fields: fields(rows), body: advert.data || null };
+}
+
+function wifiOccupancyDetail(report: WifiOccupancyReport): EventDetail {
+  const rows: Rows = report.channels.map((channel) => [
+    `${WIFI_BAND_LABELS[channel.band]} ch ${channel.number}`,
+    [
+      `${percentOf(channel.busy)} busy`,
+      channel.level_dbfs == null ? null : `${channel.level_dbfs.toFixed(0)} dBFS`,
+      channel.floor_dbfs == null ? null : `floor ${channel.floor_dbfs.toFixed(0)} dBFS`,
+    ]
+      .filter((part) => part !== null)
+      .join(" · "),
+  ]);
+  rows.push(["Measured", percentOf(report.measured)]);
+  return { fields: fields(rows), body: null };
+}
+
+function ismSurveyDetail(report: IsmSurveyReport): EventDetail {
+  const rows: Rows = [
+    ["Window", `${formatHz(report.low_hz)} to ${formatHz(report.high_hz)}`],
+    ["Busy", percentOf(report.busy)],
+    ...report.kinds.map((load): readonly [string, string] => [
+      ISM_KIND_LABELS[load.kind],
+      `${load.bursts} bursts · ${percentOf(load.airtime)} · ${Math.round(load.mean_us)} µs · ${(load.centres_mhz ?? []).join(", ")} MHz`,
+    ]),
+    ["Floor", report.floor_dbfs == null ? undefined : `${report.floor_dbfs.toFixed(0)} dBFS`],
+    ["Measured", percentOf(report.measured)],
+    ["Dropped", report.dropped ? String(report.dropped) : undefined],
+  ];
+  return { fields: fields(rows), body: null };
+}
+
+function lorawanRows(frame: LorawanFrame): Rows {
+  return [
+    ["Type", LORAWAN_TYPE_LABELS[frame.message_type]],
+    ["DevAddr", frame.dev_addr],
+    ["DevEUI", frame.dev_eui],
+    ["JoinEUI", frame.join_eui],
+    ["FCnt", frame.f_cnt == null ? undefined : String(frame.f_cnt)],
+    ["FPort", frame.f_port == null ? undefined : String(frame.f_port)],
+    ["MIC", frame.mic_ok == null ? frame.mic : `${frame.mic} ${frame.mic_ok ? "ok" : "failed"}`],
+    ["ADR", flag(frame.adr)],
+    ["ADR ack request", flag(frame.adr_ack_req)],
+    ["Ack", flag(frame.ack)],
+    ["Pending", flag(frame.pending_or_class_b)],
+    ["MAC commands", (frame.mac_commands ?? []).join(", ")],
+    ["FRMPayload", frame.frm_payload],
+    ["Decrypted", frame.decrypted],
+    ["DevNonce", frame.dev_nonce == null ? undefined : String(frame.dev_nonce)],
+    ["JoinNonce", frame.join_nonce == null ? undefined : String(frame.join_nonce)],
+    ["NetID", frame.net_id],
+    ["RX1 DR offset", frame.rx1_dr_offset == null ? undefined : String(frame.rx1_dr_offset)],
+    ["RX2 data rate", frame.rx2_data_rate == null ? undefined : `DR${frame.rx2_data_rate}`],
+    ["RX delay", frame.rx_delay_s == null ? undefined : `${frame.rx_delay_s} s`],
+    ["Channels", (frame.cf_list_hz ?? []).map(formatHz).join(", ")],
+  ];
+}
+
+function meshtasticRows(packet: MeshtasticPacket): Rows {
+  return [
+    ["From", meshtasticNode(packet.from)],
+    ["To", meshtasticNode(packet.to)],
+    ["Packet ID", hex(packet.id, 8)],
+    ["Channel", packet.channel ?? hex(packet.channel_hash, 2)],
+    ["Encryption", packet.encryption],
+    ["Port", packet.port_name ?? (packet.port == null ? undefined : String(packet.port))],
+    ["Hops", `${packet.hop_start - packet.hop_limit} of ${packet.hop_start}`],
+    ["Want ack", packet.want_ack ? "yes" : undefined],
+    ["Via MQTT", packet.via_mqtt ? "yes" : undefined],
+    ["Next hop", packet.next_hop === 0 ? undefined : hex(packet.next_hop, 2)],
+    ["Relay", packet.relay_node === 0 ? undefined : hex(packet.relay_node, 2)],
+    ["Request", packet.request_id == null ? undefined : hex(packet.request_id, 8)],
+    ["Reply to", packet.reply_id == null ? undefined : hex(packet.reply_id, 8)],
+    ...(packet.content == null ? [] : meshtasticContentRows(packet.content)),
+  ];
+}
+
+function meshtasticContentRows(content: MeshtasticContent): Rows {
+  switch (content.type) {
+    case "text":
+      return [];
+    case "position":
+      return [
+        ["Position", position(content.lat, content.lon)],
+        ["Altitude", content.altitude_m == null ? undefined : `${content.altitude_m} m`],
+        ["Satellites", content.satellites == null ? undefined : String(content.satellites)],
+        [
+          "Ground speed",
+          content.ground_speed_kmh == null ? undefined : `${content.ground_speed_kmh} km/h`,
+        ],
+        ["Fix time", unixTime(content.time)],
+        [
+          "Precision",
+          content.precision_bits == null ? undefined : `${content.precision_bits} bits`,
+        ],
+      ];
+    case "node_info":
+      return [
+        ["Node", content.id],
+        ["Long name", content.long_name],
+        ["Short name", content.short_name],
+        ["Hardware", content.hw_model == null ? undefined : String(content.hw_model)],
+        ["Role", content.role == null ? undefined : String(content.role)],
+        ["Licensed", content.licensed ? "yes" : undefined],
+        ["Public key", content.public_key],
+      ];
+    case "telemetry":
+      return [
+        ["Telemetry", content.kind],
+        ["Time", unixTime(content.time)],
+        ...content.metrics.map((metric) => [metric.name, String(metric.value)] as const),
+      ];
+    case "routing":
+      return [
+        ["Routing", content.error ?? "ack"],
+        ["Route", (content.route ?? []).map(meshtasticNode).join(" → ")],
+      ];
+    case "traceroute":
+      return [
+        ["Route", hopsWithSnr(content.route, content.snr_towards_db)],
+        ["Route back", hopsWithSnr(content.route_back, content.snr_back_db)],
+      ];
+    case "neighbor_info":
+      return [
+        ["Node", meshtasticNode(content.node)],
+        [
+          "Neighbors",
+          content.neighbors
+            .map((neighbor) => `${meshtasticNode(neighbor.node)} ${signed(neighbor.snr_db, 1)} dB`)
+            .join(", "),
+        ],
+      ];
+    case "waypoint":
+      return [
+        ["Waypoint", content.name],
+        ["Description", content.description],
+        ["Position", position(content.lat, content.lon)],
+        ["Expires", unixTime(content.expire)],
+      ];
+    case "map_report":
+      return [
+        ["Long name", content.long_name],
+        ["Short name", content.short_name],
+        ["Firmware", content.firmware_version],
+        ["Position", position(content.lat, content.lon)],
+        ["Altitude", content.altitude_m == null ? undefined : `${content.altitude_m} m`],
+        ["Online nodes", content.online_nodes == null ? undefined : String(content.online_nodes)],
+      ];
+    case "data":
+      return [["Data", content.bytes]];
+  }
+}
+
+function hopsWithSnr(route: readonly number[], snrDb: readonly number[]): string {
+  return route
+    .map((node, index) => {
+      const snr = snrDb[index];
+      return snr == null ? meshtasticNode(node) : `${meshtasticNode(node)} (${signed(snr, 1)} dB)`;
+    })
+    .join(" → ");
+}
+
+function meshcoreRows(packet: MeshcorePacket): Rows {
+  return [
+    ["Route", MESHCORE_ROUTES[packet.route]],
+    ["Type", MESHCORE_TYPE_LABELS[packet.payload_type]],
+    ["Version", String(packet.version)],
+    ["Transport codes", (packet.transport_codes ?? []).map((code) => hex(code, 4)).join(", ")],
+    ["Path", (packet.path ?? []).join(" → ")],
+    ...meshcoreContentRows(packet.content),
+  ];
+}
+
+function meshcoreContentRows(content: MeshcoreContent): Rows {
+  switch (content.type) {
+    case "advert":
+      return [
+        ["Name", content.name],
+        ["Node type", content.node_type],
+        ["Position", position(content.lat, content.lon)],
+        ["Advertised", unixTime(content.timestamp)],
+        ["Public key", content.public_key],
+        ["Signature", content.signature_ok ? "verified" : "failed"],
+      ];
+    case "group_text":
+      return [
+        ["Channel", content.channel ?? hex(content.channel_hash, 2)],
+        ["Sender", content.sender],
+        ["Sent", unixTime(content.timestamp)],
+      ];
+    case "group_data":
+      return [
+        ["Channel", content.channel ?? hex(content.channel_hash, 2)],
+        ["Data type", content.data_type == null ? undefined : hex(content.data_type, 4)],
+        ["Data", content.data],
+      ];
+    case "encrypted":
+      return [
+        ["Source", content.source],
+        ["Destination", content.destination],
+        ["MAC", content.mac],
+      ];
+    case "anon_request":
+      return [
+        ["Destination", content.destination],
+        ["Public key", content.public_key],
+      ];
+    case "ack":
+      return [["Checksum", hex(content.checksum, 8)]];
+    case "trace":
+      return [
+        ["Tag", hex(content.tag, 8)],
+        ["Auth code", hex(content.auth_code, 8)],
+        ["Flags", hex(content.flags, 2)],
+        ["Hops", content.hops.join(" → ")],
+      ];
+    case "control":
+      return [
+        ["Subtype", hex(content.subtype, 2)],
+        ["Data", content.data],
+      ];
+    case "multipart":
+      return [
+        ["Remaining", String(content.remaining)],
+        ["Inner type", hex(content.inner_type, 2)],
+        ["Data", content.data],
+      ];
+    case "raw":
+      return [["Data", content.data]];
+  }
+}
+
+function unixTime(epochS: number | null | undefined): string | undefined {
+  return epochS == null || epochS === 0
+    ? undefined
+    : new Date(epochS * 1000).toISOString().replace(".000Z", "Z");
 }
 
 function hex4(value: number): string {
@@ -761,6 +1290,13 @@ function fields(rows: readonly (readonly [string, string | null | undefined])[])
 function signed(value: number, digits: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
+
+const EOT_BATTERY_LABELS: Record<EotBattery, string> = {
+  not_monitored: "not monitored",
+  very_low: "very low",
+  low: "low",
+  ok: "ok",
+};
 
 function flag(value: boolean | null | undefined): string | undefined {
   return value == null ? undefined : value ? "yes" : "no";
@@ -794,16 +1330,4 @@ function header(
     return undefined;
   }
   return `${station}${subject}${String(serial).padStart(2, "0")}`;
-}
-
-function timings(us: readonly number[]): string | null {
-  if (us.length === 0) {
-    return null;
-  }
-  const pairs: string[] = [];
-  for (let i = 0; i < us.length; i += 2) {
-    const gap = us[i + 1];
-    pairs.push(gap == null ? `${us[i]}` : `${us[i]}/${gap}`);
-  }
-  return pairs.join("  ");
 }

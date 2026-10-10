@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::{CyclicPrefix, CyclicPrefixSearch, Ddc, SpectrumAnalyzer};
+use sdrmm_dsp::{CyclicPrefix, CyclicPrefixSearch, Ddc, SpectrumAnalyzer, fast_arg};
 
 use super::detect::Band;
 
@@ -62,10 +62,11 @@ pub(crate) fn zoom(iq: &[Complex<f32>], rate: f64, band: &Band) -> Option<Zoom> 
     let mut ddc = Ddc::new(rate, target, band.center_hz).ok()?;
     let mut out = Vec::with_capacity((iq.len() as f64 * target / rate) as usize + 1);
     ddc.process(iq, &mut out);
-    if out.len() <= SETTLE + MIN_ANALYSIS_SAMPLES {
+    let settle = SETTLE.max(ddc.settling());
+    if out.len() <= settle + MIN_ANALYSIS_SAMPLES {
         return None;
     }
-    out.drain(..SETTLE);
+    out.drain(..settle);
     Some(Zoom {
         rate: target,
         iq: out,
@@ -331,7 +332,7 @@ impl Meter {
         self.frequency.push(0.0);
         for pair in iq.windows(2) {
             self.frequency
-                .push((pair[1] * pair[0].conj()).arg() * scale);
+                .push(fast_arg(pair[1] * pair[0].conj()) * scale);
         }
 
         let mut slope_sq = 0.0f64;

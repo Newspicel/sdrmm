@@ -36,7 +36,7 @@ impl Ad936xTx {
     ) -> Result<Self, DeviceError> {
         let mut link = Link::new(source.open()?);
         set_remote_timeout(&mut link, REMOTE_TIMEOUT)?;
-        let elements = stream.elements(lanes);
+        let elements = stream.elements(0, lanes);
         open_buffer(
             &mut link,
             &stream.device,

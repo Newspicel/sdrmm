@@ -33,6 +33,10 @@ export function pushToast(message: string, tone: Tone = "error", extra: ToastDet
   });
 }
 
+export function closeToast(message: string, tone: Tone = "error"): void {
+  toastManager.close(`${tone}:${message}`);
+}
+
 function toastRecord(message: string, extra: ToastDetail): string {
   const code = extra.code === undefined ? "" : `[${extra.code}] `;
   const detail = extra.detail === undefined ? "" : `: ${extra.detail}`;

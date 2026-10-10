@@ -2,7 +2,7 @@ import { refMatches } from "../canvas/binding";
 import type { DeviceInfo, DeviceRef } from "../lib/types";
 import type { Options } from "./controls";
 
-const NODE_OWNED_DRIVERS = ["recording", "siggen", "array"];
+const NODE_OWNED_DRIVERS = ["recording", "siggen"];
 
 function deviceRank(device: DeviceInfo): number {
   return device.driver === "virtual" ? 1 : 0;
@@ -60,7 +60,7 @@ export function sourceTabs(groups: {
     {
       value: "network",
       label: "Network",
-      title: "A radio served over rtl_tcp or SpyServer, or an AntSDR or Pluto on the network",
+      title: "rtl_tcp, SpyServer, SDRconnect, KiwiSDR, AntSDR or Pluto",
     },
   ];
   if (groups.virtual.length > 0) {
@@ -81,13 +81,38 @@ export const NETWORK_BACKENDS = [
   { driver: "rtltcp", label: "rtl_tcp", placeholder: "192.168.1.5:1234" },
   { driver: "spyserver", label: "SpyServer", placeholder: "192.168.1.5:5555" },
   { driver: "sdrconnect", label: "SDRconnect", placeholder: "192.168.1.5:5454" },
+  { driver: "kiwisdr", label: "KiwiSDR", placeholder: "kiwi.example.org:8073" },
   { driver: "ad936x", label: "AntSDR / Pluto", placeholder: "192.168.1.10:30431" },
 ] as const;
 
 export function networkDeviceId(driver: string, address: string): string | null {
-  const trimmed = address.trim().replace(/^[a-z][a-z0-9+._-]*:\/\//i, "");
+  const scheme = /^([a-z][a-z0-9+._-]*):\/\//i.exec(address.trim());
+  const trimmed = address
+    .trim()
+    .slice(scheme?.[0].length ?? 0)
+    .replace(/\/+$/, "");
   if (trimmed === "" || /\s/.test(trimmed)) {
     return null;
   }
-  return `${driver}:${trimmed}`;
+  const name = scheme?.[1]?.toLowerCase() ?? "";
+  if (name === "https" || name === "wss") {
+    return `${driver}:https://${trimmed}`;
+  }
+  const host = trimmed.slice(trimmed.lastIndexOf("@") + 1);
+  const webDefault = (name === "http" || name === "ws") && !/:\d+$/.test(host);
+  return `${driver}:${trimmed}${webDefault ? ":80" : ""}`;
+}
+
+export function networkRadioLabel(id: string): string {
+  const at = id.indexOf(":");
+  const backend = NETWORK_BACKENDS.find((b) => b.driver === id.slice(0, at));
+  const address = id.slice(at + 1).replace(/^https:\/\//, "");
+  const host = address.slice(address.lastIndexOf("@") + 1);
+  return backend === undefined ? host : `${backend.label} ${host}`;
+}
+
+export function deviceHint(device: DeviceInfo): string | undefined {
+  return device.driver === "rtlsdr" && device.serial == null
+    ? "Known by USB port, not serial: give it its own serial with rtl_eeprom -s"
+    : undefined;
 }

@@ -3,6 +3,7 @@ import {
   formatBaud,
   formatBitRate,
   formatBytes,
+  formatCount,
   formatHz,
   formatMhz,
   formatSampleRate,
@@ -10,6 +11,13 @@ import {
   fractionDigits,
   si,
 } from "./format";
+
+describe("formatCount", () => {
+  it("keeps a large count short enough to read", () => {
+    expect(formatCount(12)).toBe("12");
+    expect(formatCount(740_073_332)).toBe("740.1M");
+  });
+});
 
 describe("si", () => {
   it("picks the prefix from the magnitude and trims trailing zeros", () => {
@@ -41,6 +49,8 @@ describe("unit wrappers", () => {
     expect(formatBaud(1_200)).toBe("1.2 kBd");
     expect(formatBytes(32_800_000)).toBe("32.8 MB");
     expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(167_317_504)).toBe("167.3 MB");
+    expect(formatBytes(6_744_064)).toBe("6.7 MB");
   });
 
   it("signs an offset with a real minus, not a hyphen", () => {

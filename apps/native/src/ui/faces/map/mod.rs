@@ -8,6 +8,7 @@ use zgui::prelude::*;
 use zgui::reactive::RenderEffect;
 
 use crate::{
+    arrays::Book,
     store::Store,
     ui::{
         kit_maps::{
@@ -60,9 +61,10 @@ struct Drawn {
     counts: Vec<(&'static str, usize)>,
     trail: usize,
     frame: Option<Arc<Frame>>,
+    df: df::Counts,
 }
 
-fn draw(held: &Held, wired: &Wiring, selected: Option<&str>, now: i64) -> Drawn {
+fn draw(held: &Held, book: &Book, wired: &Wiring, selected: Option<&str>, now: i64) -> Drawn {
     let tracks: Vec<_> = wired
         .positions
         .iter()
@@ -77,8 +79,10 @@ fn draw(held: &Held, wired: &Wiring, selected: Option<&str>, now: i64) -> Drawn 
         ..Overlay::default()
     };
     overlay.extend(trail::overlay(&tracks));
-    let picture = df::picture(&wired.df, |node| held.finders.get(node).cloned(), now, from);
-    overlay.extend(df::overlay(&picture));
+    let picture = df::picture(&wired.df, held, book, now, from);
+    if let Some(picture) = &picture {
+        overlay.extend(df::overlay(picture));
+    }
     let mut counts = Vec::new();
     let mut target_points = Vec::new();
     for kind in &wired.kinds {
@@ -109,6 +113,7 @@ fn draw(held: &Held, wired: &Wiring, selected: Option<&str>, now: i64) -> Drawn 
         counts,
         trail: trail_points.len(),
         frame: frame.map(Arc::new),
+        df: df::counts(picture.as_ref()),
     }
 }
 
@@ -138,7 +143,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             let at = now.get();
             let wiring = wired.get();
             let chosen = selected.get();
-            let next = draw(&feed.held.borrow(), &wiring, chosen.as_deref(), at);
+            let next = store.arrays.with_untracked(|book| {
+                draw(&feed.held.borrow(), book, &wiring, chosen.as_deref(), at)
+            });
             drawn.set(next);
         })
     };
@@ -171,7 +178,8 @@ fn legend(drawn: RwSignal<Drawn>, wired: Memo<Wiring>) -> impl IntoView {
     move || {
         let counts = drawn.with(|drawn| drawn.counts.clone());
         let trail = wired.with(|wired| !wired.positions.is_empty());
-        if counts.is_empty() && !trail {
+        let df_rows = drawn.with(|drawn| df::legend_rows(&drawn.df));
+        if counts.is_empty() && !trail && df_rows.is_empty() {
             return None;
         }
         let rows: Vec<AnyView> = counts
@@ -200,6 +208,7 @@ fn legend(drawn: RwSignal<Drawn>, wired: Memo<Wiring>) -> impl IntoView {
             column(class = "geo__legend") {
                 {rows}
                 {trail_row}
+                {df_rows}
             }
         })
     }

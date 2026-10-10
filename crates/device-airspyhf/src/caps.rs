@@ -1,10 +1,10 @@
 use sdrmm_device::{DeviceError, check_stream_settings};
 use sdrmm_wire::{
-    Agc, AgcSetting, ArgumentOption, Capabilities, Coherence, DcArtifact, DeviceSettings, Duplex,
-    GainKind, GainStage, GainValue, Range, StreamScope,
+    Agc, AgcReach, AgcSetting, ArgumentOption, Capabilities, Coherence, DcArtifact, DeviceSettings,
+    Duplex, GainKind, GainStage, GainValue, Range, StreamScope,
 };
 
-use crate::driver::{ATTENUATION_STEP_DB, Config, MAX_ATTENUATION_STEP};
+use crate::driver::{ATTENUATION_STEP_DB, Config, MAX_ATTENUATION_STEP, MAX_PPM};
 
 pub(crate) const ANTENNA: &str = "RX";
 pub(crate) const AGC_LOW: &str = "low";
@@ -22,7 +22,7 @@ fn agc_mode(value: &str, label: &str) -> ArgumentOption {
     }
 }
 
-pub(crate) fn capabilities(sample_rates: &[u32]) -> Capabilities {
+pub(crate) fn capabilities(sample_rates: &[u32], low_if: bool) -> Capabilities {
     Capabilities {
         freq_ranges: vec![
             Range {
@@ -46,7 +46,8 @@ pub(crate) fn capabilities(sample_rates: &[u32]) -> Capabilities {
                     max: PREAMP_DB,
                     step: Some(PREAMP_DB),
                 },
-            ),
+            )
+            .with_agc(AgcReach::Never),
             GainStage::new(
                 GainKind::Attenuator,
                 Range {
@@ -60,7 +61,7 @@ pub(crate) fn capabilities(sample_rates: &[u32]) -> Capabilities {
         bandwidths: Vec::new(),
         bandwidth_ranges: Vec::new(),
         bandwidth_auto: false,
-        bias_tee: true,
+        bias_tee: false,
         agc: Agc::Modes {
             options: vec![
                 agc_mode(AGC_LOW, "Low threshold"),
@@ -68,25 +69,36 @@ pub(crate) fn capabilities(sample_rates: &[u32]) -> Capabilities {
             ],
         },
         extra: Vec::new(),
-        ppm: false,
+        ppm: true,
         duplex: Duplex::RxOnly,
         rx_streams: 1,
         tx_streams: 0,
         per_stream: StreamScope::default(),
         directional: None,
-        dc_artifact: DcArtifact::Managed,
+        dc_artifact: dc_artifact(low_if),
         hardware_sweep: false,
         coherence: Coherence::None,
-        noise_source: false,
+        noise_source: sdrmm_wire::NoiseSource::None,
+        retune_keeps_phase: false,
+        rx_inputs: Vec::new(),
+    }
+}
+
+pub(crate) const fn dc_artifact(low_if: bool) -> DcArtifact {
+    if low_if {
+        DcArtifact::None
+    } else {
+        DcArtifact::Managed
     }
 }
 
 pub(crate) fn settings(config: &Config) -> DeviceSettings {
     DeviceSettings {
-        center_hz: Some(f64::from(config.frequency_hz)),
+        center_hz: Some(config.center_hz()),
+        ppm: Some(config.ppm),
         sample_rate: Some(f64::from(config.sample_rate_hz)),
         antenna: Some(ANTENNA.to_string()),
-        bias_tee: Some(config.bias_tee),
+        bias_tee: None,
         agc: Some(agc_setting(config.agc, config.agc_high_threshold)),
         gains: vec![
             GainValue::new(GainKind::Amp, if config.lna { PREAMP_DB } else { 0.0 }),
@@ -158,9 +170,21 @@ pub(crate) fn validate(
             "this radio has one input, {ANTENNA}, not {antenna}"
         )));
     }
+    if let Some(ppm) = delta.ppm
+        && !(ppm.is_finite() && (-MAX_PPM..=MAX_PPM).contains(&ppm))
+    {
+        return Err(DeviceError::Unsupported(format!(
+            "ppm {ppm} outside ±{MAX_PPM}"
+        )));
+    }
     if delta.bandwidth.is_some() {
         return Err(DeviceError::Unsupported(
             "this radio has no selectable filter".to_string(),
+        ));
+    }
+    if delta.bias_tee.is_some() {
+        return Err(DeviceError::Unsupported(
+            "this radio has no bias tee".to_string(),
         ));
     }
     for gain in &delta.gains {
@@ -214,7 +238,7 @@ mod tests {
     use super::*;
 
     fn caps() -> Capabilities {
-        capabilities(&[768_000, 384_000, 256_000])
+        capabilities(&[768_000, 384_000, 256_000], false)
     }
 
     fn tuned(hz: f64) -> DeviceSettings {
@@ -261,7 +285,7 @@ mod tests {
         assert_eq!(amp.off(), 0.0);
         assert_eq!(amp.on(), 6.0);
         assert!(caps.stage("LNA").is_none());
-        assert!(caps.bias_tee);
+        assert!(!caps.bias_tee);
         assert!(caps.extra.is_empty());
     }
 
@@ -318,12 +342,11 @@ mod tests {
         let reported = settings(&Config {
             lna: true,
             attenuation_step: 3,
-            bias_tee: true,
             ..Config::default()
         });
         assert_eq!(reported.gain(GainKind::Amp.name()), Some(6.0));
         assert_eq!(reported.gain(GainKind::Attenuator.name()), Some(-18.0));
-        assert_eq!(reported.bias_tee, Some(true));
+        assert_eq!(reported.bias_tee, None);
         assert!(reported.extra.is_empty());
     }
 
@@ -374,7 +397,55 @@ mod tests {
     }
 
     #[test]
-    fn extras_and_filters_are_refused() {
+    fn only_a_zero_if_rate_leaves_a_centre_spike_to_block() {
+        assert_eq!(
+            capabilities(&[768_000], false).dc_artifact,
+            DcArtifact::Managed
+        );
+        assert_eq!(capabilities(&[384_000], true).dc_artifact, DcArtifact::None);
+    }
+
+    #[test]
+    fn the_agc_runs_the_attenuator_and_leaves_the_preamp_alone() {
+        let caps = caps();
+        let agc = AgcSetting::in_mode(true, AGC_LOW);
+        let run = |kind: GainKind| caps.stage(kind.name()).map(|s| s.agc.drives(&agc));
+        assert_eq!(run(GainKind::Amp), Some(false));
+        assert_eq!(run(GainKind::Attenuator), Some(true));
+    }
+
+    #[test]
+    fn ppm_is_offered_and_bounded() {
+        let caps = caps();
+        assert!(caps.ppm);
+        for (ppm, ok) in [
+            (0.0, true),
+            (-200.0, true),
+            (200.5, false),
+            (f64::NAN, false),
+        ] {
+            let delta = DeviceSettings {
+                ppm: Some(ppm),
+                ..DeviceSettings::default()
+            };
+            assert_eq!(validate(&delta, &caps).is_ok(), ok, "{ppm}");
+        }
+    }
+
+    #[test]
+    fn settings_report_the_centre_the_correction_lands_on() {
+        let reported = settings(&Config {
+            lo_khz: 99_995,
+            ppm: 50.0,
+            ..Config::default()
+        });
+        assert_eq!(reported.ppm, Some(50.0));
+        let centre = reported.center_hz.expect("centre");
+        assert!((centre - 99_999_999.75).abs() < 1e-3, "{centre}");
+    }
+
+    #[test]
+    fn extras_filters_and_bias_tee_are_refused() {
         let caps = caps();
         let extra = DeviceSettings {
             extra: vec![ExtraValue {
@@ -389,5 +460,10 @@ mod tests {
             ..DeviceSettings::default()
         };
         assert!(validate(&filter, &caps).is_err());
+        let bias_tee = DeviceSettings {
+            bias_tee: Some(true),
+            ..DeviceSettings::default()
+        };
+        assert!(validate(&bias_tee, &caps).is_err());
     }
 }

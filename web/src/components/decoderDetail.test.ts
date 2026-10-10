@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DecoderEvent, DecoderKind } from "../lib/types";
+import type { DecoderEvent, DecoderKind, LoraFrame } from "../lib/types";
 import { eventDetail } from "./decoderDetail";
 import { DECODER_KINDS } from "./decoderLog";
 
@@ -13,6 +13,27 @@ function dataLink(
   return {
     kind,
     data: { message_type: "test", crc_ok: true, details: {} },
+  };
+}
+
+function lora(decoded: LoraFrame["decoded"]): DecoderEvent {
+  return {
+    kind: "lora",
+    data: {
+      spreading_factor: 11,
+      bandwidth_hz: 250_000,
+      coding_rate: "4/5",
+      sync_word: 0x2b,
+      implicit_header: false,
+      low_data_rate: false,
+      inverted_iq: false,
+      integrity: "crc_ok",
+      fec_corrected: 2,
+      snr_db: -7.5,
+      frequency_error_hz: -1_210,
+      payload: "ffffffff",
+      decoded,
+    },
   };
 }
 
@@ -60,7 +81,6 @@ describe("eventDetail", () => {
         data: {
           id: 7,
           node: "dmr",
-          source_node: "dmr",
           started_at: "2026-08-16T10:00:00Z",
           ended_at: "2026-08-16T10:00:02Z",
           duration_ms: 2_000,
@@ -107,6 +127,30 @@ describe("eventDetail", () => {
           urgent: false,
           alert: 0,
           errors_corrected: 0,
+        },
+      },
+      eot: {
+        kind: "eot",
+        data: {
+          unit_address: 23456,
+          report: {
+            unit: "rear",
+            message_type: 0,
+            arming: "normal",
+            pressure_psig: 87,
+            battery: "low",
+            battery_charge_pct: 63,
+            valve_ok: true,
+            confirmed: false,
+            turbine: true,
+            motion: true,
+            marker_light: true,
+            marker_battery_low: false,
+            discretionary: false,
+            chaining: 3,
+          },
+          errors_corrected: 1,
+          rejected: 2,
         },
       },
       adsb: { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } },
@@ -166,30 +210,10 @@ describe("eventDetail", () => {
           more: false,
         },
       },
-      subghz: {
-        kind: "subghz",
-        data: {
-          modulation: "ook",
-          encoding: "raw",
-          bits: 0,
-          data: "",
-          short_us: 0,
-          repeats: 1,
-        },
-      },
       tone: { kind: "tone", data: { open: true } },
       scrambler: { kind: "scrambler", data: { inversion_hz: 3300, confidence: 0.8 } },
       dv: { kind: "dv", data: { mode: "dmr", kind: "header", errors_corrected: 0 } },
       ident: { kind: "ident", data: { snr_db: 0, signals: [] } },
-      broadcast: {
-        kind: "broadcast",
-        data: {
-          system: "dab",
-          locked: false,
-          snr_db: 0,
-          frequency_error_hz: 0,
-        },
-      },
       radio_clock: {
         kind: "radio_clock",
         data: {
@@ -236,6 +260,18 @@ describe("eventDetail", () => {
         kind: "df",
         data: { bearing_deg: 137.5, confidence: 0.8, station_id: "north" },
       },
+      radar: {
+        kind: "radar",
+        data: {
+          track_id: 7,
+          change: "confirmed",
+          range_km: 32.5,
+          range_rate_mps: -365,
+          doppler_hz: 120,
+          snr_db: 17,
+          icao: "3C6444",
+        },
+      },
       df_fix: {
         kind: "df_fix",
         data: {
@@ -247,10 +283,6 @@ describe("eventDetail", () => {
           converged: true,
           samples: 12,
         },
-      },
-      radar: {
-        kind: "radar",
-        data: { range_bin: 60, range_km: 18.2, doppler_hz: 120, snr_db: 19.1 },
       },
       ils: {
         kind: "ils",
@@ -288,6 +320,98 @@ describe("eventDetail", () => {
           bursts: 12,
           crc_errors: 0,
           level_dbfs: -31.5,
+        },
+      },
+      apt: { kind: "apt", data: { seq: 1, lines: 1200, complete: true, duration_ms: 600_000 } },
+      lrpt: {
+        kind: "lrpt",
+        data: {
+          seq: 1,
+          mode: "oqpsk72",
+          width: 1568,
+          lines: 800,
+          complete: false,
+          duration_ms: 480_000,
+          apids: [64, 65, 68],
+          frames: 1000,
+          frames_corrected: 40,
+          frames_failed: 3,
+          packets_lost: 2,
+        },
+      },
+      wefax: {
+        kind: "wefax",
+        data: {
+          seq: 1,
+          ioc: "ioc576",
+          lpm: "lpm120",
+          width: 1809,
+          lines: 900,
+          complete: true,
+          duration_ms: 450_000,
+        },
+      },
+      radiosonde: {
+        kind: "radiosonde",
+        data: { sonde: "rs41", serial: "S1234567", errors_corrected: 0 },
+      },
+      lora: lora(null),
+      remote_id: {
+        kind: "remote_id",
+        data: {
+          transport: "bluetooth_legacy",
+          phy: "le1m",
+          address: "C2:11:22:33:44:55",
+          level_dbfs: -40,
+          messages: [],
+        },
+      },
+      ble: {
+        kind: "ble",
+        data: {
+          pdu: "adv_ind",
+          phy: "le1m",
+          channel: 38,
+          address: { address: "C0:11:22:33:44:55", kind: "random_static" },
+          level_dbfs: -41,
+          name: "Thermo",
+          flags: { limited: false, general: true, le_only: true },
+          services: [{ uuid: "180F", name: "Battery", data: "57" }],
+          manufacturer: [{ company_id: 76, company: "Apple", data: "1005" }],
+          beacon: { type: "eddystone_tlm", battery_mv: 3000, adverts: 5, uptime_s: 12 },
+          aux: { channel: 8, phy: "le_coded", offset_us: 1200 },
+          data: "020106",
+        },
+      },
+      wifi_occupancy: {
+        kind: "wifi_occupancy",
+        data: {
+          window_ms: 1000,
+          measured: 1,
+          channels: [
+            { band: "ghz2_4", number: 6, centre_hz: 2_437e6, busy: 0.31, floor_dbfs: -70 },
+          ],
+        },
+      },
+      ism_survey: {
+        kind: "ism_survey",
+        data: {
+          window_ms: 1000,
+          low_hz: 2_433.5e6,
+          high_hz: 2_450.5e6,
+          measured: 1,
+          busy: 0.2,
+          kinds: [
+            {
+              kind: "bluetooth",
+              bursts: 12,
+              airtime: 0.004,
+              mean_us: 376,
+              peak_dbfs: -30,
+              centres_mhz: [2_440],
+            },
+          ],
+          dropped: 0,
         },
       },
     };
@@ -343,6 +467,36 @@ describe("eventDetail", () => {
     expect(detail.body).toContain("standard ciphering (DSC)");
   });
 
+  it("shows DSAA2, DSC2 and the voice counters of a DECT bearer", () => {
+    const detail = eventDetail({
+      kind: "dect",
+      data: {
+        side: "rfp",
+        update: "voice",
+        capabilities: ["dsaa2", "dsc2", "ule_phase1_revised"],
+        security: {
+          cipher_state: "clear",
+          encryption_events: 0,
+          dsaa2_supported: true,
+          dsc2_supported: false,
+        },
+        voice: { frames: 120, playing: true, x_crc_errors: 3, unsynced: 0, encrypted: 0, late: 0 },
+        extended_carriers: false,
+        bursts: 140,
+        crc_errors: 0,
+        level_dbfs: -40,
+      },
+    });
+    const shown = Object.fromEntries(detail.fields);
+    expect(shown.DSAA2).toBe("yes");
+    expect(shown.DSC2).toBe("no");
+    expect(shown.Voice).toBe("playing");
+    expect(shown["Voice frames"]).toBe("120");
+    expect(shown["Voice X-CRC errors"]).toBe("3");
+    expect(shown["Voice before sync"]).toBeUndefined();
+    expect(detail.body).toBe("DSAA2 authentication\nDSC2 ciphering\nULE phase 1 v1.2");
+  });
+
   it("shows weak-signal timing and link measurements", () => {
     const detail = eventDetail({
       kind: "wspr",
@@ -367,6 +521,49 @@ describe("eventDetail", () => {
       Drift: "-0.2 Hz",
     });
     expect(detail.body).toBe("K1ABC FN42 37");
+  });
+
+  it("reads an EOT rear unit and a HOT command", () => {
+    const rear = fieldsOf({
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: {
+          unit: "rear",
+          message_type: 0,
+          arming: "normal",
+          pressure_psig: 87,
+          battery: "low",
+          battery_charge_pct: 63,
+          valve_ok: true,
+          confirmed: false,
+          turbine: true,
+          motion: true,
+          marker_light: true,
+          marker_battery_low: false,
+          discretionary: false,
+          chaining: 3,
+        },
+        errors_corrected: 1,
+        rejected: 2,
+      },
+    });
+    expect(rear["Brake pipe"]).toBe("87 psig");
+    expect(rear.Battery).toBe("low");
+    expect(rear.Repaired).toBe("1");
+    expect(rear.Rejected).toBe("2");
+    const head = fieldsOf({
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: { unit: "head", command: "other", code: 0x3c, copies: 2 },
+        errors_corrected: 0,
+        rejected: 0,
+      },
+    });
+    expect(head.Command).toBe("command 0x3c");
+    expect(head.Copies).toBe("2/3");
+    expect(head.Repaired).toBeUndefined();
   });
 
   it("shows the Selcall plan, expanded code, and measured duration", () => {
@@ -476,91 +673,6 @@ describe("eventDetail", () => {
       Continues: "yes: another block follows",
     });
     expect(detail.body).toBe("POS N52.5 E013.4\nFL370");
-  });
-
-  it("pairs sub-GHz timings pulse-with-gap and offers only the readings the frame supports", () => {
-    const detail = eventDetail({
-      kind: "subghz",
-      data: {
-        modulation: "ook",
-        encoding: "pwm",
-        bits: 24,
-        data: "A1B2C3",
-        address: 0xa1b2,
-        button: 3,
-        short_us: 320,
-        repeats: 6,
-        timings_us: [320, 960, 960, 320, 320],
-      },
-    });
-    expect(Object.fromEntries(detail.fields)).toMatchObject({
-      Payload: "A1B2C3 (24 bit)",
-      "EV1527 address": "0A1B2",
-      "EV1527 button": "3",
-      "Base period": "320 µs",
-      Repeats: "×6",
-    });
-    expect(detail.fields.map(([label]) => label)).not.toContain("PT2262 tri-state");
-    expect(detail.body).toBe("320/960  960/320  320");
-  });
-
-  it("puts a named sensor reading ahead of the framing that carried it", () => {
-    const detail = eventDetail({
-      kind: "subghz",
-      data: {
-        modulation: "ook",
-        encoding: "ppm",
-        bits: 36,
-        data: "8F80D5F2F",
-        short_us: 1000,
-        repeats: 8,
-        reading: {
-          model: "Nexus-TH",
-          id: 0x8f,
-          channel: 1,
-          battery_ok: true,
-          temperature_c: 21.3,
-          humidity_pct: 47,
-        },
-      },
-    });
-    expect(detail.fields.slice(0, 6)).toEqual([
-      ["Model", "Nexus-TH"],
-      ["Sensor id", "8F"],
-      ["Channel", "1"],
-      ["Temperature", "21.3 °C"],
-      ["Humidity", "47 %"],
-      ["Battery", "yes"],
-    ]);
-  });
-
-  it("omits the sensor fields a reading did not carry", () => {
-    const detail = eventDetail({
-      kind: "subghz",
-      data: {
-        modulation: "ook",
-        encoding: "ppm",
-        bits: 36,
-        data: "A3901EF0",
-        short_us: 1000,
-        repeats: 4,
-        reading: { model: "Nexus-T", id: 0xa3, temperature_c: 3 },
-      },
-    });
-    const labels = detail.fields.map(([label]) => label);
-    expect(labels).toContain("Temperature");
-    expect(labels).not.toContain("Humidity");
-    expect(labels).not.toContain("Channel");
-    expect(labels).not.toContain("Battery");
-  });
-
-  it("reports a raw capture as timings with no payload", () => {
-    const detail = eventDetail({
-      kind: "subghz",
-      data: { modulation: "ook", encoding: "raw", bits: 0, data: "", short_us: 0, repeats: 1 },
-    });
-    expect(detail.fields.map(([label]) => label)).toEqual(["Modulation", "Encoding"]);
-    expect(detail.body).toBeNull();
   });
 
   it("distinguishes a frame that said 'not encrypted' from one that did not say", () => {
@@ -691,48 +803,6 @@ describe("eventDetail", () => {
     expect(detail.body).toBe("Now playing something");
   });
 
-  it("shows broadcast audio failures independently of radio lock", () => {
-    const detail = eventDetail({
-      kind: "broadcast",
-      data: {
-        system: "dab",
-        locked: true,
-        snr_db: 20,
-        frequency_error_hz: 0,
-        audio_frames_ok: 41,
-        audio_frames_bad: 2,
-        audio_error: "Broadcast audio input queue overflow",
-      },
-    });
-    expect(Object.fromEntries(detail.fields)).toMatchObject({
-      Lock: "locked",
-      "Audio frames": "41",
-      "Audio failures": "2",
-      "Audio error": "Broadcast audio input queue overflow",
-    });
-  });
-
-  it("shows a broadcast acquisition without inventing multiplex metadata", () => {
-    const detail = eventDetail({
-      kind: "broadcast",
-      data: {
-        system: "dvb_s2",
-        locked: true,
-        snr_db: 18.25,
-        frequency_error_hz: -32.4,
-        symbol_rate: 333_000,
-      },
-    });
-    expect(Object.fromEntries(detail.fields)).toEqual({
-      System: "DVB-S2",
-      Lock: "locked",
-      SNR: "18.3 dB",
-      "Frequency error": "-32 Hz",
-      "Symbol rate": "333000 Bd",
-    });
-    expect(detail.body).toBeNull();
-  });
-
   it("carries the APRS fields the packet's monitor line packs away", () => {
     const detail = eventDetail({
       kind: "aprs",
@@ -760,6 +830,274 @@ describe("eventDetail", () => {
       "Mic-E message": "En Route",
     });
     expect(detail.body).toBe('DL1ABC-9>S32U6T:`(_fn"Oj/');
+  });
+
+  it("adds APRS weather with units", () => {
+    const detail = eventDetail({
+      kind: "aprs",
+      data: {
+        source: "DL1WX",
+        destination: "APRS",
+        info: "_",
+        tnc2: "DL1WX>APRS:_",
+        weather: {
+          wind_dir_deg: 220,
+          wind_speed_ms: 4.5,
+          wind_gust_ms: 9,
+          temperature_c: 12.25,
+          humidity_pct: 81,
+          pressure_hpa: 1013.2,
+          rain_1h_mm: 0.5,
+          luminosity_wm2: 300,
+        },
+      },
+    });
+    expect(Object.fromEntries(detail.fields)).toMatchObject({
+      Wind: "4.5 m/s from 220°",
+      Gust: "9.0 m/s",
+      Temperature: "12.3 °C",
+      Humidity: "81%",
+      Pressure: "1013.2 hPa",
+      "Rain 1 h": "0.5 mm",
+      Luminosity: "300 W/m²",
+    });
+  });
+
+  it("names the AVHRR channels of an APT pass", () => {
+    expect(
+      fieldsOf({
+        kind: "apt",
+        data: {
+          seq: 2,
+          lines: 900,
+          complete: false,
+          duration_ms: 450_000,
+          channel_a: "ch2",
+          channel_b: "ch4",
+        },
+      }),
+    ).toMatchObject({ Channels: "ch 2 + 4", State: "cut short", Took: "450.0 s" });
+  });
+
+  it("shows LRPT link quality", () => {
+    expect(
+      fieldsOf({
+        kind: "lrpt",
+        data: {
+          seq: 1,
+          mode: "oqpsk80",
+          width: 1568,
+          lines: 400,
+          complete: true,
+          duration_ms: 1000,
+          apids: [64, 65],
+          frames: 500,
+          frames_corrected: 12,
+          frames_failed: 1,
+          packets_lost: 4,
+        },
+      }),
+    ).toMatchObject({
+      Mode: "OQPSK 80k",
+      APIDs: "64, 65",
+      "Frames repaired": "12",
+      "Frames failed": "1",
+      "Packets lost": "4",
+    });
+  });
+
+  it("shows WEFAX timing", () => {
+    expect(
+      fieldsOf({
+        kind: "wefax",
+        data: {
+          seq: 1,
+          ioc: "ioc288",
+          lpm: "lpm60",
+          width: 904,
+          lines: 300,
+          complete: true,
+          duration_ms: 300_000,
+        },
+      }),
+    ).toMatchObject({ IOC: "288", Speed: "60 LPM", Size: "904 \u00d7 300" });
+  });
+
+  it("shows radiosonde telemetry with units", () => {
+    expect(
+      fieldsOf({
+        kind: "radiosonde",
+        data: {
+          sonde: "dfm",
+          serial: "D2150123",
+          frame: 4321,
+          lat: 48.1,
+          lon: 11.5,
+          altitude_m: 12_345.6,
+          climb_ms: -4.25,
+          speed_ms: 12,
+          heading_deg: 90,
+          temperature_c: -51.2,
+          humidity_pct: 12.4,
+          pressure_hpa: 190.5,
+          satellites: 9,
+          battery_v: 2.9,
+          errors_corrected: 3,
+          rejected: 2,
+        },
+      }),
+    ).toMatchObject({
+      Serial: "D2150123",
+      Type: "DFM",
+      Frame: "4321",
+      Altitude: "12,346 m",
+      Climb: "-4.3 m/s",
+      Speed: "12.0 m/s",
+      Heading: "90°",
+      Temperature: "-51.2 °C",
+      Humidity: "12%",
+      Pressure: "190.5 hPa",
+      Satellites: "9",
+      Battery: "2.90 V",
+      Repaired: "3",
+      "Frames lost": "2",
+    });
+  });
+
+  it("shows a raw LoRa frame's modem and payload", () => {
+    expect(fieldsOf(lora(null))).toEqual({
+      "Spreading factor": "SF11",
+      Bandwidth: "250 kHz",
+      "Coding rate": "4/5",
+      "Sync word": "0x2B",
+      Header: "explicit",
+      IQ: "normal",
+      Integrity: "CRC ok",
+      "FEC repaired": "2",
+      SNR: "-7.5 dB",
+      "Frequency error": "-1210 Hz",
+      Payload: "ffffffff",
+    });
+  });
+
+  it("breaks a Meshtastic text into nodes, channel and hops", () => {
+    const event = lora({
+      protocol: "meshtastic",
+      to: 0xffff_ffff,
+      from: 0xa1b2c3d4,
+      id: 0x1234,
+      hop_limit: 1,
+      hop_start: 3,
+      want_ack: false,
+      via_mqtt: false,
+      channel_hash: 8,
+      next_hop: 0,
+      relay_node: 0xd4,
+      encryption: "channel",
+      channel: "LongFast",
+      port: 1,
+      port_name: "TEXT_MESSAGE_APP",
+      content: { type: "text", text: "hello mesh" },
+    });
+    expect(fieldsOf(event)).toMatchObject({
+      Protocol: "Meshtastic",
+      From: "!a1b2c3d4",
+      To: "^all",
+      "Packet ID": "0x00001234",
+      Channel: "LongFast",
+      Port: "TEXT_MESSAGE_APP",
+      Hops: "2 of 3",
+      Relay: "0xD4",
+    });
+    expect(eventDetail(event).body).toBe("hello mesh");
+  });
+
+  it("lists Meshtastic positions and telemetry", () => {
+    const position = lora({
+      protocol: "meshtastic",
+      to: 0xffff_ffff,
+      from: 1,
+      id: 1,
+      hop_limit: 3,
+      hop_start: 3,
+      want_ack: false,
+      via_mqtt: false,
+      channel_hash: 8,
+      next_hop: 0,
+      relay_node: 0,
+      encryption: "channel",
+      content: { type: "position", lat: 47.5, lon: 8.25, altitude_m: 410, satellites: 9 },
+    });
+    expect(fieldsOf(position)).toMatchObject({
+      From: "!00000001",
+      Channel: "0x08",
+      Hops: "0 of 3",
+      Position: "47.50000, 8.25000",
+      Altitude: "410 m",
+      Satellites: "9",
+    });
+  });
+
+  it("shows LoRaWAN header, counters and MIC check", () => {
+    const fields = fieldsOf(
+      lora({
+        protocol: "lorawan",
+        message_type: "confirmed_up",
+        major: 0,
+        mic: "a1b2c3d4",
+        mic_ok: true,
+        dev_addr: "26011BDA",
+        adr: true,
+        f_cnt: 42,
+        f_port: 10,
+        mac_commands: ["LinkCheckReq"],
+        decrypted: "0102",
+      }),
+    );
+    expect(fields).toMatchObject({
+      Protocol: "LoRaWAN",
+      Type: "Confirmed uplink",
+      DevAddr: "26011BDA",
+      FCnt: "42",
+      FPort: "10",
+      MIC: "a1b2c3d4 ok",
+      ADR: "yes",
+      "MAC commands": "LinkCheckReq",
+      Decrypted: "0102",
+    });
+  });
+
+  it("shows a MeshCore advert with its place and signature", () => {
+    const fields = fieldsOf(
+      lora({
+        protocol: "meshcore",
+        route: "flood",
+        payload_type: "advert",
+        version: 1,
+        path: ["a1", "b2"],
+        content: {
+          type: "advert",
+          public_key: "00112233",
+          timestamp: 1_700_000_000,
+          node_type: "repeater",
+          name: "Hilltop",
+          lat: 51.5,
+          lon: -0.12,
+          signature_ok: true,
+        },
+      }),
+    );
+    expect(fields).toMatchObject({
+      Protocol: "MeshCore",
+      Route: "flood",
+      Type: "Advert",
+      Path: "a1 → b2",
+      Name: "Hilltop",
+      "Node type": "repeater",
+      Position: "51.50000, -0.12000",
+      Advertised: "2023-11-14T22:13:20Z",
+      Signature: "verified",
+    });
   });
 
   it("has nothing to add for a frame whose whole content is its summary", () => {

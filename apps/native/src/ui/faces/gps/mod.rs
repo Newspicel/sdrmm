@@ -10,8 +10,8 @@ use sdrmm_wire::{
 use zgui::prelude::*;
 
 use self::{
-    choices::{gps_choices, receivers},
-    source::{nmea_suggestion, valid_baud, valid_gpsd_address},
+    choices::{Phones, gps_choices, phones, receivers},
+    source::{nmea_suggestion, phone_standing, valid_baud, valid_gpsd_address},
 };
 use super::device::actions::edit_body;
 use crate::{
@@ -53,7 +53,7 @@ fn set_source(store: Store, node: String, next: Option<PositionSource>) {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     None,
-    Device,
+    Phone,
     Gpsd,
     Fixed,
     Nmea,
@@ -62,7 +62,7 @@ enum Kind {
 fn kind_of(source: Option<&PositionSource>) -> Kind {
     match source {
         None => Kind::None,
-        Some(PositionSource::Device) => Kind::Device,
+        Some(PositionSource::Phone { .. }) => Kind::Phone,
         Some(PositionSource::Gpsd { .. }) => Kind::Gpsd,
         Some(PositionSource::Fixed { .. }) => Kind::Fixed,
         Some(PositionSource::Nmea { .. }) => Kind::Nmea,
@@ -98,18 +98,15 @@ fn with_source(
         let node = node.clone();
         move |next: PositionSource| set_source(store, node.clone(), Some(next))
     };
+    let state = {
+        let node = node.clone();
+        Signal::derive(move || positions().and_then(|positions| positions.of(&node)))
+    };
     let settings = match kind {
         Kind::Gpsd => AnyView::new(gpsd_settings(source, change)),
         Kind::Fixed => AnyView::new(fixed_settings(source, change)),
         Kind::Nmea => AnyView::new(nmea_settings(store, source, change)),
-        Kind::Device | Kind::None => AnyView::new(row_field(
-            "Source",
-            view! { text(class = "kit-note") {"This device's live location provider"} },
-        )),
-    };
-    let state = {
-        let node = node.clone();
-        Signal::derive(move || positions().and_then(|positions| positions.of(&node)))
+        Kind::Phone | Kind::None => AnyView::new(phone_settings(phones(store), source, state)),
     };
     let fix = move || {
         let state = state.get()?;
@@ -127,6 +124,29 @@ fn with_source(
             {footer(button(|| "Forget source".to_owned(), Tone::Quiet, Signal::stored(false), move || set_source(store, node.clone(), None)))}
         }
     }
+}
+
+fn phone_settings(
+    found: Phones,
+    source: Memo<Option<PositionSource>>,
+    state: Signal<Option<crate::position::PositionState>>,
+) -> impl IntoView {
+    let said = move || {
+        let Some(PositionSource::Phone { phone }) = source.get() else {
+            return String::new();
+        };
+        let listed = found.get().and_then(Result::ok);
+        let name = listed
+            .as_ref()
+            .and_then(|all| all.iter().find(|candidate| candidate.id == phone))
+            .map_or_else(|| phone.clone(), |found| found.name.clone());
+        let error = state.get().and_then(|state| state.error);
+        match phone_standing(listed.as_deref(), &phone, error.as_deref()) {
+            Some(standing) => format!("{name} · {}", standing.label()),
+            None => name,
+        }
+    };
+    row_field("Phone", view! { text(class = "kit-note") {{said}} })
 }
 
 fn fix_readout(fix: &PositionFix) -> impl IntoView {

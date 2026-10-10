@@ -352,9 +352,14 @@ fn decode_individual(symbols: &[i32]) -> DscMessage {
         tc2: at(symbols, 14).map(SecondCommand::from_symbol),
         ..DscMessage::blank(symbols, Format::IndividualStationCall)
     };
+    let position_request =
+        message.tc1 == Some(FirstCommand::ShipPositionOrLocationRegistrationUpdating);
     match at(symbols, 15) {
         Some(55) => message.position = extract_position(symbols, 16),
-        Some(126) => message.nature_description = Some("Position Requested".to_owned()),
+        Some(126) if position_request => {
+            message.nature_description = Some("Position Requested".to_owned());
+        }
+        Some(126) => {}
         _ => message.frequency = extract_frequencies(symbols, 15),
     }
     message.with_tail(symbols, 21)
@@ -627,11 +632,25 @@ mod tests {
     #[test]
     fn position_requested() {
         let m = decoded(&[
-            120, 120, 51, 89, 99, 19, 50, 100, 0, 27, 11, 0, 0, 126, 126, 126, 126, 126, 126, 126,
-            126, 117, 81, 117, 117,
+            120, 120, 51, 89, 99, 19, 50, 100, 0, 27, 11, 0, 0, 121, 126, 126, 126, 126, 126, 126,
+            126, 117, 86, 117, 117,
         ]);
         assert_eq!(m.to.as_deref(), Some("518999195"));
         assert_eq!(m.nature_description.as_deref(), Some("Position Requested"));
+        assert_eq!(m.status, "OK");
+    }
+
+    #[test]
+    fn a_test_call_requests_nothing() {
+        let m = decoded(&[
+            120, 120, 23, 17, 0, 0, 0, 108, 0, 21, 91, 0, 0, 118, 126, 126, 126, 126, 126, 126,
+            126, 122, 46, 122, 122,
+        ]);
+        assert_eq!(m.from.as_deref(), Some("002191000"));
+        assert_eq!(m.to.as_deref(), Some("231700000"));
+        assert_eq!(m.tc1, Some(FirstCommand::Test));
+        assert_eq!(m.nature_description, None);
+        assert_eq!(m.frequency, None);
         assert_eq!(m.status, "OK");
     }
 

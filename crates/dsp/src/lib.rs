@@ -1,13 +1,16 @@
 pub mod agc;
+pub mod airtime;
+pub mod array_sync;
+pub mod beamform;
 pub mod bits;
-pub mod caf;
-pub mod cfar;
-pub mod combine;
+pub mod channelizer;
 pub mod compander;
+pub mod correlator;
 pub mod covariance;
 pub mod ddc;
 pub mod decim;
-pub mod eca;
+pub mod doa;
+pub mod fastmath;
 pub mod fec;
 pub mod fft;
 pub mod fir;
@@ -17,21 +20,26 @@ pub mod iir;
 pub mod interp;
 pub mod level;
 pub mod linalg;
-pub mod music;
+pub mod manifold;
 pub mod nco;
 pub mod noise;
 pub mod ofdm;
 pub mod pll;
+pub mod polar;
+pub mod radar;
 pub mod realiq;
 pub mod resamp;
+#[cfg(any(test, feature = "test-scene"))]
+pub mod scene;
+pub mod special;
 pub mod spectrum;
 pub mod squelch;
-pub mod steering;
 pub mod stitch;
 pub mod subband;
+pub mod sweep;
 pub mod sync;
 pub mod tone;
-pub mod track;
+pub mod vector;
 pub mod window;
 pub mod xcorr;
 
@@ -43,9 +51,11 @@ pub use bits::{
     Descrambler, DifferentialDecoder, HdlcDeframer, NrziDecoder, Scrambler, SyncDetector, bits_be,
     hamming_distance, manchester_decode, pack_lsb, pack_msb, reverse_byte,
 };
+pub use channelizer::{Channelizer, ChannelizerError};
 pub use compander::Compander;
 pub use ddc::{Ddc, DdcError, flat_bandwidth_hz};
 pub use decim::{Decimator, RealDecimator};
+pub use fastmath::{fast_arg, fast_atan2, phase_diff_into};
 pub use fec::{
     RdsOffset,
     block::{CyclicCode, ParityCode},
@@ -53,15 +63,16 @@ pub use fec::{
     conv::{CONFIDENT, ERASURE, Soft, Viterbi5, soft},
     conv_soft::SoftViterbi,
     conv7::{ConvCode, Depuncturer, StreamViterbiK7, ViterbiK7, depuncture, puncture},
-    crc4_msb, crc8_msb, crc16_ccitt, crc16_msb, crc16_msb_bits, crc16_x25, crc32_mpeg,
-    ermes_bch_decode, ermes_bch_encode, golay23_correct, golay23_encode, golay23_ok, hdlc_fcs_ok,
-    hdlc_repair, lfsr_digest8, lfsr_digest8_reflect, mode_s_append_overlaid_parity,
-    mode_s_append_parity, mode_s_bit_overlays, mode_s_fix_single_bit, mode_s_overlay,
-    mode_s_syndrome, pocsag_bch_decode, pocsag_bch_encode,
+    crc4_msb, crc8_msb, crc16_ccitt, crc16_msb, crc16_msb_bits, crc16_x25, crc24_reflected,
+    crc32_ieee, crc32_mpeg, ermes_bch_decode, ermes_bch_encode, golay23_correct, golay23_encode,
+    golay23_ok, hdlc_fcs_ok, hdlc_repair, lfsr_digest8, lfsr_digest8_reflect,
+    mode_s_append_overlaid_parity, mode_s_append_parity, mode_s_bit_overlays,
+    mode_s_fix_single_bit, mode_s_overlay, mode_s_syndrome, pocsag_bch_decode, pocsag_bch_encode,
     prbs::{DAB_DISPERSAL, DVB_DISPERSAL, Prbs, PrbsSpec},
     rds_check_block, rds_correct_block, rds_encode_block, rds_syndrome, rs64_decode, rs64_encode,
     rs129_parity,
     rs256::{DVB_PRIMITIVE, ReedSolomon},
+    syndrome::SyndromeDecoder,
 };
 pub use fir::{
     design_bandpass, design_gaussian, design_lowpass, design_rds_biphase, design_rds_shaping,
@@ -81,10 +92,10 @@ pub use pll::{Costas, LoopFilter, Pll};
 pub use realiq::RealToIq;
 pub use resamp::FracResampler;
 pub use spectrum::{
-    DbWindowSmoother, NoiseFloor, PowerAverage, SpectrumAnalyzer, adaptive_db_window, decimate_max,
-    quantize_db,
+    DbWindowSmoother, NoiseFloor, PowerAverage, SpanFloor, SpectrumAnalyzer, adaptive_db_window,
+    decimate_signal, quantize_db,
 };
 pub use squelch::Squelch;
 pub use sync::{BitSync, SymbolSync, farrow};
 pub use tone::{Envelope, Goertzel, KeyingSlicer, KeyingTiming, ToneCorrelator};
-pub use window::{coherent_gain, hann};
+pub use window::{blackman_harris, coherent_gain, hann};

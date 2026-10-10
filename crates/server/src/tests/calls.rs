@@ -18,15 +18,15 @@ async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
     const RATE: f64 = 240_000.0;
     let dir = tempfile::TempDir::new().expect("temp dir");
     let stem = dir.path().join("dmr");
-    let spoken = sdrmm_channels::testgen::dv::dmr::Call::default();
-    let one = sdrmm_channels::testgen::dv::dmr::transmission(&spoken, RATE);
+    let spoken = sdrmm_channels::synth::dv::dmr::Call::default();
+    let one = sdrmm_channels::synth::dv::dmr::transmission(&spoken, RATE);
     let mut iq = Vec::new();
     for _ in 0..6 {
         iq.extend_from_slice(&one);
     }
     let floor = RATE as usize * 2;
     if iq.len() < floor {
-        iq.extend(sdrmm_channels::testgen::silence(floor - iq.len()));
+        iq.extend(sdrmm_channels::synth::silence(floor - iq.len()));
     }
     let mut writer =
         sdrmm_recorder::SigmfWriter::create(&stem, RATE, 145_000_000.0, "conventional dmr fixture")
@@ -37,11 +37,23 @@ async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
     let app = recording_router(dir.path());
     let mut snapshot =
         virtual_snapshot(&format!("file:{}", stem.display()), &[("dmr", "dmr", "iq")]);
-    for node in &mut snapshot.graph.nodes {
-        if let sdrmm_wire::NodeBody::Channel(channel) = &mut node.body {
-            channel.record_calls = true;
-        }
-    }
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: "log".to_owned(),
+        body: sdrmm_wire::NodeBody::DecoderLog(Default::default()),
+        position: sdrmm_wire::Position { x: 0.0, y: 0.0 },
+        size: None,
+        label: None,
+    });
+    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: "dmr".to_owned(),
+            port: "events".to_owned(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: "log".to_owned(),
+            port: "events".to_owned(),
+        },
+    });
     let workspace = put_active_workspace(&app, &snapshot).await;
     let mut settings = sdrmm_wire::ChannelSettings::default_for("dmr").expect("dmr is built in");
     settings.frequency_hz = 145_000_000.0;

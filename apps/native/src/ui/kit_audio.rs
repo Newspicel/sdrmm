@@ -233,13 +233,15 @@ pub fn alert(message: impl Fn() -> Option<String> + 'static) -> impl IntoView {
 
 pub fn is_recording(store: Store, node: String) -> Signal<bool> {
     Signal::derive(move || {
-        store.graph.get().node(&node).is_some_and(|found| {
-            matches!(
-                &found.body,
-                NodeBody::Recorder(body) | NodeBody::AudioRecorder(body) | NodeBody::BasebandRecorder(body)
-                    if body.recording
-            )
-        })
+        store
+            .graph
+            .get()
+            .node(&node)
+            .is_some_and(|found| match &found.body {
+                NodeBody::Recorder(body) | NodeBody::BasebandRecorder(body) => body.recording,
+                NodeBody::AudioRecorder(body) => body.recording,
+                _ => false,
+            })
     })
 }
 
@@ -257,13 +259,12 @@ pub fn recorder_switch(store: Store, node: String) -> impl IntoView {
         Signal::stored(false),
         move || {
             let next = !recording.get_untracked();
-            edit_body(store, &node, |body| {
-                if let NodeBody::Recorder(recorder)
-                | NodeBody::AudioRecorder(recorder)
-                | NodeBody::BasebandRecorder(recorder) = body
-                {
+            edit_body(store, &node, |body| match body {
+                NodeBody::Recorder(recorder) | NodeBody::BasebandRecorder(recorder) => {
                     recorder.recording = next;
                 }
+                NodeBody::AudioRecorder(recorder) => recorder.recording = next,
+                _ => {}
             });
         },
     )

@@ -1,12 +1,15 @@
 use std::sync::LazyLock;
 
+mod array;
+
 use sdrmm_wire::{
-    AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, ChannelNode, ChannelParams,
-    ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams, ErmesParams, FlexParams,
-    GnssParams, IdentParams, M17Params, MorseParams, NavtexParams, NfmParams, NodeBody, PatchEdge,
-    PatchGraph, PatchNode, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
-    RttyParams, Squelch, SsbParams, SstvParams, SubghzParams, TemplateInfo, WfmParams, WsjtParams,
-    WsprParams, YsfParams,
+    AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink, BleParams,
+    ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
+    EotParams, ErmesParams, FlexParams, GnssParams, IsmSurveyParams, LrptParams, M17Params,
+    MorseParams, NavtexParams, NfmParams, NodeBody, PatchEdge, PatchGraph, PatchNode, PocsagParams,
+    PortRef, Position, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
+    RttyParams, Squelch, SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams,
+    WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -35,7 +38,7 @@ impl Sink {
             Self::Speaker => NodeBody::Speaker,
             Self::Video => NodeBody::Video,
             Self::Map => NodeBody::Map,
-            Self::Log => NodeBody::DecoderLog,
+            Self::Log => NodeBody::DecoderLog(sdrmm_wire::DecoderLogNode { group: None }),
         }
     }
 
@@ -59,7 +62,6 @@ const ORDER: &[Sink] = &[
 const LISTEN: &[Sink] = &[Sink::Speaker];
 const LISTEN_READ: &[Sink] = &[Sink::Speaker, Sink::Readout];
 const LISTEN_LOG: &[Sink] = &[Sink::Speaker, Sink::Log];
-const TRACK: &[Sink] = &[Sink::Map, Sink::Log];
 const TRACK_READ: &[Sink] = &[Sink::Map, Sink::Log, Sink::Readout];
 const LOG: &[Sink] = &[Sink::Log];
 const LOG_READ: &[Sink] = &[Sink::Log, Sink::Readout];
@@ -140,7 +142,6 @@ fn patch(channels: &[Channel]) -> PatchGraph {
             &id,
             NodeBody::Channel(ChannelNode {
                 channel_type: (channel.params)().type_id().to_string(),
-                record_calls: false,
                 tuning_locked: false,
             }),
             COLUMN,
@@ -281,7 +282,7 @@ static TEMPLATES: &[Entry] = &[
         channels: &[Channel::at(
             144_800_000.0,
             || ChannelParams::Aprs(AprsParams::default()),
-            TRACK,
+            TRACK_READ,
         )],
     },
     Entry {
@@ -311,6 +312,105 @@ static TEMPLATES: &[Entry] = &[
                 LOG,
             ),
         ],
+    },
+    Entry {
+        id: "railroad-eot",
+        name: "Railroad EOT",
+        description: "End-of-Train brake pressure, motion and marker light.",
+        explainer: "North American freight trains carry an End-of-Train unit that reports \
+                    rear brake pipe pressure, motion and battery on 457.9375 MHz. The \
+                    locomotive answers and sends emergency commands on 452.9375 MHz; \
+                    retune the channel there to log them.",
+        center_hz: 457_700_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[Channel::at(
+            457_937_500.0,
+            || ChannelParams::Eot(EotParams::default()),
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "drone-remote-id",
+        name: "Drone Remote ID",
+        description: "Drone ID, position and pilot over Bluetooth.",
+        explainer: "Drones broadcast their serial number, position and pilot location under \
+                    ASTM F3411 and EN 4709-002. Bluetooth 4 adverts arrive on channel 38; \
+                    Bluetooth 5 long range puts its data on the channels around it.",
+        center_hz: 2_426_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_426_000_000.0,
+            || {
+                ChannelParams::RemoteId(RemoteIdParams {
+                    link: RemoteIdLink::BluetoothBand,
+                })
+            },
+            TRACK_READ,
+        )],
+    },
+    Entry {
+        id: "drone-remote-id-wifi",
+        name: "Drone Remote ID · Wi-Fi",
+        description: "Drone ID, position and pilot from Wi-Fi beacons.",
+        explainer: "DJI and many other drones send Remote ID in Wi-Fi beacons, usually on \
+                    channel 6. Retune to channel 1, 11 or 149 if nothing shows.",
+        center_hz: 2_437_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_437_000_000.0,
+            || {
+                ChannelParams::RemoteId(RemoteIdParams {
+                    link: RemoteIdLink::Wifi,
+                })
+            },
+            TRACK_READ,
+        )],
+    },
+    Entry {
+        id: "ble-devices",
+        name: "BLE devices",
+        description: "Bluetooth LE devices, beacons and trackers.",
+        explainer: "Phones, tags and sensors advertise on channel 38. A 20 MS/s window also \
+                    hears long range adverts on the data channels around it.",
+        center_hz: 2_426_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_426_000_000.0,
+            || {
+                ChannelParams::Ble(BleParams {
+                    link: BleLink::Band,
+                })
+            },
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "ism-survey",
+        name: "2.4 GHz survey",
+        description: "Who uses 2.4 GHz: Wi-Fi, Bluetooth, Zigbee, ovens.",
+        explainer: "Sorts every burst by width, length and channel grid, from energy alone. \
+                    One report per second.",
+        center_hz: 2_442_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_442_000_000.0,
+            || ChannelParams::IsmSurvey(IsmSurveyParams::default()),
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "wifi-occupancy",
+        name: "Wi-Fi occupancy",
+        description: "How busy each Wi-Fi channel is.",
+        explainer: "Busy time from energy alone, once a second. A 20 MS/s radio sees one \
+                    channel; 80 MS/s sees all of 2.4 GHz.",
+        center_hz: 2_437_000_000.0,
+        sample_rate: 20_000_000.0,
+        channels: &[Channel::at(
+            2_437_000_000.0,
+            || ChannelParams::WifiOccupancy(WifiOccupancyParams::default()),
+            LOG_READ,
+        )],
     },
     Entry {
         id: "radio-clock",
@@ -451,31 +551,6 @@ static TEMPLATES: &[Entry] = &[
         ],
     },
     Entry {
-        id: "ism-433",
-        name: "ISM 433 MHz",
-        description: "Remotes, sensors and doorbells, plus a classifier for the rest.",
-        explainer: "433.05–434.79 MHz is licence-free for short-range devices, so it is full \
-                    of weather sensors, car remotes, tyre-pressure monitors and doorbells \
-                    sending a few bytes at a time. The sub-GHz decoder reports the raw pulse \
-                    train of on-off keyed bursts. Alongside it, the identifier watches the \
-                    same span and names the modulation of anything it sees, which is the \
-                    quickest way to tell an unknown burst apart from noise.",
-        center_hz: 433_920_000.0,
-        sample_rate: 1_024_000.0,
-        channels: &[
-            Channel::at(
-                433_920_000.0,
-                || ChannelParams::Subghz(SubghzParams::default()),
-                LOG,
-            ),
-            Channel::at(
-                433_920_000.0,
-                || ChannelParams::Ident(IdentParams::default()),
-                LOG_READ,
-            ),
-        ],
-    },
-    Entry {
         id: "dab-check",
         name: "DAB ensemble check",
         description: "Confirm a DAB block is on air and measure its lock.",
@@ -583,6 +658,65 @@ static TEMPLATES: &[Entry] = &[
             ),
         ],
     },
+    Entry {
+        id: "weather-sats",
+        name: "Weather satellites (137 MHz)",
+        description: "NOAA APT and Meteor LRPT pictures during a pass.",
+        explainer: "Polar weather satellites send pictures while they pass overhead. NOAA \
+                    APT is analog on 137.100 MHz, Meteor LRPT digital on 137.900 MHz. Retune \
+                    to the satellite in view and use the Satellite node for Doppler.",
+        center_hz: 137_500_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[
+            Channel::at(
+                137_100_000.0,
+                || ChannelParams::Apt(AptParams::default()),
+                WATCH,
+            ),
+            Channel::at(
+                137_900_000.0,
+                || ChannelParams::Lrpt(LrptParams::default()),
+                WATCH,
+            ),
+        ],
+    },
+    Entry {
+        id: "hf-wefax",
+        name: "Weather fax (HF)",
+        description: "DWD weather charts from Pinneberg on 7.880 MHz.",
+        explainer: "Radiofax sends weather charts line by line. Start and stop tones begin \
+                    and end a chart; the start tone picks the IOC for you. Channels sit on \
+                    the USB carrier, 1.9 kHz below the published frequency.",
+        center_hz: 7_880_000.0,
+        sample_rate: 250_000.0,
+        channels: &[
+            Channel::at(
+                7_878_100.0,
+                || ChannelParams::Wefax(WefaxParams::default()),
+                WATCH,
+            ),
+            Channel::at(
+                7_878_100.0,
+                || ChannelParams::Ssb(SsbParams::default()),
+                LISTEN,
+            ),
+        ],
+    },
+    Entry {
+        id: "radiosondes",
+        name: "Radiosondes (403 MHz)",
+        description: "Weather balloon position and readings, RS41, DFM, M10, M20, iMet.",
+        explainer: "Weather services launch radiosondes once or twice a day. Each sends its \
+                    position, temperature, humidity and pressure every second. Set the \
+                    channel to your nearest launch site's frequency.",
+        center_hz: 403_000_000.0,
+        sample_rate: 2_048_000.0,
+        channels: &[Channel::at(
+            403_000_000.0,
+            || ChannelParams::Radiosonde(RadiosondeParams::default()),
+            TRACK_READ,
+        )],
+    },
 ];
 
 #[must_use]
@@ -620,8 +754,10 @@ pub(crate) fn all() -> &'static [TemplateInfo] {
                     patch: Some(patch(entry.channels)),
                     direction: sdrmm_wire::Direction::Rx,
                     supported_devices: Vec::new(),
+                    min_lanes: 1,
                 }
             })
+            .chain(std::iter::once(array::df_drive()))
             .collect()
     });
     &BUILT
@@ -732,7 +868,7 @@ mod tests {
         }];
 
         for template in all() {
-            if template.min_freq_hz < 70_000_000.0 {
+            if template.min_freq_hz < 70_000_000.0 || template.min_lanes > 1 {
                 continue;
             }
             let rate = template

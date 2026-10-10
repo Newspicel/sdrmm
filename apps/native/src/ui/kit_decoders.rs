@@ -87,7 +87,25 @@ pub fn install() {
 }
 
 pub fn no_pan() -> Attrs {
-    zgui_flow::view::NodeCx::<(), ()>::no_pan()
+    Attrs::new()
+        .listener(
+            events::POINTER_DOWN,
+            ListenerOptions::DEFAULT,
+            |ev: &mut EventCx<'_, events::PointerDown>| {
+                if ev.button == Some(PointerButton::Primary) {
+                    ev.stop_propagation();
+                }
+            },
+        )
+        .listener(
+            events::WHEEL,
+            ListenerOptions::DEFAULT,
+            |ev: &mut EventCx<'_, events::Wheel>| {
+                if !(ev.modifiers.control() || ev.modifiers.meta()) {
+                    ev.stop_propagation();
+                }
+            },
+        )
 }
 
 pub fn fields_view(fields: Vec<(&'static str, String)>) -> impl IntoView {

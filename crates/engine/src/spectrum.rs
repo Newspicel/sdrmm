@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 use num_complex::Complex;
-use sdrmm_dsp::SpectrumAnalyzer as CpuSpectrumAnalyzer;
+use sdrmm_dsp::{SpectrumAnalyzer as CpuSpectrumAnalyzer, blackman_harris};
 
 #[cfg(any(feature = "gpu-fft", test))]
 const GPU_MIN_FFT_SIZE: usize = 65_536;
@@ -54,7 +54,7 @@ impl SpectrumPlan {
                 Ok(analyzer) => {
                     return SpectrumAnalyzer::Gpu {
                         analyzer: Box::new(analyzer),
-                        fallback: CpuSpectrumAnalyzer::new(self.size),
+                        fallback: cpu_analyzer(self.size),
                         failed: false,
                     };
                 }
@@ -64,7 +64,7 @@ impl SpectrumPlan {
             }
         }
 
-        SpectrumAnalyzer::Cpu(CpuSpectrumAnalyzer::new(self.size))
+        SpectrumAnalyzer::Cpu(cpu_analyzer(self.size))
     }
 }
 
@@ -124,6 +124,14 @@ impl SpectrumAnalyzer {
     }
 }
 
+pub(crate) fn display_window(size: usize) -> Vec<f32> {
+    blackman_harris(size)
+}
+
+pub(crate) fn cpu_analyzer(size: usize) -> CpuSpectrumAnalyzer {
+    CpuSpectrumAnalyzer::with_window(display_window(size))
+}
+
 #[cfg(any(feature = "gpu-fft", test))]
 fn should_use_gpu(size: usize, _lanes: usize) -> bool {
     size.is_power_of_two() && size >= GPU_MIN_FFT_SIZE
@@ -168,7 +176,7 @@ mod tests {
             })
             .collect();
         let mut expected = vec![0.0; size];
-        CpuSpectrumAnalyzer::new(size).power_db(&input, &mut expected);
+        cpu_analyzer(size).power_db(&input, &mut expected);
         let mut actual = vec![0.0; size];
         let mut analyzer = gpu::Analyzer::new(context, size).unwrap();
         let frame = SpectrumFrame {
@@ -194,7 +202,7 @@ mod tests {
         }
         let mut fallback = SpectrumAnalyzer::Gpu {
             analyzer: Box::new(analyzer),
-            fallback: CpuSpectrumAnalyzer::new(size),
+            fallback: cpu_analyzer(size),
             failed: true,
         };
         sdrmm_test_support::assert_no_alloc("spectrum CPU fallback", || {

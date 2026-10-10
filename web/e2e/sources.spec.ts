@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { addNode } from "./scenes";
+import { addNode } from "./canvas";
 
 test.describe("the source nodes", () => {
   test.describe.configure({ mode: "serial" });
@@ -25,7 +25,8 @@ test.describe("the source nodes", () => {
     const generator = page.locator('.react-flow__node[data-id^="signal_gen:"]').last();
     await expect(generator.locator("header")).not.toContainText("CTCSS");
 
-    await generator.getByRole("combobox", { name: "Signal", exact: true }).click();
+    await generator.getByRole("button", { name: "Signal", exact: true }).click();
+    await page.getByRole("combobox", { name: "Signal", exact: true }).click();
     const search = page.getByRole("combobox", { name: "Search signal" });
     await expect(search).toBeVisible();
     await search.fill("adsb");
@@ -35,10 +36,10 @@ test.describe("the source nodes", () => {
     await page.screenshot({ path: "/tmp/shot-signals.png" });
     await options.first().click();
 
-    await expect(generator.getByRole("combobox", { name: "Signal", exact: true })).toContainText(
+    await expect(generator.getByRole("button", { name: "Signal", exact: true })).toContainText(
       "ADS-B",
     );
-    await expect(generator.getByRole("combobox", { name: "sample rate" })).toContainText("2 MS/s");
+    await expect(generator.getByRole("button", { name: "Sample rate" })).toContainText("2 MS/s");
   });
 
   test("a recording node picks from the library and plays what it is given", async ({ page }) => {
@@ -49,7 +50,11 @@ test.describe("the source nodes", () => {
     await expect(recording.getByRole("searchbox", { name: "Search recordings" })).toBeVisible();
     await expect(recording.getByRole("button", { name: "Upload SigMF" })).toBeVisible();
 
-    const first = recording.locator("button").filter({ hasText: /MHz/ }).first();
+    const first = recording
+      .locator("button")
+      .filter({ hasText: /MHz/ })
+      .filter({ hasNotText: "array_" })
+      .first();
     await expect(first).toBeVisible();
     await first.click();
 

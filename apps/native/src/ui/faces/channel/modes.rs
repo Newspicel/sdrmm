@@ -3,7 +3,7 @@ use sdrmm_wire::channel::{
     DabMode, DabTransmissionMode, DatvCodeRate, DatvRollOff, DatvStandard, DectBand, DectSides,
     DmrSlots, DrmMode, DvbtBandwidth, DvbtStandard, IlsComponent, IridiumSpan, NfmScramblerMode,
     NfmToneMode, NxdnBandwidth, PocsagBaud, PskBaud, RadioClockStandard, RttyStopBits,
-    SelcallSystem, Sideband, SubghzModulation,
+    SelcallSystem, Sideband,
 };
 use zgui::prelude::*;
 
@@ -19,8 +19,8 @@ use super::{
         DRM_MODES, DRM_PLUS_BANDWIDTHS_HZ, DRM30_BANDWIDTHS_HZ, DVBT_BANDWIDTHS, DVBT_STANDARDS,
         ILS_COMPONENTS, INVERSION_DEFAULT_HZ, IRIDIUM_SPANS, NFM_SCRAMBLER_MODES, NFM_TONE_MODES,
         NXDN_WIDTHS, POCSAG_BAUDS, PSK_BAUDS, RADIO_CLOCK_STANDARDS, RTTY_BAUDS, RTTY_SHIFTS_HZ,
-        RTTY_STOP_BITS, SELCALL_SYSTEMS, SIDEBANDS, SUBGHZ_MODULATIONS, ctcss_options, dcs_options,
-        drm_bandwidth_for, sstv_modes, tone_key,
+        RTTY_STOP_BITS, SELCALL_SYSTEMS, SIDEBANDS, ctcss_options, dcs_options, drm_bandwidth_for,
+        sstv_modes, tone_key,
     },
 };
 use crate::ui::kit_channel::{NumberSpec, setting_row, text_field};
@@ -129,7 +129,6 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
             ctx.read(get!(Acars, p => p.bandwidth_hz), 12_500.0),
             set!(Acars, p, v => p.bandwidth_hz = v),
         )]),
-        "subghz" => subghz(ctx),
         "atv" => atv(ctx),
         "sstv" => sstv(ctx),
         "dab" => dab(ctx),
@@ -781,52 +780,6 @@ fn ils(ctx: Ctx) -> AnyView {
                 .unit("ms"),
             ctx.read(get!(Ils, p => Some(f64::from(p.report_ms))), Some(500.0)),
             set!(Ils, p, v => if let Some(v) = v { p.report_ms = v as u32 }),
-        ),
-    ])
-}
-
-fn subghz(ctx: Ctx) -> AnyView {
-    rows(vec![
-        segmented(
-            ctx,
-            "Modulation",
-            None,
-            SUBGHZ_MODULATIONS,
-            ctx.read(get!(Subghz, p => p.modulation), SubghzModulation::Ook),
-            set!(Subghz, p, v => p.modulation = v),
-        ),
-        bandwidth(
-            ctx,
-            "Bandwidth",
-            &[50_000.0, 100_000.0, 150_000.0],
-            ctx.read(get!(Subghz, p => p.bandwidth_hz), 150_000.0),
-            set!(Subghz, p, v => p.bandwidth_hz = v),
-        ),
-        number(
-            ctx,
-            "Min pulse",
-            Some("Shortest keying edge accepted"),
-            NumberSpec::new("Min pulse")
-                .limit(ctx.limit("min_pulse_us"))
-                .unit("µs"),
-            ctx.read(
-                get!(Subghz, p => Some(f64::from(p.min_pulse_us))),
-                Some(80.0),
-            ),
-            set!(Subghz, p, v => if let Some(v) = v { p.min_pulse_us = v as u32 }),
-        ),
-        number(
-            ctx,
-            "Frame gap",
-            Some("Silence that ends a frame"),
-            NumberSpec::new("Frame gap")
-                .limit(ctx.limit("frame_gap_us"))
-                .unit("µs"),
-            ctx.read(
-                get!(Subghz, p => Some(f64::from(p.frame_gap_us))),
-                Some(5_000.0),
-            ),
-            set!(Subghz, p, v => if let Some(v) = v { p.frame_gap_us = v as u32 }),
         ),
     ])
 }

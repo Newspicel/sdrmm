@@ -34,15 +34,13 @@ pub fn wired_sources_of(graph: &PatchGraph, node: &str) -> Vec<WiredSource> {
         .map(|id| match graph.node(id).map(|found| &found.body) {
             Some(NodeBody::Channel(channel)) => WiredSource {
                 channel_type: Some(channel.channel_type.clone()),
-                records_calls: channel.record_calls,
                 ..WiredSource::default()
             },
             Some(NodeBody::SpectrumMonitor(_)) => WiredSource {
                 monitor: true,
                 ..WiredSource::default()
             },
-            Some(NodeBody::DmrTrunk(trunk)) => WiredSource {
-                records_calls: trunk.record_calls,
+            Some(NodeBody::DmrTrunk(_)) => WiredSource {
                 trunk: true,
                 ..WiredSource::default()
             },
@@ -94,14 +92,13 @@ mod tests {
     fn a_filter_is_seen_through_to_the_decoders_behind_it() {
         let channel = NodeBody::Channel(ChannelNode {
             channel_type: "adsb".to_owned(),
-            record_calls: false,
             tuning_locked: false,
         });
         let graph = PatchGraph {
             nodes: vec![
                 node("adsb", channel),
                 node("filter", NodeBody::EventFilter(EventFilterNode::default())),
-                node("log", NodeBody::DecoderLog),
+                node("log", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![events("adsb", "filter"), events("filter", "log")],
         };

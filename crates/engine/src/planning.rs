@@ -1,8 +1,8 @@
 use sdrmm_channels::ChannelError;
 use sdrmm_device::{DeviceError, check_stream_settings};
 use sdrmm_wire::{
-    Capabilities, ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings, DcArtifact,
-    DeviceSettings, StreamSettings,
+    BandMiss, Capabilities, ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings,
+    DcArtifact, DeviceSettings, StreamSettings,
 };
 
 use crate::{DEFAULT_CENTER_HZ, EngineError, center_of, sample_rate_of};
@@ -68,8 +68,55 @@ pub(crate) fn tuner_reaches(capabilities: &Capabilities, hz: f64) -> bool {
             .any(|r| hz >= r.min && hz <= r.max)
 }
 
+pub(crate) fn band_miss(
+    capabilities: &Capabilities,
+    rate: f64,
+    follows_decoders: bool,
+    settings: &ChannelSettings,
+) -> BandMiss {
+    let (low, high) = sdrmm_channels::occupied_band(&settings.params);
+    let Some(span) = tuning_span(settings.frequency_hz, low, high, rate) else {
+        return BandMiss::TooWide {
+            needs_hz: high - low,
+            top_rate_hz: top_rate_hz(capabilities),
+        };
+    };
+    if !tuner_meets(capabilities, span) {
+        BandMiss::OffTuner
+    } else if follows_decoders {
+        BandMiss::Crowded
+    } else {
+        BandMiss::TunedAway
+    }
+}
+
+fn top_rate_hz(capabilities: &Capabilities) -> Option<f64> {
+    capabilities
+        .sample_rates
+        .iter()
+        .copied()
+        .chain(
+            capabilities
+                .sample_rate_ranges
+                .iter()
+                .map(|range| range.max),
+        )
+        .reduce(f64::max)
+}
+
+fn tuner_meets(capabilities: &Capabilities, (low, high): Span) -> bool {
+    capabilities.freq_ranges.is_empty()
+        || capabilities
+            .freq_ranges
+            .iter()
+            .any(|range| range.min <= high && low <= range.max)
+}
+
 /// Room left between the DC term at the centre and the edge of a channel it must not sit in.
 const LO_ARTIFACT_MARGIN_HZ: f64 = 2_000.0;
+
+/// A centre stepped aside from a decoder lands on this grid, so the dial reads a round number.
+const CENTRE_GRID_HZ: f64 = 1_000.0;
 
 fn channel_half_width_hz(params: &ChannelParams) -> f64 {
     descriptor_for(params).map_or(0.0, |d| d.bandwidth_hz / 2.0) + LO_ARTIFACT_MARGIN_HZ
@@ -243,8 +290,8 @@ fn candidate_centers(spans: &[Span], channels: &[ChannelInfo], current_hz: f64) 
             let frequency_hz = channel.settings.frequency_hz;
             candidates.extend(
                 [
-                    frequency_hz - clear_of,
-                    frequency_hz + clear_of,
+                    ((frequency_hz - clear_of) / CENTRE_GRID_HZ).floor() * CENTRE_GRID_HZ,
+                    ((frequency_hz + clear_of) / CENTRE_GRID_HZ).ceil() * CENTRE_GRID_HZ,
                     f64::midpoint(span.0, frequency_hz),
                     f64::midpoint(frequency_hz, span.1),
                 ]
@@ -332,7 +379,6 @@ pub(crate) fn plan_center(
     capabilities: &Capabilities,
     settings: &DeviceSettings,
     channels: &[ChannelInfo],
-    group: &[u32],
 ) -> Option<DeviceSettings> {
     let scope = capabilities.per_stream;
     if !scope.tuning {
@@ -346,21 +392,14 @@ pub(crate) fn plan_center(
             ..DeviceSettings::default()
         });
     }
-    let leader = group.iter().min().copied();
     let mut streams = Vec::new();
     for stream in 0..capabilities.rx_streams {
-        let grouped = group.contains(&stream);
-        if grouped && Some(stream) != leader || !settings.for_stream(stream, &scope).tunes_itself()
-        {
+        if !settings.for_stream(stream, &scope).tunes_itself() {
             continue;
         }
-        let lanes: &[u32] = if grouped { group } else { &[stream] };
         let heard: Vec<ChannelInfo> = channels
             .iter()
-            .filter(|channel| {
-                lanes.contains(&channel.stream)
-                    || grouped && channel.stream == capabilities.rx_streams
-            })
+            .filter(|channel| channel.stream == stream)
             .cloned()
             .collect();
         let current_hz = center_of(settings, stream, &scope);
@@ -368,16 +407,13 @@ pub(crate) fn plan_center(
         else {
             continue;
         };
-        streams.extend(
-            lanes
-                .iter()
-                .filter(|lane| center_of(settings, **lane, &scope) != center_hz)
-                .map(|lane| StreamSettings {
-                    stream: *lane,
-                    center_hz: Some(center_hz),
-                    ..StreamSettings::default()
-                }),
-        );
+        if center_hz != current_hz {
+            streams.push(StreamSettings {
+                stream,
+                center_hz: Some(center_hz),
+                ..StreamSettings::default()
+            });
+        }
     }
     (!streams.is_empty()).then(|| DeviceSettings {
         streams,

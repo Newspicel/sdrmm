@@ -1,10 +1,12 @@
 pub mod monitor;
 pub use monitor::{EventOrigin, SpectrumMonitorNode, Transmission, TransmissionState};
 pub mod about;
+pub mod airtime;
+pub mod array;
 pub mod audio;
 pub mod bandplan;
+pub mod ble;
 pub mod channel;
-pub mod coherent;
 pub mod cps;
 pub mod decode;
 pub mod device;
@@ -13,63 +15,86 @@ pub mod doctor;
 pub mod event_output;
 pub mod filter;
 pub mod frame;
+pub mod fusion;
+pub mod geo;
 mod pipeline;
 pub use pipeline::{PipelineQueue, PipelineStage, QueueHealth};
 pub mod hunt;
+pub mod labels;
+pub mod limits;
+pub mod lora;
+pub mod mission;
 pub mod network;
 pub mod patch;
+pub mod phone;
 pub mod position;
+pub mod presence;
+pub mod processor;
 pub mod propagation;
+pub mod radar;
+pub mod remote;
+pub mod remote_id;
 pub mod rest;
 pub mod satellite;
 pub mod scan;
 pub mod state;
+pub mod survey;
 pub mod timemachine;
 pub mod tools;
 pub mod units;
+pub mod weather;
 pub mod workspace;
 pub mod workspace_state;
 pub mod ws;
 
-pub use about::{AboutResponse, Attribution, ComponentSource, LicenseTextResponse};
+pub use about::{API_PROTOCOL, AboutResponse, Attribution, ComponentSource, LicenseTextResponse};
+pub use airtime::{
+    AIRTIME_REPORT_MS, AirtimeSpan, IsmKind, IsmKindLoad, IsmSurveyParams, IsmSurveyReport,
+    MAX_AIRTIME_MARGIN_DB, MIN_AIRTIME_MARGIN_DB, WifiBand, WifiChannelLoad, WifiOccupancyParams,
+    WifiOccupancyReport,
+};
+pub use array::{
+    ArrayCal, ArrayCalRecord, ArrayCalSource, ArrayElement, ArrayFailure, ArrayGain, ArrayGeometry,
+    ArrayLaneStatus, ArrayNode, ArrayOrientation, ArrayRecordingRequest, ArrayRecordingStarted,
+    ArrayRecordingStatus, ArrayStatus, ArrayTune, ArrayTuneRequest, ArrayTuningMode, CalPhase,
+    CalSourceKind, GeometryError, HeldLane, LaneKey, LaneSolution, ProcessorGate, ProcessorStatus,
+    SyncState, VirtualLane, Winding, WorkspaceArray,
+};
 pub use audio::{
     AudioAgcMode, AudioFilterSettings, AudioFxNode, AudioProcessing, AudioRoute,
-    ClickRemovalSettings, DenoiseMode, DenoiseSettings, MAX_AUDIO_FX_CHAIN, MAX_AUDIO_NOTCHES,
-    MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD, MAX_CLICK_THRESHOLD, MAX_NOTCH_WIDTH_HZ,
-    MIN_AUDIO_TONE_HZ, MIN_BLANKER_THRESHOLD, MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ,
-    NoiseBlankerSettings, NotchSettings,
+    ClickRemovalSettings, DENOISE_MODELS_PREFIX, DENOISE_MODELS_URL, DenoiseArtifact, DenoiseMode,
+    DenoiseModel, DenoiseModelState, DenoiseModelStatus, DenoiseModelsResponse, DenoiseSettings,
+    MAX_AUDIO_FX_CHAIN, MAX_AUDIO_NOTCHES, MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD,
+    MAX_CLICK_THRESHOLD, MAX_NOTCH_WIDTH_HZ, MIN_AUDIO_TONE_HZ, MIN_BLANKER_THRESHOLD,
+    MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, NoiseBlankerSettings, NotchSettings,
 };
 pub use bandplan::{
-    BandAllocation, BandBlock, BandLane, BandLayerInfo, BandLayerKind, BandPlan, BandProvision,
-    BandRegion, BandRegionMatch, BandRegionsResponse, BandService, ItuRegion, LocateQuery,
+    BandAllocation, BandBlock, BandChannel, BandLane, BandLayerInfo, BandLayerKind, BandPlan,
+    BandProvision, BandRegion, BandRegionMatch, BandRegionsResponse, BandService, ItuRegion,
+    LocateQuery,
+};
+pub use ble::{
+    BleAddress, BleAddressKind, BleAdi, BleAdvert, BleAuxPointer, BleBeacon, BleFlags, BleLink,
+    BleManufacturer, BleParams, BlePdu, BlePhy, BleService,
 };
 pub use channel::{
     AcarsParams, AdsbParams, AeroChannel, AisChannel, AisParams, AmParams, AprsMode, AprsParams,
-    AtvColor, AtvModulation, AtvParams, AtvStandard, ChannelDescriptor, ChannelInfo, ChannelParams,
-    ChannelSettings, CwSkimmerParams, DECT_CARRIER_SPACING_HZ, DEFAULT_FREQUENCY_HZ, DabMode,
-    DabParams, DabTransmissionMode, DatvCodeRate, DatvParams, DatvRollOff, DatvStandard,
-    DecoderFamily, DectBand, DectParams, DectSides, DmrParams, DmrSlots, DpmrParams, DrmMode,
-    DrmParams, DscParams, DstarParams, DvbtBandwidth, DvbtParams, DvbtStandard, ErmesParams,
-    FlexParams, FreeDvMode, FreeDvParams, GnssParams, HfdlParams, IdentParams, IlsComponent,
-    IlsParams, InmarsatAeroParams, InmarsatStdcParams, IridiumParams, IridiumSpan, M17Params,
-    MAX_DATV_SYMBOL_RATE, MAX_IDENT_BANDWIDTH_HZ, MAX_IDENT_INTERVAL_MS, MAX_IDENT_THRESHOLD_DB,
-    MAX_NAVAID_REPORT_MS, MAX_SQUELCH_AUTO_MARGIN_DB, MIN_DATV_SYMBOL_RATE, MIN_IDENT_BANDWIDTH_HZ,
-    MIN_IDENT_INTERVAL_MS, MIN_IDENT_THRESHOLD_DB, MIN_NAVAID_REPORT_MS,
-    MIN_SQUELCH_AUTO_MARGIN_DB, MorseParams, NavtexParams, NfmParams, NfmScramblerMode,
-    NfmToneMode, NxdnBandwidth, NxdnParams, P25Params, ParamLimit, PocsagBaud, PocsagParams,
-    PskBaud, PskParams, RadioClockParams, RadioClockStandard, RttyParams, RttyStopBits,
-    SelcallParams, SelcallSystem, Sideband, Squelch, SsbParams, SstvMode, SstvParams,
-    SubghzModulation, SubghzParams, Vdl2Params, VorParams, WfmParams, WsjtParams, WsprParams,
-    YsfParams, home_frequency_hz, param_limits,
-};
-pub use coherent::{
-    ArrayElement, ArrayGeometry, CalParams, CalSource, CalState, CfarParams, CoherentParams,
-    CombineMode, CombinerParams, DF_SPECTRUM_POINTS, DfAlgorithm, DfBearing, DfEstimate,
-    DfFusionState, DfGuidance, DfParams, DfReading, DfStation, EcaParams, GuidanceMode,
-    Illuminator, LaneCal, MAX_ARRAY_ELEMENTS, MAX_ARRAY_EXTENT_M, MAX_CPI_MS, MAX_DF_BANDWIDTH_HZ,
-    MAX_DF_REPORT_MS, MAX_RANGE_BINS, MAX_STATION_ID_LEN, MIN_ARRAY_ELEMENTS, MIN_CPI_MS,
-    MIN_DF_BANDWIDTH_HZ, MIN_DF_REPORT_MS, NavTarget, NavTargetKind, PassiveRadarParams,
-    RadarDetection, StitchMode, StitchParams,
+    AtvColor, AtvModulation, AtvParams, AtvStandard, BandMiss, ChannelDescriptor, ChannelInfo,
+    ChannelParams, ChannelSettings, CwSkimmerParams, DECT_CARRIER_SPACING_HZ, DEFAULT_FREQUENCY_HZ,
+    DabMode, DabParams, DabTransmissionMode, DatvCodeRate, DatvParams, DatvRollOff, DatvStandard,
+    DecoderFamily, DectBand, DectParams, DectSides, DectSpan, DmrParams, DmrSlots, DpmrParams,
+    DrmMode, DrmParams, DscParams, DstarParams, DvbtBandwidth, DvbtParams, DvbtStandard, EotParams,
+    ErmesParams, FlexParams, FreeDvMode, FreeDvParams, GnssParams, HfdlParams, IdentParams,
+    IlsComponent, IlsParams, InmarsatAeroParams, InmarsatStdcParams, IridiumParams, IridiumSpan,
+    M17Params, MAX_DATV_SYMBOL_RATE, MAX_IDENT_BANDWIDTH_HZ, MAX_IDENT_INTERVAL_MS,
+    MAX_IDENT_THRESHOLD_DB, MAX_NAVAID_REPORT_MS, MAX_SQUELCH_AUTO_MARGIN_DB, MAX_SUPERFRAME_CODE,
+    MIN_DATV_SYMBOL_RATE, MIN_IDENT_BANDWIDTH_HZ, MIN_IDENT_INTERVAL_MS, MIN_IDENT_THRESHOLD_DB,
+    MIN_NAVAID_REPORT_MS, MIN_SQUELCH_AUTO_MARGIN_DB, MorseParams, NavtexParams, NfmParams,
+    NfmScramblerMode, NfmToneMode, NxdnBandwidth, NxdnParams, P25Params, ParamLimit, PocsagBaud,
+    PocsagParams, PskBaud, PskParams, RETIRED_CHANNEL_TYPES, RadioClockParams, RadioClockStandard,
+    RttyParams, RttyStopBits, SelcallParams, SelcallSystem, Sideband, Squelch, SsbParams, SstvMode,
+    SstvModulation, SstvParams, Vdl2Params, VorParams, WfmParams, WsjtParams, WsprParams,
+    YsfParams, home_frequency_hz, param_limits, retired_channel_type,
 };
 pub use cps::{
     ALL_CALL_NUMBER, Admit, Bandwidth, CODEPLUG_VERSION, ChannelKind, ChannelMode, Codeplug,
@@ -87,59 +112,111 @@ pub use decode::{
     AcarsMessage, AdsbMessage, AisMessage, AprsPacket, BroadcastData, BroadcastService,
     BroadcastServiceKind, BroadcastStatus, BroadcastSystem, CwSkimmerSpot, DataLinkMessage,
     DecodedRecord, DecoderEvent, DectArc, DectCapability, DectCipherState, DectFrame, DectIdentity,
-    DectSecurity, DectSide, DectUpdate, DvChannelDefinition, DvFrame, DvFrameKind, DvMode,
-    DvSlotActivity, DvTrunkProtocol, ErmesMessage, FlexMessage, GnssFrame, IdentFeatures,
-    IdentReport, IdentSignal, IlsReading, Modulation, MorseText, NavtexMessage, PagerPayload,
-    PocsagMessage, PocsagPayload, ProtocolMatch, PskText, RadioClockFrame, RdsUpdate, RttyText,
-    ScramblerStatus, SelcallSequence, SstvPicture, SubghzEncoding, SubghzFrame, SubghzReading,
-    ToneSquelchStatus, Vendor, VorReading, WsjtMessage, WsprSpot,
+    DectSecurity, DectSide, DectUpdate, DectVoice, DvChannelDefinition, DvFrame, DvFrameKind,
+    DvMode, DvSlotActivity, DvTrunkProtocol, EotArming, EotBattery, EotMessage, EotReport,
+    EotStatus, ErmesMessage, FlexMessage, GnssFrame, HotCommand, HotRequest, IdentFeatures,
+    IdentReport, IdentSignal, IlsReading, Modulation, MorseText, NO_CHANNEL, NavtexMessage,
+    PagerPayload, PocsagMessage, PocsagPayload, ProtocolMatch, PskText, RadioClockFrame, RdsUpdate,
+    RttyText, ScramblerStatus, SelcallSequence, SstvPicture, SuperframeStatus, ToneSquelchStatus,
+    Vendor, VorReading, WsjtMessage, WsprSpot,
 };
 pub use device::{
-    ARRAY_DRIVER_ID, Agc, AgcGain, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType,
-    ArrayDefinition, BandwidthSetting, Capabilities, ChannelCapabilities, Coherence, DcArtifact,
-    DeviceInfo, DeviceProfile, DeviceSettings, Direction, DirectionalCapabilities, Duplex,
-    ExtraSetting, ExtraValue, GainKind, GainStage, GainUnit, GainValue, MAX_ARRAY_KEY_LEN,
-    MAX_ARRAY_MEMBERS, MAX_RECORDING_STEM_LEN, RECORDING_DRIVER_ID, Range, SIGGEN_DRIVER_ID,
-    StreamScope, StreamSettings, Tuning, any_range_holds, recording_stem_valid,
+    Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType,
+    BandwidthSetting, Capabilities, ChannelCapabilities, Coherence, DcArtifact, DeviceInfo,
+    DeviceProfile, DeviceSettings, Direction, DirectionalCapabilities, Duplex, ExtraSetting,
+    ExtraValue, GainKind, GainStage, GainUnit, GainValue, MAX_RECORDING_STEM_LEN, NoiseSource,
+    RECORDING_DRIVER_ID, Range, SIGGEN_DRIVER_ID, StreamScope, StreamSettings, Tuning,
+    any_range_holds, recording_stem_valid,
 };
 pub use diagnostics::{DiagnosticsReport, LogLevel, LogLine, MAX_LOG_LINES, MAX_LOG_MESSAGE_LEN};
 pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};
 pub use event_output::{
-    DEFAULT_POSTGRES_TABLE, EventOutputNode, EventOutputTarget, MAX_INFLUX_NAME_LEN,
-    MAX_MATRIX_ROOM_ID_LEN, MAX_MQTT_TOPIC_LEN, MAX_MQTT_USERNAME_LEN, MAX_OUTPUT_SECRET_LEN,
-    MAX_OUTPUT_URL_LEN, MAX_SQL_IDENTIFIER_LEN, WebhookFormat, valid_sql_identifier,
+    DEFAULT_POSTGRES_TABLE, EventOutputNode, EventOutputTarget, MAX_CSV_FILE_LEN,
+    MAX_INFLUX_NAME_LEN, MAX_MATRIX_ROOM_ID_LEN, MAX_MQTT_TOPIC_LEN, MAX_MQTT_USERNAME_LEN,
+    MAX_OUTPUT_SECRET_LEN, MAX_OUTPUT_URL_LEN, MAX_SQL_IDENTIFIER_LEN, WebhookFormat,
+    csv_file_name, valid_csv_file, valid_sql_identifier,
 };
 pub use filter::{
     EventFacet, EventFilterNode, EventKindFacets, FilterMode, MAX_FILTER_DURATION_MS,
     MAX_FILTER_IDS, MAX_FILTER_KINDS, MAX_FILTER_TEXT_LEN, event_facets, facets_of,
 };
 pub use frame::{
-    AudioFrame, FrameHeader, FrameKind, HEADER_LEN, IqFrame, PROTOCOL_VERSION, RangeDopplerFrame,
-    SpectrumFrame, SymbolFrame, SymbolPlane, VideoData, VideoFrame, typescript_frames,
+    AudioFrame, FrameError, FrameHeader, FrameKind, FusionGridFrame, FusionGridOwned, HEADER_LEN,
+    IqFrame, PROTOCOL_VERSION, RangeDopplerFrame, RangeDopplerOwned, SPECTRUM_SIGNAL_MARGIN_DB,
+    SpatialSpectrumFrame, SpatialSpectrumOwned, SpectrumFrame, SurfaceFrame, SymbolFrame,
+    SymbolPlane, VideoData, VideoFrame, VisibilityFrame, VisibilityOwned, peek_header,
+    typescript_frames,
 };
-pub use hunt::{HuntAction, HuntRequest, HuntSettings, HuntStatus};
+pub use fusion::{
+    BearingSource, DfBearing, DfEstimate, DfFusionState, DfOtherPeak, DfStation, FusionDecay,
+    NavMode, NavTarget, NavTargetKind, TriangulationParams,
+};
+pub use geo::LatLon;
+pub use hunt::{
+    HuntAction, HuntRequest, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState,
+};
+pub use lora::{
+    LoraBandwidth, LoraCodingRate, LoraFrame, LoraImplicitHeader, LoraIntegrity, LoraIq, LoraKey,
+    LoraParams, LoraPayload, LoraProtocol, LoraSpreadingFactor, LorawanFrame, LorawanMessageType,
+    MAX_LORA_KEY_NAME_LEN, MAX_LORA_KEY_TEXT_LEN, MAX_LORA_KEYS, MeshcoreContent, MeshcoreNodeType,
+    MeshcorePacket, MeshcorePayloadType, MeshcoreRoute, MeshtasticContent, MeshtasticEncryption,
+    MeshtasticMetric, MeshtasticNeighbor, MeshtasticPacket,
+};
+pub use mission::{
+    ChannelTarget, DfMission, HuntMission, Mission, MissionAction, MissionActionResponse,
+    MissionBody, MissionControl, MissionProblem, MissionWorkspace, MissionsResponse, PositionLink,
+    RadarMission, SurveyMission, SwitchWorkspaceRequest, TriangulationMission,
+};
 pub use network::{
     ChannelNetworkExportRequest, MAX_NETWORK_ADDRESS_LEN, NetworkExportAction, NetworkExportNode,
     NetworkExportRequest, NetworkExportSettings, NetworkExportStatus, NetworkSampleFormat,
     NetworkTransport,
 };
 pub use patch::{
-    ArrayNode, ChannelNode, CombinerNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
-    DEFAULT_SIGNAL_MAP_OFFSET_HZ, DF_BEAM_PORT, DV_DECODER_KIND, DeviceNode, DeviceRef, DfNode,
-    DmrChannelEntry, DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol,
-    MAX_DMR_CHANNEL_MAP, MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES, MAX_DMR_SEARCH_CANDIDATES,
-    MAX_DMR_SEARCH_RANGES, MAX_EDGES, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ,
-    MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS, MIN_DMR_SEARCH_STEP_HZ, NodeBody, NodeCategory,
-    NodeTypeInfo, PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode,
-    PortBacking, PortCondition, PortDirection, PortRef, PortRepeat, PortSpec, PortType, Position,
-    RACK_COLS, RACK_ROWS, RADAR_REFERENCE_PORT, RADAR_SURVEILLANCE_PORT, RackCell, RackLayout,
-    RackSlot, RecorderNode, RecordingNode, STITCH_WIDE_PORT, SignalGenNode, SignalMapNode, Size,
-    StitchNode, port_stream, siggen_key, stream_port,
+    ARRAY_LANE_PORT, ARRAY_PORT, AudioRecorderNode, BEAM_PORT, BeamformerNode, CONTROL_PORT,
+    ChannelNode, CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
+    DEFAULT_SIGNAL_MAP_OFFSET_HZ, DV_DECODER_KIND, DecoderLogNode, DeviceNode, DeviceRef, DfNode,
+    DmrChannelEntry, DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol, EVENTS_PORT,
+    HuntNode, MAX_DMR_CHANNEL_MAP, MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES,
+    MAX_DMR_SEARCH_CANDIDATES, MAX_DMR_SEARCH_RANGES, MAX_EDGES, MAX_NODES,
+    MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS, MIN_DMR_SEARCH_STEP_HZ,
+    NodeBody, NodeCategory, NodeTypeInfo, POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge,
+    PatchError, PatchGraph, PatchNode, PolarimeterNode, PortBacking, PortCondition, PortDirection,
+    PortRef, PortRepeat, PortSpec, PortType, Position, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT,
+    RADAR_TX_PORT, REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_SHARED_CLOCK,
+    REFUSAL_STEER, REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, RackCell, RackLayout, RackSlot,
+    RecorderNode, RecordingNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalGenNode,
+    SignalMapNode, Size, SpatialSpectrumNode, StitchNode, TriangulationNode, port_stream,
+    siggen_key, stream_port,
+};
+#[cfg(feature = "pin")]
+pub use phone::PinError;
+pub use phone::{
+    CreateOfferRequest, MdnsState, OfferState, PairRequest, PairResponse, PairUri, PairUriError,
+    PairingOffer, PairingOfferStatus, Phone, PhoneAccess, PhoneAccessStatus, PhoneEndpoint,
+    PhoneListenerState, PhonePlatform, PhoneSelf, PhoneToken, PhonesResponse, RenamePhoneRequest,
 };
 pub use position::{
-    DEFAULT_GPSD_ADDRESS, DEFAULT_NMEA_BAUD, DEFAULT_NMEA_UPDATE_INTERVAL_MS, GpsNode,
-    MAX_NMEA_BAUD, MAX_NMEA_UPDATE_INTERVAL_MS, MAX_POSITION_ENDPOINT_LEN, MIN_NMEA_BAUD,
-    MIN_NMEA_UPDATE_INTERVAL_MS, NmeaDeviceInfo, NmeaDevicesResponse, PositionFix, PositionSource,
+    Attitude, DEFAULT_GPSD_ADDRESS, DEFAULT_NMEA_BAUD, DEFAULT_NMEA_UPDATE_INTERVAL_MS, GpsNode,
+    HeadingSource, MAX_HEADING_ACCURACY_DEG, MAX_NMEA_BAUD, MAX_NMEA_UPDATE_INTERVAL_MS,
+    MAX_POSITION_ENDPOINT_LEN, MAX_YAW_RATE_DPS, MIN_NMEA_BAUD, MIN_NMEA_UPDATE_INTERVAL_MS,
+    NmeaDeviceInfo, NmeaDevicesResponse, PositionFix, PositionSource, normalize_heading,
+};
+pub use presence::{
+    AUTHOR_HEADER, DraggedNode, MAX_AUTHOR_LEN, MAX_PEER_NAME_LEN, MAX_POINTER_NODES,
+    POINTER_BURST, POINTER_RATE_HZ, Peer, Pointer, author_hue, peer_name, valid_author,
+};
+pub use processor::{
+    ProcessorParams, ProcessorReading,
+    beamformer::{
+        Adaptation, BeamMode, BeamformerParams, BeamformerReading, LaneWeight, NoiseModel,
+        SteerSource,
+    },
+    correlator::{Baseline, CorrelatorParams, CorrelatorReading},
+    df::{DfAlgorithm, DfParams, DfPeak, DfReading, SourceRule, UlaSide},
+    polarimeter::{Hand, PolarimeterParams, PolarimeterReading},
+    spatial::{SpatialMethod, SpatialPeak, SpatialReading, SpatialSpectrumParams},
+    stitch::{StitchBlend, StitchLane, StitchParams, StitchReading},
 };
 pub use propagation::{
     DEFAULT_PROPAGATION_HALF_LIFE_MIN, DEFAULT_REFLECTION_HEIGHT_KM, IONOSONDE_MAX_STATIONS,
@@ -147,19 +224,35 @@ pub use propagation::{
     MAX_PROPAGATION_HALF_LIFE_MIN, MAX_REFLECTION_HEIGHT_KM, MIN_PROPAGATION_HALF_LIFE_MIN,
     MIN_REFLECTION_HEIGHT_KM, PropagationNode,
 };
+pub use radar::{
+    AdsbMatch, AdsbTruth, AoaState, CfarKind, CfarParams, CfarWindow, ClutterMethod, ClutterParams,
+    DopplerWindow, GpuUse, Illuminator, PassiveRadarParams, RadarAoa, RadarAxes, RadarDetection,
+    RadarFix, RadarGeometry, RadarHealth, RadarProblem, RadarSite, RadarTrack, RadarTrackEvent,
+    RadarTrailPoint, RadarUpdate, ReferenceCleaning, ReferenceHealth, ReferenceMode,
+    SurveillanceSet, TrackChange, TrackState, TrackerParams,
+};
+pub use remote::{
+    DEFAULT_REMOTE_APP, MAX_HEALTH_LABEL_CHARS, MAX_HEALTH_RADIOS, RadioHealth, RemoteState,
+    RemoteStatus, SiteHealth,
+};
+pub use remote_id::{
+    AuthType, EuCategory, EuClassification, HeightReference, OperatorLocationType, RemoteIdFrame,
+    RemoteIdLink, RemoteIdLocation, RemoteIdMessage, RemoteIdParams, RemoteIdPhy, RemoteIdSystem,
+    RemoteIdTransport, UaStatus, UaType, UasIdType,
+};
 pub use rest::{
     AnnotationError, ApiError, ApplyTemplateRequest, AudioRecordingInfo, AudioRecordingsResponse,
     AuthInfo, Bookmark, CapturedImage, CapturedImagesResponse, ChannelTypesResponse,
     ClientsResponse, CreateBookmarkRequest, CreateChannelRequest, CreateDeviceSetRequest,
-    CreatePresetRequest, CreatedId, CreatedRowId, DecoderLogEntry, DecoderLogQuery,
-    DecoderLogResponse, DeletedCount, DevicesResponse, ErrorCode, EventAudio, EventImage,
-    ExportFormat, LogScope, MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN,
-    MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES, MAX_ROUTE_LEG_M,
-    Maneuver, ManeuverKind, OccupancyBucket, OccupancyReport, PRESET_SNAPSHOT_VERSION,
-    PlaybackAction, PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
-    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
-    Route, RoutePoint, RouteRequest, RoutingBackend, TemplateInfo, TemplatesResponse, VoiceCall,
-    VoiceCallsResponse,
+    CreatePresetRequest, CreatedId, CreatedRowId, DecoderLogEntry, DecoderLogGroup,
+    DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount, DevicesResponse,
+    ErrorCode, EventAudio, EventImage, ExportFormat, LogGroupKey, LogScope, MAX_LOG_SOURCES,
+    MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS,
+    MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket, OccupancyReport, PRESET_SNAPSHOT_VERSION,
+    PatchChannelRequest, PlaybackAction, PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot,
+    RecordingAnnotation, RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload,
+    RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo,
+    TemplatesResponse, VoiceCall, VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
 };
 pub use satellite::{
     CatalogSatellite, MAX_CATALOG_RESULTS, MAX_SATELLITE_HZ, MAX_SATELLITE_QUERY_LEN, MAX_TLE_LEN,
@@ -168,14 +261,15 @@ pub use satellite::{
     TRANSMITTER_SOURCE, TRANSMITTER_URL, Transmitter, TransmittersResponse,
 };
 pub use scan::{
-    DEFAULT_SCAN_RANGE, MAX_SCAN_TARGETS, ScanAction, ScanMode, ScanRange, ScanRequest,
-    ScanSettings, ScanState, ScannerNode, ScannerStatus,
+    MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanRequest,
+    ScanSettings, ScanState, ScannerStatus,
 };
 pub use state::{
-    AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, ExtraLane,
+    AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, LaneLevel,
     PlaybackStatus, RecordingStatus, SettingsRefused, StateSnapshot, TrunkChannel,
     TrunkChannelSource, TrunkControl, TrunkFollower, TrunkProbe, TrunkProblem, TrunkSystemStatus,
 };
+pub use survey::{SurveyAction, SurveyCell, SurveyGrid, SurveyRequest, SurveyStop, SurveyUpdate};
 pub use timemachine::{
     DEFAULT_TIME_MACHINE_SECONDS, MAX_TIME_MACHINE_BYTES, MAX_TIME_MACHINE_SECONDS,
     MIN_TIME_MACHINE_SECONDS, TimeMachineAction, TimeMachineNode, TimeMachineRequest,
@@ -195,16 +289,24 @@ pub use tools::{
     NanoVnaSweepState, ToolCategory, ToolDescriptor, ToolRequest, ToolResponse, ToolsResponse,
     YagiParams,
 };
+pub use weather::{
+    AprsWeather, AptImage, AptParams, AvhrrChannel, LrptImage, LrptMode, LrptParams,
+    RadiosondeFrame, RadiosondeParams, SondeType, WefaxIoc, WefaxLpm, WefaxParams, WefaxPicture,
+};
 pub use workspace::{
-    CreateWorkspaceRequest, MAX_NAME_LEN, MAX_REGION_ID_LEN, PatchApplyReport, PatchBinding,
-    PatchRefusal, PlacementCoverage, UpdateWorkspaceRequest, WORKSPACE_EXPORT_VERSION,
-    WORKSPACE_SNAPSHOT_VERSION, WorkspaceDetail, WorkspaceError, WorkspaceExport, WorkspaceHistory,
-    WorkspaceInfo, WorkspaceSettings, WorkspaceSnapshot, WorkspacesResponse,
+    CreateWorkspaceRequest, DroppedNode, MAX_NAME_LEN, MAX_REGION_ID_LEN, PatchApplyReport,
+    PatchBinding, PatchRefusal, PlacementCoverage, UpdateWorkspaceRequest,
+    WORKSPACE_EXPORT_VERSION, WORKSPACE_SNAPSHOT_VERSION, WorkspaceDetail, WorkspaceError,
+    WorkspaceExport, WorkspaceHistory, WorkspaceInfo, WorkspaceNotice, WorkspaceNoticeKind,
+    WorkspaceSettings, WorkspaceSnapshot, WorkspacesResponse,
 };
 pub use workspace_state::{
     WORKSPACE_STATE_VERSION, WorkspaceChannel, WorkspaceDevice, WorkspaceState, WorkspaceTrunk,
 };
-pub use ws::{ClientCommand, ServerEvent, StateScope, StreamKind};
+pub use ws::{
+    ClientCommand, ServerEvent, StateScope, StreamKind, SurfaceFit, SurfaceRefusal,
+    WS_BEARER_PROTOCOL_PREFIX, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
+};
 
 #[cfg(test)]
 mod contract_tests {
@@ -220,7 +322,11 @@ mod contract_tests {
         assert_eq!(json["data"]["scope"]["scope"], "device_set");
         assert_eq!(json["data"]["scope"]["id"], 3);
 
-        let hello = ServerEvent::Hello { revision: 9 };
+        let hello = ServerEvent::Hello {
+            revision: 9,
+            protocol: API_PROTOCOL,
+            phone: None,
+        };
         let json = serde_json::to_value(&hello).unwrap();
         assert_eq!(json["type"], "Hello");
         assert_eq!(json["data"]["revision"], 9);
@@ -356,6 +462,7 @@ mod contract_tests {
         assert!(info.tags.is_empty());
         assert_eq!(info.note, None);
         assert_eq!(info.name, None);
+        assert_eq!(info.lanes, 1);
     }
 
     #[test]
@@ -364,6 +471,7 @@ mod contract_tests {
             (StateScope::All, "all"),
             (StateScope::Presets, "presets"),
             (StateScope::Bookmarks, "bookmarks"),
+            (StateScope::SavedRadios, "saved_radios"),
             (StateScope::Recordings, "recordings"),
             (StateScope::DecoderLog, "decoder_log"),
             (StateScope::Workspaces, "workspaces"),
@@ -585,6 +693,7 @@ mod contract_tests {
             level_db: -42.0,
             peak_db: -30.0,
             squelch_db: None,
+            shift_hz: None,
         };
         let json = serde_json::to_value(open).unwrap();
         assert!(json.get("squelch_db").is_none());
@@ -599,6 +708,31 @@ mod contract_tests {
         let back: ChannelLevel =
             serde_json::from_str(r#"{"channel":1,"level_db":-42.0,"peak_db":-30.0}"#).unwrap();
         assert_eq!(back, open);
+    }
+
+    #[test]
+    fn a_channel_level_carries_a_shift_only_while_steered() {
+        let steered = ChannelLevel {
+            channel: 1,
+            level_db: -42.0,
+            peak_db: -30.0,
+            squelch_db: None,
+            shift_hz: Some(8_200.5),
+        };
+        assert_eq!(
+            serde_json::to_value(steered).unwrap()["shift_hz"],
+            serde_json::json!(8_200.5)
+        );
+        let still = ChannelLevel {
+            shift_hz: None,
+            ..steered
+        };
+        assert!(
+            serde_json::to_value(still)
+                .unwrap()
+                .get("shift_hz")
+                .is_none()
+        );
     }
 
     #[test]
@@ -637,6 +771,7 @@ mod contract_tests {
             .expect("old settings");
         assert_eq!(old.transmission_mode, DabTransmissionMode::I);
         for (mode, name) in [
+            (DabTransmissionMode::Auto, "auto"),
             (DabTransmissionMode::I, "i"),
             (DabTransmissionMode::Ii, "ii"),
             (DabTransmissionMode::Iii, "iii"),
@@ -657,11 +792,26 @@ mod contract_tests {
     }
 
     #[test]
+    fn broadcast_status_carries_the_detected_dab_mode() {
+        let status = BroadcastStatus {
+            transmission_mode: Some(DabTransmissionMode::Iii),
+            ..BroadcastStatus::default()
+        };
+        let json = serde_json::to_value(&status).expect("status");
+        assert_eq!(json["transmission_mode"], "iii");
+        let old: BroadcastStatus = serde_json::from_str(
+            r#"{"system":"dab","locked":true,"snr_db":9.0,"frequency_error_hz":-120.0}"#,
+        )
+        .expect("old status");
+        assert_eq!(old.transmission_mode, None);
+    }
+
+    #[test]
     fn decoder_params_default_from_empty_settings() {
         use channel::{
             AcarsParams, AdsbParams, AisParams, AprsParams, DabParams, DatvParams, DrmParams,
             GnssParams, MorseParams, NavtexParams, PocsagParams, PskBaud, PskParams,
-            RadioClockParams, RttyParams, SubghzParams, WsjtParams, WsprParams,
+            RadioClockParams, RttyParams, WsjtParams, WsprParams,
         };
         for (json, expected) in [
             (
@@ -695,10 +845,6 @@ mod contract_tests {
             (
                 r#"{"type":"acars","settings":{}}"#,
                 ChannelParams::Acars(AcarsParams::default()),
-            ),
-            (
-                r#"{"type":"subghz","settings":{}}"#,
-                ChannelParams::Subghz(SubghzParams::default()),
             ),
             (
                 r#"{"type":"ft8","settings":{}}"#,
@@ -818,13 +964,13 @@ mod contract_tests {
         assert!(back.can_transmit);
     }
 
-    fn sample_device_set() -> DeviceSet {
+    pub(crate) fn sample_device_set() -> DeviceSet {
         DeviceSet {
             id: 1,
             device: DeviceInfo {
                 driver: "virtual".to_owned(),
-                key: "siggen".to_owned(),
-                label: "Signal Generator".to_owned(),
+                key: "band".to_owned(),
+                label: "Test band".to_owned(),
                 serial: None,
                 profile: None,
             },
@@ -849,7 +995,9 @@ mod contract_tests {
                 dc_artifact: DcArtifact::Operator,
                 hardware_sweep: false,
                 coherence: Coherence::None,
-                noise_source: false,
+                noise_source: crate::device::NoiseSource::None,
+                retune_keeps_phase: false,
+                rx_inputs: Vec::new(),
             },
             settings: DeviceSettings::default(),
             status: DeviceSetStatus::Running,
@@ -865,8 +1013,10 @@ mod contract_tests {
             scanners: Vec::new(),
             hunts: Vec::new(),
             playback: None,
-            extra_lane: None,
             agc_gains: Vec::new(),
+            virtual_lanes: Vec::new(),
+            held: Vec::new(),
+            loss: None,
         }
     }
 
@@ -1127,7 +1277,7 @@ mod contract_tests {
             first_hz: 144_000_000.0,
             last_hz: 146_000_000.0,
             current_hz: 145_500_000.0,
-            current_db: Some(-31.5),
+            current_snr_db: Some(21.5),
             sweeps: 4,
             hits: 9,
             hardware_sweep: false,
@@ -1157,11 +1307,12 @@ mod contract_tests {
                 ..scan::ScanSettings::for_channel(3)
             }
         );
-        assert_eq!(settings.threshold_db, -55.0);
         assert_eq!(settings.dwell_ms, 250);
         assert_eq!(settings.resume_ms, 1_500);
+        assert_eq!(settings.hold_ms, 5_000);
         assert_eq!(settings.measure_bw_hz, None);
-        assert!(settings.skip.is_empty());
+        assert!(settings.lockouts.is_empty());
+        assert!(settings.priority.is_empty());
         assert!(
             serde_json::from_str::<scan::ScanSettings>(r#"{"frequencies":[162550000.0]}"#).is_err(),
             "a scan without a decoder to feed is refused"
@@ -1187,14 +1338,20 @@ mod contract_tests {
     }
 
     #[test]
+    fn an_older_skip_list_still_locks_frequencies_out() {
+        let settings: scan::ScanSettings =
+            serde_json::from_str(r#"{"channel":1,"skip":[145500000.0],"threshold_db":-55}"#)
+                .unwrap();
+        assert_eq!(settings.lockouts, vec![145_500_000.0]);
+        assert_eq!(serde_json::to_value(scan::ScanMode::All).unwrap(), "all");
+    }
+
+    #[test]
     fn hunt_update_event_shape() {
         let ev = ServerEvent::HuntUpdate {
             device_set: 2,
             status: Box::new(hunt::HuntStatus {
-                settings: hunt::HuntSettings {
-                    channel: 7,
-                    interval_ms: 50,
-                },
+                settings: hunt::HuntSettings::for_channel(7),
                 freq_hz: 433_920_000.0,
                 bw_hz: 12_500.0,
                 level_db: Some(-58.5),
@@ -1204,6 +1361,9 @@ mod contract_tests {
                 strength: 0.63,
                 closing: true,
                 readings: 17,
+                at_ms: 0,
+                pose_drops: 0,
+                sweep: None,
                 error: None,
             }),
         };
@@ -1255,7 +1415,7 @@ mod contract_tests {
                 first_hz: 446_000_000.0,
                 last_hz: 446_000_000.0,
                 current_hz: 446_000_000.0,
-                current_db: None,
+                current_snr_db: None,
                 sweeps: 0,
                 hits: 0,
                 hardware_sweep: false,

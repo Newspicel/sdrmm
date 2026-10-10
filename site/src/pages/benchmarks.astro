@@ -1,0 +1,46 @@
+---
+import { machine, measured, SECTIONS } from "../bench";
+import BenchGroup from "../components/BenchGroup.astro";
+import Page from "../layouts/Page.astro";
+
+const summary = "SDR-- measured against other SDR software and libraries on the same machine.";
+const sections = measured(SECTIONS);
+---
+
+<Page title="Benchmarks · SDR--" description={summary} summary={summary}>
+  <div class="wrap top">
+    <h1>Benchmarks</h1>
+    <p class="lede">Same machine, same input, release builds. Run them yourself.</p>
+  </div>
+
+  {
+    sections.map((section) => (
+      <section class="wrap" id={section.id}>
+        <header>
+          <h2>{section.title}</h2>
+          <p class="machine">{machine(section.suite)}</p>
+        </header>
+        <div class="groups">
+          {section.suite.groups.map((group) => (
+            <BenchGroup group={group} />
+          ))}
+        </div>
+        <p class="note">
+          <code>{section.command}</code>
+        </p>
+      </section>
+    ))
+  }
+</Page>
+
+<style>
+  .top { padding-top: clamp(56px, 9vw, 112px); }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; }
+  .machine { margin: 0; font: 13px var(--mono); color: var(--ink-faint); }
+  .groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+    gap: 16px;
+    margin-top: 24px;
+  }
+</style>

@@ -5,7 +5,7 @@ use sdrmm_wire::{
         AcarsMessage, AdsbMessage, AisMessage, AprsPacket, BroadcastData, BroadcastStatus,
         DataLinkMessage, DecoderEvent, DectFrame, DectSide, DvFrame, DvFrameKind, ErmesMessage,
         FlexMessage, GnssFrame, IdentReport, NavtexMessage, PocsagMessage, RadioClockFrame,
-        RdsUpdate, SubghzFrame, SubghzReading, VorReading, WsjtMessage, WsprSpot,
+        RdsUpdate, VorReading, WsjtMessage, WsprSpot,
     },
     rest::VoiceCall,
     units::hertz,
@@ -55,6 +55,16 @@ fn repaired(count: u32, unit: &str) -> Option<String> {
 pub fn event_detail(event: &DecoderEvent) -> EventDetail {
     match event {
         DecoderEvent::Transmission(t) => transmission(t),
+        DecoderEvent::Eot(_)
+        | DecoderEvent::Apt(_)
+        | DecoderEvent::Lrpt(_)
+        | DecoderEvent::Wefax(_)
+        | DecoderEvent::Radiosonde(_)
+        | DecoderEvent::Lora(_)
+        | DecoderEvent::RemoteId(_)
+        | DecoderEvent::Ble(_)
+        | DecoderEvent::WifiOccupancy(_)
+        | DecoderEvent::IsmSurvey(_) => detail([], some(event.summary())),
         DecoderEvent::Rds(r) => rds(r),
         DecoderEvent::Pocsag(p) => pocsag(p),
         DecoderEvent::Flex(p) => flex(p),
@@ -97,7 +107,6 @@ pub fn event_detail(event: &DecoderEvent) -> EventDetail {
         ),
         DecoderEvent::Navtex(n) => navtex(n),
         DecoderEvent::Acars(a) => acars(a),
-        DecoderEvent::Subghz(f) => subghz(f),
         DecoderEvent::Ident(r) => ident(r),
         DecoderEvent::Scrambler(s) => detail(
             [
@@ -121,7 +130,6 @@ pub fn event_detail(event: &DecoderEvent) -> EventDetail {
         DecoderEvent::Call(c) => call(c),
         DecoderEvent::Dv(f) => dv(f),
         DecoderEvent::BroadcastData(data) => broadcast_data(data),
-        DecoderEvent::Broadcast(status) => broadcast(status),
         DecoderEvent::RadioClock(r) => radio_clock(r),
         DecoderEvent::Gnss(g) => gnss(g),
         DecoderEvent::Sstv(p) => detail(
@@ -174,13 +182,22 @@ pub fn event_detail(event: &DecoderEvent) -> EventDetail {
         ),
         DecoderEvent::Radar(d) => detail(
             [
-                ("Range bin", some(d.range_bin.to_string())),
+                (
+                    "Track",
+                    some(format!("T{} {}", d.track_id, d.change.as_str())),
+                ),
                 ("Bistatic range", some(format!("{:.2} km", d.range_km))),
+                (
+                    "Range rate",
+                    some(format!("{} m/s", signed(f64::from(d.range_rate_mps), 0))),
+                ),
                 (
                     "Doppler",
                     some(format!("{} Hz", signed(f64::from(d.doppler_hz), 1))),
                 ),
                 ("SNR", some(format!("{:.1} dB", d.snr_db))),
+                ("Bearing", d.bearing_deg.map(|deg| format!("{deg:.0}°"))),
+                ("Aircraft", d.icao.clone()),
             ],
             None,
         ),
@@ -491,77 +508,6 @@ fn acars(a: &AcarsMessage) -> EventDetail {
     )
 }
 
-fn reading_rows(reading: Option<&SubghzReading>) -> Vec<Row> {
-    let unit = |value: Option<f64>, write: fn(f64) -> String| value.map(write);
-    let Some(r) = reading else {
-        return Vec::new();
-    };
-    vec![
-        ("Model", some(&r.model)),
-        ("Sensor id", some(bare_hex(u64::from(r.id), 2))),
-        ("Channel", r.channel.map(|channel| channel.to_string())),
-        (
-            "Temperature",
-            unit(r.temperature_c, |c| format!("{c:.1} °C")),
-        ),
-        (
-            "Humidity",
-            unit(r.humidity_pct, |pct| format!("{pct:.0} %")),
-        ),
-        (
-            "Soil moisture",
-            unit(r.moisture_pct, |pct| format!("{pct:.0} %")),
-        ),
-        (
-            "Tyre pressure",
-            unit(r.pressure_kpa, |kpa| format!("{kpa:.0} kPa")),
-        ),
-        (
-            "Wind average",
-            unit(r.wind_avg_kmh, |kmh| format!("{kmh:.1} km/h")),
-        ),
-        (
-            "Wind gust",
-            unit(r.wind_max_kmh, |kmh| format!("{kmh:.1} km/h")),
-        ),
-        (
-            "Wind direction",
-            unit(r.wind_dir_deg, |deg| format!("{deg:.0}°")),
-        ),
-        ("Rain", unit(r.rain_mm, |mm| format!("{mm:.1} mm"))),
-        ("Power", unit(r.power_w, |w| format!("{w:.0} W"))),
-        ("Energy", unit(r.energy_kwh, |kwh| format!("{kwh:.2} kWh"))),
-        ("Battery", flag(r.battery_ok)),
-    ]
-}
-
-fn subghz(f: &SubghzFrame) -> EventDetail {
-    let mut rows = reading_rows(f.reading.as_ref());
-    rows.extend([
-        ("Modulation", some(serde_name(&f.modulation))),
-        ("Encoding", some(serde_name(&f.encoding))),
-        (
-            "Payload",
-            (f.bits > 0).then(|| format!("{} ({} bit)", f.data, f.bits)),
-        ),
-        (
-            "EV1527 address",
-            f.address.map(|a| bare_hex(u64::from(a), 5)),
-        ),
-        ("EV1527 button", f.button.map(|b| format!("{b:X}"))),
-        ("PT2262 tri-state", f.tri_state.clone()),
-        (
-            "Base period",
-            (f.short_us > 0).then(|| format!("{} µs", f.short_us)),
-        ),
-        (
-            "Repeats",
-            (f.repeats > 1).then(|| format!("×{}", f.repeats)),
-        ),
-    ]);
-    detail(rows, timings(&f.timings_us))
-}
-
 #[must_use]
 pub fn timings(us: &[u32]) -> Option<String> {
     let pairs: Vec<String> = us
@@ -628,7 +574,7 @@ fn call(c: &VoiceCall) -> EventDetail {
     });
     detail(
         [
-            ("Mode", some(c.mode.label().to_uppercase())),
+            ("Mode", some(c.mode.to_uppercase())),
             ("Destination", destination),
             ("Source", c.source.map(|id| id.to_string())),
             ("Timeslot", c.slot.map(|slot| slot.to_string())),
@@ -747,7 +693,8 @@ fn count(value: u32) -> Option<String> {
     (value > 0).then(|| value.to_string())
 }
 
-fn broadcast(status: &BroadcastStatus) -> EventDetail {
+#[must_use]
+pub fn broadcast_detail(status: &BroadcastStatus) -> EventDetail {
     let locked = status.locked;
     detail(
         [

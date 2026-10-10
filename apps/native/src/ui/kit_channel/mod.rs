@@ -953,6 +953,7 @@ mod tests {
             level_db: -50.0,
             peak_db: -40.0,
             squelch_db: Some(-55.0),
+            shift_hz: None,
         };
         assert_eq!(gate_db(Some(&level), Some(-70.0)), Some(-55.0));
         assert_eq!(gate_db(None, Some(-70.0)), Some(-70.0));

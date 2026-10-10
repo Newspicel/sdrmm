@@ -1,6 +1,7 @@
 use std::f32::consts::TAU;
 
 use num_complex::Complex;
+use sdrmm_dsp::fast_arg;
 
 use super::symbol::{SYMBOL_BITS, symbol_at};
 
@@ -49,7 +50,7 @@ impl FskDemod {
     }
 
     fn track_carrier(&mut self, sample: Complex<f32>) {
-        let raw = (sample * self.prev_sample.conj()).arg();
+        let raw = fast_arg(sample * self.prev_sample.conj());
         self.prev_sample = sample;
         self.freq_offset += FREQ_ALPHA * (raw - self.freq_offset);
         self.center_phase = (self.center_phase + self.freq_offset).rem_euclid(TAU);
@@ -57,8 +58,8 @@ impl FskDemod {
     }
 
     fn correlate(&mut self, sample: Complex<f32>) -> (f32, f32) {
-        let mark = sample * Complex::from_polar(1.0, -(self.center_phase + self.shift_phase));
-        let space = sample * Complex::from_polar(1.0, -(self.center_phase - self.shift_phase));
+        let mark = sample * Complex::from_polar(1.0, -(self.center_phase - self.shift_phase));
+        let space = sample * Complex::from_polar(1.0, -(self.center_phase + self.shift_phase));
         self.mark_sum += widen(mark) - widen(self.mark[self.slot]);
         self.space_sum += widen(space) - widen(self.space[self.slot]);
         self.mark[self.slot] = mark;

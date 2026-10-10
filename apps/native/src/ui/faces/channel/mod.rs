@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use sdrmm_wire::{
     channel::{ChannelSettings, MAX_SQUELCH_AUTO_MARGIN_DB, MIN_SQUELCH_AUTO_MARGIN_DB, Squelch},
-    decode::{BroadcastStatus, DecoderEvent},
+    decode::BroadcastStatus,
     device::Capabilities,
     patch::NodeBody,
     state::DeviceSet,
@@ -26,8 +26,8 @@ use self::{
     controls::Ctx,
     settings::{
         DEFAULT_SQUELCH_DB, DEFAULT_SQUELCH_MARGIN_DB, RadioWindow, SQUELCH_MAX_DB, SQUELCH_MIN_DB,
-        SquelchMode, channel_has_audio, channel_width_hz, keeps_calls, radio_window_hz, reaches_hz,
-        squelch_at, squelch_mode,
+        SquelchMode, channel_has_audio, channel_width_hz, radio_window_hz, reaches_hz, squelch_at,
+        squelch_mode,
     },
     tables::SQUELCH_MODES,
 };
@@ -36,7 +36,7 @@ use crate::{
     ui::{
         kit_channel::{
             self, SWAP_ICON, blanker_control, button, format_hz, format_mhz, icon, level_meter,
-            setting_row, slider_field, tip, toggle_row, tune_to, tuning_lock,
+            setting_row, slider_field, tip, tune_to, tuning_lock,
         },
         widgets::{dial, segments},
     },
@@ -135,7 +135,7 @@ pub fn in_tuning_range(hz: f64, range: (f64, f64)) -> Option<f64> {
 
 #[must_use]
 pub fn lane_center_hz(set: &DeviceSet, stream: u32) -> Option<f64> {
-    if let Some(lane) = set.extra_lane.filter(|lane| lane.stream == stream) {
+    if let Some(lane) = set.virtual_lanes.iter().find(|lane| lane.stream == stream) {
         return Some(lane.center_hz);
     }
     let own = set
@@ -150,7 +150,7 @@ pub fn lane_center_hz(set: &DeviceSet, stream: u32) -> Option<f64> {
 
 #[must_use]
 pub fn lane_rate_hz(set: &DeviceSet, stream: u32) -> Option<f64> {
-    match set.extra_lane.filter(|lane| lane.stream == stream) {
+    match set.virtual_lanes.iter().find(|lane| lane.stream == stream) {
         Some(lane) => Some(lane.sample_rate),
         None => set.settings.sample_rate,
     }
@@ -213,8 +213,10 @@ fn view_of(store: Store, node: &str, tracked: Option<String>) -> View {
     let frequency = settings.as_ref().map(|settings| settings.frequency_hz);
     let unreachable = set.is_some()
         && frequency.is_some_and(|hz| {
-            live.as_ref()
-                .map_or_else(|| !reaches_hz(hz, window), |live| live.channel.out_of_band)
+            live.as_ref().map_or_else(
+                || !reaches_hz(hz, window),
+                |live| live.channel.out_of_band.is_some(),
+            )
         });
     let scanned = live.as_ref().is_some_and(|live| {
         set.as_ref().is_some_and(|set| {
@@ -288,29 +290,10 @@ fn watch_broadcast(
     store: Store,
     live: Signal<Option<(u32, u32)>>,
 ) -> Signal<Option<BroadcastStatus>> {
-    let heard = RwSignal::new(None::<BroadcastStatus>);
-    let latest = move |held: &crate::decoded::Decoded, at: (u32, u32)| {
-        held.all_frames()
-            .filter_map(|record| match &record.event {
-                DecoderEvent::Broadcast(status) if (record.device_set, record.channel) == at => {
-                    Some(status.clone())
-                }
-                _ => None,
-            })
-            .last()
-    };
-    if let Some(at) = live.get_untracked() {
-        heard.set(latest(&store.decoded.get_untracked(), at));
-    }
-    store.on_event(move |event| {
-        if let ServerEvent::Decoded(record) = event
-            && let DecoderEvent::Broadcast(status) = &record.event
-            && live.get_untracked() == Some((record.device_set, record.channel))
-        {
-            heard.set(Some(status.clone()));
-        }
-    });
-    heard.into()
+    Signal::derive(move || {
+        let at = live.get()?;
+        store.broadcasts.with(|held| held.get(&at).cloned())
+    })
 }
 
 pub fn face(store: Store, node: String) -> impl IntoView {
@@ -506,7 +489,6 @@ fn controls(
         broadcast,
     };
     let squelch = audio.then(|| squelch_row(store, node.clone(), shown));
-    let calls = keeps_calls(descriptor.as_ref()).then(|| record_calls(store, node.clone()));
     let blanker = audio.then(|| {
         let node = node.clone();
         blanker_control(
@@ -524,31 +506,9 @@ fn controls(
         column(class = "ch-body kc-grid") {
             {squelch}
             {modes::mode_view(ctx, &kind)}
-            {calls}
             {blanker}
         }
     })
-}
-
-fn record_calls(store: Store, node: String) -> AnyView {
-    let on = {
-        let node = node.clone();
-        Signal::derive(
-            move || matches!(store.graph.get().node(&node).map(|found| &found.body), Some(NodeBody::Channel(channel)) if channel.record_calls),
-        )
-    };
-    toggle_row(
-        "Record calls",
-        Some("Save each call the decoder hears as its own audio file"),
-        on,
-        move |record: bool| {
-            store.edit_node(&node, move |body| {
-                if let NodeBody::Channel(channel) = body {
-                    channel.record_calls = record;
-                }
-            });
-        },
-    )
 }
 
 fn squelch_row(store: Store, node: String, shown: Memo<View>) -> AnyView {

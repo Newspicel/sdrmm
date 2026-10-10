@@ -1,0 +1,501 @@
+{
+  "machine": {
+    "cpu": "Apple M4 Max",
+    "os": "macOS 27.0.1",
+    "date": "2026-10-06"
+  },
+  "groups": [
+    {
+      "id": "adsb-speed",
+      "title": "ADS-B speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 68.50558491781044
+        },
+        {
+          "tool": "dump1090-fa",
+          "version": "11.1",
+          "value": 74.48290244974268
+        },
+        {
+          "tool": "readsb",
+          "version": "3.16.17",
+          "value": 77.46713456815942
+        }
+      ]
+    },
+    {
+      "id": "adsb-noise",
+      "title": "ADS-B in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 20 to -5 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 67.7579365079365
+        },
+        {
+          "tool": "dump1090-fa",
+          "version": "11.1",
+          "value": 50.0
+        },
+        {
+          "tool": "readsb",
+          "version": "3.16.17",
+          "value": 56.25
+        }
+      ]
+    },
+    {
+      "id": "ais-speed",
+      "title": "AIS speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 182.3812439479947
+        },
+        {
+          "tool": "AIS-catcher",
+          "version": "0.70",
+          "value": 154.46354429380744
+        }
+      ]
+    },
+    {
+      "id": "ais-noise",
+      "title": "AIS in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR -2 to -12 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 54.166666666666664
+        },
+        {
+          "tool": "AIS-catcher",
+          "version": "0.70",
+          "value": 52.083333333333336
+        }
+      ]
+    },
+    {
+      "id": "aprs-speed",
+      "title": "APRS speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "Others start from FM audio, SDR-- from IQ.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 830.8817770258635
+        },
+        {
+          "tool": "Dire Wolf",
+          "version": "1.8.1",
+          "value": 34.20759698741488
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 6917.506712696023
+        }
+      ]
+    },
+    {
+      "id": "aprs-noise",
+      "title": "APRS in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 5 to -10 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 81.25
+        },
+        {
+          "tool": "Dire Wolf",
+          "version": "1.8.1",
+          "value": 81.25
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 64.58333333333333
+        }
+      ]
+    },
+    {
+      "id": "pocsag-speed",
+      "title": "POCSAG speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "Others start from FM audio, SDR-- from IQ.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 972.0894847048572
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 19142.3179160001
+        }
+      ]
+    },
+    {
+      "id": "pocsag-noise",
+      "title": "POCSAG in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 5 to -20 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 72.91666666666667
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 50.0
+        }
+      ]
+    },
+    {
+      "id": "flex-speed",
+      "title": "FLEX speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "Others start from FM audio, SDR-- from IQ.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 786.0639257681324
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 5022.048032765982
+        }
+      ]
+    },
+    {
+      "id": "flex-noise",
+      "title": "FLEX in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 45 to 20 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 91.66666666666667
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 56.25
+        }
+      ]
+    },
+    {
+      "id": "selcall-speed",
+      "title": "Selcall speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "Others start from FM audio, SDR-- from IQ.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 468.42576154318095
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 3494.752047342363
+        }
+      ]
+    },
+    {
+      "id": "selcall-noise",
+      "title": "Selcall in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 5 to -10 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 70.83333333333333
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 33.333333333333336
+        }
+      ]
+    },
+    {
+      "id": "acars-decodes",
+      "title": "ACARS decodes",
+      "unit": "msgs",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 2.0
+        },
+        {
+          "tool": "acarsdec",
+          "version": "3.7",
+          "value": 2.0
+        }
+      ]
+    },
+    {
+      "id": "acars-speed",
+      "title": "ACARS speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "acarsdec starts from AM audio, SDR-- from IQ.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 2350.0070254320185
+        },
+        {
+          "tool": "acarsdec",
+          "version": "3.7",
+          "value": 4333.338131359809
+        }
+      ]
+    },
+    {
+      "id": "acars-noise",
+      "title": "ACARS in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 30 to 5 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 51.041666666666664
+        },
+        {
+          "tool": "acarsdec",
+          "version": "3.7",
+          "value": 40.625
+        }
+      ]
+    },
+    {
+      "id": "ft8-decodes",
+      "title": "FT8 decodes",
+      "unit": "msgs",
+      "better": "higher",
+      "note": "Two SDR-- decodes are unconfirmed.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 21.0
+        },
+        {
+          "tool": "ft8_lib",
+          "version": "9fec6ca",
+          "value": 17.0
+        }
+      ]
+    },
+    {
+      "id": "ft8-speed",
+      "title": "FT8 speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "SDR-- re-decodes overlapping windows.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 45.538446592510034
+        },
+        {
+          "tool": "ft8_lib",
+          "version": "9fec6ca",
+          "value": 1151.2779184892524
+        }
+      ]
+    },
+    {
+      "id": "ft8-noise",
+      "title": "FT8 in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 20 to -5 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 55.8531746031746
+        },
+        {
+          "tool": "ft8_lib",
+          "version": "9fec6ca",
+          "value": 55.759803921568626
+        }
+      ]
+    },
+    {
+      "id": "dmr-decodes",
+      "title": "DMR decodes",
+      "unit": "msgs",
+      "better": "higher",
+      "note": "Counts frames carrying the call's addresses.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 5.0
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 6.0
+        }
+      ]
+    },
+    {
+      "id": "dmr-speed",
+      "title": "DMR speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "Others start from FM audio, SDR-- from IQ.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 368.7324520707938
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 33.472839962633095
+        }
+      ]
+    },
+    {
+      "id": "dmr-noise",
+      "title": "DMR in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 20 to 0 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 80.83333333333333
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 60.06944444444444
+        }
+      ]
+    },
+    {
+      "id": "nxdn-speed",
+      "title": "NXDN speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "Others start from FM audio, SDR-- from IQ.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 424.1175322955578
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 42.04270267955447
+        }
+      ]
+    },
+    {
+      "id": "nxdn-noise",
+      "title": "NXDN in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 15 to -10 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 66.66666666666667
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 22.916666666666668
+        }
+      ]
+    },
+    {
+      "id": "ysf-speed",
+      "title": "YSF speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "Others start from FM audio, SDR-- from IQ.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 383.9818666197497
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 53.075089236861764
+        }
+      ]
+    },
+    {
+      "id": "ysf-noise",
+      "title": "YSF in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 25 to 0 dB.",
+      "results": [
+        {
+          "tool": "SDR--",
+          "version": "2.1.0-8-gee242c51-dirty",
+          "value": 83.33333333333333
+        },
+        {
+          "tool": "dsd-fme",
+          "version": "4fe32db",
+          "value": 68.75
+        }
+      ]
+    }
+  ]
+}

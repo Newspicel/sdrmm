@@ -9,7 +9,7 @@ use zgui::{prelude::*, reactive::RenderEffect};
 
 use crate::{
     decoders::output::{
-        BeastState, SERVICES, Service, beast_line, empty_hint, new_target, service_of,
+        BeastState, Service, beast_line, empty_hint, new_target, service_of, services_offered,
     },
     store::Store,
     ui::{
@@ -55,11 +55,11 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             });
         })
     };
-    let options: Vec<(Service, String)> = SERVICES
-        .iter()
-        .map(|(service, label)| (*service, (*label).to_owned()))
-        .collect();
     let chosen = Signal::derive(move || target.get().as_ref().map(service_of));
+    let options: Vec<(Service, String)> = services_offered(false, chosen.get_untracked())
+        .into_iter()
+        .map(|(service, label)| (service, label.to_owned()))
+        .collect();
     let pick_service = {
         let commit = commit.clone();
         move |service: Service| {
@@ -326,6 +326,9 @@ where
             text_field("Org", org.clone(), edit(slot!(Influx, org))),
             secret_field("Token", token.clone(), edit(slot!(Influx, token))),
         ],
+        EventOutputTarget::Csv { file } => {
+            vec![text_field("File", file.clone(), edit(slot!(Csv, file)))]
+        }
         _ => Vec::new(),
     }
 }

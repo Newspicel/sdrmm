@@ -8,10 +8,14 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
+  useState,
 } from "react";
 import { Button } from "../../components/BaseControls";
 import { ICON_BTN_SM } from "../../components/controls";
+import { FaceAlert } from "../../components/FaceAlert";
 import { Icon } from "../../components/Icon";
 import { PortalContainerProvider } from "../../components/PortalContainer";
 import { toastError } from "../../lib/toasts";
@@ -28,12 +32,12 @@ import {
   pin,
   portLabel,
   portsOf,
-  pruneRack,
-  removeNode,
   unpin,
 } from "../graph";
-import { closeEngineObjects } from "../remove";
+import { closeEngineObjects, dropNodes } from "../remove";
 import { movesCanvas, wheelStaysOnFace } from "../wheel";
+import { NodeName } from "./NodeName";
+import { offsetWithin } from "./portAnchor";
 
 const Surface = createContext<"canvas" | "rack">("rack");
 
@@ -64,18 +68,62 @@ export function useFaceWheel(claim: WheelClaim): void {
   }, [hold, claim]);
 }
 
+type Anchors = Readonly<Record<string, number>>;
+
+interface AnchorSlot {
+  container: RefObject<HTMLDivElement | null>;
+  place: (port: string, top: number | null) => void;
+}
+
+const PortAnchors = createContext<AnchorSlot | null>(null);
+
+function placed(anchors: Anchors, port: string, top: number | null): Anchors {
+  if (top === null) {
+    const { [port]: _dropped, ...rest } = anchors;
+    return port in anchors ? rest : anchors;
+  }
+  return anchors[port] === top ? anchors : { ...anchors, [port]: top };
+}
+
+export function PortAnchor({ port }: { port: string }) {
+  const slot = useContext(PortAnchors);
+  const mark = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const host = slot?.container.current ?? null;
+    const element = mark.current;
+    if (slot === null || host === null || element === null) {
+      return;
+    }
+    const measure = () => slot.place(port, offsetWithin(element, host));
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      return () => slot.place(port, null);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(host);
+    if (element.parentElement !== null) {
+      observer.observe(element.parentElement);
+    }
+    return () => {
+      observer.disconnect();
+      slot.place(port, null);
+    };
+  }, [slot, port]);
+  return <span ref={mark} aria-hidden className="w-0 shrink-0 self-stretch" />;
+}
+
 const CATEGORY_STRIP: Record<NodeCategory, string> = {
-  source: "bg-cat-source",
-  channel: "bg-cat-channel",
-  tool: "bg-cat-tool",
-  output: "bg-cat-output",
+  source: "bg-cat-source shadow-[0_0_8px_var(--color-cat-source)]",
+  channel: "bg-cat-channel shadow-[0_0_8px_var(--color-cat-channel)]",
+  tool: "bg-cat-tool shadow-[0_0_8px_var(--color-cat-tool)]",
+  output: "bg-cat-output shadow-[0_0_8px_var(--color-cat-output)]",
 };
 
 const CATEGORY_BAR: Record<NodeCategory, string> = {
-  source: "bg-cat-source/14",
-  channel: "bg-cat-channel/14",
-  tool: "bg-cat-tool/14",
-  output: "bg-cat-output/14",
+  source: "bg-cat-source/17 shadow-[inset_0_2px_0_var(--color-cat-source)]",
+  channel: "bg-cat-channel/17 shadow-[inset_0_2px_0_var(--color-cat-channel)]",
+  tool: "bg-cat-tool/17 shadow-[inset_0_2px_0_var(--color-cat-tool)]",
+  output: "bg-cat-output/17 shadow-[inset_0_2px_0_var(--color-cat-output)]",
 };
 
 const PORT_COLOR: Record<PortType, string> = {
@@ -87,6 +135,7 @@ const PORT_COLOR: Record<PortType, string> = {
   control: "text-port-control",
   position: "text-accent",
   tx: "text-port-tx",
+  array: "text-port-array",
 };
 
 function PortGlyph({ type }: { type: PortType }) {
@@ -97,7 +146,12 @@ function PortGlyph({ type }: { type: PortType }) {
   };
   return (
     <svg aria-hidden viewBox="0 0 12 12" className="pointer-events-none size-3 overflow-visible">
-      {type === "iq" || type === "position" || type === "tx" ? (
+      {type === "array" ? (
+        <>
+          <circle cx="6" cy="6" r="4.5" {...common} />
+          <circle cx="6" cy="6" r="2.2" fill="none" stroke="var(--color-panel)" strokeWidth={1} />
+        </>
+      ) : type === "iq" || type === "position" || type === "tx" ? (
         <circle cx="6" cy="6" r="4.5" {...common} />
       ) : type === "baseband" ? (
         <path d="M10.5 6 A4.5 4.5 0 0 1 1.5 6 Z" {...common} />
@@ -149,14 +203,20 @@ export function NodeShell({
     wheelClaim.current = claim;
   }, []);
   const full = workspace.expanded === node.id;
+  const [anchors, setAnchors] = useState<Anchors>({});
+  const place = useCallback(
+    (port: string, top: number | null) => setAnchors((current) => placed(current, port, top)),
+    [],
+  );
+  const anchorSlot = useMemo<AnchorSlot>(() => ({ container: portalContainer, place }), [place]);
   useWheelRouting(portalContainer, wheelClaim);
-  useHandleRefresh(node.id, ports, surface === "canvas");
+  useHandleRefresh(node.id, ports, anchors, surface === "canvas");
 
   return (
     <div
       ref={portalContainer}
       style={surface === "canvas" ? canvasSize(node.kind, minimum.h, width) : undefined}
-      className={`relative flex h-full min-h-0 flex-col ${surface === "canvas" && width === undefined && fitWidth(node.kind) !== null ? "w-max" : "w-full"} rounded-[4px] border bg-panel shadow-face ${
+      className={`relative flex h-full min-h-0 flex-col ${surface === "canvas" && width === undefined && fitWidth(node.kind) !== null ? "w-max" : "w-full"} rounded-[4px] border bg-linear-to-b from-panel-3 to-panel shadow-node ${
         selected ? "border-accent" : "border-line"
       }`}
     >
@@ -177,11 +237,9 @@ export function NodeShell({
         >
           <span
             aria-hidden
-            className={`size-1.5 shrink-0 rounded-full ${CATEGORY_STRIP[category]}`}
+            className={`size-[7px] shrink-0 rounded-full ${CATEGORY_STRIP[category]}`}
           />
-          <span className="truncate font-mono text-[11px] font-medium text-ink">
-            {node.label ?? title}
-          </span>
+          <NodeName node={node} title={title} />
           {badge !== undefined && (
             <span className="shrink-0 font-mono text-[10.5px] text-ink-faint">{badge}</span>
           )}
@@ -233,12 +291,16 @@ export function NodeShell({
           </span>
         </header>
 
+        <FaceAlert node={node.id} />
+
         <div
           className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-[3px] nodrag nopan"
           onPointerDownCapture={surface === "canvas" ? () => workspace.select(node.id) : undefined}
         >
           <Active value={active}>
-            <WheelClaimSlot value={holdWheel}>{children}</WheelClaimSlot>
+            <WheelClaimSlot value={holdWheel}>
+              <PortAnchors value={anchorSlot}>{children}</PortAnchors>
+            </WheelClaimSlot>
           </Active>
         </div>
 
@@ -247,7 +309,8 @@ export function NodeShell({
             key={`${port.direction}:${port.name}`}
             port={port}
             label={portLabel(port.name, ports)}
-            offset={PORT_TOP_PX + PORT_STEP_PX * indexOnSide(ports, index)}
+            offset={anchors[port.name] ?? PORT_TOP_PX + PORT_STEP_PX * indexOnSide(ports, index)}
+            anchored={port.name in anchors}
           />
         ))}
       </PortalContainerProvider>
@@ -272,7 +335,6 @@ function useWheelRouting(
     if (host === null) {
       return;
     }
-    // Native and bubbling, so it runs before React Flow's pane listener and can withhold the event.
     const onWheel = (event: WheelEvent) => {
       if (movesCanvas(event)) {
         return;
@@ -291,25 +353,29 @@ function useWheelRouting(
   }, [face, claim]);
 }
 
-function useHandleRefresh(id: string, ports: readonly PortSpec[], onCanvas: boolean): void {
+function useHandleRefresh(
+  id: string,
+  ports: readonly PortSpec[],
+  anchors: Anchors,
+  onCanvas: boolean,
+): void {
   const updateNodeInternals = useUpdateNodeInternals();
   const handles = handleSignature(ports);
+  const placement = Object.entries(anchors)
+    .map(([port, top]) => `${port}@${Math.round(top)}`)
+    .join(",");
   useEffect(() => {
-    if (onCanvas && handles !== "") {
+    if (onCanvas && (handles !== "" || placement !== "")) {
       updateNodeInternals(id);
     }
-  }, [id, handles, onCanvas, updateNodeInternals]);
+  }, [id, handles, placement, onCanvas, updateNodeInternals]);
 }
 
 function useRemoveNode(node: PatchNode): () => void {
   const workspace = useWorkspaceContext();
   const drop = useMutation({
     mutationFn: () => closeEngineObjects(workspace, [node.id]),
-    onSuccess: () =>
-      workspace.edit((snapshot) => {
-        const graph = removeNode(snapshot.graph, node.id);
-        return { ...snapshot, graph, rack: pruneRack(snapshot.rack ?? {}, graph) };
-      }),
+    onSuccess: () => dropNodes(workspace, [node.id]),
     onError: (error: Error) => toastError(error),
   });
 
@@ -321,7 +387,17 @@ function indexOnSide(ports: readonly PortSpec[], index: number): number {
   return ports.slice(0, index).filter((port) => port.direction === side).length;
 }
 
-function PortHandle({ port, label, offset }: { port: PortSpec; label: string; offset: number }) {
+function PortHandle({
+  port,
+  label,
+  offset,
+  anchored,
+}: {
+  port: PortSpec;
+  label: string;
+  offset: number;
+  anchored: boolean;
+}) {
   const out = port.direction === "out";
   const description = port.note == null ? `${label} (${port.port_type})` : `${label}: ${port.note}`;
   return (
@@ -337,15 +413,17 @@ function PortHandle({ port, label, offset }: { port: PortSpec; label: string; of
       >
         <PortGlyph type={port.port_type} />
       </Handle>
-      <span
-        aria-hidden
-        style={{ top: offset }}
-        className={`pointer-events-none absolute z-10 -translate-y-1/2 rounded-[3px] bg-bg/85 px-1 font-mono text-[10px] whitespace-nowrap select-none text-ink-faint ${
-          out ? "left-full ml-2.5" : "right-full mr-2.5"
-        }`}
-      >
-        {label}
-      </span>
+      {!anchored && (
+        <span
+          aria-hidden
+          style={{ top: offset }}
+          className={`pointer-events-none absolute z-10 -translate-y-1/2 rounded-[3px] bg-bg/85 px-1 font-mono text-[10px] whitespace-nowrap select-none text-ink-faint ${
+            out ? "left-full ml-2.5" : "right-full mr-2.5"
+          }`}
+        >
+          {label}
+        </span>
+      )}
     </>
   );
 }

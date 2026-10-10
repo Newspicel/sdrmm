@@ -5,9 +5,10 @@ use std::{
 };
 
 use sdrmm_wire::{
-    coherent::{DfFusionState, RadarDetection},
     decode::{DecodedRecord, DecoderEvent},
     position::PositionFix,
+    processor::ProcessorReading,
+    radar::RadarUpdate,
     satellite::SatelliteStatus,
     ws::ServerEvent,
 };
@@ -20,6 +21,8 @@ use crate::{store::Store, ui::map::Geo};
 pub const POSITION_HISTORY: usize = 5_000;
 pub const STATION_CAPACITY: usize = 1_000;
 pub const BEARING_HISTORY: usize = 64;
+pub const BEARING_MAX_AGE_MS: i64 = 300_000;
+pub const FIX_TRAIL_POINTS: usize = 16;
 pub const MAP_KINDS: [&str; 3] = ["adsb", "ais", "aprs"];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -93,25 +96,81 @@ pub fn merge_forward(previous: &DecoderEvent, next: &DecoderEvent) -> DecoderEve
     serde_json::from_value(held).unwrap_or_else(|_| next.clone())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Bearing {
-    pub deg: f64,
+#[derive(Clone, Debug, PartialEq)]
+pub struct BearingSample {
+    pub node: String,
+    pub true_deg: f64,
     pub confidence: f64,
+    pub sigma_deg: f64,
+    pub from: Geo,
     pub at: i64,
+    pub station_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Finder {
-    pub history: Vec<Bearing>,
-    pub fusion: Option<DfFusionState>,
-    pub detections: Vec<RadarDetection>,
+#[must_use]
+pub fn bearing_of(record: &DecodedRecord, now: i64) -> Option<BearingSample> {
+    let DecoderEvent::Df(bearing) = &record.event else {
+        return None;
+    };
+    let node = record
+        .origin
+        .as_ref()
+        .map_or(bearing.node.as_str(), |origin| origin.node.as_str());
+    let from = Geo::checked(bearing.lat, bearing.lon)?;
+    (!node.is_empty()).then(|| BearingSample {
+        node: node.to_owned(),
+        true_deg: f64::from(bearing.bearing_deg),
+        confidence: f64::from(bearing.confidence),
+        sigma_deg: f64::from(bearing.sigma_deg),
+        from,
+        at: millis_of(&record.at).unwrap_or(now),
+        station_id: bearing.station_id.clone(),
+    })
+}
+
+#[must_use]
+pub fn keep_recent(mut samples: Vec<BearingSample>, now: i64) -> Vec<BearingSample> {
+    samples.retain(|sample| sample.at >= now - BEARING_MAX_AGE_MS);
+    samples.sort_by_key(|sample| sample.at);
+    let overflow = samples.len().saturating_sub(BEARING_HISTORY);
+    samples.drain(..overflow);
+    samples
+}
+
+fn same_sample(a: &BearingSample, b: &BearingSample) -> bool {
+    a.at == b.at && a.true_deg == b.true_deg && a.from == b.from && a.station_id == b.station_id
+}
+
+pub type FixTrails = HashMap<u32, Vec<Geo>>;
+
+#[must_use]
+pub fn advance_trails(held: Option<&FixTrails>, update: &RadarUpdate) -> FixTrails {
+    update
+        .tracks
+        .iter()
+        .filter_map(|track| {
+            let fix = track.fix.as_ref()?;
+            let at = Geo::new(fix.lat, fix.lon);
+            let mut trail = held
+                .and_then(|trails| trails.get(&track.id))
+                .cloned()
+                .unwrap_or_default();
+            if trail.last() != Some(&at) {
+                trail.push(at);
+                let overflow = trail.len().saturating_sub(FIX_TRAIL_POINTS);
+                trail.drain(..overflow);
+            }
+            Some((track.id, trail))
+        })
+        .collect()
 }
 
 #[derive(Default)]
 pub struct Held {
     pub tracks: HashMap<String, Track>,
     pub stations: HashMap<&'static str, HashMap<String, Station>>,
-    pub finders: HashMap<String, Finder>,
+    pub bearings: HashMap<String, Vec<BearingSample>>,
+    pub fix_trails: HashMap<String, FixTrails>,
     pub satellites: HashMap<String, SatelliteStatus>,
 }
 
@@ -177,18 +236,40 @@ impl Held {
         }
     }
 
-    pub fn bearing(&mut self, node: &str, deg: f64, confidence: f64, now: i64) {
-        if confidence <= 0.0 {
-            return;
+    pub fn bearings<'a>(
+        &mut self,
+        records: impl IntoIterator<Item = &'a DecodedRecord>,
+        now: i64,
+    ) -> bool {
+        let mut added: HashMap<String, Vec<BearingSample>> = HashMap::new();
+        for sample in records
+            .into_iter()
+            .filter_map(|record| bearing_of(record, now))
+        {
+            let held = self.bearings.get(&sample.node);
+            let list = added.entry(sample.node.clone()).or_default();
+            let seen = held
+                .into_iter()
+                .flatten()
+                .chain(list.iter())
+                .any(|kept| same_sample(kept, &sample));
+            if !seen {
+                list.push(sample);
+            }
         }
-        let finder = self.finders.entry(node.to_owned()).or_default();
-        finder.history.push(Bearing {
-            deg,
-            confidence,
-            at: now,
-        });
-        let overflow = finder.history.len().saturating_sub(BEARING_HISTORY);
-        finder.history.drain(..overflow);
+        added.retain(|_, list| !list.is_empty());
+        let changed = !added.is_empty();
+        for (node, samples) in added {
+            let mut merged = self.bearings.remove(&node).unwrap_or_default();
+            merged.extend(samples);
+            self.bearings.insert(node, keep_recent(merged, now));
+        }
+        changed
+    }
+
+    pub fn radar(&mut self, node: &str, update: &RadarUpdate) {
+        let next = advance_trails(self.fix_trails.get(node), update);
+        self.fix_trails.insert(node.to_owned(), next);
     }
 }
 
@@ -196,7 +277,7 @@ impl Held {
 pub enum Topic {
     Positions,
     Stations,
-    Finders,
+    Df,
     Satellites,
 }
 
@@ -204,7 +285,7 @@ pub struct Feed {
     pub held: RefCell<Held>,
     positions: ArcRwSignal<u64>,
     stations: ArcRwSignal<u64>,
-    finders: ArcRwSignal<u64>,
+    df: ArcRwSignal<u64>,
     satellites: ArcRwSignal<u64>,
     holders: RefCell<Vec<u64>>,
     next: Cell<u64>,
@@ -216,7 +297,7 @@ thread_local! {
         held: RefCell::new(Held::default()),
         positions: ArcRwSignal::new(0),
         stations: ArcRwSignal::new(0),
-        finders: ArcRwSignal::new(0),
+        df: ArcRwSignal::new(0),
         satellites: ArcRwSignal::new(0),
         holders: RefCell::new(Vec::new()),
         next: Cell::new(0),
@@ -233,7 +314,7 @@ impl Feed {
         match topic {
             Topic::Positions => &self.positions,
             Topic::Stations => &self.stations,
-            Topic::Finders => &self.finders,
+            Topic::Df => &self.df,
             Topic::Satellites => &self.satellites,
         }
     }
@@ -267,6 +348,9 @@ impl Feed {
                     held.decoded(record);
                 }
             });
+            self.change(Topic::Df, |held| {
+                held.bearings(seed.all_frames().map(|record| record.as_ref()), now_ms());
+            });
         }
         let feed = self.clone();
         on_cleanup_local(move || feed.holders.borrow_mut().retain(|held| *held != id));
@@ -286,44 +370,12 @@ impl Feed {
                     held.position(node, fix.clone(), error.clone(), now)
                 });
             }
-            ServerEvent::Decoded(record) => {
-                if self.held.borrow_mut().decoded(record) {
-                    self.bump(Topic::Stations);
+            ServerEvent::Decoded(record) => self.records(std::slice::from_ref(&**record), now),
+            ServerEvent::DecodedBacklog { records } => self.records(records, now),
+            ServerEvent::ProcessorUpdate { node, reading } => {
+                if let ProcessorReading::PassiveRadar(update) = &**reading {
+                    self.change(Topic::Df, |held| held.radar(node, update));
                 }
-            }
-            ServerEvent::DecodedBacklog { records } => {
-                let mut changed = false;
-                for record in records {
-                    changed |= self.held.borrow_mut().decoded(record);
-                }
-                if changed {
-                    self.bump(Topic::Stations);
-                }
-            }
-            ServerEvent::DfUpdate { node, reading, .. } => {
-                let (deg, confidence) = (
-                    f64::from(reading.bearing_deg),
-                    f64::from(reading.confidence),
-                );
-                self.change(Topic::Finders, |held| {
-                    held.bearing(node, deg, confidence, now)
-                });
-            }
-            ServerEvent::DfFusionUpdate { node, state } => {
-                self.change(Topic::Finders, |held| {
-                    held.finders.entry(node.clone()).or_default().fusion = Some((**state).clone());
-                });
-            }
-            ServerEvent::RadarDetections {
-                node, detections, ..
-            } => {
-                self.change(Topic::Finders, |held| {
-                    held.finders
-                        .entry(node.clone())
-                        .or_default()
-                        .detections
-                        .clone_from(detections);
-                });
             }
             ServerEvent::SatelliteUpdate { status } => {
                 self.change(Topic::Satellites, |held| {
@@ -334,11 +386,29 @@ impl Feed {
             _ => {}
         }
     }
+
+    fn records(&self, records: &[DecodedRecord], now: i64) {
+        let mut stations = false;
+        for record in records {
+            stations |= self.held.borrow_mut().decoded(record);
+        }
+        if stations {
+            self.bump(Topic::Stations);
+        }
+        if self.held.borrow_mut().bearings(records, now) {
+            self.bump(Topic::Df);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::decode::{AdsbMessage, AisMessage};
+    use sdrmm_wire::{
+        EventOrigin,
+        decode::{AdsbMessage, AisMessage},
+        fusion::{BearingSource, DfBearing},
+        radar::{RadarFix, RadarTrack},
+    };
 
     use super::*;
     use crate::ui::kit_maps::iso_of;
@@ -424,15 +494,118 @@ mod tests {
         assert!(held.stations["adsb"].is_empty());
     }
 
-    #[test]
-    fn a_bearing_trail_keeps_only_confident_recent_readings() {
-        let mut held = Held::default();
-        held.bearing("df", 45.0, 0.0, 1);
-        assert!(!held.finders.contains_key("df"));
-        for at in 0..(BEARING_HISTORY as i64 + 5) {
-            held.bearing("df", 45.0, 0.9, at);
+    fn bearing(node: &str, at: i64, deg: f32, lat: Option<f64>) -> DecodedRecord {
+        DecodedRecord {
+            origin: None,
+            device_set: 0,
+            channel: 0,
+            at: iso_of(at),
+            freq_hz: 433_920_000.0,
+            event: DecoderEvent::Df(DfBearing {
+                bearing_deg: deg,
+                confidence: 0.9,
+                lat,
+                lon: Some(7.0),
+                station_id: Some("roof".to_owned()),
+                node: node.to_owned(),
+                sigma_deg: 3.0,
+                accuracy_m: None,
+                heading_deg: None,
+                heading_sigma_deg: None,
+                relative_deg: None,
+                mirror_deg: None,
+                freq_hz: None,
+                source: BearingSource::Array,
+                moving: false,
+                others: Vec::new(),
+                likelihood: Vec::new(),
+                snr_db: None,
+            }),
+            sinks: Vec::new(),
         }
-        assert_eq!(held.finders["df"].history.len(), BEARING_HISTORY);
-        assert_eq!(held.finders["df"].history[0].at, 5);
+    }
+
+    #[test]
+    fn a_bearing_record_carries_its_own_position_and_names_its_origin() {
+        let mut record = bearing("df", 1_000, 45.0, Some(51.5));
+        let sample = bearing_of(&record, 9).expect("a bearing");
+        assert_eq!(sample.node, "df");
+        assert_eq!(sample.from, Geo::new(51.5, 7.0));
+        assert_eq!(sample.at, 1_000);
+        assert_eq!(sample.station_id.as_deref(), Some("roof"));
+        record.origin = Some(EventOrigin {
+            node: "hunt".to_owned(),
+            transmission: 1,
+        });
+        assert_eq!(
+            bearing_of(&record, 9).map(|found| found.node).as_deref(),
+            Some("hunt")
+        );
+        record.at = "not a time".to_owned();
+        assert_eq!(bearing_of(&record, 9).map(|found| found.at), Some(9));
+    }
+
+    #[test]
+    fn a_bearing_without_a_place_or_a_node_is_not_drawn() {
+        assert!(bearing_of(&bearing("df", 0, 45.0, None), 0).is_none());
+        assert!(bearing_of(&bearing("", 0, 45.0, Some(51.5)), 0).is_none());
+        assert!(bearing_of(&adsb(AdsbMessage::default(), 0), 0).is_none());
+    }
+
+    #[test]
+    fn bearings_keep_the_newest_within_five_minutes_without_repeats() {
+        let mut held = Held::default();
+        let now = BEARING_MAX_AGE_MS * 2;
+        let records: Vec<DecodedRecord> = (0..(BEARING_HISTORY as i64 + 5))
+            .map(|step| bearing("df", now - step, 10.0, Some(51.5)))
+            .chain([bearing("df", 0, 10.0, Some(51.5))])
+            .collect();
+        assert!(held.bearings(&records, now));
+        let kept = &held.bearings["df"];
+        assert_eq!(kept.len(), BEARING_HISTORY);
+        assert_eq!(kept.last().map(|sample| sample.at), Some(now));
+        assert!(kept.windows(2).all(|pair| pair[0].at <= pair[1].at));
+        assert!(!held.bearings(&records[..1], now));
+        assert!(!held.bearings(&[adsb(AdsbMessage::default(), 0)], now));
+    }
+
+    fn radar(fixes: &[(u32, f64)]) -> RadarUpdate {
+        RadarUpdate {
+            tracks: fixes
+                .iter()
+                .map(|(id, lat)| RadarTrack {
+                    id: *id,
+                    fix: Some(RadarFix {
+                        lat: *lat,
+                        lon: 7.0,
+                        ..RadarFix::default()
+                    }),
+                    ..RadarTrack::default()
+                })
+                .chain([RadarTrack {
+                    id: 99,
+                    ..RadarTrack::default()
+                }])
+                .collect(),
+            ..RadarUpdate::default()
+        }
+    }
+
+    #[test]
+    fn a_fix_trail_grows_when_the_track_moves_and_forgets_lost_tracks() {
+        let mut held = Held::default();
+        held.radar("radar", &radar(&[(1, 51.0), (2, 52.0)]));
+        held.radar("radar", &radar(&[(1, 51.0)]));
+        held.radar("radar", &radar(&[(1, 51.1)]));
+        let trails = &held.fix_trails["radar"];
+        assert_eq!(trails.len(), 1);
+        assert_eq!(trails[&1], [Geo::new(51.0, 7.0), Geo::new(51.1, 7.0)]);
+        let mut long = None;
+        for step in 0..(FIX_TRAIL_POINTS + 4) {
+            long = Some(advance_trails(long.as_ref(), &radar(&[(1, step as f64)])));
+        }
+        let long = long.unwrap_or_default();
+        assert_eq!(long[&1].len(), FIX_TRAIL_POINTS);
+        assert_eq!(long[&1][0], Geo::new(4.0, 7.0));
     }
 }

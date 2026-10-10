@@ -112,12 +112,13 @@ pub const SHEET: &str = css!(
 
 .node__body { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; }
 
-.flow__node.selected .node {
-    z-index: 5;
+.zf-node[data-selected] .node {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent),
         0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.42);
 }
+
+.node__grip { display: flex; flex-direction: column; flex: 0 0 auto; }
 
 .node__bar {
     align-items: center;
@@ -165,47 +166,64 @@ pub const SHEET: &str = css!(
     border-top: 1px solid var(--line);
 }
 
-.flow .flow__handle-dot {
-    width: 10px;
-    height: 10px;
-    border: 2px solid var(--bg);
-    background-color: var(--line-strong);
+.patch .zf-flow {
+    --zf-bg: var(--bg);
+    --zf-fg: var(--ink);
+    --zf-muted: var(--ink-faint);
+    --zf-border: var(--line);
+    --zf-ring: var(--accent);
+    --zf-primary: var(--accent);
+    --zf-accent: var(--panel-2);
+    --zf-node-bg: var(--panel);
+    --zf-handle-size: 10px;
+    --zf-handle-bg: var(--line-strong);
+    --zf-handle-border: var(--bg);
+    --zf-handle-bg-active: var(--ink);
+    --zf-handle-valid: var(--ok);
+    --zf-handle-invalid: var(--danger);
+    --zf-edge-stroke: var(--line-strong);
+    --zf-edge-stroke-selected: var(--ink);
+    --zf-edge-width: 2px;
+    --zf-edge-width-selected: 3px;
+    --zf-connection-stroke: var(--ink-dim);
+    --zf-connection-stroke-valid: var(--ok);
+    --zf-pattern: var(--line);
+    --zf-selection-bg: color-mix(in oklab, var(--accent) 12%, transparent);
+    --zf-selection-border: var(--accent);
+    --zf-panel-bg: var(--panel);
+    --zf-panel-border: var(--line);
+    --zf-minimap-bg: var(--panel);
+    --zf-minimap-node: var(--line-strong);
+    --zf-minimap-node-selected: var(--accent);
+    --zf-minimap-mask: color-mix(in oklab, var(--bg) 60%, transparent);
+    --zf-minimap-view: var(--accent);
 }
 
-.flow__handle[data-class="iq"] .flow__handle-dot { background-color: oklch(0.72 0.11 228); }
-.flow__handle[data-class="baseband"] .flow__handle-dot { background-color: oklch(0.74 0.1 196); }
-.flow__handle[data-class="audio"] .flow__handle-dot { background-color: oklch(0.74 0.12 158); }
-.flow__handle[data-class="events"] .flow__handle-dot { background-color: oklch(0.78 0.11 85); }
-.flow__handle[data-class="video"] .flow__handle-dot { background-color: oklch(0.76 0.12 35); }
-.flow__handle[data-class="control"] .flow__handle-dot { background-color: oklch(0.76 0.1 300); }
-.flow__handle[data-class="position"] .flow__handle-dot { background-color: oklch(0.74 0.09 140); }
-.flow__handle[data-class="tx"] .flow__handle-dot { background-color: oklch(0.76 0.12 345); }
+.zf-node { cursor: default; }
+.zf-handle { border-width: 2px; }
+.zf-handle:hover, .zf-handle[data-connecting] { border-color: var(--ink); }
 
-.flow__handle:hover .flow__handle-dot { border-color: var(--ink); }
-.flow__handle[data-status="from"] .flow__handle-dot { border-color: var(--ink); }
-.flow__handle[data-status="valid"] .flow__handle-dot { border-color: var(--ok); }
-.flow__handle[data-status="invalid"] .flow__handle-dot { border-color: var(--danger); }
+.zf-handle.iq, .zf-edge.iq { --wire: oklch(0.72 0.11 228); }
+.zf-handle.baseband, .zf-edge.baseband { --wire: oklch(0.74 0.1 196); }
+.zf-handle.audio, .zf-edge.audio { --wire: oklch(0.74 0.12 158); }
+.zf-handle.events, .zf-edge.events { --wire: oklch(0.78 0.11 85); }
+.zf-handle.video, .zf-edge.video { --wire: oklch(0.76 0.12 35); }
+.zf-handle.control, .zf-edge.control { --wire: oklch(0.76 0.1 300); }
+.zf-handle.position, .zf-edge.position { --wire: oklch(0.74 0.09 140); }
+.zf-handle.tx, .zf-edge.tx { --wire: oklch(0.76 0.12 345); }
+.zf-handle.array, .zf-edge.array { --wire: oklch(0.7 0.13 262); }
 
-.flow .flow__handle-label {
-    top: 0;
-    padding: 0 4px;
-    border-radius: 3px;
-    background-color: color-mix(in oklab, var(--bg) 85%, transparent);
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-faint);
+.zf-handle.iq, .zf-handle.baseband, .zf-handle.audio, .zf-handle.events, .zf-handle.video,
+.zf-handle.control, .zf-handle.position, .zf-handle.tx, .zf-handle.array {
+    --zf-handle-bg: var(--wire);
 }
 
-.flow .flow__handle-label[data-side="left"] { left: auto; right: 18px; }
-.flow .flow__handle-label[data-side="right"] { right: auto; left: 18px; }
-
-.flow__minimap, .flow__controls { border-color: var(--line); background-color: var(--panel); }
-.flow .flow__background { color: var(--line); }
-.flow .flow__minimap-canvas { color: var(--line-strong); }
-.flow .flow__minimap-mask { color: color-mix(in oklab, var(--bg) 60%, transparent); }
-.flow__control { color: var(--ink-dim); }
-.flow__control:hover { background-color: var(--panel-2); color: var(--ink); }
-.flow__selection { border-color: var(--accent); background-color: color-mix(in oklab, var(--accent) 12%, transparent); }
+.zf-edge.iq, .zf-edge.baseband, .zf-edge.audio, .zf-edge.events, .zf-edge.video,
+.zf-edge.control, .zf-edge.position, .zf-edge.tx, .zf-edge.array {
+    --zf-edge-stroke: color-mix(in oklab, var(--wire) 90%, transparent);
+    --zf-edge-stroke-hover: var(--wire);
+    --zf-edge-stroke-selected: var(--wire);
+}
 
 .dial { align-items: center; gap: 0; flex: 0 0 auto; }
 

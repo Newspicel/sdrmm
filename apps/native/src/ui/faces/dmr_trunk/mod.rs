@@ -68,16 +68,7 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     kit_channel::install();
     let settings = {
         let node = node.clone();
-        Memo::new(move |_| {
-            settings_of(store, &node).unwrap_or_else(|| DmrTrunkNode {
-                protocol: Default::default(),
-                record_calls: true,
-                discovery: Default::default(),
-                channel_map: Vec::new(),
-                control_hz: None,
-                ignore_crc: false,
-            })
-        })
+        Memo::new(move |_| settings_of(store, &node).unwrap_or_default())
     };
     let status = {
         let node = node.clone();
@@ -161,7 +152,6 @@ fn head(
             true
         }
     };
-    let record = move |on: bool| edit(store, &node, move |held| held.record_calls = on);
     view! {
         column(class = "dt-section kc-grid") {
             text(class = "kc-note") {{summary}}
@@ -172,7 +162,6 @@ fn head(
                     {text_field(control, "Control channel", "451.0125", "kc-fill", set_control)}
                 }
             })}
-            {toggle_row("Record calls", None, Signal::derive(move || settings.get().record_calls), record)}
         }
     }
 }

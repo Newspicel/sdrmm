@@ -1,26 +1,20 @@
 use sdrmm_wire::{
-    channel::{
-        ChannelInfo, ChannelSettings, MAX_SQUELCH_AUTO_MARGIN_DB, MIN_SQUELCH_AUTO_MARGIN_DB,
-        Squelch,
-    },
+    channel::{ChannelInfo, ChannelSettings},
     patch::{NodeBody, PatchNode},
     state::{DeviceSet, DeviceSetStatus},
 };
 use zgui::prelude::*;
 
-use crate::{
-    binding, format,
-    store::Store,
-    ui::widgets::{check, dial, level_bar, meter, pick, row_field, segments, slide},
-};
+use crate::store::Store;
 
 pub mod array;
 pub mod audio_fx;
 pub mod audio_recorder;
 pub mod baseband_recorder;
 pub mod baseband_scope;
+pub mod beamformer;
 pub mod channel;
-pub mod combiner;
+pub mod correlator;
 pub mod decoder_log;
 pub mod device;
 pub mod df;
@@ -33,6 +27,8 @@ pub mod hunt;
 pub mod map;
 pub mod network_export;
 pub mod passive_radar;
+pub mod polarimeter;
+pub mod processor;
 pub mod propagation;
 pub mod readout;
 pub mod recorder;
@@ -42,6 +38,7 @@ pub mod scanner;
 pub mod scope;
 pub mod signal_gen;
 pub mod signal_map;
+pub mod spatial_spectrum;
 pub mod speaker;
 pub mod spectrum_monitor;
 pub mod stitch;
@@ -55,7 +52,7 @@ pub fn face(store: Store, node: &PatchNode) -> AnyView {
         NodeBody::Channel(_) => AnyView::new(channel::face(store, node.id.clone())),
         NodeBody::Scope => AnyView::new(scope::face(store, node.id.clone())),
         NodeBody::Speaker => AnyView::new(speaker::face(store, node.id.clone())),
-        NodeBody::DecoderLog => AnyView::new(decoder_log::face(store, node.id.clone())),
+        NodeBody::DecoderLog(_) => AnyView::new(decoder_log::face(store, node.id.clone())),
         NodeBody::Array(_) => AnyView::new(array::face(store, node.id.clone())),
         NodeBody::AudioFx(_) => AnyView::new(audio_fx::face(store, node.id.clone())),
         NodeBody::AudioRecorder(_) => AnyView::new(audio_recorder::face(store, node.id.clone())),
@@ -63,7 +60,8 @@ pub fn face(store: Store, node: &PatchNode) -> AnyView {
             AnyView::new(baseband_recorder::face(store, node.id.clone()))
         }
         NodeBody::BasebandScope => AnyView::new(baseband_scope::face(store, node.id.clone())),
-        NodeBody::Combiner(_) => AnyView::new(combiner::face(store, node.id.clone())),
+        NodeBody::Beamformer(_) => AnyView::new(beamformer::face(store, node.id.clone())),
+        NodeBody::Correlator(_) => AnyView::new(correlator::face(store, node.id.clone())),
         NodeBody::Df(_) => AnyView::new(df::face(store, node.id.clone())),
         NodeBody::DmrTrunk(_) => AnyView::new(dmr_trunk::face(store, node.id.clone())),
         NodeBody::EventFilter(_) => AnyView::new(event_filter::face(store, node.id.clone())),
@@ -74,6 +72,7 @@ pub fn face(store: Store, node: &PatchNode) -> AnyView {
         NodeBody::Map => AnyView::new(map::face(store, node.id.clone())),
         NodeBody::NetworkExport(_) => AnyView::new(network_export::face(store, node.id.clone())),
         NodeBody::PassiveRadar(_) => AnyView::new(passive_radar::face(store, node.id.clone())),
+        NodeBody::Polarimeter(_) => AnyView::new(polarimeter::face(store, node.id.clone())),
         NodeBody::Propagation(_) => AnyView::new(propagation::face(store, node.id.clone())),
         NodeBody::Readout => AnyView::new(readout::face(store, node.id.clone())),
         NodeBody::Recorder(_) => AnyView::new(recorder::face(store, node.id.clone())),
@@ -82,12 +81,15 @@ pub fn face(store: Store, node: &PatchNode) -> AnyView {
         NodeBody::Scanner(_) => AnyView::new(scanner::face(store, node.id.clone())),
         NodeBody::SignalGen(_) => AnyView::new(signal_gen::face(store, node.id.clone())),
         NodeBody::SignalMap(_) => AnyView::new(signal_map::face(store, node.id.clone())),
+        NodeBody::SpatialSpectrum(_) => {
+            AnyView::new(spatial_spectrum::face(store, node.id.clone()))
+        }
         NodeBody::SpectrumMonitor(_) => {
             AnyView::new(spectrum_monitor::face(store, node.id.clone()))
         }
         NodeBody::Stitch(_) => AnyView::new(stitch::face(store, node.id.clone())),
         NodeBody::TimeMachine(_) => AnyView::new(time_machine::face(store, node.id.clone())),
-        NodeBody::Triangulation => AnyView::new(triangulation::face(store, node.id.clone())),
+        NodeBody::Triangulation(_) => AnyView::new(triangulation::face(store, node.id.clone())),
         NodeBody::Video => AnyView::new(video::face(store, node.id.clone())),
     }
 }

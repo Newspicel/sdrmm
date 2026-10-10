@@ -56,6 +56,29 @@ pub(super) async fn create_device_set(
 }
 
 #[utoipa::path(
+    post, path = "/api/devices/serial",
+    request_body = WriteSerialRequest,
+    responses(
+        (status = 200, description = "Serial written, takes effect after a replug", body = WrittenSerial),
+        (status = 400, description = "This radio cannot take that serial", body = ApiError),
+        (status = 404, description = "Device not found", body = ApiError),
+        (status = 409, description = "Device open here or in another program", body = ApiError),
+        (status = 422, description = "Malformed request body", body = ApiError),
+    ),
+)]
+pub(super) async fn write_serial(
+    State(state): State<AppState>,
+    Json(req): Json<WriteSerialRequest>,
+) -> Result<Json<WrittenSerial>, AppError> {
+    let engine = state.engine.clone();
+    let serial = tokio::task::spawn_blocking(move || {
+        engine.write_serial(&req.device_id, req.serial.as_deref())
+    })
+    .await??;
+    Ok(Json(WrittenSerial { serial }))
+}
+
+#[utoipa::path(
     delete, path = "/api/devicesets/{ds}",
     params(("ds" = u32, Path, description = "Device set id")),
     responses(
@@ -87,23 +110,32 @@ pub(super) async fn delete_device_set(
 pub(super) async fn patch_device(
     State(state): State<AppState>,
     Path(ds): Path<u32>,
+    author: Author,
     Json(settings): Json<DeviceSettings>,
 ) -> Result<StatusCode, AppError> {
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let _serialized = state
-            .apply_gate
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let edit = workspace::begin_edit(&state, ds, None);
-        state.engine.patch_device(ds, settings)?;
-        if let Some(edit) = edit {
-            workspace::finish_edit(&state, edit);
-        }
-        crate::placement::settle_active(&state);
-        Ok(())
-    })
-    .await??;
+    tokio::task::spawn_blocking(move || patch_device_live(&state, ds, settings, author.as_deref()))
+        .await??;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) fn patch_device_live(
+    state: &AppState,
+    ds: u32,
+    settings: DeviceSettings,
+    author: Option<&str>,
+) -> Result<(), AppError> {
+    let _serialized = lock_gate(&state.apply_gate);
+    let edit = workspace::begin_edit(state, ds, None, author);
+    let calibrates = settings.ppm.is_some() || settings.offset_hz.is_some();
+    state.engine.patch_device(ds, settings)?;
+    if calibrates {
+        calibration::remember_live(&state.engine, &state.store, ds);
+    }
+    if let Some(edit) = edit {
+        workspace::finish_edit(state, edit);
+    }
+    crate::placement::settle_active(state);
+    Ok(())
 }
 
 #[utoipa::path(
@@ -134,9 +166,13 @@ pub(super) async fn create_channel(
         ("ds" = u32, Path, description = "Device set id"),
         ("ch" = u32, Path, description = "Channel id"),
     ),
-    request_body = ChannelSettings,
+    request_body = PatchChannelRequest,
     responses(
-        (status = 204, description = "Settings applied"),
+        (
+            status = 204,
+            description = "Settings applied. With a base, only the fields changed from it land, \
+                           so another client's edit to other fields survives",
+        ),
         (status = 400, description = "Invalid channel settings", body = ApiError),
         (status = 404, description = "Device set or channel not found", body = ApiError),
         (status = 422, description = "Malformed request body", body = ApiError),
@@ -145,23 +181,66 @@ pub(super) async fn create_channel(
 pub(super) async fn patch_channel(
     State(state): State<AppState>,
     Path((ds, ch)): Path<(u32, u32)>,
-    Json(settings): Json<ChannelSettings>,
+    author: Author,
+    Json(req): Json<PatchChannelRequest>,
 ) -> Result<StatusCode, AppError> {
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let _serialized = state
-            .apply_gate
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let edit = workspace::begin_edit(&state, ds, Some(ch));
-        state.engine.patch_channel(ds, ch, settings)?;
-        if let Some(edit) = edit {
-            workspace::finish_edit(&state, edit);
-        }
-        crate::placement::settle_active(&state);
-        Ok(())
+    tokio::task::spawn_blocking(move || {
+        let _serialized = lock_gate(&state.apply_gate);
+        let settings = match &req.base {
+            Some(base) => rebase_channel(&state, ds, ch, base, &req.settings)?,
+            None => req.settings,
+        };
+        patch_channel_locked(&state, ds, ch, settings, author.as_deref())
     })
     .await??;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn rebase_channel(
+    state: &AppState,
+    ds: u32,
+    ch: u32,
+    base: &ChannelSettings,
+    ours: &ChannelSettings,
+) -> Result<ChannelSettings, AppError> {
+    let held = state
+        .engine
+        .snapshot()
+        .device_sets
+        .iter()
+        .find(|set| set.id == ds)
+        .and_then(|set| set.channels.iter().find(|channel| channel.id == ch))
+        .map(|channel| channel.settings.clone())
+        .ok_or_else(|| AppError::not_found(format!("channel {ch} on device set {ds}")))?;
+    crate::merge::merge_typed(base, ours, &held)
+        .map_err(|err| AppError::bad_request(format!("settings do not merge: {err}")))
+}
+
+pub(crate) fn patch_channel_live(
+    state: &AppState,
+    ds: u32,
+    ch: u32,
+    settings: ChannelSettings,
+    author: Option<&str>,
+) -> Result<(), AppError> {
+    let _serialized = lock_gate(&state.apply_gate);
+    patch_channel_locked(state, ds, ch, settings, author)
+}
+
+fn patch_channel_locked(
+    state: &AppState,
+    ds: u32,
+    ch: u32,
+    settings: ChannelSettings,
+    author: Option<&str>,
+) -> Result<(), AppError> {
+    let edit = workspace::begin_edit(state, ds, Some(ch), author);
+    state.engine.patch_channel(ds, ch, settings)?;
+    if let Some(edit) = edit {
+        workspace::finish_edit(state, edit);
+    }
+    crate::placement::settle_active(state);
+    Ok(())
 }
 
 #[utoipa::path(
@@ -194,4 +273,73 @@ pub(super) async fn get_channel_types(State(state): State<AppState>) -> Json<Cha
         types: state.engine.channel_types(),
         facets: sdrmm_wire::event_facets(),
     })
+}
+
+#[utoipa::path(
+    get, path = "/api/saved-radios",
+    responses((status = 200, description = "Saved network radios", body = Vec<SavedRadio>)),
+)]
+pub(super) async fn list_saved_radios(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<SavedRadio>>, AppError> {
+    let store = state.store.clone();
+    let radios = tokio::task::spawn_blocking(move || store.list_saved_radios()).await??;
+    Ok(Json(radios))
+}
+
+#[utoipa::path(
+    post, path = "/api/saved-radios",
+    request_body = SaveRadioRequest,
+    responses(
+        (status = 200, description = "Radio saved, or its label updated", body = CreatedRowId),
+        (status = 400, description = "Blank device id or label", body = ApiError),
+        (status = 422, description = "Malformed request body", body = ApiError),
+    ),
+)]
+pub(super) async fn save_radio(
+    State(state): State<AppState>,
+    Json(req): Json<SaveRadioRequest>,
+) -> Result<Json<CreatedRowId>, AppError> {
+    let req = SaveRadioRequest {
+        device_id: req.device_id.trim().to_string(),
+        label: req.label.trim().to_string(),
+    };
+    if req.device_id.is_empty() || req.label.is_empty() {
+        return Err(AppError::bad_request(
+            "a saved radio needs a device id and a label",
+        ));
+    }
+    let engine = state.engine.clone();
+    let store = state.store.clone();
+    let id = tokio::task::spawn_blocking(move || -> Result<i64, AppError> {
+        let id = store.save_radio(&req)?;
+        engine.emit_scope(StateScope::SavedRadios);
+        Ok(id)
+    })
+    .await??;
+    Ok(Json(CreatedRowId { id }))
+}
+
+#[utoipa::path(
+    delete, path = "/api/saved-radios/{id}",
+    params(("id" = i64, Path, description = "Saved radio id")),
+    responses(
+        (status = 204, description = "Saved radio removed"),
+        (status = 400, description = "Invalid path parameter", body = ApiError),
+        (status = 404, description = "Saved radio not found", body = ApiError),
+    ),
+)]
+pub(super) async fn delete_saved_radio(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    let engine = state.engine.clone();
+    let store = state.store.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        store.delete_saved_radio(id)?;
+        engine.emit_scope(StateScope::SavedRadios);
+        Ok(())
+    })
+    .await??;
+    Ok(StatusCode::NO_CONTENT)
 }

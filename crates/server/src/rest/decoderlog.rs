@@ -28,6 +28,33 @@ pub(super) async fn list_decoder_log(
 }
 
 #[utoipa::path(
+    get, path = "/api/decoderlog/groups/{by}",
+    params(("by" = LogGroupKey, Path, description = "What each row stands for"), DecoderLogQuery),
+    responses(
+        (
+            status = 200,
+            description = "One row per frequency or station, most recently heard first",
+            body = DecoderLogGroupsResponse,
+        ),
+        (status = 400, description = "Unknown grouping or malformed filter", body = ApiError),
+    ),
+)]
+pub(super) async fn group_decoder_log(
+    State(state): State<AppState>,
+    Path(by): Path<LogGroupKey>,
+    Query(filter): Query<DecoderLogQuery>,
+) -> Result<Json<DecoderLogGroupsResponse>, AppError> {
+    let store = state.store.clone();
+    let (groups, total) =
+        tokio::task::spawn_blocking(move || store.group_decoder_log(&filter, by)).await??;
+    Ok(Json(DecoderLogGroupsResponse {
+        groups,
+        total,
+        dropped: state.decoder_log_dropped() + state.engine.decoded_dropped(),
+    }))
+}
+
+#[utoipa::path(
     delete, path = "/api/decoderlog",
     params(DecoderLogQuery),
     responses(

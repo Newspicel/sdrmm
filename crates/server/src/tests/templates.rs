@@ -9,14 +9,18 @@ async fn templates_report_the_radios_that_can_run_them() {
 
     assert!(!listed.templates.is_empty());
     for template in &listed.templates {
-        assert!(
-            template
-                .supported_devices
-                .contains(&"virtual:siggen".to_string()),
-            "{} does not offer the signal generator: {:?}",
-            template.id,
-            template.supported_devices
-        );
+        let offers = |id: &str| template.supported_devices.iter().any(|device| device == id);
+        if template.min_lanes > 1 {
+            assert!(offers("virtual:kraken5"), "{}", template.id);
+            assert!(!offers("virtual:band"), "{}", template.id);
+        } else {
+            assert!(
+                offers("virtual:band"),
+                "{} does not offer the test band: {:?}",
+                template.id,
+                template.supported_devices
+            );
+        }
     }
 }
 
@@ -88,7 +92,9 @@ async fn templates_list_and_apply_over_http() {
     );
     let set = &get_state(&app).await.device_sets[0];
     assert!(
-        set.channels.iter().all(|channel| !channel.out_of_band),
+        set.channels
+            .iter()
+            .all(|channel| channel.out_of_band.is_none()),
         "the radio did not settle over the template's channels"
     );
     assert_eq!(
@@ -119,12 +125,12 @@ async fn templates_list_and_apply_over_http() {
 
 #[tokio::test]
 async fn every_template_runs_on_the_signal_generator() {
-    let app = test_router();
-    let ds = create_virtual_set(&app).await;
-    let (_, body) = request(app.clone(), "GET", "/api/templates", None).await;
+    let (_, body) = request(test_router(), "GET", "/api/templates", None).await;
     let listed: sdrmm_wire::TemplatesResponse = serde_json::from_slice(&body).expect("json");
 
-    for template in &listed.templates {
+    for template in listed.templates.iter().filter(|t| t.min_lanes <= 1) {
+        let app = test_router();
+        let ds = create_virtual_set(&app).await;
         let (status, body) = request(
             app.clone(),
             "POST",
@@ -141,7 +147,9 @@ async fn every_template_runs_on_the_signal_generator() {
         );
         let set = &get_state(&app).await.device_sets[0];
         assert!(
-            set.channels.iter().all(|channel| !channel.out_of_band),
+            set.channels
+                .iter()
+                .all(|channel| channel.out_of_band.is_none()),
             "{}: the radio did not settle over the template's channels",
             template.id
         );
@@ -225,6 +233,74 @@ async fn applying_a_template_merges_its_patch_into_the_active_workspace() {
     detail.snapshot.validate().expect("a valid workspace");
 }
 
+#[tokio::test]
+async fn the_df_drive_wires_every_kraken_lane_into_one_array() {
+    let app = test_router();
+    let band = create_virtual_set(&app).await;
+    let (status, _) = request(
+        app.clone(),
+        "POST",
+        "/api/templates/df-drive/apply",
+        Some(&format!(r#"{{"device_set":{band}}}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "one lane is refused");
+
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/devicesets",
+        Some(r#"{"device_id":"virtual:kraken5"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let kraken = serde_json::from_slice::<CreatedId>(&body).expect("json").id;
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/templates/df-drive/apply",
+        Some(&format!(r#"{{"device_set":{kraken}}}"#)),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let active = workspaces(&app).await.active.expect("seeded workspace");
+    let (_, body) = request(
+        app.clone(),
+        "GET",
+        &format!("/api/workspaces/{active}"),
+        None,
+    )
+    .await;
+    let detail: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
+    let graph = &detail.snapshot.graph;
+    let lanes = graph
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.from.node == "template:df-drive:dev" && edge.to.node == "template:df-drive:array"
+        })
+        .count();
+    assert_eq!(lanes, 5);
+    assert_eq!(
+        graph.array_of_processor("template:df-drive:df"),
+        Some("template:df-drive:array")
+    );
+    detail.snapshot.validate().expect("a valid workspace");
+    let set = get_state(&app)
+        .await
+        .device_sets
+        .into_iter()
+        .find(|set| set.id == kraken)
+        .expect("the kraken");
+    assert_eq!(set.settings.center_hz, Some(433_920_000.0));
+}
+
 struct HidesOpenRadios {
     inner: sdrmm_device_virtual::VirtualDriver,
     opened: std::sync::atomic::AtomicBool,
@@ -278,5 +354,5 @@ async fn an_open_radio_the_driver_no_longer_lists_can_still_run_templates() {
         .iter()
         .find(|t| t.id == "fm-radio")
         .expect("fm-radio");
-    assert_eq!(fm.supported_devices, vec!["virtual:siggen".to_string()]);
+    assert_eq!(fm.supported_devices, vec!["virtual:band".to_string()]);
 }

@@ -135,7 +135,7 @@ mod tests {
                 "frequency_hz": 100e6,
                 "params": { "type": type_id, "settings": {} }
             },
-            "out_of_band": false
+            "out_of_band": null
         }))
         .expect("a channel")
     }

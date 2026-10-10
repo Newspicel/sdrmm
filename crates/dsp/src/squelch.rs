@@ -2,6 +2,10 @@ use num_complex::Complex;
 
 use crate::iir::one_pole_coeff;
 
+mod guard;
+
+use guard::GuardMeter;
+
 const POWER_TAU_S: f64 = 3e-3;
 
 const FLOOR_FALL_TAU_S: f64 = 0.3;
@@ -12,6 +16,7 @@ const AUTO_MAX_LIN: f32 = 1.0;
 
 #[derive(Clone, Debug)]
 pub struct Squelch {
+    rate: f64,
     power: f32,
     coeff: f32,
     threshold_db: f32,
@@ -28,6 +33,8 @@ pub struct Squelch {
     warmup_samples: u64,
     auto_margin_db: Option<f32>,
     auto_margin_lin: f32,
+    guard: Option<GuardMeter>,
+    guard_quiet: f32,
 }
 
 impl Squelch {
@@ -38,6 +45,7 @@ impl Squelch {
             "invalid squelch parameters"
         );
         let mut s = Self {
+            rate,
             power: 0.0,
             coeff: one_pole_coeff(rate, POWER_TAU_S),
             threshold_db,
@@ -54,9 +62,17 @@ impl Squelch {
             warmup_samples: (FLOOR_WARMUP_S * rate).round() as u64,
             auto_margin_db: None,
             auto_margin_lin: 1.0,
+            guard: None,
+            guard_quiet: 0.0,
         };
         s.recompute_thresholds();
         s
+    }
+
+    #[must_use]
+    pub fn with_guard_band(mut self, band_low_hz: f64, band_high_hz: f64) -> Self {
+        self.guard = GuardMeter::new(self.rate, band_low_hz, band_high_hz);
+        self
     }
 
     pub fn set_threshold_db(&mut self, db: f32) {
@@ -81,6 +97,10 @@ impl Squelch {
     pub fn reset(&mut self) {
         self.power = 0.0;
         self.floor = 0.0;
+        self.guard_quiet = 0.0;
+        if let Some(guard) = &mut self.guard {
+            guard.reset();
+        }
         self.warmup = self.warmup_samples;
         self.quiet = 0;
         self.open = false;
@@ -89,20 +109,32 @@ impl Squelch {
 
     fn recompute_thresholds(&mut self) {
         self.open_lin = match self.auto_margin_db {
-            Some(_) => (self.floor * self.auto_margin_lin).clamp(AUTO_MIN_LIN, AUTO_MAX_LIN),
+            Some(_) => self.auto_open_lin(),
             None => db_to_power(self.threshold_db),
         };
         self.close_lin = self.open_lin * self.hysteresis_lin;
     }
 
+    fn auto_open_lin(&self) -> f32 {
+        (self.floor * self.auto_margin_lin * self.guard_lift()).clamp(AUTO_MIN_LIN, AUTO_MAX_LIN)
+    }
+
+    fn guard_lift(&self) -> f32 {
+        match &self.guard {
+            Some(guard) if self.guard_quiet > 0.0 => (guard.level() / self.guard_quiet).max(1.0),
+            _ => 1.0,
+        }
+    }
+
     #[must_use]
-    pub fn process(&mut self, iq: &[Complex<f32>]) -> bool {
-        if !self.power.is_finite() || !self.floor.is_finite() {
-            self.power = 0.0;
-            self.floor = 0.0;
-            self.warmup = self.warmup_samples;
+    pub fn process(&mut self, iq: &[Complex<f32>], wide: &[Complex<f32>]) -> bool {
+        if !self.power.is_finite() || !self.floor.is_finite() || !self.guard_quiet.is_finite() {
+            self.reset();
         }
         let auto = self.auto_margin_db.is_some();
+        if auto && let Some(guard) = &mut self.guard {
+            guard.process(wide);
+        }
         for &x in iq {
             self.power += self.coeff * (x.norm_sqr() - self.power);
             if auto {
@@ -122,16 +154,29 @@ impl Squelch {
     }
 
     fn track_floor(&mut self) {
+        let guard = self.guard.as_ref().map_or(0.0, GuardMeter::level);
+        if self.warmup > 0 || self.guard_quiet == 0.0 {
+            self.guard_quiet = guard;
+        }
         if self.warmup > 0 {
             self.warmup -= 1;
             self.floor = self.power;
-        } else if self.power < self.floor {
-            self.floor += self.floor_fall * (self.power - self.floor);
-        } else if !self.open {
-            self.floor += self.floor_rise * (self.power - self.floor);
+        } else {
+            self.floor = self.follow(self.floor, self.power);
+            self.guard_quiet = self.follow(self.guard_quiet, guard);
         }
-        self.open_lin = (self.floor * self.auto_margin_lin).clamp(AUTO_MIN_LIN, AUTO_MAX_LIN);
+        self.open_lin = self.auto_open_lin();
         self.close_lin = self.open_lin * self.hysteresis_lin;
+    }
+
+    fn follow(&self, quiet: f32, now: f32) -> f32 {
+        if now < quiet {
+            quiet + self.floor_fall * (now - quiet)
+        } else if self.open {
+            quiet
+        } else {
+            quiet + self.floor_rise * (now - quiet)
+        }
     }
 }
 
@@ -148,6 +193,12 @@ mod tests {
     const THRESHOLD_DB: f32 = -30.0;
     const HYSTERESIS_DB: f32 = 2.0;
     const HOLD_S: f32 = 0.1;
+
+    impl Squelch {
+        fn process_alone(&mut self, iq: &[Complex<f32>]) -> bool {
+            self.process(iq, &[])
+        }
+    }
 
     fn squelch() -> Squelch {
         Squelch::new(RATE, THRESHOLD_DB, HYSTERESIS_DB, HOLD_S)
@@ -167,14 +218,14 @@ mod tests {
             let block: Vec<Complex<f32>> = (0..480)
                 .map(|_| Complex::new(rng.next_f32(), rng.next_f32()) * scale)
                 .collect();
-            assert!(!sq.process(&block), "opened on noise floor");
+            assert!(!sq.process_alone(&block), "opened on noise floor");
         }
     }
 
     #[test]
     fn burst_above_threshold_opens() {
         let mut sq = squelch();
-        assert!(sq.process(&tone_at_db(-10.0, 480)));
+        assert!(sq.process_alone(&tone_at_db(-10.0, 480)));
     }
 
     fn noise_at_db(db: f32, len: usize, rng: &mut XorShift32) -> Vec<Complex<f32>> {
@@ -187,16 +238,22 @@ mod tests {
     #[test]
     fn dithering_inside_hysteresis_band_never_chatters() {
         let mut sq = squelch();
-        assert!(sq.process(&tone_at_db(-10.0, 480)));
+        assert!(sq.process_alone(&tone_at_db(-10.0, 480)));
         for i in 0..100 {
             let db = if i % 2 == 0 { -30.5 } else { -31.5 };
-            assert!(sq.process(&tone_at_db(db, 480)), "closed at block {i}");
+            assert!(
+                sq.process_alone(&tone_at_db(db, 480)),
+                "closed at block {i}"
+            );
         }
 
         let mut sq = squelch();
         for i in 0..100 {
             let db = if i % 2 == 0 { -30.5 } else { -31.5 };
-            assert!(!sq.process(&tone_at_db(db, 480)), "opened at block {i}");
+            assert!(
+                !sq.process_alone(&tone_at_db(db, 480)),
+                "opened at block {i}"
+            );
         }
     }
 
@@ -205,12 +262,12 @@ mod tests {
         let mut sq = squelch();
         let mut rng = XorShift32(0xdead_beef);
         for _ in 0..100 {
-            assert!(!sq.process(&noise_at_db(-33.0, 480, &mut rng)));
+            assert!(!sq.process_alone(&noise_at_db(-33.0, 480, &mut rng)));
         }
-        assert!(sq.process(&tone_at_db(-10.0, 480)));
+        assert!(sq.process_alone(&tone_at_db(-10.0, 480)));
         let mut open = true;
         for _ in 0..50 {
-            open = sq.process(&noise_at_db(-33.0, 480, &mut rng));
+            open = sq.process_alone(&noise_at_db(-33.0, 480, &mut rng));
         }
         assert!(!open, "the gate wedged open on the noise floor");
     }
@@ -218,11 +275,11 @@ mod tests {
     #[test]
     fn closes_only_after_hold_time() {
         let mut sq = squelch();
-        assert!(sq.process(&tone_at_db(-10.0, 480)));
+        assert!(sq.process_alone(&tone_at_db(-10.0, 480)));
         let silence = vec![Complex::new(0.0f32, 0.0); 480];
         let mut states = Vec::new();
         for _ in 0..15 {
-            states.push(sq.process(&silence));
+            states.push(sq.process_alone(&silence));
         }
         assert!(states[8], "closed before the hold time");
         assert!(!states[12], "still open after the hold time");
@@ -231,23 +288,23 @@ mod tests {
     #[test]
     fn recovers_after_non_finite_sample() {
         let mut sq = squelch();
-        assert!(sq.process(&tone_at_db(-10.0, 480)));
+        assert!(sq.process_alone(&tone_at_db(-10.0, 480)));
         let mut poisoned = tone_at_db(-10.0, 480);
         poisoned[0] = Complex::new(f32::NAN, 0.0);
-        let _ = sq.process(&poisoned);
+        let _ = sq.process_alone(&poisoned);
         let silence = vec![Complex::new(0.0f32, 0.0); 480];
         let mut open = true;
         for _ in 0..15 {
-            open = sq.process(&silence);
+            open = sq.process_alone(&silence);
         }
         assert!(!open, "gate frozen open after NaN");
 
         let mut sq = squelch();
         let mut poisoned = tone_at_db(-60.0, 480);
         poisoned[0] = Complex::new(f32::NAN, f32::NAN);
-        assert!(!sq.process(&poisoned));
+        assert!(!sq.process_alone(&poisoned));
         assert!(
-            sq.process(&tone_at_db(-10.0, 480)),
+            sq.process_alone(&tone_at_db(-10.0, 480)),
             "gate frozen closed after NaN"
         );
     }
@@ -255,9 +312,9 @@ mod tests {
     #[test]
     fn set_threshold_moves_the_open_point() {
         let mut sq = squelch();
-        assert!(!sq.process(&tone_at_db(-40.0, 4_800)));
+        assert!(!sq.process_alone(&tone_at_db(-40.0, 4_800)));
         sq.set_threshold_db(-50.0);
-        assert!(sq.process(&tone_at_db(-40.0, 4_800)));
+        assert!(sq.process_alone(&tone_at_db(-40.0, 4_800)));
     }
 
     const MARGIN_DB: f32 = 8.0;
@@ -274,7 +331,7 @@ mod tests {
             let mut sq = auto();
             let mut open = true;
             for _ in 0..200 {
-                open = sq.process(&tone_at_db(noise_db, 480));
+                open = sq.process_alone(&tone_at_db(noise_db, 480));
             }
             assert!(!open, "gate open on the noise floor at {noise_db} dB");
             let landed = sq.threshold_db();
@@ -289,20 +346,26 @@ mod tests {
     fn a_burst_above_the_learned_floor_opens_the_gate() {
         let mut sq = auto();
         for _ in 0..200 {
-            assert!(!sq.process(&tone_at_db(-60.0, 480)));
+            assert!(!sq.process_alone(&tone_at_db(-60.0, 480)));
         }
-        assert!(sq.process(&tone_at_db(-40.0, 480)), "burst did not open it");
+        assert!(
+            sq.process_alone(&tone_at_db(-40.0, 480)),
+            "burst did not open it"
+        );
     }
 
     #[test]
     fn a_long_transmission_does_not_squelch_itself() {
         let mut sq = auto();
         for _ in 0..200 {
-            let _ = sq.process(&tone_at_db(-60.0, 480));
+            let _ = sq.process_alone(&tone_at_db(-60.0, 480));
         }
-        assert!(sq.process(&tone_at_db(-40.0, 480)));
+        assert!(sq.process_alone(&tone_at_db(-40.0, 480)));
         for i in 0..3_000 {
-            assert!(sq.process(&tone_at_db(-40.0, 480)), "closed at block {i}");
+            assert!(
+                sq.process_alone(&tone_at_db(-40.0, 480)),
+                "closed at block {i}"
+            );
         }
     }
 
@@ -310,11 +373,14 @@ mod tests {
     fn the_threshold_follows_a_floor_that_creeps_up() {
         let mut sq = auto();
         for _ in 0..200 {
-            let _ = sq.process(&tone_at_db(-80.0, 480));
+            let _ = sq.process_alone(&tone_at_db(-80.0, 480));
         }
         for step in 0..12_000 {
             let db = -80.0 + 20.0 * step as f32 / 12_000.0;
-            assert!(!sq.process(&tone_at_db(db, 480)), "opened on its own noise");
+            assert!(
+                !sq.process_alone(&tone_at_db(db, 480)),
+                "opened on its own noise"
+            );
         }
         let landed = sq.threshold_db();
         assert!(
@@ -327,7 +393,7 @@ mod tests {
     fn auto_and_manual_thresholds_hand_over_to_each_other() {
         let mut sq = auto();
         for _ in 0..200 {
-            let _ = sq.process(&tone_at_db(-60.0, 480));
+            let _ = sq.process_alone(&tone_at_db(-60.0, 480));
         }
         let learned = sq.threshold_db();
 
@@ -335,7 +401,7 @@ mod tests {
         sq.set_threshold_db(-90.0);
         assert_eq!(sq.threshold_db(), -90.0);
         assert!(
-            sq.process(&tone_at_db(-60.0, 480)),
+            sq.process_alone(&tone_at_db(-60.0, 480)),
             "manual gate did not open"
         );
 
@@ -351,12 +417,12 @@ mod tests {
     fn a_reset_forgets_the_floor_the_channel_taught_it() {
         let mut sq = auto();
         for _ in 0..200 {
-            let _ = sq.process(&tone_at_db(-30.0, 480));
+            let _ = sq.process_alone(&tone_at_db(-30.0, 480));
         }
         sq.reset();
         let mut open = true;
         for _ in 0..200 {
-            open = sq.process(&tone_at_db(-70.0, 480));
+            open = sq.process_alone(&tone_at_db(-70.0, 480));
         }
         assert!(!open);
         assert!(
@@ -371,11 +437,105 @@ mod tests {
         let mut sq = auto();
         let mut poisoned = tone_at_db(-60.0, 480);
         poisoned[0] = Complex::new(f32::NAN, f32::NAN);
-        let _ = sq.process(&poisoned);
+        let _ = sq.process_alone(&poisoned);
         for _ in 0..200 {
-            let _ = sq.process(&tone_at_db(-60.0, 480));
+            let _ = sq.process_alone(&tone_at_db(-60.0, 480));
         }
         assert!(sq.threshold_db().is_finite());
-        assert!(sq.process(&tone_at_db(-30.0, 480)), "gate wedged after NaN");
+        assert!(
+            sq.process_alone(&tone_at_db(-30.0, 480)),
+            "gate wedged after NaN"
+        );
+    }
+
+    const BAND_HZ: f64 = 6_250.0;
+
+    fn guarded() -> Squelch {
+        auto().with_guard_band(-BAND_HZ, BAND_HZ)
+    }
+
+    fn noise_with(db: f32, tone: Option<(f64, f32)>, rng: &mut XorShift32) -> Vec<Complex<f32>> {
+        let mut block = noise_at_db(db, 480, rng);
+        if let Some((freq, tone_db)) = tone {
+            let amp = 10f32.powf(tone_db / 20.0);
+            for (x, t) in block.iter_mut().zip(complex_tone(freq / RATE, 480)) {
+                *x += t * amp;
+            }
+        }
+        block
+    }
+
+    fn settle_on_noise(sq: &mut Squelch, db: f32, rng: &mut XorShift32) {
+        for _ in 0..500 {
+            let block = noise_at_db(db, 480, rng);
+            let _ = sq.process(&block, &block);
+        }
+    }
+
+    #[test]
+    fn a_floor_that_steps_up_does_not_open_the_gate() {
+        let mut sq = guarded();
+        let mut rng = XorShift32(0x5eed_0001);
+        settle_on_noise(&mut sq, -70.0, &mut rng);
+        for i in 0..100 {
+            let block = noise_at_db(-50.0, 480, &mut rng);
+            assert!(!sq.process(&block, &block), "opened at block {i}");
+        }
+    }
+
+    #[test]
+    fn a_floor_that_steps_up_mid_call_closes_the_gate_when_the_call_ends() {
+        let mut sq = guarded();
+        let mut rng = XorShift32(0x5eed_0004);
+        settle_on_noise(&mut sq, -70.0, &mut rng);
+        for _ in 0..50 {
+            let block = noise_with(-70.0, Some((1_000.0, -30.0)), &mut rng);
+            assert!(sq.process(&block, &block));
+        }
+        for _ in 0..50 {
+            let block = noise_with(-50.0, Some((1_000.0, -30.0)), &mut rng);
+            assert!(sq.process(&block, &block));
+        }
+        let mut open = true;
+        for _ in 0..50 {
+            let block = noise_at_db(-50.0, 480, &mut rng);
+            open = sq.process(&block, &block);
+        }
+        assert!(!open, "the stepped floor held the gate open");
+    }
+
+    #[test]
+    fn a_long_signal_inside_the_band_holds_a_guarded_gate_open() {
+        let mut sq = guarded();
+        let mut rng = XorShift32(0x5eed_0002);
+        settle_on_noise(&mut sq, -70.0, &mut rng);
+        for i in 0..3_000 {
+            let block = noise_with(-70.0, Some((1_000.0, -40.0)), &mut rng);
+            assert!(sq.process(&block, &block), "closed at block {i}");
+        }
+    }
+
+    #[test]
+    fn a_signal_beside_the_channel_leaves_the_threshold_alone() {
+        let mut sq = guarded();
+        let mut rng = XorShift32(0x5eed_0003);
+        settle_on_noise(&mut sq, -70.0, &mut rng);
+        let before = sq.threshold_db();
+        for _ in 0..200 {
+            let inside = noise_at_db(-70.0, 480, &mut rng);
+            let wide = noise_with(-70.0, Some((14_000.0, -30.0)), &mut rng);
+            assert!(!sq.process(&inside, &wide));
+        }
+        assert!(
+            (sq.threshold_db() - before).abs() < 1.0,
+            "threshold moved from {before:.1} to {:.1} dB",
+            sq.threshold_db()
+        );
+    }
+
+    #[test]
+    fn a_band_that_fills_the_channel_has_no_guard() {
+        assert!(GuardMeter::new(240_000.0, -100_000.0, 100_000.0).is_none());
+        assert!(GuardMeter::new(RATE, -BAND_HZ, BAND_HZ).is_some());
     }
 }

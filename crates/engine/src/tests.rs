@@ -24,10 +24,10 @@ mod clipping;
 mod device_patch;
 mod discovery;
 mod front_end;
-mod group_tuning;
 #[cfg(all(feature = "rtlsdr", feature = "hackrf", feature = "soapy"))]
 mod hardware;
 mod hotplug;
+mod lanes;
 mod placement;
 mod recording;
 mod scanning;
@@ -92,7 +92,9 @@ fn empty_capabilities() -> Capabilities {
         dc_artifact: DcArtifact::Operator,
         hardware_sweep: false,
         coherence: sdrmm_wire::Coherence::None,
-        noise_source: false,
+        noise_source: sdrmm_wire::NoiseSource::None,
+        retune_keeps_phase: false,
+        rx_inputs: Vec::new(),
     }
 }
 
@@ -215,6 +217,37 @@ impl DeviceDriver for VanishingDriver {
         } else {
             Vec::new()
         }
+    }
+
+    fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        Ok(Box::new(SilentDevice {
+            capabilities: empty_capabilities(),
+            settings: mock_settings(),
+        }))
+    }
+}
+
+#[derive(Default)]
+struct AdoptingDriver {
+    adopted: AtomicBool,
+}
+
+impl DeviceDriver for AdoptingDriver {
+    fn id(&self) -> &'static str {
+        "mock"
+    }
+
+    fn probe(&self) -> Vec<DeviceInfo> {
+        if self.adopted.load(Ordering::SeqCst) {
+            vec![mock_info("adopted", None)]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn probe_deep(&self) -> Vec<DeviceInfo> {
+        self.adopted.store(true, Ordering::SeqCst);
+        self.probe()
     }
 
     fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
@@ -569,7 +602,8 @@ impl DeviceDriver for RefusedSweepDriver {
                 sample_rates: vec![SIGNAL_RATE_HZ],
                 hardware_sweep: true,
                 coherence: sdrmm_wire::Coherence::None,
-                noise_source: false,
+                noise_source: sdrmm_wire::NoiseSource::None,
+                rx_inputs: Vec::new(),
                 ..empty_capabilities()
             },
             settings: DeviceSettings {
@@ -788,9 +822,9 @@ impl SdrDevice for AdsbTestDevice {
 
     fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
         let mut sink = single_rx_sink(sinks)?;
-        let frame = sdrmm_channels::testgen::adsb::squitter(
+        let frame = sdrmm_channels::synth::adsb::squitter(
             0x3C_6444,
-            sdrmm_channels::testgen::adsb::me_airborne_position(9_000, 52.52, 13.405, false),
+            sdrmm_channels::synth::adsb::me_airborne_position(9_000, 52.52, 13.405, false),
         );
         let frames = std::iter::repeat_n(frame, 16).collect::<Vec<_>>();
         let rate = self.rate.clone();
@@ -802,7 +836,7 @@ impl SdrDevice for AdsbTestDevice {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
                 let samples =
-                    sdrmm_channels::testgen::adsb::transmission(&frames, 30.0, 0.8, sample_rate);
+                    sdrmm_channels::synth::adsb::transmission(&frames, 30.0, 0.8, sample_rate);
                 sink.push(&samples);
                 std::thread::sleep(Duration::from_millis(2));
             }
@@ -873,6 +907,58 @@ impl SdrDevice for SnappingDevice {
     }
 
     fn rx_stop(&mut self) {}
+}
+
+struct HeldSinkDriver {
+    sink: Arc<Mutex<Option<RxSink>>>,
+}
+
+impl DeviceDriver for HeldSinkDriver {
+    fn id(&self) -> &'static str {
+        "mock"
+    }
+
+    fn probe(&self) -> Vec<DeviceInfo> {
+        vec![mock_info("held", None)]
+    }
+
+    fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        Ok(Box::new(HeldSinkDevice {
+            capabilities: empty_capabilities(),
+            settings: mock_settings(),
+            sink: self.sink.clone(),
+        }))
+    }
+}
+
+struct HeldSinkDevice {
+    capabilities: Capabilities,
+    settings: DeviceSettings,
+    sink: Arc<Mutex<Option<RxSink>>>,
+}
+
+impl SdrDevice for HeldSinkDevice {
+    fn capabilities(&self) -> &Capabilities {
+        &self.capabilities
+    }
+
+    fn settings(&self) -> &DeviceSettings {
+        &self.settings
+    }
+
+    fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
+        self.settings.merge_from(settings);
+        Ok(())
+    }
+
+    fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
+        *lock(&self.sink) = Some(single_rx_sink(sinks)?);
+        Ok(())
+    }
+
+    fn rx_stop(&mut self) {
+        lock(&self.sink).take();
+    }
 }
 
 struct ExclusiveDriver {
@@ -1127,7 +1213,7 @@ fn parked(id: u32, offset_hz: f64) -> ChannelInfo {
         stream: 0,
         node: None,
         settings: nfm_settings(offset_hz),
-        out_of_band: false,
+        out_of_band: None,
         audio_recordings: Vec::new(),
         baseband_recording: None,
         network_export: None,
@@ -1139,7 +1225,8 @@ fn managed_caps() -> Capabilities {
         dc_artifact: DcArtifact::Managed,
         hardware_sweep: false,
         coherence: sdrmm_wire::Coherence::None,
-        noise_source: false,
+        noise_source: sdrmm_wire::NoiseSource::None,
+        rx_inputs: Vec::new(),
         ..tuner_caps()
     }
 }

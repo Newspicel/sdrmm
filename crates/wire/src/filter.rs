@@ -36,6 +36,9 @@ const FACETS: &[(&str, &[EventFacet])] = &[
     ("inmarsat_aero", &[EventFacet::Position]),
     ("inmarsat_stdc", &[EventFacet::Position]),
     ("iridium", &[EventFacet::Position]),
+    ("lora", &[EventFacet::Position]),
+    ("remote_id", &[EventFacet::Position]),
+    ("radar", &[EventFacet::Position]),
     ("vdl2", &[EventFacet::Position]),
 ];
 
@@ -277,14 +280,13 @@ mod tests {
         VoiceCall {
             id: 1,
             node: "dmr".to_owned(),
-            source_node: "dmr".to_owned(),
             started_at: "2026-08-16T10:00:00Z".to_owned(),
             ended_at: "2026-08-16T10:00:02Z".to_owned(),
             duration_ms: 2_000,
             device_set: 1,
             channel: 2,
             freq_hz: 451_125_000.0,
-            mode: DvMode::Dmr,
+            mode: "dmr".to_owned(),
             slot: Some(2),
             color_code: Some(3),
             source: Some(2_621_001),
@@ -497,6 +499,7 @@ mod tests {
             &[EventFacet::Voice, EventFacet::Duration]
         );
         assert_eq!(facets_of("dv"), &[EventFacet::Position, EventFacet::Voice]);
+        assert_eq!(facets_of("radar"), &[EventFacet::Position]);
         let listed = event_facets();
         assert!(listed.iter().any(|entry| entry.kind == "ais"));
         assert!(listed.iter().all(|entry| !entry.facets.is_empty()));

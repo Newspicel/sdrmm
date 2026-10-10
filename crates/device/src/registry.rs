@@ -108,6 +108,21 @@ impl DeviceRegistry {
             .find_map(|(_, driver)| driver.resolve(key))
     }
 
+    pub fn write_serial(
+        &self,
+        device_id: &str,
+        serial: Option<&str>,
+    ) -> Result<String, DeviceError> {
+        let not_found = || DeviceError::NotFound(device_id.to_string());
+        let (driver_id, key) = device_id.split_once(':').ok_or_else(not_found)?;
+        self.drivers
+            .iter()
+            .find(|(_, driver)| driver.id() == driver_id)
+            .ok_or_else(not_found)?
+            .1
+            .write_serial(key, serial)
+    }
+
     fn find(&self, device_id: &str) -> Option<(&dyn DeviceDriver, DeviceInfo)> {
         let (driver_id, key) = device_id.split_once(':')?;
         let matching = || {
@@ -223,7 +238,9 @@ mod tests {
                 dc_artifact: DcArtifact::Operator,
                 hardware_sweep: false,
                 coherence: sdrmm_wire::Coherence::None,
-                noise_source: false,
+                noise_source: sdrmm_wire::NoiseSource::None,
+                retune_keeps_phase: false,
+                rx_inputs: Vec::new(),
             })
         }
 
@@ -255,6 +272,21 @@ mod tests {
         DeviceInfo {
             serial: Some(serial.to_string()),
             ..info(driver, key)
+        }
+    }
+
+    #[test]
+    fn a_serial_goes_to_the_named_driver_which_may_refuse_it() {
+        let registry = registry([Fake::new("mock", &["one"])]);
+        assert!(matches!(
+            registry.write_serial("mock:one", None),
+            Err(DeviceError::Unsupported(text)) if text == "mock radios keep their factory serial"
+        ));
+        for missing in ["other:one", "no-colon"] {
+            assert!(matches!(
+                registry.write_serial(missing, Some("7")),
+                Err(DeviceError::NotFound(_))
+            ));
         }
     }
 

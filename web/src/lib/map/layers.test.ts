@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { AdsbMessage, AisMessage, AprsPacket, ChannelParams } from "../types";
+import { emptyTrail, extendTrail, type Trail } from "../trails";
+import type {
+  AdsbMessage,
+  AisMessage,
+  AprsPacket,
+  ChannelParams,
+  LoraFrame,
+  RadiosondeFrame,
+} from "../types";
 import {
   isStale,
   layerId,
@@ -15,6 +23,8 @@ import {
   targetFeature,
   targetHeading,
   targetLabel,
+  trackCollection,
+  trackSourceId,
 } from "./layers";
 
 const NOW = Date.parse("2026-08-09T12:00:00Z");
@@ -49,6 +59,56 @@ function aprs(data: Partial<AprsPacket>, over: Partial<Target> = {}): Target {
   );
 }
 
+function sonde(data: Partial<RadiosondeFrame>, over: Partial<Target> = {}): Target {
+  return station(
+    {
+      kind: "radiosonde",
+      data: { sonde: "rs41", serial: "S1234567", errors_corrected: 0, ...data },
+    },
+    over,
+  );
+}
+
+function meshcore(name: string | null, lat: number | null): Target {
+  const data: LoraFrame = {
+    spreading_factor: 8,
+    bandwidth_hz: 62_500,
+    coding_rate: "4/8",
+    sync_word: 0x12,
+    implicit_header: false,
+    low_data_rate: false,
+    inverted_iq: false,
+    integrity: "crc_ok",
+    fec_corrected: 0,
+    snr_db: 6.5,
+    frequency_error_hz: 0,
+    payload: "11",
+    decoded: {
+      protocol: "meshcore",
+      route: "flood",
+      payload_type: "advert",
+      version: 1,
+      content: {
+        type: "advert",
+        public_key: "0011223344",
+        timestamp: 1,
+        node_type: "repeater",
+        name,
+        lat,
+        lon: 8.25,
+        signature_ok: true,
+      },
+    },
+  };
+  return station({ kind: "lora", data }, { id: name ?? "00112233" });
+}
+
+function trailOf(...points: [number, number][]): Trail {
+  const trail = emptyTrail();
+  points.forEach((point, at) => extendTrail(trail, point, at));
+  return trail;
+}
+
 function station(event: Target["event"], over: Partial<Target>): Target {
   return {
     kind: event.kind,
@@ -72,6 +132,46 @@ describe("MAP_KINDS", () => {
       layerId(kind, "label"),
     ]);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("gives every kind its own track source and layer", () => {
+    const ids = [
+      ...MAP_KINDS.map(sourceId),
+      ...MAP_KINDS.flatMap((kind) => [trackSourceId(kind), layerId(kind, "track")]),
+    ];
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("trackCollection", () => {
+  it("draws each live target's trail as a line", () => {
+    const trails = new Map([
+      ["A", trailOf([11.1, 48.1], [11.2, 48.3])],
+      ["B", trailOf([8, 50])],
+    ]);
+    const stations = [adsb({}, { id: "A" }), adsb({}, { id: "B" }), adsb({}, { id: "C" })];
+    expect(trackCollection(stations, trails, NOW)).toEqual({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [11.1, 48.1],
+              [11.2, 48.3],
+            ],
+          },
+          properties: { id: "A" },
+        },
+      ],
+    });
+  });
+
+  it("drops a target not heard within the horizon", () => {
+    const trails = new Map([["A", trailOf([11.1, 48.1], [11.2, 48.3])]]);
+    const stale = [ais({}, { id: "A", lastSeen: NOW - TARGET_MAX_AGE_MS - 1 })];
+    expect(trackCollection(stale, trails, NOW).features).toEqual([]);
   });
 });
 
@@ -116,6 +216,20 @@ describe("targetFeature", () => {
   });
 });
 
+describe("LoRa targets", () => {
+  it("places a MeshCore advert by its name", () => {
+    expect(targetFeature(meshcore("Hilltop", 47.5))).toEqual({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [8.25, 47.5] },
+      properties: { id: "Hilltop", label: "Hilltop" },
+    });
+    expect(targetFeature(meshcore("Hilltop", null))).toBeNull();
+    expect(targetLabel(meshcore(null, 47.5))).toBe("00112233");
+    expect(mapKindsOf(["lora", "dect"])).toEqual(["lora"]);
+    expect(targetDetail(meshcore("Hilltop", 47.5)).rows).toContainEqual(["Protocol", "MeshCore"]);
+  });
+});
+
 describe("targetLabel", () => {
   it("falls back through each kind's identities", () => {
     expect(targetLabel(adsb({ callsign: "  " }))).toBe("3C6444");
@@ -123,6 +237,7 @@ describe("targetLabel", () => {
     expect(targetLabel(ais({ call_sign: "DEAB" }))).toBe("DEAB");
     expect(targetLabel(ais({ name: "NORDIC", call_sign: "DEAB" }))).toBe("NORDIC");
     expect(targetLabel(aprs({}))).toBe("DL1ABC-9");
+    expect(targetLabel(sonde({}))).toBe("S1234567");
   });
 });
 
@@ -142,6 +257,11 @@ describe("targetHeading", () => {
     expect(targetHeading(aprs({ course_deg: -90 }))).toBe(270);
     expect(targetHeading(aprs({ course_deg: 450 }))).toBe(90);
     expect(targetHeading(aprs({ course_deg: Number.NaN }))).toBeNull();
+  });
+
+  it("reads a sonde's heading", () => {
+    expect(targetHeading(sonde({ heading_deg: 45 }))).toBe(45);
+    expect(targetHeading(sonde({}))).toBeNull();
   });
 });
 
@@ -219,6 +339,20 @@ describe("targetDetail", () => {
     ]);
   });
 
+  it("shows a sonde's flight data with units", () => {
+    const detail = targetDetail(
+      sonde({ altitude_m: 15_234.4, climb_ms: 5.12, temperature_c: -60.25, pressure_hpa: 120 }),
+    );
+    expect(detail.rows).toEqual([
+      ["Serial", "S1234567"],
+      ["Altitude", "15234 m"],
+      ["Climb", "5.1 m/s"],
+      ["Temp", "-60.3 °C"],
+      ["Pressure", "120.0 hPa"],
+      ["Frames", "1"],
+    ]);
+  });
+
   it("carries the identity and provenance the panel header shows", () => {
     const detail = targetDetail(ais({ name: "NORDIC" }, { id: "211234560" }));
     expect(detail).toMatchObject({
@@ -228,5 +362,41 @@ describe("targetDetail", () => {
       freqHz: 1_090_000_000,
       lastSeen: NOW,
     });
+  });
+});
+
+describe("drone targets", () => {
+  it("place a drone by its location and name it by its serial", () => {
+    const drone = station(
+      {
+        kind: "remote_id",
+        data: {
+          transport: "wifi_beacon",
+          phy: "ofdm",
+          address: "90:3A:E6:5B:C8:A8",
+          uas_id: "1588E040445AC004418",
+          level_dbfs: -50,
+          messages: [
+            {
+              type: "location",
+              status: "ground",
+              lat: 47.1987103,
+              lon: 8.7302371,
+              track_deg: 84,
+              height_m: 0,
+              height_reference: "takeoff",
+            },
+          ],
+        },
+      },
+      { id: "1588E040445AC004418" },
+    );
+    expect(targetFeature(drone)).toEqual({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [8.7302371, 47.1987103] },
+      properties: { id: "1588E040445AC004418", label: "1588E040445AC004418", heading: 84 },
+    });
+    expect(targetDetail(drone).rows).toContainEqual(["Link", "Wi-Fi beacon"]);
+    expect(mapKindsOf(["remote_id"])).toEqual(["remote_id"]);
   });
 });

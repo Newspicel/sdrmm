@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicU32;
+
 use super::*;
 
 fn nfm_decoder(engine: &Engine, ds: u32, frequency_hz: f64) -> u32 {
@@ -29,7 +31,6 @@ async fn scan_finds_a_carrier_and_holds() {
             stop_hz: 100_200_000.0,
             step_hz: 25_000.0,
         }],
-        threshold_db: -60.0,
         dwell_ms: 60,
         resume_ms: 60_000,
         ..sdrmm_wire::ScanSettings::for_channel(ch)
@@ -119,7 +120,7 @@ async fn scan_finds_a_carrier_and_holds() {
         "the decoder stays where the scan left it"
     );
     assert!(
-        !after.channels[0].out_of_band,
+        after.channels[0].out_of_band.is_none(),
         "the radio follows the decoder once the scan lets go"
     );
     engine
@@ -149,7 +150,6 @@ async fn a_radio_tuned_by_hand_stays_put_and_the_scan_searches_only_its_window()
             ds,
             sdrmm_wire::ScanSettings {
                 frequencies: vec![SIGNAL_HZ, beyond],
-                threshold_db: -60.0,
                 dwell_ms: 40,
                 resume_ms: 60_000,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
@@ -211,7 +211,7 @@ async fn the_decoder_follows_the_sweep_and_stays_where_the_scan_stops() {
             ds,
             sdrmm_wire::ScanSettings {
                 frequencies: targets.to_vec(),
-                threshold_db: 100.0,
+                margin_db: 200.0,
                 dwell_ms: 40,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -226,7 +226,7 @@ async fn the_decoder_follows_the_sweep_and_stays_where_the_scan_stops() {
         let decoder_hz = set.channels[0].settings.frequency_hz;
         if targets.contains(&decoder_hz) {
             assert!(
-                !set.channels[0].out_of_band,
+                set.channels[0].out_of_band.is_none(),
                 "the decoder follows the scan into the radio's window"
             );
             break;
@@ -263,7 +263,6 @@ async fn skipping_a_held_frequency_resumes_and_never_holds_there_again() {
             ds,
             sdrmm_wire::ScanSettings {
                 frequencies: vec![SIGNAL_HZ, SIGNAL_HZ + 25_000.0],
-                threshold_db: -60.0,
                 dwell_ms: 40,
                 resume_ms: 60_000,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
@@ -286,7 +285,7 @@ async fn skipping_a_held_frequency_resumes_and_never_holds_there_again() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     let skipped = engine.skip_scan(ds, ch).unwrap();
-    assert_eq!(skipped.settings.skip, vec![SIGNAL_HZ]);
+    assert_eq!(skipped.settings.lockouts, vec![SIGNAL_HZ]);
 
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -319,10 +318,98 @@ async fn skipping_a_held_frequency_resumes_and_never_holds_there_again() {
     engine.remove_device_set(ds).unwrap();
 }
 
+async fn scanner_once(
+    engine: &Engine,
+    ready: impl Fn(&sdrmm_wire::ScannerStatus) -> bool,
+) -> sdrmm_wire::ScannerStatus {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let scanner = engine.snapshot().device_sets[0]
+            .scanners
+            .first()
+            .cloned()
+            .expect("scan listed");
+        assert_eq!(scanner.error, None, "scan failed");
+        if ready(&scanner) {
+            return scanner;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the scan never got there: {scanner:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn an_all_scan_visits_each_busy_frequency_once_and_finishes() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(SignalDriver));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
+    engine
+        .start_scan(
+            ds,
+            sdrmm_wire::ScanSettings {
+                mode: sdrmm_wire::ScanMode::All,
+                frequencies: vec![SIGNAL_HZ - 50_000.0, SIGNAL_HZ, SIGNAL_HZ + 50_000.0],
+                dwell_ms: 40,
+                hold_ms: 300,
+                ..sdrmm_wire::ScanSettings::for_channel(ch)
+            },
+        )
+        .unwrap();
+
+    let done = scanner_once(&engine, |s| s.state == ScanState::Done).await;
+    assert_eq!(done.hits, 1, "one carrier, one visit");
+    assert_eq!(done.current_hz, SIGNAL_HZ, "it ends on what it found");
+    assert!(done.sweeps >= 2, "a last sweep proves nothing new is left");
+    let parked = engine.snapshot().device_sets[0].channels[0]
+        .settings
+        .frequency_hz;
+    assert!(
+        (parked - SIGNAL_HZ).abs() < 1.0,
+        "the decoder was left at {parked} Hz"
+    );
+    assert!(engine.skip_scan(ds, ch).is_err(), "nothing held to skip");
+    let last = engine.stop_scan(ds, ch).unwrap();
+    assert_eq!(last.state, ScanState::Done);
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
+async fn a_busy_priority_frequency_is_held_while_the_sweep_finds_nothing() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(SignalDriver));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
+    engine
+        .start_scan(
+            ds,
+            sdrmm_wire::ScanSettings {
+                frequencies: vec![SIGNAL_HZ + 300_000.0],
+                priority: vec![SIGNAL_HZ],
+                lockouts: Vec::new(),
+                dwell_ms: 40,
+                resume_ms: 60_000,
+                ..sdrmm_wire::ScanSettings::for_channel(ch)
+            },
+        )
+        .unwrap();
+
+    let held = scanner_once(&engine, |s| s.state == ScanState::Holding).await;
+    assert_eq!(held.current_hz, SIGNAL_HZ);
+    assert!(held.current_snr_db.is_some_and(|snr| snr >= 12.0));
+    engine.stop_scan(ds, ch).unwrap();
+    engine.remove_device_set(ds).unwrap();
+}
+
 #[tokio::test]
 async fn a_firmware_sweep_finds_a_carrier_without_the_scanner_retuning() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     assert!(
         engine.sweeps_in_firmware(ds),
         "the virtual radio has to offer a firmware sweep for this to test anything"
@@ -340,7 +427,6 @@ async fn a_firmware_sweep_finds_a_carrier_without_the_scanner_retuning() {
             stop_hz: marker + 200_000.0,
             step_hz: 50_000.0,
         }],
-        threshold_db: -50.0,
         dwell_ms: 40,
         resume_ms: 60_000,
         measure_bw_hz: Some(25_000.0),
@@ -401,7 +487,7 @@ async fn a_firmware_sweep_finds_a_carrier_without_the_scanner_retuning() {
 #[tokio::test]
 async fn a_radio_sweeping_in_firmware_refuses_a_retune_by_name() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     let marker = sdrmm_device_virtual::SWEEP_MARKER_HZ;
     engine
@@ -409,7 +495,7 @@ async fn a_radio_sweeping_in_firmware_refuses_a_retune_by_name() {
             ds,
             sdrmm_wire::ScanSettings {
                 frequencies: vec![marker],
-                threshold_db: 100.0,
+                margin_db: 200.0,
                 dwell_ms: 40,
                 measure_bw_hz: Some(25_000.0),
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
@@ -469,8 +555,8 @@ async fn a_hunt_streams_a_strength_a_walker_can_follow() {
         .start_hunt(
             ds,
             sdrmm_wire::HuntSettings {
-                channel: ch,
                 interval_ms: 20,
+                ..sdrmm_wire::HuntSettings::for_channel(ch)
             },
         )
         .unwrap();
@@ -636,7 +722,7 @@ async fn a_hunt_and_a_scan_do_not_share_a_decoder() {
 #[tokio::test]
 async fn close_call_holds_on_the_loudest_carrier_nobody_named() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     let marker = sdrmm_device_virtual::SWEEP_MARKER_HZ;
     let status = engine
@@ -743,7 +829,6 @@ async fn a_refused_firmware_sweep_falls_back_to_retuning_without_losing_the_radi
                     stop_hz: 100_200_000.0,
                     step_hz: 25_000.0,
                 }],
-                threshold_db: -60.0,
                 dwell_ms: 60,
                 resume_ms: 60_000,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
@@ -800,7 +885,7 @@ async fn a_refused_firmware_sweep_falls_back_to_retuning_without_losing_the_radi
 #[tokio::test]
 async fn stopping_mid_sweep_hands_the_radio_back() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     let marker = sdrmm_device_virtual::SWEEP_MARKER_HZ;
     let status = engine
@@ -812,7 +897,7 @@ async fn stopping_mid_sweep_hands_the_radio_back() {
                     stop_hz: marker + 500_000.0,
                     step_hz: 50_000.0,
                 }],
-                threshold_db: 100.0,
+                margin_db: 200.0,
                 dwell_ms: 40,
                 measure_bw_hz: Some(25_000.0),
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
@@ -861,7 +946,7 @@ async fn stopping_mid_sweep_hands_the_radio_back() {
 #[tokio::test]
 async fn a_sweep_hands_back_a_working_channel() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     let marker = sdrmm_device_virtual::SWEEP_MARKER_HZ;
     let channel = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
     engine
@@ -869,7 +954,6 @@ async fn a_sweep_hands_back_a_working_channel() {
             ds,
             sdrmm_wire::ScanSettings {
                 frequencies: vec![marker, marker + 100_000.0],
-                threshold_db: -50.0,
                 dwell_ms: 40,
                 resume_ms: 60_000,
                 measure_bw_hz: Some(25_000.0),
@@ -920,7 +1004,7 @@ async fn removing_a_scanning_set_tears_the_scan_down() {
                     stop_hz: 100_400_000.0,
                     step_hz: 25_000.0,
                 }],
-                threshold_db: 100.0,
+                margin_db: 200.0,
                 dwell_ms: 40,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -962,5 +1046,228 @@ async fn scan_rejects_targets_the_tuner_cannot_reach() {
         )
         .unwrap_err();
     assert!(err.is_not_found(), "expected not found, got {err}");
+    engine.remove_device_set(ds).unwrap();
+}
+
+const SWING_SOURCE_DEG: f64 = 123.0;
+const SWING_S: f64 = 5.0;
+const ANTENNA_LAG_S: f64 = 0.08;
+
+struct SweptDriver {
+    gain_db: Arc<AtomicU32>,
+}
+
+impl DeviceDriver for SweptDriver {
+    fn id(&self) -> &'static str {
+        "mock"
+    }
+
+    fn probe(&self) -> Vec<DeviceInfo> {
+        vec![mock_info("swept", Some("MOCK-SWEPT"))]
+    }
+
+    fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        Ok(Box::new(SweptDevice {
+            capabilities: Capabilities {
+                freq_ranges: vec![sdrmm_wire::Range {
+                    min: 80_000_000.0,
+                    max: 120_000_000.0,
+                    step: None,
+                }],
+                sample_rates: vec![SIGNAL_RATE_HZ],
+                ..empty_capabilities()
+            },
+            settings: DeviceSettings {
+                center_hz: Some(100_000_000.0),
+                sample_rate: Some(SIGNAL_RATE_HZ),
+                ..DeviceSettings::default()
+            },
+            center: Arc::new(Mutex::new(100_000_000.0)),
+            gain_db: self.gain_db.clone(),
+            stop: Arc::new(AtomicBool::new(false)),
+            worker: None,
+        }))
+    }
+}
+
+struct SweptDevice {
+    capabilities: Capabilities,
+    settings: DeviceSettings,
+    center: Arc<Mutex<f64>>,
+    gain_db: Arc<AtomicU32>,
+    stop: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl SdrDevice for SweptDevice {
+    fn capabilities(&self) -> &Capabilities {
+        &self.capabilities
+    }
+
+    fn settings(&self) -> &DeviceSettings {
+        &self.settings
+    }
+
+    fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
+        if let Some(center) = settings.center_hz {
+            *lock(&self.center) = center;
+        }
+        self.settings.merge_from(settings);
+        Ok(())
+    }
+
+    fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
+        let mut sink = single_rx_sink(sinks)?;
+        let center = self.center.clone();
+        let gain_db = self.gain_db.clone();
+        let stop = self.stop.clone();
+        stop.store(false, Ordering::SeqCst);
+        self.worker = Some(std::thread::spawn(move || {
+            let mut phase = 0.0f64;
+            let mut block = vec![Complex::new(0.0f32, 0.0); 2_048];
+            while !stop.load(Ordering::SeqCst) {
+                let step = std::f64::consts::TAU * (SIGNAL_HZ - *lock(&center)) / SIGNAL_RATE_HZ;
+                let gain = f32::from_bits(gain_db.load(Ordering::Relaxed));
+                let amplitude = 0.5 * 10f64.powf(f64::from(gain) / 20.0);
+                for slot in &mut block {
+                    phase = (phase + step).rem_euclid(std::f64::consts::TAU);
+                    *slot = Complex::new(
+                        (amplitude * phase.cos()) as f32,
+                        (amplitude * phase.sin()) as f32,
+                    );
+                }
+                sink.push(&block);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }));
+        Ok(())
+    }
+
+    fn rx_stop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(handle) = self.worker.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn swing_heading(t: f64) -> f64 {
+    10.0 + 120.0 * (t - 1.0).clamp(0.0, 2.5)
+}
+
+fn antenna_gain_db(offset_deg: f64) -> f64 {
+    let half = 30f64.to_radians().cos();
+    let power = 0.5f64.ln() / ((1.0 + half) / 2.0).ln();
+    let cosine = offset_deg.to_radians().cos();
+    (10.0 * power * ((1.0 + cosine) / 2.0).log10()).max(-15.0)
+}
+
+fn pose_facing(heading_deg: f64) -> sdrmm_wire::PositionFix {
+    sdrmm_wire::PositionFix {
+        latitude: 48.137,
+        longitude: 11.575,
+        altitude_m: None,
+        accuracy_m: Some(5.0),
+        speed_mps: None,
+        track_deg: None,
+        time: jiff::Timestamp::now().to_string(),
+        attitude: sdrmm_wire::Attitude {
+            heading_deg: Some(heading_deg.rem_euclid(360.0)),
+            heading_accuracy_deg: Some(2.0),
+            ..sdrmm_wire::Attitude::default()
+        },
+    }
+}
+
+fn wall_ms() -> u64 {
+    u64::try_from(jiff::Timestamp::now().as_millisecond()).unwrap()
+}
+
+#[tokio::test]
+async fn hunt_sweep_publishes_a_df_event() {
+    let gain_db = Arc::new(AtomicU32::new((-15.0f32).to_bits()));
+    let mut registry = DeviceRegistry::new();
+    registry.register(
+        50,
+        Box::new(SweptDriver {
+            gain_db: gain_db.clone(),
+        }),
+    );
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("mock:swept").unwrap();
+    let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
+    let mut decoded = engine.subscribe_decoded();
+    assert!(
+        engine.hunt_mark(ds, ch).is_err(),
+        "no mark before the hunt runs"
+    );
+    let status = engine
+        .sweep_hunt(
+            ds,
+            ch,
+            Some(sdrmm_wire::HuntSettings {
+                interval_ms: 20,
+                node: Some("hunt-1".to_owned()),
+                ..sdrmm_wire::HuntSettings::for_channel(ch)
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        status.sweep.map(|sweep| sweep.state),
+        Some(sdrmm_wire::SweepState::NoHeading)
+    );
+
+    let started = Instant::now();
+    loop {
+        let t = started.elapsed().as_secs_f64();
+        if t > SWING_S {
+            break;
+        }
+        let facing = antenna_gain_db(swing_heading(t - ANTENNA_LAG_S) - SWING_SOURCE_DEG);
+        gain_db.store((facing as f32).to_bits(), Ordering::Relaxed);
+        engine
+            .hunt_pose(ds, ch, pose_facing(swing_heading(t)), wall_ms())
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let (origin, bearing) = loop {
+        match decoded.try_recv() {
+            Ok(DecodedRecord {
+                origin,
+                event: DecoderEvent::Df(bearing),
+                ..
+            }) => break (origin, bearing),
+            Ok(_) => {}
+            Err(_) => {
+                assert!(Instant::now() < deadline, "the sweep sent no bearing");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+    };
+    assert_eq!(origin.map(|origin| origin.node).as_deref(), Some("hunt-1"));
+    assert_eq!(bearing.source, sdrmm_wire::BearingSource::Sweep);
+    assert_eq!(bearing.lat, Some(48.137));
+    let error =
+        (f64::from(bearing.bearing_deg) - SWING_SOURCE_DEG + 180.0).rem_euclid(360.0) - 180.0;
+    assert!(error.abs() < 10.0, "{bearing:?}");
+    let hunt = engine.snapshot().device_sets[0].hunts[0].clone();
+    assert_eq!(
+        hunt.sweep.and_then(|sweep| sweep.peak_deg),
+        Some(bearing.bearing_deg)
+    );
+    assert!(hunt.at_ms > 0);
+    assert_eq!(hunt.pose_drops, 0);
+
+    let stopped = engine
+        .start_hunt(ds, sdrmm_wire::HuntSettings::for_channel(ch))
+        .unwrap();
+    assert_eq!(
+        stopped.sweep.map(|sweep| sweep.state),
+        Some(sdrmm_wire::SweepState::Off),
+        "start on a sweeping hunt turns the sweep off"
+    );
+    engine.stop_hunt(ds, ch).unwrap();
     engine.remove_device_set(ds).unwrap();
 }

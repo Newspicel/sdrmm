@@ -13,6 +13,14 @@ fn fields_of(kind: &str, data: Value) -> HashMap<&'static str, String> {
     detail_of(kind, data).fields.into_iter().collect()
 }
 
+fn broadcast_of(data: Value) -> EventDetail {
+    broadcast_detail(&serde_json::from_value(data).expect("a broadcast status"))
+}
+
+fn broadcast_fields(data: Value) -> HashMap<&'static str, String> {
+    broadcast_of(data).fields.into_iter().collect()
+}
+
 fn labels(detail: &EventDetail) -> Vec<&'static str> {
     detail.fields.iter().map(|(label, _)| *label).collect()
 }
@@ -204,73 +212,6 @@ fn acars_names_direction_and_continuation() {
 }
 
 #[test]
-fn subghz_timings_pair_pulse_with_gap() {
-    let detail = detail_of(
-        "subghz",
-        json!({
-            "modulation": "ook", "encoding": "pwm", "bits": 24, "data": "A1B2C3",
-            "address": 0xa1b2, "button": 3, "short_us": 320, "repeats": 6,
-            "timings_us": [320, 960, 960, 320, 320],
-        }),
-    );
-    let shown: HashMap<_, _> = detail.fields.iter().cloned().collect();
-    has(
-        &shown,
-        &[
-            ("Payload", "A1B2C3 (24 bit)"),
-            ("EV1527 address", "0A1B2"),
-            ("EV1527 button", "3"),
-            ("Base period", "320 µs"),
-            ("Repeats", "×6"),
-        ],
-    );
-    assert!(!labels(&detail).contains(&"PT2262 tri-state"));
-    assert_eq!(detail.body.as_deref(), Some("320/960  960/320  320"));
-}
-
-#[test]
-fn a_sensor_reading_leads_the_framing() {
-    let detail = detail_of(
-        "subghz",
-        json!({
-            "modulation": "ook", "encoding": "ppm", "bits": 36, "data": "8F80D5F2F",
-            "short_us": 1000, "repeats": 8,
-            "reading": {
-                "model": "Nexus-TH", "id": 0x8f, "channel": 1, "battery_ok": true,
-                "temperature_c": 21.3, "humidity_pct": 47.0,
-            },
-        }),
-    );
-    let first: Vec<(&str, &str)> = detail
-        .fields
-        .iter()
-        .take(6)
-        .map(|(label, value)| (*label, value.as_str()))
-        .collect();
-    assert_eq!(
-        first,
-        [
-            ("Model", "Nexus-TH"),
-            ("Sensor id", "8F"),
-            ("Channel", "1"),
-            ("Temperature", "21.3 °C"),
-            ("Humidity", "47 %"),
-            ("Battery", "yes"),
-        ]
-    );
-}
-
-#[test]
-fn a_raw_capture_has_no_payload() {
-    let detail = detail_of(
-        "subghz",
-        json!({"modulation": "ook", "encoding": "raw", "bits": 0, "data": "", "short_us": 0, "repeats": 1}),
-    );
-    assert_eq!(labels(&detail), ["Modulation", "Encoding"]);
-    assert_eq!(detail.body, None);
-}
-
-#[test]
 fn not_encrypted_differs_from_unsaid() {
     let said = fields_of(
         "dv",
@@ -375,14 +316,11 @@ fn rds_reads_as_fields_with_radiotext_as_body() {
 
 #[test]
 fn broadcast_audio_failures_show_regardless_of_lock() {
-    let shown = fields_of(
-        "broadcast",
-        json!({
-            "system": "dab", "locked": true, "snr_db": 20.0, "frequency_error_hz": 0.0,
-            "audio_frames_ok": 41, "audio_frames_bad": 2,
-            "audio_error": "Broadcast audio input queue overflow",
-        }),
-    );
+    let shown = broadcast_fields(json!({
+        "system": "dab", "locked": true, "snr_db": 20.0, "frequency_error_hz": 0.0,
+        "audio_frames_ok": 41, "audio_frames_bad": 2,
+        "audio_error": "Broadcast audio input queue overflow",
+    }));
     has(
         &shown,
         &[
@@ -396,13 +334,10 @@ fn broadcast_audio_failures_show_regardless_of_lock() {
 
 #[test]
 fn a_broadcast_acquisition_invents_no_multiplex_metadata() {
-    let detail = detail_of(
-        "broadcast",
-        json!({
-            "system": "dvb_s2", "locked": true, "snr_db": 18.26, "frequency_error_hz": -32.4,
-            "symbol_rate": 333000.0,
-        }),
-    );
+    let detail = broadcast_of(json!({
+        "system": "dvb_s2", "locked": true, "snr_db": 18.26, "frequency_error_hz": -32.4,
+        "symbol_rate": 333000.0,
+    }));
     let shown: Vec<(&str, &str)> = detail
         .fields
         .iter()
@@ -458,4 +393,43 @@ fn a_utc_offset_carries_its_sign() {
     assert_eq!(utc_offset(Some(120)).as_deref(), Some("UTC+02:00"));
     assert_eq!(utc_offset(Some(-330)).as_deref(), Some("UTC−05:30"));
     assert_eq!(utc_offset(None), None);
+}
+
+#[test]
+fn a_newer_decoder_shows_its_wire_summary() {
+    let detail = detail_of(
+        "eot",
+        json!({
+            "unit_address": 12345,
+            "report": { "unit": "head", "command": "emergency", "code": 170, "copies": 3 },
+            "errors_corrected": 0,
+            "rejected": 0,
+        }),
+    );
+    assert!(detail.fields.is_empty());
+    assert_eq!(detail.body.as_deref(), Some("HOT 12345 · EMERGENCY"));
+}
+
+#[test]
+fn a_radar_track_names_its_change_and_aircraft() {
+    let shown = fields_of(
+        "radar",
+        json!({
+            "track_id": 7, "change": "confirmed", "range_km": 12.5, "range_rate_mps": -80.0,
+            "doppler_hz": 120.0, "snr_db": 14.0, "icao": "3C6444",
+        }),
+    );
+    has(
+        &shown,
+        &[
+            ("Bistatic range", "12.50 km"),
+            ("Range rate", "-80 m/s"),
+            ("Aircraft", "3C6444"),
+        ],
+    );
+    assert!(
+        shown
+            .get("Track")
+            .is_some_and(|track| track.starts_with("T7 "))
+    );
 }

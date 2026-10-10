@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceInfo } from "../lib/types";
 import {
+  deviceHint,
   deviceId,
   groupDevices,
   NETWORK_BACKENDS,
   networkDeviceId,
+  networkRadioLabel,
   rankDevices,
   sourceTabs,
   unclaimedDevices,
@@ -18,7 +20,7 @@ function device(driver: string, key: string, label = `${driver} ${key}`): Device
 describe("rankDevices", () => {
   it("puts every real radio above the virtual devices", () => {
     const ranked = rankDevices([
-      device("virtual", "siggen", "Signal Generator"),
+      device("virtual", "band", "Test band"),
       device("rtlsdr", "00000001", "RTL-SDR 00000001"),
       device("rtltcp", "10.0.0.5:1234", "rtl_tcp 10.0.0.5:1234"),
     ]);
@@ -34,11 +36,10 @@ describe("rankDevices", () => {
 
 describe("visibleDevices", () => {
   const devices = [
-    device("virtual", "siggen", "Signal Generator"),
+    device("virtual", "band", "Test band"),
     device("virtual", "array4", "Coherent Array"),
     device("recording", "airband", "airband"),
     device("siggen", "signal_gen-a1b2", "Signal generator"),
-    device("array", "array-9f2c", "Array"),
     device("rtlsdr", "00000001", "RTL-SDR 00000001"),
   ];
 
@@ -46,7 +47,7 @@ describe("visibleDevices", () => {
     expect(visibleDevices(devices, true).map(deviceId)).toEqual([
       "rtlsdr:00000001",
       "virtual:array4",
-      "virtual:siggen",
+      "virtual:band",
     ]);
   });
 
@@ -59,13 +60,13 @@ describe("unclaimedDevices", () => {
   const devices = [
     device("rtlsdr", "00000001", "RTL-SDR 00000001"),
     device("rtlsdr", "00000002", "RTL-SDR 00000002"),
-    device("virtual", "siggen", "Signal Generator"),
+    device("virtual", "band", "Test band"),
   ];
 
   it("drops the radios another node already names", () => {
     expect(
       unclaimedDevices(devices, [{ backend: "rtlsdr", key: "00000001" }]).map(deviceId),
-    ).toEqual(["rtlsdr:00000002", "virtual:siggen"]);
+    ).toEqual(["rtlsdr:00000002", "virtual:band"]);
     expect(
       unclaimedDevices(
         [{ driver: "rtlsdr", key: "0@rx", label: "RTL-SDR", serial: "0" }],
@@ -75,9 +76,10 @@ describe("unclaimedDevices", () => {
   });
 
   it("matches a keyed reference and a bare backend alike", () => {
-    expect(
-      unclaimedDevices(devices, [{ backend: "virtual", key: "siggen" }]).map(deviceId),
-    ).toEqual(["rtlsdr:00000001", "rtlsdr:00000002"]);
+    expect(unclaimedDevices(devices, [{ backend: "virtual", key: "band" }]).map(deviceId)).toEqual([
+      "rtlsdr:00000001",
+      "rtlsdr:00000002",
+    ]);
     expect(unclaimedDevices(devices, [{ backend: "virtual" }]).map(deviceId)).toEqual([
       "rtlsdr:00000001",
       "rtlsdr:00000002",
@@ -92,7 +94,7 @@ describe("unclaimedDevices", () => {
 describe("groupDevices", () => {
   const devices = [
     device("rtlsdr", "00000001", "RTL-SDR 00000001"),
-    device("virtual", "siggen", "Signal Generator"),
+    device("virtual", "band", "Test band"),
     device("virtual", "array4", "Coherent Array"),
   ];
 
@@ -100,14 +102,14 @@ describe("groupDevices", () => {
     const grouped = groupDevices(devices);
 
     expect(grouped.radios.map(deviceId)).toEqual(["rtlsdr:00000001"]);
-    expect(grouped.virtual.map(deviceId)).toEqual(["virtual:siggen", "virtual:array4"]);
+    expect(grouped.virtual.map(deviceId)).toEqual(["virtual:band", "virtual:array4"]);
   });
 });
 
 describe("sourceTabs", () => {
   const groups = groupDevices([
     device("rtlsdr", "00000001", "RTL-SDR 00000001"),
-    device("virtual", "siggen", "Signal Generator"),
+    device("virtual", "band", "Test band"),
   ]);
 
   it("counts what each tab holds and explains each one on hover", () => {
@@ -135,6 +137,25 @@ describe("networkDeviceId", () => {
   it("passes the address through untouched", () => {
     expect(networkDeviceId("rtltcp", "  Radio.Local  ")).toBe("rtltcp:Radio.Local");
     expect(networkDeviceId("rtltcp", "[2001:db8::1]:1234")).toBe("rtltcp:[2001:db8::1]:1234");
+  });
+
+  it("reads a pasted web address the way a browser would", () => {
+    expect(networkDeviceId("kiwisdr", "http://kiwi.example.org:8073/")).toBe(
+      "kiwisdr:kiwi.example.org:8073",
+    );
+    expect(networkDeviceId("kiwisdr", "http://kiwi.example.org")).toBe(
+      "kiwisdr:kiwi.example.org:80",
+    );
+    expect(networkDeviceId("kiwisdr", "http://pw@kiwi.example.org")).toBe(
+      "kiwisdr:pw@kiwi.example.org:80",
+    );
+    expect(networkDeviceId("kiwisdr", "kiwi.example.org")).toBe("kiwisdr:kiwi.example.org");
+    expect(networkDeviceId("kiwisdr", "https://kiwi.example.org/")).toBe(
+      "kiwisdr:https://kiwi.example.org",
+    );
+    expect(networkDeviceId("kiwisdr", "WSS://kiwi.example.org:8073")).toBe(
+      "kiwisdr:https://kiwi.example.org:8073",
+    );
   });
 
   it("strips a scheme someone pasted, but never an IPv6 literal's colons", () => {
@@ -166,13 +187,34 @@ describe("NETWORK_BACKENDS", () => {
       "rtltcp",
       "spyserver",
       "sdrconnect",
+      "kiwisdr",
       "ad936x",
     ]);
     expect(NETWORK_BACKENDS.map((b) => b.placeholder.split(":").pop())).toEqual([
       "1234",
       "5555",
       "5454",
+      "8073",
       "30431",
     ]);
+  });
+});
+
+describe("networkRadioLabel", () => {
+  it("names the protocol and host, never the password", () => {
+    expect(networkRadioLabel("kiwisdr:pw@kiwi.example.org:8073")).toBe(
+      "KiwiSDR kiwi.example.org:8073",
+    );
+    expect(networkRadioLabel("kiwisdr:https://kiwi.example.org")).toBe("KiwiSDR kiwi.example.org");
+    expect(networkRadioLabel("rtltcp:[::1]:1234")).toBe("rtl_tcp [::1]:1234");
+    expect(networkRadioLabel("mystery:host:1")).toBe("host:1");
+  });
+});
+
+describe("deviceHint", () => {
+  it("explains only an RTL-SDR known by its USB port", () => {
+    expect(deviceHint(device("rtlsdr", "1/4"))).toContain("rtl_eeprom -s");
+    expect(deviceHint({ ...device("rtlsdr", "00000002"), serial: "00000002" })).toBeUndefined();
+    expect(deviceHint(device("rtltcp", "10.0.0.5:1234"))).toBeUndefined();
   });
 });

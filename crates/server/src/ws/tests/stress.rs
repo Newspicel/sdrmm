@@ -66,7 +66,11 @@ async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
                         ServerEvent::PipelineHealth { queues, websocket } => {
                             diagnostics += 1;
                             assert_eq!(websocket.dropped, 0, "WebSocket queue lost frames");
-                            assert!(queues.iter().all(|queue| queue.health.dropped == 0));
+                            let lossy: Vec<_> = queues
+                                .iter()
+                                .filter(|queue| queue.health.dropped > 0)
+                                .collect();
+                            assert!(lossy.is_empty(), "queues lost frames: {lossy:?}");
                         }
                         ServerEvent::Error { message } => panic!("stream failed: {message}"),
                         ServerEvent::StreamStopped { .. } => panic!("stream stopped early"),
@@ -108,7 +112,7 @@ async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn simultaneous_socket_listeners_keep_audio_continuous_during_retunes() {
     let engine = test_engine();
-    let ds = engine.create_device_set("virtual:siggen").expect("radio");
+    let ds = engine.create_device_set("virtual:band").expect("radio");
     let channels: Vec<_> = (0..8)
         .map(|index| {
             engine

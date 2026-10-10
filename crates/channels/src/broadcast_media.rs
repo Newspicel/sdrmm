@@ -19,11 +19,12 @@ use crate::{
         pad::{Event as PadEvent, Pad},
         superframe::AudioFormat,
     },
+    drm::aac::{AudioConfig as DrmAudio, Coding as DrmCoding},
 };
 
 mod clock;
 mod decoder;
-mod latm;
+pub(crate) mod latm;
 
 #[cfg(test)]
 mod tests;
@@ -41,6 +42,8 @@ pub enum Kind {
     DabPacket,
     Aac,
     Latm,
+    DrmAudio,
+    DrmXhe,
     Ac3,
     Mpeg2,
     H264,
@@ -53,8 +56,8 @@ impl Kind {
             Self::Mp2 => Id::MP2,
             Self::Eac3 => Id::EAC3,
             Self::DabPad | Self::DabPacket => Id::None,
-            Self::Aac => Id::AAC,
-            Self::Latm => Id::AAC_LATM,
+            Self::Aac | Self::DrmXhe => Id::AAC,
+            Self::Latm | Self::DrmAudio => Id::AAC_LATM,
             Self::Ac3 => Id::AC3,
             Self::Mpeg2 => Id::MPEG2VIDEO,
             Self::H264 => Id::H264,
@@ -71,6 +74,7 @@ struct Input {
     kind: Kind,
     pts: Option<i64>,
     format: Option<AudioFormat>,
+    drm: Option<DrmAudio>,
     mot_app: Option<u8>,
     packet: Option<PacketConfig>,
     length: usize,
@@ -126,6 +130,15 @@ fn publish(output: &mut Producer<Output>, resident: &AtomicUsize, mut value: Out
         thread::sleep(Duration::from_millis(1));
     }
     true
+}
+
+fn open_decoder(key: (Kind, Option<DrmAudio>)) -> Result<decoder::Decoder, String> {
+    match key {
+        (Kind::DrmXhe, Some(config)) => {
+            decoder::Decoder::usac(&crate::drm::aac::usac_config(&config)?)
+        }
+        (kind, _) => decoder::Decoder::new(kind),
+    }
 }
 
 fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: Arc<AtomicUsize>) {
@@ -218,28 +231,39 @@ fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: Arc<A
         if matches!(item.kind, Kind::DabPad | Kind::DabPacket) {
             continue;
         }
-        let state: &mut Option<(Kind, decoder::Decoder)> = if item.kind.video() {
+        let key = (item.kind, item.drm.filter(|_| item.kind == Kind::DrmXhe));
+        let state: &mut Option<((Kind, Option<DrmAudio>), decoder::Decoder)> = if item.kind.video()
+        {
             &mut video
         } else {
             &mut audio
         };
         let result = (|| {
-            if state.as_ref().is_none_or(|(kind, _)| *kind != item.kind) {
-                *state = Some((item.kind, decoder::Decoder::new(item.kind)?));
+            if state.as_ref().is_none_or(|(current, _)| *current != key) {
+                *state = Some((key, open_decoder(key)?));
             }
             let Some((_, decoder)) = state else {
                 return Err("Broadcast decoder missing".to_owned());
             };
             let bytes = &item.bytes[..item.length];
             let latm;
-            let encoded = if let Some(format) = item.format {
+            let encoded = if item.kind == Kind::DrmXhe {
+                bytes
+            } else if let Some(format) = item.format {
                 latm = latm::wrap(bytes, format).map_err(str::to_owned)?;
+                &latm
+            } else if let Some(config) = &item.drm {
+                latm = crate::drm::aac::latm(bytes, config)?;
                 &latm
             } else {
                 bytes
             };
             decoder.push(encoded, item.pts, &mut frames)
-        })();
+        })()
+        .map_err(|message| match item.drm {
+            Some(config) if config.coding == DrmCoding::Xhe => format!("xHE-AAC: {message}"),
+            _ => message,
+        });
         for (pts, payload) in frames.drain(..) {
             if !publish(
                 &mut output,
@@ -364,10 +388,15 @@ impl BroadcastMedia {
         self.video_error = None;
     }
 
-    pub fn audio_gap(&mut self, count: u32) {
+    #[cfg(test)]
+    pub fn input_idle(&self) -> bool {
+        self.input.slots() == INPUT_SLOTS
+    }
+
+    pub fn audio_gap(&mut self, count: u32, reason: &str) {
         self.epoch = self.epoch.wrapping_add(1);
         self.audio_errors = self.audio_errors.saturating_add(count);
-        self.audio_error = Some("DAB+ access-unit CRC failure".to_owned());
+        self.audio_error = Some(reason.to_owned());
     }
 
     fn failed(&mut self, video: bool, error: String) {
@@ -396,8 +425,27 @@ impl BroadcastMedia {
         pts: Option<u64>,
         format: Option<AudioFormat>,
     ) {
+        self.push_unit(kind, bytes, pts, format, None);
+    }
+
+    pub fn push_drm(&mut self, frame: &[u8], config: DrmAudio) {
+        let kind = match config.coding {
+            DrmCoding::Aac => Kind::DrmAudio,
+            DrmCoding::Xhe => Kind::DrmXhe,
+        };
+        self.push_unit(kind, frame, None, None, Some(config));
+    }
+
+    fn push_unit(
+        &mut self,
+        kind: Kind,
+        bytes: &[u8],
+        pts: Option<u64>,
+        format: Option<AudioFormat>,
+        drm: Option<DrmAudio>,
+    ) {
         if self.input.slots() < bytes.len().div_ceil(CHUNK_BYTES)
-            || (format.is_some() && bytes.len() > CHUNK_BYTES)
+            || ((format.is_some() || drm.is_some()) && bytes.len() > CHUNK_BYTES)
         {
             self.input_failed(kind, "Broadcast media input overflow");
             self.epoch = self.epoch.wrapping_add(1);
@@ -409,6 +457,7 @@ impl BroadcastMedia {
                 kind,
                 pts: pts.filter(|_| index == 0).map(|v| v as i64),
                 format,
+                drm,
                 mot_app: self.mot_app,
                 packet: self.packet_config,
                 length: chunk.len(),

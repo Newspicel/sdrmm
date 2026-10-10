@@ -4,6 +4,9 @@ use sdrmm_wire::event_output::{EventOutputTarget, WebhookFormat};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Service {
+    Recordings,
+    Desktop,
+    Csv,
     Beast,
     Webhook,
     Matrix,
@@ -13,7 +16,10 @@ pub enum Service {
     Tunnel,
 }
 
-pub const SERVICES: [(Service, &str); 7] = [
+pub const SERVICES: [(Service, &str); 10] = [
+    (Service::Recordings, "Recordings"),
+    (Service::Desktop, "Notification"),
+    (Service::Csv, "CSV file"),
     (Service::Beast, "ADS-B Beast TCP"),
     (Service::Webhook, "Webhook"),
     (Service::Matrix, "Matrix"),
@@ -26,6 +32,9 @@ pub const SERVICES: [(Service, &str); 7] = [
 #[must_use]
 pub fn service_of(target: &EventOutputTarget) -> Service {
     match target {
+        EventOutputTarget::Recordings => Service::Recordings,
+        EventOutputTarget::Desktop => Service::Desktop,
+        EventOutputTarget::Csv { .. } => Service::Csv,
         EventOutputTarget::Beast { .. } => Service::Beast,
         EventOutputTarget::Tunnel { .. } => Service::Tunnel,
         EventOutputTarget::Webhook { .. } => Service::Webhook,
@@ -39,6 +48,11 @@ pub fn service_of(target: &EventOutputTarget) -> Service {
 #[must_use]
 pub fn new_target(service: Service) -> EventOutputTarget {
     match service {
+        Service::Recordings => EventOutputTarget::Recordings,
+        Service::Desktop => EventOutputTarget::Desktop,
+        Service::Csv => EventOutputTarget::Csv {
+            file: "events".to_owned(),
+        },
         Service::Beast => EventOutputTarget::Beast {
             address: "127.0.0.1:30005".to_owned(),
             enabled: false,
@@ -85,6 +99,10 @@ pub fn empty_hint(inputs: usize, target: &EventOutputTarget) -> &'static str {
         return "Wire events in";
     }
     match target {
+        EventOutputTarget::Recordings => "One WAV per call in Recordings",
+        EventOutputTarget::Desktop => "One notification per event",
+        EventOutputTarget::Csv { .. } if configured => "One row per event in Recordings",
+        EventOutputTarget::Csv { .. } => "Enter a file name",
         EventOutputTarget::Tunnel { .. } if configured => "Received IPv4 and IPv6 datagrams",
         EventOutputTarget::Tunnel { .. } => "Enter the interface name",
         _ if !configured => "Enter the destination credentials",
@@ -97,6 +115,16 @@ pub fn empty_hint(inputs: usize, target: &EventOutputTarget) -> &'static str {
         } => "One send per event, with available audio",
         _ => "One send per event, as one JSON object",
     }
+}
+
+#[must_use]
+pub fn services_offered(notify: bool, current: Option<Service>) -> Vec<(Service, &'static str)> {
+    SERVICES
+        .into_iter()
+        .filter(|(service, _)| {
+            *service != Service::Desktop || notify || current == Some(Service::Desktop)
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -124,6 +152,41 @@ pub fn beast_line(connected: bool, enabled: bool, status: Option<&BeastState>) -
 mod tests {
     use super::*;
 
+    #[test]
+    fn every_service_makes_a_target_of_its_own_kind() {
+        for (service, _) in SERVICES {
+            assert_eq!(service_of(&new_target(service)), service);
+        }
+    }
+
+    #[test]
+    fn notifications_are_offered_only_where_the_shell_shows_them() {
+        let offered = |notify, current| -> Vec<Service> {
+            services_offered(notify, current)
+                .into_iter()
+                .map(|(service, _)| service)
+                .collect()
+        };
+        assert!(!offered(false, None).contains(&Service::Desktop));
+        assert!(offered(true, None).contains(&Service::Desktop));
+        assert!(offered(false, Some(Service::Desktop)).contains(&Service::Desktop));
+        assert_eq!(offered(true, None).len(), SERVICES.len());
+    }
+
+    #[test]
+    fn a_csv_output_asks_for_a_file_name() {
+        let named = new_target(Service::Csv);
+        assert_eq!(empty_hint(1, &named), "One row per event in Recordings");
+        let blank = EventOutputTarget::Csv {
+            file: " ".to_owned(),
+        };
+        assert_eq!(empty_hint(1, &blank), "Enter a file name");
+        assert_eq!(
+            empty_hint(1, &EventOutputTarget::Recordings),
+            "One WAV per call in Recordings"
+        );
+    }
+
     fn matrix(access_token: &str) -> bool {
         EventOutputTarget::Matrix {
             homeserver_url: "https://matrix.example".to_owned(),
@@ -144,11 +207,15 @@ mod tests {
     }
 
     #[test]
-    fn every_service_starts_unconfigured() {
+    fn only_services_without_settings_start_configured() {
         for (service, _) in SERVICES {
             let target = new_target(service);
             assert_eq!(service_of(&target), service);
-            assert!(!target.configured());
+            let bare = matches!(
+                service,
+                Service::Recordings | Service::Desktop | Service::Csv
+            );
+            assert_eq!(target.configured(), bare, "{service:?}");
         }
     }
 

@@ -22,7 +22,7 @@ impl Engine {
                     .device_sets
                     .get(&ds)
                     .ok_or(EngineError::DeviceSetNotFound(ds))?;
-                state.check_stream(stream)?;
+                state.check_physical(stream)?;
                 if state.recording.is_some() {
                     return Err(EngineError::Recording("already recording".to_string()));
                 }
@@ -74,7 +74,7 @@ impl Engine {
                         if state.status == DeviceSetStatus::Running
                             && state.recording.is_none()
                             && state.rate_patches == 0
-                            && state.check_stream(stream).is_ok()
+                            && state.check_physical(stream).is_ok()
                             && sample_rate_of(&state.settings) == rate =>
                     {
                         state.recording = Some(RecordingState {
@@ -172,19 +172,20 @@ impl Engine {
         ds: u32,
         ch: u32,
     ) -> Result<AudioRecordingStatus, EngineError> {
-        self.start_route_recording(&AudioRoute::channel(ds, ch))
+        self.start_route_recording(&AudioRoute::channel(ds, ch), false)
     }
 
     pub fn start_route_recording(
         &self,
         route: &AudioRoute,
+        skip_silence: bool,
     ) -> Result<AudioRecordingStatus, EngineError> {
         let (ds, ch) = (route.device_set, route.channel);
         if !route.fx.is_empty() {
             route.validate().map_err(EngineError::Recording)?;
         }
         loop {
-            let (stream, channels, device_rate) = {
+            let (stream, channels, device_rate, mode, freq_hz) = {
                 let inner = self.lock();
                 let state = inner
                     .device_sets
@@ -215,6 +216,8 @@ impl Engine {
                     channel.stream,
                     sdrmm_channels::audio_channels(&channel.settings.params),
                     sample_rate_of(&state.settings),
+                    channel.settings.params.type_id(),
+                    channel.settings.frequency_hz,
                 )
             };
             let Some(dir) = self.audio_recordings_dir() else {
@@ -227,9 +230,7 @@ impl Engine {
             let started_at = jiff::Timestamp::now();
             let writer = audio_recording::create_writer(
                 &dir,
-                ds,
-                ch,
-                started_at,
+                &sdrmm_recorder::audio_stem(started_at, mode, freq_hz),
                 sdrmm_channels::AUDIO_RATE,
                 channels,
             )?;
@@ -239,7 +240,7 @@ impl Engine {
                 .and_then(|name| name.to_str())
                 .unwrap_or_default()
                 .to_owned();
-            let (tap, blocks, shared) = audio_recording::create_tap(device_rate);
+            let (tap, blocks, shared) = audio_recording::create_tap(device_rate, skip_silence);
             let thread = audio_recording::spawn_writer(writer, blocks, shared.clone())?;
             let fx_control = if route.fx.is_empty() {
                 None
@@ -330,6 +331,23 @@ impl Engine {
         }
     }
 
+    pub fn set_route_skip_silence(
+        &self,
+        route: &AudioRoute,
+        skip: bool,
+    ) -> Result<(), EngineError> {
+        let inner = self.lock();
+        let recording = inner
+            .device_sets
+            .get(&route.device_set)
+            .ok_or(EngineError::DeviceSetNotFound(route.device_set))?
+            .audio_recordings
+            .get(route)
+            .ok_or_else(|| EngineError::Recording("this audio is not recording".to_string()))?;
+        recording.shared.set_skip_silence(skip);
+        Ok(())
+    }
+
     pub fn stop_channel_recording(
         &self,
         ds: u32,
@@ -403,7 +421,7 @@ impl Engine {
                     .device_sets
                     .get(&ds)
                     .ok_or(EngineError::DeviceSetNotFound(ds))?;
-                state.check_stream(stream)?;
+                state.check_physical(stream)?;
                 if state.network_export.is_some() {
                     return Err(EngineError::NetworkExport(
                         "another network export is already active".to_owned(),
@@ -424,7 +442,7 @@ impl Engine {
                         if state.status == DeviceSetStatus::Running
                             && state.network_export.is_none()
                             && state.rate_patches == 0
-                            && state.check_stream(stream).is_ok()
+                            && state.check_physical(stream).is_ok()
                             && sample_rate_of(&state.settings) == rate =>
                     {
                         let center = state

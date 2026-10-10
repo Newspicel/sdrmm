@@ -1,83 +1,262 @@
 use num_complex::Complex;
 
-use crate::fir::{design_lowpass, dot};
+use crate::fir::{DelayLine, Isa, design_lowpass, plane_dot, plane_interpolated};
 
 const PHASES: usize = 128;
+const TAP_MULTIPLE: usize = 8;
+const MAX_EXACT_PHASES: usize = 512;
+const MAX_EXACT_TAPS: usize = 16_384;
+const BATCH: usize = 4;
 
 pub(crate) fn taps_per_phase(ratio: f64) -> usize {
-    (5.5 / (0.1 * ratio.min(1.0))).ceil() as usize
+    taps_for(0.1 * ratio.min(1.0))
+}
+
+fn taps_for(transition: f64) -> usize {
+    (5.5 / transition).ceil() as usize
+}
+
+#[derive(Clone, Debug)]
+enum Clock {
+    Exact {
+        phases: usize,
+        whole: usize,
+        rest: usize,
+        phase: usize,
+    },
+    Free {
+        step: f64,
+        fraction: f64,
+    },
+}
+
+impl Clock {
+    fn for_ratio(ratio: f64, taps_per_phase: usize) -> Self {
+        let step = ratio.recip();
+        let exact = (1..=MAX_EXACT_PHASES)
+            .take_while(|phases| phases * taps_per_phase <= MAX_EXACT_TAPS)
+            .find_map(|phases| {
+                let advance = (phases as f64 * step).round();
+                let exact = (advance - phases as f64 * step).abs() <= 1e-9 * advance.max(1.0);
+                (exact && advance >= 1.0).then_some((phases, advance as usize))
+            });
+        match exact {
+            Some((phases, advance)) => Self::Exact {
+                phases,
+                whole: advance / phases,
+                rest: advance % phases,
+                phase: 0,
+            },
+            None => Self::Free {
+                step,
+                fraction: 0.0,
+            },
+        }
+    }
+
+    fn phases(&self) -> usize {
+        match self {
+            Self::Exact { phases, .. } => *phases,
+            Self::Free { .. } => PHASES,
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Exact { phase, .. } => *phase = 0,
+            Self::Free { fraction, .. } => *fraction = 0.0,
+        }
+    }
+}
+
+struct Sequence<I> {
+    ticks: usize,
+    stride: usize,
+    outputs: usize,
+    slots: I,
 }
 
 #[derive(Clone, Debug)]
 pub struct FracResampler {
     rows: Vec<f32>,
+    slopes: Vec<f32>,
     taps_per_phase: usize,
-    step: f64,
+    clock: Clock,
     position: usize,
-    fraction: f64,
-    buf: Vec<Complex<f32>>,
+    re: DelayLine<f32>,
+    im: DelayLine<f32>,
+    isa: Isa,
 }
 
 impl FracResampler {
     #[must_use]
     pub fn new(ratio: f64) -> Self {
         assert!(ratio.is_finite() && ratio > 0.0, "ratio must be positive");
-        let band = 0.5 * ratio.min(1.0);
-        let taps_per_phase = taps_per_phase(ratio);
-        let cutoff = 0.9 * band;
-        let proto = design_lowpass(PHASES * taps_per_phase + 1, cutoff / PHASES as f64);
-        let mut rows = vec![0.0f32; (PHASES + 1) * taps_per_phase];
-        for p in 0..=PHASES {
-            let row = &mut rows[p * taps_per_phase..(p + 1) * taps_per_phase];
-            for (j, slot) in row.iter_mut().enumerate() {
-                *slot = proto[j * PHASES + p];
+        Self::design(ratio, 0.45 * ratio.min(1.0), taps_per_phase(ratio))
+    }
+
+    #[must_use]
+    pub fn keeping(ratio: f64, keep: f64) -> Self {
+        assert!(ratio.is_finite() && ratio > 0.0, "ratio must be positive");
+        let narrower = keep.is_finite() && keep > 0.0 && keep < 1.0;
+        if ratio >= 1.0 || !narrower {
+            return Self::new(ratio);
+        }
+        let taps = taps_for(ratio * (1.0 - keep));
+        if taps >= taps_per_phase(ratio) {
+            return Self::new(ratio);
+        }
+        Self::design(ratio, 0.5 * ratio, taps)
+    }
+
+    fn design(ratio: f64, cutoff: f64, taps: usize) -> Self {
+        let taps_per_phase = taps.next_multiple_of(TAP_MULTIPLE);
+        let clock = Clock::for_ratio(ratio, taps_per_phase);
+        let phases = clock.phases();
+        let proto = design_lowpass(phases * taps + 1, cutoff / phases as f64);
+        let mut rows = vec![0.0f32; (phases + 1) * taps_per_phase];
+        for (p, row) in rows.chunks_exact_mut(taps_per_phase).enumerate() {
+            let branch = &mut row[taps_per_phase - taps..];
+            for (j, slot) in branch.iter_mut().enumerate() {
+                *slot = proto[j * phases + p];
             }
-            let sum: f32 = row.iter().sum();
+            let sum: f32 = branch.iter().sum();
             debug_assert!(sum > 0.0, "degenerate polyphase branch");
-            for v in row.iter_mut() {
+            for v in branch.iter_mut() {
                 *v /= sum;
             }
-            row.reverse();
+            branch.reverse();
         }
+        let slopes = match clock {
+            Clock::Exact { .. } => Vec::new(),
+            Clock::Free { .. } => rows[taps_per_phase..]
+                .iter()
+                .zip(&rows)
+                .map(|(upper, lower)| upper - lower)
+                .collect(),
+        };
         Self {
             rows,
+            slopes,
             taps_per_phase,
-            step: ratio.recip(),
+            clock,
             position: taps_per_phase - 1,
-            fraction: 0.0,
-            buf: vec![Complex::new(0.0, 0.0); taps_per_phase - 1],
+            re: DelayLine::new(taps_per_phase - 1, 1, 0),
+            im: DelayLine::new(taps_per_phase - 1, 1, 0),
+            isa: Isa::detect(),
         }
     }
 
     pub fn reset(&mut self) {
         self.position = self.taps_per_phase - 1;
-        self.fraction = 0.0;
-        self.buf.clear();
-        self.buf
-            .resize(self.taps_per_phase - 1, Complex::new(0.0, 0.0));
+        self.clock.reset();
+        self.re.reset();
+        self.im.reset();
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
         out.clear();
-        self.buf.extend_from_slice(input);
-        let tpp = self.taps_per_phase;
-        while self.position < self.buf.len() {
-            let n = self.position;
-            let phase = self.fraction * PHASES as f64;
-            let p = phase as usize;
-            let mu = (phase - p as f64) as f32;
-            let window = &self.buf[n + 1 - tpp..=n];
-            let a = dot(window, &self.rows[p * tpp..(p + 1) * tpp]);
-            let b = dot(window, &self.rows[(p + 1) * tpp..(p + 2) * tpp]);
-            out.push(a + (b - a) * mu);
-            self.fraction += self.step;
-            let advance = self.fraction as usize;
-            self.position += advance;
-            self.fraction -= advance as f64;
+        for chunk in input.chunks(self.re.room()) {
+            self.re.push_with(chunk, |sample| sample.re);
+            self.im.push_with(chunk, |sample| sample.im);
+            match self.clock {
+                Clock::Exact { .. } => self.emit_exact(out),
+                Clock::Free { .. } => self.emit_free(out),
+            }
+            let tpp = self.taps_per_phase;
+            let consumed = self.position.saturating_sub(tpp - 1).min(self.re.len());
+            self.re.consume(consumed);
+            self.im.consume(consumed);
+            self.position -= consumed;
         }
-        let drain = self.position.saturating_sub(tpp - 1).min(self.buf.len());
-        self.buf.drain(..drain);
-        self.position -= drain;
+    }
+
+    fn emit_exact(&mut self, out: &mut Vec<Complex<f32>>) {
+        let Clock::Exact {
+            phases,
+            whole,
+            rest,
+            phase,
+        } = self.clock
+        else {
+            return;
+        };
+        let advance = whole * phases + rest;
+        let ticks = self.position * phases + phase;
+        let count = (self.re.len() * phases)
+            .saturating_sub(ticks)
+            .div_ceil(advance);
+        let first = out.len();
+        out.resize(first + count, Complex::new(0.0, 0.0));
+        for lead in 0..phases.min(count) {
+            let mut sequence = Sequence {
+                ticks: ticks + lead * advance,
+                stride: advance,
+                outputs: (count - lead).div_ceil(phases),
+                slots: out[first + lead..].iter_mut().step_by(phases),
+            };
+            self.fill::<BATCH>(&mut sequence, phases);
+            self.fill::<1>(&mut sequence, phases);
+        }
+        let ticks = ticks + count * advance;
+        self.position = ticks / phases;
+        self.clock = Clock::Exact {
+            phases,
+            whole,
+            rest,
+            phase: ticks % phases,
+        };
+    }
+
+    fn fill<'a, const N: usize>(
+        &self,
+        sequence: &mut Sequence<impl Iterator<Item = &'a mut Complex<f32>>>,
+        phases: usize,
+    ) {
+        let tpp = self.taps_per_phase;
+        let row = sequence.ticks % phases;
+        let taps = &self.rows[row * tpp..(row + 1) * tpp];
+        let (re, im) = (self.re.rows_from(0), self.im.rows_from(0));
+        while sequence.outputs >= N {
+            let window = sequence.ticks / phases + 1 - tpp;
+            let starts: [usize; N] = std::array::from_fn(|index| window + index * sequence.stride);
+            let values = plane_dot(self.isa, re, im, starts, taps);
+            for (value, slot) in values.into_iter().zip(sequence.slots.by_ref()) {
+                *slot = value;
+            }
+            sequence.ticks += N * sequence.stride * phases;
+            sequence.outputs -= N;
+        }
+    }
+
+    fn emit_free(&mut self, out: &mut Vec<Complex<f32>>) {
+        let Clock::Free {
+            step,
+            ref mut fraction,
+        } = self.clock
+        else {
+            return;
+        };
+        let tpp = self.taps_per_phase;
+        while self.position < self.re.len() {
+            let phase = *fraction * PHASES as f64;
+            let row = phase as usize;
+            let mu = (phase - row as f64) as f32;
+            let taps = row * tpp..(row + 1) * tpp;
+            let window = self.position + 1 - tpp;
+            out.push(plane_interpolated(
+                self.isa,
+                &self.re.rows_from(window)[..tpp],
+                &self.im.rows_from(window)[..tpp],
+                &self.rows[taps.clone()],
+                &self.slopes[taps],
+                mu,
+            ));
+            *fraction += step;
+            let advance = *fraction as usize;
+            self.position += advance;
+            *fraction -= advance as f64;
+        }
     }
 }
 
@@ -96,18 +275,23 @@ mod tests {
                 )
             })
             .collect();
-        for ratio in [0.2, 0.75, 0.768, 0.96, 48_000.0 / 44_100.0, 1.2] {
+        for ratio in [
+            0.2,
+            0.75,
+            0.768,
+            0.96,
+            48_000.0 / 44_100.0,
+            1.2,
+            0.8736,
+            std::f64::consts::GOLDEN_RATIO - 1.0,
+            std::f64::consts::GOLDEN_RATIO,
+        ] {
             let mut resampler = FracResampler::new(ratio);
             let taps = resampler.taps_per_phase;
             let mut history = vec![Complex::new(0.0, 0.0); taps - 1];
             history.extend_from_slice(&input);
             let mut expected = Vec::new();
-            let mut time = (taps - 1) as f64;
-            while (time as usize) < history.len() {
-                let sample = time as usize;
-                let phase = (time - sample as f64) * PHASES as f64;
-                let row = phase as usize;
-                let fraction = phase - row as f64;
+            for (sample, row, fraction) in schedule(&resampler.clock, taps - 1, history.len()) {
                 let mut sum = Complex::new(0.0f64, 0.0);
                 for (index, value) in history[sample + 1 - taps..=sample].iter().enumerate() {
                     let a = f64::from(resampler.rows[row * taps + index]);
@@ -116,7 +300,6 @@ mod tests {
                         * (a + (b - a) * fraction);
                 }
                 expected.push(sum);
-                time += ratio.recip();
             }
             let mut actual = Vec::new();
             let mut block = Vec::new();
@@ -132,6 +315,44 @@ mod tests {
                     "ratio={ratio} sample={index}"
                 );
             }
+        }
+    }
+
+    fn schedule(clock: &Clock, first: usize, len: usize) -> Vec<(usize, usize, f64)> {
+        match *clock {
+            Clock::Exact {
+                phases,
+                whole,
+                rest,
+                ..
+            } => (0..)
+                .map(|index: usize| index * (whole * phases + rest))
+                .map(|ticks| (first + ticks / phases, ticks % phases, 0.0))
+                .take_while(|&(sample, ..)| sample < len)
+                .collect(),
+            Clock::Free { step, .. } => (0..)
+                .map(|index| first as f64 + index as f64 * step)
+                .take_while(|&time| (time as usize) < len)
+                .map(|time| {
+                    let phase = time.fract() * PHASES as f64;
+                    (time as usize, phase as usize, phase.fract())
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn small_rational_ratios_run_on_an_exact_clock() {
+        for (ratio, phases) in [(48_000.0 / 44_100.0, 160), (0.2, 1), (0.75, 3), (1.2, 6)] {
+            let clock = FracResampler::new(ratio).clock;
+            assert!(
+                matches!(clock, Clock::Exact { phases: p, .. } if p == phases),
+                "{ratio}: {clock:?}"
+            );
+        }
+        for ratio in [0.8736, 0.618_033_988_7] {
+            let clock = FracResampler::new(ratio).clock;
+            assert!(matches!(clock, Clock::Free { .. }), "{ratio}: {clock:?}");
         }
     }
 
@@ -184,6 +405,45 @@ mod tests {
             assert!(
                 (count - ideal_out).abs() <= 2,
                 "ratio {ratio}: got {count}, ideal {ideal_out}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_kept_band_stays_clean_with_fewer_taps() {
+        let dab = 2_048_000.0 / 2_400_000.0;
+        let kept = FracResampler::keeping(dab, 1_536_000.0 / 2_048_000.0);
+        assert!(kept.taps_per_phase * 2 < FracResampler::new(dab).taps_per_phase);
+        let (ratio, keep) = (0.6, 0.75);
+        let mut r = FracResampler::keeping(ratio, keep);
+        let inside = complex_tone(1_228.0 / 4_096.0 * ratio, 8 * 4096);
+        let mut out = Vec::new();
+        r.process(&inside, &mut out);
+        let (peak, snr) = tone_peak_and_snr(&out[256..256 + 4096]);
+        assert_eq!(peak, 1_228, "output frequency shifted");
+        assert!(snr > 40.0, "kept band snr {snr} dB");
+        let mut r = FracResampler::keeping(ratio, keep);
+        let folding = complex_tone(0.45, 8 * 4096);
+        r.process(&folding, &mut out);
+        let rms = rms_c(&out[256..]);
+        assert!(
+            rms < 3.16e-3,
+            "a tone folding into the kept band leaks at rms {rms}"
+        );
+    }
+
+    #[test]
+    fn keeping_the_whole_band_is_the_plain_resampler() {
+        let ratio = 0.853;
+        assert_eq!(
+            FracResampler::keeping(ratio, 0.95).taps_per_phase,
+            FracResampler::new(ratio).taps_per_phase
+        );
+        for (ratio, keep) in [(1.2, 0.5), (0.8, 1.5), (0.8, -0.1), (0.8, f64::NAN)] {
+            assert_eq!(
+                FracResampler::keeping(ratio, keep).taps_per_phase,
+                FracResampler::new(ratio).taps_per_phase,
+                "ratio {ratio} keep {keep}"
             );
         }
     }

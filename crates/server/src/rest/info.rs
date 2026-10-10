@@ -150,9 +150,34 @@ pub(super) async fn get_ionosonde(State(state): State<AppState>) -> Json<Ionoson
         body = AuthInfo,
     )),
 )]
-pub(super) async fn get_auth(State(state): State<AppState>) -> Json<AuthInfo> {
+pub(super) async fn get_auth(
+    State(state): State<AppState>,
+    relayed: Option<axum::Extension<sdrmm_tunnel::Relayed>>,
+) -> Json<AuthInfo> {
+    let token_required = match relayed {
+        Some(axum::Extension(relayed)) => relayed.user.is_empty(),
+        None => state.auth.required(),
+    };
     Json(AuthInfo {
-        token_required: state.auth.required(),
+        token_required,
+        login_url: None,
+    })
+}
+
+#[utoipa::path(
+    get, path = "/api/status",
+    responses((
+        status = 200,
+        description = "Liveness probe: version, platform and uptime. Public and instant, unlike \
+                       /api/doctor, so health checks need no token",
+        body = ServerStatus,
+    )),
+)]
+pub(super) async fn get_status(State(state): State<AppState>) -> Json<ServerStatus> {
+    Json(ServerStatus {
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        platform: format!("{}/{}", std::env::consts::OS, std::env::consts::ARCH),
+        uptime_secs: state.uptime().as_secs(),
     })
 }
 
@@ -170,14 +195,9 @@ pub(super) async fn get_doctor(
 ) -> Result<Json<DoctorReport>, AppError> {
     let engine = state.engine.clone();
     let db_path = state.db_path.clone();
-    let report = tokio::task::spawn_blocking(move || {
-        crate::doctor::report(
-            engine.registry(),
-            db_path.as_deref(),
-            engine.recordings_dir(),
-        )
-    })
-    .await?;
+    let report =
+        tokio::task::spawn_blocking(move || crate::doctor::served(&engine, db_path.as_deref()))
+            .await?;
     Ok(Json(report))
 }
 
@@ -198,14 +218,9 @@ pub(super) async fn get_diagnostics(
 ) -> Result<Json<DiagnosticsReport>, AppError> {
     let engine = state.engine.clone();
     let db_path = state.db_path.clone();
-    let doctor = tokio::task::spawn_blocking(move || {
-        crate::doctor::report(
-            engine.registry(),
-            db_path.as_deref(),
-            engine.recordings_dir(),
-        )
-    })
-    .await?;
+    let doctor =
+        tokio::task::spawn_blocking(move || crate::doctor::served(&engine, db_path.as_deref()))
+            .await?;
     let log = crate::diagnostics::log();
     Ok(Json(DiagnosticsReport {
         generated_at: jiff::Timestamp::now().to_string(),
@@ -264,16 +279,9 @@ pub(super) async fn run_tool(
 )]
 pub(super) async fn get_about(State(state): State<AppState>) -> Json<AboutResponse> {
     Json(AboutResponse {
-        lan_addresses: if state.local_only {
-            Vec::new()
-        } else {
-            crate::notices::lan_addresses()
-        },
-        local_only: state.local_only,
-        routing: state.routing.configured(),
-        offline_basemap: crate::basemap::basemap_path(&state).is_some(),
         reveal: state.shell.is_some(),
-        ..crate::notices::about()
+        notify: state.shell.is_some(),
+        ..crate::notices::about(&state.server_id, &state.server_name)
     })
 }
 

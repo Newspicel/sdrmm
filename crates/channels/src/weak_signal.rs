@@ -1,14 +1,16 @@
+mod ftx;
+mod wspr;
+
+#[cfg(any(test, feature = "synth"))]
+pub(crate) use ftx::{FT4, FT8, pack as pack_ftx, waveform as ftx_waveform};
+#[cfg(any(test, feature = "synth"))]
+pub(crate) use wspr::waveform as wspr_waveform;
+
+use ftx::FtxDecoder;
+use wspr::WsprDecoder;
+
 use std::{sync::LazyLock, thread, time::Duration};
 
-use mfsk_core::{
-    ft4::Ft4,
-    ft8::Ft8,
-    msg::{WsprMessage as CoreWsprMessage, decode_request::DecodeRequest, wsjt77::unpack77},
-    wspr::{
-        decode::{WsprCallsignTable, decode_scan_with_table},
-        search::SearchParams,
-    },
-};
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use sdrmm_dsp::{FirC, design_lowpass};
@@ -275,9 +277,47 @@ fn identity(event: &DecoderEvent) -> Option<(&str, f32, f32)> {
     }
 }
 
+enum Worker {
+    Ftx(Box<FtxDecoder>, fn(WsjtMessage) -> DecoderEvent),
+    Wspr(Box<WsprDecoder>),
+}
+
+impl Worker {
+    fn new(mode: Mode) -> Self {
+        match mode {
+            Mode::Ft8 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT8)), DecoderEvent::Ft8),
+            Mode::Ft4 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT4)), DecoderEvent::Ft4),
+            Mode::Wspr => Self::Wspr(Box::new(WsprDecoder::new())),
+        }
+    }
+
+    fn decode(&mut self, job: &Job, nominal_start_s: f64) -> Vec<DecoderEvent> {
+        match self {
+            Self::Ftx(decoder, event) => decoder
+                .decode(
+                    &job.samples,
+                    job.audio_low_hz,
+                    job.audio_high_hz,
+                    job.max_candidates,
+                )
+                .into_iter()
+                .map(|found| {
+                    event(WsjtMessage {
+                        text: found.text,
+                        snr_db: found.snr_db,
+                        audio_hz: found.frequency_hz,
+                        time_offset_s: found.start_s - nominal_start_s as f32,
+                        hard_errors: found.hard_errors,
+                    })
+                })
+                .collect(),
+            Self::Wspr(decoder) => decode_wspr(job, decoder, nominal_start_s),
+        }
+    }
+}
+
 fn run(mode: Mode, mut input: Consumer<Job>, mut output: Producer<Done>) {
-    let mut wspr_calls = WsprCallsignTable::new();
-    let mut pcm = Vec::with_capacity(mode.slot_samples());
+    let mut worker = Worker::new(mode);
     loop {
         if output.is_abandoned() {
             return;
@@ -289,11 +329,7 @@ fn run(mode: Mode, mut input: Consumer<Job>, mut output: Producer<Done>) {
             thread::sleep(WORKER_IDLE);
             continue;
         };
-        let events = match mode {
-            Mode::Ft8 => decode_wsjt::<Ft8>(&job, &mut pcm, DecoderEvent::Ft8),
-            Mode::Ft4 => decode_wsjt::<Ft4>(&job, &mut pcm, DecoderEvent::Ft4),
-            Mode::Wspr => decode_wspr(&job, &mut wspr_calls),
-        };
+        let events = worker.decode(&job, mode.nominal_start_s());
         let mut done = Done {
             epoch: job.epoch,
             window_start: job.window_start,
@@ -308,47 +344,6 @@ fn run(mode: Mode, mut input: Consumer<Job>, mut output: Producer<Done>) {
             thread::sleep(WORKER_IDLE);
         }
     }
-}
-
-fn decode_wsjt<P>(
-    job: &Job,
-    pcm: &mut Vec<i16>,
-    event: fn(WsjtMessage) -> DecoderEvent,
-) -> Vec<DecoderEvent>
-where
-    P: mfsk_core::msg::decode_request::FrameDecodable
-        + mfsk_core::msg::decode_request::SupportsSicRounds<
-            DecodeResult = mfsk_core::engine::pipeline::DecodeResult,
-        >,
-{
-    pcm.clear();
-    pcm.extend(
-        job.samples
-            .iter()
-            .map(|sample| (sample * f32::from(i16::MAX)).round() as i16),
-    );
-    DecodeRequest::<P>::new(
-        pcm,
-        job.audio_low_hz,
-        job.audio_high_hz,
-        1.0,
-        job.max_candidates,
-    )
-    .sic_rounds(2)
-    .decode()
-    .results
-    .into_iter()
-    .filter_map(|result| {
-        let text = unpack77(result.message77())?;
-        Some(event(WsjtMessage {
-            text,
-            snr_db: result.snr_db,
-            audio_hz: result.freq_hz,
-            time_offset_s: result.dt_sec,
-            hard_errors: result.hard_errors,
-        }))
-    })
-    .collect()
 }
 
 fn reported_by_a_transmitter(grid: Option<&str>, power_dbm: i32) -> bool {
@@ -371,45 +366,29 @@ fn reported_by_a_transmitter(grid: Option<&str>, power_dbm: i32) -> bool {
         && (locator.len() == 4 || (subsquare(locator[4]) && subsquare(locator[5])))
 }
 
-fn decode_wspr(job: &Job, calls: &mut WsprCallsignTable) -> Vec<DecoderEvent> {
-    let params = SearchParams {
-        freq_min_hz: job.audio_low_hz,
-        freq_max_hz: job.audio_high_hz,
-        max_candidates: job.max_candidates,
-        ..SearchParams::default()
-    };
-    decode_scan_with_table(&job.samples, INPUT_RATE_HZ as u32, 0, &params, calls)
+fn decode_wspr(job: &Job, decoder: &mut WsprDecoder, nominal_start_s: f64) -> Vec<DecoderEvent> {
+    decoder
+        .decode(
+            &job.samples,
+            job.audio_low_hz,
+            job.audio_high_hz,
+            job.max_candidates,
+        )
         .into_iter()
-        .filter_map(|result| {
-            let text = result.message.to_string();
-            let (callsign, grid, power_dbm) = match result.message {
-                CoreWsprMessage::Type1 {
-                    callsign,
-                    grid,
-                    power_dbm,
-                } => (callsign, Some(grid), power_dbm),
-                CoreWsprMessage::Type2 {
-                    callsign,
-                    power_dbm,
-                } => (callsign, None, power_dbm),
-                CoreWsprMessage::Type3 {
-                    callsign_hash,
-                    grid6,
-                    power_dbm,
-                } => (format!("<#{callsign_hash:05x}>"), Some(grid6), power_dbm),
-            };
-            reported_by_a_transmitter(grid.as_deref(), power_dbm).then_some(DecoderEvent::Wspr(
-                WsprSpot {
-                    text,
-                    callsign,
-                    grid,
-                    power_dbm,
-                    snr_db: result.snr_db,
-                    audio_hz: result.freq_hz,
-                    time_offset_s: result.dt_sec,
-                    drift_hz: result.drift_hz,
-                },
-            ))
+        .filter(|spot| {
+            reported_by_a_transmitter(spot.message.grid.as_deref(), spot.message.power_dbm)
+        })
+        .map(|spot| {
+            DecoderEvent::Wspr(WsprSpot {
+                text: spot.message.text,
+                callsign: spot.message.callsign,
+                grid: spot.message.grid,
+                power_dbm: spot.message.power_dbm,
+                snr_db: spot.snr_db,
+                audio_hz: spot.frequency_hz,
+                time_offset_s: spot.start_s - nominal_start_s as f32,
+                drift_hz: spot.drift_hz,
+            })
         })
         .collect()
 }
@@ -548,7 +527,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        testgen,
+        synth,
         testutil::{realtime_budget, settings},
     };
 
@@ -572,7 +551,7 @@ mod tests {
                 settings(ChannelParams::Ft8(WsjtParams::default())),
             )
             .unwrap(),
-            &testgen::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0)
+            &synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0)
         );
         let message = events.iter().find_map(|event| match event {
             DecoderEvent::Ft8(message) if message.text.contains("W1AW") => Some(message),
@@ -593,7 +572,7 @@ mod tests {
                 settings(ChannelParams::Ft4(WsjtParams::default())),
             )
             .unwrap(),
-            &testgen::weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0)
+            &synth::weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0)
         );
         let message = events.iter().find_map(|event| match event {
             DecoderEvent::Ft4(message) if message.text.contains("JA1ABC") => Some(message),
@@ -614,7 +593,7 @@ mod tests {
                 settings(ChannelParams::Wspr(WsprParams::default())),
             )
             .unwrap(),
-            &testgen::weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0)
+            &synth::weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0)
         );
         let spot = events.iter().find_map(|event| match event {
             DecoderEvent::Wspr(spot) if spot.callsign == "K1ABC" => Some(spot),
@@ -628,7 +607,7 @@ mod tests {
 
     #[test]
     fn a_slot_decode_never_blocks_the_sample_path() {
-        let iq = testgen::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0);
+        let iq = synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0);
         let mut channel = Ft8Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
@@ -697,31 +676,93 @@ mod tests {
         iq
     }
 
+    fn decode_ft8(iq: &[Complex<f32>]) -> Vec<String> {
+        let mut channel = Ft8Channel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(ChannelParams::Ft8(WsjtParams::default())),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        for block in iq.chunks(4_096) {
+            channel.process(block, &mut out);
+        }
+        channel.settle(&mut out);
+        out.events
+            .into_iter()
+            .filter_map(|event| match event {
+                DecoderEvent::Ft8(message) => Some(message.text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn with_noise(iq: &[Complex<f32>], snr_db: f32, mut state: u64) -> Vec<Complex<f32>> {
+        let power = iq.iter().map(|s| s.re * s.re).sum::<f32>() / iq.len() as f32;
+        let sigma = (power / 10f32.powf(snr_db / 10.0)).sqrt();
+        let mut gaussian = || {
+            (0..12)
+                .map(|_| {
+                    state = state
+                        .wrapping_mul(6_364_136_223_846_793_005)
+                        .wrapping_add(1_442_695_040_888_963_407);
+                    (state >> 40) as f32 / (1u64 << 24) as f32
+                })
+                .sum::<f32>()
+                - 6.0
+        };
+        iq.iter()
+            .map(|s| Complex::new(s.re + sigma * gaussian(), 0.0))
+            .collect()
+    }
+
+    #[test]
+    fn noise_on_a_busy_band_invents_no_messages() {
+        let heard: Vec<&str> = PUBLISHED
+            .iter()
+            .copied()
+            .chain(["OT4B <...> -19", "WB2QJ ES3AT KO18"])
+            .collect();
+        let slot = busy_slot_with_quiet_tail();
+        for (snr_db, seed) in [(0.0, 1), (0.0, 2), (-5.0, 3), (-5.0, 4)] {
+            let texts = decode_ft8(&with_noise(&slot, snr_db, seed));
+            let invented: Vec<&String> = texts
+                .iter()
+                .filter(|text| !heard.contains(&text.as_str()))
+                .collect();
+            assert!(
+                invented.is_empty(),
+                "{snr_db} dB, seed {seed}: {invented:?}"
+            );
+        }
+    }
+
+    const PUBLISHED: [&str; 20] = [
+        "VK4BLE OH8JK R-17",
+        "RK6AH JH1AJT -05",
+        "PA3EPP SP8NFO KN09",
+        "RV6K RU3XL -13",
+        "SQ8OHR UA9LL MO27",
+        "ET3RFG/R IN3ADG -23",
+        "CQ F4FSY JN25",
+        "JR5MJS OH8NW 73",
+        "SV1GN RK6AUV LN05",
+        "PB5DX EI3CTB IO63",
+        "CQ IZ1ANK JN33",
+        "NT6Q OH8GDU -17",
+        "CQ DL1UDO JO31",
+        "VK4BLE OH1EDK -20",
+        "CQ JA OH1LWZ KP11",
+        "<...> ON7EE JO10",
+        "CQ DG0OFT JO50",
+        "CQ UB3AQS KO85",
+        "G1XJM HA7JIV JN97",
+        "SP7XIF JA2GQT -15",
+    ];
+
     #[test]
     fn a_recorded_slot_reads_the_band_the_reference_decoder_published() {
-        const PUBLISHED: [&str; 20] = [
-            "VK4BLE OH8JK R-17",
-            "RK6AH JH1AJT -05",
-            "PA3EPP SP8NFO KN09",
-            "RV6K RU3XL -13",
-            "SQ8OHR UA9LL MO27",
-            "ET3RFG/R IN3ADG -23",
-            "CQ F4FSY JN25",
-            "JR5MJS OH8NW 73",
-            "SV1GN RK6AUV LN05",
-            "PB5DX EI3CTB IO63",
-            "CQ IZ1ANK JN33",
-            "NT6Q OH8GDU -17",
-            "CQ DL1UDO JO31",
-            "VK4BLE OH1EDK -20",
-            "CQ JA OH1LWZ KP11",
-            "<...> ON7EE JO10",
-            "CQ DG0OFT JO50",
-            "CQ UB3AQS KO85",
-            "PA3EPP SP8NFO KN09",
-            "RV6K RU3XL -13",
-        ];
-
         let mut channel = Ft8Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,

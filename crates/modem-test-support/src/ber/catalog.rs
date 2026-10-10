@@ -1,6 +1,7 @@
 pub mod afsk;
 pub mod analog;
 pub mod ask;
+pub mod ble;
 pub mod equalised;
 pub mod framing;
 pub mod gmsk;
@@ -14,6 +15,7 @@ pub mod ppm;
 pub mod psk;
 pub mod qam;
 pub mod spread;
+pub mod wifi;
 
 use crate::ber::{
     Curve,
@@ -286,6 +288,14 @@ pub const ENTRIES: &[Entry] = &[
     Entry {
         name: "fhss",
         measurements: spread::FHSS,
+    },
+    Entry {
+        name: "ble",
+        measurements: ble::MEASUREMENTS,
+    },
+    Entry {
+        name: "wifi",
+        measurements: wifi::MEASUREMENTS,
     },
 ];
 

@@ -877,6 +877,7 @@ mod tests {
             speed_mps: None,
             track_deg: None,
             time: "2026-08-16T12:00:00Z".to_owned(),
+            attitude: Default::default(),
         };
         assert_eq!(receiver_of(Some(&fix)), Some(BERLIN));
         assert_eq!(receiver_of(None), None);

@@ -3,13 +3,15 @@ import { useState } from "react";
 import { Button, Input } from "../../components/BaseControls";
 import { BTN, BTN_PRIMARY, BTN_QUIET, FIELD } from "../../components/controls";
 import { deviceId } from "../../components/devices";
+import { FaceFault } from "../../components/face/Fault";
+import { Readout, Readouts } from "../../components/face/Readouts";
 import { formatBytes, formatMhz, formatSampleRate } from "../../components/format";
 import { PlaybackTransport } from "../../components/PlaybackTransport";
-import { Readout, ReadoutRow } from "../../components/Readout";
 import { RecordingUpload } from "../../components/RecordingUpload";
 import {
   describeRecording,
   formatDuration,
+  recordingLanes,
   recordingProvenance,
   recordingTitle,
 } from "../../components/recordings";
@@ -19,8 +21,10 @@ import type { PatchNode, PatchNodeOf, RecordingInfo } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { releaseRadio } from "../remove";
+import { MakeArrayButton, offersMakeArray } from "./MakeArrayButton";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import { claimedRecordings, recordingChoices, recordingDeviceId } from "./recordingNode";
+import { SourceHealth } from "./SourceHealth";
 
 type RecordingNodeData = PatchNodeOf<"recording">["data"];
 
@@ -82,6 +86,29 @@ function Library({
         <p className="text-sm text-ink-dim">Nothing free matches that.</p>
       )}
     </div>
+  );
+}
+
+export function RecordingFacts({ recording }: { recording: RecordingInfo }) {
+  const lanes = recordingLanes(recording);
+  return (
+    <Readouts columns={2}>
+      {lanes > 1 && (
+        <Readout label="Lanes" title="Lanes recorded side by side">
+          {lanes}
+        </Readout>
+      )}
+      <Readout label="Centre" title="Recorded centre">
+        {formatMhz(recording.center_hz)}
+      </Readout>
+      <Readout label="Rate" title="Recorded sample rate">
+        {formatSampleRate(recording.sample_rate)}
+      </Readout>
+      <Readout label="Length">{formatDuration(recording.duration_s)}</Readout>
+      <Readout label="Size" title="Size on disk">
+        {formatBytes(recording.bytes)}
+      </Readout>
+    </Readouts>
   );
 }
 
@@ -192,21 +219,14 @@ export function RecordingFace({ node }: { node: PatchNode }) {
     >
       <FaceBody>
         {set.playback != null && <PlaybackTransport set={set} status={set.playback} />}
-        {known !== null && (
-          <Readout separated={set.playback == null}>
-            <ReadoutRow label="Centre">{formatMhz(known.center_hz)}</ReadoutRow>
-            <ReadoutRow label="Rate">{formatSampleRate(known.sample_rate)}</ReadoutRow>
-            <ReadoutRow label="Length">{formatDuration(known.duration_s)}</ReadoutRow>
-            <ReadoutRow label="Size">{formatBytes(known.bytes)}</ReadoutRow>
-          </Readout>
-        )}
-        {set.error != null && (
-          <p role="alert" className="border-t border-line p-2 font-mono text-xs text-danger">
-            {set.error}
-          </p>
-        )}
+        {known !== null && <RecordingFacts recording={known} />}
+        {set.error != null && <FaceFault message={set.error} />}
       </FaceBody>
       <FaceFooter>
+        <SourceHealth set={set} />
+        {offersMakeArray(workspace.graph, node.id, set) && (
+          <MakeArrayButton node={node.id} set={set} />
+        )}
         <Button
           type="button"
           className={BTN_QUIET}

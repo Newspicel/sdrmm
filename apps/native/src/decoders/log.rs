@@ -23,7 +23,6 @@ const KIND_LABELS: &[(&str, &str)] = &[
     ("selcall", "Selcall"),
     ("navtex", "NAVTEX"),
     ("acars", "ACARS"),
-    ("subghz", "Sub-GHz"),
     ("tone", "Tone"),
     ("scrambler", "Scrambler"),
     ("dv", "Digital voice"),

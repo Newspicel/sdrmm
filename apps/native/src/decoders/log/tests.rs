@@ -77,7 +77,6 @@ fn station(kind: &str, data: Value) -> Option<String> {
 fn every_kind_has_a_name_and_unknown_ones_shout() {
     assert_eq!(kind_label("adsb"), "ADS-B");
     assert_eq!(kind_label("navtex"), "NAVTEX");
-    assert_eq!(kind_label("subghz"), "Sub-GHz");
     assert_eq!(kind_label("dmr"), "DMR");
     assert!(KIND_LABELS.iter().all(|(_, label)| !label.is_empty()));
 }
@@ -405,31 +404,4 @@ fn clock_gnss_navtex_and_acars_summaries() {
         "downlink": true, "flight": "LH0400", "text": "", "more": false,
     });
     assert_eq!(summary("acars", acars), "D-AIBC · LH0400 · [H1]");
-}
-
-#[test]
-fn subghz_summaries_lead_with_the_reading() {
-    let frame = json!({
-        "modulation": "ook", "encoding": "pwm", "bits": 24, "data": "0A1B23",
-        "address": 0xa1b2, "button": 3, "short_us": 320, "repeats": 6,
-    });
-    assert_eq!(
-        summary("subghz", frame.clone()),
-        "24 bit 0A1B23 · addr 0A1B2 · btn 3 · ×6"
-    );
-    assert_eq!(station("subghz", frame).as_deref(), Some("0A1B2"));
-    let raw = json!({
-        "modulation": "fsk", "encoding": "raw", "bits": 0, "data": "", "short_us": 250,
-        "repeats": 1, "timings_us": [320, 960, 320, 960],
-    });
-    assert_eq!(summary("subghz", raw.clone()), "raw, 4 edges");
-    assert_eq!(station("subghz", raw), None);
-    let mast = json!({
-        "modulation": "ook", "encoding": "pwm", "bits": 64, "data": "", "short_us": 500,
-        "repeats": 1,
-        "reading": {"model": "WS2032", "id": 7, "wind_avg_kmh": 12.5, "wind_dir_deg": 270.0, "rain_mm": 3.2},
-    });
-    let said = summary("subghz", mast);
-    assert!(said.contains("wind 12.5 km/h"));
-    assert!(said.contains("rain 3.2 mm"));
 }

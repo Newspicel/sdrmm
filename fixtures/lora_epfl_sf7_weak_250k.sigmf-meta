@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "USRP-2920 remote radio head",
+    "core:description": "LoRa SF7 125 kHz CR 4/5, payload 0001413, -6 dB"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 862500000.0,
+      "core:datetime": "2026-10-07T01:44:47.087297Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "EPFL LoRaIQ dataset (Tapparel, EPFL TCL), CC BY 4.0, https://zenodo.org/records/17708397, 25_01_17-14_39/rrh4/981; source SHA-256 3a77300ed2f72964868fcd64c429add294fdba8512f4fceeec996e602a96b5d7; samples 0..12750 at 250000 Hz",
+      "core:sample_count": 12750,
+      "core:sample_start": 0
+    }
+  ]
+}

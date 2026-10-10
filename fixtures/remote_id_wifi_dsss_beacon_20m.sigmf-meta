@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 20000000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "USRP X310",
+    "core:description": "Wi-Fi channel 1 off air: 802.11b 1 Mbit/s beacon from Xiaomi 13"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 2412000000.0,
+      "core:datetime": "2026-10-08T14:18:59.417746Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "RFUAV dataset (huggingface.co/datasets/alley66/RFUAV), DJI MINI4 PRO VTSBW=10 pack1, Apache-2.0; source SHA-256 99f5fd1c3627c1dccad49a4c5bf80ef5e279d483a2a4c999d59e435003a4cb74; samples 66470000..66750000 at 100000000 Hz",
+      "core:sample_count": 56000,
+      "core:sample_start": 0
+    }
+  ]
+}

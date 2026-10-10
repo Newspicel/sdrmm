@@ -1,6 +1,9 @@
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::Args;
 use num_complex::Complex;
 use sdrmm_channels::{ChannelCtx, ChannelOutputs};
@@ -21,23 +24,33 @@ pub struct Replay {
     #[arg(long)]
     pub input_rate: Option<f64>,
     #[arg(long)]
+    pub center: Option<f64>,
+    #[arg(long)]
     pub quiet_tail: Option<f64>,
+    #[arg(long)]
+    pub speed: Option<f64>,
+    #[arg(long, default_value_t = 0.0)]
+    pub settle: f64,
+    #[arg(long)]
+    pub images: Option<PathBuf>,
 }
 
 pub fn run(args: &Replay) -> Result<()> {
     let params: ChannelParams =
         serde_json::from_str(&args.params).context("read the channel parameters as JSON")?;
-    let mut source = Source::open(&args.input, args.input_rate, None)?;
+    let mut source = Source::open(&args.input, args.input_rate, args.center)?;
     let device_rate = source.rate;
 
     let type_id = params.type_id().to_owned();
-    let descriptor = sdrmm_channels::descriptors()
-        .into_iter()
-        .find(|d| d.type_id == type_id)
-        .with_context(|| format!("no channel called {type_id}"))?;
-    let input_rate = descriptor.input_rate_hz;
+    ensure!(
+        sdrmm_channels::descriptors()
+            .iter()
+            .any(|d| d.type_id == type_id),
+        "no channel called {type_id}"
+    );
+    let input_rate = sdrmm_channels::input_rate(&params);
     let settings = ChannelSettings {
-        frequency_hz: args.offset,
+        frequency_hz: source.center + args.offset,
         squelch: sdrmm_wire::Squelch::Off,
         params,
         blanker: Default::default(),
@@ -56,6 +69,8 @@ pub fn run(args: &Replay) -> Result<()> {
     let mut audio = 0usize;
     let tail = (args.quiet_tail.unwrap_or(0.0) * device_rate).round() as u64;
     let mut tail_left = tail;
+    let started = Instant::now();
+    let mut saved = 0usize;
     loop {
         let got = source.read(&mut block)?;
         let got = if got > 0 {
@@ -74,22 +89,75 @@ pub fn run(args: &Replay) -> Result<()> {
         out.reset();
         channel.process(&filtered, &mut out);
         audio += out.audio_pcm.len();
-        for event in &out.events {
-            events += 1;
-            println!("{:9.4} s  {event:?}", read as f64 / device_rate);
+        events += report(&out, read as f64 / device_rate);
+        save_images(&out, args.images.as_deref(), &mut saved)?;
+        if let Some(speed) = args.speed {
+            pace(started, read as f64 / device_rate / speed);
         }
-        for image in &out.images {
-            println!(
-                "{:9.4} s  image {}x{}",
-                read as f64 / device_rate,
-                image.picture.width,
-                image.picture.height
-            );
-        }
+    }
+    let settle_until = Instant::now() + Duration::from_secs_f64(args.settle);
+    while Instant::now() < settle_until {
+        std::thread::sleep(Duration::from_millis(100));
+        out.reset();
+        channel.process(&[], &mut out);
+        events += report(&out, read as f64 / device_rate);
+        save_images(&out, args.images.as_deref(), &mut saved)?;
     }
     println!(
         "{events} events, {audio} audio samples over {:.3} s of {type_id} at {device_rate} Hz",
         read as f64 / device_rate
     );
+    Ok(())
+}
+
+fn report(out: &ChannelOutputs, at_s: f64) -> usize {
+    for event in &out.events {
+        println!("{at_s:9.4} s  {event:?}");
+    }
+    for image in &out.images {
+        println!(
+            "{at_s:9.4} s  image {}x{}",
+            image.picture.width, image.picture.height
+        );
+    }
+    out.events.len()
+}
+
+fn pace(started: Instant, due_s: f64) {
+    let due = Duration::from_secs_f64(due_s);
+    if let Some(wait) = due.checked_sub(started.elapsed()) {
+        std::thread::sleep(wait);
+    }
+}
+
+fn save_images(out: &ChannelOutputs, dir: Option<&Path>, saved: &mut usize) -> Result<()> {
+    let Some(dir) = dir else {
+        return Ok(());
+    };
+    for image in &out.images {
+        *saved += 1;
+        let path = dir.join(format!("{}-{saved}.png", image.source));
+        let picture = &image.picture;
+        let (color, data) = if picture.rgb.is_empty() {
+            (png::ColorType::Grayscale, &picture.luma)
+        } else {
+            (png::ColorType::Rgb, &picture.rgb)
+        };
+        let file =
+            std::fs::File::create(&path).with_context(|| format!("create {}", path.display()))?;
+        let mut encoder = png::Encoder::new(
+            std::io::BufWriter::new(file),
+            u32::from(picture.width),
+            u32::from(picture.height),
+        );
+        encoder.set_color(color);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().context("write the png header")?;
+        writer
+            .write_image_data(data)
+            .context("write the png data")?;
+        writer.finish().context("finish the png")?;
+        println!("saved {}", path.display());
+    }
     Ok(())
 }

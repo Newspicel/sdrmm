@@ -20,7 +20,7 @@ async fn preset_capture_apply_delete_roundtrip() {
         app.clone(),
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{channel}"),
-        Some(r#"{"frequency_hz":145525000.0,"squelch":{"mode":"manual","level_db":-70.0},"params":{"type":"nfm","settings":{}}}"#),
+        Some(r#"{"settings":{"frequency_hz":145525000.0,"squelch":{"mode":"manual","level_db":-70.0},"params":{"type":"nfm","settings":{}}}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -105,7 +105,7 @@ async fn preset_capture_apply_delete_roundtrip() {
 #[tokio::test]
 async fn a_preset_carries_every_radio_the_workspace_draws() {
     let app = test_router();
-    let mut snapshot = virtual_snapshot("siggen", &[]);
+    let mut snapshot = virtual_snapshot("band", &[]);
     snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
         id: "second".to_string(),
         body: sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
@@ -115,6 +115,7 @@ async fn a_preset_carries_every_radio_the_workspace_draws() {
                 key: Some("array4".to_string()),
             }),
             locked_streams: Vec::new(),
+            split_tuning: false,
         }),
         position: sdrmm_wire::Position { x: 0.0, y: 600.0 },
         size: None,
@@ -207,7 +208,7 @@ async fn saving_a_preset_with_no_radio_open_is_refused() {
 #[tokio::test]
 async fn apply_preset_replaces_channels_that_do_not_fit_the_preset_rate() {
     let (app, store) = test_router_with_store();
-    let workspace = put_active_workspace(&app, &virtual_snapshot("siggen", &[])).await;
+    let workspace = put_active_workspace(&app, &virtual_snapshot("band", &[])).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
     let (status, _) = request(
@@ -250,7 +251,7 @@ async fn apply_preset_replaces_channels_that_do_not_fit_the_preset_rate() {
 #[tokio::test]
 async fn apply_preset_rejected_up_front_leaves_the_set_untouched() {
     let (app, store) = test_router_with_store();
-    let workspace = put_active_workspace(&app, &virtual_snapshot("siggen", &[])).await;
+    let workspace = put_active_workspace(&app, &virtual_snapshot("band", &[])).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
     let (status, _) = request(
@@ -330,5 +331,47 @@ async fn bookmark_crud_over_http() {
     let (status, _) = request(app.clone(), "DELETE", &format!("/api/bookmarks/{id}"), None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, _) = request(app, "DELETE", &format!("/api/bookmarks/{id}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn saved_radio_crud_over_http() {
+    let app = test_router();
+    let (status, _) = request(
+        app.clone(),
+        "POST",
+        "/api/saved-radios",
+        Some(r#"{"device_id":"rtltcp:10.0.0.5:1234","label":"  "}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/saved-radios",
+        Some(r#"{"device_id":" rtltcp:10.0.0.5:1234 ","label":"roof"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let id = serde_json::from_slice::<CreatedRowId>(&body)
+        .expect("json")
+        .id;
+
+    let (_, body) = request(app.clone(), "GET", "/api/saved-radios", None).await;
+    let listed: Vec<SavedRadio> = serde_json::from_slice(&body).expect("json");
+    assert_eq!(
+        listed,
+        vec![SavedRadio {
+            id,
+            device_id: "rtltcp:10.0.0.5:1234".to_string(),
+            label: "roof".to_string(),
+        }]
+    );
+
+    let path = format!("/api/saved-radios/{id}");
+    let (status, _) = request(app.clone(), "DELETE", &path, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = request(app, "DELETE", &path, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }

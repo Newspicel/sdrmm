@@ -9,7 +9,10 @@ use sdrmm_test_support::{CountingAlloc, assert_no_alloc, measure_throughput};
 
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc::new();
-use sdrmm_wire::ChannelSettings;
+use sdrmm_wire::{
+    AirtimeSpan, BleLink, BleParams, ChannelParams, ChannelSettings, IsmSurveyParams, RemoteIdLink,
+    RemoteIdParams, WifiOccupancyParams,
+};
 
 const BLOCK: usize = 2_048;
 const SURVEY_SECONDS: f64 = 0.1;
@@ -26,7 +29,7 @@ struct Row {
 fn searching_signal(rate: f64) -> Vec<Complex<f32>> {
     let len = (rate * SURVEY_SECONDS) as usize;
     let mut iq = vec![Complex::new(0.0f32, 0.0); len.max(BLOCK)];
-    sdrmm_channels::testgen::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
+    sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
     iq
 }
 
@@ -53,7 +56,7 @@ fn survey() -> Vec<Row> {
             _ => SURVEY_SECONDS,
         };
         let mut iq = vec![Complex::new(0.0, 0.0); ((rate * seconds) as usize).max(BLOCK)];
-        sdrmm_channels::testgen::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
+        sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
         let mut outputs = ChannelOutputs::default();
         drive(rx.as_mut(), &iq, &mut outputs);
         let msamples_per_s = measure_throughput(
@@ -173,7 +176,7 @@ fn the_cw_skimmer_allocates_nothing_while_it_searches_an_empty_band() {
     let mut rx =
         sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
     let mut iq = vec![Complex::new(0.0, 0.0); (rate as usize).max(BLOCK)];
-    sdrmm_channels::testgen::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
+    sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
     let mut outputs = ChannelOutputs::default();
     for _ in 0..4 {
         drive(rx.as_mut(), &iq, &mut outputs);
@@ -203,5 +206,184 @@ fn analog_channels_allocate_nothing_after_warmup_and_exceed_realtime() {
             msps * 1e6 / rate >= 2.0,
             "{type_id} fell below twice realtime: {msps} MS/s"
         );
+    }
+}
+
+#[test]
+fn lora_allocates_nothing_while_every_spreading_factor_searches() {
+    let settings = ChannelSettings::default_for("lora").expect("settings");
+    let rate = sdrmm_channels::input_rate(&settings.params);
+    let mut rx =
+        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+    let iq = searching_signal(rate);
+    let mut outputs = ChannelOutputs::default();
+    for _ in 0..4 {
+        drive(rx.as_mut(), &iq, &mut outputs);
+    }
+    assert_no_alloc("lora", || drive(rx.as_mut(), &iq, &mut outputs));
+}
+
+fn remote_id_settings(link: RemoteIdLink) -> ChannelSettings {
+    ChannelSettings {
+        params: ChannelParams::RemoteId(RemoteIdParams { link }),
+        ..ChannelSettings::default_for("remote_id").expect("settings")
+    }
+}
+
+fn aux_without_remote_id() -> Vec<u8> {
+    let mut pdu = vec![0x47, 30, 9, 0x09, 6, 5, 4, 3, 2, 0xC1, 0x75, 0x0E];
+    pdu.extend([19, 0xFF, 0x4C, 0x00, 0x02, 0x15]);
+    pdu.extend(1..=14);
+    pdu
+}
+
+fn busy_bluetooth(rate: f64, spread: bool) -> Vec<Complex<f32>> {
+    use sdrmm_channels::synth::remote_id::{BlePhy, bluetooth, ext_adv_pdu};
+    let mut ibeacon = vec![0x42, 20, 6, 5, 4, 3, 2, 0xC1];
+    ibeacon.extend([13, 0xFF, 0x4C, 0x00, 0x02, 0x15, 1, 2, 3, 4, 5, 6, 7, 8]);
+    let mut bursts = vec![
+        bluetooth(&ibeacon, 12, BlePhy::Le1m, rate),
+        bluetooth(&ext_adv_pdu(8, BlePhy::CodedS8), 12, BlePhy::CodedS8, rate),
+        bluetooth(&aux_without_remote_id(), 12, BlePhy::CodedS2, rate),
+    ];
+    if spread {
+        let mut aux = bluetooth(&aux_without_remote_id(), 9, BlePhy::CodedS8, rate);
+        sdrmm_channels::synth::shift(&mut aux, -6e6, rate);
+        bursts.push(aux);
+    }
+    busy(bursts, rate)
+}
+
+fn busy_wifi(rate: f64) -> Vec<Complex<f32>> {
+    use sdrmm_channels::synth::remote_id::{WifiPhy, build, dsss, ofdm};
+    let source = [0x02, 1, 2, 3, 4, 5];
+    let beacon = build::ordinary_beacon(source, "HomeNet");
+    let data = build::data(source, &[0xAA; 300]);
+    busy(
+        vec![
+            dsss(&beacon, WifiPhy::Dsss1m, false).unwrap(),
+            dsss(&data, WifiPhy::Cck11m, true).unwrap(),
+            ofdm(&beacon, 24),
+            ofdm(&data, 6),
+        ],
+        rate,
+    )
+}
+
+fn busy(bursts: Vec<Vec<Complex<f32>>>, rate: f64) -> Vec<Complex<f32>> {
+    let gap = (200e-6 * rate) as usize;
+    let mut iq = sdrmm_channels::synth::silence(gap);
+    for mut burst in bursts {
+        sdrmm_channels::synth::scale(&mut burst, 0.3);
+        iq.append(&mut burst);
+        iq.extend(sdrmm_channels::synth::silence(gap));
+    }
+    sdrmm_channels::synth::add_noise(&mut iq, 0xB05E, 0.02);
+    iq
+}
+
+#[test]
+fn remote_id_allocates_nothing_on_a_busy_channel_without_remote_id() {
+    for link in [
+        RemoteIdLink::Bluetooth,
+        RemoteIdLink::BluetoothBand,
+        RemoteIdLink::Wifi,
+    ] {
+        let settings = remote_id_settings(link);
+        let rate = sdrmm_channels::input_rate(&settings.params);
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = match link {
+            RemoteIdLink::Wifi => busy_wifi(rate),
+            _ => busy_bluetooth(rate, link == RemoteIdLink::BluetoothBand),
+        };
+        let mut outputs = ChannelOutputs::default();
+        drive(rx.as_mut(), &searching_signal(rate), &mut outputs);
+        assert_no_alloc("remote_id busy", || drive(rx.as_mut(), &iq, &mut outputs));
+        assert!(outputs.events.is_empty());
+    }
+}
+
+#[test]
+fn remote_id_allocates_nothing_while_every_link_searches() {
+    for link in [
+        RemoteIdLink::Bluetooth,
+        RemoteIdLink::BluetoothBand,
+        RemoteIdLink::Wifi,
+    ] {
+        let settings = remote_id_settings(link);
+        let rate = sdrmm_channels::input_rate(&settings.params);
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = searching_signal(rate);
+        let mut outputs = ChannelOutputs::default();
+        for _ in 0..4 {
+            drive(rx.as_mut(), &iq, &mut outputs);
+        }
+        assert_no_alloc("remote_id", || drive(rx.as_mut(), &iq, &mut outputs));
+    }
+}
+
+#[test]
+fn ble_allocates_nothing_once_every_device_is_known() {
+    for link in [BleLink::Channel, BleLink::Band] {
+        let settings = ChannelSettings {
+            params: ChannelParams::Ble(BleParams { link }),
+            ..ChannelSettings::default_for("ble").expect("settings")
+        };
+        let rate = link.input_rate_hz();
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = busy_bluetooth(rate, link == BleLink::Band);
+        let mut outputs = ChannelOutputs::default();
+        drive(rx.as_mut(), &iq, &mut outputs);
+        assert_no_alloc("ble", || drive(rx.as_mut(), &iq, &mut outputs));
+        assert!(outputs.events.is_empty());
+    }
+}
+
+fn airtime_settings(type_id: &str, span: AirtimeSpan) -> ChannelSettings {
+    let params = match type_id {
+        "wifi_occupancy" => ChannelParams::WifiOccupancy(WifiOccupancyParams {
+            span,
+            ..WifiOccupancyParams::default()
+        }),
+        _ => ChannelParams::IsmSurvey(IsmSurveyParams {
+            span,
+            ..IsmSurveyParams::default()
+        }),
+    };
+    ChannelSettings {
+        params,
+        ..ChannelSettings::default_for(type_id).expect("settings")
+    }
+}
+
+#[test]
+fn airtime_decoders_allocate_nothing_and_keep_up_at_every_span() {
+    for type_id in ["wifi_occupancy", "ism_survey"] {
+        for span in [AirtimeSpan::Mhz20, AirtimeSpan::Mhz40, AirtimeSpan::Mhz80] {
+            let settings = airtime_settings(type_id, span);
+            let rate = span.sample_rate_hz();
+            let mut rx = sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings)
+                .expect("receiver");
+            let mut iq = busy_wifi(rate);
+            iq.resize((rate * 0.02) as usize, Complex::new(0.0, 0.0));
+            sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, 0.02);
+            let mut outputs = ChannelOutputs::default();
+            for _ in 0..8 {
+                drive(rx.as_mut(), &iq, &mut outputs);
+            }
+            assert_no_alloc(type_id, || drive(rx.as_mut(), &iq, &mut outputs));
+            if cfg!(debug_assertions) {
+                continue;
+            }
+            let msps =
+                measure_throughput(4, iq.len() as u64, || drive(rx.as_mut(), &iq, &mut outputs));
+            assert!(
+                msps * 1e6 / rate >= 1.5,
+                "{type_id} at {rate} Hz fell below 1.5x realtime: {msps} MS/s"
+            );
+        }
     }
 }

@@ -114,6 +114,7 @@ mod tests {
             speed_mps: None,
             track_deg: None,
             time: "2026-08-15T10:00:00Z".to_owned(),
+            attitude: Default::default(),
         };
         let live = Track {
             fix: Some(fix),

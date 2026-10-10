@@ -2,13 +2,13 @@ use std::{collections::HashSet, time::Duration};
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelInfo, ChannelSettings, DeviceSet, NodeBody, PatchGraph, ServerEvent, StateScope,
-    StateSnapshot, WorkspaceChannel, WorkspaceDevice, WorkspaceState,
+    ChannelInfo, ChannelSettings, DeviceSet, DeviceSettings, NodeBody, PatchGraph, ServerEvent,
+    StateScope, StateSnapshot, WorkspaceChannel, WorkspaceDevice, WorkspaceState,
 };
 use tokio::{sync::broadcast::error::RecvError, time::Instant};
 
 use crate::{
-    AppState,
+    AppState, array, calibration,
     store::{SettingsStep, Store, StoreError},
 };
 
@@ -30,9 +30,6 @@ pub(crate) fn adopt_named_devices(engine: &Engine, store: &Store) {
             continue;
         };
         for node in detail.snapshot.graph.device_nodes() {
-            if matches!(node.body, NodeBody::Array(_)) {
-                continue;
-            }
             let Some(reference) = node.body.device_ref(&node.id) else {
                 continue;
             };
@@ -42,35 +39,6 @@ pub(crate) fn adopt_named_devices(engine: &Engine, store: &Store) {
             }
         }
     }
-}
-
-pub(crate) fn describe_arrays(engine: &Engine, graph: &PatchGraph) {
-    let state = engine.snapshot();
-    let bound = bind_devices(graph, &state);
-    let definitions = graph
-        .nodes
-        .iter()
-        .filter_map(|node| {
-            let NodeBody::Array(array) = &node.body else {
-                return None;
-            };
-            let members = graph
-                .array_members(&node.id)
-                .iter()
-                .map(|member| {
-                    let (_, id) = bound.iter().find(|(node, _)| node == member)?;
-                    state
-                        .device_sets
-                        .iter()
-                        .find(|set| set.id == *id)
-                        .map(|set| set.device.id())
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(array.definition(&node.id, node.label.as_deref(), members))
-        })
-        .filter(sdrmm_wire::ArrayDefinition::valid)
-        .collect();
-    engine.arrays().replace(definitions);
 }
 
 pub(crate) fn bind_devices(graph: &PatchGraph, state: &StateSnapshot) -> Vec<(String, u32)> {
@@ -88,37 +56,6 @@ pub(crate) fn bind_devices(graph: &PatchGraph, state: &StateSnapshot) -> Vec<(St
         {
             claimed.push(set.id);
             bound.push((node.id.clone(), set.id));
-        }
-    }
-    bound
-}
-
-/// Channels wired to a direction finder's beam rather than to an antenna, which sit on the lane
-/// one past the radio's own.
-fn beam_bound(graph: &PatchGraph, device_node: &str, set: &DeviceSet) -> Vec<(String, u32)> {
-    let mut bound = Vec::new();
-    for node in &graph.nodes {
-        if node.body.lane_output().is_none() {
-            continue;
-        }
-        let from_device = graph
-            .edges
-            .iter()
-            .any(|edge| edge.to.node == node.id && edge.from.node == device_node);
-        if !from_device {
-            continue;
-        }
-        for listener in crate::coherent::beam_listeners(graph, &node.id) {
-            let Some(NodeBody::Channel(wanted)) = graph.node(&listener).map(|node| &node.body)
-            else {
-                continue;
-            };
-            if let Some(channel) = set.channels.iter().find(|channel| {
-                channel.node.as_deref() == Some(listener.as_str())
-                    && carries(channel, &wanted.channel_type, set.capabilities.rx_streams)
-            }) {
-                bound.push((listener, channel.id));
-            }
         }
     }
     bound
@@ -172,7 +109,26 @@ pub(crate) fn bind_channels(
             bound.push(((*node).to_owned(), free.remove(at).id));
         }
     }
-    bound.extend(beam_bound(graph, device_node, set));
+    bound.extend(virtual_bound(graph, set));
+    bound
+}
+
+pub(crate) fn virtual_bound(graph: &PatchGraph, set: &DeviceSet) -> Vec<(String, u32)> {
+    let mut bound = Vec::new();
+    for lane in &set.virtual_lanes {
+        for listener in array::lane_port_listeners(graph, &lane.node, &lane.port) {
+            let Some(NodeBody::Channel(wanted)) = graph.node(&listener).map(|node| &node.body)
+            else {
+                continue;
+            };
+            if let Some(channel) = set.channels.iter().find(|channel| {
+                channel.node.as_deref() == Some(listener.as_str())
+                    && carries(channel, &wanted.channel_type, lane.stream)
+            }) {
+                bound.push((listener, channel.id));
+            }
+        }
+    }
     bound
 }
 
@@ -309,6 +265,9 @@ fn live_state(
     let (devices, channels) = capture(graph, &state.engine.snapshot(), &unrestored);
     stored.merge(devices);
     stored.merge_channels(channels);
+    for held in array::capture_tunes(state) {
+        stored.put_array(&held.node, held.tune);
+    }
     Ok(stored)
 }
 
@@ -319,11 +278,17 @@ pub(crate) struct SettingsEdit {
     node: String,
     graph: PatchGraph,
     before: WorkspaceState,
+    author: Option<String>,
 }
 
 /// Opens a settings change for the node the patch lands on, or `None` when it lands on a radio the
 /// active workspace does not draw: an ad-hoc device has no node whose history could hold it.
-pub(crate) fn begin_edit(state: &AppState, ds: u32, channel: Option<u32>) -> Option<SettingsEdit> {
+pub(crate) fn begin_edit(
+    state: &AppState,
+    ds: u32,
+    channel: Option<u32>,
+    author: Option<&str>,
+) -> Option<SettingsEdit> {
     let active = state.store.active_workspace().ok()??;
     let graph = active.snapshot.graph;
     let binding = bind(&graph, &state.engine.snapshot())
@@ -344,6 +309,7 @@ pub(crate) fn begin_edit(state: &AppState, ds: u32, channel: Option<u32>) -> Opt
         node,
         graph,
         before,
+        author: author.map(str::to_owned),
     })
 }
 
@@ -360,8 +326,13 @@ pub(crate) fn finish_edit(state: &AppState, edit: SettingsEdit) {
         before: &edit.before,
         after: &after,
     };
-    match state.store.record_settings(edit.workspace, &step) {
-        Ok(true) => state.engine.emit_scope(StateScope::Workspaces),
+    match state
+        .store
+        .record_settings(edit.workspace, &step, edit.author.as_deref())
+    {
+        Ok(true) => state
+            .engine
+            .emit_scope(StateScope::Workspace(edit.workspace)),
         Ok(false) => {}
         Err(err) => tracing::warn!(%err, "could not record a settings change in the history"),
     }
@@ -372,7 +343,19 @@ pub(crate) fn finish_edit(state: &AppState, edit: SettingsEdit) {
 pub(crate) fn restore_settings(state: &AppState, graph: &PatchGraph, saved: &WorkspaceState) {
     let engine = &state.engine;
     for binding in bind(graph, &engine.snapshot()) {
-        if let Err(err) = restore_device(engine, binding.device_set, &binding.node, saved) {
+        if let Some(device) = saved.device(&binding.node) {
+            let calibration = device.settings.calibration();
+            if calibration != DeviceSettings::default() {
+                calibration::remember(engine, &state.store, binding.device_set, &calibration);
+            }
+        }
+        if let Err(err) = restore_device(
+            engine,
+            &state.store,
+            binding.device_set,
+            &binding.node,
+            saved,
+        ) {
             tracing::warn!(err, node = binding.node, "could not step a radio back");
         }
         for (node, channel) in binding.channels {
@@ -467,7 +450,7 @@ fn touches_settings(event: &ServerEvent) -> bool {
     matches!(
         event,
         ServerEvent::StateChanged {
-            scope: StateScope::All | StateScope::DeviceSet(_)
+            scope: StateScope::All | StateScope::DeviceSet(_) | StateScope::Arrays
         }
     )
 }
@@ -486,6 +469,7 @@ pub(crate) fn reconcile(
     saved: &WorkspaceState,
 ) -> Reconciled {
     let engine = &state.engine;
+    array::release(state, incoming);
     let snapshot = engine.snapshot();
     let bindings = bind(incoming, &snapshot);
     let mut report = Reconciled::default();
@@ -494,7 +478,6 @@ pub(crate) fn reconcile(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clear();
-    crate::coherent::drop_undrawn(state, incoming);
 
     for set in &snapshot.device_sets {
         if bindings.iter().any(|bound| bound.device_set == set.id) {
@@ -538,7 +521,7 @@ pub(crate) fn reconcile(
                 }
             }
         }
-        match restore_device(engine, set.id, &binding.node, saved) {
+        match restore_device(engine, &state.store, set.id, &binding.node, saved) {
             Ok(Restored::Whole) => {}
             Ok(Restored::Partial) => report.unrestored.push(binding.node.clone()),
             Err(err) => {
@@ -576,18 +559,24 @@ pub(crate) enum Restored {
 
 pub(crate) fn restore_device(
     engine: &sdrmm_engine::Engine,
+    store: &Store,
     device_set: u32,
     node: &str,
     saved: &WorkspaceState,
 ) -> Result<Restored, String> {
-    let Some(device) = saved.device(node) else {
+    let remembered = saved
+        .device(node)
+        .map(|device| device.settings.clone())
+        .unwrap_or_default()
+        .calibrated(&calibration::of(engine, store, device_set));
+    if remembered == DeviceSettings::default() {
         return Ok(Restored::Whole);
-    };
+    }
     let capabilities = engine
         .capabilities(device_set)
         .ok_or_else(|| format!("device set {device_set} is not open"))?;
-    let taken = device.settings.supported_by(&capabilities);
-    let whole = taken == device.settings;
+    let taken = remembered.supported_by(&capabilities);
+    let whole = taken == remembered;
     engine
         .patch_device(device_set, taken)
         .map_err(|err| err.to_string())?;
@@ -685,6 +674,7 @@ mod tests {
             body: NodeBody::Device(DeviceNode {
                 device: Some(reference),
                 locked_streams: Vec::new(),
+                split_tuning: false,
             }),
             position: Position { x: 0.0, y: 0.0 },
             size: None,
@@ -867,7 +857,7 @@ mod tests {
             stream: 0,
             node: node.map(str::to_owned),
             settings: ChannelSettings::default_for("dmr").expect("dmr"),
-            out_of_band: false,
+            out_of_band: None,
             audio_recordings: Vec::new(),
             baseband_recording: None,
             network_export: None,
@@ -879,8 +869,8 @@ mod tests {
             id: 1,
             device: DeviceInfo {
                 driver: "virtual".to_owned(),
-                key: "siggen".to_owned(),
-                label: "Siggen".to_owned(),
+                key: "band".to_owned(),
+                label: "Test band".to_owned(),
                 serial: None,
                 profile: None,
             },
@@ -905,7 +895,9 @@ mod tests {
                 dc_artifact: sdrmm_wire::DcArtifact::Operator,
                 hardware_sweep: false,
                 coherence: sdrmm_wire::Coherence::None,
-                noise_source: false,
+                noise_source: sdrmm_wire::NoiseSource::None,
+                retune_keeps_phase: false,
+                rx_inputs: Vec::new(),
             },
             settings: sdrmm_wire::DeviceSettings::default(),
             status: sdrmm_wire::DeviceSetStatus::Running,
@@ -921,8 +913,10 @@ mod tests {
             scanners: Vec::new(),
             hunts: Vec::new(),
             playback: None,
-            extra_lane: None,
             agc_gains: Vec::new(),
+            virtual_lanes: Vec::new(),
+            held: Vec::new(),
+            loss: None,
         }
     }
 
@@ -932,7 +926,6 @@ mod tests {
             id: "voice".to_owned(),
             body: NodeBody::Channel(sdrmm_wire::ChannelNode {
                 channel_type: "dmr".to_owned(),
-                record_calls: false,
                 tuning_locked: false,
             }),
             position: Position { x: 0.0, y: 0.0 },
@@ -987,6 +980,7 @@ mod tests {
                 other_control_hz: Vec::new(),
                 color_code: None,
             }],
+            arrays: Vec::new(),
             revision: 1,
         };
         assert_eq!(trunk_channels(&state, 1), HashSet::from([4]));

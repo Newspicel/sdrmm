@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 4000000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "USRP X310",
+    "core:description": "Bluetooth channel 38 off air: DJI Mini 4 Pro advert and scan response plus phones"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 2426000000.0,
+      "core:datetime": "2026-10-08T14:18:58.966371Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "RFUAV dataset (huggingface.co/datasets/alley66/RFUAV), DJI MINI4 PRO VTSBW=10 pack1, Apache-2.0; source SHA-256 99f5fd1c3627c1dccad49a4c5bf80ef5e279d483a2a4c999d59e435003a4cb74; samples 91600000..92700000 at 100000000 Hz",
+      "core:sample_count": 44001,
+      "core:sample_start": 0
+    }
+  ]
+}

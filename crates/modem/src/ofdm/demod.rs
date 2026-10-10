@@ -1,10 +1,11 @@
-use std::sync::Arc;
-
 use num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
+use sdrmm_dsp::fft::Transform;
 
 use super::{
-    equalize::{ChannelEstimate, ChannelEstimator, PilotFit, PilotTracker, noise_var_from_repeats},
+    equalize::{
+        ChannelEstimate, ChannelEstimator, DelaySmoother, PilotFit, PilotTracker,
+        noise_var_from_repeats,
+    },
     params::OfdmParams,
     sync::{Acquisition, PreambleSync},
 };
@@ -16,18 +17,19 @@ use crate::{
 
 pub const DEFAULT_BACKOFF: usize = 4;
 
+pub const DELAY_GUARD_TAPS: usize = 4;
+
 #[derive(Clone)]
 pub struct OfdmDemod {
     params: OfdmParams,
-    fft: Arc<dyn Fft<f32>>,
-    scratch: Vec<Complex<f32>>,
+    fft: Transform,
     grid: Vec<Complex<f32>>,
-    scale: f32,
     sync: PreambleSync,
     estimator: ChannelEstimator,
     pilot_tracking: bool,
     backoff: usize,
     channel: ChannelEstimate,
+    smoother: Option<DelaySmoother>,
     tracker: PilotTracker,
     cfo: f64,
     data_start: usize,
@@ -43,22 +45,24 @@ impl OfdmDemod {
     #[must_use]
     pub fn new(params: OfdmParams) -> Self {
         let fft_size = params.fft();
-        let fft = FftPlanner::<f32>::new().plan_fft_forward(fft_size);
-        let scratch = vec![Complex::new(0.0, 0.0); fft.get_inplace_scratch_len()];
         let occupied = params.map().occupied().len();
         let pilots = params.map().pilots().len();
         let pilot_offsets = params.map().pilots().iter().map(|c| c.offset).collect();
         let data = params.data_subcarriers();
         Self {
-            fft,
-            scratch,
+            fft: Transform::forward(fft_size),
             grid: vec![Complex::new(0.0, 0.0); fft_size],
-            scale: (fft_size as f64).sqrt().recip() as f32,
             sync: PreambleSync::new(&params),
             estimator: ChannelEstimator::LongTraining,
             pilot_tracking: true,
             backoff: DEFAULT_BACKOFF,
             channel: ChannelEstimate::new(fft_size),
+            smoother: DelaySmoother::new(
+                params.map(),
+                -(DELAY_GUARD_TAPS as isize),
+                params.cp() + 2 * DELAY_GUARD_TAPS + 1,
+            )
+            .ok(),
             tracker: PilotTracker::new(),
             cfo: 0.0,
             data_start: params.data_offset(),
@@ -143,7 +147,7 @@ impl OfdmDemod {
         for (c, &h) in self.params.map().occupied().iter().zip(channel) {
             self.channel.set(c.bin, h);
         }
-        self.channel.finish(self.params.map(), noise_var, 0.0);
+        self.channel.finish(self.params.map(), noise_var, 0.0, None);
     }
 
     pub fn symbol(&mut self, x: &[Complex<f32>], symbol: usize, out: &mut [Complex<f32>]) {
@@ -241,11 +245,7 @@ impl OfdmDemod {
             self.grid[n] = Complex::new(y.re as f32, y.im as f32);
             rot *= step;
         }
-        self.fft
-            .process_with_scratch(&mut self.grid, &mut self.scratch);
-        for bin in &mut self.grid {
-            *bin *= self.scale;
-        }
+        self.fft.process_unitary(&mut self.grid);
     }
 
     fn estimate_long(&mut self, x: &[Complex<f32>], long_start: usize) {
@@ -293,14 +293,22 @@ impl OfdmDemod {
         }
         let noise_var = noise_var_from_repeats(&self.first[..count], &self.second[..count]);
         self.channel.clear();
+        let mut spread = 0.0;
         for index in 0..count {
             let (bin, value) = known(&self.params, index);
             let mean = (self.first[index] + self.second[index]) * 0.5;
             self.channel
                 .set(bin, mean * value.conj() / value.norm_sqr());
+            spread += 1.0 / f64::from(value.norm_sqr());
         }
+        let estimate_var = 0.5 * noise_var * spread / count.max(1) as f64;
+        let smoothing = match self.estimator {
+            ChannelEstimator::LongTraining => self.smoother.as_mut().map(|s| (s, estimate_var)),
+            ChannelEstimator::ShortComb => None,
+        };
         let ramp = -(self.backoff as f64) / self.params.fft() as f64;
-        self.channel.finish(self.params.map(), noise_var, ramp);
+        self.channel
+            .finish(self.params.map(), noise_var, ramp, smoothing);
     }
 }
 

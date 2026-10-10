@@ -100,6 +100,7 @@ pub struct Api {
     base: String,
     http: reqwest::Client,
     token: Token,
+    author: Option<String>,
 }
 
 impl Api {
@@ -110,7 +111,16 @@ impl Api {
                 .build()
                 .context("cannot build the http client")?,
             token: Token::default(),
+            author: None,
         })
+    }
+
+    #[must_use]
+    pub fn with_author(self, author: String) -> Self {
+        Self {
+            author: Some(author),
+            ..self
+        }
     }
 
     #[must_use]
@@ -129,6 +139,10 @@ impl Api {
     }
 
     fn authorised(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let request = match &self.author {
+            Some(author) => request.header(sdrmm_wire::AUTHOR_HEADER, author),
+            None => request,
+        };
         match self.token.get() {
             Some(token) => request.bearer_auth(token),
             None => request,
@@ -367,10 +381,14 @@ impl Api {
         channel: u32,
         settings: &ChannelSettings,
     ) -> anyhow::Result<()> {
+        let body = sdrmm_wire::PatchChannelRequest {
+            settings: settings.clone(),
+            base: None,
+        };
         self.send::<_, serde_json::Value>(
             reqwest::Method::PATCH,
             &format!("/api/devicesets/{set}/channels/{channel}"),
-            Some(settings),
+            Some(&body),
         )
         .await
         .map(drop)

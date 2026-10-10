@@ -316,6 +316,7 @@ mod tests {
             span_hz: 2e6,
             db_min: -100.0,
             db_max: -20.0,
+            floor_db: -100.0,
             bins,
         }
     }

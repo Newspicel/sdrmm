@@ -65,7 +65,7 @@ pub fn hunt_refusal(target: Option<&HuntTarget>) -> Option<&'static str> {
     {
         return Some("This decoder is scanning. Stop the scan to hunt on one frequency.");
     }
-    if target.channel.out_of_band {
+    if target.channel.out_of_band.is_some() {
         return Some(
             "The radio is tuned away from this decoder. Unlock its tuning or move it there.",
         );
@@ -144,6 +144,9 @@ mod tests {
             closing: false,
             readings: 10,
             error: None,
+            at_ms: 0,
+            pose_drops: 0,
+            sweep: None,
         }
     }
 
@@ -152,7 +155,7 @@ mod tests {
             "id": 9,
             "stream": 0,
             "settings": { "frequency_hz": 433_920_000.0, "params": { "type": "nfm", "settings": {} } },
-            "out_of_band": out_of_band
+            "out_of_band": out_of_band.then(|| serde_json::json!({ "reason": "tuned_away" }))
         }))
         .expect("a channel")
     }
@@ -220,18 +223,30 @@ mod tests {
                             key: Some("siggen".to_owned()),
                         }),
                         locked_streams: Vec::new(),
+                        split_tuning: false,
                     }),
                 ),
                 node(
                     "nfm",
                     NodeBody::Channel(ChannelNode {
                         channel_type: "nfm".to_owned(),
-                        record_calls: false,
                         tuning_locked: false,
                     }),
                 ),
-                node("hunt", NodeBody::Hunt(HuntNode { clicks: false })),
-                node("bare", NodeBody::Hunt(HuntNode { clicks: true })),
+                node(
+                    "hunt",
+                    NodeBody::Hunt(HuntNode {
+                        clicks: false,
+                        ..HuntNode::default()
+                    }),
+                ),
+                node(
+                    "bare",
+                    NodeBody::Hunt(HuntNode {
+                        clicks: true,
+                        ..HuntNode::default()
+                    }),
+                ),
             ],
             edges: vec![
                 edge(("dev", "iq"), ("nfm", "iq")),

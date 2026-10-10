@@ -1,14 +1,22 @@
+mod lanes;
+
 use std::{fmt, sync::LazyLock};
 
 use num_complex::Complex;
 
 const TABLE_BITS: u32 = 9;
 const TABLE_LEN: usize = 1 << TABLE_BITS;
-const FRACTION_BITS: u32 = u64::BITS - TABLE_BITS;
-const FRACTION_MASK: u64 = (1 << FRACTION_BITS) - 1;
+const LOOKUP_SHIFT: u32 = u32::BITS;
+const INDEX_SHIFT: u32 = u32::BITS - TABLE_BITS;
+const FRACTION_MASK: u32 = (1 << INDEX_SHIFT) - 1;
+const DELTA_PER_STEP: f32 = std::f32::consts::TAU / TABLE_LEN as f32 / (1u32 << INDEX_SHIFT) as f32;
+const SIXTH: f32 = 1.0 / 6.0;
 const PHASE_SCALE: f64 = 18_446_744_073_709_551_616.0;
+const SILENT: Complex<f32> = Complex::new(f32::NAN, f32::NAN);
 
-static PHASORS: LazyLock<[Complex<f32>; TABLE_LEN]> = LazyLock::new(|| {
+type Table = [Complex<f32>; TABLE_LEN];
+
+static PHASORS: LazyLock<Table> = LazyLock::new(|| {
     std::array::from_fn(|index| {
         let phase = std::f64::consts::TAU * index as f64 / TABLE_LEN as f64;
         let (sin, cos) = phase.sin_cos();
@@ -16,12 +24,29 @@ static PHASORS: LazyLock<[Complex<f32>; TABLE_LEN]> = LazyLock::new(|| {
     })
 });
 
+#[inline(always)]
+fn phasor(table: &Table, phase: u64) -> Complex<f32> {
+    let top = (phase >> LOOKUP_SHIFT) as u32;
+    let first = table[(top >> INDEX_SHIFT) as usize];
+    let delta = (top & FRACTION_MASK) as f32 * DELTA_PER_STEP;
+    let square = delta * delta;
+    let sin = delta * (1.0 - square * SIXTH);
+    let cos = 1.0 - square * 0.5;
+    Complex::new(
+        first.re * cos - first.im * sin,
+        first.im * cos + first.re * sin,
+    )
+}
+
 #[derive(Clone)]
 pub struct Nco {
     phase: u64,
     step: u64,
     valid: bool,
-    table: &'static [Complex<f32>; TABLE_LEN],
+    lane: usize,
+    anchor: Complex<f32>,
+    steps: Box<lanes::Steps>,
+    table: &'static Table,
 }
 
 impl fmt::Debug for Nco {
@@ -30,6 +55,7 @@ impl fmt::Debug for Nco {
             .field("phase", &self.phase)
             .field("step", &self.step)
             .field("valid", &self.valid)
+            .field("lane", &self.lane)
             .finish()
     }
 }
@@ -41,6 +67,9 @@ impl Nco {
             phase: 0,
             step: 0,
             valid: true,
+            lane: 0,
+            anchor: Complex::new(1.0, 0.0),
+            steps: Box::new(lanes::Steps::new(0)),
             table: &PHASORS,
         };
         nco.set_freq(freq_hz, sample_rate);
@@ -49,6 +78,8 @@ impl Nco {
 
     pub fn reset(&mut self) {
         self.phase = 0;
+        self.lane = 0;
+        self.realign();
     }
 
     pub fn set_freq(&mut self, freq_hz: f32, sample_rate: f32) {
@@ -59,39 +90,68 @@ impl Nco {
         } else if turns < -0.5 {
             turns += 1.0;
         }
-        self.step = (turns * PHASE_SCALE).round() as i64 as u64;
+        let step = (turns * PHASE_SCALE).round() as i64 as u64;
+        if step != self.step {
+            self.step = step;
+            *self.steps = lanes::Steps::new(step);
+        }
+        self.realign();
+    }
+
+    #[must_use]
+    pub const fn is_identity(&self) -> bool {
+        self.valid && self.step == 0 && self.phase == 0
     }
 
     #[must_use]
     pub fn next_sample(&mut self) -> Complex<f32> {
         if !self.valid {
-            return Complex::new(f32::NAN, f32::NAN);
+            return SILENT;
         }
-        let index = (self.phase >> FRACTION_BITS) as usize;
-        let fraction = (self.phase & FRACTION_MASK) as f32 / (1u64 << FRACTION_BITS) as f32;
-        let first = self.table[index];
-        self.phase = self.phase.wrapping_add(self.step);
-        let delta = fraction * (std::f32::consts::TAU / TABLE_LEN as f32);
-        let square = delta * delta;
-        let sin = delta * (1.0 - square / 6.0);
-        let cos = 1.0 - square / 2.0;
-        Complex::new(
-            first.re * cos - first.im * sin,
-            first.im * cos + first.re * sin,
-        )
+        self.wave()
     }
 
     #[inline(never)]
     pub fn mix_into(&mut self, input: &[Complex<f32>], out: &mut [Complex<f32>]) {
         debug_assert_eq!(input.len(), out.len());
-        for (i, o) in input.iter().zip(out.iter_mut()) {
-            *o = *i * self.next_sample();
+        let len = input.len().min(out.len());
+        let (input, out) = (&input[..len], &mut out[..len]);
+        if !self.valid {
+            out.fill(SILENT);
+            return;
         }
+        lanes::mix_into(self, input, out);
     }
 
     pub fn mix(&mut self, samples: &mut [Complex<f32>]) {
-        for s in samples {
-            *s *= self.next_sample();
+        if !self.valid {
+            samples.fill(SILENT);
+            return;
+        }
+        lanes::mix(self, samples);
+    }
+
+    fn realign(&mut self) {
+        let back = self.step.wrapping_mul(self.lane as u64);
+        self.anchor = phasor(self.table, self.phase.wrapping_sub(back));
+    }
+
+    #[inline(always)]
+    fn wave(&mut self) -> Complex<f32> {
+        let sample = lanes::product(self.steps.at(self.lane), self.anchor);
+        self.advance(1);
+        sample
+    }
+
+    #[inline(always)]
+    fn advance(&mut self, samples: usize) {
+        self.phase = self
+            .phase
+            .wrapping_add(self.step.wrapping_mul(samples as u64));
+        self.lane += samples;
+        if self.lane == lanes::GROUP {
+            self.lane = 0;
+            self.anchor = phasor(self.table, self.phase);
         }
     }
 }
@@ -175,6 +235,91 @@ mod tests {
             nco.mix(chunk);
         }
         assert_eq!(samples, expected);
+    }
+
+    fn noise(len: usize) -> Vec<Complex<f32>> {
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 40) as f32 / (1u32 << 23) as f32 - 1.0
+        };
+        (0..len).map(|_| Complex::new(next(), next())).collect()
+    }
+
+    fn started(frequency: f32, lead: usize) -> Nco {
+        let mut nco = Nco::new(frequency, 20_000_000.0);
+        for _ in 0..lead {
+            let _ = nco.next_sample();
+        }
+        nco
+    }
+
+    #[test]
+    fn block_mixing_is_bit_identical_to_mixing_sample_by_sample() {
+        let input = noise(37);
+        for frequency in [0.0, 187_501.25, -731_251.0, 9_999_999.0, -10_000_000.0] {
+            for len in 0..=37 {
+                let source = &input[..len];
+                let mut single = started(frequency, len * 7);
+                let expected: Vec<_> = source
+                    .iter()
+                    .map(|&x| {
+                        let mut sample = [x];
+                        single.mix(&mut sample);
+                        sample[0]
+                    })
+                    .collect();
+                let mut copied = started(frequency, len * 7);
+                let mut out = vec![Complex::new(0.0, 0.0); len];
+                copied.mix_into(source, &mut out);
+                let mut in_place = started(frequency, len * 7);
+                let mut samples = source.to_vec();
+                in_place.mix(&mut samples);
+                assert_eq!(out, expected, "{frequency} Hz, {len} samples");
+                assert_eq!(samples, expected, "{frequency} Hz, {len} samples in place");
+                assert_eq!(copied.phase, single.phase);
+                assert_eq!(in_place.phase, single.phase);
+            }
+        }
+    }
+
+    #[test]
+    fn block_boundaries_do_not_change_the_mix() {
+        let input = noise(37 * 38 / 2 + 5);
+        let mut whole = started(-731_251.0, 3);
+        let mut expected = input.clone();
+        whole.mix(&mut expected);
+        let mut ragged = started(-731_251.0, 3);
+        let mut out = vec![Complex::new(0.0, 0.0); input.len()];
+        let mut start = 0;
+        for len in (0..=37).chain([5]) {
+            let end = start + len;
+            ragged.mix_into(&input[start..end], &mut out[start..end]);
+            start = end;
+        }
+        assert_eq!(start, input.len());
+        assert_eq!(out, expected);
+        assert_eq!(ragged.phase, whole.phase);
+    }
+
+    #[test]
+    fn an_invalid_frequency_mixes_to_nan_without_moving_the_phase() {
+        let mut nco = started(1_000.0, 5);
+        let phase = nco.phase;
+        nco.set_freq(f32::NAN, 48_000.0);
+        let mut samples = noise(11);
+        nco.mix(&mut samples);
+        let mut out = vec![Complex::new(0.0, 0.0); 11];
+        nco.mix_into(&noise(11), &mut out);
+        assert!(
+            samples
+                .iter()
+                .chain(&out)
+                .all(|s| s.re.is_nan() && s.im.is_nan())
+        );
+        assert_eq!(nco.phase, phase);
     }
 
     #[test]

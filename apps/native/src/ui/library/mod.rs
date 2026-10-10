@@ -1,6 +1,5 @@
 mod bands;
 mod bookmarks;
-mod field;
 mod occupancy;
 mod presets;
 mod recordings;
@@ -51,14 +50,13 @@ const SHEET: &str = css!(
 "#
 );
 
-const TABS: [(LibraryTab, &str); 7] = [
+const TABS: [(LibraryTab, &str); 6] = [
     (LibraryTab::Templates, "Templates"),
     (LibraryTab::Presets, "Presets"),
     (LibraryTab::Bookmarks, "Bookmarks"),
     (LibraryTab::Bands, "Bands"),
     (LibraryTab::Occupancy, "Occupancy"),
     (LibraryTab::Recordings, "Recordings"),
-    (LibraryTab::Field, "Field"),
 ];
 
 pub fn popover(store: Store, shell: Shell) -> impl IntoView {
@@ -87,7 +85,6 @@ pub fn popover(store: Store, shell: Shell) -> impl IntoView {
         LibraryTab::Bands => AnyView::new(bands::panel(store, shell)),
         LibraryTab::Occupancy => AnyView::new(occupancy::panel(store, shell)),
         LibraryTab::Recordings => AnyView::new(recordings::panel(store, shell)),
-        LibraryTab::Field => AnyView::new(field::panel(store)),
     };
     view! {
         column(

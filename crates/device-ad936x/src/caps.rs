@@ -1,13 +1,13 @@
 use sdrmm_device::DeviceError;
 use sdrmm_wire::{
-    Agc, ArgumentOption, Capabilities, Coherence, DcArtifact, Duplex, ExtraSetting, GainKind,
-    GainStage, Range, StreamScope,
+    Agc, AgcReach, ArgumentOption, Capabilities, Coherence, DcArtifact, Duplex, ExtraSetting,
+    GainKind, GainStage, Range, StreamScope,
 };
 
 use crate::{
     iio::{Client, Context, Direction},
     layout::{
-        BB_DC_TRACKING, FILTER_FIR_EN, FREQUENCY, GAIN_CONTROL_MODE, HARDWAREGAIN, Layout,
+        BB_DC_TRACKING, CONVERTER_CHANNEL, FREQUENCY, GAIN_CONTROL_MODE, HARDWAREGAIN, Layout,
         QUADRATURE_TRACKING, RF_BANDWIDTH, RF_DC_TRACKING, RF_PORT_SELECT, RX_LO,
         SAMPLING_FREQUENCY, XO_CORRECTION, available,
     },
@@ -23,13 +23,10 @@ const AGC_MODES: [(&str, &str); 3] = [
 pub(crate) const QUADRATURE: &str = "quadrature_tracking";
 pub(crate) const RF_DC: &str = "rf_dc_tracking";
 pub(crate) const BB_DC: &str = "bb_dc_tracking";
-pub(crate) const FIR: &str = "fir_filter";
 pub(crate) const TX_PORT: &str = "tx_port";
+const RX_PORT_LOCK: &str = "adi,rx-rf-port-input-select-lock-enable";
+const TX_PORT_LOCK: &str = "adi,tx-rf-port-input-select-lock-enable";
 
-/// What the AD936x on this board will accept, as the board itself reports it.
-///
-/// An AD9361 reaches 6 GHz and an AD9363 stops at 3.8, and the same firmware serves both, so
-/// every limit here is read rather than assumed.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Front {
     pub(crate) frequency: Range,
@@ -43,10 +40,35 @@ pub(crate) struct Front {
     pub(crate) tx_ports: Vec<String>,
     pub(crate) trim: Option<Trim>,
     pub(crate) tracking: Tracking,
+    pub(crate) decimation: Option<Decimation>,
 }
 
-/// The crystal correction, and the value it was calibrated to, which is what a part per million
-/// is counted from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Decimation {
+    pub(crate) factor: u32,
+    pub(crate) rx: String,
+    pub(crate) tx: Option<String>,
+}
+
+impl Front {
+    pub(crate) fn rates(&self) -> Range {
+        match &self.decimation {
+            Some(decimation) => Range {
+                min: (self.rate.min / f64::from(decimation.factor)).ceil(),
+                ..self.rate
+            },
+            None => self.rate,
+        }
+    }
+
+    pub(crate) fn converter_rate(&self, rate: f64) -> f64 {
+        match &self.decimation {
+            Some(decimation) if rate < self.rate.min => rate * f64::from(decimation.factor),
+            _ => rate,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Trim {
     pub(crate) reference: f64,
@@ -74,17 +96,13 @@ impl Trim {
     }
 }
 
-/// The corrections the transceiver runs for itself, each present only if this firmware has it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Tracking {
     pub(crate) quadrature: bool,
     pub(crate) rf_dc: bool,
     pub(crate) bb_dc: bool,
-    pub(crate) fir: bool,
 }
 
-/// The widest span any AD936x part covers, used only when a firmware publishes no list of its
-/// own. The radio still refuses anything its own part cannot reach, and says so.
 const FALLBACK_FREQUENCY: Range = span(70e6, 6e9);
 const FALLBACK_RATE: Range = span(2_083_333.0, 61_440_000.0);
 const FALLBACK_RX_BANDWIDTH: Range = span(200e3, 56e6);
@@ -153,14 +171,13 @@ impl Front {
             gain_modes: reader
                 .list(Direction::In, rx, GAIN_CONTROL_MODE)
                 .unwrap_or_default(),
-            rx_ports: reader
-                .list(Direction::In, rx, RF_PORT_SELECT)
-                .unwrap_or_default(),
+            rx_ports: reader.ports(Direction::In, rx, RX_PORT_LOCK),
             tx_ports: tx
-                .and_then(|tx| reader.list(Direction::Out, tx, RF_PORT_SELECT))
+                .map(|tx| reader.ports(Direction::Out, tx, TX_PORT_LOCK))
                 .unwrap_or_default(),
             trim: reader.trim(),
             tracking: reader.tracking(rx),
+            decimation: decimation(client, context, layout),
         })
     }
 }
@@ -172,8 +189,6 @@ struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    /// An attribute's value, asked of the radio and falling back to what its own description of
-    /// itself already said. A firmware that publishes neither simply does not have it.
     fn value(&self, direction: Direction, channel: &str, attr: &str) -> Option<String> {
         match self
             .client
@@ -205,8 +220,24 @@ impl Reader<'_> {
         (!options.is_empty()).then_some(options)
     }
 
-    /// Whether the radio's own description of itself lists this receive attribute. The listing
-    /// is the same one every libiio client learns attribute names from, so it is not asked again.
+    fn ports(&self, direction: Direction, channel: &str, lock: &str) -> Vec<String> {
+        if self.locked(lock) {
+            return self
+                .value(direction, channel, RF_PORT_SELECT)
+                .map(|port| vec![port.trim().to_string()])
+                .unwrap_or_default();
+        }
+        self.list(direction, channel, RF_PORT_SELECT)
+            .unwrap_or_default()
+    }
+
+    fn locked(&self, lock: &str) -> bool {
+        self.client
+            .read_debug_attr(self.phy, lock)
+            .inspect_err(|e| tracing::debug!("{}.{lock}: {e}", self.phy))
+            .is_ok_and(|value| value.trim() == "1")
+    }
+
     fn present(&self, rx: &str, attr: &str) -> bool {
         self.context
             .device(self.phy)
@@ -219,12 +250,9 @@ impl Reader<'_> {
             quadrature: self.present(rx, QUADRATURE_TRACKING),
             rf_dc: self.present(rx, RF_DC_TRACKING),
             bb_dc: self.present(rx, BB_DC_TRACKING),
-            fir: self.present(rx, FILTER_FIR_EN),
         }
     }
 
-    /// The crystal as the board left the factory. Its present correction is the zero of the
-    /// operator's parts per million, so a board trimmed at build time stays trimmed at 0 ppm.
     fn trim(&self) -> Option<Trim> {
         let reference = self
             .client
@@ -253,7 +281,40 @@ impl Reader<'_> {
     }
 }
 
-/// `[min step max]`, which is how every bounded IIO attribute publishes its limits.
+fn decimation(client: &Client, context: &Context, layout: &Layout) -> Option<Decimation> {
+    let rx = layout.rx.as_ref()?.device.clone();
+    let offered = client
+        .read_channel_attr(
+            &rx,
+            Direction::In,
+            CONVERTER_CHANNEL,
+            &available(SAMPLING_FREQUENCY),
+        )
+        .inspect_err(|e| tracing::debug!("{rx} decimation: {e}"))
+        .ok()?;
+    let factor = decimation_factor(&offered)?;
+    let tx = layout.tx.as_ref().map(|tx| tx.device.clone()).filter(|tx| {
+        context
+            .device(tx)
+            .and_then(|device| device.channel(CONVERTER_CHANNEL, true))
+            .is_some_and(|channel| channel.has(SAMPLING_FREQUENCY))
+    });
+    Some(Decimation { factor, rx, tx })
+}
+
+pub(crate) fn decimation_factor(offered: &str) -> Option<u32> {
+    let rates: Vec<f64> = offered
+        .split_whitespace()
+        .filter_map(|rate| rate.parse().ok())
+        .filter(|rate: &f64| *rate > 0.0)
+        .collect();
+    let [full, reduced] = rates[..] else {
+        return None;
+    };
+    let factor = (full.max(reduced) / full.min(reduced)).round();
+    (2.0..=64.0).contains(&factor).then_some(factor as u32)
+}
+
 pub(crate) fn parse_range(text: &str) -> Option<Range> {
     let inside = text.trim().strip_prefix('[')?.strip_suffix(']')?;
     let mut parts = inside.split_whitespace();
@@ -270,8 +331,6 @@ pub(crate) fn parse_range(text: &str) -> Option<Range> {
     })
 }
 
-/// A one-count step over a range measured in hertz is the absence of a step, not a grid worth
-/// snapping a control to.
 fn continuous(range: Range) -> Range {
     Range {
         step: range.step.filter(|step| *step > 1.0),
@@ -282,10 +341,10 @@ fn continuous(range: Range) -> Range {
 pub(crate) fn capabilities(front: &Front, layout: &Layout) -> Capabilities {
     let rx_streams = layout.rx_streams() as u32;
     let tx_streams = layout.tx_streams() as u32;
-    Capabilities {
+    let mut capabilities = Capabilities {
         freq_ranges: vec![front.frequency],
         sample_rates: Vec::new(),
-        sample_rate_ranges: vec![front.rate],
+        sample_rate_ranges: vec![front.rates()],
         gains: gain_stages(front),
         antennas: front.rx_ports.clone(),
         bandwidths: Vec::new(),
@@ -300,36 +359,50 @@ pub(crate) fn capabilities(front: &Front, layout: &Layout) -> Capabilities {
         } else {
             Duplex::RxOnly
         },
-        rx_streams: rx_streams.max(1),
+        rx_streams: 1,
         tx_streams,
-        per_stream: if rx_streams > 1 {
-            StreamScope {
-                tuning: false,
-                gain: true,
-                antenna: true,
-                agc: false,
-            }
-        } else {
-            StreamScope::default()
-        },
+        per_stream: StreamScope::default(),
         directional: None,
         dc_artifact: DcArtifact::Managed,
         hardware_sweep: false,
-        // Both receivers run off the one synthesizer and the one converter clock, so their
-        // relative phase survives a retune and a bearing taken across them means something.
-        coherence: if rx_streams > 1 {
-            Coherence::PhaseCoherent
+        coherence: Coherence::None,
+        noise_source: sdrmm_wire::NoiseSource::None,
+        retune_keeps_phase: false,
+        rx_inputs: if rx_streams > 1 {
+            (0..layout.rx_streams()).map(input_name).collect()
         } else {
-            Coherence::None
+            Vec::new()
         },
-        noise_source: false,
+    };
+    stream_lanes(&mut capabilities, 1, layout);
+    capabilities
+}
+
+pub(crate) fn stream_lanes(capabilities: &mut Capabilities, lanes: u32, layout: &Layout) {
+    capabilities.rx_streams = lanes.max(1);
+    capabilities.tx_streams = (layout.tx_streams() as u32).min(capabilities.rx_streams);
+    if lanes > 1 {
+        capabilities.per_stream = StreamScope {
+            tuning: false,
+            gain: true,
+            antenna: false,
+            agc: true,
+        };
+        capabilities.coherence = Coherence::PhaseCoherent;
+    } else {
+        capabilities.per_stream = StreamScope::default();
+        capabilities.coherence = Coherence::None;
     }
+}
+
+fn input_name(input: usize) -> String {
+    format!("RX{}", input + 1)
 }
 
 fn gain_stages(front: &Front) -> Vec<GainStage> {
     let mut stages = vec![GainStage::new(GainKind::Tuner, front.rx_gain)];
     if let Some(range) = front.tx_gain {
-        stages.push(GainStage::new(GainKind::Tx, range));
+        stages.push(GainStage::new(GainKind::Tx, range).with_agc(AgcReach::Never));
     }
     stages
 }
@@ -360,9 +433,6 @@ fn extra_settings(front: &Front) -> Vec<ExtraSetting> {
         if present {
             extra.push(ExtraSetting::bool(name, label, true));
         }
-    }
-    if front.tracking.fir {
-        extra.push(ExtraSetting::bool(FIR, "FIR filter", false));
     }
     if front.tx_ports.len() > 1 {
         extra.push(ExtraSetting::choice(
@@ -404,8 +474,12 @@ pub(crate) mod tests {
                 quadrature: true,
                 rf_dc: true,
                 bb_dc: true,
-                fir: true,
             },
+            decimation: Some(Decimation {
+                factor: 8,
+                rx: "cf-ad9361-lpc".to_string(),
+                tx: Some("cf-ad9361-dds-core-lpc".to_string()),
+            }),
         }
     }
 
@@ -484,12 +558,18 @@ pub(crate) mod tests {
     #[test]
     fn a_two_by_two_radio_declares_per_lane_gain_and_a_shared_synthesizer() {
         let layout = crate::layout::tests::two_by_two_layout();
-        let caps = capabilities(&front(), &layout);
+        let mut caps = capabilities(&front(), &layout);
+        stream_lanes(&mut caps, 2, &crate::layout::tests::two_by_two_layout());
         assert_eq!(caps.rx_streams, 2);
         assert_eq!(caps.tx_streams, 2);
         assert_eq!(caps.duplex, Duplex::Full);
         assert_eq!(caps.coherence, Coherence::PhaseCoherent);
         assert!(caps.per_stream.gain);
+        assert!(caps.per_stream.agc, "each receiver runs its own gain loop");
+        assert!(
+            !caps.per_stream.antenna,
+            "one input switch serves both receivers"
+        );
         assert!(!caps.per_stream.tuning, "one synthesizer feeds both lanes");
         assert_eq!(caps.dc_artifact, DcArtifact::Managed);
         assert!(caps.ppm);
@@ -513,6 +593,12 @@ pub(crate) mod tests {
         assert_eq!(kinds, vec![GainKind::Tuner, GainKind::Tx]);
         assert_eq!(caps.gains[0].name, "TUNER");
         assert_eq!(caps.gains[1].name, "TX");
+        assert_eq!(caps.gains[0].agc, AgcReach::Always);
+        assert_eq!(
+            caps.gains[1].agc,
+            AgcReach::Never,
+            "receive AGC leaves TX alone"
+        );
 
         let mut receive_only = front();
         receive_only.tx_gain = None;
@@ -529,10 +615,7 @@ pub(crate) mod tests {
                 .map(|setting| setting.name().to_string())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(
-            names(&front()),
-            vec![QUADRATURE, RF_DC, BB_DC, FIR, TX_PORT]
-        );
+        assert_eq!(names(&front()), vec![QUADRATURE, RF_DC, BB_DC, TX_PORT]);
         assert!(
             extra_settings(&front())
                 .iter()
@@ -583,11 +666,54 @@ pub(crate) mod tests {
             frequency: FALLBACK_FREQUENCY,
             rate: FALLBACK_RATE,
             rx_bandwidth: FALLBACK_RX_BANDWIDTH,
+            decimation: None,
             ..front()
         };
         let caps = capabilities(&front, &crate::layout::tests::one_by_one_layout());
         assert_eq!(caps.freq_ranges[0].min, 70e6);
         assert_eq!(caps.sample_rate_ranges[0].max, 61_440_000.0);
         assert!(caps.bandwidth_ranges[0].holds(20e6));
+    }
+
+    #[test]
+    fn a_decimator_reaches_below_the_transceivers_floor() {
+        let front = front();
+        assert_eq!(front.rates().min, 260_417.0);
+        assert_eq!(front.rates().max, 61_440_000.0);
+        assert_eq!(front.converter_rate(250_000.0 * 2.0), 4_000_000.0);
+        assert_eq!(
+            front.converter_rate(2_400_000.0),
+            2_400_000.0,
+            "a rate the transceiver makes is not decimated"
+        );
+        let caps = capabilities(&front, &crate::layout::tests::two_by_two_layout());
+        assert_eq!(caps.sample_rate_ranges[0].min, 260_417.0);
+    }
+
+    #[test]
+    fn the_decimator_is_the_ratio_of_the_two_rates_offered() {
+        assert_eq!(decimation_factor("30720000 3840000 "), Some(8));
+        assert_eq!(decimation_factor("2399999 299999"), Some(8));
+        assert_eq!(decimation_factor("30720000"), None);
+        assert_eq!(decimation_factor("30720000 30720000"), None);
+        assert_eq!(decimation_factor(""), None);
+        assert_eq!(decimation_factor("[2083333 1 61440000]"), None);
+    }
+
+    #[test]
+    fn a_two_by_two_radio_opens_on_one_lane_and_transmits_on_as_many() {
+        let mut caps = capabilities(&front(), &crate::layout::tests::two_by_two_layout());
+        assert_eq!(caps.rx_inputs, vec!["RX1", "RX2"]);
+        assert_eq!(caps.rx_streams, 1, "the lanes share one synthesizer");
+        assert_eq!(caps.tx_streams, 1);
+        assert_eq!(caps.per_stream, StreamScope::default());
+        assert_eq!(caps.coherence, Coherence::None);
+        stream_lanes(&mut caps, 2, &crate::layout::tests::two_by_two_layout());
+        assert_eq!(caps.tx_streams, 2);
+        assert!(caps.per_stream.agc);
+        assert_eq!(caps.coherence, Coherence::PhaseCoherent);
+
+        let single = capabilities(&front(), &crate::layout::tests::one_by_one_layout());
+        assert!(single.rx_inputs.is_empty());
     }
 }

@@ -13,7 +13,7 @@ use std::{
 
 use common::{assert_tone_dominates, collect_packets, settle_then_collect_second};
 use num_complex::Complex;
-use sdrmm_channels::testgen;
+use sdrmm_channels::synth;
 use sdrmm_device::{
     DeviceDriver, DeviceError, DeviceRegistry, RxSink, SdrDevice, check_stream_settings,
 };
@@ -27,7 +27,7 @@ use sdrmm_wire::{
 };
 use tokio::sync::broadcast;
 
-const ARRAY: &str = "virtual:array4";
+const QUAD: &str = "virtual:quad";
 const TRANSCEIVER: &str = "virtual:transceiver";
 const RATE: f64 = 2_048_000.0;
 const DEFAULT_CENTER_HZ: f64 = 100_000_000.0;
@@ -97,7 +97,7 @@ fn band_power(samples: &[Complex<f32>], sample_rate: f64, offset_hz: f64) -> f64
 #[tokio::test]
 async fn a_channel_on_stream_2_hears_stream_2_and_not_stream_0() {
     let engine = engine();
-    let ds = engine.create_device_set(ARRAY).unwrap();
+    let ds = engine.create_device_set(QUAD).unwrap();
     let offset = stream_marker_offset_hz(2);
 
     let on_stream_2 = engine.add_channel(ds, 2, nfm(offset, None)).unwrap();
@@ -117,7 +117,7 @@ async fn a_channel_on_stream_2_hears_stream_2_and_not_stream_0() {
 #[tokio::test]
 async fn per_stream_spectrum_differs_and_a_retune_moves_every_lane() {
     let engine = engine();
-    let ds = engine.create_device_set(ARRAY).unwrap();
+    let ds = engine.create_device_set(QUAD).unwrap();
     let mut rx0 = engine.subscribe_spectrum(ds, 0).unwrap();
     let mut rx3 = engine.subscribe_spectrum(ds, 3).unwrap();
 
@@ -159,7 +159,7 @@ async fn per_stream_spectrum_differs_and_a_retune_moves_every_lane() {
 #[tokio::test]
 async fn removing_a_channel_on_a_non_zero_stream_frees_it() {
     let engine = engine();
-    let ds = engine.create_device_set(ARRAY).unwrap();
+    let ds = engine.create_device_set(QUAD).unwrap();
     let ch = engine
         .add_channel(ds, 3, nfm(stream_marker_offset_hz(3), None))
         .unwrap();
@@ -192,12 +192,11 @@ async fn removing_a_channel_on_a_non_zero_stream_frees_it() {
 #[tokio::test]
 async fn an_out_of_range_stream_is_a_clean_bad_request_naming_the_count() {
     let engine = engine();
-    let ds = engine.create_device_set(ARRAY).unwrap();
+    let ds = engine.create_device_set(QUAD).unwrap();
 
-    // Four antennas and the beam the array sums them into, which is a lane like any other.
-    let err = engine.add_channel(ds, 5, nfm(0.0, None)).unwrap_err();
+    let err = engine.add_channel(ds, 4, nfm(0.0, None)).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
-    assert!(err.to_string().contains("5 rx streams"), "unhelpful: {err}");
+    assert!(err.to_string().contains("4 rx streams"), "unhelpful: {err}");
     assert!(
         engine.snapshot().device_sets[0].channels.is_empty(),
         "a refused add must not leave a channel behind"
@@ -206,11 +205,11 @@ async fn an_out_of_range_stream_is_a_clean_bad_request_naming_the_count() {
     let err = engine.subscribe_spectrum(ds, 99).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
 
-    let err = engine.start_recording(ds, 5).unwrap_err();
+    let err = engine.start_recording(ds, 4).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
-    assert!(err.to_string().contains("5 rx streams"), "unhelpful: {err}");
+    assert!(err.to_string().contains("4 rx streams"), "unhelpful: {err}");
 
-    let siggen = engine.create_device_set("virtual:siggen").unwrap();
+    let siggen = engine.create_device_set("virtual:band").unwrap();
     let err = engine.add_channel(siggen, 1, nfm(0.0, None)).unwrap_err();
     assert!(err.to_string().contains("1 rx streams"), "unhelpful: {err}");
 
@@ -228,7 +227,7 @@ async fn a_recording_on_stream_2_captures_stream_2_and_says_so() {
         Box::new(RecordingDriver::new(Some(dir.path().to_path_buf()))),
     );
     let engine = Engine::with_registry(registry, Some(dir.path().to_path_buf()));
-    let ds = engine.create_device_set(ARRAY).unwrap();
+    let ds = engine.create_device_set(QUAD).unwrap();
 
     engine.start_recording(ds, 2).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -385,7 +384,7 @@ async fn a_bad_streams_entry_is_a_clean_bad_request_naming_the_problem() {
     );
     engine.remove_device_set(ds).unwrap();
 
-    let ds = engine.create_device_set(ARRAY).unwrap();
+    let ds = engine.create_device_set(QUAD).unwrap();
     let err = engine
         .patch_device(ds, entry(1, Some(101_000_000.0)))
         .unwrap_err();
@@ -495,7 +494,7 @@ async fn the_lane_a_scan_is_not_using_keeps_following_its_decoders() {
         .find(|c| c.stream == 0)
         .expect("lane 1 decoder");
     assert!(
-        !lane1.out_of_band,
+        lane1.out_of_band.is_none(),
         "lane 1 stopped following its decoder during a scan on lane 2"
     );
     engine.stop_scan(ds, scanned).unwrap();
@@ -603,7 +602,9 @@ impl DeviceDriver for PagingDriver {
                 dc_artifact: DcArtifact::Operator,
                 hardware_sweep: false,
                 coherence: sdrmm_wire::Coherence::None,
-                noise_source: false,
+                noise_source: sdrmm_wire::NoiseSource::None,
+                retune_keeps_phase: false,
+                rx_inputs: Vec::new(),
             },
             settings: DeviceSettings {
                 center_hz: Some(DEFAULT_CENTER_HZ),
@@ -683,15 +684,15 @@ impl SdrDevice for PagingDevice {
 #[tokio::test]
 async fn a_decoded_frame_reports_its_lanes_absolute_frequency() {
     const LANE1_HZ: f64 = 433_000_000.0;
-    let pages = [testgen::pocsag::Page {
+    let pages = [synth::pocsag::Page {
         address: 1_234_567,
         function: 3,
         text: "LANES".to_owned(),
         numeric: false,
     }];
-    let mut iq = testgen::pocsag::transmission(&pages, 1_200, 4_500.0, PAGING_RATE);
-    testgen::shift(&mut iq, PAGING_OFFSET_HZ, PAGING_RATE);
-    iq.extend(testgen::silence(PAGING_RATE as usize));
+    let mut iq = synth::pocsag::transmission(&pages, 1_200, 4_500.0, PAGING_RATE);
+    synth::shift(&mut iq, PAGING_OFFSET_HZ, PAGING_RATE);
+    iq.extend(synth::silence(PAGING_RATE as usize));
 
     let mut registry = DeviceRegistry::new();
     registry.register(10, Box::new(PagingDriver { iq: Arc::new(iq) }));

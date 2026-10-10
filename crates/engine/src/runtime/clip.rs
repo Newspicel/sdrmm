@@ -1,27 +1,43 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use num_complex::Complex;
 
 const FULL_SCALE: f32 = 0.995;
 const CLIPPING_FRACTION: u64 = 10_000;
+pub(crate) const SILENT_DB: f32 = -140.0;
 
 #[derive(Debug, Default)]
 pub(crate) struct ClipMeter {
     clipped: AtomicU64,
     samples: AtomicU64,
+    peak_bits: AtomicU32,
+}
+
+fn clipped_and_peak(samples: &[Complex<f32>]) -> (u64, f32) {
+    samples.iter().fold((0, 0.0), |(clipped, peak), sample| {
+        let rail = sample.re.abs().max(sample.im.abs());
+        (clipped + u64::from(rail >= FULL_SCALE), peak.max(rail))
+    })
 }
 
 impl ClipMeter {
     pub(crate) fn measure(&self, samples: &[Complex<f32>]) {
-        let clipped = samples
-            .iter()
-            .filter(|sample| sample.re.abs() >= FULL_SCALE || sample.im.abs() >= FULL_SCALE)
-            .count() as u64;
+        let (clipped, peak) = clipped_and_peak(samples);
         if clipped > 0 {
             self.clipped.fetch_add(clipped, Ordering::Relaxed);
         }
         self.samples
             .fetch_add(samples.len() as u64, Ordering::Relaxed);
+        self.peak_bits.fetch_max(peak.to_bits(), Ordering::Relaxed);
+    }
+
+    pub(crate) fn take_peak_db(&self) -> f32 {
+        let peak = f32::from_bits(self.peak_bits.swap(0, Ordering::Relaxed));
+        if peak > 0.0 {
+            (20.0 * peak.log10()).max(SILENT_DB)
+        } else {
+            SILENT_DB
+        }
     }
 
     pub(crate) fn take_clipping(&self) -> bool {
@@ -62,6 +78,24 @@ mod tests {
         block[0] = Complex::new(1.0, 0.0);
         meter.measure(&block);
         assert!(!meter.take_clipping());
+    }
+
+    #[test]
+    fn the_peak_is_the_loudest_rail_since_the_last_read() {
+        let meter = ClipMeter::default();
+        meter.measure(&quiet(10));
+        meter.measure(&[Complex::new(0.1, -0.5)]);
+        assert!((meter.take_peak_db() - 20.0 * 0.5f32.log10()).abs() < 1e-4);
+        meter.measure(&quiet(10));
+        assert!((meter.take_peak_db() - 20.0 * 0.2f32.log10()).abs() < 1e-4);
+    }
+
+    #[test]
+    fn silence_reads_as_the_floor() {
+        let meter = ClipMeter::default();
+        assert_eq!(meter.take_peak_db(), SILENT_DB);
+        meter.measure(&[Complex::new(0.0, 0.0)]);
+        assert_eq!(meter.take_peak_db(), SILENT_DB);
     }
 
     #[test]

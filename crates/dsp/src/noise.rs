@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
+use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
 
 use crate::{iir::one_pole_coeff, window::hann};
 
@@ -185,73 +185,68 @@ impl ClickRemover {
 pub struct AutoNotch {
     weights: Vec<f32>,
     history: Vec<f32>,
-    write: usize,
-    delay: usize,
+    head: usize,
+    span: usize,
     mu: f32,
 }
 
 impl AutoNotch {
-    const TAPS: usize = 64;
-    const DELAY: usize = 4;
-    const MU: f32 = 0.02;
+    const DELAY_S: f64 = 2e-3;
+    const TAPS_S: f64 = 4e-3;
+    const STEP_HZ: f64 = 24.0;
 
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(rate: f64) -> Self {
+        assert!(rate > 0.0, "rate must be positive");
+        let taps = ((rate * Self::TAPS_S).round() as usize).max(1);
+        let delay = ((rate * Self::DELAY_S).round() as usize).max(1);
+        let span = taps + delay;
         Self {
-            weights: vec![0.0; Self::TAPS],
-            history: vec![0.0; (Self::TAPS + Self::DELAY).next_power_of_two()],
-            write: 0,
-            delay: Self::DELAY,
-            mu: Self::MU,
+            weights: vec![0.0; taps],
+            history: vec![0.0; 2 * span],
+            head: 0,
+            span,
+            mu: (Self::STEP_HZ / rate) as f32,
         }
     }
 
     pub fn reset(&mut self) {
         self.weights.fill(0.0);
         self.history.fill(0.0);
-        self.write = 0;
+        self.head = 0;
     }
 
     pub fn process(&mut self, samples: &mut [f32]) {
         if !self.weights.iter().all(|w| w.is_finite()) {
             self.reset();
         }
-        let mask = self.history.len() - 1;
         let taps = self.weights.len();
         for s in samples {
             let x = if s.is_finite() { *s } else { 0.0 };
-            self.write = (self.write + 1) & mask;
-            self.history[self.write] = x;
-
-            let base = self.write + self.history.len() - self.delay;
-            let mut predicted = 0.0;
-            let mut reference_power = 0.0;
-            for k in 0..taps {
-                let r = self.history[(base - k) & mask];
-                predicted += self.weights[k] * r;
-                reference_power += r * r;
-            }
+            let reference = &self.history[self.head + 1..=self.head + taps];
+            let (predicted, power) = reference
+                .iter()
+                .zip(&self.weights)
+                .fold((0.0, 0.0), |(p, e), (&r, &w)| (p + w * r, e + r * r));
             let error = x - predicted;
-            let step = self.mu * error / (reference_power + 1e-6);
-            for k in 0..taps {
-                self.weights[k] += step * self.history[(base - k) & mask];
+            let step = self.mu * error / (power + 1e-6);
+            for (w, &r) in self.weights.iter_mut().zip(reference) {
+                *w += step * r;
             }
+            self.history[self.head] = x;
+            self.history[self.head + self.span] = x;
+            self.head = (self.head + 1) % self.span;
             *s = error;
         }
     }
 }
 
-impl Default for AutoNotch {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub struct SpectralDenoiser {
-    fft: Arc<dyn Fft<f32>>,
-    ifft: Arc<dyn Fft<f32>>,
+    fft: Arc<dyn RealToComplex<f32>>,
+    ifft: Arc<dyn ComplexToReal<f32>>,
     window: Vec<f32>,
     pending: Vec<f32>,
+    frame: Vec<f32>,
     overlap: Vec<f32>,
     ready: Vec<f32>,
     read: usize,
@@ -293,17 +288,16 @@ impl SpectralDenoiser {
 
     #[must_use]
     pub fn new(strength: f32) -> Self {
-        let mut planner = FftPlanner::<f32>::new();
+        let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(Self::FRAME);
         let ifft = planner.plan_fft_inverse(Self::FRAME);
-        let scratch_len = fft
-            .get_inplace_scratch_len()
-            .max(ifft.get_inplace_scratch_len());
+        let scratch_len = fft.get_scratch_len().max(ifft.get_scratch_len());
         let mut denoiser = Self {
             fft,
             ifft,
             window: hann(Self::FRAME).iter().map(|w| w.sqrt()).collect(),
             pending: Vec::with_capacity(Self::FRAME * 4),
+            frame: vec![0.0; Self::FRAME],
             overlap: vec![0.0; Self::FRAME],
             ready: vec![0.0; Self::FRAME],
             read: 0,
@@ -319,7 +313,7 @@ impl SpectralDenoiser {
             frames: 0,
             floor: 1.0,
             log_floor: 0.0,
-            spectrum: vec![Complex::new(0.0, 0.0); Self::FRAME],
+            spectrum: vec![Complex::new(0.0, 0.0); Self::BINS],
             scratch: vec![Complex::new(0.0, 0.0); scratch_len],
         };
         denoiser.set_strength(strength);
@@ -355,7 +349,7 @@ impl SpectralDenoiser {
         self.frames = 0;
     }
 
-    pub fn process(&mut self, samples: &mut [f32]) {
+    pub fn process(&mut self, samples: &mut [f32]) -> Result<(), FftError> {
         if self.read > 0 {
             self.ready.drain(..self.read.min(self.ready.len()));
             self.read = 0;
@@ -363,8 +357,9 @@ impl SpectralDenoiser {
         self.pending
             .extend(samples.iter().map(|s| if s.is_finite() { *s } else { 0.0 }));
         let mut consumed = 0;
+        let mut result = Ok(());
         while self.pending.len() - consumed >= Self::FRAME {
-            self.transform(consumed);
+            result = result.and(self.transform(consumed));
             consumed += Self::HOP;
         }
         self.pending.drain(..consumed);
@@ -372,31 +367,35 @@ impl SpectralDenoiser {
             *s = self.ready.get(self.read).copied().unwrap_or(0.0);
             self.read += 1;
         }
+        result
     }
 
-    fn transform(&mut self, offset: usize) {
+    fn transform(&mut self, offset: usize) -> Result<(), FftError> {
         let frame = &self.pending[offset..offset + Self::FRAME];
-        for ((dst, &s), &w) in self.spectrum.iter_mut().zip(frame).zip(&self.window) {
-            *dst = Complex::new(s * w, 0.0);
+        for ((dst, &s), &w) in self.frame.iter_mut().zip(frame).zip(&self.window) {
+            *dst = s * w;
         }
-        self.fft
-            .process_with_scratch(&mut self.spectrum, &mut self.scratch);
-        self.shape();
-        self.ifft
-            .process_with_scratch(&mut self.spectrum, &mut self.scratch);
+        let spectral = self.filter_frame();
+        if spectral.is_err() {
+            self.frame.fill(0.0);
+        }
 
         let norm = 1.0 / Self::FRAME as f32;
-        for ((slot, bin), &w) in self
-            .overlap
-            .iter_mut()
-            .zip(&self.spectrum)
-            .zip(&self.window)
-        {
-            *slot += bin.re * norm * w;
+        for ((slot, &sample), &w) in self.overlap.iter_mut().zip(&self.frame).zip(&self.window) {
+            *slot += sample * norm * w;
         }
         self.ready.extend_from_slice(&self.overlap[..Self::HOP]);
         self.overlap.copy_within(Self::HOP.., 0);
         self.overlap[Self::FRAME - Self::HOP..].fill(0.0);
+        spectral
+    }
+
+    fn filter_frame(&mut self) -> Result<(), FftError> {
+        self.fft
+            .process_with_scratch(&mut self.frame, &mut self.spectrum, &mut self.scratch)?;
+        self.shape();
+        self.ifft
+            .process_with_scratch(&mut self.spectrum, &mut self.frame, &mut self.scratch)
     }
 
     fn shape(&mut self) {
@@ -406,9 +405,8 @@ impl SpectralDenoiser {
         self.track_noise();
         self.update_gains();
         self.frames = self.frames.saturating_add(1);
-        for (k, bin) in self.spectrum.iter_mut().enumerate() {
-            let index = if k < Self::BINS { k } else { Self::FRAME - k };
-            *bin *= self.gains[index];
+        for (bin, &gain) in self.spectrum.iter_mut().zip(&self.gains) {
+            *bin *= gain;
         }
     }
 
@@ -492,7 +490,7 @@ impl SpectralDenoiser {
 fn exponential_integral(x: f32) -> f32 {
     let x = f64::from(x);
     let value = if x < 1.0 {
-        -x.ln() - 0.577_215_664_901_532_9
+        -x.ln() - std::f64::consts::EULER_GAMMA
             + x * (0.999_991_93
                 + x * (-0.249_910_55 + x * (0.055_199_68 + x * (-0.009_760_04 + x * 0.001_078_57))))
     } else {
@@ -750,7 +748,7 @@ mod tests {
     fn auto_notch_removes_an_unannounced_carrier() {
         let input = tone_in_noise(1_500.0, 96_000);
         let mut output = input.clone();
-        AutoNotch::new().process(&mut output);
+        AutoNotch::new(RATE).process(&mut output);
 
         let settled = 48_000;
         let before = tone_amplitude(&input[settled..], 1_500.0);
@@ -763,15 +761,46 @@ mod tests {
         let mut rng = XorShift32(0x77AA_0913);
         let input: Vec<f32> = (0..96_000).map(|_| rng.next_f32() * 0.2).collect();
         let mut output = input.clone();
-        AutoNotch::new().process(&mut output);
+        AutoNotch::new(RATE).process(&mut output);
         let settled = 48_000;
         let ratio = rms_r(&output[settled..]) / rms_r(&input[settled..]);
         assert!((0.8..1.2).contains(&ratio), "noise gain {ratio}");
     }
 
+    fn gliding_voice(len: usize) -> Vec<f32> {
+        let mut phase = 0.0f64;
+        (0..len)
+            .map(|n| {
+                let t = n as f64 / RATE;
+                let pitch = 130.0 + 30.0 * (std::f64::consts::TAU * 1.3 * t).sin();
+                phase += std::f64::consts::TAU * pitch / RATE;
+                let syllable = (std::f64::consts::PI * 4.0 * t).sin().abs();
+                let voice: f64 = (1..=20)
+                    .map(|k| {
+                        let f = pitch * f64::from(k);
+                        let formant = (-((f - 600.0) / 300.0).powi(2)).exp()
+                            + 0.6 * (-((f - 1_400.0) / 400.0).powi(2)).exp();
+                        formant * (phase * f64::from(k)).sin()
+                    })
+                    .sum();
+                (0.2 * syllable * voice) as f32
+            })
+            .collect()
+    }
+
+    #[test]
+    fn auto_notch_leaves_a_voice_alone() {
+        let input = gliding_voice(144_000);
+        let mut output = input.clone();
+        AutoNotch::new(RATE).process(&mut output);
+        let settled = 48_000;
+        let ratio = rms_r(&output[settled..]) / rms_r(&input[settled..]);
+        assert!(ratio > 0.8, "voice gain {ratio}");
+    }
+
     #[test]
     fn auto_notch_recovers_after_a_non_finite_sample() {
-        let mut notch = AutoNotch::new();
+        let mut notch = AutoNotch::new(RATE);
         let mut poisoned = vec![f32::NAN; 256];
         notch.process(&mut poisoned);
         assert!(poisoned.iter().all(|s| s.is_finite()));
@@ -784,7 +813,7 @@ mod tests {
         let mut out = Vec::with_capacity(input.len());
         for chunk in input.chunks(block) {
             let mut buf = chunk.to_vec();
-            denoiser.process(&mut buf);
+            denoiser.process(&mut buf).unwrap();
             out.extend_from_slice(&buf);
         }
         out
@@ -801,7 +830,7 @@ mod tests {
             }
             let end = (pos + len).min(input.len());
             let mut buf = input[pos..end].to_vec();
-            denoiser.process(&mut buf);
+            denoiser.process(&mut buf).unwrap();
             assert_eq!(buf.len(), end - pos);
             produced += buf.len();
             pos = end;
@@ -991,7 +1020,7 @@ mod tests {
         let started = std::time::Instant::now();
         for chunk in input.as_chunks::<960>().0 {
             buf.copy_from_slice(chunk);
-            denoiser.process(&mut buf);
+            denoiser.process(&mut buf).unwrap();
         }
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),
@@ -1004,7 +1033,7 @@ mod tests {
     fn denoiser_recovers_after_a_non_finite_sample() {
         let mut denoiser = SpectralDenoiser::new(0.8);
         let mut poisoned = vec![f32::NAN; 2_048];
-        denoiser.process(&mut poisoned);
+        denoiser.process(&mut poisoned).unwrap();
         assert!(poisoned.iter().all(|s| s.is_finite()));
         let input = bursts_in_hiss(240_000);
         let output = run_denoiser(&mut denoiser, &input, 480);

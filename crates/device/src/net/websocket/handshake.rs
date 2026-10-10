@@ -1,4 +1,6 @@
-use crate::DeviceError;
+use crate::{DeviceError, net::Endpoint};
+
+const HTTP_PORT: u16 = 80;
 
 const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -32,6 +34,48 @@ pub(crate) fn request(host: &str, path: &str, key: &str) -> Vec<u8> {
 
 pub(crate) fn accept(key: &str) -> String {
     base64(&sha1(format!("{key}{GUID}").as_bytes()))
+}
+
+pub(crate) fn moved(response: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(response);
+    let mut lines = text.split("\r\n");
+    let code = lines.next()?.split_whitespace().nth(1)?;
+    if !matches!(code, "301" | "302" | "303" | "307" | "308") {
+        return None;
+    }
+    lines.find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim()
+            .eq_ignore_ascii_case("location")
+            .then(|| value.trim().to_string())
+    })
+}
+
+pub(crate) fn follow(from: &Endpoint, location: &str) -> Result<(Endpoint, String), DeviceError> {
+    if location.starts_with('/') {
+        return Ok((from.clone(), location.to_string()));
+    }
+    let Some(at) = location.find("://") else {
+        return Err(DeviceError::Io(format!(
+            "the server redirects to {location}, which SDR-- cannot follow"
+        )));
+    };
+    let rest = &location[at + 3..];
+    let split = rest
+        .find('/')
+        .map_or(location.len(), |slash| at + 3 + slash);
+    let (origin, path) = location.split_at(split);
+    let path = if path.is_empty() { "/" } else { path };
+    let scheme = origin[..at].to_ascii_lowercase();
+    let to = Endpoint::parse_web(origin, HTTP_PORT)
+        .ok()
+        .filter(|_| matches!(scheme.as_str(), "http" | "https" | "ws" | "wss"))
+        .ok_or_else(|| {
+            DeviceError::Io(format!(
+                "the server redirects to {location}, which SDR-- cannot follow"
+            ))
+        })?;
+    Ok((to, path.to_string()))
 }
 
 /// Checks the upgrade the server answered with, so a plain HTTP page or a redirect is reported as
@@ -286,5 +330,26 @@ mod tests {
             accept(key)
         );
         assert!(verify(listed.as_bytes(), key).is_ok());
+    }
+
+    #[test]
+    fn a_redirect_names_where_to_go() {
+        let response = b"HTTP/1.0 307 Temporary Redirect\r\nlocation: http://proxy2.example/kiwi/1/snd\r\n\r\n";
+        let location = moved(response).expect("a redirect");
+        let from = Endpoint::parse("proxy.example:8073", 8073).expect("parses");
+        let (to, path) = follow(&from, &location).expect("followable");
+        assert_eq!(to.to_string(), "proxy2.example:80");
+        assert_eq!(path, "/kiwi/1/snd");
+        assert_eq!(
+            follow(&from, "/elsewhere").expect("relative").0.to_string(),
+            "proxy.example:8073"
+        );
+        let (secure, path) = follow(&from, "https://secure.example/kiwi").expect("followable");
+        assert_eq!(secure.to_string(), "https://secure.example:443");
+        assert_eq!(path, "/kiwi");
+        assert!(follow(&from, "ftp://other.example/").is_err());
+        assert!(follow(&from, "ftp://other.example:21/").is_err());
+        assert!(moved(&upgrade("KEY")).is_none());
+        assert!(moved(b"HTTP/1.1 404 Not Found\r\n\r\n").is_none());
     }
 }

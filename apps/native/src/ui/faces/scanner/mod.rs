@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use sdrmm_wire::{
     patch::NodeBody,
-    scan::{DEFAULT_SCAN_RANGE, ScanAction, ScanMode, ScanRequest, ScannerNode, ScannerStatus},
+    scan::{ScanAction, ScanMode, ScanRequest, ScanSettings, ScanState, ScannerStatus},
     state::DeviceSet,
     ws::ServerEvent,
 };
@@ -57,19 +57,28 @@ fn decoder_of(store: Store, node: &str) -> Option<Decoder> {
     })
 }
 
-fn settings_of(store: Store, node: &str) -> ScannerNode {
+fn settings_of(store: Store, node: &str) -> ScanSettings {
     match store.graph.get().node(node).map(|found| &found.body) {
-        Some(NodeBody::Scanner(settings)) => settings.clone(),
-        _ => ScannerNode::default(),
+        Some(NodeBody::Scanner(scanner)) => scanner.settings.clone(),
+        _ => ScanSettings::default(),
     }
 }
 
-fn edit_settings(store: Store, node: &str, edit: impl FnOnce(&mut ScannerNode) + 'static) {
+fn edit_settings(store: Store, node: &str, edit: impl FnOnce(&mut ScanSettings) + 'static) {
     store.edit_node(node, move |body| {
-        if let NodeBody::Scanner(settings) = body {
-            edit(settings);
+        if let NodeBody::Scanner(scanner) = body {
+            edit(&mut scanner.settings);
         }
     });
+}
+
+fn state_label(status: &ScannerStatus) -> &'static str {
+    match (status.state, status.settings.mode) {
+        (ScanState::Holding, ScanMode::All) => "visiting",
+        (ScanState::Holding, _) => "holding",
+        (ScanState::Done, _) => "done",
+        (ScanState::Scanning, _) => "scanning",
+    }
 }
 
 fn send(store: Store, decoder: (u32, u32), request: ScanRequest) {
@@ -151,34 +160,31 @@ fn running_view(
     let holding = move || {
         status
             .get()
-            .is_some_and(|status| status.state == sdrmm_wire::scan::ScanState::Holding)
+            .is_some_and(|status| status.state == ScanState::Holding)
     };
     let skipped = move || {
         status
             .get()
-            .is_some_and(|status| !status.settings.skip.is_empty())
+            .is_some_and(|status| !status.settings.lockouts.is_empty())
     };
     let fault = move || status.get().and_then(|status| status.error);
     view! {
         column(class = "sc-body kc-readout") {
             {readout_row("State", view! {
-                text(class:kc-accent = holding) {{move || if holding() { "holding" } else { "scanning" }}}
+                text(class:kc-accent = holding) {{move || status.get().map(|status| state_label(&status)).unwrap_or_default()}}
             })}
             {readout_row("Frequency", read(|status| format_mhz(Some(status.current_hz))))}
-            {readout_row("Looking for", read(|status| match status.settings.mode {
-                ScanMode::CloseCall => format!("anything {} dB over the noise", status.settings.margin_db),
-                _ => String::from("the listed frequencies"),
-            }))}
+            {readout_row("Find", read(|status| format!("{}, {} dB over noise", mode_label(status.settings.mode), status.settings.margin_db)))}
             {readout_row("Sweep", move || {
                 let status = status.get();
                 sweep_kind(decoder.get().as_ref().map(|found| &found.set), status.as_ref()).to_owned()
             })}
             {readout_row("Span", read(|status| format!("{} to {}", format_mhz(Some(status.first_hz)), format_mhz(Some(status.last_hz)))))}
-            {readout_row("Level", read(|status| format_db(status.current_db)))}
+            {readout_row("SNR", read(|status| format_db(status.current_snr_db)))}
             {readout_row("Targets", read(|status| status.targets.to_string()))}
             {readout_row("Sweeps", read(|status| status.sweeps.to_string()))}
             {readout_row("Hits", read(|status| status.hits.to_string()))}
-            {move || skipped().then(|| readout_row("Skipped", read(|status| status.settings.skip.len().to_string())))}
+            {move || skipped().then(|| readout_row("Lockouts", read(|status| status.settings.lockouts.len().to_string())))}
             {move || fault().map(|fault| readout_row("Fault", view! { text(class = "kc-danger") {{fault}} }))}
         }
     }
@@ -187,7 +193,7 @@ fn running_view(
 fn idle_view(
     store: Store,
     node: String,
-    settings: Memo<ScannerNode>,
+    settings: Memo<ScanSettings>,
     decoder: Memo<Option<Decoder>>,
 ) -> impl IntoView {
     let count = Memo::new(move |_| settings.get().ranges.len());
@@ -221,7 +227,7 @@ fn idle_view(
 fn range_field(
     store: Store,
     node: String,
-    settings: Memo<ScannerNode>,
+    settings: Memo<ScanSettings>,
     index: usize,
     spec: NumberSpec,
     read: fn(&RangeValues) -> f64,
@@ -249,7 +255,7 @@ fn range_field(
 fn range_group(
     store: Store,
     node: String,
-    settings: Memo<ScannerNode>,
+    settings: Memo<ScanSettings>,
     count: Memo<usize>,
     index: usize,
 ) -> AnyView {
@@ -318,10 +324,73 @@ fn range_group(
     )
 }
 
+const MODES: [(ScanMode, &str, &str); 3] = [
+    (
+        ScanMode::Targets,
+        "Listed",
+        "Stop on the first busy frequency",
+    ),
+    (
+        ScanMode::CloseCall,
+        "Strongest",
+        "Stop on the strongest signal nearby",
+    ),
+    (
+        ScanMode::All,
+        "All",
+        "Visit every busy frequency once, then finish",
+    ),
+];
+
+fn mode_label(mode: ScanMode) -> &'static str {
+    MODES
+        .iter()
+        .find(|(candidate, _, _)| *candidate == mode)
+        .map_or("Listed", |(_, label, _)| label)
+}
+
+fn margin_row(store: Store, node: String, settings: Memo<ScanSettings>) -> AnyView {
+    setting_row(
+        "Over noise",
+        Some("How far over the noise floor counts as busy"),
+        number_field(
+            Signal::derive(move || Some(f64::from(settings.get().margin_db))),
+            NumberSpec::new("Scan margin")
+                .limit(NumberLimit::new(1.0, 60.0, 1.0))
+                .unit("dB"),
+            move |next| {
+                if let Some(next) = next {
+                    edit_settings(store, &node, move |held| held.margin_db = next as f32);
+                }
+            },
+        ),
+    )
+}
+
+fn hold_row(store: Store, node: String, settings: Memo<ScanSettings>) -> AnyView {
+    setting_row(
+        "Hold",
+        Some("Time on each busy frequency, long enough for the decoder to read it"),
+        number_field(
+            Signal::derive(move || Some(f64::from(settings.get().hold_ms) / 1_000.0)),
+            NumberSpec::new("Hold time")
+                .limit(NumberLimit::new(0.5, 120.0, 0.5))
+                .unit("s"),
+            move |next| {
+                if let Some(seconds) = next {
+                    edit_settings(store, &node, move |held| {
+                        held.hold_ms = (seconds * 1_000.0).round() as u32;
+                    });
+                }
+            },
+        ),
+    )
+}
+
 fn sweep_group(
     store: Store,
     node: String,
-    settings: Memo<ScannerNode>,
+    settings: Memo<ScanSettings>,
     decoder: Memo<Option<Decoder>>,
 ) -> AnyView {
     let mode = Signal::derive(move || Some(settings.get().mode));
@@ -329,47 +398,10 @@ fn sweep_group(
         let node = node.clone();
         move |next: ScanMode| edit_settings(store, &node, move |held| held.mode = next)
     };
-    let level = {
+    let hold = {
         let node = node.clone();
         move || {
-            let node = node.clone();
-            if settings.get().mode == ScanMode::CloseCall {
-                setting_row(
-                    "Over noise",
-                    None,
-                    number_field(
-                        Signal::derive(move || Some(f64::from(settings.get().margin_db))),
-                        NumberSpec::new("Close call margin")
-                            .limit(NumberLimit::new(1.0, 60.0, 1.0))
-                            .unit("dB"),
-                        move |next| {
-                            if let Some(next) = next {
-                                edit_settings(store, &node, move |held| {
-                                    held.margin_db = next as f32
-                                });
-                            }
-                        },
-                    ),
-                )
-            } else {
-                setting_row(
-                    "Threshold",
-                    None,
-                    number_field(
-                        Signal::derive(move || Some(f64::from(settings.get().threshold_db))),
-                        NumberSpec::new("Scan threshold")
-                            .limit(NumberLimit::new(-120.0, 0.0, 1.0))
-                            .unit("dB"),
-                        move |next| {
-                            if let Some(next) = next {
-                                edit_settings(store, &node, move |held| {
-                                    held.threshold_db = next as f32
-                                });
-                            }
-                        },
-                    ),
-                )
-            }
+            (settings.get().mode == ScanMode::All).then(|| hold_row(store, node.clone(), settings))
         }
     };
     let firmware = {
@@ -389,19 +421,17 @@ fn sweep_group(
                 })
         }
     };
+    let modes = MODES
+        .iter()
+        .map(|(mode, label, _)| (*mode, (*label).to_owned()))
+        .collect();
     group(
         "Sweep",
         AnyView::new(()),
         view! {
-            {setting_row("Looking for", None, pick(
-                vec![
-                    (ScanMode::Targets, String::from("the listed frequencies")),
-                    (ScanMode::CloseCall, String::from("the strongest signal near me")),
-                ],
-                mode,
-                pick_mode,
-            ))}
-            {level}
+            {setting_row("Find", None, pick(modes, mode, pick_mode))}
+            {margin_row(store, node.clone(), settings)}
+            {hold}
             {firmware}
         },
     )
@@ -410,7 +440,7 @@ fn sweep_group(
 fn footer(
     store: Store,
     node: String,
-    settings: Memo<ScannerNode>,
+    settings: Memo<ScanSettings>,
     decoder: Memo<Option<Decoder>>,
     status: Memo<Option<ScannerStatus>>,
     pushed: RwSignal<HashMap<(u32, u32), ScannerStatus>>,
@@ -423,22 +453,29 @@ fn footer(
     let holding = Signal::derive(move || {
         status
             .get()
-            .is_some_and(|status| status.state == sdrmm_wire::scan::ScanState::Holding)
+            .is_some_and(|status| status.state == ScanState::Holding)
     });
     let blocked = Signal::derive(move || {
         decoder.get().is_none() || check_ranges(&settings.get().ranges).is_err()
     });
     let add = move || {
         edit_settings(store, &node, |held| {
-            let next = held.ranges.last().copied().unwrap_or(DEFAULT_SCAN_RANGE);
-            held.ranges.push(next);
+            let next = held
+                .ranges
+                .last()
+                .or(ScanSettings::default().ranges.first())
+                .copied();
+            held.ranges.extend(next);
         });
     };
     let start = move || {
         let Some(at) = target() else { return };
         let request = ScanRequest {
             action: ScanAction::Start,
-            settings: Some(settings.get_untracked().settings_for(at.1)),
+            settings: Some(ScanSettings {
+                channel: at.1,
+                ..settings.get_untracked()
+            }),
         };
         send(store, at, request);
     };

@@ -12,7 +12,7 @@ pub struct SpectrumSnapshot {
     pub db: Arc<[f32]>,
 }
 
-const LO_GUARD_BINS: usize = 2;
+const LO_GUARD_BINS: usize = 4;
 
 impl SpectrumSnapshot {
     #[must_use]
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn the_lo_guard_covers_the_centre_bins() {
-        assert_eq!(snapshot_at(100e6, 1_024).lo_guard(), Some(510..=514));
+        assert_eq!(snapshot_at(100e6, 1_024).lo_guard(), Some(508..=516));
     }
 
     #[test]

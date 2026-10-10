@@ -25,6 +25,10 @@ pub struct DeviceProfile {
     pub tx_streams: u32,
     #[serde(default)]
     pub per_stream: StreamScope,
+    #[serde(default)]
+    pub coherence: Coherence,
+    #[serde(default)]
+    pub noise_source: NoiseSource,
 }
 
 impl DeviceProfile {
@@ -91,6 +95,13 @@ impl DeviceInfo {
             profile: None,
             ..self.clone()
         }
+    }
+
+    #[must_use]
+    pub fn radio(&self) -> String {
+        self.serial
+            .as_ref()
+            .map_or_else(|| self.id(), |serial| format!("{}:{serial}", self.driver))
     }
 }
 
@@ -276,6 +287,34 @@ pub enum GainUnit {
     Index,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgcReach {
+    #[default]
+    Always,
+    Never,
+    Modes {
+        modes: Vec<String>,
+    },
+}
+
+impl AgcReach {
+    #[must_use]
+    pub fn is_always(&self) -> bool {
+        matches!(self, Self::Always)
+    }
+
+    #[must_use]
+    pub fn drives(&self, agc: &AgcSetting) -> bool {
+        agc.on
+            && match self {
+                Self::Always => true,
+                Self::Never => false,
+                Self::Modes { modes } => agc.mode.as_ref().is_some_and(|mode| modes.contains(mode)),
+            }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct GainStage {
     pub name: String,
@@ -285,6 +324,8 @@ pub struct GainStage {
     pub range: Range,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub values: Vec<f64>,
+    #[serde(default, skip_serializing_if = "AgcReach::is_always")]
+    pub agc: AgcReach,
 }
 
 impl GainStage {
@@ -301,7 +342,14 @@ impl GainStage {
             unit: GainUnit::Db,
             range,
             values: Vec::new(),
+            agc: AgcReach::Always,
         }
+    }
+
+    #[must_use]
+    pub fn with_agc(mut self, agc: AgcReach) -> Self {
+        self.agc = agc;
+        self
     }
 
     #[must_use]
@@ -753,11 +801,49 @@ pub struct Capabilities {
     pub hardware_sweep: bool,
     #[serde(default)]
     pub coherence: Coherence,
-    /// Whether the radio can switch a calibration reference into every lane at once. An array
-    /// that carries its own is calibrated without an operator reaching for a splitter, and
-    /// without one it has to be told what to solve against.
     #[serde(default)]
-    pub noise_source: bool,
+    pub noise_source: NoiseSource,
+    #[serde(default)]
+    pub retune_keeps_phase: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rx_inputs: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NoiseSource {
+    #[default]
+    None,
+    Isolated,
+    Unisolated,
+    Replayed,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum NoiseName {
+    None,
+    Isolated,
+    Unisolated,
+    Replayed,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum NoiseRepr {
+    Legacy(bool),
+    Named(NoiseName),
+}
+
+impl<'de> Deserialize<'de> for NoiseSource {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match NoiseRepr::deserialize(deserializer)? {
+            NoiseRepr::Legacy(false) | NoiseRepr::Named(NoiseName::None) => Self::None,
+            NoiseRepr::Legacy(true) | NoiseRepr::Named(NoiseName::Isolated) => Self::Isolated,
+            NoiseRepr::Named(NoiseName::Unisolated) => Self::Unisolated,
+            NoiseRepr::Named(NoiseName::Replayed) => Self::Replayed,
+        })
+    }
 }
 
 /// How much of the relationship between two of a radio's receive lanes survives calibration.
@@ -836,6 +922,15 @@ impl Capabilities {
     }
 
     #[must_use]
+    pub fn admits_rx_inputs(&self, inputs: &[u32]) -> bool {
+        !inputs.is_empty()
+            && inputs.windows(2).all(|pair| pair[0] < pair[1])
+            && inputs
+                .iter()
+                .all(|input| (*input as usize) < self.rx_inputs.len())
+    }
+
+    #[must_use]
     pub fn profile(&self) -> DeviceProfile {
         DeviceProfile {
             freq_ranges: self.freq_ranges.clone(),
@@ -845,15 +940,14 @@ impl Capabilities {
             rx_streams: self.rx_streams,
             tx_streams: self.tx_streams,
             per_stream: self.per_stream,
+            coherence: self.coherence,
+            noise_source: self.noise_source,
         }
     }
 }
 
-pub const ARRAY_DRIVER_ID: &str = "array";
 pub const RECORDING_DRIVER_ID: &str = "recording";
 pub const SIGGEN_DRIVER_ID: &str = "siggen";
-pub const MAX_ARRAY_MEMBERS: usize = 16;
-pub const MAX_ARRAY_KEY_LEN: usize = 64;
 pub const MAX_RECORDING_STEM_LEN: usize = 200;
 
 #[must_use]
@@ -865,63 +959,6 @@ pub fn recording_stem_valid(stem: &str) -> bool {
         && !stem.contains('/')
         && !stem.contains('\\')
         && !stem.contains('\0')
-}
-
-/// A bank of separate radios the operator has wired to one clock and wants treated as one.
-///
-/// Nothing here is discovered: which radios belong together, and whether their clock alone is
-/// shared or their synthesizer too, is a fact about the bench that only the operator knows.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct ArrayDefinition {
-    pub key: String,
-    pub label: String,
-    /// Member device ids, in the order their lanes are numbered.
-    pub members: Vec<String>,
-    pub coherence: Coherence,
-    /// Whether every member is tuned together. A bank whose members can be tuned apart is a bank
-    /// of receivers; only one tuned together is an array.
-    #[serde(default = "yes")]
-    pub shared_tuning: bool,
-}
-
-const fn yes() -> bool {
-    true
-}
-
-impl ArrayDefinition {
-    #[must_use]
-    pub fn id(&self) -> String {
-        format!("{ARRAY_DRIVER_ID}:{}", self.key)
-    }
-
-    #[must_use]
-    pub fn valid(&self) -> bool {
-        !self.key.is_empty()
-            && self.key.len() <= MAX_ARRAY_KEY_LEN
-            && self
-                .key
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-            && (2..=MAX_ARRAY_MEMBERS).contains(&self.members.len())
-            && self.members.iter().all(|member| member.contains(':'))
-            && {
-                let mut seen = self.members.clone();
-                seen.sort_unstable();
-                seen.dedup();
-                seen.len() == self.members.len()
-            }
-            && self.coherence != Coherence::None
-    }
-
-    #[must_use]
-    pub fn per_stream(&self) -> StreamScope {
-        StreamScope {
-            tuning: !self.shared_tuning,
-            gain: true,
-            antenna: true,
-            agc: true,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -982,6 +1019,8 @@ pub struct DeviceSettings {
     pub extra: Vec<ExtraValue>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub streams: Vec<StreamSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rx_inputs: Option<Vec<u32>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -1068,6 +1107,9 @@ impl DeviceSettings {
         if delta.agc.is_some() {
             self.agc.clone_from(&delta.agc);
         }
+        if delta.rx_inputs.is_some() {
+            self.rx_inputs.clone_from(&delta.rx_inputs);
+        }
         merge_gains(&mut self.gains, &delta.gains);
         for extra in &delta.extra {
             match self.extra.iter_mut().find(|e| e.name == extra.name) {
@@ -1143,15 +1185,23 @@ impl DeviceSettings {
                         .antenna
                         .clone()
                         .filter(|a| scope.antenna && capabilities.antennas.contains(a)),
-                    agc: None,
+                    agc: stream
+                        .agc
+                        .clone()
+                        .filter(|agc| scope.agc && capabilities.agc.admits(agc)),
                 })
                 .filter(|stream| {
                     stream.center_hz.is_some()
                         || stream.tuning.is_some()
                         || !stream.gains.is_empty()
                         || stream.antenna.is_some()
+                        || stream.agc.is_some()
                 })
                 .collect(),
+            rx_inputs: self
+                .rx_inputs
+                .clone()
+                .filter(|inputs| capabilities.admits_rx_inputs(inputs)),
         }
     }
 
@@ -1171,6 +1221,22 @@ impl DeviceSettings {
     #[must_use]
     pub fn agc_on(&self) -> bool {
         self.agc.as_ref().is_some_and(|agc| agc.on)
+    }
+
+    #[must_use]
+    pub fn calibration(&self) -> DeviceSettings {
+        DeviceSettings {
+            ppm: self.ppm,
+            offset_hz: self.offset_hz,
+            ..DeviceSettings::default()
+        }
+    }
+
+    #[must_use]
+    pub fn calibrated(mut self, calibration: &DeviceSettings) -> DeviceSettings {
+        self.ppm = calibration.ppm.or(self.ppm);
+        self.offset_hz = calibration.offset_hz.or(self.offset_hz);
+        self
     }
 
     #[must_use]
@@ -1296,7 +1362,9 @@ mod tests {
             dc_artifact: DcArtifact::Operator,
             hardware_sweep: false,
             coherence: Coherence::None,
-            noise_source: false,
+            noise_source: NoiseSource::None,
+            retune_keeps_phase: false,
+            rx_inputs: Vec::new(),
         }
     }
 
@@ -1327,6 +1395,49 @@ mod tests {
         assert_eq!(profile.duplex, Duplex::Half);
         assert_eq!(profile.rx_streams, 1);
         assert_eq!(profile.per_stream, full.per_stream);
+    }
+
+    #[test]
+    fn noise_source_reads_the_legacy_bool() {
+        let read = |json: &str| serde_json::from_str::<NoiseSource>(json).expect(json);
+        assert_eq!(read("true"), NoiseSource::Isolated);
+        assert_eq!(read("false"), NoiseSource::None);
+        assert_eq!(read(r#""none""#), NoiseSource::None);
+        assert_eq!(read(r#""isolated""#), NoiseSource::Isolated);
+        assert_eq!(read(r#""unisolated""#), NoiseSource::Unisolated);
+        assert_eq!(read(r#""replayed""#), NoiseSource::Replayed);
+        assert!(serde_json::from_str::<NoiseSource>(r#""loud""#).is_err());
+        assert_eq!(
+            serde_json::to_value(NoiseSource::Unisolated).expect("serialize"),
+            "unisolated"
+        );
+        let mut legacy =
+            serde_json::to_value(caps(Vec::new(), Vec::new(), Duplex::RxOnly)).expect("serialize");
+        legacy["noise_source"] = serde_json::Value::Bool(true);
+        legacy
+            .as_object_mut()
+            .expect("object")
+            .remove("retune_keeps_phase");
+        let parsed: Capabilities = serde_json::from_value(legacy).expect("legacy capabilities");
+        assert_eq!(parsed.noise_source, NoiseSource::Isolated);
+        assert!(!parsed.retune_keeps_phase);
+    }
+
+    #[test]
+    fn device_profile_carries_coherence_and_noise_source() {
+        let mut kraken = caps(vec![range(24e6, 1.766e9)], vec![2.4e6], Duplex::RxOnly);
+        kraken.rx_streams = 5;
+        kraken.coherence = Coherence::TimeSync;
+        kraken.noise_source = NoiseSource::Isolated;
+        let profile = kraken.profile();
+        assert_eq!(profile.coherence, Coherence::TimeSync);
+        assert_eq!(profile.noise_source, NoiseSource::Isolated);
+        let old: DeviceProfile = serde_json::from_str(
+            r#"{"freq_ranges":[],"sample_rates":[],"duplex":"rx_only","rx_streams":1,"tx_streams":0}"#,
+        )
+        .expect("old profile");
+        assert_eq!(old.coherence, Coherence::None);
+        assert_eq!(old.noise_source, NoiseSource::None);
     }
 
     #[test]
@@ -1428,6 +1539,37 @@ mod tests {
     }
 
     #[test]
+    fn agc_reaches_a_stage_only_where_the_radio_says() {
+        let lna_only = AgcReach::Modes {
+            modes: vec!["lna".to_string()],
+        };
+        assert!(AgcReach::Always.drives(&AgcSetting::switched(true)));
+        assert!(!AgcReach::Always.drives(&AgcSetting::off()));
+        assert!(!AgcReach::Never.drives(&AgcSetting::switched(true)));
+        assert!(lna_only.drives(&AgcSetting::in_mode(true, "lna")));
+        assert!(!lna_only.drives(&AgcSetting::in_mode(true, "mixer")));
+        assert!(!lna_only.drives(&AgcSetting::in_mode(false, "lna")));
+    }
+
+    #[test]
+    fn a_stage_every_agc_drives_carries_no_reach_on_the_wire() {
+        let range = Range {
+            min: 0.0,
+            max: 10.0,
+            step: None,
+        };
+        let plain = serde_json::to_value(GainStage::new(GainKind::Lna, range)).expect("json");
+        assert!(plain.get("agc").is_none());
+        let manual = GainStage::new(GainKind::Vga, range).with_agc(AgcReach::Never);
+        let json = serde_json::to_value(&manual).expect("json");
+        assert_eq!(json["agc"], serde_json::json!({ "kind": "never" }));
+        let back: GainStage = serde_json::from_value(json).expect("round trip");
+        assert_eq!(back, manual);
+        let older: GainStage = serde_json::from_value(plain).expect("a stage without the field");
+        assert_eq!(older.agc, AgcReach::Always);
+    }
+
+    #[test]
     fn a_radio_that_cannot_go_narrow_enough_runs_wide_instead() {
         let menu = caps(Vec::new(), vec![1.024e6, 2.0e6, 2.4e6], Duplex::RxOnly).profile();
         assert_eq!(menu.rate_for(2.0e6), Some(2.0e6), "offered as asked");
@@ -1505,6 +1647,52 @@ mod tests {
         assert!(stored.profile.is_none());
         assert_eq!(stored.id(), probed.id());
         assert_eq!(stored.label, probed.label);
+    }
+
+    #[test]
+    fn a_radio_is_its_serial_or_else_its_address() {
+        let radio = |driver: &str, key: &str, serial: Option<&str>| DeviceInfo {
+            driver: driver.to_string(),
+            key: key.to_string(),
+            label: String::new(),
+            serial: serial.map(str::to_string),
+            profile: None,
+        };
+        assert_eq!(
+            radio("rtlsdr", "0@rx", Some("00000001")).radio(),
+            "rtlsdr:00000001"
+        );
+        assert_eq!(
+            radio("rtltcp", "10.0.0.5:1234", None).radio(),
+            "rtltcp:10.0.0.5:1234"
+        );
+    }
+
+    #[test]
+    fn a_calibration_overrides_only_what_it_holds() {
+        let node = DeviceSettings {
+            center_hz: Some(100e6),
+            ppm: Some(1.0),
+            offset_hz: Some(-125e6),
+            ..DeviceSettings::default()
+        };
+        let calibration = DeviceSettings {
+            ppm: Some(42.0),
+            ..DeviceSettings::default()
+        };
+        let calibrated = node.clone().calibrated(&calibration);
+        assert_eq!(calibrated.ppm, Some(42.0));
+        assert_eq!(calibrated.offset_hz, Some(-125e6));
+        assert_eq!(calibrated.center_hz, Some(100e6));
+        assert_eq!(
+            calibrated.calibration(),
+            DeviceSettings {
+                ppm: Some(42.0),
+                offset_hz: Some(-125e6),
+                ..DeviceSettings::default()
+            }
+        );
+        assert_eq!(node.clone().calibrated(&DeviceSettings::default()), node);
     }
 
     fn gain(stage: &str, value_db: f64) -> GainValue {
@@ -1746,6 +1934,49 @@ mod tests {
                 .tunes_itself(),
             "a radio with one synthesizer has one tuning mode"
         );
+    }
+
+    #[test]
+    fn the_picked_inputs_and_each_lanes_own_agc_survive_replay() {
+        let mut capabilities = tuner(70e6, 6e9);
+        capabilities.agc = Agc::Switch;
+        capabilities.rx_streams = 2;
+        capabilities.rx_inputs = vec!["RX1".to_string(), "RX2".to_string()];
+        capabilities.per_stream = StreamScope {
+            agc: true,
+            ..StreamScope::default()
+        };
+        let stored = DeviceSettings {
+            rx_inputs: Some(vec![1]),
+            streams: vec![StreamSettings {
+                stream: 1,
+                agc: Some(AgcSetting::off()),
+                ..StreamSettings::default()
+            }],
+            ..DeviceSettings::default()
+        };
+        let replayed = stored.supported_by(&capabilities);
+        assert_eq!(replayed.rx_inputs, Some(vec![1]));
+        assert_eq!(replayed.streams, stored.streams);
+
+        capabilities.rx_inputs.clear();
+        assert_eq!(
+            stored.supported_by(&capabilities).rx_inputs,
+            None,
+            "a radio with fixed inputs takes none"
+        );
+    }
+
+    #[test]
+    fn a_pick_names_inputs_the_radio_has_once_each_in_order() {
+        let mut capabilities = tuner(70e6, 6e9);
+        capabilities.rx_inputs = vec!["RX1".to_string(), "RX2".to_string()];
+        assert!(capabilities.admits_rx_inputs(&[1]));
+        assert!(capabilities.admits_rx_inputs(&[0, 1]));
+        assert!(!capabilities.admits_rx_inputs(&[]));
+        assert!(!capabilities.admits_rx_inputs(&[1, 0]));
+        assert!(!capabilities.admits_rx_inputs(&[1, 1]));
+        assert!(!capabilities.admits_rx_inputs(&[2]));
     }
 
     #[test]

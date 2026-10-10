@@ -1,336 +1,399 @@
 [
   {
-    "bench": "iridium",
-    "msamples_per_s": 0.09,
-    "realtime_factor": 0.36,
-    "config": "noise including deferred decode slots, 250000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "datv",
-    "msamples_per_s": 3.1,
-    "realtime_factor": 1.55,
-    "config": "noise including deferred decode slots, 2000000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "ft4",
-    "msamples_per_s": 0.04,
-    "realtime_factor": 3.3333333333333335,
-    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "adsb",
-    "msamples_per_s": 7.58,
-    "realtime_factor": 3.16,
-    "config": "noise including deferred decode slots, 2400000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "dvbt",
-    "msamples_per_s": 41.37,
-    "realtime_factor": 4.52484375,
-    "config": "noise including deferred decode slots, 9142857 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "dect",
-    "msamples_per_s": 19.5,
-    "realtime_factor": 8.463541666666666,
-    "config": "noise including deferred decode slots, 2304000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "ft8",
-    "msamples_per_s": 0.12,
-    "realtime_factor": 10.0,
-    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "cw_skimmer",
-    "msamples_per_s": 0.62,
-    "realtime_factor": 12.916666666666666,
+    "bench": "nfm",
+    "msamples_per_s": 100.01406447781719,
+    "realtime_factor": 2083.626343287858,
     "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "atv",
-    "msamples_per_s": 39.32,
-    "realtime_factor": 2.46,
-    "config": "noise including deferred decode slots, 16000000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "wfm",
-    "msamples_per_s": 5.07,
-    "realtime_factor": 21.125,
-    "config": "noise including deferred decode slots, 240000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "hfdl",
-    "msamples_per_s": 0.57,
-    "realtime_factor": 47.5,
-    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
     "host": "x86_64-linux"
   },
   {
     "bench": "selcall",
-    "msamples_per_s": 2.85,
-    "realtime_factor": 59.375,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "inmarsat_aero",
-    "msamples_per_s": 2.86,
-    "realtime_factor": 59.583333333333336,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "ssb",
-    "msamples_per_s": 3.13,
-    "realtime_factor": 65.20833333333333,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "psk",
-    "msamples_per_s": 0.53,
-    "realtime_factor": 66.25,
-    "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "dab",
-    "msamples_per_s": 138.91,
-    "realtime_factor": 67.8271484375,
-    "config": "noise including deferred decode slots, 2048000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "dpmr",
-    "msamples_per_s": 3.29,
-    "realtime_factor": 68.54166666666667,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "nxdn",
-    "msamples_per_s": 3.31,
-    "realtime_factor": 68.95833333333333,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "drm",
-    "msamples_per_s": 19.22,
-    "realtime_factor": 100.10416666666667,
-    "config": "noise including deferred decode slots, 192000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "vdl2",
-    "msamples_per_s": 10.27,
-    "realtime_factor": 102.7,
-    "config": "noise including deferred decode slots, 100000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "pocsag",
-    "msamples_per_s": 5.42,
-    "realtime_factor": 112.91666666666667,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "m17",
-    "msamples_per_s": 6.3,
-    "realtime_factor": 131.25,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "dmr",
-    "msamples_per_s": 6.42,
-    "realtime_factor": 133.75,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "p25",
-    "msamples_per_s": 6.5,
-    "realtime_factor": 135.41666666666666,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "ysf",
-    "msamples_per_s": 6.5,
-    "realtime_factor": 135.41666666666666,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "acars",
-    "msamples_per_s": 7.02,
-    "realtime_factor": 146.25,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "ais",
-    "msamples_per_s": 3.31,
-    "realtime_factor": 68.958,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "subghz",
-    "msamples_per_s": 38.97,
-    "realtime_factor": 155.88,
-    "config": "noise including deferred decode slots, 250000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "gnss",
-    "msamples_per_s": 356.84,
-    "realtime_factor": 174.23828125,
-    "config": "noise including deferred decode slots, 2048000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "nfm",
-    "msamples_per_s": 8.96,
-    "realtime_factor": 186.66666666666666,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "vor",
-    "msamples_per_s": 9.57,
-    "realtime_factor": 199.375,
+    "msamples_per_s": 8.262904267970805,
+    "realtime_factor": 172.14383891605843,
     "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
     "host": "x86_64-linux"
   },
   {
     "bench": "am",
-    "msamples_per_s": 11.05,
-    "realtime_factor": 230.20833333333334,
+    "msamples_per_s": 62.52112530210403,
+    "realtime_factor": 1302.523443793834,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ssb",
+    "msamples_per_s": 26.81554508321618,
+    "realtime_factor": 558.6571892336704,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "wfm",
+    "msamples_per_s": 11.91958274705955,
+    "realtime_factor": 49.66492811274813,
+    "config": "noise including deferred decode slots, 240000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "pocsag",
+    "msamples_per_s": 7.23446680849236,
+    "realtime_factor": 301.436117020515,
+    "config": "noise including deferred decode slots, 24000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "flex",
+    "msamples_per_s": 14.977012625777654,
+    "realtime_factor": 312.0210963703678,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ermes",
+    "msamples_per_s": 73.11756542879644,
+    "realtime_factor": 1523.2826130999258,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "eot",
+    "msamples_per_s": 141.57036932170095,
+    "realtime_factor": 2949.3826942021033,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "adsb",
+    "msamples_per_s": 53.43021715876917,
+    "realtime_factor": 22.262590482820485,
+    "config": "noise including deferred decode slots, 2400000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ais",
+    "msamples_per_s": 3.6170999757767333,
+    "realtime_factor": 75.3562494953486,
     "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
     "host": "x86_64-linux"
   },
   {
     "bench": "aprs",
-    "msamples_per_s": 12.33,
-    "realtime_factor": 256.875,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "inmarsat_stdc",
-    "msamples_per_s": 4.29,
-    "realtime_factor": 357.5,
-    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "dstar",
-    "msamples_per_s": 5.2,
-    "realtime_factor": 108.33,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "ident",
-    "msamples_per_s": 62.195805078873555,
-    "realtime_factor": 259.1491878286398,
-    "config": "noise including deferred decode slots, 240000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "ils",
-    "msamples_per_s": 24.79,
-    "realtime_factor": 516.4583333333334,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "wspr",
-    "msamples_per_s": 6.23,
-    "realtime_factor": 519.1666666666666,
-    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "ermes",
-    "msamples_per_s": 25.28,
-    "realtime_factor": 526.6666666666666,
-    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "freedv",
-    "msamples_per_s": 4.4,
-    "realtime_factor": 550.0,
-    "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "flex",
-    "msamples_per_s": 31.3,
-    "realtime_factor": 652.0833333333334,
+    "msamples_per_s": 65.9984779101032,
+    "realtime_factor": 1374.9682897938167,
     "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
     "host": "x86_64-linux"
   },
   {
     "bench": "rtty",
-    "msamples_per_s": 6.71,
-    "realtime_factor": 838.75,
-    "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "navtex",
-    "msamples_per_s": 15.21,
-    "realtime_factor": 1901.25,
-    "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "sstv",
-    "msamples_per_s": 59.53,
-    "realtime_factor": 3720.625,
-    "config": "noise including deferred decode slots, 16000 Hz, 2048 sample blocks",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "dsc",
-    "msamples_per_s": 12.68,
-    "realtime_factor": 1585.0,
+    "msamples_per_s": 62.829891443568904,
+    "realtime_factor": 7853.736430446113,
     "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
     "host": "x86_64-linux"
   },
   {
     "bench": "morse",
-    "msamples_per_s": 68.84,
-    "realtime_factor": 8605.0,
+    "msamples_per_s": 68.48376018645774,
+    "realtime_factor": 8560.470023307218,
     "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
     "host": "x86_64-linux"
   },
   {
+    "bench": "cw_skimmer",
+    "msamples_per_s": 12.132420823632136,
+    "realtime_factor": 252.75876715900284,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "navtex",
+    "msamples_per_s": 95.45960911900289,
+    "realtime_factor": 11932.451139875362,
+    "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "acars",
+    "msamples_per_s": 88.9747330294599,
+    "realtime_factor": 3707.2805428941624,
+    "config": "noise including deferred decode slots, 24000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "atv",
+    "msamples_per_s": 187.7799432195702,
+    "realtime_factor": 11.736246451223138,
+    "config": "noise including deferred decode slots, 16000000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "sstv",
+    "msamples_per_s": 214.2293027610266,
+    "realtime_factor": 13389.331422564162,
+    "config": "noise including deferred decode slots, 16000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "dab",
+    "msamples_per_s": 129.6685259664389,
+    "realtime_factor": 63.31470994455024,
+    "config": "noise including deferred decode slots, 2048000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "dvbt",
+    "msamples_per_s": 47.945117624470754,
+    "realtime_factor": 5.243997240176489,
+    "config": "noise including deferred decode slots, 9142857 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "datv",
+    "msamples_per_s": 10.63664319538887,
+    "realtime_factor": 5.318321597694435,
+    "config": "noise including deferred decode slots, 2000000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "drm",
+    "msamples_per_s": 52.132058650195106,
+    "realtime_factor": 271.5211388030995,
+    "config": "noise including deferred decode slots, 192000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "dmr",
+    "msamples_per_s": 45.937718024716396,
+    "realtime_factor": 957.0357921815917,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "dstar",
+    "msamples_per_s": 10.398390502456728,
+    "realtime_factor": 216.63313546784852,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ysf",
+    "msamples_per_s": 50.69226626112854,
+    "realtime_factor": 1056.088880440178,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "nxdn",
+    "msamples_per_s": 40.02177851781011,
+    "realtime_factor": 833.7870524543773,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "p25",
+    "msamples_per_s": 50.53988175773497,
+    "realtime_factor": 1052.9142032861453,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "dpmr",
+    "msamples_per_s": 39.89230739183679,
+    "realtime_factor": 831.089737329933,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "m17",
+    "msamples_per_s": 39.681686736230866,
+    "realtime_factor": 826.7018070048097,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "freedv",
+    "msamples_per_s": 9.133124656894639,
+    "realtime_factor": 1141.6405821118299,
+    "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ft8",
+    "msamples_per_s": 682.847626345779,
+    "realtime_factor": 56903.96886214824,
+    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ft4",
+    "msamples_per_s": 908.9440090490426,
+    "realtime_factor": 75745.33408742021,
+    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "psk",
+    "msamples_per_s": 6.1343151432518335,
+    "realtime_factor": 766.7893929064792,
+    "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "wspr",
+    "msamples_per_s": 361.42147064404304,
+    "realtime_factor": 30118.455887003587,
+    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ident",
+    "msamples_per_s": 123.7969451556321,
+    "realtime_factor": 515.8206048151338,
+    "config": "noise including deferred decode slots, 240000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
     "bench": "radio_clock",
-    "msamples_per_s": 102.56,
-    "realtime_factor": 51280.0,
+    "msamples_per_s": 89.21842395305578,
+    "realtime_factor": 44609.211976527884,
     "config": "noise including deferred decode slots, 2000 Hz, 2048 sample blocks",
     "host": "x86_64-linux"
   },
   {
+    "bench": "gnss",
+    "msamples_per_s": 15.00393813082155,
+    "realtime_factor": 7.32614166544021,
+    "config": "noise including deferred decode slots, 2048000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "vor",
+    "msamples_per_s": 10.09260915077948,
+    "realtime_factor": 210.26269064123917,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ils",
+    "msamples_per_s": 24.544451151556615,
+    "realtime_factor": 511.3427323240961,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "dsc",
+    "msamples_per_s": 15.547984854379987,
+    "realtime_factor": 1943.4981067974984,
+    "config": "noise including deferred decode slots, 8000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "inmarsat_stdc",
+    "msamples_per_s": 4.5193037491795245,
+    "realtime_factor": 376.6086457649604,
+    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "inmarsat_aero",
+    "msamples_per_s": 2.2053495623782435,
+    "realtime_factor": 45.94478254954674,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "vdl2",
+    "msamples_per_s": 82.55531825487964,
+    "realtime_factor": 825.5531825487964,
+    "config": "noise including deferred decode slots, 100000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "hfdl",
+    "msamples_per_s": 0.8598105188370818,
+    "realtime_factor": 71.65087656975682,
+    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "iridium",
+    "msamples_per_s": 835.2976750324514,
+    "realtime_factor": 3341.1907001298055,
+    "config": "noise including deferred decode slots, 250000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "dect",
+    "msamples_per_s": 79.75657214145512,
+    "realtime_factor": 34.61656776972879,
+    "config": "noise including deferred decode slots, 2304000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "apt",
+    "msamples_per_s": 32.18357511244137,
+    "realtime_factor": 536.3929185406895,
+    "config": "noise including deferred decode slots, 60000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "lrpt",
+    "msamples_per_s": 14.164163490939076,
+    "realtime_factor": 49.18112323242735,
+    "config": "noise including deferred decode slots, 288000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "wefax",
+    "msamples_per_s": 73.7701670274729,
+    "realtime_factor": 6147.513918956075,
+    "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "radiosonde",
+    "msamples_per_s": 16.914034420060045,
+    "realtime_factor": 352.37571708458427,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "lora",
+    "msamples_per_s": 27.13289223933078,
+    "realtime_factor": 108.53156895732312,
+    "config": "noise including deferred decode slots, 250000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "remote_id",
+    "msamples_per_s": 74.65687885122175,
+    "realtime_factor": 18.664219712805437,
+    "config": "noise including deferred decode slots, 4000000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ble",
+    "msamples_per_s": 74.12536470837645,
+    "realtime_factor": 18.531341177094113,
+    "config": "noise including deferred decode slots, 4000000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "wifi_occupancy",
+    "msamples_per_s": 428.46417786679166,
+    "realtime_factor": 21.423208893339584,
+    "config": "noise including deferred decode slots, 20000000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ism_survey",
+    "msamples_per_s": 262.04030318744384,
+    "realtime_factor": 13.102015159372193,
+    "config": "noise including deferred decode slots, 20000000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
     "bench": "__calibration",
-    "msamples_per_s": 900.4737342219196,
+    "msamples_per_s": 849.1363690288924,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"

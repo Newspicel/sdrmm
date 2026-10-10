@@ -64,9 +64,9 @@ pub fn modulate_iq(
     let mut phase = 0.0f64;
     for (index, &bit) in bits.iter().enumerate() {
         let freq = if bit != 0 {
-            freq_offset_hz + shift_hz
-        } else {
             freq_offset_hz - shift_hz
+        } else {
+            freq_offset_hz + shift_hz
         };
         let end = (((index + 1) as f64) * samples_per_bit).round() as usize;
         while iq.len() < end {

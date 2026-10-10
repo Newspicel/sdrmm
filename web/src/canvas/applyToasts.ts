@@ -1,3 +1,4 @@
+import { NOT_CONNECTED } from "../lib/refusals";
 import type { PatchApplyReport, PatchNode } from "../lib/types";
 
 function named(nodes: readonly PatchNode[], id: string): string {
@@ -14,6 +15,10 @@ export function applyToasts(
   }
   return [
     ...(report.refused ?? []).map((refusal) => `${named(nodes, refusal.node)}: ${refusal.reason}`),
-    ...(report.absent ?? []).map((node) => `${named(nodes, node)}: radio not connected`),
+    ...(report.absent ?? []).map((node) => notConnectedToast(nodes, node)),
   ];
+}
+
+export function notConnectedToast(nodes: readonly PatchNode[], id: string): string {
+  return `${named(nodes, id)}: ${NOT_CONNECTED}`;
 }

@@ -9,7 +9,7 @@ use sdrmm_channels::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
 };
 use sdrmm_dsp::{LevelMeter, NoiseBlanker, Squelch};
-use sdrmm_wire::{ChannelSettings, DecoderEvent, PositionFix};
+use sdrmm_wire::{BroadcastStatus, ChannelSettings, DecoderEvent, PositionFix};
 use tokio::sync::broadcast;
 
 use super::{downconvert::Downconverter, dsp_block_len};
@@ -33,7 +33,12 @@ pub(crate) struct RawDecoded {
     pub(crate) device_set: u32,
     pub(crate) channel: u32,
     pub(crate) freq_hz: f64,
-    pub(crate) event: DecoderEvent,
+    pub(crate) payload: RawPayload,
+}
+
+pub(crate) enum RawPayload {
+    Event(DecoderEvent),
+    Broadcast(BroadcastStatus),
 }
 
 pub(crate) struct RawImage {
@@ -53,10 +58,6 @@ pub(crate) struct DecodedSink {
 }
 
 impl DecodedSink {
-    pub(crate) fn note_lost(&self, count: u64) {
-        self.dropped.fetch_add(count, Ordering::Relaxed);
-    }
-
     pub(crate) fn device_set(&self) -> u32 {
         self.device_set
     }
@@ -91,11 +92,19 @@ impl DecodedSink {
     }
 
     pub(crate) fn publish(&self, freq_hz: f64, event: DecoderEvent) {
+        self.send(freq_hz, RawPayload::Event(event));
+    }
+
+    pub(crate) fn publish_broadcast(&self, freq_hz: f64, status: BroadcastStatus) {
+        self.send(freq_hz, RawPayload::Broadcast(status));
+    }
+
+    fn send(&self, freq_hz: f64, payload: RawPayload) {
         let record = RawDecoded {
             device_set: self.device_set,
             channel: self.channel,
             freq_hz,
-            event,
+            payload,
         };
         if self.tx.try_send(record).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
@@ -127,6 +136,7 @@ pub(crate) struct ChannelSinks {
     pub(crate) level_db: Arc<AtomicU32>,
     pub(crate) peak_db: Arc<AtomicU32>,
     pub(crate) squelch_db: Arc<AtomicU32>,
+    pub(crate) shift_hz: Arc<AtomicU64>,
 }
 
 pub(crate) struct ChannelHost {
@@ -202,7 +212,8 @@ impl ChannelHost {
             settings.squelch.manual_level_db().unwrap_or(0.0),
             SQUELCH_HYSTERESIS_DB,
             SQUELCH_HOLD_S,
-        );
+        )
+        .with_guard_band(band_low_hz, band_high_hz);
         squelch.set_auto_margin_db(settings.squelch.auto_margin_db());
         let publisher =
             ChannelPublisher::new(input_rate, device_rate, settings, sinks.clone(), decoded)
@@ -354,6 +365,9 @@ impl ChannelHost {
         selected: Option<&[Complex<f32>]>,
     ) {
         self.ramp_doppler(input.len());
+        self.sinks
+            .shift_hz
+            .store(self.doppler.shift_hz.to_bits(), Ordering::Relaxed);
         self.follow_center(center_hz);
         if !self.in_band {
             self.sinks
@@ -391,7 +405,7 @@ impl ChannelHost {
             .store(self.meter.peak_db().to_bits(), Ordering::Relaxed);
         let baseband_start = self.baseband_pos;
         self.sink_baseband();
-        let open = !self.squelched || self.squelch.process(&self.filtered);
+        let open = !self.squelched || self.squelch.process(&self.filtered, &self.scratch);
         self.sinks.squelch_db.store(
             if self.squelched {
                 self.squelch.threshold_db().to_bits()
@@ -624,6 +638,7 @@ mod tests {
             level_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
             peak_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
             squelch_db: Arc::new(AtomicU32::new(f32::NAN.to_bits())),
+            shift_hz: Arc::new(AtomicU64::new(0.0_f64.to_bits())),
         }
     }
 
@@ -1423,6 +1438,12 @@ mod tests {
         assert_eq!(
             host.frequency_hz, CENTER,
             "the tuned frequency stays the published one"
+        );
+        host.process_and_flush(&tone(0.0, 0.1, BLOCK), CENTER);
+        assert_eq!(
+            f64::from_bits(host.sinks.shift_hz.load(Ordering::Relaxed)),
+            3_000.0,
+            "the shift is published as live state"
         );
     }
 

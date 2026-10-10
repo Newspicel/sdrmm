@@ -243,7 +243,7 @@ mod tests {
         registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
         let engine = Engine::with_registry(registry, None);
         let set = engine
-            .create_device_set("virtual:siggen")
+            .create_device_set("virtual:band")
             .expect("open the virtual radio");
         let channel = engine
             .add_channel(
@@ -264,7 +264,6 @@ mod tests {
             id: "channel:adsb".to_owned(),
             body: NodeBody::Channel(ChannelNode {
                 channel_type: "adsb".to_owned(),
-                record_calls: false,
                 tuning_locked: false,
             }),
             position: Position { x: 0.0, y: 0.0 },
@@ -294,7 +293,7 @@ mod tests {
         device.device = Some(DeviceRef {
             backend: "virtual".to_owned(),
             serial: None,
-            key: Some("siggen".to_owned()),
+            key: Some("band".to_owned()),
         });
         let id = store.create_workspace("bench", &snapshot).expect("create");
         store.activate_workspace(id).expect("activate");

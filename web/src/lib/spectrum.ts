@@ -9,6 +9,7 @@ export interface SpectrumSocket {
 }
 
 export const SPECTRUM_FPS = 30;
+export const SPECTRUM_HIDDEN_FPS = 1;
 export const SPECTRUM_BINS = 1024;
 export const SPECTRUM_MAX_BINS = 4096;
 
@@ -65,6 +66,7 @@ export interface RowMeta {
   spanHz: number;
   dbMin: number;
   dbMax: number;
+  floorDb: number;
   at: number;
 }
 
@@ -109,6 +111,7 @@ class History {
       spanHz: frame.spanHz,
       dbMin: frame.dbMin,
       dbMax: frame.dbMax,
+      floorDb: frame.floorDb,
       at: Date.now(),
     };
     this.write = (this.write + 1) % SPECTRUM_HISTORY_ROWS;
@@ -144,6 +147,7 @@ export class SpectrumHub {
   private unsubscribes: Unsubscribe[] = [];
   private readonly lanes = new Map<string, Watched>();
   private readonly ids = new Map<number, string>();
+  private hidden = false;
 
   private readonly onFrame = (frame: SpectrumFrame): void => {
     const key = this.ids.get(frame.streamId);
@@ -229,6 +233,16 @@ export class SpectrumHub {
     return () => this.release(key, { deviceSet, stream }, listener);
   }
 
+  setVisible(visible: boolean): void {
+    if (this.hidden === !visible) {
+      return;
+    }
+    this.hidden = !visible;
+    for (const lane of this.watched()) {
+      this.send(lane, true);
+    }
+  }
+
   history(deviceSet: number, stream: number): SpectrumHistory {
     return (
       this.lanes.get(laneKey(deviceSet, stream))?.history.read() ?? {
@@ -290,7 +304,7 @@ export class SpectrumHub {
             type: "SubscribeSpectrum",
             data: {
               device_set: lane.deviceSet,
-              fps: SPECTRUM_FPS,
+              fps: this.hidden ? SPECTRUM_HIDDEN_FPS : SPECTRUM_FPS,
               bins,
               stream: lane.stream,
             },

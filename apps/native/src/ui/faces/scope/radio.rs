@@ -226,7 +226,7 @@ mod tests {
                 "frequency_hz": hz,
                 "params": { "type": type_id, "settings": {} }
             },
-            "out_of_band": false
+            "out_of_band": null
         }))
         .expect("a channel")
     }
@@ -323,13 +323,13 @@ mod tests {
                     NodeBody::Device(DeviceNode {
                         device: None,
                         locked_streams: vec![1],
+                        split_tuning: false,
                     }),
                 ),
                 node(
                     "nfm",
                     NodeBody::Channel(ChannelNode {
                         channel_type: String::from("nfm"),
-                        record_calls: false,
                         tuning_locked: true,
                     }),
                 ),

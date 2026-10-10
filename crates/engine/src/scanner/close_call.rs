@@ -1,3 +1,4 @@
+use super::floor::NoiseFloor;
 use crate::runtime::SpectrumSnapshot;
 
 /// The strongest thing on the air in one block, and how far it stands above everything else.
@@ -9,13 +10,9 @@ pub(crate) struct Peak {
 }
 
 /// Finds the loudest carrier in a block without being told where to look.
-///
-/// The noise floor is the median bin rather than the mean: a strong signal drags a mean up towards
-/// itself and hides behind the raised floor, while a median is unmoved by anything occupying a
-/// minority of the span.
 #[derive(Default)]
 pub(crate) struct CloseCall {
-    scratch: Vec<f32>,
+    floor: NoiseFloor,
 }
 
 impl CloseCall {
@@ -24,20 +21,11 @@ impl CloseCall {
         snapshot: &SpectrumSnapshot,
         margin_db: f32,
     ) -> Option<Peak> {
+        let floor_db = self.floor.of(snapshot)?;
         let n = snapshot.db.len();
-        if n == 0 || !snapshot.span_hz.is_finite() || snapshot.span_hz <= 0.0 {
-            return None;
-        }
         let guard = snapshot.lo_guard();
-        let live = |i: usize| !guard.as_ref().is_some_and(|g| g.contains(&i));
-
-        self.scratch.clear();
-        self.scratch
-            .extend((0..n).filter(|&i| live(i)).map(|i| snapshot.db[i]));
-        let floor_db = median(&mut self.scratch)?;
-
         let (bin, db) = (0..n)
-            .filter(|&i| live(i))
+            .filter(|i| !guard.as_ref().is_some_and(|g| g.contains(i)))
             .map(|i| (i, snapshot.db[i]))
             .fold((0usize, f32::NEG_INFINITY), |best, next| {
                 if next.1 > best.1 { next } else { best }
@@ -52,15 +40,6 @@ impl CloseCall {
             floor_db,
         })
     }
-}
-
-fn median(values: &mut [f32]) -> Option<f32> {
-    if values.is_empty() {
-        return None;
-    }
-    let mid = values.len() / 2;
-    let (_, at, _) = values.select_nth_unstable_by(mid, f32::total_cmp);
-    at.is_finite().then_some(*at)
 }
 
 #[cfg(test)]

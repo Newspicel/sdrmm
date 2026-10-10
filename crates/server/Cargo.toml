@@ -12,7 +12,7 @@ workspace = true
 
 # Passthrough to the engine's deliberate minimal-build gates.
 [features]
-default = ["soapy", "sdrplay", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "ad936x", "net-client", "gpu-fft"]
+default = ["soapy", "sdrplay", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "espsdr", "ad936x", "net-client", "gpu-fft"]
 soapy = ["sdrmm-engine/soapy", "dep:sdrmm-device-soapy"]
 sdrplay = ["sdrmm-engine/sdrplay", "dep:sdrmm-device-sdrplay"]
 cr8 = ["sdrmm-engine/cr8", "dep:sdrmm-device-cr8"]
@@ -20,17 +20,20 @@ rtlsdr = ["sdrmm-engine/rtlsdr"]
 hackrf = ["sdrmm-engine/hackrf"]
 airspy = ["sdrmm-engine/airspy"]
 airspyhf = ["sdrmm-engine/airspyhf"]
+espsdr = ["sdrmm-engine/espsdr"]
 ad936x = ["sdrmm-engine/ad936x"]
 net-client = ["sdrmm-engine/net-client"]
 gpu-fft = ["sdrmm-engine/gpu-fft"]
+probe = ["sdrmm-engine/probe"]
 
 [dependencies]
 tun-rs.workspace = true
 local-ip-address = "0.6"
-sdrmm-wire.workspace = true
+sdrmm-wire = { workspace = true, features = ["pin"] }
 sdrmm-engine.workspace = true
 sdrmm-dsp.workspace = true
 sdrmm-orbit.workspace = true
+sdrmm-channels.workspace = true
 sdrmm-device.workspace = true
 sdrmm-device-soapy = { workspace = true, optional = true }
 sdrmm-device-sdrplay = { workspace = true, optional = true }
@@ -38,6 +41,7 @@ sdrmm-device-cr8 = { workspace = true, optional = true }
 sdrmm-cps.workspace = true
 sdrmm-recorder.workspace = true
 sdrmm-tools.workspace = true
+sdrmm-tunnel.workspace = true
 
 # `macros` for the FromRequest/FromRequestParts derives that remap extractor rejections
 # onto the ApiError contract.
@@ -45,7 +49,6 @@ axum = { workspace = true, features = ["ws", "macros"] }
 axum-server.workspace = true
 rustls.workspace = true
 rcgen.workspace = true
-tower.workspace = true
 tower-http.workspace = true
 futures.workspace = true
 reqwest.workspace = true
@@ -64,6 +67,10 @@ serde_json.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
 
+mdns-sd.workspace = true
+getrandom.workspace = true
+gethostname.workspace = true
+
 rusqlite.workspace = true
 jiff.workspace = true
 sha2.workspace = true
@@ -73,6 +80,8 @@ flate2.workspace = true
 png.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true
+whoami = "2.1.3"
 
 [build-dependencies]
 flate2.workspace = true
@@ -90,7 +99,8 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "ti
 sdrmm-device-virtual.workspace = true
 sdrmm-device-recording.workspace = true
 sdrmm-device-siggen.workspace = true
-sdrmm-channels = { workspace = true, features = ["test-signals"] }
+sdrmm-channels = { workspace = true, features = ["synth"] }
+sdrmm-dsp = { workspace = true, features = ["test-scene"] }
 tokio-tungstenite.workspace = true
 serialport.workspace = true
 num-complex.workspace = true

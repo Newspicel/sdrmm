@@ -4,18 +4,24 @@ import {
   formatLevel,
   gateDb,
   gateOpen,
+  heardHz,
   LEVEL_FLOOR_DB,
   levelUnit,
   useLevelStore,
 } from "./levels";
 import type { ChannelLevel, ServerEvent } from "./types";
 
-function update(deviceSet: number, levels: [number, number, number][]): ServerEvent {
+function update(
+  deviceSet: number,
+  levels: [number, number, number][],
+  lanes: [number, number][] = [],
+): ServerEvent {
   return {
     type: "ChannelLevels",
     data: {
       device_set: deviceSet,
       levels: levels.map(([channel, level_db, peak_db]) => ({ channel, level_db, peak_db })),
+      lanes: lanes.map(([stream, peak_db]) => ({ stream, peak_db })),
     },
   };
 }
@@ -28,6 +34,24 @@ describe("useLevelStore", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("keeps the lane peaks of a radio beside its channel levels", () => {
+    useLevelStore.getState().observe(
+      update(
+        1,
+        [],
+        [
+          [0, -6],
+          [1, -20],
+        ],
+      ),
+    );
+    vi.advanceTimersByTime(FLUSH_MS);
+    expect(useLevelStore.getState().lanesByDeviceSet[1]).toEqual({ 0: -6, 1: -20 });
+
+    useLevelStore.getState().clear(1);
+    expect(useLevelStore.getState().lanesByDeviceSet[1]).toBeUndefined();
   });
 
   it("publishes a reading once the flush interval has passed", () => {
@@ -91,7 +115,7 @@ describe("useLevelStore", () => {
   });
 
   it("ignores events that are not levels", () => {
-    useLevelStore.getState().observe({ type: "Hello", data: { revision: 1 } });
+    useLevelStore.getState().observe({ type: "Hello", data: { revision: 1, protocol: 1 } });
     vi.advanceTimersByTime(FLUSH_MS);
     expect(useLevelStore.getState().byDeviceSet).toEqual({});
   });
@@ -148,5 +172,14 @@ describe("formatLevel", () => {
     expect(formatLevel(undefined)).toBe("-");
     expect(formatLevel(LEVEL_FLOOR_DB)).toBe("-");
     expect(formatLevel(Number.NEGATIVE_INFINITY)).toBe("-");
+  });
+});
+
+describe("heardHz", () => {
+  it("adds the live shift a controller steers the decoder by", () => {
+    const level: ChannelLevel = { channel: 1, level_db: -40, peak_db: -30, shift_hz: 8_200.4 };
+    expect(heardHz(437_800_000, level)).toBe(437_808_200);
+    expect(heardHz(437_800_000, { ...level, shift_hz: null })).toBe(437_800_000);
+    expect(heardHz(437_800_000, undefined)).toBe(437_800_000);
   });
 });

@@ -18,22 +18,22 @@ use sdrmm_device_siggen::SigGenDriver;
 use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_recorder::{data_path, meta_path};
 use sdrmm_wire::{
-    AudioRecordingStatus, AudioRoute, Capabilities, ChannelInfo, ChannelSettings, DecodedRecord,
-    DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus, DeviceSettings, NetworkExportSettings,
-    NetworkExportStatus, PositionFix, RecordingStatus, ServerEvent, SettingsRefused, StateScope,
-    StateSnapshot, StreamScope, TrunkSystemStatus,
+    AudioRecordingStatus, AudioRoute, BandMiss, Capabilities, ChannelInfo, ChannelSettings,
+    DecodedRecord, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus, DeviceSettings, HeldLane,
+    NetworkExportSettings, NetworkExportStatus, PositionFix, RecordingStatus, ServerEvent,
+    SettingsRefused, StateScope, StateSnapshot, StreamScope, TrunkSystemStatus, VirtualLane,
 };
 use tokio::sync::broadcast;
 
-mod arrays;
+pub mod array;
+mod array_ops;
 pub mod audio;
 mod audio_fx;
 pub mod audio_recording;
 mod capture_ops;
 mod capture_ring;
 mod channel_ops;
-pub mod coherent;
-mod coherent_ops;
+mod denoise_models;
 mod device_ops;
 mod discovery;
 mod doppler;
@@ -44,6 +44,7 @@ mod hotplug;
 mod hunt;
 pub mod image;
 pub mod iq;
+mod lanes;
 mod metrics;
 mod network_export;
 pub mod occupancy;
@@ -57,13 +58,14 @@ pub mod runtime;
 pub mod scanner;
 mod sinks;
 mod spectrum;
-mod stitching;
 mod streams;
 pub mod symbols;
 mod time_machine;
 pub mod trunking;
 pub mod video;
+pub use array::{ArrayEvent, ArraySpec, LaneRef, ProcessorAction, ProcessorSpec};
 pub use audio::{AudioPacket, PcmBlock, PcmPayload};
+pub use denoise_models::DenoiseModels;
 pub use doppler::Doppler;
 pub use image::ImageCapture;
 pub use iq::{IQ_BLOCK_SAMPLES, IQ_BLOCKS_PER_SEC, IqBlock};
@@ -71,7 +73,6 @@ pub use placement::{Allocation, Lane, Placeable, Placement};
 pub(crate) use planning::{dc_block, descriptor_for};
 pub use recording::FinalizedRecording;
 pub use runtime::SpectrumSnapshot;
-pub use sdrmm_device_array::ArrayCatalog;
 pub use symbols::{SYMBOL_BLOCKS_PER_SEC, SymbolBlock};
 pub use trunking::TrunkSystem;
 pub use video::{VideoPacket, VideoPicture};
@@ -84,6 +85,7 @@ use crate::{
     recording::RecordingShared,
     runtime::{
         CaptureRuntime, ChannelSinks, DecodedSink, DeviceRuntime, DspCommand, RawDecoded, RawImage,
+        RawPayload,
     },
     scanner::ScannerState,
     sinks::ChannelBasebandRecording,
@@ -92,25 +94,23 @@ use crate::{
 const VIRTUAL_PRIORITY: u8 = 10;
 #[cfg(feature = "soapy")]
 const SOAPY_PRIORITY: u8 = 20;
-// Above Soapy so a host-installed SoapySDRPlay3 loses the dedup for a receiver this driver
-// already speaks to directly.
 #[cfg(feature = "sdrplay")]
 const SDRPLAY_PRIORITY: u8 = 25;
-// The USB backends speak to their radios directly and are hidden from Soapy's enumeration, so
-// this rank only settles a tie against a driver that reports the same serial by another route.
 #[cfg(any(
     feature = "cr8",
     feature = "rtlsdr",
     feature = "hackrf",
+    feature = "airspy",
+    feature = "airspyhf",
+    feature = "espsdr",
     feature = "ad936x"
 ))]
 const NATIVE_PRIORITY: u8 = 25;
 #[cfg(feature = "net-client")]
 const NET_PRIORITY: u8 = 30;
 
-/// A composite the operator described by hand beats anything discovered, because it is the only
-/// thing that knows those radios belong together.
 const EVENT_CHANNEL_CAP: usize = 256;
+const ARRAY_EVENT_CAP: usize = 256;
 const DECODED_QUEUE_CAP: usize = 4096;
 const DECODED_CHANNEL_CAP: usize = 1024;
 const DEFAULT_CENTER_HZ: f64 = 100_000_000.0;
@@ -124,8 +124,6 @@ pub fn channel_types() -> Vec<sdrmm_wire::ChannelDescriptor> {
     sdrmm_channels::descriptors()
 }
 
-/// The SoapySDR driver names this build speaks to over its own USB stack, and therefore hides
-/// from Soapy's enumeration so one radio is never listed twice.
 #[must_use]
 pub fn soapy_handled_natively() -> Vec<&'static str> {
     [
@@ -203,6 +201,11 @@ pub fn builtin_registry_accelerated(
         NATIVE_PRIORITY,
         Box::new(sdrmm_device_airspyhf::AirspyHfDriver::new()),
     );
+    #[cfg(feature = "espsdr")]
+    registry.register(
+        NATIVE_PRIORITY,
+        Box::new(sdrmm_device_espsdr::EspSdrDriver::new()),
+    );
     #[cfg(feature = "ad936x")]
     registry.register(
         NATIVE_PRIORITY,
@@ -221,6 +224,10 @@ pub fn builtin_registry_accelerated(
         registry.register(
             NET_PRIORITY,
             Box::new(sdrmm_device_sdrconnect::SdrConnectDriver::new()),
+        );
+        registry.register(
+            NET_PRIORITY,
+            Box::new(sdrmm_device_kiwisdr::KiwiSdrDriver::new()),
         );
     }
     registry
@@ -254,15 +261,34 @@ pub enum EngineError {
     Scan(String),
     #[error("occupancy: {0}")]
     Occupancy(String),
-    #[error("coherent: {0}")]
-    Coherent(String),
+    #[error("{0}")]
+    Processor(String),
+    #[error("{0}")]
+    Array(sdrmm_wire::ArrayFailure),
+    #[error("array {0} not found")]
+    ArrayNotFound(String),
+    #[error("processor {0} not found")]
+    ProcessorNotFound(String),
+    #[error("Tuned by {array}")]
+    Held { array: String },
+}
+
+impl From<sdrmm_wire::ArrayFailure> for EngineError {
+    fn from(failure: sdrmm_wire::ArrayFailure) -> Self {
+        Self::Array(failure)
+    }
 }
 
 impl EngineError {
     #[must_use]
     pub fn is_not_found(&self) -> bool {
-        matches!(self, Self::DeviceSetNotFound(_) | Self::ChannelNotFound(..))
-            || matches!(self, Self::Device(DeviceError::NotFound(_)))
+        matches!(
+            self,
+            Self::DeviceSetNotFound(_)
+                | Self::ChannelNotFound(..)
+                | Self::ArrayNotFound(_)
+                | Self::ProcessorNotFound(_)
+        ) || matches!(self, Self::Device(DeviceError::NotFound(_)))
     }
 
     #[must_use]
@@ -277,7 +303,6 @@ impl EngineError {
                 | Self::Recording(_)
                 | Self::NetworkExport(_)
                 | Self::Scan(_)
-                | Self::Coherent(_)
                 | Self::StreamOutOfRange { .. }
         )
     }
@@ -286,7 +311,11 @@ impl EngineError {
     pub fn is_conflict(&self) -> bool {
         matches!(
             self,
-            Self::DeviceAlreadyOpen(..) | Self::Device(DeviceError::InUse(_))
+            Self::DeviceAlreadyOpen(..)
+                | Self::Device(DeviceError::InUse(_))
+                | Self::Processor(_)
+                | Self::Array(_)
+                | Self::Held { .. }
         )
     }
 }
@@ -309,63 +338,16 @@ fn center_of(settings: &DeviceSettings, stream: u32, scope: &StreamScope) -> f64
         .unwrap_or(DEFAULT_CENTER_HZ)
 }
 
-fn tune_together(delta: &mut DeviceSettings, group: &[u32]) {
-    let Some(leader) = delta
-        .streams
-        .iter()
-        .filter(|entry| group.contains(&entry.stream))
-        .filter(|entry| entry.center_hz.is_some() || entry.tuning.is_some())
-        .min_by_key(|entry| entry.stream)
-        .map(|entry| (entry.center_hz, entry.tuning))
-    else {
-        return;
-    };
-    for lane in group {
-        let entry = match delta.streams.iter().position(|entry| entry.stream == *lane) {
-            Some(at) => &mut delta.streams[at],
-            None => {
-                delta.streams.push(sdrmm_wire::StreamSettings {
-                    stream: *lane,
-                    ..sdrmm_wire::StreamSettings::default()
-                });
-                let Some(last) = delta.streams.last_mut() else {
-                    return;
-                };
-                last
-            }
-        };
-        if leader.0.is_some() {
-            entry.center_hz = leader.0;
-        }
-        if leader.1.is_some() {
-            entry.tuning = leader.1;
-        }
-    }
-}
-
-fn retuned_to(capabilities: &Capabilities, stream: u32, center_hz: f64) -> DeviceSettings {
-    if capabilities.per_stream.tuning {
-        DeviceSettings {
-            streams: vec![sdrmm_wire::StreamSettings {
-                stream,
-                center_hz: Some(center_hz),
-                ..sdrmm_wire::StreamSettings::default()
-            }],
-            ..DeviceSettings::default()
-        }
-    } else {
-        DeviceSettings {
-            center_hz: Some(center_hz),
-            ..DeviceSettings::default()
-        }
-    }
-}
-
 fn ids_of(devices: &[DeviceInfo]) -> Vec<String> {
     devices.iter().map(DeviceInfo::id).collect()
 }
 
-/// Sorts a fault into what a reader can do about it, leaving the message itself for the details.
+fn sorted_ids(devices: &[DeviceInfo]) -> Vec<String> {
+    let mut ids = ids_of(devices);
+    ids.sort();
+    ids
+}
+
 fn fault_kind(error: &DeviceError) -> DeviceFault {
     match error {
         DeviceError::Disconnected(_) => DeviceFault::Unplugged,
@@ -431,6 +413,7 @@ impl ChannelMedia {
                 level_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
                 peak_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
                 squelch_db: Arc::new(AtomicU32::new(f32::NAN.to_bits())),
+                shift_hz: Arc::new(AtomicU64::new(0.0_f64.to_bits())),
             },
             audio_tx,
             encoder: Some(encoder),
@@ -583,7 +566,6 @@ impl RecordingState {
 }
 
 struct DeviceSetState {
-    array: Option<arrays::ArrayBinding>,
     info: DeviceInfo,
     capabilities: Capabilities,
     settings: DeviceSettings,
@@ -606,13 +588,45 @@ struct DeviceSetState {
     cmd_txs: Vec<mpsc::Sender<DspCommand>>,
     overruns: Vec<Arc<AtomicU64>>,
     overruns_seen: u64,
+    overruns_polled: Option<Instant>,
+    loss: Option<f32>,
     stalls: Vec<Arc<AtomicU64>>,
     clip_meters: Vec<Arc<runtime::clip::ClipMeter>>,
     clipping: Vec<u32>,
     agc_gains: Vec<sdrmm_wire::AgcGain>,
     playback: Option<Arc<PlaybackShared>>,
-    coherent: Option<crate::coherent_ops::CoherentState>,
     runtime: Arc<DeviceRuntime>,
+    held: BTreeMap<u32, String>,
+    virtual_lanes: BTreeMap<u32, VirtualLaneState>,
+}
+
+struct VirtualLaneState {
+    node: String,
+    port: String,
+    center_hz: f64,
+    sample_rate: f64,
+    cmd_tx: mpsc::Sender<DspCommand>,
+}
+
+impl VirtualLaneState {
+    fn project(&self, stream: u32) -> VirtualLane {
+        VirtualLane {
+            stream,
+            node: self.node.clone(),
+            port: self.port.clone(),
+            center_hz: self.center_hz,
+            sample_rate: self.sample_rate,
+        }
+    }
+}
+
+fn loss_share(lost: u64, span_secs: f64, samples_per_sec: f64) -> Option<f32> {
+    let carried = span_secs * samples_per_sec;
+    if lost == 0 || carried <= 0.0 {
+        return None;
+    }
+    let share = (lost as f64 / carried).clamp(0.01, 1.0);
+    Some(((share * 100.0).round() / 100.0) as f32)
 }
 
 impl DeviceSetState {
@@ -620,10 +634,28 @@ impl DeviceSetState {
         self.capabilities.shifted_by(-self.settings.offset())
     }
 
-    /// Whether the radio's window covers what this decoder is listening for. A decoder keeps its
-    /// frequency when the radio moves off it, so this is a passing state, not a broken patch.
     fn reaches_channel(&self, channel: &ChannelInfo) -> bool {
         self.hears(channel.stream, &channel.settings)
+    }
+
+    fn band_miss(&self, channel: &ChannelInfo) -> Option<BandMiss> {
+        (!self.reaches_channel(channel)).then(|| {
+            planning::band_miss(
+                &self.capabilities,
+                self.lane_rate(channel.stream),
+                self.follows_decoders(channel.stream),
+                &channel.settings,
+            )
+        })
+    }
+
+    fn follows_decoders(&self, stream: u32) -> bool {
+        !self.virtual_lanes.contains_key(&stream)
+            && !self.held.contains_key(&stream)
+            && self
+                .settings
+                .for_stream(stream, &self.capabilities.per_stream)
+                .tunes_itself()
     }
 
     fn hears(&self, stream: u32, settings: &ChannelSettings) -> bool {
@@ -631,14 +663,27 @@ impl DeviceSetState {
     }
 
     fn hears_with(&self, tuning: &DeviceSettings, stream: u32, settings: &ChannelSettings) -> bool {
-        if self.is_extra_lane(stream) {
-            return planning::hears_at(
-                self.lane_center(tuning, stream),
-                self.lane_rate(tuning, stream),
-                settings,
-            );
+        match self.virtual_lanes.get(&stream) {
+            Some(lane) => planning::hears_at(lane.center_hz, lane.sample_rate, settings),
+            None => planning::hears(&self.capabilities, tuning, stream, settings),
         }
-        planning::hears(&self.capabilities, tuning, stream, settings)
+    }
+
+    fn lane_center(&self, stream: u32) -> f64 {
+        self.virtual_lanes.get(&stream).map_or_else(
+            || center_of(&self.settings, stream, &self.capabilities.per_stream),
+            |lane| lane.center_hz,
+        )
+    }
+
+    fn lane_rate(&self, stream: u32) -> f64 {
+        self.virtual_lanes
+            .get(&stream)
+            .map_or_else(|| sample_rate_of(&self.settings), |lane| lane.sample_rate)
+    }
+
+    fn holder(&self) -> Option<&str> {
+        self.held.values().next().map(String::as_str)
     }
 
     fn project(&self, id: u32) -> DeviceSet {
@@ -653,7 +698,7 @@ impl DeviceSetState {
                 .channels
                 .iter()
                 .map(|channel| ChannelInfo {
-                    out_of_band: !self.reaches_channel(channel),
+                    out_of_band: self.band_miss(channel),
                     audio_recordings: self.audio_recording_statuses(channel.id),
                     baseband_recording: self
                         .baseband_recordings
@@ -667,6 +712,7 @@ impl DeviceSetState {
                 })
                 .collect(),
             overruns,
+            loss: self.loss,
             clipping: self.clipping.clone(),
             error: self.error.clone(),
             fault: self.fault,
@@ -684,7 +730,19 @@ impl DeviceSetState {
             hunts: self.hunt_statuses(),
             playback: self.playback.as_deref().map(PlaybackShared::status),
             agc_gains: self.agc_gains.clone(),
-            extra_lane: self.extra_lane(),
+            virtual_lanes: self
+                .virtual_lanes
+                .iter()
+                .map(|(stream, lane)| lane.project(*stream))
+                .collect(),
+            held: self
+                .held
+                .iter()
+                .map(|(stream, array)| HeldLane {
+                    stream: *stream,
+                    array: array.clone(),
+                })
+                .collect(),
         }
     }
 
@@ -702,19 +760,51 @@ impl DeviceSetState {
         statuses
     }
 
-    fn rx_streams(&self) -> u32 {
+    fn physical_streams(&self) -> u32 {
         self.cmd_txs.len() as u32
     }
 
+    fn has_stream(&self, stream: u32) -> bool {
+        stream < self.physical_streams() || self.virtual_lanes.contains_key(&stream)
+    }
+
+    fn out_of_range(&self, stream: u32) -> EngineError {
+        EngineError::StreamOutOfRange {
+            stream,
+            streams: self.physical_streams(),
+        }
+    }
+
     fn check_stream(&self, stream: u32) -> Result<(), EngineError> {
-        if stream < self.rx_streams() {
+        if self.has_stream(stream) {
             Ok(())
         } else {
-            Err(EngineError::StreamOutOfRange {
-                stream,
-                streams: self.rx_streams(),
-            })
+            Err(self.out_of_range(stream))
         }
+    }
+
+    fn check_physical(&self, stream: u32) -> Result<(), EngineError> {
+        if stream < self.physical_streams() {
+            Ok(())
+        } else {
+            Err(self.out_of_range(stream))
+        }
+    }
+
+    fn dsp_sender(&self, stream: u32) -> Result<&mpsc::Sender<DspCommand>, EngineError> {
+        self.cmd_txs
+            .get(stream as usize)
+            .or_else(|| self.virtual_lanes.get(&stream).map(|lane| &lane.cmd_tx))
+            .ok_or_else(|| self.out_of_range(stream))
+    }
+
+    fn loss_since_poll(&mut self, lost: u64, now: Instant) -> Option<f32> {
+        let polled = self.overruns_polled.replace(now)?;
+        loss_share(
+            lost,
+            now.duration_since(polled).as_secs_f64(),
+            sample_rate_of(&self.settings) * f64::from(self.capabilities.rx_streams.max(1)),
+        )
     }
 
     fn overruns_total(&self) -> u64 {
@@ -722,34 +812,6 @@ impl DeviceSetState {
             .iter()
             .map(|counter| counter.load(Ordering::Relaxed))
             .sum()
-    }
-
-    fn coherent_lanes(&self) -> Vec<u32> {
-        self.coherent
-            .as_ref()
-            .map(|coherent| {
-                coherent
-                    .members()
-                    .into_iter()
-                    .map(|lane| lane as u32)
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    fn coherent_centers(&self) -> Vec<f64> {
-        let lanes = self.coherent_lanes();
-        if lanes.is_empty() {
-            return vec![center_of(&self.settings, 0, &self.capabilities.per_stream)];
-        }
-        lanes
-            .iter()
-            .map(|lane| center_of(&self.settings, *lane, &self.capabilities.per_stream))
-            .collect()
-    }
-
-    fn tune_group_together(&self, delta: &mut DeviceSettings) {
-        self.lay_out(delta);
     }
 
     fn runs_agc(&self) -> bool {
@@ -771,8 +833,6 @@ impl DeviceSetState {
             .collect()
     }
 
-    /// Longest gap any lane went without touching its capture ring since the last read, and
-    /// clears it so the next report covers the next window.
     fn take_worst_stall_ms(&self) -> u64 {
         self.stalls
             .iter()
@@ -783,8 +843,8 @@ impl DeviceSetState {
     }
 
     fn send_dsp(&self, stream: u32, cmd: DspCommand) {
-        match self.cmd_txs.get(stream as usize) {
-            Some(cmd_tx) => {
+        match self.dsp_sender(stream) {
+            Ok(cmd_tx) => {
                 if cmd_tx.send(cmd).is_err() {
                     tracing::error!(
                         stream,
@@ -792,11 +852,7 @@ impl DeviceSetState {
                     );
                 }
             }
-            None => tracing::error!(
-                stream,
-                streams = self.rx_streams(),
-                "dsp command for a stream this device set does not have"
-            ),
+            Err(error) => tracing::error!(stream, %error, "dsp command for a missing stream"),
         }
     }
 
@@ -868,14 +924,16 @@ struct Inner {
     pending_faults: HashMap<u32, DeviceError>,
     next_ds_id: u32,
     revision: u64,
+    arrays: BTreeMap<String, array_ops::ArrayState>,
+    processor_index: BTreeMap<String, String>,
+    steer_boxes: BTreeMap<String, Arc<array::SteerMailbox>>,
 }
 
 pub struct Engine {
-    array_edits: Mutex<()>,
     registry: DeviceRegistry,
-    arrays: ArrayCatalog,
     inner: Mutex<Inner>,
     audio_fx: Mutex<audio_fx::AudioFxHub>,
+    denoise_models: Arc<DenoiseModels>,
     event_tx: broadcast::Sender<ServerEvent>,
     fault_tx: mpsc::Sender<(u32, DeviceError)>,
     decoded_tx: mpsc::SyncSender<RawDecoded>,
@@ -890,6 +948,8 @@ pub struct Engine {
     occupancy_sets: Mutex<HashSet<(u32, u32)>>,
     discovery: Mutex<discovery::Discovery>,
     recordings_dir: Option<PathBuf>,
+    array_edits: Mutex<()>,
+    array_tx: broadcast::Sender<ArrayEvent>,
 }
 
 impl Engine {
@@ -901,20 +961,6 @@ impl Engine {
 
     #[must_use]
     pub fn with_registry(registry: DeviceRegistry, recordings_dir: Option<PathBuf>) -> Arc<Self> {
-        Self::with_arrays(registry, recordings_dir, ArrayCatalog::new())
-    }
-
-    #[must_use]
-    pub fn arrays(&self) -> &ArrayCatalog {
-        &self.arrays
-    }
-
-    #[must_use]
-    pub fn with_arrays(
-        registry: DeviceRegistry,
-        recordings_dir: Option<PathBuf>,
-        arrays: ArrayCatalog,
-    ) -> Arc<Self> {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAP);
         let (fault_tx, fault_rx) = mpsc::channel();
         let (decoded_tx, decoded_rx) = mpsc::sync_channel(DECODED_QUEUE_CAP);
@@ -923,12 +969,12 @@ impl Engine {
         let (image_tx, _) = broadcast::channel(image::IMAGE_CHANNEL_CAP);
         let (trunk_tx, trunk_rx) = mpsc::channel();
         let trunk_status = Arc::new(Mutex::new(Vec::new()));
+        let denoise_models = Arc::new(DenoiseModels::default());
         let engine = Arc::new(Self {
-            array_edits: Mutex::new(()),
             registry,
-            arrays,
             inner: Mutex::new(Inner::default()),
-            audio_fx: Mutex::new(audio_fx::AudioFxHub::default()),
+            audio_fx: Mutex::new(audio_fx::AudioFxHub::new(Arc::clone(&denoise_models))),
+            denoise_models,
             event_tx,
             fault_tx,
             decoded_tx,
@@ -943,6 +989,8 @@ impl Engine {
             occupancy_sets: Mutex::new(HashSet::new()),
             discovery: Mutex::new(discovery::Discovery::default()),
             recordings_dir,
+            array_edits: Mutex::new(()),
+            array_tx: broadcast::channel(ARRAY_EVENT_CAP).0,
         });
         engine.spawn_fault_drainer(fault_rx);
         engine.spawn_decoded_pump(decoded_rx);
@@ -983,28 +1031,43 @@ impl Engine {
                         tracing::warn!(count, "decoded events dropped: the decoder log is behind");
                         engine.emit(ServerEvent::DecodedLost { count });
                     }
-                    let Some(raw) = raw else { continue };
-                    let at = format!("{:.9}", jiff::Timestamp::now());
-                    let record = DecodedRecord {
-                        origin: None,
-                        sinks: Vec::new(),
-                        device_set: raw.device_set,
-                        channel: raw.channel,
-                        at,
-                        freq_hz: raw.freq_hz,
-                        event: raw.event,
-                    };
-                    if engine.trunk_active.load(Ordering::Relaxed) {
-                        let _ = engine
-                            .trunk_tx
-                            .send(trunking::TrunkInput::Record(Box::new(record.clone())));
+                    if let Some(raw) = raw {
+                        engine.route_raw(raw);
                     }
-                    let _ = engine.decoded_tx_out.send(record);
                 }
             });
         if let Err(e) = spawned {
             tracing::error!("failed to spawn decoder pump: {e}");
         }
+    }
+
+    fn route_raw(&self, raw: RawDecoded) {
+        let event = match raw.payload {
+            RawPayload::Event(event) => event,
+            RawPayload::Broadcast(status) => {
+                self.emit(ServerEvent::BroadcastUpdate {
+                    device_set: raw.device_set,
+                    channel: raw.channel,
+                    status: Box::new(status),
+                });
+                return;
+            }
+        };
+        let record = DecodedRecord {
+            origin: None,
+            sinks: Vec::new(),
+            device_set: raw.device_set,
+            channel: raw.channel,
+            at: format!("{:.9}", jiff::Timestamp::now()),
+            freq_hz: raw.freq_hz,
+            event,
+        };
+        if self.trunk_active.load(Ordering::Relaxed) {
+            let _ = self
+                .trunk_tx
+                .send(trunking::TrunkInput::Record(Box::new(record.clone())));
+        }
+        let _ = self.decoded_tx_out.send(record);
     }
 
     fn spawn_image_pump(self: &Arc<Self>, image_rx: mpsc::Receiver<RawImage>) {
@@ -1066,6 +1129,11 @@ impl Engine {
         self.recordings_dir.as_deref()
     }
 
+    #[must_use]
+    pub fn denoise_models(&self) -> &Arc<DenoiseModels> {
+        &self.denoise_models
+    }
+
     fn spawn_fault_drainer(self: &Arc<Self>, fault_rx: mpsc::Receiver<(u32, DeviceError)>) {
         let weak = Arc::downgrade(self);
         let spawned = std::thread::Builder::new()
@@ -1082,12 +1150,6 @@ impl Engine {
     }
 
     fn mark_device_fault(&self, ds: u32, err: DeviceError) {
-        for array in self.arrays_using(ds) {
-            self.mark_device_fault(
-                array,
-                DeviceError::Io(format!("array member {ds} failed: {err}")),
-            );
-        }
         let mut inner = self.lock();
         if let Some(state) = inner.device_sets.get_mut(&ds) {
             state.status = DeviceSetStatus::Error;
@@ -1119,6 +1181,7 @@ impl Engine {
             let runtime = state.runtime.clone();
             inner.revision += 1;
             drop(inner);
+            self.arrays_lanes_lost(ds);
             for scanner in scanners {
                 scanner.stop_and_join();
             }
@@ -1176,11 +1239,18 @@ impl Engine {
                 let mut gate = hotplug::ProbeGate::default();
                 let pace = hotplug::Pace::start();
                 let mut woken = false;
+                let mut probe_due = None;
                 loop {
                     let Some(engine) = weak.upgrade() else { return };
-                    engine.hotplug_tick(&mut known, &mut missing_once, &mut gate, woken);
+                    let now = Instant::now();
+                    if hotplug::probe_is_due(woken, probe_due, now) {
+                        engine.hotplug_tick(&mut known, &mut missing_once, &mut gate, woken);
+                        probe_due = Some(now + interval);
+                    } else {
+                        engine.sink_tick();
+                    }
                     drop(engine);
-                    woken = pace.wait(interval);
+                    woken = pace.wait(interval.min(hotplug::SINK_POLL));
                 }
             })?;
         Ok(())
@@ -1272,7 +1342,7 @@ impl Engine {
             .device_sets
             .iter()
             .filter(|(_, state)| state.status == DeviceSetStatus::Running)
-            .map(|(id, state)| (*id, state.rx_streams()))
+            .map(|(id, state)| (*id, state.physical_streams()))
             .collect()
     }
 
@@ -1299,12 +1369,14 @@ impl Engine {
     }
 
     pub fn level_tick(&self) {
-        for ds in self.device_sets_with_channels() {
+        for ds in self.device_sets_running() {
             let levels = self.channel_levels(ds);
-            if !levels.is_empty() {
+            let lanes = self.lane_levels(ds);
+            if !levels.is_empty() || !lanes.is_empty() {
                 self.emit(ServerEvent::ChannelLevels {
                     device_set: ds,
                     levels,
+                    lanes,
                 });
             }
         }
@@ -1337,9 +1409,6 @@ impl Engine {
         self.registry.resolve(device_id)
     }
 
-    /// The radios to choose from: what is attached to this machine right now, plus what the last
-    /// network search found. A fresh network search runs behind the answer and announces itself
-    /// when it changes the list, so nobody waits seconds for a list that is mostly already known.
     #[must_use]
     pub fn probe_devices(self: &Arc<Self>) -> Vec<DeviceInfo> {
         let attached = self.registry.probe_all();
@@ -1362,14 +1431,15 @@ impl Engine {
             .name("sdrmm-discovery".to_string())
             .spawn(move || {
                 let Some(engine) = weak.upgrade() else { return };
+                let attached_before = sorted_ids(&engine.registry.probe_all());
                 let found = engine.registry.probe_all_deep();
-                let attached = ids_of(&engine.registry.probe_all());
+                let attached = sorted_ids(&engine.registry.probe_all());
                 let extras = found
                     .into_iter()
                     .filter(|device| !attached.contains(&device.id()))
                     .collect();
-                let changed = engine.lock_discovery().searched(extras, Instant::now());
-                if changed {
+                let extras_changed = engine.lock_discovery().searched(extras, Instant::now());
+                if extras_changed || attached != attached_before {
                     engine.emit(ServerEvent::StateChanged {
                         scope: StateScope::Devices,
                     });
@@ -1389,6 +1459,7 @@ impl Engine {
     #[must_use]
     pub fn snapshot(&self) -> StateSnapshot {
         let trunk_systems = self.trunk_systems();
+        let arrays = self.array_statuses();
         let inner = self.lock();
         StateSnapshot {
             device_sets: inner
@@ -1397,12 +1468,11 @@ impl Engine {
                 .map(|(id, s)| s.project(*id))
                 .collect(),
             trunk_systems,
+            arrays,
             revision: inner.revision,
         }
     }
 
-    /// Whether a radio is tuned where it can hear what a channel would be set to. An automated
-    /// follower asks before opening a receiver, so it backs off instead of leaving a dead one.
     #[must_use]
     pub fn hears(&self, ds: u32, stream: u32, settings: &ChannelSettings) -> bool {
         self.lock()

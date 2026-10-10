@@ -18,6 +18,7 @@ pub enum DecoderFamily {
     Paging,
     Video,
     Broadcast,
+    Weather,
     #[default]
     Utility,
 }
@@ -120,22 +121,38 @@ pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
             navaid_report_limit(),
         ],
         "ils" => vec![navaid_report_limit()],
-        "subghz" => vec![
-            limit("min_pulse_us", 10.0, 2_000.0, 10.0),
-            limit("frame_gap_us", 500.0, 100_000.0, 500.0),
-        ],
+        "wifi_occupancy" | "ism_survey" => vec![limit(
+            "margin_db",
+            f64::from(crate::airtime::MIN_AIRTIME_MARGIN_DB),
+            f64::from(crate::airtime::MAX_AIRTIME_MARGIN_DB),
+            0.5,
+        )],
         "atv" => vec![limit(
             "sound_subcarrier_hz",
             500_000.0,
             7_500_000.0,
             500_000.0,
         )],
-        "datv" => vec![limit(
-            "symbol_rate",
-            MIN_DATV_SYMBOL_RATE,
-            MAX_DATV_SYMBOL_RATE,
-            1_000.0,
-        )],
+        "datv" => vec![
+            limit(
+                "symbol_rate",
+                MIN_DATV_SYMBOL_RATE,
+                MAX_DATV_SYMBOL_RATE,
+                1_000.0,
+            ),
+            limit(
+                "superframe_reference",
+                0.0,
+                f64::from(MAX_SUPERFRAME_CODE),
+                1.0,
+            ),
+            limit(
+                "superframe_payload",
+                0.0,
+                f64::from(MAX_SUPERFRAME_CODE),
+                1.0,
+            ),
+        ],
         "ident" => vec![
             limit(
                 "bandwidth_hz",
@@ -274,12 +291,15 @@ impl Default for NfmParams {
 pub struct AmParams {
     #[serde(default = "default_am_bandwidth_hz")]
     pub bandwidth_hz: f64,
+    #[serde(default)]
+    pub sync: bool,
 }
 
 impl Default for AmParams {
     fn default() -> Self {
         Self {
             bandwidth_hz: default_am_bandwidth_hz(),
+            sync: false,
         }
     }
 }
@@ -406,6 +426,24 @@ impl Default for ErmesParams {
         Self {
             bandwidth_hz: default_pager_bandwidth_hz(),
             invert: false,
+        }
+    }
+}
+
+fn default_eot_bandwidth_hz() -> f64 {
+    12_500.0
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct EotParams {
+    #[serde(default = "default_eot_bandwidth_hz")]
+    pub bandwidth_hz: f64,
+}
+
+impl Default for EotParams {
+    fn default() -> Self {
+        Self {
+            bandwidth_hz: default_eot_bandwidth_hz(),
         }
     }
 }
@@ -623,49 +661,6 @@ impl Default for AcarsParams {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum SubghzModulation {
-    #[default]
-    Ook,
-    Fsk,
-}
-
-fn default_subghz_bandwidth_hz() -> f64 {
-    150_000.0
-}
-
-fn default_subghz_min_pulse_us() -> u32 {
-    30
-}
-
-fn default_subghz_frame_gap_us() -> u32 {
-    5_000
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct SubghzParams {
-    #[serde(default)]
-    pub modulation: SubghzModulation,
-    #[serde(default = "default_subghz_bandwidth_hz")]
-    pub bandwidth_hz: f64,
-    #[serde(default = "default_subghz_min_pulse_us")]
-    pub min_pulse_us: u32,
-    #[serde(default = "default_subghz_frame_gap_us")]
-    pub frame_gap_us: u32,
-}
-
-impl Default for SubghzParams {
-    fn default() -> Self {
-        Self {
-            modulation: SubghzModulation::default(),
-            bandwidth_hz: default_subghz_bandwidth_hz(),
-            min_pulse_us: default_subghz_min_pulse_us(),
-            frame_gap_us: default_subghz_frame_gap_us(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
 pub enum AtvModulation {
     #[default]
     Am,
@@ -842,8 +837,20 @@ impl SstvMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SstvModulation {
+    #[default]
+    Usb,
+    Lsb,
+    Fm,
+    Am,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SstvParams {
+    #[serde(default)]
+    pub modulation: SstvModulation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<SstvMode>,
     #[serde(default = "default_true")]
@@ -855,6 +862,7 @@ pub struct SstvParams {
 impl Default for SstvParams {
     fn default() -> Self {
         Self {
+            modulation: SstvModulation::default(),
             mode: None,
             slant_correction: true,
             keep_partial: true,
@@ -874,6 +882,7 @@ pub enum DabMode {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DabTransmissionMode {
+    Auto,
     #[default]
     I,
     Ii,
@@ -901,6 +910,7 @@ pub enum DatvStandard {
 
 pub const MIN_DATV_SYMBOL_RATE: f64 = 100_000.0;
 pub const MAX_DATV_SYMBOL_RATE: f64 = 4_000_000.0;
+pub const MAX_SUPERFRAME_CODE: u32 = (1 << 20) - 2;
 
 fn default_datv_symbol_rate() -> f64 {
     333_000.0
@@ -963,6 +973,12 @@ pub struct DatvParams {
     #[serde(default)]
     pub superframes: bool,
     #[serde(default)]
+    pub superframe_reference: u32,
+    #[serde(default)]
+    pub superframe_payload: u32,
+    #[serde(default)]
+    pub superframe_search: bool,
+    #[serde(default)]
     pub standard: DatvStandard,
     #[serde(default = "default_datv_symbol_rate")]
     pub symbol_rate: f64,
@@ -982,6 +998,9 @@ impl Default for DatvParams {
             standard: DatvStandard::default(),
             symbol_rate: default_datv_symbol_rate(),
             superframes: false,
+            superframe_reference: 0,
+            superframe_payload: 0,
+            superframe_search: false,
             code_rate: DatvCodeRate::default(),
             roll_off: DatvRollOff::default(),
             program: None,
@@ -993,7 +1012,12 @@ impl Default for DatvParams {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DvbtBandwidth {
+    Khz250,
+    Khz333,
+    Khz500,
+    Mhz1,
     Mhz1_7,
+    Mhz2,
     Mhz5,
     Mhz10,
     Mhz6,
@@ -1005,7 +1029,12 @@ pub enum DvbtBandwidth {
 impl DvbtBandwidth {
     pub const fn hz(self) -> f64 {
         match self {
+            Self::Khz250 => 250_000.0,
+            Self::Khz333 => 333_000.0,
+            Self::Khz500 => 500_000.0,
+            Self::Mhz1 => 1_000_000.0,
             Self::Mhz1_7 => 1_700_000.0,
+            Self::Mhz2 => 2_000_000.0,
             Self::Mhz5 => 5_000_000.0,
             Self::Mhz10 => 10_000_000.0,
             Self::Mhz6 => 6_000_000.0,
@@ -1319,7 +1348,7 @@ fn default_gnss_doppler_hz() -> u32 {
 }
 
 fn default_gnss_threshold() -> f32 {
-    2.5
+    4.0
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -1411,6 +1440,7 @@ pub enum DectBand {
 }
 
 pub const DECT_CARRIER_SPACING_HZ: f64 = 1_728_000.0;
+const DECT_CARRIER_TOLERANCE_HZ: f64 = 50_000.0;
 
 impl DectBand {
     #[must_use]
@@ -1430,6 +1460,23 @@ impl DectBand {
         Some(match self {
             Self::Eu => 1_897_344_000.0 - step,
             Self::Us => 1_921_536_000.0 + step,
+        })
+    }
+
+    #[must_use]
+    pub fn center_hz(self) -> f64 {
+        let last = self.carriers() - 1;
+        match (self.carrier_hz(0), self.carrier_hz(last)) {
+            (Some(first), Some(last)) => (first + last) / 2.0,
+            _ => 0.0,
+        }
+    }
+
+    #[must_use]
+    pub fn carrier_at(self, hz: f64) -> Option<u8> {
+        (0..self.carriers()).find(|&carrier| {
+            self.carrier_hz(carrier)
+                .is_some_and(|center| (center - hz).abs() <= DECT_CARRIER_TOLERANCE_HZ)
         })
     }
 
@@ -1464,11 +1511,21 @@ impl DectSides {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DectSpan {
+    #[default]
+    Carrier,
+    Band,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DectParams {
     #[serde(default)]
     pub band: DectBand,
     #[serde(default)]
     pub sides: DectSides,
+    #[serde(default)]
+    pub span: DectSpan,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -1534,6 +1591,7 @@ pub enum ChannelParams {
     Pocsag(PocsagParams),
     Flex(FlexParams),
     Ermes(ErmesParams),
+    Eot(EotParams),
     Adsb(AdsbParams),
     Ais(AisParams),
     Aprs(AprsParams),
@@ -1542,7 +1600,6 @@ pub enum ChannelParams {
     CwSkimmer(CwSkimmerParams),
     Navtex(NavtexParams),
     Acars(AcarsParams),
-    Subghz(SubghzParams),
     Atv(AtvParams),
     Sstv(SstvParams),
     Dab(DabParams),
@@ -1573,6 +1630,15 @@ pub enum ChannelParams {
     Hfdl(HfdlParams),
     Iridium(IridiumParams),
     Dect(DectParams),
+    Apt(crate::weather::AptParams),
+    Lrpt(crate::weather::LrptParams),
+    Wefax(crate::weather::WefaxParams),
+    Radiosonde(crate::weather::RadiosondeParams),
+    Lora(crate::lora::LoraParams),
+    RemoteId(crate::remote_id::RemoteIdParams),
+    Ble(crate::ble::BleParams),
+    WifiOccupancy(crate::airtime::WifiOccupancyParams),
+    IsmSurvey(crate::airtime::IsmSurveyParams),
 }
 
 impl ChannelParams {
@@ -1587,6 +1653,7 @@ impl ChannelParams {
             Self::Pocsag(_) => "pocsag",
             Self::Flex(_) => "flex",
             Self::Ermes(_) => "ermes",
+            Self::Eot(_) => "eot",
             Self::Adsb(_) => "adsb",
             Self::Ais(_) => "ais",
             Self::Aprs(_) => "aprs",
@@ -1595,7 +1662,6 @@ impl ChannelParams {
             Self::CwSkimmer(_) => "cw_skimmer",
             Self::Navtex(_) => "navtex",
             Self::Acars(_) => "acars",
-            Self::Subghz(_) => "subghz",
             Self::Atv(_) => "atv",
             Self::Sstv(_) => "sstv",
             Self::Dab(_) => "dab",
@@ -1626,6 +1692,15 @@ impl ChannelParams {
             Self::Hfdl(_) => "hfdl",
             Self::Iridium(_) => "iridium",
             Self::Dect(_) => "dect",
+            Self::Apt(_) => "apt",
+            Self::Lrpt(_) => "lrpt",
+            Self::Wefax(_) => "wefax",
+            Self::Radiosonde(_) => "radiosonde",
+            Self::Lora(_) => "lora",
+            Self::RemoteId(_) => "remote_id",
+            Self::Ble(_) => "ble",
+            Self::WifiOccupancy(_) => "wifi_occupancy",
+            Self::IsmSurvey(_) => "ism_survey",
         }
     }
 }
@@ -1726,8 +1801,13 @@ pub fn home_frequency_hz(type_id: &str) -> Option<f64> {
         "vor" => 113_000_000.0,
         "ils" => 110_300_000.0,
         "dect" => 1_897_344_000.0,
+        "apt" => 137_100_000.0,
+        "lrpt" => 137_900_000.0,
         "radio_clock" => 77_500.0,
         "dab" => 227_360_000.0,
+        "remote_id" | "ble" => 2_426_000_000.0,
+        "wifi_occupancy" => 2_437_000_000.0,
+        "ism_survey" => 2_442_000_000.0,
         _ => return None,
     };
     Some(hz)
@@ -1826,6 +1906,43 @@ impl<'de> Deserialize<'de> for ChannelSettings {
     }
 }
 
+pub const RETIRED_CHANNEL_TYPES: &[&str] = &["subghz"];
+
+#[must_use]
+pub fn retired_channel_type(type_id: &str) -> bool {
+    RETIRED_CHANNEL_TYPES.contains(&type_id)
+}
+
+pub(crate) fn states_retired_params(settings: &serde_json::Value) -> bool {
+    settings
+        .get("params")
+        .and_then(|params| params.get("type"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(retired_channel_type)
+}
+
+pub(crate) fn current_channel_settings<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<ChannelSettings>, D::Error> {
+    Vec::<serde_json::Value>::deserialize(deserializer)?
+        .into_iter()
+        .filter(|settings| !states_retired_params(settings))
+        .map(|settings| ChannelSettings::deserialize(settings).map_err(serde::de::Error::custom))
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "reason", rename_all = "snake_case")]
+pub enum BandMiss {
+    TooWide {
+        needs_hz: f64,
+        top_rate_hz: Option<f64>,
+    },
+    OffTuner,
+    Crowded,
+    TunedAway,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelInfo {
     pub id: u32,
@@ -1836,10 +1953,10 @@ pub struct ChannelInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node: Option<String>,
     pub settings: ChannelSettings,
-    /// The radio carrying this decoder is tuned somewhere it cannot hear the decoder's frequency,
-    /// so the channel is alive and set up but silent until the radio comes back over it.
-    #[serde(default)]
-    pub out_of_band: bool,
+    /// Why the radio carrying this decoder cannot hear it, so the channel is alive and set up but
+    /// silent until the radio comes back over it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub out_of_band: Option<BandMiss>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub audio_recordings: Vec<AudioRecordingStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1855,7 +1972,12 @@ mod dvbt_tests {
     #[test]
     fn dvbt_bandwidths_roundtrip_with_native_clocks() {
         for (bandwidth, json, hz) in [
+            (DvbtBandwidth::Khz250, "khz250", 250_000.0),
+            (DvbtBandwidth::Khz333, "khz333", 333_000.0),
+            (DvbtBandwidth::Khz500, "khz500", 500_000.0),
+            (DvbtBandwidth::Mhz1, "mhz1", 1_000_000.0),
             (DvbtBandwidth::Mhz1_7, "mhz1_7", 1_700_000.0),
+            (DvbtBandwidth::Mhz2, "mhz2", 2_000_000.0),
             (DvbtBandwidth::Mhz5, "mhz5", 5_000_000.0),
             (DvbtBandwidth::Mhz10, "mhz10", 10_000_000.0),
             (DvbtBandwidth::Mhz6, "mhz6", 6_000_000.0),
@@ -1888,6 +2010,35 @@ mod dvbt_tests {
         assert_eq!(legacy.standard, DvbtStandard::DvbT);
         assert_eq!(legacy.sample_rate_hz(), 1_700_000.0 * 8.0 / 7.0);
         assert!(serde_json::from_str::<DvbtParams>(r#"{"plp":256}"#).is_err());
+    }
+}
+
+#[cfg(test)]
+mod dect_tests {
+    use super::*;
+
+    #[test]
+    fn dect_span_defaults_to_one_carrier_and_older_settings_still_load() {
+        let legacy: ChannelParams =
+            serde_json::from_str(r#"{"type":"dect","settings":{"band":"us","sides":"rfp"}}"#)
+                .unwrap();
+        let ChannelParams::Dect(params) = legacy else {
+            panic!("dect params");
+        };
+        assert_eq!(params.span, DectSpan::Carrier);
+        assert_eq!(params.band, DectBand::Us);
+        assert_eq!(serde_json::to_value(DectSpan::Band).unwrap(), "band");
+    }
+
+    #[test]
+    fn dect_band_centres_and_carrier_lookup_follow_the_band_plan() {
+        assert_eq!(DectBand::Eu.center_hz(), 1_889_568_000.0);
+        assert_eq!(DectBand::Us.center_hz(), 1_924_992_000.0);
+        assert_eq!(DectBand::Eu.carrier_at(1_897_344_000.0), Some(0));
+        assert_eq!(DectBand::Eu.carrier_at(1_881_800_000.0), Some(9));
+        assert_eq!(DectBand::Eu.carrier_at(1_889_568_000.0), None);
+        assert_eq!(DectBand::Us.carrier_at(1_928_448_000.0), Some(4));
+        assert_eq!(DectBand::Us.carrier_at(1_897_344_000.0), None);
     }
 }
 

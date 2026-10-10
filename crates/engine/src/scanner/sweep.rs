@@ -6,7 +6,6 @@ use tokio::sync::broadcast;
 use crate::{
     CaptureRuntime, DeviceSetStatus, Engine, EngineError, RebuildEntry, dc_block, lock_runtime,
     runtime::{DeviceRuntime, SpectrumSnapshot},
-    sample_rate_of,
 };
 
 /// How far apart two targets have to sit before sweeping the gap costs more than tuning across it.
@@ -30,7 +29,7 @@ pub(crate) fn bands(targets: &[f64], span_hz: f64, measure_bw_hz: f64) -> Vec<Sw
     bands
 }
 
-fn fault_handler(
+pub(crate) fn fault_handler(
     engine: &Engine,
     ds: u32,
 ) -> impl FnOnce(sdrmm_device::DeviceError) + Send + 'static {
@@ -58,6 +57,11 @@ pub(crate) fn enter(engine: &Engine, ds: u32, plan: &SweepPlan) -> Result<(), En
             return Err(EngineError::Scan(
                 "the device set is not running".to_string(),
             ));
+        }
+        if let Some(array) = state.holder() {
+            return Err(EngineError::Held {
+                array: array.to_owned(),
+            });
         }
         (state.runtime.clone(), state.settings.offset())
     };
@@ -144,7 +148,11 @@ pub(crate) fn leave(engine: &Engine, ds: u32) -> Result<(), EngineError> {
     restore_receiving(engine, ds, device, taps)
 }
 
-fn swap_runtime(engine: &Engine, ds: u32, runtime: CaptureRuntime) -> Result<(), EngineError> {
+pub(crate) fn swap_runtime(
+    engine: &Engine,
+    ds: u32,
+    runtime: CaptureRuntime,
+) -> Result<(), EngineError> {
     let cmd_txs = runtime.command_senders();
     let overruns = runtime.overruns_counters();
     let stalls = runtime.stall_counters();
@@ -159,6 +167,9 @@ fn swap_runtime(engine: &Engine, ds: u32, runtime: CaptureRuntime) -> Result<(),
         };
         state.cmd_txs = cmd_txs;
         state.overruns = overruns;
+        state.overruns_seen = 0;
+        state.overruns_polled = None;
+        state.loss = None;
         state.stalls = stalls;
         state.clip_meters = clip_meters;
         state.clipping.clear();
@@ -170,13 +181,13 @@ fn swap_runtime(engine: &Engine, ds: u32, runtime: CaptureRuntime) -> Result<(),
     Ok(())
 }
 
-fn rebuild_channels(engine: &Engine, ds: u32) {
-    let (rebuilds, rate) = {
+pub(crate) fn rebuild_channels(engine: &Engine, ds: u32) {
+    let rebuilds: Vec<RebuildEntry> = {
         let inner = engine.lock();
         let Some(state) = inner.device_sets.get(&ds) else {
             return;
         };
-        let rebuilds: Vec<RebuildEntry> = state
+        state
             .channels
             .iter()
             .filter_map(|c| {
@@ -187,12 +198,11 @@ fn rebuild_channels(engine: &Engine, ds: u32) {
                     sinks: m.sinks.clone(),
                 })
             })
-            .collect();
-        (rebuilds, sample_rate_of(&state.settings))
+            .collect()
     };
     let mut dead = Vec::new();
     for rebuild in rebuilds {
-        engine.rebuild_channel(ds, rebuild, rate, &mut dead);
+        engine.rebuild_channel(ds, rebuild, &mut dead);
     }
     for handle in dead {
         handle.shutdown();

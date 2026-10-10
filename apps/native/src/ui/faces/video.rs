@@ -130,7 +130,7 @@ fn watch(store: Store, device_set: u32, channel: u32) -> impl IntoView {
         {
             return;
         }
-        let Some(decoded) = VideoFrame::decode(&frame.bytes) else {
+        let Ok(decoded) = VideoFrame::decode(&frame.bytes) else {
             tracing::warn!(device_set, channel, "a video frame did not decode");
             return;
         };

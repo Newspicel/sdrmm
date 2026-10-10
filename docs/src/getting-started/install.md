@@ -8,16 +8,14 @@ sits somewhere else and you connect from a browser. Both run the same receiver.
 | [Desktop app](#desktop-app) | A radio on your computer |
 | [Portable server](#portable-server) | A Raspberry Pi, home server, or remote receiver |
 | [Homebrew](#homebrew) | macOS or Linux with Homebrew |
-| [WinGet](#winget) | Windows |
 | [APT](#apt) | Debian and Ubuntu |
 | [DNF](#dnf) | Fedora |
-| [AUR](#aur) | Arch Linux |
 | [Nix](#nix) | Linux managed with Nix |
 | [Container](#container) | Docker |
 
 ## Desktop app
 
-Download the installer from the [download page](/download.html) and open SDR--. The app starts
+Download the installer from the [download page](/download) and open SDR--. The app starts
 its own server on a random port only this computer can reach. For a fixed port or access from
 other devices, run the [server](#portable-server) instead.
 
@@ -29,7 +27,7 @@ other devices, run the [server](#portable-server) instead.
 
 ## Portable server
 
-Download and unpack the `sdrmm` archive for your system from the [download page](/download.html),
+Download and unpack the `sdrmm` archive for your system from the [download page](/download),
 then run it:
 
 ```sh
@@ -37,56 +35,49 @@ then run it:
 ```
 
 On Windows, run `sdrmm.exe`. Open <http://localhost:8080> on the server, or
-`http://<server>:8080` from another computer.
+`http://<server>:8080` from another computer. `--bind` picks another address or port.
 
 The server listens on every network interface with no password. Set up
 [a token and HTTPS](../server/configuration.md) before untrusted devices can reach it.
 
 ## Homebrew
 
+App, macOS:
+
 ```sh
-brew tap newspicel/tap
-brew install --cask sdrminusminus   # macOS desktop app
-brew install sdrmm                  # server, macOS or Linux
+brew install sdrmm-app
+```
+
+Server, macOS or Linux:
+
+```sh
+brew install sdrmm
 brew services start sdrmm
 ```
 
 The cask installs into `/Applications`. The service starts the server at login. Open
 <http://localhost:8080>.
 
-## WinGet
-
-```powershell
-winget install Newspicel.SDRminusminus
-```
-
 ## APT
 
 ```sh
-curl -fsSL https://newspicel.github.io/packages/key.gpg \
-  | sudo tee /usr/share/keyrings/sdrminusminus.gpg > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/sdrminusminus.gpg] https://newspicel.github.io/packages/deb stable main" \
-  | sudo tee /etc/apt/sources.list.d/sdrminusminus.list
+curl -fsSL https://downloads.sdrmm.com/packages/key.gpg \
+  | sudo tee /usr/share/keyrings/sdrmm.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/sdrmm.gpg] https://downloads.sdrmm.com/packages/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/sdrmm.list
 sudo apt update
-sudo apt install sdrminusminus
+sudo apt install sdrmm-app
 ```
 
-APT and DNF install the desktop app. For the `sdrmm` server, use the
+APT and DNF install the desktop app. For the `sdrmm` server, use [Homebrew](#homebrew) or the
 [portable server](#portable-server).
 
 ## DNF
 
 ```sh
 sudo dnf config-manager addrepo \
-  --from-repofile=https://newspicel.github.io/packages/rpm/sdrminusminus.repo
-sudo dnf install sdrminusminus
-```
-
-## AUR
-
-```sh
-yay -S sdrminusminus-bin   # desktop app
-yay -S sdrmm-bin           # server
+  --from-repofile=https://downloads.sdrmm.com/packages/rpm/sdrmm.repo
+sudo dnf install sdrmm-app
 ```
 
 ## Nix
@@ -95,20 +86,21 @@ Install and launch the desktop app on x86_64 or aarch64 Linux:
 
 ```sh
 nix --extra-experimental-features 'nix-command flakes' \
-  profile install github:Newspicel/sdrminusminus
+  profile install github:Newspicel/sdrmm
 sdrmm-desktop
 ```
 
-The flake exports the package as `sdrmm-desktop`, `sdrmm`, and `default`. From a checkout,
+The flake exports the desktop app as `sdrmm-desktop`, `sdrmm`, and `default`. From a checkout,
 `nix build` produces `result/bin/sdrmm-desktop`.
 
-The Nix package reaches local radios through SoapySDR. Pick the modules with `soapyPlugins`.
-This NixOS example assumes the flake input is named `sdrminusminus`:
+Radios without a built-in driver need SoapySDR modules, picked with `soapyPlugins`. For SDRplay,
+enable `services.sdrplayApi` and pass the unfree `pkgs.sdrplay` as `sdrplayApi`. This NixOS
+example assumes the flake input is named `sdrmm`:
 
 ```nix
 environment.systemPackages = [
-  (inputs.sdrminusminus.packages.${pkgs.stdenv.hostPlatform.system}.sdrmm.override {
-    soapyPlugins = with pkgs; [ soapyrtlsdr soapyremote ];
+  (inputs.sdrmm.packages.${pkgs.stdenv.hostPlatform.system}.sdrmm.override {
+    soapyPlugins = with pkgs; [ soapybladerf soapyremote ];
   })
 ];
 
@@ -121,19 +113,24 @@ users.users.your-user.extraGroups = [ "plugdev" ];
 On Linux:
 
 ```sh
-git clone https://github.com/Newspicel/sdrminusminus.git
-cd sdrminusminus
+git clone https://github.com/Newspicel/sdrmm.git
+cd sdrmm
+docker compose pull
 docker compose up -d
 ```
+
+Without the pull, Compose builds the image from the checkout.
 
 Open <http://localhost:8080>. Data lives in the `sdrmm-data` volume. For USB radios, tokens, and
 HTTPS, see [Deployment](../server/deployment.md#docker-compose).
 
 ## Stable or nightly
 
-Use a stable release. The desktop app checks for stable updates at startup and never moves to a
-nightly on its own. The [nightly release](https://github.com/Newspicel/sdrminusminus/releases/tag/nightly)
-follows `main` and may change saved data without a migration.
+Use a stable release. The desktop app checks for updates at startup and asks before installing.
+On Linux only the AppImage updates itself; APT, DNF, and Nix installs update through the package
+manager. The [nightly release](https://github.com/Newspicel/sdrmm/releases/tag/nightly) follows
+`main` and never updates itself. A database a newer build has opened does not open in an older
+one.
 
 ## Next
 

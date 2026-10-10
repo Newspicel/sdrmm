@@ -1,6 +1,6 @@
 use sdrmm_wire::patch::NodeBody;
 use zgui::prelude::*;
-use zgui_flow::{interaction::MenuTarget, kurbo::Point};
+use zgui_flow::prelude::Point;
 
 use super::{Canvas, graph, remove_selection};
 use crate::store::Store;
@@ -38,9 +38,16 @@ const SHEET: &str = css!(
 "#
 );
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    Pane,
+    Node(String),
+    Edge(String),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Menu {
-    pub target: MenuTarget,
+    pub target: Target,
     pub window: Point,
     pub flow: Point,
 }
@@ -70,12 +77,12 @@ impl Action {
     }
 }
 
-fn actions(store: Store, target: &MenuTarget) -> Vec<Action> {
+fn actions(store: Store, target: &Target) -> Vec<Action> {
     let mut listed = Vec::new();
     match target {
-        MenuTarget::Pane => listed.push(Action::AddHere),
-        MenuTarget::Edge(_) => listed.push(Action::DeleteWire),
-        MenuTarget::Node(id) => {
+        Target::Pane => listed.push(Action::AddHere),
+        Target::Edge(_) => listed.push(Action::DeleteWire),
+        Target::Node(id) => {
             let graph = store.graph.get_untracked();
             if let Some(node) = graph.node(id) {
                 if node.size.is_some() && graph::is_resizable(node.body.kind()) {
@@ -92,22 +99,22 @@ fn actions(store: Store, target: &MenuTarget) -> Vec<Action> {
 fn run(store: Store, canvas: Canvas, menu: &Menu, action: Action) {
     match (action, &menu.target) {
         (Action::AddHere, _) => store.open_palette_at(menu.flow.x as f32, menu.flow.y as f32),
-        (Action::DeleteWire, MenuTarget::Edge(id)) => {
-            let key = id.to_string();
+        (Action::DeleteWire, Target::Edge(id)) => {
+            let key = id.clone();
             store.edit_graph(move |graph| *graph = graph::remove_edges(graph, &[key]));
         }
-        (Action::DeleteNode, MenuTarget::Node(id)) => {
-            remove_selection(store, vec![id.to_string()], Vec::new());
+        (Action::DeleteNode, Target::Node(id)) => {
+            remove_selection(store, vec![id.clone()], Vec::new());
         }
-        (Action::ResetSize, MenuTarget::Node(id)) => {
-            let id = id.to_string();
+        (Action::ResetSize, Target::Node(id)) => {
+            let id = id.clone();
             store.edit_graph(move |graph| {
                 if let Some(node) = graph.nodes.iter_mut().find(|node| node.id == id) {
                     node.size = None;
                 }
             });
         }
-        (Action::Fit, _) => canvas.fit_view(true),
+        (Action::Fit, _) => canvas.view().fit_view(),
         _ => {}
     }
 }
@@ -116,9 +123,9 @@ pub fn view(store: Store, canvas: Canvas, open: RwSignal<Option<Menu>>) -> impl 
     install_stylesheet("canvas-menu", SHEET);
     move || {
         open.get().map(|menu| {
-            let shows_hint = matches!(menu.target, MenuTarget::Node(_) | MenuTarget::Edge(_));
+            let shows_hint = matches!(menu.target, Target::Node(_) | Target::Edge(_));
             let is_channel = match &menu.target {
-                MenuTarget::Node(id) => store
+                Target::Node(id) => store
                     .graph
                     .get_untracked()
                     .node(id)

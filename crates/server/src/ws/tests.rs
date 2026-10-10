@@ -3,15 +3,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_wire::{
-    ChannelParams, ChannelSettings, GpsNode, NfmParams, PatchNode, Position, PositionFix,
-    PositionSource, WorkspaceSnapshot,
-};
+use sdrmm_wire::{ChannelParams, ChannelSettings, NfmParams};
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite;
 
 use super::*;
 
+mod phone;
+mod presence;
 mod stress;
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -71,43 +70,6 @@ async fn next_event(ws: &mut WsClient) -> ServerEvent {
     }
 }
 
-fn position_fix(latitude: f64) -> PositionFix {
-    PositionFix {
-        latitude,
-        longitude: 13.405,
-        altitude_m: None,
-        accuracy_m: Some(4.0),
-        speed_mps: None,
-        track_deg: None,
-        time: "2026-08-14T12:00:00Z".to_owned(),
-    }
-}
-
-fn activate_device_gps(state: &AppState) {
-    state
-        .gps
-        .set_device_publish_interval(Duration::from_secs(5));
-    let mut snapshot = WorkspaceSnapshot::empty();
-    snapshot.graph.nodes.push(PatchNode {
-        id: "position".to_owned(),
-        body: sdrmm_wire::NodeBody::Gps(GpsNode {
-            source: Some(PositionSource::Device),
-        }),
-        position: Position { x: 0.0, y: 0.0 },
-        size: None,
-        label: None,
-    });
-    let workspace = state
-        .store
-        .create_workspace("mobile", &snapshot)
-        .expect("workspace");
-    state
-        .store
-        .activate_workspace(workspace)
-        .expect("activate workspace");
-    state.gps.reconcile(state);
-}
-
 async fn next_frame_header(ws: &mut WsClient) -> (u8, u16) {
     loop {
         let msg = timeout(WAIT, ws.next())
@@ -144,7 +106,7 @@ fn atv_channel() -> ChannelSettings {
 async fn iq_lifecycle_shares_the_media_id_space_and_streams_baseband() {
     let engine = test_engine();
     let ds = engine
-        .create_device_set("virtual:siggen")
+        .create_device_set("virtual:band")
         .expect("device set");
     let voice = engine
         .add_channel(ds, 0, nfm_channel(0.0))
@@ -227,7 +189,7 @@ async fn iq_lifecycle_shares_the_media_id_space_and_streams_baseband() {
 async fn symbol_lifecycle_shares_the_media_id_space_with_the_other_streams() {
     let engine = test_engine();
     let ds = engine
-        .create_device_set("virtual:siggen")
+        .create_device_set("virtual:band")
         .expect("device set");
     let voice = engine
         .add_channel(ds, 0, nfm_channel(0.0))
@@ -301,7 +263,7 @@ async fn symbol_lifecycle_shares_the_media_id_space_with_the_other_streams() {
 async fn a_symbol_subscription_to_a_channel_that_is_gone_is_refused_not_dropped() {
     let engine = test_engine();
     let ds = engine
-        .create_device_set("virtual:siggen")
+        .create_device_set("virtual:band")
         .expect("device set");
     let mut ws = connect(engine).await;
 
@@ -328,7 +290,7 @@ async fn a_symbol_subscription_to_a_channel_that_is_gone_is_refused_not_dropped(
 async fn video_lifecycle_shares_the_media_id_space_and_refuses_silent_channels() {
     let engine = test_engine();
     let ds = engine
-        .create_device_set("virtual:siggen")
+        .create_device_set("virtual:band")
         .expect("device set");
     let voice = engine
         .add_channel(ds, 0, nfm_channel(0.0))
@@ -418,6 +380,41 @@ async fn video_lifecycle_shares_the_media_id_space_and_refuses_silent_channels()
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_browser_hello_names_the_protocol_and_no_phone() {
+    let mut ws = connect(test_engine()).await;
+    match next_event(&mut ws).await {
+        ServerEvent::Hello {
+            protocol, phone, ..
+        } => {
+            assert_eq!(protocol, API_PROTOCOL);
+            assert_eq!(phone, None);
+        }
+        other => panic!("expected Hello, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pose_from_a_browser_socket_is_refused() {
+    let mut ws = connect(test_engine()).await;
+    assert!(matches!(
+        next_event(&mut ws).await,
+        ServerEvent::Hello { .. }
+    ));
+    send(
+        &mut ws,
+        &ClientCommand::PublishPose {
+            fix: None,
+            error: Some("No GPS".to_owned()),
+        },
+    )
+    .await;
+    match next_event(&mut ws).await {
+        ServerEvent::Error { message } => assert_eq!(message, POSE_NEEDS_PHONE),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn two_lanes_of_one_radio_stream_independently() {
     let engine = test_engine();
     let ds = engine
@@ -494,7 +491,7 @@ async fn two_lanes_of_one_radio_stream_independently() {
 async fn spectrum_lifecycle_reports_kind_and_streams_frames() {
     let engine = test_engine();
     let ds = engine
-        .create_device_set("virtual:siggen")
+        .create_device_set("virtual:band")
         .expect("device set");
     let mut ws = connect(engine).await;
 
@@ -565,7 +562,7 @@ async fn spectrum_lifecycle_reports_kind_and_streams_frames() {
 async fn spectrum_subscribe_routes_the_named_stream_to_the_engine() {
     let engine = test_engine();
     let ds = engine
-        .create_device_set("virtual:siggen")
+        .create_device_set("virtual:band")
         .expect("device set");
     let mut ws = connect(engine).await;
     assert!(matches!(
@@ -595,7 +592,7 @@ async fn spectrum_subscribe_routes_the_named_stream_to_the_engine() {
 async fn audio_ids_disjoint_from_spectrum_and_duplicate_subscribe_stops_old() {
     let engine = test_engine();
     let ds = engine
-        .create_device_set("virtual:siggen")
+        .create_device_set("virtual:band")
         .expect("device set");
     let ch = engine
         .add_channel(ds, 0, nfm_channel(0.0))
@@ -850,149 +847,6 @@ async fn client_count_tracks_connections_and_invalidates() {
     assert_eq!(count(), 0);
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn rotating_position_node_ids_share_one_connection_budget() {
-    let mut ws = connect(test_engine()).await;
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    const PUBLISHED: usize = 32;
-    for index in 0..PUBLISHED {
-        send(
-            &mut ws,
-            &ClientCommand::PublishPosition {
-                node: format!("node-{index}"),
-                fix: Some(position_fix(52.52)),
-                error: None,
-            },
-        )
-        .await;
-    }
-
-    let mut reached_the_hub = 0;
-    let mut limited = 0;
-    for _ in 0..PUBLISHED {
-        match next_event(&mut ws).await {
-            ServerEvent::Error { message } if message.contains("not a device GPS source") => {
-                reached_the_hub += 1;
-            }
-            ServerEvent::Error { message } if message.contains("per connection") => limited += 1,
-            other => panic!("unexpected event {other:?}"),
-        }
-    }
-    assert!(
-        reached_the_hub >= 8,
-        "a burst of nodes is allowed through, got {reached_the_hub}"
-    );
-    assert!(limited > 0, "sustained publishing is still limited");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn one_publish_per_device_gps_node_is_never_rate_limited() {
-    let (addr, state) = serve_ws(test_engine()).await;
-    activate_device_gps(&state);
-    let mut ws = dial(addr).await;
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-    let _ = next_event(&mut ws).await;
-
-    let fix = position_fix(52.52);
-    for _ in 0..8 {
-        send(
-            &mut ws,
-            &ClientCommand::PublishPosition {
-                node: "position".to_owned(),
-                fix: Some(fix.clone()),
-                error: None,
-            },
-        )
-        .await;
-    }
-    send(
-        &mut ws,
-        &ClientCommand::PublishPosition {
-            node: String::new(),
-            fix: Some(fix),
-            error: None,
-        },
-    )
-    .await;
-
-    let mut fixes = 0;
-    let mut fenced = false;
-    while !(fenced && fixes == 1) {
-        match next_event(&mut ws).await {
-            ServerEvent::PositionChanged { fix: Some(_), .. } => fixes += 1,
-            ServerEvent::Error { message } if message.contains("invalid position node id") => {
-                fenced = true;
-            }
-            other => panic!("unexpected event {other:?}"),
-        }
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn concurrent_sockets_share_the_device_source_budget() {
-    let (addr, state) = serve_ws(test_engine()).await;
-    activate_device_gps(&state);
-    let mut first = dial(addr).await;
-    let mut second = dial(addr).await;
-    assert!(matches!(
-        next_event(&mut first).await,
-        ServerEvent::Hello { .. }
-    ));
-    assert!(matches!(
-        next_event(&mut second).await,
-        ServerEvent::Hello { .. }
-    ));
-    let _ = next_event(&mut first).await;
-    let _ = next_event(&mut second).await;
-
-    send(
-        &mut first,
-        &ClientCommand::PublishPosition {
-            node: "position".to_owned(),
-            fix: Some(position_fix(52.52)),
-            error: None,
-        },
-    )
-    .await;
-    send(
-        &mut second,
-        &ClientCommand::PublishPosition {
-            node: "position".to_owned(),
-            fix: Some(position_fix(52.53)),
-            error: None,
-        },
-    )
-    .await;
-
-    let mut saw_fix = false;
-    let mut saw_limit = false;
-    let deadline = Instant::now() + WAIT;
-    while !(saw_fix && saw_limit) {
-        assert!(
-            Instant::now() < deadline,
-            "shared GPS budget events timed out"
-        );
-        let event = tokio::select! {
-            event = next_event(&mut first) => event,
-            event = next_event(&mut second) => event,
-        };
-        match event {
-            ServerEvent::PositionChanged { fix: Some(_), .. } => saw_fix = true,
-            ServerEvent::Error { message } if message.contains("per node") => {
-                saw_limit = true;
-            }
-            _ => {}
-        }
-    }
-}
-
 async fn wait_for(events: &mut broadcast::Receiver<ServerEvent>, scope: StateScope) {
     let deadline = Instant::now() + WAIT;
     loop {
@@ -1118,7 +972,9 @@ impl sdrmm_device::DeviceDriver for FaultingDriver {
                 dc_artifact: sdrmm_wire::DcArtifact::Operator,
                 hardware_sweep: false,
                 coherence: sdrmm_wire::Coherence::None,
-                noise_source: false,
+                noise_source: sdrmm_wire::NoiseSource::None,
+                retune_keeps_phase: false,
+                rx_inputs: Vec::new(),
             },
             settings: sdrmm_wire::DeviceSettings {
                 sample_rate: Some(2_048_000.0),
@@ -1306,7 +1162,7 @@ async fn event_forwarder_lag_synthesizes_full_invalidation() {
         .expect("send");
     }
     let (out_tx, mut out_rx) = outbox::channel();
-    let task = spawn_events(rx, out_tx);
+    let task = spawn_events(rx, out_tx, false);
 
     let first = timeout(WAIT, out_rx.recv())
         .await
@@ -1345,7 +1201,7 @@ async fn event_forwarder_lag_synthesizes_full_invalidation() {
 #[tokio::test(flavor = "multi_thread")]
 async fn diagnostics_report_capture_and_connection_queues_only_when_subscribed() {
     let engine = test_engine();
-    let ds = engine.create_device_set("virtual:siggen").expect("radio");
+    let ds = engine.create_device_set("virtual:band").expect("radio");
     let mut socket = connect(engine.clone()).await;
     send(
         &mut socket,
@@ -1409,7 +1265,34 @@ async fn audio_forwarder_discards_packets_older_than_the_live_budget() {
     task.await.expect("forwarder");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
+async fn a_briefly_stalled_socket_writer_keeps_the_connection() {
+    let (out, output) = outbox::channel();
+    out.send(Message::Text("first".into()))
+        .await
+        .expect("queued");
+    let (delivered, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let sink = Box::pin(futures::sink::unfold(
+        delivered,
+        |delivered, message: Message| async move {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            delivered.send(message).map_err(|_| ())?;
+            Ok::<_, ()>(delivered)
+        },
+    ));
+    let writer = tokio::spawn(async move {
+        write_output(sink, output).await;
+    });
+    assert_eq!(received.recv().await, Some(Message::Text("first".into())));
+    out.send(Message::Text("second".into()))
+        .await
+        .expect("a two second stall must not close the connection");
+    assert_eq!(received.recv().await, Some(Message::Text("second".into())));
+    drop(out);
+    writer.await.expect("writer");
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_stalled_socket_writer_expires_and_closes_its_output_queue() {
     let (out, output) = outbox::channel();
     out.send(Message::Text("queued".into()))

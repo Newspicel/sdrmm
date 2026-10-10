@@ -100,7 +100,7 @@ fn hear(store: Store, audio: Audio, frame: &Frame) {
     else {
         return;
     };
-    let Some(decoded) = AudioFrame::decode(&frame.bytes) else {
+    let Ok(decoded) = AudioFrame::decode(&frame.bytes) else {
         return;
     };
     let route = AudioRoute {

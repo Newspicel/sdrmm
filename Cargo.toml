@@ -11,30 +11,35 @@ members = [
     "crates/device-virtual",
     "crates/device-recording",
     "crates/device-siggen",
-    "crates/device-array",
     "crates/device-ad936x",
     "crates/device-airspy",
     "crates/device-airspyhf",
+    "crates/device-espsdr",
     "crates/device-soapy",
     "crates/device-sdrplay",
     "crates/device-sdrconnect",
+    "crates/device-kiwisdr",
     "crates/device-rtlsdr",
     "crates/device-cr8",
     "crates/device-hackrf",
     "crates/device-rtltcp",
     "crates/device-spyserver",
     "crates/usb-stream",
+    "crates/iqlink",
     "crates/channels",
     "crates/cps",
     "crates/recorder",
     "crates/engine",
     "crates/tools",
+    "crates/tunnel",
     "crates/server",
-    "crates/zgui-flow",
+    "crates/mobile-core",
     "apps/sdrmm",
+    "apps/iqlinkd",
     "apps/desktop",
     "apps/native",
     "xtask",
+    "xtask/release",
 ]
 
 default-members = [
@@ -48,41 +53,46 @@ default-members = [
     "crates/device-virtual",
     "crates/device-recording",
     "crates/device-siggen",
-    "crates/device-array",
     "crates/device-ad936x",
     "crates/device-airspy",
     "crates/device-airspyhf",
+    "crates/device-espsdr",
     "crates/device-soapy",
     "crates/device-sdrplay",
     "crates/device-sdrconnect",
+    "crates/device-kiwisdr",
     "crates/device-rtlsdr",
     "crates/device-cr8",
     "crates/device-hackrf",
     "crates/device-rtltcp",
     "crates/device-spyserver",
     "crates/usb-stream",
+    "crates/iqlink",
     "crates/channels",
     "crates/cps",
     "crates/recorder",
     "crates/engine",
     "crates/tools",
+    "crates/tunnel",
     "crates/server",
-    "crates/zgui-flow",
+    "crates/mobile-core",
     "apps/sdrmm",
+    "apps/iqlinkd",
     "apps/native",
     "xtask",
+    "xtask/release",
 ]
 
 [workspace.package]
 edition = "2024"
 version = "0.0.0"
-license = "GPL-3.0-or-later"
+license = "AGPL-3.0-or-later"
 authors = ["Julian Haag"]
-repository = "https://github.com/newspicel/sdrminusminus"
-rust-version = "1.98"
+repository = "https://github.com/newspicel/sdrmm"
+rust-version = "1.99"
 
 [workspace.dependencies]
-tun-rs = { version = "2.8.10", features = ["async"] }
+tun-rs = { version = "2.8.11", features = ["async"] }
 sdrmm-test-support = { path = "crates/test-support" }
 # Internal crates
 sdrmm-wire = { path = "crates/wire" }
@@ -94,37 +104,40 @@ sdrmm-device = { path = "crates/device" }
 sdrmm-device-virtual = { path = "crates/device-virtual" }
 sdrmm-device-recording = { path = "crates/device-recording" }
 sdrmm-device-siggen = { path = "crates/device-siggen" }
-sdrmm-device-array = { path = "crates/device-array" }
 sdrmm-device-ad936x = { path = "crates/device-ad936x" }
 sdrmm-device-airspy = { path = "crates/device-airspy" }
 sdrmm-device-airspyhf = { path = "crates/device-airspyhf" }
+sdrmm-device-espsdr = { path = "crates/device-espsdr" }
 sdrmm-device-soapy = { path = "crates/device-soapy" }
 sdrmm-device-sdrplay = { path = "crates/device-sdrplay" }
 sdrmm-device-sdrconnect = { path = "crates/device-sdrconnect" }
+sdrmm-device-kiwisdr = { path = "crates/device-kiwisdr" }
 sdrmm-device-rtlsdr = { path = "crates/device-rtlsdr" }
 sdrmm-device-cr8 = { path = "crates/device-cr8" }
 sdrmm-device-hackrf = { path = "crates/device-hackrf" }
 sdrmm-device-rtltcp = { path = "crates/device-rtltcp" }
 sdrmm-device-spyserver = { path = "crates/device-spyserver" }
 sdrmm-usb-stream = { path = "crates/usb-stream" }
+sdrmm-iqlink = { path = "crates/iqlink" }
 sdrmm-channels = { path = "crates/channels" }
 sdrmm-cps = { path = "crates/cps" }
 sdrmm-recorder = { path = "crates/recorder" }
 sdrmm-tools = { path = "crates/tools" }
+sdrmm-tunnel = { path = "crates/tunnel" }
 # default-features = false so binaries opt into `soapy` themselves: a member manifest cannot
 # disable a workspace dep's defaults, only add to them (needed for the minimal build).
 sdrmm-engine = { path = "crates/engine", default-features = false }
 sdrmm-server = { path = "crates/server", default-features = false }
-zgui-flow = { path = "crates/zgui-flow" }
+xtask-release = { path = "xtask/release" }
 
 # Native UI
-zgui = { git = "https://github.com/zortax/zgui", rev = "f046ccd26a5862731b94b3b3f89dbcfe8f74d551" }
-zgui-ui = { git = "https://github.com/zortax/zgui", rev = "f046ccd26a5862731b94b3b3f89dbcfe8f74d551" }
-zgui-tokio = { git = "https://github.com/zortax/zgui", rev = "f046ccd26a5862731b94b3b3f89dbcfe8f74d551" }
-qrcode = { version = "0.14.1", default-features = false }
+zgui = { git = "https://github.com/zortax/zgui" }
+zgui-ui = { git = "https://github.com/zortax/zgui" }
+zgui-tokio = { git = "https://github.com/zortax/zgui" }
+zgui-image = { git = "https://github.com/zortax/zgui" }
+zgui-flow = { git = "https://github.com/zortax/zgui-flow", rev = "8e98f35efe5017431018e0a5091f9415f61190be", default-features = false }
 rfd = "0.17.2"
 open = "5.4.4"
-zgui-image = { git = "https://github.com/zortax/zgui", rev = "f046ccd26a5862731b94b3b3f89dbcfe8f74d551" }
 
 # Async runtime / web
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
@@ -134,28 +147,33 @@ axum-server = { version = "0.8", default-features = false, features = ["tls-rust
 rustls = "0.23"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 tower = "0.5"
-tower-http = { version = "0.7", features = ["compression-gzip", "cors", "fs", "trace"] }
+tower-http = { version = "0.7", features = ["compression-gzip", "cors", "trace"] }
 futures = "0.3"
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "multipart", "rustls"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "multipart", "rustls"] }
 rumqttc = { package = "rumqttc-v4-next", version = "0.34.0", default-features = false, features = ["use-rustls"] }
 url = "2.5.8"
 tokio-postgres = { version = "0.7.18", default-features = false, features = ["runtime"] }
 tokio-postgres-rustls = "0.14"
 rustls-platform-verifier = "0.7"
+rustls-webpki = { version = "0.103.15", default-features = false }
+rustls-pki-types = { version = "1.15.1", default-features = false }
+mdns-sd = "0.21.4"
+gethostname = "1.1.0"
+getrandom = "0.4.3"
 tokio-tungstenite = "0.30"
 tokio-serial = "5.5.0"
-serialport = { version = "4.9.0", default-features = false }
+serialport = { version = "4.10.1", default-features = false }
 
 # MCP server (, §18): streamable HTTP mounted on the same axum app. `schemars` derives
 # the tool argument schemas and must match the version rmcp itself depends on.
-rmcp = { version = "3.1", features = ["server", "macros", "transport-streamable-http-server"] }
+rmcp = { version = "3.5", features = ["server", "macros", "transport-streamable-http-server"] }
 schemars = "1.2"
 
 # Serde + OpenAPI
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-utoipa = { version = "5", features = ["axum_extras"] }
-utoipa-axum = "0.2"
+utoipa = { version = "6", features = ["axum_extras"] }
+utoipa-axum = "0.3"
 mime_guess = "2"
 
 # Device backends
@@ -168,13 +186,12 @@ nusb = "0.2.7"
 libloading = "0.9"
 
 # DSP
-num-complex = "0.4"
-kurbo = "0.13.1"
+num-complex = { version = "0.4", features = ["bytemuck"] }
 rustfft = "6"
 tract-onnx = { version = "0.23.8", default-features = false }
 tract-nnef = "0.23.8"
 realfft = "3"
-mfsk-core = { version = "0.11.0", default-features = false, features = ["std", "fft-rustfft", "ft8", "ft4", "wspr"] }
+mfsk-core = { version = "0.13.1", default-features = false, features = ["std", "fft-rustfft", "ft8", "ft4", "wspr", "internal-testing"] }
 xng-mode-dsc = { git = "https://github.com/airframesio/xng", rev = "096c805278faa0a904de7d98066bf4cf395cb6c2" }
 xng-mode-stdc = { git = "https://github.com/airframesio/xng", rev = "096c805278faa0a904de7d98066bf4cf395cb6c2" }
 xng-mode-aero = { git = "https://github.com/airframesio/xng", rev = "096c805278faa0a904de7d98066bf4cf395cb6c2" }
@@ -210,14 +227,21 @@ sha2 = "0.11"
 # macOS scheduling: keeps App Nap from throttling the capture threads of a window that is not
 # frontmost. Already in the tree through Tauri; pinned here so the headless build shares it.
 objc2 = "0.6"
+objc2-application-services = { version = "0.3.2", default-features = false, features = ["std", "libc", "HIServices", "AXError", "AXUIElement"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFArray", "CFNumber", "CFString"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std"] }
 
 # Windows scheduling: threads there start at the priority of everything else on the machine, and
 # a capture thread that waits its turn loses USB transfers.
 windows-sys = { version = "0.61", features = ["Win32_System_Threading"] }
 
+uniffi = { version = "0.32.2", default-features = false }
+qrcodegen = "1.8.0"
+
 # Errors / logging / util
 libc = "0.2"
+socket2 = { version = "0.6", features = ["all"] }
+rustix = { version = "1.1.5", default-features = false, features = ["std", "fs", "process", "thread"] }
 thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
@@ -231,7 +255,6 @@ notify = "8.2.0"
 tempfile = "3"
 
 criterion = "0.8"
-cc = "1"
 
 resvg = { version = "0.48", default-features = false }
 
@@ -251,7 +274,6 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(sanitized)"] }
 [profile.release]
 opt-level = 3
 lto = "thin"
-codegen-units = 1
 strip = true
 
 # The container gate builds the real Dockerfile only to prove it still builds and that the
@@ -260,58 +282,19 @@ strip = true
 [profile.ci]
 inherits = "release"
 lto = false
-codegen-units = 16
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+codegen-units = 256
+
+[profile.mobile]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+strip = "debuginfo"
 
 [profile.dev.package."*"]
-opt-level = 3
-
-[profile.dev.package.sdrmm-dsp]
-opt-level = 3
-
-[profile.dev.package.sdrmm-modem]
-opt-level = 3
-
-[profile.dev.package.sdrmm-modem-test-support]
-opt-level = 3
-
-[profile.dev.package.sdrmm-channels]
-opt-level = 3
-
-[profile.dev.package.sdrmm-engine]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-rtltcp]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-spyserver]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-sdrconnect]
-opt-level = 3
-
-[profile.dev.package.sdrmm-usb-stream]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-rtlsdr]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-hackrf]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-ad936x]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-virtual]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-recording]
-opt-level = 3
-
-[profile.dev.package.sdrmm-device-siggen]
-opt-level = 3
-
-[profile.dev.package.sdrmm-recorder]
-opt-level = 3
+debug = false
+codegen-units = 16

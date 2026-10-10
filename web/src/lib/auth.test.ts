@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  adoptTokenFromUrl,
+  adoptUrlToken,
   getToken,
+  loginRedirect,
   onTokenRejected,
   rejectToken,
   resetTokenCache,
   setToken,
   withToken,
 } from "./auth";
+import { clientEvents, resetEvents } from "./diagnostics";
 
 class FakeStorage {
   private readonly items = new Map<string, string>();
@@ -54,6 +56,20 @@ describe("token storage", () => {
     setToken("");
     expect(getToken()).toBeNull();
   });
+
+  it("records a store that refuses the token and still keeps it for the session", () => {
+    resetEvents();
+    const full = new FakeStorage();
+    full.setItem = () => {
+      throw new Error("quota exceeded");
+    };
+    Object.defineProperty(globalThis, "localStorage", { value: full, configurable: true });
+    setToken("s3cret");
+    expect(getToken()).toBe("s3cret");
+    expect(clientEvents()).toContainEqual(
+      expect.objectContaining({ level: "warn", source: "auth", message: "Error: quota exceeded" }),
+    );
+  });
 });
 
 describe("withToken", () => {
@@ -87,34 +103,46 @@ describe("rejectToken", () => {
   });
 });
 
-function fakeHistory(): { history: History; seen: string[] } {
-  const seen: string[] = [];
-  const history = {
-    replaceState: (_state: unknown, _title: string, url?: string | URL | null) => {
-      seen.push(String(url ?? ""));
-    },
-  } as unknown as History;
-  return { history, seen };
-}
+describe("loginRedirect", () => {
+  const login = "https://app.sdrmm.com/open/abc";
 
-describe("adoptTokenFromUrl", () => {
-  it("keeps a token from the address bar and takes it back out of the address", () => {
-    resetTokenCache();
-    setToken(null);
-    const { history, seen } = fakeHistory();
-    const location = new URL("http://192.168.1.10:8080/field?token=s3cret&mission=df");
-    const adopted = adoptTokenFromUrl(location as unknown as Location, history);
-    expect(adopted).toBe("s3cret");
-    expect(getToken()).toBe("s3cret");
-    expect(seen).toEqual(["/field?mission=df"]);
+  it("sends a tokenless visitor to the app that can grant a token", () => {
+    expect(loginRedirect({ token_required: true, login_url: login }, false)).toBe(login);
   });
 
-  it("leaves an address without a token alone", () => {
-    resetTokenCache();
-    setToken(null);
-    const { history, seen } = fakeHistory();
-    const location = new URL("http://localhost:8080/field");
-    expect(adoptTokenFromUrl(location as unknown as Location, history)).toBeNull();
-    expect(seen).toEqual([]);
+  it("stays put with a token, without a login URL, or when no token is needed", () => {
+    expect(loginRedirect({ token_required: true, login_url: login }, true)).toBeNull();
+    expect(loginRedirect({ token_required: true }, false)).toBeNull();
+    expect(loginRedirect({ token_required: false, login_url: login }, false)).toBeNull();
+    expect(loginRedirect(undefined, false)).toBeNull();
+  });
+});
+
+function page(href: string) {
+  const location = { href } as Location;
+  const history = {
+    state: { tab: 1 },
+    replaceState(state: unknown, _unused: string, url: URL) {
+      location.href = url.href;
+      expect(state).toEqual({ tab: 1 });
+    },
+  } as unknown as History;
+  return { location, history };
+}
+
+describe("adoptUrlToken", () => {
+  it("keeps the token from the address and removes it there", () => {
+    const { location, history } = page("https://abc.sdrmm.link/view?token=t0k%2Bn&tab=2#map");
+    adoptUrlToken(location, history);
+    expect(getToken()).toBe("t0k+n");
+    expect(location.href).toBe("https://abc.sdrmm.link/view?tab=2#map");
+  });
+
+  it("leaves a stored token alone without one in the address", () => {
+    setToken("saved");
+    const { location, history } = page("https://abc.sdrmm.link/");
+    adoptUrlToken(location, history);
+    expect(getToken()).toBe("saved");
+    expect(location.href).toBe("https://abc.sdrmm.link/");
   });
 });

@@ -1,7 +1,27 @@
 import type { StationOf } from "../decoded";
+import { loraName, loraPosition, loraProtocol } from "../lora";
+import {
+  distanceM,
+  REMOTE_ID_TRANSPORT_LABELS,
+  remoteIdLocation,
+  remoteIdOperator,
+  remoteIdPilot,
+  remoteIdPosition,
+  remoteIdUaType,
+  UA_STATUS_LABELS,
+  UA_TYPE_LABELS,
+} from "../remoteId";
+import { geoPosition, type Trail, trailLine } from "../trails";
 import type { ChannelParams, DecoderKind } from "../types";
 
-export const MAP_KINDS = ["adsb", "ais", "aprs"] as const satisfies readonly DecoderKind[];
+export const MAP_KINDS = [
+  "adsb",
+  "ais",
+  "aprs",
+  "radiosonde",
+  "lora",
+  "remote_id",
+] as const satisfies readonly DecoderKind[];
 
 export type MapKind = (typeof MAP_KINDS)[number];
 export type Target = StationOf<MapKind>;
@@ -10,6 +30,9 @@ export const KIND_STYLE: Record<MapKind, { title: string; color: string }> = {
   adsb: { title: "Aircraft", color: "#21b0b0" },
   ais: { title: "Ships", color: "#e0a458" },
   aprs: { title: "APRS", color: "#b07de0" },
+  radiosonde: { title: "Sondes", color: "#e06c6c" },
+  lora: { title: "LoRa", color: "#6cc070" },
+  remote_id: { title: "Drones", color: "#e0d05c" },
 };
 
 export const TARGET_MAX_AGE_MS = 5 * 60_000;
@@ -52,8 +75,46 @@ export function sourceId(kind: MapKind): string {
   return `targets-${kind}`;
 }
 
-export function layerId(kind: MapKind, part: "dot" | "heading" | "label"): string {
+export function layerId(kind: MapKind, part: "dot" | "heading" | "label" | "track"): string {
   return `targets-${kind}-${part}`;
+}
+
+export function trackSourceId(kind: MapKind): string {
+  return `targets-${kind}-tracks`;
+}
+
+export interface TrackCollection {
+  type: "FeatureCollection";
+  features: {
+    type: "Feature";
+    geometry: { type: "LineString"; coordinates: [number, number][] };
+    properties: { id: string };
+  }[];
+}
+
+export function trackCollection(
+  stations: readonly Target[],
+  trails: ReadonlyMap<string, Trail>,
+  nowMs: number,
+  maxAgeMs = TARGET_MAX_AGE_MS,
+): TrackCollection {
+  const features: TrackCollection["features"] = [];
+  for (const station of stations) {
+    const trail = trails.get(station.id);
+    if (
+      trail === undefined ||
+      trail.points.length < 2 ||
+      isStale(station.lastSeen, nowMs, maxAgeMs)
+    ) {
+      continue;
+    }
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: trailLine(trail) },
+      properties: { id: station.id },
+    });
+  }
+  return { type: "FeatureCollection", features };
 }
 
 export function isStale(lastSeen: number, nowMs: number, maxAgeMs = TARGET_MAX_AGE_MS): boolean {
@@ -91,22 +152,17 @@ export function targetFeature(station: Target): TargetFeature | null {
   return { type: "Feature", geometry: { type: "Point", coordinates }, properties };
 }
 
-export function geoPosition(
-  lat: number | null | undefined,
-  lon: number | null | undefined,
-): [number, number] | null {
-  if (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-    return null;
-  }
-  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-    return null;
-  }
-  return [lon, lat];
-}
-
 export function targetPosition(station: Target): [number, number] | null {
-  const { lat, lon } = station.event.data;
-  return geoPosition(lat, lon);
+  const event = station.event;
+  if (event.kind === "lora") {
+    const position = loraPosition(event.data);
+    return geoPosition(position?.lat, position?.lon);
+  }
+  if (event.kind === "remote_id") {
+    const position = remoteIdPosition(event.data);
+    return geoPosition(position?.lat, position?.lon);
+  }
+  return geoPosition(event.data.lat, event.data.lon);
 }
 
 export function referencePositions(params: readonly ChannelParams[]): [number, number][] {
@@ -157,6 +213,12 @@ export function targetLabel(station: Target): string {
       return trimmed(event.data.name) ?? trimmed(event.data.call_sign) ?? String(event.data.mmsi);
     case "aprs":
       return event.data.source;
+    case "radiosonde":
+      return event.data.serial;
+    case "lora":
+      return loraName(event.data) ?? station.id;
+    case "remote_id":
+      return event.data.uas_id ?? event.data.address;
   }
 }
 
@@ -169,6 +231,12 @@ export function targetHeading(station: Target): number | null {
       return bearing(headingOf(event.data.heading_deg)) ?? bearing(courseOf(event.data.cog_deg));
     case "aprs":
       return bearing(event.data.course_deg);
+    case "radiosonde":
+      return bearing(event.data.heading_deg);
+    case "lora":
+      return null;
+    case "remote_id":
+      return bearing(remoteIdLocation(event.data)?.track_deg);
   }
 }
 
@@ -229,7 +297,58 @@ function detailRows(station: Target): (readonly [string, string])[] {
         ["Comment", trimmed(d.comment)],
       ]);
     }
+    case "radiosonde": {
+      const d = event.data;
+      return kept([
+        ["Serial", d.serial],
+        ["Position", fix],
+        ["Altitude", scalar(d.altitude_m, 0, " m")],
+        ["Climb", scalar(d.climb_ms, 1, " m/s")],
+        ["Speed", scalar(d.speed_ms, 1, " m/s")],
+        ["Temp", scalar(d.temperature_c, 1, " °C")],
+        ["Humidity", scalar(d.humidity_pct, 0, "%")],
+        ["Pressure", scalar(d.pressure_hpa, 1, " hPa")],
+      ]);
+    }
+    case "lora": {
+      const d = event.data;
+      return kept([
+        ["Node", station.id],
+        ["Protocol", loraProtocol(d)],
+        ["Position", fix],
+        ["SNR", scalar(d.snr_db, 1, " dB")],
+      ]);
+    }
+    case "remote_id":
+      return remoteIdRows(station, event.data, fix);
   }
+}
+
+function remoteIdRows(
+  station: Target,
+  frame: StationOf<"remote_id">["event"]["data"],
+  fix: string | null,
+): (readonly [string, string])[] {
+  const location = remoteIdLocation(frame);
+  const drone = remoteIdPosition(frame);
+  const pilot = remoteIdPilot(frame);
+  const uaType = remoteIdUaType(frame);
+  return kept([
+    ["ID", station.id],
+    ["Type", uaType === null ? null : UA_TYPE_LABELS[uaType]],
+    ["Status", location ? UA_STATUS_LABELS[location.status] : null],
+    ["Position", fix],
+    ["Height", scalar(location?.height_m, 0, " m")],
+    ["Altitude", scalar(location?.geodetic_altitude_m, 0, " m")],
+    ["Speed", scalar(location?.speed_mps, 1, " m/s")],
+    ["Pilot", pilot === null ? null : formatPosition(pilot.lat, pilot.lon)],
+    [
+      "Pilot distance",
+      drone === null || pilot === null ? null : scalar(distanceM(drone, pilot), 0, " m"),
+    ],
+    ["Operator", remoteIdOperator(frame)],
+    ["Link", REMOTE_ID_TRANSPORT_LABELS[frame.transport]],
+  ]);
 }
 
 function kept(

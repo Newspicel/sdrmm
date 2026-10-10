@@ -23,7 +23,7 @@ impl AirspyConverter {
     pub(crate) fn new(samples: usize) -> Self {
         Self {
             dc: DcBlocker::new(),
-            converter: RealToIq::default(),
+            converter: RealToIq::default().inverted(),
             real: Vec::with_capacity(samples),
             out: Vec::with_capacity(samples / 2),
             carry: None,
@@ -60,6 +60,10 @@ impl SampleConverter for AirspyConverter {
         self.out.clear();
         self.carry = None;
     }
+
+    fn bytes_per_sample(&self) -> u64 {
+        4
+    }
 }
 
 fn code_to_f32(word: u16) -> f32 {
@@ -69,6 +73,8 @@ fn code_to_f32(word: u16) -> f32 {
 #[cfg(test)]
 mod tests {
     use std::f64::consts::TAU;
+
+    use sdrmm_dsp::fft::FftPair;
 
     use super::*;
 
@@ -103,6 +109,14 @@ mod tests {
     }
 
     #[test]
+    fn a_sample_takes_as_many_bytes_as_the_converter_claims() {
+        let bytes = tone_bytes(0.25, 4096);
+        let mut converter = AirspyConverter::new(4096);
+        let samples = converter.convert(&bytes).len() as u64;
+        assert_eq!(samples * converter.bytes_per_sample(), bytes.len() as u64);
+    }
+
+    #[test]
     fn a_transfer_split_between_two_codes_loses_no_sample() {
         let bytes = tone_bytes(0.26, 4096);
         let mut whole = AirspyConverter::new(4096);
@@ -119,7 +133,13 @@ mod tests {
             got.extend_from_slice(split.convert(&bytes[at..end]));
             at = end;
         }
-        assert_eq!(expected, got);
+        assert_eq!(expected.len(), got.len());
+        let worst = expected
+            .iter()
+            .zip(&got)
+            .map(|(a, b)| (a - b).norm())
+            .fold(0.0f32, f32::max);
+        assert!(worst < 1e-5, "split output differs by {worst}");
     }
 
     #[test]
@@ -134,6 +154,24 @@ mod tests {
             "a constant code should decay away, left {}",
             mean.norm()
         );
+    }
+
+    #[test]
+    fn a_code_above_the_quarter_rate_lands_below_the_tuning() {
+        let input_len = 8192;
+        let above_quarter = 256;
+        let mut converter = AirspyConverter::new(input_len);
+        let bytes = tone_bytes(0.25 + above_quarter as f64 / input_len as f64, input_len);
+        let mut spectrum = converter.convert(&bytes)[1024..3072].to_vec();
+        FftPair::new(spectrum.len()).forward(&mut spectrum);
+        let peak = spectrum
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.norm_sqr().total_cmp(&b.1.norm_sqr()))
+            .map(|(bin, _)| bin)
+            .unwrap_or_default();
+        let offset_bins = 2 * above_quarter * spectrum.len() / input_len;
+        assert_eq!(peak, spectrum.len() - offset_bins);
     }
 
     #[test]

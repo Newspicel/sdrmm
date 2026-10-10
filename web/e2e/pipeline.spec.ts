@@ -168,14 +168,14 @@ for (const { fallback, delayOutput, wideband } of [
     }
     await instrumentPlayback(page, delayOutput);
     const snapshot: WorkspaceSnapshot = {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
           {
             id: "radio",
             kind: "device",
             position: { x: 0, y: 0 },
-            data: { device: { backend: "virtual", key: "siggen" } },
+            data: { device: { backend: "virtual", key: "band" } },
           },
           {
             id: "voice",
@@ -215,7 +215,7 @@ for (const { fallback, delayOutput, wideband } of [
         frequency_hz: (device.settings.center_hz ?? 100_000_000) + 300_000,
         squelch: { mode: "off" as const },
       };
-      expect((await page.request.patch(channelUrl, { data: settings })).ok()).toBe(true);
+      expect((await page.request.patch(channelUrl, { data: { settings } })).ok()).toBe(true);
       const speaker = page.locator('.react-flow__node[data-id="speaker"]');
       await speaker.locator("header").click();
       await speaker.getByRole("button", { name: "Play", exact: true }).click();
@@ -237,16 +237,18 @@ for (const { fallback, delayOutput, wideband } of [
           (
             await page.request.patch(channelUrl, {
               data: {
-                ...settings,
-                frequency_hz: settings.frequency_hz + offset,
-                params:
-                  settings.params.type === "wfm"
-                    ? {
-                        ...settings.params,
-                        settings: { ...settings.params.settings, stereo: offset === -100 },
-                      }
-                    : settings.params,
-              } satisfies ChannelSettings,
+                settings: {
+                  ...settings,
+                  frequency_hz: settings.frequency_hz + offset,
+                  params:
+                    settings.params.type === "wfm"
+                      ? {
+                          ...settings.params,
+                          settings: { ...settings.params.settings, stereo: offset === -100 },
+                        }
+                      : settings.params,
+                } satisfies ChannelSettings,
+              },
             })
           ).ok(),
         ).toBe(true);

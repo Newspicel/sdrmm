@@ -37,6 +37,29 @@ async fn decoder_log_lists_newest_first_and_filters() {
 }
 
 #[tokio::test]
+async fn decoder_log_groups_by_station_and_refuses_an_unknown_key() {
+    let (app, store) = test_router_with_store();
+    seed_decoder_log(&store);
+
+    let (status, body) = request(
+        app.clone(),
+        "GET",
+        "/api/decoderlog/groups/station?kind=adsb",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let grouped: sdrmm_wire::DecoderLogGroupsResponse =
+        serde_json::from_slice(&body).expect("json");
+    assert_eq!(grouped.total, 2);
+    assert_eq!(grouped.groups[0].latest.station.as_deref(), Some("4CA2D4"));
+    assert_eq!(grouped.groups[0].count, 1);
+
+    let (status, _) = request(app, "GET", "/api/decoderlog/groups/colour", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn decoder_log_clear_removes_only_the_filtered_rows() {
     let (app, store) = test_router_with_store();
     seed_decoder_log(&store);

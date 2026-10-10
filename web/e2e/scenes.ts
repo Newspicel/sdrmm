@@ -5,14 +5,15 @@ import type {
   DeviceInfo,
   DeviceRef,
   DeviceSet,
-  PatchEdge,
   PatchNode,
   RackSlot,
   StateSnapshot,
   WorkspaceSnapshot,
 } from "../src/lib/types";
+import { type Box, face, fitPatch, node, stage, wire } from "./canvas";
 
-const SIGGEN: DeviceRef = { backend: "virtual", key: "siggen" };
+const BAND: DeviceRef = { backend: "virtual", key: "band" };
+const BAND_CENTER_HZ = 100_000_000;
 
 export interface Scene {
   id: string;
@@ -23,28 +24,8 @@ export interface Scene {
   settleSeconds: number;
 }
 
-interface Box {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-function node(id: string, body: Record<string, unknown>, box: Box): PatchNode {
-  return {
-    id,
-    position: { x: box.x, y: box.y },
-    size: { w: box.w, h: box.h },
-    ...body,
-  } as PatchNode;
-}
-
 function channel(id: string, type: string, box: Box): PatchNode {
   return node(id, { kind: "channel", data: { channel_type: type } }, box);
-}
-
-function wire(from: [string, string], to: [string, string]): PatchEdge {
-  return { from: { node: from[0], port: from[1] }, to: { node: to[0], port: to[1] } };
 }
 
 function slot(id: string, cell: Box): RackSlot {
@@ -60,19 +41,6 @@ async function recording(page: Page, stem: string): Promise<DeviceRef> {
     throw new Error(`a recording device for ${stem}`);
   }
   return { backend: found.driver, key: found.key };
-}
-
-async function stage(page: Page, name: string, snapshot: WorkspaceSnapshot): Promise<void> {
-  const response = await page.request.post("/api/workspaces", { data: { name, snapshot } });
-  const created: { id?: number; error?: string } = await response.json();
-  if (created.id === undefined) {
-    throw new Error(`workspace ${name} was rejected: ${created.error ?? response.status()}`);
-  }
-  await page.request.post(`/api/workspaces/${created.id}/activate`);
-  const report = await page.request.post(`/api/workspaces/${created.id}/apply`);
-  expect(report.ok()).toBe(true);
-  await page.goto("/");
-  await expect(page.getByRole("button", { name: "Add a node" })).toBeVisible();
 }
 
 async function deviceSet(page: Page, device: DeviceRef): Promise<DeviceSet> {
@@ -96,7 +64,7 @@ async function amend(
       continue;
     }
     const response = await page.request.patch(`/api/devicesets/${set.id}/channels/${open.id}`, {
-      data: { ...open.settings, ...change(open) },
+      data: { settings: { ...open.settings, ...change(open) } },
     });
     if (!response.ok()) {
       throw new Error(`setting channel ${open.id}: ${await response.text()}`);
@@ -106,25 +74,33 @@ async function amend(
 
 async function tune(page: Page, device: DeviceRef, offsets: Record<string, number>): Promise<void> {
   const set = await deviceSet(page, device);
-  const centerHz = set.settings.center_hz ?? 0;
+  const centerHz = device === BAND ? BAND_CENTER_HZ : (set.settings.center_hz ?? 0);
   for (const [type, offset] of Object.entries(offsets)) {
     await amend(page, device, type, () => ({ frequency_hz: centerHz + offset }));
   }
+  if (set.settings.center_hz === centerHz) {
+    return;
+  }
+  const response = await page.request.patch(`/api/devicesets/${set.id}/device`, {
+    data: { ...set.settings, center_hz: centerHz },
+  });
+  if (!response.ok()) {
+    throw new Error(`centering ${device.key}: ${await response.text()}`);
+  }
 }
 
-async function fitPatch(page: Page): Promise<void> {
-  const pane = page.locator(".react-flow__pane");
-  const box = await pane.boundingBox();
-  if (box === null) {
-    throw new Error("a pane to right-click");
-  }
-  await page.mouse.click(box.x + 40, box.y + box.height - 40, { button: "right" });
-  await page
-    .getByRole("menu")
-    .getByRole("button", { name: /fit the patch/i })
-    .click();
+async function fitForCapture(page: Page): Promise<void> {
+  await fitPatch(page);
   await page.keyboard.press("Escape");
+  const box = await page.locator(".react-flow__pane").boundingBox();
+  if (box === null) {
+    throw new Error("a pane to click");
+  }
   await page.mouse.click(box.x + 12, box.y + 12);
+  await idle(page);
+}
+
+async function idle(page: Page): Promise<void> {
   await page.mouse.move(0, 0);
   await page
     .locator("body")
@@ -135,31 +111,21 @@ async function showRack(page: Page): Promise<void> {
   await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Rack" }).click();
 }
 
-export async function addNode(page: Page, name: string): Promise<void> {
-  await page.getByRole("button", { name: "Add a node" }).click();
-  await page.getByRole("textbox", { name: "Search nodes" }).fill(name);
-  await page.getByRole("button", { name, exact: true }).click();
-}
-
-export function face(page: Page, id: string) {
-  return page.locator(`.react-flow__node[data-id="${id}"]`);
-}
-
 export async function listen(page: Page, id: string): Promise<void> {
   const shell = face(page, id);
   await shell.click();
   await shell.getByRole("button", { name: /^play$/i }).click();
 }
 
-function siggenPatch(): WorkspaceSnapshot {
+function bandPatch(): WorkspaceSnapshot {
   return {
-    version: 3,
+    version: 4,
     graph: {
       nodes: [
-        node("dev", { kind: "device", data: { device: SIGGEN } }, { x: 0, y: 0, w: 380, h: 420 }),
-        node("scope", { kind: "scope" }, { x: 440, y: 0, w: 800, h: 420 }),
-        channel("ch", "nfm", { x: 0, y: 480, w: 560, h: 620 }),
-        node("speaker", { kind: "speaker" }, { x: 620, y: 480, w: 620, h: 300 }),
+        node("dev", { kind: "device", data: { device: BAND } }, { x: 0, y: 0, w: 420, h: 236 }),
+        channel("ch", "nfm", { x: 540, y: 0, w: 460, h: 331 }),
+        node("scope", { kind: "scope" }, { x: 540, y: 371, w: 880, h: 400 }),
+        node("speaker", { kind: "speaker" }, { x: 1140, y: 0, w: 280, h: 204 }),
       ],
       edges: [
         wire(["dev", "iq"], ["scope", "iq"]),
@@ -176,22 +142,22 @@ const patch: Scene = {
   speaker: "speaker",
   settleSeconds: 10,
   async stage(page) {
-    await stage(page, "Signal generator", {
-      version: 3,
+    await stage(page, "Test band", {
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device: SIGGEN } }, { x: 0, y: 0, w: 380, h: 222 }),
-          node("scope", { kind: "scope" }, { x: 440, y: 0, w: 1400, h: 440 }),
-          channel("nfm", "nfm", { x: 0, y: 520, w: 440, h: 541 }),
-          channel("am", "am", { x: 480, y: 520, w: 440, h: 445 }),
-          channel("wfm", "wfm", { x: 960, y: 520, w: 440, h: 469 }),
-          node("speaker", { kind: "speaker" }, { x: 1440, y: 520, w: 320, h: 270 }),
+          node("dev", { kind: "device", data: { device: BAND } }, { x: 0, y: 0, w: 420, h: 236 }),
+          node("scope", { kind: "scope" }, { x: 1140, y: 0, w: 760, h: 400 }),
+          channel("nfm", "nfm", { x: 540, y: 100, w: 460, h: 331 }),
+          channel("am", "am", { x: 540, y: 471, w: 460, h: 229 }),
+          channel("wfm", "wfm", { x: 540, y: 740, w: 460, h: 255 }),
+          node("speaker", { kind: "speaker" }, { x: 1140, y: 440, w: 280, h: 204 }),
+          node("udp", { kind: "network_export", data: {} }, { x: 1140, y: 684, w: 280, h: 242 }),
           node(
             "rec",
             { kind: "audio_recorder", data: { recording: false } },
-            { x: 1440, y: 830, w: 340, h: 70 },
+            { x: 1140, y: 966, w: 280, h: 104 },
           ),
-          node("udp", { kind: "network_export", data: {} }, { x: 1440, y: 940, w: 380, h: 240 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -204,8 +170,8 @@ const patch: Scene = {
         ],
       },
     });
-    await tune(page, SIGGEN, { nfm: 300_000, am: -300_000, wfm: 600_000 });
-    await fitPatch(page);
+    await tune(page, BAND, { nfm: 300_000, am: -300_000, wfm: 600_000 });
+    await fitForCapture(page);
   },
   async ready(page) {
     await expect(face(page, "scope").getByText(/MHz/).first()).toBeVisible();
@@ -215,12 +181,12 @@ const patch: Scene = {
 const spectrum: Scene = {
   id: "spectrum",
   title: "the spectrum and waterfall",
-  settleSeconds: 16,
+  settleSeconds: 26,
   async stage(page) {
-    const snapshot = siggenPatch();
+    const snapshot = bandPatch();
     snapshot.rack = { slots: [slot("scope", { x: 0, y: 0, w: 12, h: 8 })] };
     await stage(page, "Spectrum", snapshot);
-    await tune(page, SIGGEN, { nfm: 300_000 });
+    await tune(page, BAND, { nfm: 300_000 });
     await showRack(page);
     const scope = page.locator('.grid > [data-id="scope"]');
     await expect(scope).toBeVisible();
@@ -230,7 +196,7 @@ const spectrum: Scene = {
       .getByRole("button", { name: /^viridis$/i })
       .click();
     await page.keyboard.press("Escape");
-    await page.mouse.move(0, 0);
+    await idle(page);
   },
   async ready(page) {
     await expect(page.locator('.grid > [data-id="scope"]').getByText(/MHz/).first()).toBeVisible();
@@ -240,18 +206,18 @@ const spectrum: Scene = {
 const adsb: Scene = {
   id: "adsb",
   title: "aircraft on the map",
-  settleSeconds: 8,
+  settleSeconds: 20,
   async stage(page) {
     const device = await recording(page, "adsb_squitters_2m");
     await stage(page, "Aircraft (ADS-B)", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 380, h: 290 }),
-          channel("ch", "adsb", { x: 0, y: 350, w: 440, h: 190 }),
-          node("scope", { kind: "scope" }, { x: 480, y: 0, w: 720, h: 540 }),
-          node("map", { kind: "map" }, { x: 1240, y: 0, w: 700, h: 540 }),
-          node("log", { kind: "decoder_log" }, { x: 0, y: 600, w: 1940, h: 560 }),
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          channel("ch", "adsb", { x: 540, y: 0, w: 420, h: 141 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 181, w: 960, h: 819 }),
+          node("map", { kind: "map" }, { x: 1100, y: 0, w: 800, h: 560 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 600, w: 800, h: 400 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -262,7 +228,7 @@ const adsb: Scene = {
       },
     });
     await tune(page, device, { adsb: 0 });
-    await fitPatch(page);
+    await fitForCapture(page);
   },
   async ready(page) {
     await expect(face(page, "map").getByText("Aircraft")).toBeVisible();
@@ -271,24 +237,26 @@ const adsb: Scene = {
         .getByText(/DLH123/)
         .first(),
     ).toBeVisible({ timeout: 60_000 });
+    await face(page, "map").getByRole("button", { name: "Zoom out" }).click();
+    await idle(page);
   },
 };
 
 const ais: Scene = {
   id: "ais",
   title: "ships on the map",
-  settleSeconds: 8,
+  settleSeconds: 16,
   async stage(page) {
     const device = await recording(page, "ais_position_240k");
     await stage(page, "Ships (AIS)", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 380, h: 290 }),
-          channel("ch", "ais", { x: 0, y: 350, w: 440, h: 204 }),
-          node("scope", { kind: "scope" }, { x: 0, y: 600, w: 440, h: 300 }),
-          node("map", { kind: "map" }, { x: 480, y: 0, w: 1020, h: 720 }),
-          node("log", { kind: "decoder_log" }, { x: 480, y: 760, w: 1020, h: 140 }),
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          channel("ch", "ais", { x: 540, y: 0, w: 420, h: 153 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 193, w: 960, h: 807 }),
+          node("map", { kind: "map" }, { x: 1100, y: 0, w: 800, h: 760 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 800, w: 800, h: 200 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -299,7 +267,7 @@ const ais: Scene = {
       },
     });
     await tune(page, device, { ais: 25_000 });
-    await fitPatch(page);
+    await fitForCapture(page);
   },
   async ready(page) {
     await expect(
@@ -317,23 +285,25 @@ const sstv: Scene = {
   async stage(page) {
     const device = await recording(page, "sstv_robot36_48k");
     await stage(page, "SSTV", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 380, h: 290 }),
-          channel("ch", "sstv", { x: 0, y: 350, w: 440, h: 300 }),
-          node("readout", { kind: "readout" }, { x: 500, y: 0, w: 1200, h: 560 }),
-          node("scope", { kind: "scope" }, { x: 0, y: 610, w: 1700, h: 300 }),
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          channel("ch", "sstv", { x: 540, y: 0, w: 420, h: 218 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 258, w: 960, h: 582 }),
+          node("readout", { kind: "readout" }, { x: 1100, y: 0, w: 800, h: 530 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 570, w: 800, h: 270 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
           wire(["dev", "iq"], ["ch", "iq"]),
           wire(["ch", "events"], ["readout", "events"]),
+          wire(["ch", "events"], ["log", "events"]),
         ],
       },
     });
     await tune(page, device, { sstv: 4_000 });
-    await fitPatch(page);
+    await fitForCapture(page);
   },
   async ready(page) {
     const readout = face(page, "readout");
@@ -351,11 +321,11 @@ const pocsag: Scene = {
   async stage(page) {
     const device = await recording(page, "pocsag_1200_240k");
     await stage(page, "Pagers (POCSAG)", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 380, h: 290 }),
-          channel("ch", "pocsag", { x: 0, y: 350, w: 440, h: 262 }),
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          channel("ch", "pocsag", { x: 540, y: 0, w: 420, h: 217 }),
           node(
             "hook",
             {
@@ -368,10 +338,10 @@ const pocsag: Scene = {
                 },
               },
             },
-            { x: 0, y: 680, w: 420, h: 209 },
+            { x: 1100, y: 803, w: 280, h: 197 },
           ),
-          node("scope", { kind: "scope" }, { x: 480, y: 0, w: 1240, h: 360 }),
-          node("log", { kind: "decoder_log" }, { x: 480, y: 410, w: 1240, h: 620 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 257, w: 960, h: 743 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 0, w: 800, h: 763 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -382,7 +352,7 @@ const pocsag: Scene = {
       },
     });
     await tune(page, device, { pocsag: 50_000 });
-    await fitPatch(page);
+    await fitForCapture(page);
   },
   async ready(page) {
     await expect(
@@ -396,17 +366,17 @@ const pocsag: Scene = {
 const ft8: Scene = {
   id: "ft8",
   title: "a busy FT8 slot",
-  settleSeconds: 4,
+  settleSeconds: 10,
   async stage(page) {
     const device = await recording(page, "ft8_20m_busy_12k");
     await stage(page, "Weak signal (FT8)", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 380, h: 290 }),
-          channel("ch", "ft8", { x: 0, y: 350, w: 440, h: 274 }),
-          node("scope", { kind: "scope" }, { x: 480, y: 0, w: 1180, h: 300 }),
-          node("log", { kind: "decoder_log" }, { x: 480, y: 340, w: 1180, h: 620 }),
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          channel("ch", "ft8", { x: 540, y: 0, w: 420, h: 229 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 269, w: 960, h: 731 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 0, w: 800, h: 1000 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -416,7 +386,7 @@ const ft8: Scene = {
       },
     });
     await tune(page, device, { ft8: 0 });
-    await fitPatch(page);
+    await fitForCapture(page);
   },
   async ready(page) {
     await expect(face(page, "log").getByText(/OH8JK/).first()).toBeVisible({ timeout: 180_000 });
@@ -427,29 +397,31 @@ const rds: Scene = {
   id: "rds",
   title: "broadcast FM with RDS",
   speaker: "speaker",
-  settleSeconds: 8,
+  settleSeconds: 16,
   async stage(page) {
     const device = await recording(page, "rds_station_960k");
     await stage(page, "Broadcast FM (RDS)", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 380, h: 290 }),
-          channel("ch", "wfm", { x: 0, y: 350, w: 440, h: 469 }),
-          node("speaker", { kind: "speaker" }, { x: 0, y: 860, w: 320, h: 210 }),
-          node("scope", { kind: "scope" }, { x: 480, y: 0, w: 1200, h: 760 }),
-          node("readout", { kind: "readout" }, { x: 480, y: 800, w: 1200, h: 270 }),
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          channel("ch", "wfm", { x: 540, y: 0, w: 460, h: 255 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 295, w: 1000, h: 705 }),
+          node("speaker", { kind: "speaker" }, { x: 1140, y: 0, w: 280, h: 204 }),
+          node("readout", { kind: "readout" }, { x: 1140, y: 244, w: 760, h: 220 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1140, y: 504, w: 760, h: 496 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
           wire(["dev", "iq"], ["ch", "iq"]),
           wire(["ch", "audio"], ["speaker", "audio"]),
           wire(["ch", "events"], ["readout", "events"]),
+          wire(["ch", "events"], ["log", "events"]),
         ],
       },
     });
     await tune(page, device, { wfm: 200_000 });
-    await fitPatch(page);
+    await fitForCapture(page);
   },
   async ready(page) {
     await expect(
@@ -463,27 +435,29 @@ const rds: Scene = {
 const ident: Scene = {
   id: "ident",
   title: "an unknown signal identified",
-  settleSeconds: 6,
+  settleSeconds: 14,
   async stage(page) {
     const device = await recording(page, "pocsag_1200_240k");
     await stage(page, "Signal identification", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 380, h: 290 }),
-          channel("ch", "ident", { x: 0, y: 350, w: 440, h: 274 }),
-          node("readout", { kind: "readout" }, { x: 480, y: 0, w: 1180, h: 470 }),
-          node("scope", { kind: "scope" }, { x: 0, y: 680, w: 1660, h: 300 }),
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          channel("ch", "ident", { x: 540, y: 0, w: 420, h: 229 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 269, w: 960, h: 731 }),
+          node("readout", { kind: "readout" }, { x: 1100, y: 0, w: 800, h: 560 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 600, w: 800, h: 400 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
           wire(["dev", "iq"], ["ch", "iq"]),
           wire(["ch", "events"], ["readout", "events"]),
+          wire(["ch", "events"], ["log", "events"]),
         ],
       },
     });
     await tune(page, device, { ident: 0 });
-    await fitPatch(page);
+    await fitForCapture(page);
   },
   async ready(page) {
     await expect(
@@ -501,13 +475,13 @@ const atv: Scene = {
   async stage(page) {
     const device = await recording(page, "atv_ccir625_2m4");
     await stage(page, "Amateur television", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
-          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 380, h: 290 }),
-          channel("ch", "atv", { x: 0, y: 350, w: 440, h: 639 }),
-          node("scope", { kind: "scope" }, { x: 480, y: 0, w: 1180, h: 400 }),
-          node("video", { kind: "video" }, { x: 480, y: 440, w: 1180, h: 548 }),
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          node("scope", { kind: "scope" }, { x: 540, y: 0, w: 1360, h: 360 }),
+          channel("ch", "atv", { x: 540, y: 400, w: 460, h: 433 }),
+          node("video", { kind: "video" }, { x: 1140, y: 400, w: 760, h: 596 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
@@ -522,9 +496,9 @@ const atv: Scene = {
       if (params.type !== "atv") {
         throw new Error("an ATV channel");
       }
-      return { params: { ...params, settings: { ...params.settings, interlace: false } } };
+      return { params: { ...params, settings: { ...params.settings, interlace: true } } };
     });
-    await fitPatch(page);
+    await fitForCapture(page);
   },
   async ready(page) {
     await expect(face(page, "video").locator("canvas")).toBeVisible({ timeout: 60_000 });
@@ -540,7 +514,7 @@ const rack: Scene = {
     const pocsagDevice = await recording(page, "pocsag_1200_240k");
     const sstvDevice = await recording(page, "sstv_robot36_48k");
     await stage(page, "Watch desk", {
-      version: 3,
+      version: 4,
       graph: {
         nodes: [
           node(
@@ -563,7 +537,7 @@ const rack: Scene = {
           channel("ch_sstv", "sstv", { x: 440, y: 680, w: 440, h: 300 }),
           node("scope", { kind: "scope" }, { x: 940, y: 0, w: 700, h: 300 }),
           node("map", { kind: "map" }, { x: 940, y: 340, w: 700, h: 300 }),
-          node("log", { kind: "decoder_log" }, { x: 940, y: 680, w: 700, h: 300 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 940, y: 680, w: 700, h: 300 }),
           node("readout", { kind: "readout" }, { x: 1700, y: 0, w: 700, h: 300 }),
         ],
         edges: [
@@ -578,10 +552,10 @@ const rack: Scene = {
       },
       rack: {
         slots: [
-          slot("scope", { x: 0, y: 0, w: 7, h: 4 }),
-          slot("map", { x: 7, y: 0, w: 5, h: 4 }),
-          slot("log", { x: 0, y: 4, w: 7, h: 4 }),
-          slot("readout", { x: 7, y: 4, w: 5, h: 4 }),
+          slot("scope", { x: 0, y: 0, w: 8, h: 3 }),
+          slot("map", { x: 8, y: 0, w: 4, h: 3 }),
+          slot("log", { x: 0, y: 3, w: 8, h: 5 }),
+          slot("readout", { x: 8, y: 3, w: 4, h: 5 }),
         ],
       },
     });

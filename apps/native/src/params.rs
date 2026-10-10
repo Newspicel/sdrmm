@@ -67,11 +67,11 @@ pub fn fields(type_id: &str) -> anyhow::Result<Vec<Field>> {
     };
     properties
         .iter()
-        .map(|(name, schema)| field(root, name, schema))
+        .filter_map(|(name, schema)| field(root, name, schema).transpose())
         .collect()
 }
 
-fn field(root: &Value, name: &str, schema: &Value) -> anyhow::Result<Field> {
+fn field(root: &Value, name: &str, schema: &Value) -> anyhow::Result<Option<Field>> {
     let mut schema = resolve(root, schema)?;
     let mut optional = false;
     if let Some(choices) = schema["oneOf"].as_array() {
@@ -113,15 +113,16 @@ fn field(root: &Value, name: &str, schema: &Value) -> anyhow::Result<Field> {
                 integer: kind == "integer",
             },
             "string" => Control::Text,
+            "object" | "array" => return Ok(None),
             _ => bail!("unsupported control for {name}: {kind}"),
         }
     };
-    Ok(Field {
+    Ok(Some(Field {
         name: name.into(),
         label: label(name),
         control,
         optional,
-    })
+    }))
 }
 
 pub fn label(name: &str) -> String {

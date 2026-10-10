@@ -405,7 +405,7 @@ mod tests {
 
     fn channel(export: Option<NetworkExportStatus>) -> ChannelInfo {
         serde_json::from_value(json!({
-            "id": 3, "stream": 0, "out_of_band": false, "network_export": export,
+            "id": 3, "stream": 0, "out_of_band": null, "network_export": export,
             "settings": { "frequency_hz": 100e6, "params": { "type": "nfm", "settings": {} } }
         }))
         .expect("channel")

@@ -5,7 +5,6 @@ use sdrmm_wire::{
     patch::{NodeBody, PatchGraph, PortBacking},
 };
 
-use super::settings::keeps_calls;
 use zgui::prelude::*;
 
 use crate::store::Store;
@@ -32,9 +31,6 @@ pub fn retype_channel(graph: &PatchGraph, id: &str, descriptor: &ChannelDescript
         return retyped;
     };
     channel.channel_type.clone_from(&descriptor.type_id);
-    if !keeps_calls(Some(descriptor)) {
-        channel.record_calls = false;
-    }
     let kept: HashSet<String> = node
         .body
         .ports_with(Some(PortBacking::Channel(descriptor)))
@@ -155,12 +151,11 @@ mod tests {
                     "ch",
                     NodeBody::Channel(ChannelNode {
                         channel_type: "nfm".into(),
-                        record_calls: true,
                         tuning_locked: true,
                     }),
                 ),
                 node("spk", NodeBody::Speaker),
-                node("log", NodeBody::DecoderLog),
+                node("log", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge(("dev", "iq"), ("ch", "iq")),
@@ -197,7 +192,6 @@ mod tests {
             channel_of(&retyped),
             ChannelNode {
                 channel_type: "am".into(),
-                record_calls: false,
                 tuning_locked: true,
             }
         );
@@ -205,21 +199,14 @@ mod tests {
 
     #[test]
     fn retyping_drops_the_wires_the_new_decoder_has_no_port_for() {
-        let retyped = retype_channel(&graph(), "ch", &descriptor("am", true, None));
-        assert_eq!(
-            retyped.edges,
-            vec![
-                edge(("dev", "iq"), ("ch", "iq")),
-                edge(("ch", "audio"), ("spk", "audio")),
-            ]
-        );
+        let retyped = retype_channel(&graph(), "ch", &descriptor("raw", false, None));
+        assert_eq!(retyped.edges, vec![edge(("dev", "iq"), ("ch", "iq"))]);
     }
 
     #[test]
     fn retyping_leaves_a_wire_the_new_decoder_still_carries() {
         let retyped = retype_channel(&graph(), "ch", &descriptor("dmr", true, Some("dv")));
         assert_eq!(retyped.edges.len(), 3);
-        assert!(channel_of(&retyped).record_calls);
     }
 
     #[test]

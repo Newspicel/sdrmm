@@ -4,7 +4,7 @@ use sdrmm_wire::about::{AboutResponse, Attribution, LicenseTextResponse};
 use zgui::prelude::*;
 
 use crate::{
-    shell::about::{group_components, noted_components, summary_line},
+    shell::about::{group_components, summary_line},
     store::Store,
     ui::{
         dialogs::frame,
@@ -95,18 +95,6 @@ fn contents(
     let repository = about.repository.clone();
     let license = RwSignal::new(false);
     let license_text = about.license_text.clone();
-    let noted: Vec<AnyView> = noted_components(&about.components)
-        .into_iter()
-        .map(|component| {
-            let note = component.note.clone().unwrap_or_default();
-            AnyView::new(view! {
-                column {
-                    {component_row(store, component, reading)}
-                    text(class = "about__note") {{note}}
-                }
-            })
-        })
-        .collect();
     let count = about.components.len();
     let summary = summary_line(&about.components);
     let components = about.clone();
@@ -153,10 +141,6 @@ fn contents(
             "License"
         }
         {move || license.get().then(|| view! { text(class = "sk-pre") {{license_text.clone()}} })}
-        {(!noted.is_empty()).then(|| view! {
-            text(class = "about__section") {"Worth knowing"}
-            {noted}
-        })}
         row(class = "about__filter") {
             text(class = "about__section") {{format!("Third-party components ({count})")}}
             spacer() {}

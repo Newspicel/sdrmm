@@ -4,77 +4,107 @@ use crate::EngineError;
 
 pub(crate) struct ScanPlan {
     pub(crate) targets: Vec<f64>,
+    pub(crate) priority: Vec<f64>,
+}
+
+fn bad(msg: String) -> EngineError {
+    EngineError::Scan(msg)
 }
 
 impl ScanPlan {
     pub(crate) fn build(settings: &ScanSettings) -> Result<Self, EngineError> {
-        let bad = |msg: String| EngineError::Scan(msg);
-        if !settings.threshold_db.is_finite() {
-            return Err(bad("threshold_db must be finite".to_string()));
+        if !settings.margin_db.is_finite() {
+            return Err(bad("margin_db must be finite".to_string()));
         }
         if let Some(bw_hz) = settings.measure_bw_hz
             && (!bw_hz.is_finite() || bw_hz <= 0.0)
         {
             return Err(bad(format!("measure_bw_hz must be positive, got {bw_hz}")));
         }
-        let mut targets: Vec<f64> = Vec::new();
-        for range in &settings.ranges {
-            if !range.start_hz.is_finite() || !range.stop_hz.is_finite() {
-                return Err(bad("scan range bounds must be finite".to_string()));
-            }
-            if !range.step_hz.is_finite() || range.step_hz <= 0.0 {
-                return Err(bad(format!(
-                    "scan range step must be positive, got {}",
-                    range.step_hz
-                )));
-            }
-            if range.stop_hz < range.start_hz {
-                return Err(bad(format!(
-                    "scan range {} Hz–{} Hz ends before it starts",
-                    range.start_hz, range.stop_hz
-                )));
-            }
-            let steps = ((range.stop_hz - range.start_hz) / range.step_hz).floor();
-            let too_many = !steps.is_finite()
-                || steps < 0.0
-                || steps >= MAX_SCAN_TARGETS as f64
-                || targets.len() + (steps as usize) + 1 > MAX_SCAN_TARGETS;
-            if too_many {
-                return Err(bad(format!(
-                    "scan expands to more than {MAX_SCAN_TARGETS} targets; widen the step or \
-                     narrow the range"
-                )));
-            }
-            let count = steps as usize + 1;
-            for i in 0..count {
-                targets.push(range.start_hz + range.step_hz * i as f64);
-            }
-        }
-        for &freq in &settings.frequencies {
-            if !freq.is_finite() || freq <= 0.0 {
-                return Err(bad(format!(
-                    "scan frequency {freq} is not a usable Hz value"
-                )));
-            }
-            targets.push(freq);
-        }
+        let mut targets = expand_ranges(settings)?;
+        let priority = usable_frequencies(&settings.priority)?;
+        targets.extend(usable_frequencies(&settings.frequencies)?);
+        targets.extend(&priority);
         if targets.len() > MAX_SCAN_TARGETS {
             return Err(bad(format!(
                 "scan expands to more than {MAX_SCAN_TARGETS} targets"
             )));
         }
-        for t in &mut targets {
-            *t = t.round();
-        }
-        targets.sort_by(f64::total_cmp);
-        targets.dedup();
+        let targets = sorted_hz(targets);
         if targets.is_empty() {
             return Err(bad(
                 "a scan needs at least one range or frequency".to_string()
             ));
         }
-        Ok(Self { targets })
+        Ok(Self {
+            targets,
+            priority: sorted_hz(priority),
+        })
     }
+}
+
+fn expand_ranges(settings: &ScanSettings) -> Result<Vec<f64>, EngineError> {
+    let mut targets: Vec<f64> = Vec::new();
+    for range in &settings.ranges {
+        if !range.start_hz.is_finite() || !range.stop_hz.is_finite() {
+            return Err(bad("scan range bounds must be finite".to_string()));
+        }
+        if !range.step_hz.is_finite() || range.step_hz <= 0.0 {
+            return Err(bad(format!(
+                "scan range step must be positive, got {}",
+                range.step_hz
+            )));
+        }
+        if range.stop_hz < range.start_hz {
+            return Err(bad(format!(
+                "scan range {} Hz–{} Hz ends before it starts",
+                range.start_hz, range.stop_hz
+            )));
+        }
+        let steps = ((range.stop_hz - range.start_hz) / range.step_hz).floor();
+        let too_many = !steps.is_finite()
+            || steps < 0.0
+            || steps >= MAX_SCAN_TARGETS as f64
+            || targets.len() + (steps as usize) + 1 > MAX_SCAN_TARGETS;
+        if too_many {
+            return Err(bad(format!(
+                "scan expands to more than {MAX_SCAN_TARGETS} targets; widen the step or \
+                 narrow the range"
+            )));
+        }
+        let count = steps as usize + 1;
+        targets.extend((0..count).map(|i| range.start_hz + range.step_hz * i as f64));
+    }
+    Ok(targets)
+}
+
+fn usable_frequencies(frequencies: &[f64]) -> Result<Vec<f64>, EngineError> {
+    if frequencies.len() > MAX_SCAN_TARGETS {
+        return Err(bad(format!(
+            "scan expands to more than {MAX_SCAN_TARGETS} targets"
+        )));
+    }
+    frequencies
+        .iter()
+        .map(|&freq| {
+            if freq.is_finite() && freq > 0.0 {
+                Ok(freq)
+            } else {
+                Err(bad(format!(
+                    "scan frequency {freq} is not a usable Hz value"
+                )))
+            }
+        })
+        .collect()
+}
+
+fn sorted_hz(mut hz: Vec<f64>) -> Vec<f64> {
+    for t in &mut hz {
+        *t = t.round();
+    }
+    hz.sort_by(f64::total_cmp);
+    hz.dedup();
+    hz
 }
 
 impl ScanPlan {
@@ -140,6 +170,17 @@ mod tests {
     }
 
     #[test]
+    fn priority_frequencies_are_swept_too() {
+        let plan = ScanPlan::build(&ScanSettings {
+            priority: vec![145_500_000.0, 145_500_000.4],
+            ..settings(Vec::new(), vec![144_800_000.0])
+        })
+        .expect("plan");
+        assert_eq!(plan.targets, vec![144_800_000.0, 145_500_000.0]);
+        assert_eq!(plan.priority, vec![145_500_000.0]);
+    }
+
+    #[test]
     fn plan_stops_at_the_last_whole_step() {
         let plan = ScanPlan::build(&settings(
             vec![ScanRange {
@@ -174,6 +215,10 @@ mod tests {
                 Vec::new(),
             ),
             settings(Vec::new(), vec![f64::NAN]),
+            ScanSettings {
+                priority: vec![-1.0],
+                ..settings(Vec::new(), vec![100.0])
+            },
             settings(
                 vec![ScanRange {
                     start_hz: 0.0,

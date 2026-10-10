@@ -93,7 +93,6 @@ pub fn body_for(kind: &str) -> Option<NodeBody> {
     if let Some(type_id) = kind.strip_prefix("channel:") {
         return Some(NodeBody::Channel(ChannelNode {
             channel_type: type_id.to_owned(),
-            record_calls: false,
             tuning_locked: false,
         }));
     }
@@ -106,7 +105,12 @@ fn add(store: Store, canvas: Canvas, kind: &str) {
         return;
     };
     let at = store.palette_at.get_untracked().unwrap_or_else(|| {
-        let centre = canvas.visible_centre();
+        let view = canvas.view();
+        let centre = view
+            .viewport()
+            .get_untracked()
+            .visible_rect(view.pane_size().get_untracked())
+            .center();
         (
             centre.x as f32 - node::DEFAULT_WIDTH / 2.0,
             centre.y as f32 - 80.0,

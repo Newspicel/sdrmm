@@ -1,13 +1,30 @@
+import { BLE_BEACON_LABELS, BLE_PDU_LABELS, bleStation, bleVendor } from "../lib/ble";
 import type { StationOf } from "../lib/decoded";
+import { loraMessage, loraName, loraProtocol, loraStation } from "../lib/lora";
+import {
+  distanceM,
+  REMOTE_ID_TRANSPORT_LABELS,
+  remoteIdLocation,
+  remoteIdOperator,
+  remoteIdPilot,
+  remoteIdPosition,
+  remoteIdStation,
+  remoteIdUaType,
+  UA_TYPE_LABELS,
+  withRemoteIdState,
+} from "../lib/remoteId";
 import type {
   AdsbMessage,
   AisMessage,
+  AprsWeather,
+  BleAdvert,
   DecodedRecord,
   DecodedRecordOf,
   DvFrame,
   IdentReport,
   IdentSignal,
   Modulation,
+  RadiosondeFrame,
   RdsUpdate,
   VorReading,
 } from "../lib/types";
@@ -58,7 +75,10 @@ export interface DectStation {
   slotPair: number | null;
   authentication: boolean | null;
   ciphering: boolean | null;
+  dsaa2: boolean | null;
+  dsc2: boolean | null;
   cipherState: string;
+  voice: "playing" | "muted" | null;
   handsets: number;
   bursts: number;
   crcErrors: number;
@@ -75,6 +95,11 @@ export function dectStations(records: readonly DecodedRecordOf<"dect">[]): DectS
     if (previous !== undefined && Date.parse(record.at) <= Date.parse(previous.at)) {
       continue;
     }
+    const voice = frame.voice ? (frame.voice.playing ? "playing" : "muted") : null;
+    if (previous !== undefined && frame.side === "pp") {
+      latest.set(key, { ...previous, voice: voice ?? previous.voice, at: record.at });
+      continue;
+    }
     latest.set(key, {
       key,
       rfpi: frame.identity?.rfpi ?? null,
@@ -84,7 +109,10 @@ export function dectStations(records: readonly DecodedRecordOf<"dect">[]): DectS
       slotPair: frame.slot_pair ?? null,
       authentication: frame.security.authentication_supported ?? null,
       ciphering: frame.security.ciphering_supported ?? null,
+      dsaa2: frame.security.dsaa2_supported ?? null,
+      dsc2: frame.security.dsc2_supported ?? null,
       cipherState: frame.security.cipher_state,
+      voice: voice ?? previous?.voice ?? null,
       handsets: (frame.handsets ?? []).length,
       bursts: frame.bursts,
       crcErrors: frame.crc_errors,
@@ -93,6 +121,261 @@ export function dectStations(records: readonly DecodedRecordOf<"dect">[]): DectS
     });
   }
   return [...latest.values()].toSorted((a, b) => b.levelDbfs - a.levelDbfs);
+}
+
+export const BURST_DROP_M = 200;
+
+export interface RadiosondeStation {
+  serial: string;
+  sonde: RadiosondeFrame["sonde"];
+  frame: number | null;
+  lat: number | null;
+  lon: number | null;
+  altitudeM: number | null;
+  climbMs: number | null;
+  temperatureC: number | null;
+  humidityPct: number | null;
+  pressureHpa: number | null;
+  maxAltitudeM: number | null;
+  burst: boolean;
+  frames: number;
+  at: string;
+}
+
+export function radiosondeStations(
+  records: readonly DecodedRecordOf<"radiosonde">[],
+): RadiosondeStation[] {
+  const sondes = new Map<string, RadiosondeStation>();
+  for (const record of chronological(records)) {
+    const frame = record.event.data;
+    sondes.set(frame.serial, nextSonde(sondes.get(frame.serial), frame, record.at));
+  }
+  return [...sondes.values()].toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+function nextSonde(
+  previous: RadiosondeStation | undefined,
+  frame: RadiosondeFrame,
+  at: string,
+): RadiosondeStation {
+  const altitudeM = frame.altitude_m ?? previous?.altitudeM ?? null;
+  const maxAltitudeM = highest(previous?.maxAltitudeM ?? null, altitudeM);
+  return {
+    serial: frame.serial,
+    sonde: frame.sonde,
+    frame: frame.frame ?? previous?.frame ?? null,
+    lat: frame.lat ?? previous?.lat ?? null,
+    lon: frame.lon ?? previous?.lon ?? null,
+    altitudeM,
+    climbMs: frame.climb_ms ?? previous?.climbMs ?? null,
+    temperatureC: frame.temperature_c ?? previous?.temperatureC ?? null,
+    humidityPct: frame.humidity_pct ?? previous?.humidityPct ?? null,
+    pressureHpa: frame.pressure_hpa ?? previous?.pressureHpa ?? null,
+    maxAltitudeM,
+    burst:
+      (previous?.burst ?? false) ||
+      (altitudeM !== null && maxAltitudeM !== null && maxAltitudeM - altitudeM > BURST_DROP_M),
+    frames: (previous?.frames ?? 0) + 1,
+    at,
+  };
+}
+
+export function radiosondeLog(
+  records: readonly DecodedRecordOf<"radiosonde">[],
+  serial: string,
+  limit: number,
+): DecodedRecordOf<"radiosonde">[] {
+  return records.filter((record) => record.event.data.serial === serial).slice(0, limit);
+}
+
+export interface Drone {
+  key: string;
+  kind: string;
+  heightM: number | null;
+  speedMps: number | null;
+  pilotM: number | null;
+  operator: string | null;
+  links: string[];
+  levelDbfs: number;
+  frames: number;
+  at: string;
+}
+
+export function remoteIdDrones(records: readonly DecodedRecordOf<"remote_id">[]): Drone[] {
+  const states = new Map<
+    string,
+    { frame: DecodedRecordOf<"remote_id">["event"]["data"]; drone: Drone }
+  >();
+  for (const record of chronological(records)) {
+    const next = record.event.data;
+    const key = remoteIdStation(next);
+    const previous = states.get(key);
+    const frame = previous ? withRemoteIdState(previous.frame, next) : next;
+    const location = remoteIdLocation(frame);
+    const drone = remoteIdPosition(frame);
+    const pilot = remoteIdPilot(frame);
+    const uaType = remoteIdUaType(frame);
+    const link = REMOTE_ID_TRANSPORT_LABELS[next.transport];
+    const links = previous?.drone.links ?? [];
+    states.set(key, {
+      frame,
+      drone: {
+        key,
+        kind: uaType === null ? "-" : UA_TYPE_LABELS[uaType],
+        heightM: location?.height_m ?? null,
+        speedMps: location?.speed_mps ?? null,
+        pilotM: drone !== null && pilot !== null ? distanceM(drone, pilot) : null,
+        operator: remoteIdOperator(frame),
+        links: links.includes(link) ? links : [...links, link],
+        levelDbfs: next.level_dbfs,
+        frames: (previous?.drone.frames ?? 0) + 1,
+        at: record.at,
+      },
+    });
+  }
+  return [...states.values()]
+    .map((state) => state.drone)
+    .toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+export interface BleDevice {
+  key: string;
+  name: string | null;
+  vendor: string | null;
+  beacon: string | null;
+  kind: string;
+  channel: number | null;
+  levelDbfs: number;
+  heard: number;
+  at: string;
+}
+
+function bleAnonymousKey(advert: BleAdvert): string {
+  const label = BLE_PDU_LABELS[advert.pdu];
+  return advert.adi == null
+    ? `${label} ${advert.data.slice(0, 12)}`
+    : `${label} SID ${advert.adi.set} DID ${advert.adi.data_id.toString(16).toUpperCase()}`;
+}
+
+export function bleDevices(records: readonly DecodedRecordOf<"ble">[]): BleDevice[] {
+  const devices = new Map<string, BleDevice>();
+  for (const record of chronological(records)) {
+    const advert = record.event.data;
+    const key = bleStation(advert) ?? bleAnonymousKey(advert);
+    const previous = devices.get(key);
+    devices.set(key, {
+      key,
+      name: advert.name ?? previous?.name ?? null,
+      vendor: bleVendor(advert) ?? previous?.vendor ?? null,
+      beacon:
+        advert.beacon == null ? (previous?.beacon ?? null) : BLE_BEACON_LABELS[advert.beacon.type],
+      kind: BLE_PDU_LABELS[advert.pdu],
+      channel: advert.channel ?? null,
+      levelDbfs: advert.level_dbfs,
+      heard: (previous?.heard ?? 0) + 1 + (advert.repeats ?? 0),
+      at: record.at,
+    });
+  }
+  return [...devices.values()].toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+export function latestRecord<R extends { at: string }>(records: readonly R[]): R | null {
+  return records.reduce<R | null>(
+    (latest, record) =>
+      latest === null || Date.parse(record.at) > Date.parse(latest.at) ? record : latest,
+    null,
+  );
+}
+
+export interface LoraStation {
+  key: string;
+  protocol: string;
+  name: string | null;
+  message: string;
+  snrDb: number;
+  frames: number;
+  at: string;
+}
+
+export function loraStations(records: readonly DecodedRecordOf<"lora">[]): LoraStation[] {
+  const stations = new Map<string, LoraStation>();
+  for (const record of chronological(records)) {
+    const frame = record.event.data;
+    const key = loraStation(frame);
+    if (key === null) {
+      continue;
+    }
+    const previous = stations.get(key);
+    stations.set(key, {
+      key,
+      protocol: loraProtocol(frame),
+      name: loraName(frame) ?? previous?.name ?? null,
+      message: loraMessage(frame),
+      snrDb: frame.snr_db,
+      frames: (previous?.frames ?? 0) + 1,
+      at: record.at,
+    });
+  }
+  return [...stations.values()].toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+export interface AprsWeatherStation {
+  source: string;
+  weather: AprsWeather;
+  minTemperatureC: number | null;
+  maxTemperatureC: number | null;
+  maxGustMs: number | null;
+  reports: number;
+  at: string;
+}
+
+export function aprsWeatherStations(
+  records: readonly DecodedRecordOf<"aprs">[],
+): AprsWeatherStation[] {
+  const stations = new Map<string, AprsWeatherStation>();
+  for (const record of chronological(records)) {
+    const weather = record.event.data.weather;
+    if (weather == null) {
+      continue;
+    }
+    const source = record.event.data.source;
+    stations.set(source, nextWeather(stations.get(source), source, weather, record.at));
+  }
+  return [...stations.values()].toSorted((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
+
+function nextWeather(
+  previous: AprsWeatherStation | undefined,
+  source: string,
+  weather: AprsWeather,
+  at: string,
+): AprsWeatherStation {
+  const temperature = weather.temperature_c ?? null;
+  return {
+    source,
+    weather: { ...previous?.weather, ...withoutNulls(weather) },
+    minTemperatureC: lowest(previous?.minTemperatureC ?? null, temperature),
+    maxTemperatureC: highest(previous?.maxTemperatureC ?? null, temperature),
+    maxGustMs: highest(previous?.maxGustMs ?? null, weather.wind_gust_ms ?? null),
+    reports: (previous?.reports ?? 0) + 1,
+    at,
+  };
+}
+
+function withoutNulls(weather: AprsWeather): AprsWeather {
+  return Object.fromEntries(Object.entries(weather).filter(([, value]) => value != null));
+}
+
+function chronological<R extends { at: string }>(records: readonly R[]): R[] {
+  return records.toReversed().toSorted((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+function highest(a: number | null, b: number | null): number | null {
+  return a === null ? b : b === null ? a : Math.max(a, b);
+}
+
+function lowest(a: number | null, b: number | null): number | null {
+  return a === null ? b : b === null ? a : Math.min(a, b);
 }
 
 export interface VorFix {
@@ -479,6 +762,10 @@ const DV_MODE_LABELS: Record<DvFrame["mode"], string> = {
 
 export function dvMode(frame: Pick<DvFrame, "mode">): string {
   return DV_MODE_LABELS[frame.mode];
+}
+
+export function callMode(mode: string): string {
+  return DV_MODE_LABELS[mode as DvFrame["mode"]] ?? mode.toUpperCase();
 }
 
 export function dvNetwork(frame: Pick<DvFrame, "mode" | "color_code" | "slot">): string {

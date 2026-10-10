@@ -22,7 +22,9 @@ import { ReadoutHold } from "../../components/readoutHold";
 import {
   alignHistory,
   type FrameKey,
+  historyLevels,
   retuneAction,
+  rowLevel,
   seedRows,
 } from "../../components/spectrumAlign";
 import {
@@ -56,22 +58,19 @@ import {
   quantizeDb,
   VideoAverage,
 } from "../../components/videoAverage";
-import {
-  attachWaterfall,
-  COLORMAPS,
-  type Colormap,
-  DEFAULT_COLORMAP,
-  GRAPHICS_HELP,
-  type WaterfallView,
-} from "../../gl/waterfall";
+import type { Rgb } from "../../gl/colormap";
+import { attachWaterfall, GRAPHICS_HELP, type WaterfallView } from "../../gl/waterfall";
 import { bookmarksQuery } from "../../lib/api";
 import type { SpectrumFrame } from "../../lib/frame";
+import { heardHz, type SetLevels, useLevelStore } from "../../lib/levels";
+import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
 import { SPECTRUM_MAX_BINS, spectrumHub } from "../../lib/spectrum";
 import type { Bookmark, ChannelInfo, ChannelParams, DeviceSet, PatchNode } from "../../lib/types";
+import { useArrayTune } from "../../lib/useArrayTune";
 import { useBandPlan } from "../../lib/useBandPlan";
 import { useChannelPatch } from "../../lib/useChannelPatch";
 import { useRadioTune } from "../../lib/useRadioTune";
-import { channelNodesOf, type IqLane, iqSourceOf, tunedStream } from "../binding";
+import { channelNodesOf, type IqLane, iqSourceOf, laneTuneTarget } from "../binding";
 import { useWorkspaceContext } from "../context";
 import {
   addEdge,
@@ -94,6 +93,14 @@ import { FaceBody, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
 import { ScopeMenu, type ScopeMenuAt } from "./ScopeMenu";
 import { ScopeSettings } from "./ScopeSettings";
 import {
+  type PaletteChoice,
+  paletteOf,
+  readChoice,
+  readCustom,
+  storeChoice,
+  storeCustom,
+} from "./scopePalette";
+import {
   bookmarkDraft,
   channelTypeAt,
   dragTuneHz,
@@ -112,7 +119,6 @@ const TUNE_THROTTLE_MS = 150;
 const NO_CHANNELS: readonly ChannelInfo[] = [];
 
 const NO_OWNERS: ReadonlyMap<number, TrunkChannelOwner> = new Map();
-const COLORMAP_KEY = "sdrmm.colormap";
 const AVERAGE_KEY = "sdrmm.scopeAverage";
 const TRACE_MIN = 0.15;
 const TRACE_MAX = 0.75;
@@ -124,6 +130,7 @@ interface FrameMeta {
   spanHz: number;
   dbMin: number;
   dbMax: number;
+  floorDb: number;
 }
 
 interface Gesture {
@@ -150,16 +157,38 @@ export function ScopeFace({ node }: { node: PatchNode }) {
   );
 }
 
+function useLaneTune(set: DeviceSet | null, source: IqLane | null) {
+  const workspace = useWorkspaceContext();
+  const { tuneRadio } = useRadioTune();
+  const { tuneArray } = useArrayTune();
+  const stream = source?.stream ?? 0;
+  const aim = source === null ? null : laneTuneTarget(source);
+  const tunedArray = aim?.kind === "array" ? aim.node : null;
+  const onAuto = tunedArray === null && set !== null && autoTuning(set, stream);
+  const centerHeld =
+    onAuto ||
+    (tunedArray === null &&
+      source !== null &&
+      tuningLocked(workspace.graph, source.source, stream));
+  const tuneCenter = (hz: number): void => {
+    if (tunedArray !== null) {
+      tuneArray(tunedArray, hz);
+    } else if (set !== null && !centerHeld) {
+      tuneRadio(set, stream, hz);
+    }
+  };
+  return { centerHeld, tuneCenter };
+}
+
 function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | null }) {
   const workspace = useWorkspaceContext();
   const stream = source?.stream ?? 0;
-  const tuned = source === null ? 0 : tunedStream(source);
   const setId = set?.id ?? null;
+  const levels = useLevelStore((state) => (setId === null ? undefined : state.byDeviceSet[setId]));
   const channels = useMemo(
     () => streamChannels(set?.channels ?? NO_CHANNELS, stream),
     [set?.channels, stream],
   );
-  const { tuneRadio } = useRadioTune();
   const { applyEdit } = useChannelPatch();
   const active = useFaceActive();
   const placeNode = useNodePlacement();
@@ -196,7 +225,12 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
   const [average, setAverage] = useState<AverageFrames>(readAverage);
   const [range, setRange] = useState<DbWindow | null>(null);
   const [waterfall, setWaterfall] = useState({ top: 0, height: 0, width: 0 });
-  const [colormap, setColormap] = useState<Colormap>(readColormap);
+  const [paletteChoice, setPaletteChoice] = useState<PaletteChoice>(readChoice);
+  const [customStops, setCustomStops] = useState<readonly Rgb[]>(readCustom);
+  const colormap = useMemo(
+    () => paletteOf(paletteChoice, customStops),
+    [paletteChoice, customStops],
+  );
   const [traceFraction, setTraceFraction] = useState(0.32);
   const [preview, setPreview] = useState<{
     channel: number;
@@ -245,8 +279,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
   }
   const locked = lockedChannels(workspace.graph, faces);
   const heldChannel = (channel: number): boolean => owners.has(channel) || locked.has(channel);
-  const centerHeld = deviceNode !== undefined && tuningLocked(workspace.graph, deviceNode, tuned);
-  const onAuto = set !== null && autoTuning(set, tuned);
+  const { centerHeld, tuneCenter } = useLaneTune(set, source);
 
   const workspaceChannel = [...faces].find(([, id]) => id === workspace.selected)?.[0] ?? null;
   const selectedChannel =
@@ -262,12 +295,6 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     }
   };
 
-  const tuneCenter = (hz: number): void => {
-    if (set === null || centerHeld) {
-      return;
-    }
-    tuneRadio(set, tuned, hz);
-  };
   const tuneChannel = (channel: number, frequencyHz: number): void => {
     if (setId === null || heldChannel(channel)) {
       return;
@@ -281,8 +308,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
       tuneCenter(hz);
       return;
     }
-    const held = set === null || !autoTuning(set, tuned);
-    if (held && (meta === null || Math.abs(hz - meta.centerHz) >= meta.spanHz / 2)) {
+    if (meta === null || Math.abs(hz - meta.centerHz) >= meta.spanHz / 2) {
       tuneCenter(hz);
     }
     applyEdit(setId, tunableChannel, { frequency_hz: Math.round(hz), ...params });
@@ -329,9 +355,9 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
         }),
         {
           from:
-            source?.beam === undefined
+            source?.virtual === undefined
               ? { node: deviceNode, port: streamPort("iq", stream) }
-              : { node: source.beam.node, port: source.beam.port },
+              : { node: source.virtual.node, port: source.virtual.port },
           to: { node: id, port: "iq" },
         },
       ),
@@ -405,6 +431,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
         seedRows(past, frameRef.current, rangeRef.current),
         past.count,
         past.bins,
+        historyLevels(past, rangeRef.current),
       );
     }
     keyRef.current = frameRef.current === null ? null : frameKeyOf(frameRef.current);
@@ -438,6 +465,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
               alignHistory(rows, { centerHz: frame.centerHz, spanHz: frame.spanHz }, held),
               rows.count,
               rows.bins,
+              historyLevels(rows, held),
             );
             seeded = true;
           }
@@ -445,7 +473,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
       }
       if (!seeded) {
         rowRef.current = waterfallRow(frame, db, liveDbRef.current, held, rowRef.current);
-        rendererRef.current?.pushRow(rowRef.current);
+        rendererRef.current?.pushRow(rowRef.current, rowLevel(window, frame.floorDb, Date.now()));
       }
       tracesRef.current = accumulateTraces(tracesRef.current, db);
       densityRef.current?.add(db, viewRef.current, window);
@@ -527,11 +555,14 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     ),
   );
 
-  const chooseColormap = (next: Colormap): void => {
-    setColormap(next);
-    try {
-      localStorage.setItem(COLORMAP_KEY, next);
-    } catch {}
+  const chooseColormap = (next: PaletteChoice): void => {
+    setPaletteChoice(next);
+    storeChoice(next);
+  };
+
+  const chooseCustom = (stops: readonly Rgb[]): void => {
+    setCustomStops(stops);
+    storeCustom(stops);
   };
 
   const reseed = (held: DbWindow | null): void => {
@@ -542,7 +573,12 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     if (past.count === 0) {
       return;
     }
-    rendererRef.current?.seed(seedRows(past, frameRef.current, held), past.count, past.bins);
+    rendererRef.current?.seed(
+      seedRows(past, frameRef.current, held),
+      past.count,
+      past.bins,
+      historyLevels(past, held),
+    );
   };
 
   const scheduleReseed = (): void => {
@@ -604,7 +640,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     const at = pointerFraction(event.clientX);
     const grabbed =
       markerFrom(event.target, channels) ??
-      markerAt(channels, view, meta.centerHz, spanHz, at, GRAB_PX / rect.width);
+      markerAt(channels, levels, view, meta.centerHz, spanHz, at, GRAB_PX / rect.width);
     if (grabbed !== null) {
       selectChannel(grabbed.id);
     }
@@ -646,7 +682,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
       return;
     }
     const rect = plotRef.current?.getBoundingClientRect();
-    if (isFullView(gesture.view) && (centerHeld || onAuto)) {
+    if (isFullView(gesture.view) && centerHeld) {
       return;
     }
     setPanning(true);
@@ -683,7 +719,12 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     if (gesture.moved) {
       if (gesture.channel !== null && preview !== null && meta !== null) {
         tuneChannel(gesture.channel, meta.centerHz + preview.offsetHz);
-      } else if (gesture.channel === null && isFullView(gesture.view) && !onAuto && meta !== null) {
+      } else if (
+        gesture.channel === null &&
+        isFullView(gesture.view) &&
+        !centerHeld &&
+        meta !== null
+      ) {
         const rect = plotRef.current?.getBoundingClientRect();
         const hz = dragTuneHz(
           gesture.centerHz,
@@ -786,6 +827,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
       {meta !== null && (
         <Markers
           channels={channels}
+          levels={levels}
           view={view}
           centerHz={meta.centerHz}
           spanHz={meta.spanHz}
@@ -802,8 +844,8 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
         className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-between p-1.5"
         style={{ top: bandRuler && plan !== null ? BAND_RULER_H : 0 }}
       >
-        <span className="legend self-end text-right whitespace-pre text-plot-ink-dim">
-          {meta !== null && `${formatCentre(meta, view)}${formatRange(shownRange)}`}
+        <span className="legend self-end font-mono text-[10.5px] text-right whitespace-pre text-plot-ink-dim">
+          {meta !== null && `${formatCentre(meta, view)}${formatFloor(meta.floorDb)}`}
           {range !== null && " · manual"}
         </span>
         <div
@@ -811,8 +853,10 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
           className="pointer-events-auto flex items-center gap-1 self-start rounded-[3px] bg-plot-bg/85 p-0.5"
         >
           <ScopeSettings
-            colormap={colormap}
+            colormap={paletteChoice}
             onColormap={chooseColormap}
+            custom={customStops}
+            onCustom={chooseCustom}
             average={average}
             onAverage={chooseAverage}
             traces={traceModes}
@@ -922,6 +966,7 @@ function Divider({
 
 function Markers({
   channels,
+  levels,
   view,
   centerHz,
   spanHz,
@@ -933,6 +978,7 @@ function Markers({
   widthPx,
 }: {
   channels: readonly ChannelInfo[];
+  levels: SetLevels | undefined;
   view: SpectrumView;
   centerHz: number;
   spanHz: number;
@@ -950,7 +996,7 @@ function Markers({
       const offsetHz =
         preview?.channel === channel.id
           ? preview.offsetHz
-          : channel.settings.frequency_hz - centerHz;
+          : heardHz(channel.settings.frequency_hz, levels?.[channel.id]) - centerHz;
       return {
         channel,
         hz: centerHz + offsetHz,
@@ -1156,6 +1202,7 @@ function MarkerLabel({
 
 function markerAt(
   channels: readonly ChannelInfo[],
+  levels: SetLevels | undefined,
   view: SpectrumView,
   centerHz: number,
   spanHz: number,
@@ -1165,7 +1212,7 @@ function markerAt(
   let best: ChannelInfo | null = null;
   let bestDistance = tolerance;
   for (const channel of channels) {
-    const offsetHz = channel.settings.frequency_hz - centerHz;
+    const offsetHz = heardHz(channel.settings.frequency_hz, levels?.[channel.id]) - centerHz;
     const position = spanToView(view, offsetToSpan(offsetHz, spanHz));
     const distance = Math.abs(position - at);
     if (distance <= bestDistance) {
@@ -1220,6 +1267,7 @@ function metaOf(frame: SpectrumFrame): FrameMeta {
     spanHz: frame.spanHz,
     dbMin: frame.dbMin,
     dbMax: frame.dbMax,
+    floorDb: frame.floorDb,
   };
 }
 
@@ -1245,15 +1293,6 @@ function readAverage(): AverageFrames {
   }
 }
 
-export function readColormap(): Colormap {
-  try {
-    const stored = localStorage.getItem(COLORMAP_KEY);
-    return COLORMAPS.find((name) => name === stored) ?? DEFAULT_COLORMAP;
-  } catch {
-    return DEFAULT_COLORMAP;
-  }
-}
-
 function formatCentre(meta: FrameMeta, view: SpectrumView): string {
   const visible = meta.spanHz * viewWidth(view);
   const centre = meta.centerHz + spanToOffset((view.start + view.end) / 2, meta.spanHz);
@@ -1262,8 +1301,8 @@ function formatCentre(meta: FrameMeta, view: SpectrumView): string {
   return `${(centre / 1e6).toFixed(4)} MHz   ${span}`;
 }
 
-function formatRange(window: DbWindow): string {
-  return `   ${window.min.toFixed(0)}…${window.max.toFixed(0)} dBFS`;
+function formatFloor(floorDb: number): string {
+  return Number.isFinite(floorDb) ? `   floor ${floorDb.toFixed(0)} dBFS` : "";
 }
 
 function displayWindow(meta: FrameMeta | null, held: DbWindow | null): DbWindow {
@@ -1282,7 +1321,12 @@ function plotSource(
     return { frame: null, window: held ?? EMPTY_WINDOW };
   }
   return {
-    frame: { centerHz: frame.centerHz, spanHz: frame.spanHz, db: liveDb },
+    frame: {
+      centerHz: frame.centerHz,
+      spanHz: frame.spanHz,
+      signalDb: frame.floorDb + SPECTRUM_SIGNAL_MARGIN_DB,
+      db: liveDb,
+    },
     window: held ?? frameWindow(frame),
   };
 }

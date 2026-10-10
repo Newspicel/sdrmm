@@ -25,7 +25,7 @@ use self::{
     radio::{Radio, radio_settings},
     tuner::{Tuned, tuner},
 };
-use super::set_signal;
+use super::{array::make_array_button, set_signal};
 use crate::{
     store::Store,
     ui::kit_sources::{Tone, button, collapsible, footer, install, readout},
@@ -168,6 +168,7 @@ fn opened(store: Store, node: String, set: Signal<Option<DeviceSet>>, busy: Busy
         radio,
     };
     let closing = busy.busy;
+    let make_array = make_array_button(store, node.clone(), set);
     view! {
         column(class = "face") {
             {heard_head(radio)}
@@ -175,7 +176,7 @@ fn opened(store: Store, node: String, set: Signal<Option<DeviceSet>>, busy: Busy
             {radio_settings(radio, lanes_shown, advised)}
             {health(radio)}
             {fault(radio)}
-            {footer(button(move || if closing.get() { "Closing…".to_owned() } else { "Forget radio".to_owned() }, Tone::Quiet, closing.into(), move || forget(store, node.clone(), busy)))}
+            {footer(view! { {make_array} {button(move || if closing.get() { "Closing…".to_owned() } else { "Forget radio".to_owned() }, Tone::Quiet, closing.into(), move || forget(store, node.clone(), busy))} })}
         }
     }
 }

@@ -2,9 +2,8 @@ use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use sdrmm_wire::{
     channel::{ChannelDescriptor, ChannelInfo, ChannelSettings},
-    decode::DecodedRecord,
+    decode::{BroadcastStatus, DecodedRecord},
     device::{DeviceInfo, DeviceSettings},
-    frame::FrameKind,
     patch::{PatchCatalog, PatchGraph, RackLayout},
     state::{ChannelLevel, DeviceSet, StateSnapshot},
     workspace::{WorkspaceDetail, WorkspaceInfo, WorkspaceSettings},
@@ -16,9 +15,8 @@ use zgui::prelude::*;
 
 use crate::{
     api::Api,
-    binding,
+    arrays, binding,
     bus::{Bus, Frame, Source},
-    coherent,
     decoded::Decoded,
     shell::{
         apply_toasts::apply_toasts,
@@ -70,9 +68,10 @@ pub struct Store {
     pub palette: RwSignal<bool>,
     pub palette_at: RwSignal<Option<(f32, f32)>>,
     pub levels: RwSignal<Arc<HashMap<(u32, u32), ChannelLevel>>>,
+    pub broadcasts: RwSignal<Arc<HashMap<(u32, u32), BroadcastStatus>>>,
     pub decoded: RwSignal<Arc<Decoded>>,
     staged: StoredValue<Vec<DecodedRecord>>,
-    pub coherent: RwSignal<Arc<coherent::Book>>,
+    pub arrays: RwSignal<Arc<arrays::Book>>,
     pub saved_channels: RwSignal<Arc<Vec<WorkspaceChannel>>>,
     bus: StoredValue<Rc<Bus>, LocalStorage>,
     pub(crate) editor: StoredValue<Option<Session>>,
@@ -105,9 +104,10 @@ impl Store {
             palette: RwSignal::new(false),
             palette_at: RwSignal::new(None),
             levels: RwSignal::new(Arc::new(HashMap::new())),
+            broadcasts: RwSignal::new(Arc::new(HashMap::new())),
             decoded: RwSignal::new(Arc::new(Decoded::default())),
             staged: StoredValue::new(Vec::new()),
-            coherent: RwSignal::new(Arc::new(coherent::Book::default())),
+            arrays: RwSignal::new(Arc::new(arrays::Book::default())),
             saved_channels: RwSignal::new(Arc::new(Vec::new())),
             bus: StoredValue::new_local(Rc::new(Bus::default())),
             editor: StoredValue::new(None),
@@ -248,13 +248,22 @@ impl Store {
                 StateScope::Workspaces => self.refresh_workspaces(),
                 _ => self.refresh_state(),
             },
-            ServerEvent::ChannelLevels { device_set, levels } => {
+            ServerEvent::ChannelLevels {
+                device_set, levels, ..
+            } => {
                 let mut next = (*self.levels.get_untracked()).clone();
                 for level in levels {
                     next.insert((device_set, level.channel), level);
                 }
                 self.levels.set(Arc::new(next));
             }
+            ServerEvent::BroadcastUpdate {
+                device_set,
+                channel,
+                status,
+            } => self.broadcasts.update(|held| {
+                Arc::make_mut(held).insert((device_set, channel), *status);
+            }),
             ServerEvent::Decoded(record) => self.staged.update_value(|staged| staged.push(*record)),
             ServerEvent::DecodedBacklog { records } => {
                 let mut next = (*self.decoded.get_untracked()).clone();
@@ -267,12 +276,12 @@ impl Store {
                     .update(|decoded| Arc::make_mut(decoded).report_lost(count));
             }
             ServerEvent::Error { message } => self.say(message),
-            event @ (ServerEvent::DfUpdate { .. }
-            | ServerEvent::DfFusionUpdate { .. }
-            | ServerEvent::RadarDetections { .. }) => {
-                let mut next = (*self.coherent.get_untracked()).clone();
-                next.observe(&event, std::time::SystemTime::now());
-                self.coherent.set(Arc::new(next));
+            event @ (ServerEvent::ArrayUpdate { .. }
+            | ServerEvent::ProcessorUpdate { .. }
+            | ServerEvent::DfFusionUpdate { .. }) => {
+                self.arrays.update(|book| {
+                    Arc::make_mut(book).observe(&event, std::time::SystemTime::now());
+                });
             }
             _ => {}
         }

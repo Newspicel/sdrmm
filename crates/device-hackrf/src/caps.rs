@@ -73,7 +73,9 @@ pub(crate) fn capabilities() -> Capabilities {
         dc_artifact: DcArtifact::Managed,
         hardware_sweep: true,
         coherence: Coherence::None,
-        noise_source: false,
+        noise_source: sdrmm_wire::NoiseSource::None,
+        retune_keeps_phase: false,
+        rx_inputs: Vec::new(),
     }
 }
 
@@ -207,6 +209,7 @@ pub(crate) fn settings_from_config(config: &Config) -> DeviceSettings {
         ],
         extra: Vec::new(),
         streams: Vec::new(),
+        rx_inputs: None,
     }
 }
 

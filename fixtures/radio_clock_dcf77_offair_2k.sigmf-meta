@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 2000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "KiwiSDR bern.proxy.kiwisdr.com (DL1VLF, Drage near Hamburg)",
+    "core:description": "DCF77 off air at 77.5 kHz with the KiwiSDR AGC on: 2026-10-03 22:04 CEST"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 77500.0,
+      "core:datetime": "2026-10-03T20:02:58Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "public KiwiSDR IQ via cargo xtask net-capture; source SHA-256 31209624b79946582706c3e9202de2b971e08736c9ad4a5fed08233855af74be; samples 0..767937 at 11999.020338 Hz",
+      "core:sample_count": 128001,
+      "core:sample_start": 0
+    }
+  ]
+}

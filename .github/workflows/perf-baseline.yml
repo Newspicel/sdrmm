@@ -1,0 +1,26 @@
+name: Perf baseline
+
+on:
+  push:
+    branches: [perf-baseline]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  channels:
+    name: Channel perf baseline (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust
+        with:
+          cache: performance
+          save: "false"
+      - run: cargo test -p sdrmm-channels --release --test channel_perf -- --ignored --exact write_perf_baseline
+      - uses: actions/upload-artifact@v7
+        with:
+          name: channel-perf-baseline
+          path: crates/channels/baselines/channel_perf/x86_64-linux.json
+          retention-days: 7

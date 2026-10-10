@@ -1,94 +1,154 @@
-# Coherent arrays
+# Arrays
 
-An array receives several antennas at once, from receivers that share a clock. How much they
-share decides what they can do:
+An **Array** node turns radio lanes into one antenna array. Every array processor reads its `array`
+output: [Direction finder](direction-finding.md), Beamformer, Stitch, Spatial spectrum,
+Correlator, Polarimeter and [Passive radar](passive-radar.md).
 
-| Tier | Shared | Can do |
+## Make an array
+
+On a multi-lane radio such as a KrakenSDR, press **Make array** on the Device. It adds an Array
+and wires every lane to it. The button is greyed out when the lanes share no clock. A playing
+array recording has the same button.
+
+For separate radios on one clock:
+
+1. Add a Device for each radio.
+2. Wire each Device `iq` to the Array in antenna order: `lane1`, `lane2`, and so on.
+3. Open **Tier** and pick what the radios share: **Shared clock**, or **Shared LO** for clock and
+   local oscillator.
+
+A lane belongs to one Array. The Device then shows **Array** on that lane, and tuning and gain
+move to the Array.
+
+## Tiers
+
+| Tier | Lanes share |
+|---|---|
+| Shared LO | Clock and local oscillator |
+| Shared clock | Sample clock |
+| None | Nothing, not an array |
+
+On one Shared LO radio the lanes start lined up in time. Otherwise the Array syncs them first.
+It also measures clock drift between radios. When the tier ends up below what you declared,
+**Tier** reads `capped`.
+
+| Radio | Tier | Noise source |
 |---|---|---|
-| `phase_coherent` | Clock and local oscillator | Bearings, beamforming, combining, passive radar |
-| `time_sync` | Clock only | Passive radar. The rest needs calibration after every retune. |
-| `none` | Nothing | Independent reception only |
+| KrakenSDR | Shared clock | Built in, antennas cut off |
+| KerberosSDR | Shared clock | Built in, antennas stay on |
+| RSPduo dual tuner | Shared clock | None |
+| LimeSDR, USRP B210, bladeRF 2, AD936x boards | Shared LO | None |
+| CR-8 | Shared LO | None |
+| Other multi-channel SoapySDR radios | Shared clock | None |
+| Several radios in one Array | What you declare, capped by any radio that gives more than one lane | None |
+| [Array recording](recording.md#play-an-array-recording) | As recorded | Recorded noise windows |
 
-Receivers without a shared clock drift apart, even on the same frequency.
+## Lane tuning
 
-## Multi-lane radios
+Pick it under **Tuning**.
 
-KrakenSDR, CR-8, an RSPduo in dual-tuner mode, and multi-channel SoapySDR radios are one
-**Device** with several outputs: `iq1`, `iq2`, and so on. The driver reports the tier. Wire the
-outputs straight to the processing node.
+| Mode | Lanes | For |
+|---|---|---|
+| Together | All on one frequency | Every processor except Stitch |
+| Spread | Side by side, **Span** shows the band | Stitch |
 
-### KrakenSDR
+## Lay out the antennas
 
-KrakenSDR has five lanes, KerberosSDR four. They are `time_sync`: the tuner phases change on
-every retune.
+Open **Geometry**. Angles run clockwise from the array's forward direction.
 
-Set **Cal source** to **Noise**. SDR-- then switches on the built-in noise source whenever it
-needs to calibrate, after a retune or when you press **Calibrate**, and switches back to the
-antennas. Bearings are hidden while it shows `noise source in`.
+| Shape | Set |
+|---|---|
+| UCA | A circle: **Radius**, **First** (where lane 1 sits, 0 is forward), **Winding** |
+| ULA | A line: **Spacing**, **Axis** (from lane 1 to the last lane) |
+| Custom | Each lane's x, y and z in metres |
 
-Use fixed gain and equal-length cables. AGC stays allowed, but its **Auto** turns amber on lanes a
-coherent node or Array uses. Calibration pauses during scans and hunts.
+**Max f** is the highest frequency before the spacing aliases.
 
-In Auto, the lanes a coherent node uses move as one, to the frequency that suits all their
-decoders. A new sample rate restarts the coherent nodes.
+## Point it
 
-## Build your own array
+Open **Forward** and pick a **Mode**.
 
-For separate receivers wired to one clock, use an **Array** node.
+- **Fixed:** type the **Azimuth** of the array's forward direction, from true north.
+- **Heading:** wire a GPS with heading, such as a [phone](phones.md), to the Array's `position`.
+  **Mount** is the array's forward direction relative to that heading.
 
-1. Add a Device for each receiver.
-2. Give them the same sample rate, and the same frequency if they share tuning.
-3. Wire each Device `iq` to the Array. It grows an input per member.
-4. Set **Wired as** to match: shared clock, or shared clock and local oscillator.
-5. Wire the Array's outputs to the processor, channels, or recorders.
-
-Input order sets antenna numbering. Use fixed gain: AGC breaks calibration.
-
-Tuning a member, changing its rate, or switching it to Auto moves the whole Array, so the members
-stay aligned. A scan or hunt on a member moves the whole Array too. The Devices keep their radios, and
-removing the Array leaves them running. If a member drops out, the array pauses until it is back.
+Wire a GPS to `position` in either mode. Direction finders need it to send bearings.
 
 ## Calibrate
 
-Press **Calibrate** on the processing node. It measures the delay, gain, and phase of each lane.
+Pick the **Cal source**:
 
-| Cal source | Needs |
+| Source | Uses |
 |---|---|
-| Signal | A strong signal every antenna receives |
-| Noise | Noise fed into every lane, built in or through an external splitter |
+| Noise | The radio's built-in noise source |
+| Pilot | A carrier every antenna hears, at a known **Offset** and **Width** |
+| Emitter | A transmitter at a known true **Bearing**, **Offset** and **Width**. Needs **Forward** set. |
+| Off | Nothing |
 
-A `time_sync` array needs noise or a known pilot to recover phase after each retune. Built-in
-noise switches itself. Feed external noise before pressing **Calibrate**. On `phase_coherent`
-hardware, calibration corrects cable and path differences.
+The Array calibrates delay, phase and gain on start and after every retune or gain change.
+**Calibrate** runs it now. Processors that need phase wait until it is done.
 
-The node shows **solved**, **still solving**, or **phase unknown**. Phase unknown means there is
-not enough reference for bearings or beamforming.
+Open **Calibration** for the rest. **Check** rechecks the phase on a timer. **EQ** flattens each
+lane across the band. **Warm start** begins from the last calibration stored for this radio and
+band.
 
-## Combine antennas
+The **Gain** row sets one gain for every lane. **Auto** steps it from the lane levels and needs a
+cal source.
 
-Wire a coherent source to a **Combiner** and its `beam` output to an ordinary channel.
+## Read the face
+
+| Row | Shows |
+|---|---|
+| Sync | `Idle`, `Syncing`, `Locked`, `Drifting` or `Lost` |
+| Tier | What the lanes share |
+| Cal | `No cal`, `Waiting`, `Calibrating`, `Calibrated`, `Warm`, `Stale` or `Cal failed` |
+| Heading | Array forward, true north |
+| Gaps, Realigns, Drops, Lost | Lost or resynced samples, shown when not zero |
+
+`Calibrated`, `Warm` and `Stale` show their age. Each lane row shows its quality, gain and phase.
+When the array stops, the face says why, such as `Noise clips, lower gain`.
+
+A processor that cannot run says why on its own face: `Syncing`, `Calibrating`, `Needs cal`,
+`Retuning`, `Not coherent` or `Wrong tuning`.
+
+**Rec** [records](recording.md#record-an-array) every lane into one SigMF collection.
+[Play it back](recording.md#play-an-array-recording) into an Array like a radio.
+
+## Beamformer
+
+Combines the lanes into one `beam` lane. Channels, scopes and recorders use it like a radio lane.
 
 | Mode | Does |
 |---|---|
-| Diversity | Aligns and adds the antennas. Two antennas gain about 3 dB SNR. |
-| Cancel | Uses the other antennas to subtract local noise from the first |
+| MRC | Best SNR from every lane |
+| Beam | Steers with equal weights |
+| MVDR | Steers and suppresses the rest |
+| Nulls | Steers with nulls on the azimuths you list, or that **Auto** finds |
+| GSC | Steers and cancels the rest as it moves |
+| Cancel | Subtracts what the **Refs** lanes hear from the **Main** lane |
+| CMA | Locks onto a signal with a steady envelope |
 
-For Cancel, point the first antenna at the wanted signal and the others at the noise. Both modes
-need the phase: `time_sync` arrays need a pilot or noise reference.
+**Steer** picks **DF**, a Direction finder wired to `steer`, or a **Fixed** azimuth from array
+forward. The plot shows the beam pattern. **Gain** is the gain over one lane.
 
-The `beam` output also feeds a Scope and any number of channels. It stays silent until the phase
-is solved.
+## Stitch
 
-## Stitch lanes into one wide stream
+Joins spread lanes into one `wide` lane at the lane rate times the lane count. It needs the Array
+on **Spread**: **Spread array** on its face sets it. **Blend** handles overlaps: **SNR** favours
+the cleaner lane, **Equal** averages.
 
-Wire every lane of a radio that tunes each lane on its own into a **Stitch**. Its `wide` output
-runs at the lane rate times the lane count, as one more radio lane.
+## Spatial spectrum
 
-| Mode | Does |
-|---|---|
-| Auto | Tunes the lanes side by side with a small overlap. Tuning the wide lane moves them all. |
-| Manual | Keeps each lane where you tune it. Gaps between lanes stay empty. |
+Shows bearing over frequency. **Map** draws bearing against frequency. **Trail** draws frequency
+over time, coloured by bearing. Pick **Rel** or **True** bearings.
 
-A KrakenSDR at 2.048 MS/s gives about 8.7 MHz in Auto. Overlaps match each lane's gain and phase to
-its neighbour while a signal sits in them. A Stitch needs the radio's lanes to itself, so no
-Combiner or direction finder can share them. Use fixed, equal gain on every lane.
+## Correlator
+
+Correlates every pair of lanes. For the chosen **Baseline** it plots amplitude and phase over
+frequency and reads the **Delay** from the phase slope and the coherence **Coh**.
+
+## Polarimeter
+
+Needs two crossed antennas: pick the **H** and **V** lanes. It reads the Stokes values, the
+polarised share **Pol**, **Tilt**, **Ellip** and **Hand**. **Output** sets what `beam` carries:
+**Matched** to the wave or **Cross** to it.

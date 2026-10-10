@@ -1,24 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { agcTip } from "../../components/AgcAuto";
-import type { Capabilities, DeviceSet, PatchGraph } from "../../lib/types";
+import type { Capabilities, DeviceSet, PatchEdge, PatchGraph, PatchNode } from "../../lib/types";
 import { mergeSettings } from "../../lib/useDevicePatch";
+import { renderFace } from "../../test/faceHarness";
+import { dialHold, heldLanes, laneHolds } from "./arrayNode";
+import { DeviceFace } from "./DeviceFace";
 import {
   agcDelta,
   agcGainDb,
+  agcModeDelta,
+  allAutoTuning,
+  allLocked,
   autoTuning,
   bondSaid,
   clippingSaid,
-  coherentLanes,
   faultSaid,
-  hasLaneControls,
   hearing,
   laneAgc,
+  lanesAligned,
   lanesMerged,
+  lockAll,
   lockStream,
+  lossSaid,
+  radioAgc,
   refLabel,
   refusalSaid,
+  tuneAllDelta,
   tuneDelta,
   tunerDials,
+  tuningAllDelta,
   tuningDelta,
 } from "./deviceNode";
 
@@ -38,7 +48,7 @@ function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
 function deviceSet(overrides: Partial<DeviceSet> = {}): DeviceSet {
   return {
     id: 1,
-    device: { driver: "virtual", key: "siggen", label: "Signal Generator" },
+    device: { driver: "virtual", key: "band", label: "Test band" },
     capabilities: capabilities(),
     settings: {},
     status: "running",
@@ -51,7 +61,7 @@ function deviceSet(overrides: Partial<DeviceSet> = {}): DeviceSet {
 describe("refLabel", () => {
   it("names the radio by whichever identity the reference carries", () => {
     expect(refLabel({ backend: "rtlsdr", serial: "00000001" })).toBe("rtlsdr · 00000001");
-    expect(refLabel({ backend: "virtual", key: "siggen" })).toBe("virtual · siggen");
+    expect(refLabel({ backend: "virtual", key: "band" })).toBe("virtual · band");
     expect(refLabel({ backend: "soapy", serial: "123456", key: "123456@DT" })).toBe(
       "soapy · 123456@DT",
     );
@@ -76,16 +86,79 @@ describe("lanesMerged", () => {
   });
 });
 
-describe("hasLaneControls", () => {
-  it("offers lane controls only for what a lane sets on its own", () => {
-    const gain = { kind: "lna" as const, name: "LNA", range: { min: 0, max: 40 } };
-    const perLane = { tuning: true, gain: true };
-    expect(hasLaneControls(capabilities({ per_stream: perLane, gains: [gain] }))).toBe(true);
-    expect(hasLaneControls(capabilities({ per_stream: perLane }))).toBe(false);
-    expect(hasLaneControls(capabilities({ gains: [gain] }))).toBe(false);
+describe("tuneAllDelta", () => {
+  it("moves every lane of a per-lane tuner to one frequency", () => {
+    const caps = capabilities({
+      rx_streams: 3,
+      per_stream: { tuning: true },
+      freq_ranges: [{ min: 24e6, max: 1766e6 }],
+    });
+    expect(tuneAllDelta(caps, 145.5e6)).toEqual({
+      streams: [0, 1, 2].map((stream) => ({ stream, center_hz: 145.5e6, tuning: "manual" })),
+    });
+    expect(tuneAllDelta(caps, 1e6).streams?.[0]?.center_hz).toBe(24e6);
+  });
+
+  it("tunes a shared tuner in one field", () => {
+    expect(tuneAllDelta(capabilities(), 100e6)).toEqual({ center_hz: 100e6, tuning: "manual" });
+  });
+});
+
+describe("tuningAllDelta", () => {
+  it("puts every lane, or the shared tuner, in the same mode", () => {
+    const caps = capabilities({ rx_streams: 2, per_stream: { tuning: true } });
+    expect(tuningAllDelta(caps, "auto")).toEqual({
+      streams: [
+        { stream: 0, tuning: "auto" },
+        { stream: 1, tuning: "auto" },
+      ],
+    });
+    expect(tuningAllDelta(capabilities(), "manual")).toEqual({ tuning: "manual" });
+  });
+});
+
+describe("lanesAligned", () => {
+  it("is true while every lane sits on one frequency", () => {
+    const caps = capabilities({ rx_streams: 2, per_stream: { tuning: true } });
+    const aligned = deviceSet({
+      capabilities: caps,
+      settings: {
+        center_hz: 1e8,
+        streams: [
+          { stream: 0, center_hz: 1e8 },
+          { stream: 1, center_hz: 1e8 },
+        ],
+      },
+    });
+    expect(lanesAligned(aligned)).toBe(true);
     expect(
-      hasLaneControls(capabilities({ per_stream: { antenna: true }, antennas: ["A", "B"] })),
-    ).toBe(true);
+      lanesAligned({
+        ...aligned,
+        settings: { ...aligned.settings, streams: [{ stream: 1, center_hz: 2e8 }] },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("allAutoTuning", () => {
+  it("needs every lane to follow the decoders", () => {
+    const caps = capabilities({ rx_streams: 2, per_stream: { tuning: true } });
+    expect(allAutoTuning(deviceSet({ capabilities: caps }))).toBe(true);
+    expect(
+      allAutoTuning(
+        deviceSet({ capabilities: caps, settings: { streams: [{ stream: 1, tuning: "manual" }] } }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("lockAll", () => {
+  it("holds or frees every lane at once", () => {
+    const caps = capabilities({ rx_streams: 3 });
+    expect(lockAll(caps, true)).toEqual([0, 1, 2]);
+    expect(lockAll(caps, false)).toEqual([]);
+    expect(allLocked([0, 1, 2], caps)).toBe(true);
+    expect(allLocked([0, 2], caps)).toBe(false);
   });
 });
 
@@ -179,7 +252,7 @@ describe("faultSaid", () => {
       error: "the radio is no longer attached (control transfer failed: device disconnected)",
     });
     expect(faultSaid(set)).toBe(
-      "Signal Generator is no longer attached. Plug it back in and it picks up where it left off.",
+      "Test band is no longer attached. Plug it back in and it picks up where it left off.",
     );
   });
 
@@ -270,10 +343,10 @@ describe("lockStream", () => {
 });
 
 function carrying(out: boolean[], stream = 0): DeviceSet["channels"] {
-  return out.map((out_of_band, id) => ({
+  return out.map((missed, id) => ({
     id,
     stream,
-    out_of_band,
+    out_of_band: missed ? { reason: "tuned_away" } : null,
     settings: {
       frequency_hz: 100_000_000,
       params: { type: "nfm", settings: {} },
@@ -374,27 +447,58 @@ describe("lane AGC", () => {
   });
 });
 
-describe("coherentLanes", () => {
-  it("names the lanes a coherent node or an Array uses", () => {
-    const at = { x: 0, y: 0 };
-    const graph: PatchGraph = {
-      nodes: [
-        { id: "kraken", kind: "device", data: {}, position: at },
-        {
-          id: "bench",
-          kind: "array",
-          data: { members: 1, coherence: "time_sync", shared_tuning: true },
-          position: at,
-        },
-        { id: "fm", kind: "channel", data: {}, position: at },
-      ] as PatchGraph["nodes"],
-      edges: [
-        { from: { node: "kraken", port: "iq2" }, to: { node: "bench", port: "iq" } },
-        { from: { node: "kraken", port: "iq4" }, to: { node: "bench", port: "iq2" } },
-        { from: { node: "kraken", port: "iq" }, to: { node: "fm", port: "iq" } },
+describe("lossSaid", () => {
+  it("says how much of the stream is lost right now, and nothing once it stops", () => {
+    expect(lossSaid(deviceSet({ loss: 0.74 }))).toBe("74%");
+    expect(lossSaid(deviceSet({ overruns: 12 }))).toBeNull();
+  });
+});
+
+describe("AGC modes across lanes", () => {
+  const transceiver = capabilities({
+    agc: {
+      kind: "modes",
+      options: [{ value: "fast_attack" }, { value: "slow_attack" }],
+    },
+    gains: [
+      { name: "TUNER", kind: "tuner", range: { min: -3, max: 71 } },
+      { name: "TX", kind: "tx", range: { min: -89.75, max: 0 }, agc: { kind: "never" } },
+    ],
+    rx_streams: 2,
+    per_stream: { gain: true, agc: true },
+  });
+
+  it("shows the mode of a lane that runs its loop", () => {
+    const set = deviceSet({
+      capabilities: transceiver,
+      settings: {
+        agc: { on: false, mode: "fast_attack" },
+        streams: [{ stream: 1, agc: { on: true, mode: "slow_attack" } }],
+      },
+    });
+    expect(radioAgc(set)).toEqual({ on: true, mode: "slow_attack" });
+  });
+
+  it("sets a mode on every lane and leaves each one's switch alone", () => {
+    const set = deviceSet({
+      capabilities: transceiver,
+      settings: { agc: { on: true }, streams: [{ stream: 1, agc: { on: false } }] },
+    });
+    expect(agcModeDelta(set, "slow_attack")).toEqual({
+      streams: [
+        { stream: 0, agc: { on: true, mode: "slow_attack" } },
+        { stream: 1, agc: { on: false, mode: "slow_attack" } },
       ],
-    };
-    expect([...coherentLanes(graph, "kraken")].toSorted((a, b) => a - b)).toEqual([1, 3]);
+    });
+  });
+
+  it("reads back the gain of the one stage the loop drives", () => {
+    const set = deviceSet({
+      capabilities: transceiver,
+      settings: { agc: { on: true } },
+      agc_gains: [{ stream: 0, value_db: 44 }],
+    });
+    expect(agcGainDb(set, 0)).toBe(44);
   });
 });
 
@@ -416,5 +520,82 @@ describe("agcTip", () => {
     expect(agcTip(deviceSet({ settings: { agc: { on: false } } }), 0, true)).toBe(
       "AGC off, as coherent lanes want",
     );
+  });
+});
+
+function heldWires(count: number): PatchEdge[] {
+  return Array.from({ length: count }, (_, lane) => ({
+    from: { node: "kraken", port: lane === 0 ? "iq" : `iq${lane + 1}` },
+    to: { node: "north", port: lane === 0 ? "lane" : `lane${lane + 1}` },
+  }));
+}
+
+describe("arrays on a radio", () => {
+  const radio: PatchNode = {
+    id: "kraken",
+    position: { x: 0, y: 0 },
+    kind: "device",
+    data: { device: { backend: "virtual", key: "kraken5" } },
+  };
+  const bank = deviceSet({
+    device: { driver: "virtual", key: "kraken5", label: "KrakenSDR" },
+    capabilities: capabilities({
+      rx_streams: 5,
+      coherence: "time_sync",
+      freq_ranges: [{ min: 24_000_000, max: 1_766_000_000 }],
+      gains: [{ name: "tuner", kind: "tuner", range: { min: 0, max: 49.6 } }],
+      per_stream: { gain: true },
+    }),
+    settings: { center_hz: 145_000_000, sample_rate: 2_048_000 },
+  });
+
+  function patch(edges: PatchEdge[]): PatchGraph {
+    const north = { id: "north", position: { x: 500, y: 0 }, kind: "array", label: "North" };
+    return { nodes: [radio, north as PatchNode], edges };
+  }
+
+  it("offers Make array for a multi-lane radio with a shared clock", () => {
+    const html = renderFace(DeviceFace, radio, {
+      graph: patch([]),
+      devices: new Map([["kraken", bank]]),
+    });
+    expect(html).toContain("Make array");
+    expect(html).toContain('title="New Array wired to every lane"');
+    const loose = { ...bank, capabilities: { ...bank.capabilities, coherence: "none" as const } };
+    const noClock = renderFace(DeviceFace, radio, {
+      graph: patch([]),
+      devices: new Map([["kraken", loose]]),
+    });
+    expect(noClock).toContain('title="Lanes share no clock"');
+    const single = renderFace(DeviceFace, radio, {
+      graph: patch([]),
+      devices: new Map([["kraken", deviceSet({ device: bank.device })]]),
+    });
+    expect(single).not.toContain("Make array");
+  });
+
+  it("disables held lane dials and says which array tunes them", () => {
+    const graph = patch(heldWires(5));
+    expect([...heldLanes(graph, "kraken")]).toEqual([
+      [0, "north"],
+      [1, "north"],
+      [2, "north"],
+      [3, "north"],
+      [4, "north"],
+    ]);
+    const holds = laneHolds(graph, "kraken");
+    expect(dialHold(holds, 0, false)).toEqual({ array: "north", label: "North" });
+    expect(dialHold(laneHolds(patch(heldWires(1)), "kraken"), 1, true)).toBeNull();
+    const free = renderFace(DeviceFace, radio, {
+      graph: patch([]),
+      devices: new Map([["kraken", bank]]),
+    });
+    expect(free).not.toContain('aria-disabled="true"');
+    expect(free).not.toContain("Tuned by");
+    const html = renderFace(DeviceFace, radio, { graph, devices: new Map([["kraken", bank]]) });
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('title="Tuned by North"');
+    expect(html).toContain('title="Set on North"');
+    expect(html).not.toContain("Make array");
   });
 });

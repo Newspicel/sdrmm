@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 2000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "KiwiSDR ja5fp1.proxy.kiwisdr.com (JA5FP LF, Chiba)",
+    "core:description": "JJY off air at 40 kHz, manual gain: 2026-10-04 05:16 JST"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 40000.0,
+      "core:datetime": "2026-10-03T20:15:50Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "public KiwiSDR IQ via cargo xtask net-capture; source SHA-256 c04c7e55b478b6b4f64cb7004638cee7d8403c79d056723c853cebcb4e61c6df; samples 623945..1463871 at 11998.940878 Hz",
+      "core:sample_count": 140001,
+      "core:sample_start": 0
+    }
+  ]
+}

@@ -75,13 +75,7 @@ impl SdrplayDriver {
     fn api(&self) -> Option<Arc<dyn Sdrplay>> {
         match &self.api {
             Some(api) => Some(api.clone()),
-            None => match shared() {
-                Ok(api) => Some(api),
-                Err(error) => {
-                    tracing::debug!("the SDRplay API is unavailable: {error}");
-                    None
-                }
-            },
+            None => shared().ok(),
         }
     }
 }
@@ -187,6 +181,27 @@ fn read_band(
     Ok(target_at(tree, model, mode, tuner)?.band())
 }
 
+fn stream_tuner(mode: Option<DuoMode>, device_tuner: c_int, stream: u32) -> c_int {
+    match mode {
+        Some(DuoMode::DualTuner) => {
+            if stream == 0 {
+                ffi::TUNER_A
+            } else {
+                ffi::TUNER_B
+            }
+        }
+        Some(DuoMode::Slave) => {
+            if device_tuner == ffi::TUNER_B {
+                ffi::TUNER_B
+            } else {
+                ffi::TUNER_A
+            }
+        }
+        Some(mode) => mode.tuner(),
+        None => ffi::TUNER_A,
+    }
+}
+
 pub struct SdrplayDevice {
     api: Arc<dyn Sdrplay>,
     device: ffi::DeviceT,
@@ -211,7 +226,7 @@ impl SdrplayDevice {
     ) -> Result<Self, DeviceError> {
         let handle = DevHandle(device.dev);
         let params = SendPtr(api.device_params(handle)?);
-        let band = read_band(params.0, model, mode, ffi::TUNER_A)?;
+        let band = read_band(params.0, model, mode, stream_tuner(mode, device.tuner, 0))?;
         let mut this = Self {
             api,
             device,
@@ -233,24 +248,7 @@ impl SdrplayDevice {
     }
 
     fn tuner_for(&self, stream: u32) -> c_int {
-        match self.mode {
-            Some(DuoMode::DualTuner) => {
-                if stream == 0 {
-                    ffi::TUNER_A
-                } else {
-                    ffi::TUNER_B
-                }
-            }
-            Some(DuoMode::Slave) => {
-                if self.device.tuner == ffi::TUNER_B {
-                    ffi::TUNER_B
-                } else {
-                    ffi::TUNER_A
-                }
-            }
-            Some(mode) => mode.tuner(),
-            None => ffi::TUNER_A,
-        }
+        stream_tuner(self.mode, self.device.tuner, stream)
     }
 
     fn target(&mut self, tuner: c_int) -> Result<settings::Target<'_>, DeviceError> {
@@ -832,6 +830,24 @@ mod tests {
             50_000_000.0
         );
         device.rx_stop();
+    }
+
+    #[test]
+    fn a_tuner_b_duo_opens_without_tuner_a_parameters() {
+        for (modes, tuners, key) in [
+            (ffi::DUO_MODE_SINGLE_TUNER, ffi::TUNER_B, "1809001DDD@ST_B"),
+            (ffi::DUO_MODE_MASTER, ffi::TUNER_B, "1809001DDD@MST_B"),
+            (ffi::DUO_MODE_SLAVE, ffi::TUNER_B, "1809001DDD@SLV"),
+        ] {
+            let api = Arc::new(FakeApi::with_devices(vec![FakeApi::duo(
+                "1809001DDD",
+                modes,
+                tuners,
+            )]));
+            api.drop_tuner_a();
+            let device = open(&api, key);
+            assert_eq!(device.settings().center_hz, Some(200_000_000.0), "{key}");
+        }
     }
 
     #[test]

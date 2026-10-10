@@ -1,8 +1,11 @@
 use std::net::Ipv6Addr;
 
-use sdrmm_wire::position::{
-    DEFAULT_NMEA_BAUD, DEFAULT_NMEA_UPDATE_INTERVAL_MS, MAX_NMEA_BAUD, MIN_NMEA_BAUD,
-    NmeaDeviceInfo, PositionSource,
+use sdrmm_wire::{
+    phone::{PHONE_NOT_PAIRED, PHONE_OFFLINE, Phone},
+    position::{
+        DEFAULT_NMEA_BAUD, DEFAULT_NMEA_UPDATE_INTERVAL_MS, MAX_NMEA_BAUD, MIN_NMEA_BAUD,
+        NmeaDeviceInfo, PositionSource,
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -10,20 +13,57 @@ pub enum GpsTab {
     Receiver,
     Network,
     Fixed,
-    Device,
+    Phone,
 }
 
 #[must_use]
-pub fn gps_tabs(has_geolocation: bool) -> Vec<(GpsTab, String)> {
-    let mut tabs = vec![
+pub fn gps_tabs() -> Vec<(GpsTab, String)> {
+    vec![
         (GpsTab::Receiver, "Receiver".to_owned()),
         (GpsTab::Network, "Network".to_owned()),
         (GpsTab::Fixed, "Fixed".to_owned()),
-    ];
-    if has_geolocation {
-        tabs.push((GpsTab::Device, "This device".to_owned()));
+        (GpsTab::Phone, "Phone".to_owned()),
+    ]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhoneStanding {
+    Online,
+    Offline,
+    NotPaired,
+}
+
+impl PhoneStanding {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Online => "Online",
+            Self::Offline => "Offline",
+            Self::NotPaired => "Not paired",
+        }
     }
-    tabs
+}
+
+#[must_use]
+pub fn phone_standing(
+    phones: Option<&[Phone]>,
+    id: &str,
+    error: Option<&str>,
+) -> Option<PhoneStanding> {
+    if error == Some(PHONE_NOT_PAIRED) {
+        return Some(PhoneStanding::NotPaired);
+    }
+    let Some(phones) = phones else {
+        return (error == Some(PHONE_OFFLINE)).then_some(PhoneStanding::Offline);
+    };
+    let Some(phone) = phones.iter().find(|phone| phone.id == id) else {
+        return Some(PhoneStanding::NotPaired);
+    };
+    Some(if phone.online && error != Some(PHONE_OFFLINE) {
+        PhoneStanding::Online
+    } else {
+        PhoneStanding::Offline
+    })
 }
 
 fn valid_host(host: &str) -> bool {
@@ -137,22 +177,58 @@ mod tests {
     }
 
     #[test]
-    fn this_devices_location_is_offered_only_where_one_can_be_reported() {
-        let values =
-            |tabs: Vec<(GpsTab, String)>| tabs.into_iter().map(|(tab, _)| tab).collect::<Vec<_>>();
+    fn a_phone_is_offered_beside_the_receivers() {
+        let values = gps_tabs()
+            .into_iter()
+            .map(|(tab, _)| tab)
+            .collect::<Vec<_>>();
         assert_eq!(
-            values(gps_tabs(true)),
+            values,
             vec![
                 GpsTab::Receiver,
                 GpsTab::Network,
                 GpsTab::Fixed,
-                GpsTab::Device
+                GpsTab::Phone
             ]
         );
+    }
+
+    fn phone(id: &str, online: bool) -> Phone {
+        Phone {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            platform: sdrmm_wire::phone::PhonePlatform::Android,
+            created_at: String::new(),
+            last_seen: None,
+            online,
+            gps_nodes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_phone_stands_online_offline_or_unpaired() {
+        let phones = [phone("a", true), phone("b", false)];
         assert_eq!(
-            values(gps_tabs(false)),
-            vec![GpsTab::Receiver, GpsTab::Network, GpsTab::Fixed]
+            phone_standing(Some(&phones), "a", None),
+            Some(PhoneStanding::Online)
         );
+        assert_eq!(
+            phone_standing(Some(&phones), "a", Some(PHONE_OFFLINE)),
+            Some(PhoneStanding::Offline)
+        );
+        assert_eq!(
+            phone_standing(Some(&phones), "b", None),
+            Some(PhoneStanding::Offline)
+        );
+        assert_eq!(
+            phone_standing(Some(&phones), "gone", None),
+            Some(PhoneStanding::NotPaired)
+        );
+        assert_eq!(
+            phone_standing(None, "a", Some(PHONE_NOT_PAIRED)),
+            Some(PhoneStanding::NotPaired)
+        );
+        assert_eq!(phone_standing(None, "a", None), None);
     }
 
     #[test]

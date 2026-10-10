@@ -11,7 +11,7 @@ impl Burst {
     #[must_use]
     pub fn read(bytes: &[u8]) -> Option<Self> {
         let mut samples = Vec::new();
-        let frame = IqFrame::decode(bytes, &mut samples)?;
+        let frame = IqFrame::decode(bytes, &mut samples).ok()?;
         let (center_hz, sample_rate) = (frame.center_hz, frame.sample_rate);
         Some(Self {
             center_hz,
@@ -37,7 +37,7 @@ impl Block {
     #[must_use]
     pub fn read(bytes: &[u8]) -> Option<Self> {
         let mut floats = Vec::new();
-        let frame = SymbolFrame::decode(bytes, &mut floats)?;
+        let frame = SymbolFrame::decode(bytes, &mut floats).ok()?;
         Some(Self {
             plane: frame.plane,
             symbol_rate: frame.symbol_rate,

@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { StationOf } from "../lib/decoded";
-import type { DecodedRecordOf, DecoderEventOf, DecoderKind, RdsUpdate } from "../lib/types";
+import type {
+  DecodedRecordOf,
+  DecoderEventOf,
+  DecoderKind,
+  LoraFrame,
+  RdsUpdate,
+} from "../lib/types";
 import {
   ageClass,
   aircraftRow,
   appendTranscript,
+  aprsWeatherStations,
+  BURST_DROP_M,
+  bleDevices,
   buildTranscript,
   cwSignalRows,
+  dectStations,
   dvMode,
   dvNetwork,
   dvParties,
@@ -19,13 +29,18 @@ import {
   formatSpeedKt,
   inScope,
   isAtBottom,
+  latestRecord,
   latestVorReadings,
   latestWpm,
+  loraStations,
   multiVorFix,
   ptyLabel,
+  radiosondeLog,
+  radiosondeStations,
   rdsPicture,
   rdsQuality,
   recordsInScope,
+  remoteIdDrones,
   shipRow,
   sortTargets,
   stationsInScope,
@@ -507,5 +522,374 @@ describe("digital voice", () => {
   it("spells each mode as operators write it", () => {
     expect(dvMode({ mode: "dstar" })).toBe("D-STAR");
     expect(dvMode({ mode: "dpmr" })).toBe("dPMR");
+  });
+});
+
+function sondeAt(
+  offsetS: number,
+  data: Partial<DecoderEventOf<"radiosonde">["data"]>,
+): DecodedRecordOf<"radiosonde"> {
+  return record(
+    "radiosonde",
+    { sonde: "rs41", serial: "S1", errors_corrected: 0, ...data },
+    { at: new Date(NOW + offsetS * 1000).toISOString(), freq_hz: 403_000_000 },
+  );
+}
+
+describe("radiosondeStations", () => {
+  it("keeps the latest value of each field per serial", () => {
+    const sondes = radiosondeStations([
+      sondeAt(2, { frame: 3, altitude_m: 1_200 }),
+      sondeAt(1, { frame: 2, temperature_c: 5, humidity_pct: 70 }),
+      sondeAt(0, { serial: "S2", sonde: "dfm", altitude_m: 300 }),
+    ]);
+    expect(sondes.map((s) => s.serial)).toEqual(["S1", "S2"]);
+    expect(sondes[0]).toMatchObject({
+      frame: 3,
+      altitudeM: 1_200,
+      temperatureC: 5,
+      humidityPct: 70,
+      frames: 2,
+      burst: false,
+    });
+  });
+
+  it("flags a burst once altitude falls well below the peak", () => {
+    const peak = 30_000;
+    const rising = radiosondeStations([
+      sondeAt(1, { altitude_m: peak - BURST_DROP_M + 1 }),
+      sondeAt(0, { altitude_m: peak }),
+    ]);
+    expect(rising[0]?.burst).toBe(false);
+    const fallen = radiosondeStations([
+      sondeAt(3, { altitude_m: 2_000 }),
+      sondeAt(2, { altitude_m: peak - BURST_DROP_M - 1 }),
+      sondeAt(1, { altitude_m: peak }),
+      sondeAt(0, { altitude_m: 29_000 }),
+    ]);
+    expect(fallen[0]).toMatchObject({ burst: true, maxAltitudeM: peak, altitudeM: 2_000 });
+  });
+});
+
+describe("radiosondeLog", () => {
+  it("lists one sonde's newest frames first, up to the limit", () => {
+    const records = [
+      sondeAt(3, { frame: 4 }),
+      sondeAt(2, { serial: "S2", frame: 9 }),
+      sondeAt(1, { frame: 2 }),
+      sondeAt(0, { frame: 1 }),
+    ];
+    expect(radiosondeLog(records, "S1", 2).map((r) => r.event.data.frame)).toEqual([4, 2]);
+  });
+});
+
+function weatherAt(
+  offsetS: number,
+  source: string,
+  weather: DecoderEventOf<"aprs">["data"]["weather"],
+): DecodedRecordOf<"aprs"> {
+  return record(
+    "aprs",
+    { source, destination: "APRS", info: "_", tnc2: `${source}>APRS:_`, weather },
+    { at: new Date(NOW + offsetS * 1000).toISOString() },
+  );
+}
+
+describe("aprsWeatherStations", () => {
+  it("keeps latest values and extremes per station", () => {
+    const stations = aprsWeatherStations([
+      weatherAt(3, "WX1", { temperature_c: 14, wind_gust_ms: 3 }),
+      weatherAt(2, "WX2", { temperature_c: 20 }),
+      weatherAt(1, "WX1", { temperature_c: 9, wind_gust_ms: 11, pressure_hpa: 1010 }),
+      weatherAt(0, "WX1", { temperature_c: 12, humidity_pct: 80 }),
+    ]);
+    expect(stations.map((s) => s.source)).toEqual(["WX1", "WX2"]);
+    expect(stations[0]).toMatchObject({
+      weather: { temperature_c: 14, wind_gust_ms: 3, pressure_hpa: 1010, humidity_pct: 80 },
+      minTemperatureC: 9,
+      maxTemperatureC: 14,
+      maxGustMs: 11,
+      reports: 3,
+    });
+  });
+
+  it("skips packets without weather", () => {
+    expect(aprsWeatherStations([weatherAt(0, "DL1ABC", null)])).toEqual([]);
+  });
+
+  it("leaves extremes empty when never reported", () => {
+    expect(aprsWeatherStations([weatherAt(0, "WX", { humidity_pct: 50 })])[0]).toMatchObject({
+      minTemperatureC: null,
+      maxTemperatureC: null,
+      maxGustMs: null,
+    });
+  });
+});
+
+function dectFrame(side: "rfp" | "pp", playing: boolean | null) {
+  return {
+    side,
+    update: "voice" as const,
+    identity: {
+      rfpi: "01234D5E6D",
+      pari: "02469ABCD",
+      arc: "a" as const,
+      sari_available: false,
+      rpn: 5,
+    },
+    security: {
+      cipher_state: "clear" as const,
+      encryption_events: 0,
+      authentication_supported: true,
+      dsaa2_supported: true,
+    },
+    voice:
+      playing === null
+        ? undefined
+        : { frames: 10, playing, x_crc_errors: 0, unsynced: 0, encrypted: 0, late: 0 },
+    extended_carriers: false,
+    bursts: 10,
+    crc_errors: 0,
+    level_dbfs: side === "rfp" ? -30 : -60,
+  };
+}
+
+describe("DECT stations", () => {
+  it("keeps the base's row and takes only voice from the handset", () => {
+    const [base] = dectStations([
+      record("dect", dectFrame("rfp", null), { at: "2026-08-09T12:00:00Z" }),
+      record("dect", dectFrame("pp", true), { at: "2026-08-09T12:00:01Z" }),
+    ]);
+    expect(base?.levelDbfs).toBe(-30);
+    expect(base?.voice).toBe("playing");
+    expect(base?.dsaa2).toBe(true);
+    expect(base?.dsc2).toBeNull();
+  });
+});
+
+function meshtastic(
+  from: number,
+  content: NonNullable<Extract<LoraFrame["decoded"], { protocol: "meshtastic" }>["content"]>,
+): LoraFrame["decoded"] {
+  return {
+    protocol: "meshtastic",
+    to: 0xffff_ffff,
+    from,
+    id: 1,
+    hop_limit: 3,
+    hop_start: 3,
+    want_ack: false,
+    via_mqtt: false,
+    channel_hash: 8,
+    next_hop: 0,
+    relay_node: 0,
+    encryption: "channel",
+    content,
+  };
+}
+
+function loraAt(
+  offsetS: number,
+  decoded: LoraFrame["decoded"],
+  snrDb = 0,
+): DecodedRecordOf<"lora"> {
+  return record(
+    "lora",
+    {
+      spreading_factor: 11,
+      bandwidth_hz: 250_000,
+      coding_rate: "4/5",
+      sync_word: 0x2b,
+      implicit_header: false,
+      low_data_rate: false,
+      inverted_iq: false,
+      integrity: "crc_ok",
+      fec_corrected: 0,
+      snr_db: snrDb,
+      frequency_error_hz: 0,
+      payload: "00",
+      decoded,
+    },
+    { at: new Date(NOW + offsetS * 1000).toISOString(), freq_hz: 869_525_000 },
+  );
+}
+
+describe("loraStations", () => {
+  it("lists heard nodes newest first, keeping the last known name", () => {
+    const stations = loraStations([
+      loraAt(3, meshtastic(0xa1, { type: "text", text: "hi" }), -4),
+      loraAt(2, {
+        protocol: "lorawan",
+        message_type: "unconfirmed_up",
+        major: 0,
+        mic: "00",
+        dev_addr: "26011BDA",
+      }),
+      loraAt(
+        1,
+        meshtastic(0xa1, {
+          type: "node_info",
+          id: "!000000a1",
+          long_name: "Base camp",
+          short_name: "BC",
+          licensed: false,
+        }),
+      ),
+      loraAt(0, null),
+    ]);
+    expect(stations.map((s) => s.key)).toEqual(["!000000a1", "26011BDA"]);
+    expect(stations[0]).toMatchObject({
+      protocol: "Meshtastic",
+      name: "Base camp",
+      message: "!000000a1 → ^all · hi",
+      snrDb: -4,
+      frames: 2,
+    });
+    expect(stations[1]).toMatchObject({ protocol: "LoRaWAN", name: null, frames: 1 });
+  });
+});
+
+function droneFrame(
+  messages: DecoderEventOf<"remote_id">["data"]["messages"],
+  transport: "bluetooth_legacy" | "wifi_beacon",
+): DecoderEventOf<"remote_id">["data"] {
+  return {
+    transport,
+    phy: "le1m",
+    address: "D4:5A:21:0C:7E:19",
+    uas_id: "1581F5FJD239C00DW22E",
+    level_dbfs: -42,
+    messages,
+  };
+}
+
+describe("remoteIdDrones", () => {
+  it("joins one drone's adverts into a row with its pilot distance", () => {
+    const drones = remoteIdDrones([
+      record(
+        "remote_id",
+        droneFrame(
+          [
+            {
+              type: "location",
+              status: "airborne",
+              lat: 52.5163,
+              lon: 13.3777,
+              height_m: 84,
+              speed_mps: 6.5,
+              height_reference: "takeoff",
+            },
+          ],
+          "bluetooth_legacy",
+        ),
+        { at: "2026-08-09T12:00:01Z" },
+      ),
+      record(
+        "remote_id",
+        droneFrame(
+          [
+            {
+              type: "basic_id",
+              id_type: "serial_number",
+              ua_type: "rotorcraft",
+              uas_id: "1581F5FJD239C00DW22E",
+            },
+            {
+              type: "system",
+              operator_location_type: "live_gnss",
+              operator_lat: 52.5156,
+              operator_lon: 13.3761,
+              area_count: 1,
+              area_radius_m: 0,
+            },
+          ],
+          "wifi_beacon",
+        ),
+        { at: "2026-08-09T12:00:02Z" },
+      ),
+    ]);
+    expect(drones).toHaveLength(1);
+    const drone = drones[0];
+    if (drone === undefined) {
+      throw new Error("no drone");
+    }
+    expect(drone.key).toBe("1581F5FJD239C00DW22E");
+    expect(drone.kind).toBe("Multirotor");
+    expect(drone.heightM).toBe(84);
+    expect(drone.links).toEqual(["BT4", "Wi-Fi beacon"]);
+    expect(drone.frames).toBe(2);
+    expect(Math.round(drone.pilotM ?? 0)).toBe(133);
+  });
+});
+
+function anonymousAdvert(data_id: number) {
+  return record("ble", {
+    pdu: "adv_ext_ind",
+    phy: "le1m",
+    channel: 37,
+    level_dbfs: -60,
+    adi: { set: 0, data_id },
+    data: "",
+  });
+}
+
+describe("bleDevices", () => {
+  it("joins a device's advert and scan response into one row", () => {
+    const address = { address: "C0:11:22:33:44:55", kind: "random_static" as const };
+    const devices = bleDevices([
+      record(
+        "ble",
+        {
+          pdu: "adv_ind",
+          phy: "le1m",
+          channel: 38,
+          address,
+          level_dbfs: -50,
+          manufacturer: [{ company_id: 76, company: "Apple", data: "1005" }],
+          data: "",
+        },
+        { at: "2026-08-09T12:00:01Z" },
+      ),
+      record(
+        "ble",
+        {
+          pdu: "scan_rsp",
+          phy: "le1m",
+          channel: 38,
+          address,
+          level_dbfs: -48,
+          repeats: 4,
+          name: "Thermo",
+          data: "",
+        },
+        { at: "2026-08-09T12:00:02Z" },
+      ),
+    ]);
+    expect(devices).toHaveLength(1);
+    expect(devices[0]).toMatchObject({
+      key: "C0:11:22:33:44:55",
+      name: "Thermo",
+      vendor: "Apple",
+      kind: "SCAN_RSP",
+      levelDbfs: -48,
+      heard: 6,
+    });
+  });
+
+  it("keeps anonymous extended advertisers apart by their data ID", () => {
+    const devices = bleDevices([anonymousAdvert(0xe75), anonymousAdvert(0x31a)]);
+    expect(devices.map((device) => device.key).toSorted()).toEqual([
+      "ADV_EXT_IND SID 0 DID 31A",
+      "ADV_EXT_IND SID 0 DID E75",
+    ]);
+  });
+});
+
+describe("latestRecord", () => {
+  it("picks the newest record", () => {
+    expect(latestRecord([{ at: "2026-08-09T12:00:01Z" }, { at: "2026-08-09T12:00:03Z" }])).toEqual({
+      at: "2026-08-09T12:00:03Z",
+    });
+    expect(latestRecord([])).toBeNull();
   });
 });

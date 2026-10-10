@@ -19,10 +19,6 @@ pub fn matches_query(component: &Attribution, query: &str) -> bool {
     needle.is_empty()
         || component.name.to_lowercase().contains(&needle)
         || component.license.to_lowercase().contains(&needle)
-        || component
-            .note
-            .as_deref()
-            .is_some_and(|note| note.to_lowercase().contains(&needle))
 }
 
 #[must_use]
@@ -68,25 +64,11 @@ pub fn summary_line(components: &[Attribution]) -> String {
         .join(" \u{b7} ")
 }
 
-#[must_use]
-pub fn noted_components(components: &[Attribution]) -> Vec<Attribution> {
-    components
-        .iter()
-        .filter(|component| component.note.is_some())
-        .cloned()
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn component(
-        name: &str,
-        license: &str,
-        source: ComponentSource,
-        note: Option<&str>,
-    ) -> Attribution {
+    fn component(name: &str, license: &str, source: ComponentSource) -> Attribution {
         Attribution {
             name: name.to_owned(),
             version: None,
@@ -94,25 +76,19 @@ mod tests {
             source,
             url: None,
             texts: Vec::new(),
-            note: note.map(str::to_owned),
         }
     }
 
     fn serde() -> Attribution {
-        component("serde", "MIT OR Apache-2.0", ComponentSource::Rust, None)
+        component("serde", "MIT OR Apache-2.0", ComponentSource::Rust)
     }
 
     fn codec2() -> Attribution {
-        component(
-            "codec2",
-            "LGPL-2.1-only AND MIT",
-            ComponentSource::Rust,
-            Some("LGPL-2.1-only, statically linked into the binary."),
-        )
+        component("codec2", "LGPL-2.1-only AND MIT", ComponentSource::Rust)
     }
 
     fn react() -> Attribution {
-        component("react", "MIT", ComponentSource::Web, None)
+        component("react", "MIT", ComponentSource::Web)
     }
 
     fn rtlsdr() -> Attribution {
@@ -120,7 +96,6 @@ mod tests {
             "rtl-sdr (librtlsdr)",
             "GPL-2.0-or-later",
             ComponentSource::Native,
-            Some("Loaded at runtime as a SoapySDR module."),
         )
     }
 
@@ -135,13 +110,13 @@ mod tests {
     }
 
     #[test]
-    fn matches_on_name_license_and_note() {
+    fn matches_on_name_and_license() {
         assert!(matches_query(&codec2(), "CODEC"));
         assert!(!matches_query(&codec2(), "serde"));
         assert!(matches_query(&rtlsdr(), "gpl"));
         assert!(matches_query(&codec2(), "lgpl"));
         assert!(!matches_query(&react(), "gpl"));
-        assert!(matches_query(&codec2(), "statically linked"));
+        assert!(!matches_query(&codec2(), "statically linked"));
     }
 
     #[test]
@@ -182,10 +157,5 @@ mod tests {
             .collect();
         assert_eq!(tied, ["GPL-2.0-or-later", "MIT"]);
         assert_eq!(summary_line(&[react()]), "1 \u{d7} MIT");
-    }
-
-    #[test]
-    fn keeps_only_the_components_whose_license_needs_explaining() {
-        assert_eq!(noted_components(&all()), [codec2(), rtlsdr()]);
     }
 }

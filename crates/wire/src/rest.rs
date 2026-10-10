@@ -17,14 +17,13 @@ pub struct EventAudio {
 pub struct VoiceCall {
     pub id: u64,
     pub node: String,
-    pub source_node: String,
     pub started_at: String,
     pub ended_at: String,
     pub duration_ms: u64,
     pub device_set: u32,
     pub channel: u32,
     pub freq_hz: f64,
-    pub mode: DvMode,
+    pub mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -41,6 +40,14 @@ pub struct VoiceCall {
     pub audio: Option<EventAudio>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_error: Option<String>,
+}
+
+impl VoiceCall {
+    #[must_use]
+    pub fn mode_label(&self) -> String {
+        DvMode::from_type_id(&self.mode)
+            .map_or_else(|| self.mode.to_uppercase(), |mode| mode.label().to_owned())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -89,10 +96,29 @@ pub struct CreateDeviceSetRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct WriteSerialRequest {
+    pub device_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct WrittenSerial {
+    pub serial: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct CreateChannelRequest {
     #[serde(default)]
     pub stream: u32,
     pub settings: ChannelSettings,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PatchChannelRequest {
+    pub settings: ChannelSettings,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<ChannelSettings>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -116,6 +142,7 @@ pub struct PresetDevice {
     pub node: String,
     pub device_id: String,
     pub settings: DeviceSettings,
+    #[serde(deserialize_with = "crate::channel::current_channel_settings")]
     pub channels: Vec<ChannelSettings>,
 }
 
@@ -153,6 +180,19 @@ pub struct CreateBookmarkRequest {
     pub group: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SavedRadio {
+    pub id: i64,
+    pub device_id: String,
+    pub label: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SaveRadioRequest {
+    pub device_id: String,
+    pub label: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct RecordingInfo {
     pub id: i64,
@@ -171,6 +211,12 @@ pub struct RecordingInfo {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    #[serde(default = "one_lane")]
+    pub lanes: u32,
+}
+
+const fn one_lane() -> u32 {
+    1
 }
 
 pub const MAX_RECORDING_UPLOAD_BYTES: u64 = 16 * 1024 * 1024 * 1024;
@@ -287,8 +333,6 @@ impl RecordingAnnotation {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct RecordingsResponse {
     pub recordings: Vec<RecordingInfo>,
-    /// Where the files live on the machine running the server, so the library can say it rather
-    /// than leave the operator hunting for the folder. Absent when nothing is recorded to disk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
 }
@@ -363,6 +407,34 @@ pub struct DecoderLogEntry {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DecoderLogResponse {
     pub entries: Vec<DecoderLogEntry>,
+    pub total: u64,
+    pub dropped: u64,
+}
+
+/// What a grouped decoder log keeps one row for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LogGroupKey {
+    /// One row per frequency, to the nearest 100 Hz.
+    Frequency,
+    /// One row per station and kind: a plane's ICAO address, a ship's MMSI, a callsign.
+    Station,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct DecoderLogGroup {
+    pub count: u64,
+    pub first_at: String,
+    pub last_at: String,
+    /// Summed length of the calls and transmissions in the group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub airtime_ms: Option<u64>,
+    pub latest: DecoderLogEntry,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct DecoderLogGroupsResponse {
+    pub groups: Vec<DecoderLogGroup>,
     pub total: u64,
     pub dropped: u64,
 }
@@ -488,6 +560,12 @@ pub struct TemplateInfo {
     pub direction: crate::device::Direction,
     #[serde(default)]
     pub supported_devices: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_one_lane")]
+    pub min_lanes: u32,
+}
+
+const fn is_one_lane(lanes: &u32) -> bool {
+    *lanes <= 1
 }
 
 const fn receive() -> crate::device::Direction {
@@ -504,6 +582,12 @@ impl TemplateInfo {
     pub fn unmet_by(&self, profile: &crate::device::DeviceProfile) -> Option<String> {
         if !profile.duplex.supports(self.direction) {
             return Some(format!("this radio does not {}", self.direction));
+        }
+        if self.min_lanes > 1
+            && (profile.rx_streams < self.min_lanes
+                || profile.coherence == crate::device::Coherence::None)
+        {
+            return Some(format!("needs {} lanes on one clock", self.min_lanes));
         }
         if !profile.reaches(self.min_freq_hz) || !profile.reaches(self.max_freq_hz) {
             let span = if self.min_freq_hz == self.max_freq_hz {
@@ -536,9 +620,18 @@ pub struct ClientsResponse {
     pub clients: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AuthInfo {
     pub token_required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_url: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ServerStatus {
+    pub version: String,
+    pub platform: String,
+    pub uptime_secs: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -551,10 +644,9 @@ pub struct CreatedRowId {
     pub id: i64,
 }
 
-/// Which part of the server refused, independent of the wording. A client groups repeats and
-/// titles a bug report by this; the prose in `error` is free to change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+#[schema(description = "Which part of the server refused. Stable, unlike the wording in `error`.")]
 pub enum ErrorCode {
     Request,
     NotFound,
@@ -563,7 +655,10 @@ pub enum ErrorCode {
     Engine,
     Storage,
     Tool,
+    Forbidden,
     Internal,
+    Auth,
+    RateLimited,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -573,80 +668,6 @@ pub struct ApiError {
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<ErrorCode>,
-}
-
-/// Which online routing service the server proxies to.
-///
-/// Both are OpenStreetMap-based and hand back a geometry that may be drawn on any map, which is
-/// why neither of the big phone-vendor services can stand here: their terms forbid rendering a
-/// route anywhere but their own map.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RoutingBackend {
-    #[default]
-    OpenRouteService,
-    GraphHopper,
-}
-
-pub const MAX_ROUTE_LEG_M: f64 = 500_000.0;
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct RoutePoint {
-    pub lat: f64,
-    pub lon: f64,
-}
-
-impl RoutePoint {
-    #[must_use]
-    pub fn valid(&self) -> bool {
-        (-90.0..=90.0).contains(&self.lat) && (-180.0..=180.0).contains(&self.lon)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct RouteRequest {
-    pub from: RoutePoint,
-    pub to: RoutePoint,
-}
-
-impl RouteRequest {
-    #[must_use]
-    pub fn valid(&self) -> bool {
-        self.from.valid() && self.to.valid()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ManeuverKind {
-    Depart,
-    Continue,
-    Left,
-    SlightLeft,
-    SharpLeft,
-    Right,
-    SlightRight,
-    SharpRight,
-    UTurn,
-    Roundabout,
-    Arrive,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct Maneuver {
-    pub at: RoutePoint,
-    pub kind: ManeuverKind,
-    pub instruction: String,
-    pub distance_m: f64,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct Route {
-    /// The line to draw, in order, as latitude and longitude pairs.
-    pub polyline: Vec<RoutePoint>,
-    pub distance_m: f64,
-    pub duration_s: f64,
-    pub maneuvers: Vec<Maneuver>,
 }
 
 #[cfg(test)]
@@ -742,7 +763,9 @@ mod tests {
             dc_artifact: DcArtifact::Operator,
             hardware_sweep: false,
             coherence: crate::device::Coherence::None,
-            noise_source: false,
+            noise_source: crate::device::NoiseSource::None,
+            retune_keeps_phase: false,
+            rx_inputs: Vec::new(),
         }
         .profile()
     }
@@ -769,6 +792,7 @@ mod tests {
             patch: None,
             direction: crate::device::Direction::Rx,
             supported_devices: Vec::new(),
+            min_lanes: 1,
         }
     }
 
@@ -827,13 +851,33 @@ mod tests {
     fn a_v1_preset_is_not_a_workspace_preset() {
         let v1 = serde_json::json!({
             "version": 1,
-            "device_id": "virtual:siggen",
+            "device_id": "virtual:band",
             "settings": {},
             "channels": [],
         });
         let parsed: PresetSnapshot = serde_json::from_value(v1).expect("the shape still parses");
         assert_ne!(parsed.version, PRESET_SNAPSHOT_VERSION);
         assert!(parsed.devices.is_empty());
+    }
+
+    #[test]
+    fn a_preset_drops_a_retired_decoder() {
+        let stored = serde_json::json!({
+            "version": PRESET_SNAPSHOT_VERSION,
+            "devices": [{
+                "node": "radio",
+                "device_id": "virtual:band",
+                "settings": {},
+                "channels": [
+                    { "frequency_hz": 433_920_000.0, "params": { "type": "subghz", "settings": {} } },
+                    { "frequency_hz": 145_500_000.0, "params": { "type": "nfm", "settings": {} } },
+                ],
+            }],
+        });
+        let parsed: PresetSnapshot = serde_json::from_value(stored).expect("loads");
+        let channels = &parsed.devices[0].channels;
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].params.type_id(), "nfm");
     }
 
     #[test]
@@ -845,6 +889,20 @@ mod tests {
         .expect("a template from before the direction field");
         assert_eq!(parsed.direction, crate::device::Direction::Rx);
         assert!(parsed.supported_devices.is_empty());
+    }
+
+    #[test]
+    fn error_codes_name_auth_and_rate_limits() {
+        for (code, text) in [
+            (ErrorCode::Auth, "auth"),
+            (ErrorCode::RateLimited, "rate_limited"),
+        ] {
+            assert_eq!(serde_json::to_value(code).unwrap(), text);
+            assert_eq!(
+                serde_json::from_value::<ErrorCode>(serde_json::json!(text)).unwrap(),
+                code
+            );
+        }
     }
 }
 

@@ -1,7 +1,7 @@
-use sdrmm_wire::StreamSettings;
+use sdrmm_wire::{BandMiss, StreamSettings};
 
 use super::*;
-use crate::planning::plan_center;
+use crate::planning::{band_miss, plan_center};
 
 fn tuned(center_hz: f64) -> DeviceSettings {
     DeviceSettings {
@@ -16,7 +16,7 @@ fn settled(
     settings: &DeviceSettings,
     channels: &[ChannelInfo],
 ) -> f64 {
-    plan_center(capabilities, settings, channels, &[])
+    plan_center(capabilities, settings, channels)
         .and_then(|delta| delta.center_hz)
         .unwrap_or_else(|| settings.center_hz.expect("a tuned radio"))
 }
@@ -54,7 +54,7 @@ fn crowded_tuning_plans_do_not_hold_control_for_audio_queue_durations() {
         .collect();
     let capabilities = tuner_caps();
     let settings = tuned(100e6);
-    let expected = plan_center(&capabilities, &settings, &channels, &[]);
+    let expected = plan_center(&capabilities, &settings, &channels);
     sdrmm_test_support::assert_no_alloc("descriptor lookup", || {
         for channel in &channels {
             std::hint::black_box(
@@ -64,10 +64,7 @@ fn crowded_tuning_plans_do_not_hold_control_for_audio_queue_durations() {
     });
     let started = Instant::now();
     for _ in 0..10 {
-        assert_eq!(
-            plan_center(&capabilities, &settings, &channels, &[]),
-            expected
-        );
+        assert_eq!(plan_center(&capabilities, &settings, &channels), expected);
     }
     assert!(
         started.elapsed() < Duration::from_millis(250),
@@ -80,7 +77,7 @@ fn crowded_tuning_plans_do_not_hold_control_for_audio_queue_durations() {
 
 #[test]
 fn a_radio_with_nothing_wired_to_it_is_left_where_it_was() {
-    assert_eq!(plan_center(&tuner_caps(), &tuned(100e6), &[], &[]), None);
+    assert_eq!(plan_center(&tuner_caps(), &tuned(100e6), &[]), None);
 }
 
 #[test]
@@ -104,6 +101,15 @@ fn any_radio_steps_its_centre_off_a_decoder_parked_on_it() {
         center_hz, TEST_CENTER_HZ,
         "the decoder was left on the DC term"
     );
+    assert!(heard(center_hz, &alone[0]));
+    assert!(clears(&tuner_caps(), &tuned(center_hz), &alone));
+}
+
+#[test]
+fn a_centre_stepped_off_a_decoder_reads_a_whole_kilohertz() {
+    let alone = [parked(1, 12_345.0)];
+    let center_hz = settled(&tuner_caps(), &tuned(TEST_CENTER_HZ + 12_345.0), &alone);
+    assert_eq!(center_hz % 1_000.0, 0.0, "settled on {center_hz} Hz");
     assert!(heard(center_hz, &alone[0]));
     assert!(clears(&tuner_caps(), &tuned(center_hz), &alone));
 }
@@ -155,7 +161,7 @@ fn a_radio_already_over_its_decoders_is_not_retuned_for_nothing() {
     let wired = [parked(1, -1e6), parked(2, 1e6)];
     let settled_hz = settled(&tuner_caps(), &tuned(100e6), &wired);
     assert_eq!(
-        plan_center(&tuner_caps(), &tuned(settled_hz), &wired, &[]),
+        plan_center(&tuner_caps(), &tuned(settled_hz), &wired),
         None,
         "the radio moved again after it had already settled"
     );
@@ -195,10 +201,7 @@ fn a_radio_that_tunes_each_stream_apart_follows_the_decoders_on_each() {
         },
     ];
     let settings = tuned(100e6);
-    let settled = resolved(
-        &settings,
-        plan_center(&capabilities, &settings, &wired, &[]),
-    );
+    let settled = resolved(&settings, plan_center(&capabilities, &settings, &wired));
     for channel in &wired {
         let center_hz = center_of(&settled, channel.stream, &capabilities.per_stream);
         assert!(
@@ -207,79 +210,6 @@ fn a_radio_that_tunes_each_stream_apart_follows_the_decoders_on_each() {
             channel.stream
         );
     }
-}
-
-#[test]
-fn a_coherent_group_follows_every_decoder_on_its_lanes_as_one() {
-    let capabilities = Capabilities {
-        rx_streams: 3,
-        per_stream: StreamScope {
-            tuning: true,
-            ..StreamScope::default()
-        },
-        ..tuner_caps()
-    };
-    let wired = [
-        ChannelInfo {
-            stream: 1,
-            settings: nfm_settings(40e6),
-            ..parked(1, 0.0)
-        },
-        ChannelInfo {
-            stream: 2,
-            settings: nfm_settings(40.2e6),
-            ..parked(2, 0.0)
-        },
-    ];
-    let settings = tuned(100e6);
-    let moved = plan_center(&capabilities, &settings, &wired, &[1, 2]).expect("the group moves");
-    let centers: Vec<(u32, Option<f64>)> = moved
-        .streams
-        .iter()
-        .map(|lane| (lane.stream, lane.center_hz))
-        .collect();
-    let [(1, Some(center_hz)), (2, Some(other_hz))] = centers[..] else {
-        panic!("only the group moves, together: {centers:?}");
-    };
-    assert_eq!(center_hz, other_hz);
-    for channel in &wired {
-        assert!(
-            heard(center_hz, channel),
-            "{center_hz} Hz misses a group decoder"
-        );
-    }
-}
-
-#[test]
-fn a_coherent_group_follows_a_decoder_on_its_beam() {
-    let capabilities = Capabilities {
-        rx_streams: 3,
-        per_stream: StreamScope {
-            tuning: true,
-            ..StreamScope::default()
-        },
-        ..tuner_caps()
-    };
-    let beam = ChannelInfo {
-        stream: 3,
-        settings: nfm_settings(40e6),
-        ..parked(1, 0.0)
-    };
-    let settings = tuned(100e6);
-    let moved = plan_center(
-        &capabilities,
-        &settings,
-        std::slice::from_ref(&beam),
-        &[1, 2],
-    )
-    .expect("the group moves");
-    let centers: Vec<f64> = moved
-        .streams
-        .iter()
-        .filter_map(|lane| lane.center_hz)
-        .collect();
-    assert_eq!(centers.len(), 2);
-    assert!(centers.iter().all(|hz| heard(*hz, &beam)));
 }
 
 #[test]
@@ -308,7 +238,7 @@ fn a_stream_tuned_by_hand_stays_put_while_its_neighbour_follows_its_decoder() {
         tuning: Some(Tuning::Manual),
         ..StreamSettings::default()
     }];
-    let moved = plan_center(&capabilities, &settings, &wired, &[]).expect("stream 1 moves");
+    let moved = plan_center(&capabilities, &settings, &wired).expect("stream 1 moves");
     let streams: Vec<u32> = moved.streams.iter().map(|s| s.stream).collect();
     assert_eq!(
         streams,
@@ -333,7 +263,7 @@ fn a_decoder_too_wide_to_clear_the_spike_is_held_as_far_off_it_as_the_window_all
         sample_rate: Some(4_000_000.0),
         ..DeviceSettings::default()
     };
-    let moved = plan_center(&tuner_caps(), &settings, std::slice::from_ref(&wide), &[])
+    let moved = plan_center(&tuner_caps(), &settings, std::slice::from_ref(&wide))
         .and_then(|delta| delta.center_hz)
         .expect("the spike was left on the carrier");
     let off_by = (moved - ADSB_CENTER_HZ).abs();
@@ -353,7 +283,7 @@ fn a_radio_tuned_by_hand_ignores_its_decoders() {
     let wired = [parked(1, 30e6)];
     let mut settings = tuned(100e6);
     settings.tuning = Some(Tuning::Manual);
-    assert_eq!(plan_center(&tuner_caps(), &settings, &wired, &[]), None);
+    assert_eq!(plan_center(&tuner_caps(), &settings, &wired), None);
 }
 
 #[tokio::test]
@@ -387,9 +317,9 @@ async fn tuning_one_stream_by_hand_leaves_the_other_following_its_decoders() {
         Some(TEST_CENTER_HZ - 500_000.0),
         "the stream tuned by hand moved"
     );
-    assert!(set.channels[1].out_of_band);
+    assert_eq!(set.channels[1].out_of_band, Some(BandMiss::TunedAway));
     assert!(
-        !set.channels[0].out_of_band,
+        set.channels[0].out_of_band.is_none(),
         "the stream left in auto did not follow its decoder"
     );
     engine.remove_device_set(ds).unwrap();
@@ -398,14 +328,14 @@ async fn tuning_one_stream_by_hand_leaves_the_other_following_its_decoders() {
 #[tokio::test]
 async fn a_decoder_added_off_the_window_pulls_an_auto_radio_over_to_it() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     engine
         .add_channel(ds, 0, nfm_settings(1_100_000.0))
         .unwrap();
 
     let set = &engine.snapshot().device_sets[0];
     assert!(
-        !set.channels[0].out_of_band,
+        set.channels[0].out_of_band.is_none(),
         "auto tuning left the decoder outside the window"
     );
     assert_eq!(
@@ -419,7 +349,7 @@ async fn a_decoder_added_off_the_window_pulls_an_auto_radio_over_to_it() {
 #[tokio::test]
 async fn a_held_radio_stays_where_the_operator_put_it() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     hold_tuning(&engine, ds);
     let before = engine.snapshot().device_sets[0].settings.center_hz;
     engine.add_channel(ds, 0, nfm_settings(900_000.0)).unwrap();
@@ -430,14 +360,18 @@ async fn a_held_radio_stays_where_the_operator_put_it() {
 #[tokio::test]
 async fn a_decoder_beyond_the_window_is_left_silent_rather_than_costing_the_others() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     for offset_hz in [0.0, 400_000.0, 20_000_000.0] {
         engine.add_channel(ds, 0, nfm_settings(offset_hz)).unwrap();
     }
     let set = &engine.snapshot().device_sets[0];
-    let silent = set.channels.iter().filter(|c| c.out_of_band).count();
+    let silent = set
+        .channels
+        .iter()
+        .filter(|c| c.out_of_band.is_some())
+        .count();
     assert_eq!(silent, 1, "the radio gave up a decoder it could have kept");
-    assert!(set.channels[2].out_of_band);
+    assert_eq!(set.channels[2].out_of_band, Some(BandMiss::Crowded));
     engine.remove_device_set(ds).unwrap();
 }
 
@@ -472,7 +406,7 @@ fn feasible_tuning_boundaries_match_the_runtime_at_adjacent_floats() {
 #[tokio::test]
 async fn switching_one_lane_to_auto_leaves_the_others_alone() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:bank5").unwrap();
+    let ds = engine.create_device_set("virtual:kraken5").unwrap();
     let lane = |stream: u32, tuning: Tuning| DeviceSettings {
         streams: vec![StreamSettings {
             stream,
@@ -510,4 +444,42 @@ async fn switching_one_lane_to_auto_leaves_the_others_alone() {
     let mut expected = vec![Some(Tuning::Manual); 5];
     expected[2] = Some(Tuning::Auto);
     assert_eq!(tunings, expected);
+}
+
+#[test]
+fn a_decoder_wider_than_the_window_names_the_width_it_needs() {
+    let capabilities = Capabilities {
+        sample_rates: vec![250_000.0, 2_400_000.0],
+        ..tuner_caps()
+    };
+    let wfm = ChannelSettings {
+        frequency_hz: TEST_CENTER_HZ,
+        ..ChannelSettings::default_for("wfm").expect("wfm")
+    };
+    let (low, high) = sdrmm_channels::occupied_band(&wfm.params);
+    assert_eq!(
+        band_miss(&capabilities, 100_000.0, true, &wfm),
+        BandMiss::TooWide {
+            needs_hz: high - low,
+            top_rate_hz: Some(2_400_000.0),
+        }
+    );
+}
+
+#[test]
+fn a_decoder_below_the_tuner_is_named_off_the_tuner() {
+    let below = nfm_settings(10e6 - TEST_CENTER_HZ);
+    assert_eq!(
+        band_miss(&tuner_caps(), 2_400_000.0, true, &below),
+        BandMiss::OffTuner
+    );
+}
+
+#[test]
+fn a_decoder_just_past_the_tuner_edge_is_still_in_reach() {
+    let edge = nfm_settings(24e6 - 500_000.0 - TEST_CENTER_HZ);
+    assert_eq!(
+        band_miss(&tuner_caps(), 2_400_000.0, false, &edge),
+        BandMiss::TunedAway
+    );
 }

@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
 use sdrmm_wire::{
-    DecodedRecord, DecoderEvent, EventFilterNode, NodeBody, PatchGraph, StateSnapshot,
+    DecodedRecord, DecoderEvent, EVENTS_PORT, EventFilterNode, NodeBody, PatchGraph,
+    RADAR_TRUTH_PORT, StateSnapshot,
 };
 
 const MAX_FILTER_DEPTH: usize = 16;
+const SINK_PORTS: [&str; 2] = [EVENTS_PORT, RADAR_TRUTH_PORT];
 
 pub(crate) fn decoder_nodes(
     graph: &PatchGraph,
@@ -49,13 +51,15 @@ impl EventPath {
 
 pub(crate) fn paths_into(graph: &PatchGraph, sink: &str) -> Vec<EventPath> {
     let mut paths = Vec::new();
-    walk(graph, sink, &mut Vec::new(), &mut paths, 0);
+    for port in SINK_PORTS {
+        walk(graph, (sink, port), &mut Vec::new(), &mut paths, 0);
+    }
     paths
 }
 
 fn walk(
     graph: &PatchGraph,
-    node: &str,
+    (node, port): (&str, &str),
     filters: &mut Vec<EventFilterNode>,
     paths: &mut Vec<EventPath>,
     depth: usize,
@@ -63,11 +67,11 @@ fn walk(
     if depth > MAX_FILTER_DEPTH {
         return;
     }
-    for source in graph.sources_of(node, "events") {
+    for source in graph.sources_of(node, port) {
         match graph.node(source).map(|found| &found.body) {
             Some(NodeBody::EventFilter(settings)) => {
                 filters.push(settings.clone());
-                walk(graph, source, filters, paths, depth + 1);
+                walk(graph, (source, EVENTS_PORT), filters, paths, depth + 1);
                 filters.pop();
             }
             _ => paths.push(EventPath {
@@ -187,7 +191,6 @@ mod tests {
             id,
             NodeBody::Channel(ChannelNode {
                 channel_type: "dmr".to_owned(),
-                record_calls: true,
                 tuning_locked: false,
             }),
         )
@@ -226,7 +229,10 @@ mod tests {
     #[test]
     fn a_direct_wire_carries_no_filter() {
         let graph = PatchGraph {
-            nodes: vec![channel("dmr"), node("chat", NodeBody::DecoderLog)],
+            nodes: vec![
+                channel("dmr"),
+                node("chat", NodeBody::DecoderLog(Default::default())),
+            ],
             edges: vec![edge("dmr", "chat")],
         };
 
@@ -244,7 +250,7 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![edge("dmr", "only-calls"), edge("only-calls", "chat")],
         };
@@ -270,7 +276,7 @@ mod tests {
                 channel("dmr"),
                 filter("kind", only("call")),
                 filter("group", strict),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "kind"),
@@ -293,7 +299,7 @@ mod tests {
                 channel("dmr"),
                 channel("p25"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "only-calls"),
@@ -317,7 +323,7 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "only-calls"),
@@ -376,7 +382,7 @@ mod tests {
     #[test]
     fn a_sink_with_nothing_wired_in_has_no_path() {
         let graph = PatchGraph {
-            nodes: vec![node("chat", NodeBody::DecoderLog)],
+            nodes: vec![node("chat", NodeBody::DecoderLog(Default::default()))],
             edges: Vec::new(),
         };
         assert!(paths_into(&graph, "chat").is_empty());
@@ -388,7 +394,7 @@ mod tests {
             nodes: vec![
                 filter("a", EventFilterNode::default()),
                 filter("b", EventFilterNode::default()),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![edge("a", "b"), edge("b", "a"), edge("b", "chat")],
         };
@@ -423,9 +429,9 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
                 node("export", NodeBody::Export),
-                node("idle", NodeBody::DecoderLog),
+                node("idle", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "only-calls"),
@@ -448,7 +454,7 @@ mod tests {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
                 node("export", NodeBody::Export),
             ],
             edges: vec![
@@ -479,7 +485,7 @@ mod tests {
                         ..EventFilterNode::default()
                     },
                 ),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![edge("dmr", "no-cq"), edge("no-cq", "chat")],
         };
@@ -498,7 +504,10 @@ mod tests {
     #[test]
     fn a_record_from_an_unbound_channel_reaches_nothing() {
         let graph = PatchGraph {
-            nodes: vec![channel("dmr"), node("chat", NodeBody::DecoderLog)],
+            nodes: vec![
+                channel("dmr"),
+                node("chat", NodeBody::DecoderLog(Default::default())),
+            ],
             edges: vec![edge("dmr", "chat")],
         };
         let routes = routes_over(&graph);
@@ -509,13 +518,85 @@ mod tests {
         assert!(routed.record.sinks.is_empty());
     }
 
+    fn adsb_channel(id: &str) -> PatchNode {
+        node(
+            id,
+            NodeBody::Channel(ChannelNode {
+                channel_type: "adsb".to_owned(),
+                tuning_locked: false,
+            }),
+        )
+    }
+
+    fn into_truth(from: &str) -> PatchEdge {
+        PatchEdge {
+            to: PortRef {
+                node: "radar".to_owned(),
+                port: sdrmm_wire::RADAR_TRUTH_PORT.to_owned(),
+            },
+            ..edge(from, "radar")
+        }
+    }
+
+    #[test]
+    fn only_decoders_wired_into_adsb_feed_truth() {
+        let graph = PatchGraph {
+            nodes: vec![
+                adsb_channel("wired"),
+                adsb_channel("filtered"),
+                adsb_channel("logged"),
+                filter("quiet", EventFilterNode::default()),
+                node(
+                    "radar",
+                    NodeBody::PassiveRadar(sdrmm_wire::PassiveRadarNode::default()),
+                ),
+                node("chat", NodeBody::DecoderLog(Default::default())),
+            ],
+            edges: vec![
+                into_truth("wired"),
+                edge("filtered", "quiet"),
+                into_truth("quiet"),
+                edge("logged", "chat"),
+            ],
+        };
+        let routes = Routes {
+            sources: HashMap::from([
+                ((1, 1), "wired".to_owned()),
+                ((1, 2), "filtered".to_owned()),
+                ((1, 3), "logged".to_owned()),
+            ]),
+            ..Routes::resolve(7, &graph, &StateSnapshot::default())
+        };
+        let aircraft = || {
+            DecoderEvent::Adsb(sdrmm_wire::AdsbMessage {
+                icao: "3c6444".to_owned(),
+                ..sdrmm_wire::AdsbMessage::default()
+            })
+        };
+
+        assert_eq!(
+            routes.route(decoded(1, 1, aircraft())).record.sinks,
+            ["radar"]
+        );
+        assert_eq!(
+            routes.route(decoded(1, 2, aircraft())).record.sinks,
+            ["radar"],
+            "a filter between the decoder and adsb still counts"
+        );
+        assert_eq!(
+            routes.route(decoded(1, 3, aircraft())).record.sinks,
+            ["chat"],
+            "a decoder wired elsewhere feeds no truth"
+        );
+    }
+
     #[test]
     fn one_open_wire_is_enough_to_reach_a_sink_once() {
         let graph = PatchGraph {
             nodes: vec![
                 channel("dmr"),
                 filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog),
+                node("chat", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![
                 edge("dmr", "only-calls"),

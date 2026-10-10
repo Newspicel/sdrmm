@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "Airspy via a public SpyServer in the Netherlands",
+    "core:description": "FLEX 1600/2 off air on 169.650 MHz (P2000, Netherlands): an A2 ambulance page to capcode 2029574"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 169650000.0,
+      "core:datetime": "2026-10-03T21:03:30Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "public SpyServer IQ via cargo xtask net-capture; source SHA-256 5be95b834205c9d34f7bf176d3bd719a88286ac350f1a76dc5916c3ec4911981; samples 8250000..9187500 at 312500 Hz",
+      "core:sample_count": 144001,
+      "core:sample_start": 0
+    }
+  ]
+}

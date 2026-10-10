@@ -1,9 +1,3 @@
-use std::{
-    alloc::{Layout, handle_alloc_error},
-    ffi::c_void,
-    ptr::NonNull,
-};
-
 use blip25_vocoder::{
     enhancement::{ClassicalConfig, EnhancementMode},
     fullrate,
@@ -17,10 +11,10 @@ use codec2::{Codec2, Codec2Mode};
 use num_complex::Complex;
 use sdrmm_dsp::FracResampler;
 
+use super::ambe::{AmbeDecoder, FRAME_SAMPLES as AMBE_FRAME_SAMPLES};
 use crate::{AUDIO_RATE, ChannelOutputs, clamp_full_scale};
 
 const VOCODER_RATE_HZ: f64 = 8_000.0;
-const MBE_FRAME_SAMPLES: usize = 160;
 const OUTPUT_SAMPLES_PER_MBE_FRAME: usize = 960;
 
 pub(crate) const HALF_RATE_SOFT_BITS: usize = halfrate::frame::SOFT_BITS;
@@ -241,42 +235,23 @@ impl MbeDecoder {
     }
 }
 
-unsafe extern "C" {
-    fn sdrmm_dstar_vocoder_new() -> *mut c_void;
-    fn sdrmm_dstar_vocoder_free(decoder: *mut c_void);
-    fn sdrmm_dstar_vocoder_reset(decoder: *mut c_void);
-    fn sdrmm_dstar_vocoder_decode(decoder: *mut c_void, bits: *const u8, pcm: *mut f32) -> i32;
-}
-
 pub(crate) struct DstarVocoder {
-    decoder: NonNull<c_void>,
+    decoder: AmbeDecoder,
     output: PcmOutput,
-    bits: [u8; 72],
-    pcm: [f32; MBE_FRAME_SAMPLES],
+    pcm: [f32; AMBE_FRAME_SAMPLES],
 }
-
-// SAFETY: the opaque allocation has no thread affinity or shared global state, and every FFI
-// call requires exclusive access to this owner.
-unsafe impl Send for DstarVocoder {}
 
 impl DstarVocoder {
     pub(crate) fn new() -> Self {
-        // SAFETY: constructor takes no pointers and returns either a unique allocation or null.
-        let decoder = unsafe { sdrmm_dstar_vocoder_new() };
-        let Some(decoder) = NonNull::new(decoder) else {
-            handle_alloc_error(Layout::new::<DstarVocoder>());
-        };
         Self {
-            decoder,
+            decoder: AmbeDecoder::new(),
             output: PcmOutput::new(),
-            bits: [0; 72],
-            pcm: [0.0; MBE_FRAME_SAMPLES],
+            pcm: [0.0; AMBE_FRAME_SAMPLES],
         }
     }
 
     pub(crate) fn reset(&mut self) {
-        // SAFETY: `decoder` remains a live, uniquely owned allocation until `drop`.
-        unsafe { sdrmm_dstar_vocoder_reset(self.decoder.as_ptr()) };
+        self.decoder.reset();
         self.output.reset();
     }
 
@@ -285,26 +260,8 @@ impl DstarVocoder {
             PcmOutput::silence(1, out);
             return;
         }
-        for (slot, &bit) in self.bits.iter_mut().zip(bits) {
-            *slot = u8::from(bit);
-        }
-        // SAFETY: all pointers reference fixed-size live buffers of the lengths required by
-        // the wrapper, and the decoder is uniquely borrowed for the call.
-        unsafe {
-            sdrmm_dstar_vocoder_decode(
-                self.decoder.as_ptr(),
-                self.bits.as_ptr(),
-                self.pcm.as_mut_ptr(),
-            )
-        };
+        self.decoder.decode(bits, &mut self.pcm);
         self.output.append_f32(&self.pcm, out);
-    }
-}
-
-impl Drop for DstarVocoder {
-    fn drop(&mut self) {
-        // SAFETY: this is the one matching free for the allocation and runs once.
-        unsafe { sdrmm_dstar_vocoder_free(self.decoder.as_ptr()) };
     }
 }
 
@@ -313,6 +270,7 @@ pub(crate) struct Codec2Decoder {
     codec_1600: Codec2,
     codec_1300: Codec2,
     output: PcmOutput,
+    pcm_3200: [i16; 160],
     pcm: [i16; 320],
 }
 
@@ -323,15 +281,13 @@ impl Codec2Decoder {
             codec_1600: Codec2::new(Codec2Mode::MODE_1600),
             codec_1300: Codec2::new(Codec2Mode::MODE_1300),
             output: PcmOutput::new(),
+            pcm_3200: [0; 160],
             pcm: [0; 320],
         }
     }
 
     pub(crate) fn reset(&mut self) {
-        self.codec_3200 = Codec2::new(Codec2Mode::MODE_3200);
-        self.codec_1600 = Codec2::new(Codec2Mode::MODE_1600);
-        self.codec_1300 = Codec2::new(Codec2Mode::MODE_1300);
-        self.output.reset();
+        *self = Self::new();
     }
 
     pub(crate) fn decode_3200(
@@ -345,8 +301,8 @@ impl Codec2Decoder {
             return;
         }
         for frame in payload.as_chunks::<8>().0 {
-            self.codec_3200.decode(&mut self.pcm[..160], frame);
-            self.output.append_i16(&self.pcm[..160], out);
+            self.codec_3200.decode(&mut self.pcm_3200, frame);
+            self.output.append_i16(&self.pcm_3200, out);
         }
     }
 
@@ -360,7 +316,10 @@ impl Codec2Decoder {
             PcmOutput::silence(2, out);
             return;
         }
-        self.codec_1600.decode(&mut self.pcm, &payload[..8]);
+        let Some(frame) = payload.first_chunk::<8>() else {
+            return;
+        };
+        self.codec_1600.decode(&mut self.pcm, frame);
         self.output.append_i16(&self.pcm, out);
     }
 

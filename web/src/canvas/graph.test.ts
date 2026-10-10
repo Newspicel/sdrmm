@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ChannelDescriptor,
   DeviceSet,
+  NodeBodyOf,
   NodeKind,
   PatchCatalog,
   PatchGraph,
@@ -10,9 +11,12 @@ import type {
   PortSpec,
   WorkspaceSnapshot,
 } from "../lib/types";
+import { catalogBody, CATALOG as REAL_CATALOG } from "../test/catalog";
 import {
   addEdge,
   addNode,
+  arrayWiredLanes,
+  BEAM_TAKES_ONE,
   clampCells,
   connectionRefusal,
   edgeKey,
@@ -39,18 +43,19 @@ import {
   removeNode,
   resizeSlot,
   sameGraph,
+  settleArrays,
   slotRoom,
   streamLabel,
   streamPort,
   tuningLocked,
   unpin,
 } from "./graph";
-import { DEFAULT_COMBINER_PARAMS } from "./nodes/combiner";
 
 const CATALOG: PatchCatalog = {
   nodes: [
     {
       kind: "device",
+      default_body: catalogBody("device"),
       name: "Device",
       category: "source",
       ports: [
@@ -60,7 +65,7 @@ const CATALOG: PatchCatalog = {
           direction: "in",
           multi: false,
           condition: "device_is_tx_capable",
-          note: "reserved: transmit is not built ()",
+          note: "reserved: transmit is not built",
           repeat: "per_tx_stream",
         },
         { name: "iq", port_type: "iq", direction: "out", multi: true, repeat: "per_rx_stream" },
@@ -68,6 +73,7 @@ const CATALOG: PatchCatalog = {
     },
     {
       kind: "channel",
+      default_body: catalogBody("channel"),
       name: "Channel",
       category: "channel",
       needs_channel_type: true,
@@ -93,7 +99,7 @@ const CATALOG: PatchCatalog = {
           port_type: "events",
           direction: "out",
           multi: true,
-          condition: "channel_is_decoder",
+          condition: "channel_has_events",
         },
         {
           name: "video",
@@ -106,27 +112,21 @@ const CATALOG: PatchCatalog = {
     },
     {
       kind: "scope",
+      default_body: catalogBody("scope"),
       name: "Scope",
       category: "output",
       ports: [{ name: "iq", port_type: "iq", direction: "in", multi: false }],
     },
     {
       kind: "speaker",
+      default_body: catalogBody("speaker"),
       name: "Speaker",
       category: "output",
       ports: [{ name: "audio", port_type: "audio", direction: "in", multi: true }],
     },
     {
-      kind: "combiner",
-      name: "Combiner",
-      category: "tool",
-      ports: [
-        { name: "iq", port_type: "iq", direction: "in", multi: false, repeat: "per_rx_stream" },
-        { name: "beam", port_type: "iq", direction: "out", multi: true },
-      ],
-    },
-    {
       kind: "scanner",
+      default_body: catalogBody("scanner"),
       name: "Scanner",
       category: "tool",
       ports: [{ name: "control", port_type: "control", direction: "out", multi: false }],
@@ -226,18 +226,13 @@ describe("portLabel", () => {
   });
 });
 
-const combiner = (lanes: number): PatchNode =>
-  node("comb", { kind: "combiner", data: { settings: { ...DEFAULT_COMBINER_PARAMS, lanes } } });
-
 describe("handleSignature", () => {
-  it("changes when a combiner gains antennas", () => {
-    const two = handleSignature(portsOf(context, { nodes: [combiner(2)], edges: [] }, combiner(2)));
-    const five = handleSignature(
-      portsOf(context, { nodes: [combiner(5)], edges: [] }, combiner(5)),
-    );
-    expect(five).not.toBe(two);
-    expect(five).toContain("in:iq3");
-    expect(two).not.toContain("in:iq3");
+  it("changes when a node gains a port", () => {
+    const iq = { name: "iq", port_type: "iq", direction: "out", multi: true } as const;
+    const one = handleSignature([iq]);
+    const two = handleSignature([iq, { ...iq, name: "iq2" }]);
+    expect(two).not.toBe(one);
+    expect(two).toContain("out:iq2");
   });
 });
 
@@ -251,6 +246,7 @@ describe("ports", () => {
       "iq",
       "control",
       "audio",
+      "events",
     ]);
     expect(portsOf(context, graph, adsb).map((p) => p.name)).toEqual([
       "iq",
@@ -281,6 +277,7 @@ describe("ports", () => {
     expect(nfm && portsOf({ ...context, catalog }, graph, nfm).map((p) => p.name)).toEqual([
       "iq",
       "control",
+      "events",
     ]);
   });
 
@@ -421,33 +418,6 @@ describe("connectionRefusal", () => {
     expect(connectionRefusal(context, graph, port("dev2", "iq"), port("nfm", "iq"))).toBeNull();
   });
 
-  it("keeps a beam exclusive in either connection order", () => {
-    const beamContext: GraphContext = {
-      ...context,
-      catalog: {
-        ...CATALOG,
-        nodes: [
-          ...CATALOG.nodes,
-          {
-            kind: "df",
-            name: "DF",
-            category: "tool",
-            ports: [{ name: "beam", port_type: "iq", direction: "out", multi: false }],
-          },
-        ],
-      },
-    };
-    const graph = workspace();
-    graph.nodes.push(node("df", { kind: "df", data: {} }));
-    expect(connectionRefusal(beamContext, graph, port("df", "beam"), port("nfm", "iq"))).toMatch(
-      /one wire/,
-    );
-    graph.edges = [{ from: port("df", "beam"), to: port("nfm", "iq") }];
-    expect(connectionRefusal(beamContext, graph, port("dev", "iq"), port("nfm", "iq"))).toMatch(
-      /one wire/,
-    );
-  });
-
   it("wires a scanner into the decoder it drives, and only one", () => {
     const graph = {
       ...workspace(),
@@ -542,7 +512,7 @@ const driving = (edges: PatchGraph["edges"]): WorkspaceSnapshot => ({
   graph: {
     nodes: [
       ...workspace().nodes,
-      node("scan", { kind: "scanner" }),
+      node("scan", { kind: "scanner", data: {} }),
       node("walk", { kind: "hunt", data: {} }),
       node("am", { kind: "channel", data: { channel_type: "am" } }),
       node("dev2", { kind: "device", data: {} }),
@@ -635,6 +605,22 @@ describe("editing", () => {
       { from: { node: "scan", port: "control" }, to: { node: "nfm", port: "control" } },
     ]);
     expect(migrateSnapshot(current)).toBe(current);
+  });
+
+  it("gives a scanner or decoder log saved without settings an empty body", () => {
+    const stored: WorkspaceSnapshot = {
+      version: 1,
+      graph: {
+        nodes: [
+          { id: "scan", kind: "scanner", position: { x: 0, y: 0 } } as PatchNode,
+          { id: "log", kind: "decoder_log", position: { x: 0, y: 0 } } as PatchNode,
+        ],
+        edges: [],
+      },
+    };
+    const migrated = migrateSnapshot(stored);
+    expect(migrated.graph.nodes.map((n) => (n as { data?: unknown }).data)).toEqual([{}, {}]);
+    expect(migrateSnapshot(migrated)).toBe(migrated);
   });
 
   it("compares graphs structurally so an echo of our own write is not re-applied", () => {
@@ -777,5 +763,139 @@ describe("tuningLocked", () => {
     expect(tuningLocked(graph, "loose")).toBe(false);
     expect(tuningLocked(graph, "scope")).toBe(false);
     expect(tuningLocked(graph, "nowhere")).toBe(false);
+  });
+});
+
+const ARRAY_CONTEXT: GraphContext = { catalog: REAL_CATALOG, channelTypes: [], facets: [] };
+
+function arrayNodeOf(geometry?: object): PatchNode {
+  const body = catalogBody("array") as NodeBodyOf<"array">;
+  const data = geometry === undefined ? body.data : { ...body.data, geometry };
+  return { id: "arr", position: { x: 0, y: 0 }, kind: "array", data } as PatchNode;
+}
+
+function placedNode(id: string, body: object): PatchNode {
+  return { id, position: { x: 0, y: 0 }, ...body } as PatchNode;
+}
+
+function lanesWired(lanes: readonly number[], geometry?: object): PatchGraph {
+  return {
+    nodes: [placedNode("dev", { kind: "device", data: {} }), arrayNodeOf(geometry)],
+    edges: lanes.map((lane) => ({
+      from: { node: "dev", port: streamPort("iq", lane) },
+      to: { node: "arr", port: streamPort("lane", lane) },
+    })),
+  };
+}
+
+function laneInputs(graph: PatchGraph): string[] {
+  const array = graph.nodes.find((candidate) => candidate.id === "arr");
+  if (array === undefined) {
+    return [];
+  }
+  const ports = portsOf(ARRAY_CONTEXT, graph, array);
+  return ports
+    .filter((spec) => spec.port_type === "iq" && spec.direction === "in")
+    .map((spec) => portLabel(spec.name, ports));
+}
+
+describe("arrays", () => {
+  it("draws one free lane input more than the array holds", () => {
+    expect(laneInputs(lanesWired([]))).toEqual(["lane"]);
+    expect(laneInputs(lanesWired([0, 1]))).toEqual(["lane1", "lane2", "lane3"]);
+    expect(laneInputs(lanesWired([3]))).toEqual(["lane1", "lane2", "lane3", "lane4", "lane5"]);
+    const full = Array.from({ length: 16 }, (_, lane) => lane);
+    expect(laneInputs(lanesWired(full))).toHaveLength(16);
+  });
+
+  it("counts lanes from the highest wired lane port", () => {
+    expect(arrayWiredLanes(lanesWired([]), "arr")).toBe(0);
+    expect(arrayWiredLanes(lanesWired([0, 2]), "arr")).toBe(3);
+  });
+
+  it("settleArrays grows lanes with wires and pads custom rows but never cuts them", () => {
+    const custom = { kind: "explicit", positions: [{ x_m: 1, y_m: 2, z_m: 0 }] };
+    const grown = settleArrays(lanesWired([0, 1, 2], custom));
+    const array = grown.nodes.find((candidate) => candidate.id === "arr");
+    expect(array?.kind === "array" && array.data.geometry).toEqual({
+      kind: "explicit",
+      positions: [
+        { x_m: 1, y_m: 2, z_m: 0 },
+        { x_m: 0, y_m: 0, z_m: 0 },
+        { x_m: 0, y_m: 0, z_m: 0 },
+      ],
+    });
+    const cut = { ...grown, edges: grown.edges?.slice(0, 1) };
+    expect(settleArrays(cut)).toBe(cut);
+    const circle = lanesWired([0, 1, 2]);
+    expect(settleArrays(circle)).toBe(circle);
+  });
+
+  it("pads custom rows as wires land", () => {
+    const custom = { kind: "explicit", positions: [] };
+    const graph = addEdge(lanesWired([], custom), {
+      from: { node: "dev", port: "iq2" },
+      to: { node: "arr", port: "lane2" },
+    });
+    const array = graph.nodes.find((candidate) => candidate.id === "arr");
+    expect(
+      array?.kind === "array" && array.data.geometry.kind === "explicit"
+        ? array.data.geometry.positions
+        : [],
+    ).toHaveLength(2);
+  });
+
+  it("sizes new processor kinds", () => {
+    expect(NODE_SIZE.array).toEqual({ w: 460 });
+    expect(NODE_SIZE.passive_radar).toEqual({ w: 560, h: 540 });
+    expect(isResizable("spatial_spectrum")).toBe(true);
+    expect(isResizable("polarimeter")).toBe(false);
+    expect(nodeMinSize("passive_radar", []).w).toBe(420);
+    expect(nodeMinSize("spatial_spectrum", [])).toEqual({ w: 400, h: 300 });
+    expect(nodeMinSize("correlator", [])).toEqual({ w: 380, h: 340 });
+  });
+
+  it("keeps a beam exclusive in either connection order", () => {
+    const graph: PatchGraph = {
+      nodes: [
+        ...lanesWired([]).nodes,
+        placedNode("beam", catalogBody("beamformer")),
+        placedNode("nfm", { kind: "channel", data: { channel_type: "nfm" } }),
+      ],
+      edges: [],
+    };
+    const beam = { node: "beam", port: "beam" };
+    const radio = { node: "dev", port: "iq" };
+    const nfm = { node: "nfm", port: "iq" };
+    expect(connectionRefusal(ARRAY_CONTEXT, graph, beam, nfm)).toBeNull();
+    expect(
+      connectionRefusal(ARRAY_CONTEXT, { ...graph, edges: [{ from: beam, to: nfm }] }, radio, nfm),
+    ).toBe(BEAM_TAKES_ONE);
+    expect(
+      connectionRefusal(ARRAY_CONTEXT, { ...graph, edges: [{ from: radio, to: nfm }] }, beam, nfm),
+    ).toBe(BEAM_TAKES_ONE);
+  });
+
+  it("refuses array wiring through the array rules", () => {
+    const graph: PatchGraph = {
+      nodes: [...lanesWired([]).nodes, placedNode("scope", { kind: "scope" })],
+      edges: [],
+    };
+    expect(
+      connectionRefusal(
+        ARRAY_CONTEXT,
+        graph,
+        { node: "dev", port: "iq" },
+        { node: "arr", port: "lane" },
+      ),
+    ).toBeNull();
+    expect(
+      connectionRefusal(
+        ARRAY_CONTEXT,
+        graph,
+        { node: "arr", port: "array" },
+        { node: "scope", port: "iq" },
+      ),
+    ).not.toBeNull();
   });
 });

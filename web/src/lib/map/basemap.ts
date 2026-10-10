@@ -1,14 +1,75 @@
 import type { MapOptions } from "maplibre-gl";
+import { recordEvent } from "../diagnostics";
 
 export type MapStyle = Exclude<NonNullable<MapOptions["style"]>, string>;
 
-export const BASEMAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
-export const OFFLINE_BASEMAP_URL = "/api/basemap.pmtiles";
+export const OPENFREEMAP = "https://tiles.openfreemap.org";
+export const BASEMAP_GLYPHS = `${OPENFREEMAP}/fonts/{fontstack}/{range}.pbf`;
 export const BASEMAP_TIMEOUT_MS = 4_000;
+export const RASTER_TILE_PX = 256;
 
-export type BasemapKind = "pending" | "online" | "offline" | "blank";
+export const BASEMAP_PRESETS = ["liberty", "bright", "positron", "dark", "fiord"] as const;
 
-/// A backdrop with nothing on it, for a station with neither internet nor an archive.
+export type BasemapPreset = (typeof BASEMAP_PRESETS)[number];
+
+export const PRESET_COLORS: Record<BasemapPreset, { land: string; water: string }> = {
+  liberty: { land: "#f8f4f0", water: "#9ebdff" },
+  bright: { land: "#f8f4f0", water: "#aecfe2" },
+  positron: { land: "#f2f3f0", water: "#c2c8ca" },
+  dark: { land: "#0c0c0c", water: "#1b1b1d" },
+  fiord: { land: "#45516e", water: "#38435c" },
+};
+
+export interface BasemapChoice {
+  preset: BasemapPreset | "custom";
+  custom: string;
+}
+
+export const DEFAULT_BASEMAP: BasemapChoice = { preset: "liberty", custom: "" };
+
+export type BasemapKind = "pending" | "online" | "blank";
+
+export interface Basemap {
+  kind: BasemapKind;
+  style: MapStyle;
+}
+
+export function groundOf(choice: BasemapChoice, kind: BasemapKind, background: string): string {
+  if (kind !== "online") {
+    return background;
+  }
+  return choice.preset === "custom"
+    ? PRESET_COLORS.liberty.land
+    : PRESET_COLORS[choice.preset].land;
+}
+
+export function presetUrl(preset: BasemapPreset): string {
+  return `${OPENFREEMAP}/styles/${preset}`;
+}
+
+export function isTileTemplate(url: string): boolean {
+  return url.includes("{z}") || url.includes("{quadkey}");
+}
+
+export function isWebUrl(url: string): boolean {
+  if (!URL.canParse(url)) {
+    return false;
+  }
+  const { protocol } = new URL(url);
+  return protocol === "https:" || protocol === "http:";
+}
+
+export function sameBasemap(a: BasemapChoice, b: BasemapChoice): boolean {
+  return a.preset === b.preset && (a.preset !== "custom" || a.custom === b.custom);
+}
+
+export function withCustom(basemap: BasemapChoice, custom: string): BasemapChoice {
+  if (custom !== "") {
+    return { preset: "custom", custom };
+  }
+  return { preset: basemap.preset === "custom" ? DEFAULT_BASEMAP.preset : basemap.preset, custom };
+}
+
 export function blankStyle(background: string): MapStyle {
   return {
     version: 8,
@@ -17,99 +78,47 @@ export function blankStyle(background: string): MapStyle {
   };
 }
 
-/// A small self-authored style over the operator's own archive.
-///
-/// Deliberately not a copy of a vendor style: it names only the layers every OpenMapTiles-schema
-/// extract has, so any archive cut from the usual sources draws something recognisable, land,
-/// water, roads and place names, without shipping a stylesheet nobody can maintain.
-export function offlineStyle(background: string, ink: string, line: string): MapStyle {
+export function rasterStyle(template: string): MapStyle {
   return {
     version: 8,
-    glyphs: undefined,
-    sources: {
-      basemap: { type: "vector", url: `pmtiles://${OFFLINE_BASEMAP_URL}` },
-    },
-    layers: [
-      { id: "backdrop", type: "background", paint: { "background-color": background } },
-      {
-        id: "water",
-        type: "fill",
-        source: "basemap",
-        "source-layer": "water",
-        paint: { "fill-color": line },
-      },
-      {
-        id: "landuse",
-        type: "fill",
-        source: "basemap",
-        "source-layer": "landuse",
-        paint: { "fill-color": line, "fill-opacity": 0.35 },
-      },
-      {
-        id: "roads",
-        type: "line",
-        source: "basemap",
-        "source-layer": "transportation",
-        paint: {
-          "line-color": ink,
-          "line-opacity": 0.55,
-          "line-width": ["interpolate", ["linear"], ["zoom"], 6, 0.4, 14, 2.2],
-        },
-      },
-      {
-        id: "boundaries",
-        type: "line",
-        source: "basemap",
-        "source-layer": "boundary",
-        paint: { "line-color": ink, "line-opacity": 0.3, "line-dasharray": [3, 2] },
-      },
-    ],
+    glyphs: BASEMAP_GLYPHS,
+    sources: { custom: { type: "raster", tiles: [template], tileSize: RASTER_TILE_PX } },
+    layers: [{ id: "custom", type: "raster", source: "custom" }],
   };
 }
 
-export async function fetchOnlineStyle(): Promise<MapStyle | null> {
+export async function fetchStyle(url: string): Promise<MapStyle | null> {
   try {
-    const response = await fetch(BASEMAP_STYLE_URL, {
-      signal: AbortSignal.timeout(BASEMAP_TIMEOUT_MS),
-    });
+    const response = await fetch(url, { signal: AbortSignal.timeout(BASEMAP_TIMEOUT_MS) });
     if (!response.ok) {
+      recordEvent("warn", "map", `basemap style: HTTP ${response.status}`);
       return null;
     }
     return (await response.json()) as MapStyle;
-  } catch {
+  } catch (error) {
+    recordEvent("warn", "map", `basemap style: ${String(error)}`);
     return null;
   }
 }
 
-/// Whether this station has an archive to fall back to. Answered by the server rather than probed,
-/// so a phone with no internet does not spend its first seconds waiting on a request that will
-/// never finish.
-export async function hasOfflineBasemap(): Promise<boolean> {
-  try {
-    const response = await fetch(OFFLINE_BASEMAP_URL, {
-      method: "HEAD",
-      signal: AbortSignal.timeout(BASEMAP_TIMEOUT_MS),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-/// Which basemap to draw, given what could be reached. Online first, the operator's archive next,
-/// a plain backdrop last, and the answer says which, so the map can admit what it is showing.
-export function chooseBasemap(
-  online: MapStyle | null,
-  offline: boolean,
-  background: string,
-  ink: string,
-  line: string,
-): { kind: BasemapKind; style: MapStyle } {
+export function chooseBasemap(online: MapStyle | null, background: string): Basemap {
   if (online !== null) {
     return { kind: "online", style: online };
   }
-  if (offline) {
-    return { kind: "offline", style: offlineStyle(background, ink, line) };
-  }
   return { kind: "blank", style: blankStyle(background) };
+}
+
+export async function loadBasemap(choice: BasemapChoice, background: string): Promise<Basemap> {
+  if (choice.preset !== "custom") {
+    return chooseBasemap(await fetchStyle(presetUrl(choice.preset)), background);
+  }
+  const url = choice.custom.trim();
+  if (!isWebUrl(url)) {
+    recordEvent("warn", "map", "basemap: custom URL is not http(s)");
+    return chooseBasemap(null, background);
+  }
+  if (isTileTemplate(url)) {
+    return { kind: "online", style: rasterStyle(url) };
+  }
+  return chooseBasemap(await fetchStyle(url), background);
 }

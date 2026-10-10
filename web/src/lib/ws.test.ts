@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SdrSocket } from "./ws";
+import { setToken } from "./auth";
+import { clientEvents, resetEvents } from "./diagnostics";
+import { SdrSocket, socketProtocols } from "./ws";
 
 const RECONNECT_CEILING = 30_000;
 
@@ -10,11 +12,14 @@ class FakeWebSocket {
   readyState = 0;
   binaryType = "";
   onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: Pick<CloseEvent, "code" | "reason" | "wasClean">) => void) | null = null;
   onerror: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
 
-  constructor(readonly url: string) {
+  constructor(
+    readonly url: string,
+    readonly protocols: string[] = [],
+  ) {
     sockets.push(this);
   }
 
@@ -29,9 +34,9 @@ class FakeWebSocket {
     this.onopen?.();
   }
 
-  drop(): void {
+  drop(code = 1006, reason = ""): void {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code, reason, wasClean: false });
   }
 }
 
@@ -219,5 +224,85 @@ describe("SdrSocket reconnect", () => {
     socket.close();
     vi.advanceTimersByTime(60_000);
     expect(sockets).toHaveLength(opened);
+  });
+
+  it("records why a live connection closed", () => {
+    resetEvents();
+    const socket = new SdrSocket();
+    socket.connect();
+
+    latest().drop();
+    expect(clientEvents()).toHaveLength(0);
+
+    vi.advanceTimersByTime(1_000);
+    latest().accept();
+    vi.advanceTimersByTime(58_200);
+    latest().drop(4502, "window overrun");
+    expect(clientEvents().at(-1)).toMatchObject({
+      level: "warn",
+      source: "socket",
+      message: "closed 4502 window overrun after 58.2 s, unclean",
+    });
+  });
+});
+
+describe("SdrSocket messages", () => {
+  beforeEach(() => {
+    sockets.length = 0;
+    Object.defineProperty(globalThis, "WebSocket", {
+      configurable: true,
+      value: FakeWebSocket,
+    });
+    fakeWindow();
+    resetEvents();
+  });
+
+  it("records unreadable events and unknown frames instead of dropping them quietly", () => {
+    const socket = new SdrSocket();
+    const events: unknown[] = [];
+    socket.on("event", (event) => events.push(event));
+    socket.connect();
+    latest().onmessage?.({ data: "{not json" } as MessageEvent);
+    const unknown = new Uint8Array(16);
+    unknown[0] = 1;
+    unknown[1] = 42;
+    latest().onmessage?.({ data: unknown.buffer } as MessageEvent);
+    socket.close();
+    expect(events).toEqual([]);
+    expect(clientEvents().map((event) => event.message)).toEqual([
+      "unreadable event",
+      "unknown frame 42",
+    ]);
+  });
+});
+
+describe("SdrSocket credentials", () => {
+  beforeEach(() => {
+    sockets.length = 0;
+    Object.defineProperty(globalThis, "WebSocket", {
+      configurable: true,
+      value: FakeWebSocket,
+    });
+    fakeWindow();
+  });
+
+  afterEach(() => setToken(null));
+
+  it("offers the token as a subprotocol and keeps it out of the URL", () => {
+    setToken("s3cret/ä");
+    const socket = new SdrSocket();
+    socket.connect();
+    socket.close();
+    expect(latest().url).toBe("ws://sdr.local/api/ws");
+    expect(latest().protocols).toEqual(["sdrmm", "sdrmm.bearer.7333637265742fc3a4"]);
+  });
+
+  it("offers only the plain subprotocol without a token", () => {
+    const socket = new SdrSocket();
+    socket.connect();
+    socket.close();
+    expect(latest().url).toBe("ws://sdr.local/api/ws");
+    expect(latest().protocols).toEqual(["sdrmm"]);
+    expect(socketProtocols(null)).toEqual(["sdrmm"]);
   });
 });

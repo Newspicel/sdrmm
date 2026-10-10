@@ -1,8 +1,8 @@
 mod api;
+mod arrays;
 mod audio;
 mod binding;
 mod bus;
-mod coherent;
 mod decoded;
 mod decoders;
 mod format;
@@ -65,8 +65,22 @@ fn main() -> anyhow::Result<()> {
     tracing::info!(base = %host.base, "sdr-- native ready");
 
     let token = api::Token::default();
-    token.set(prefs.load().token);
-    let api = api::Api::new(host.base.clone())?.with_token(token.clone());
+    let held = prefs.load();
+    token.set(held.token);
+    let author = match held.author {
+        Some(author) if sdrmm_wire::valid_author(&author) => author,
+        _ => {
+            let made = shell::prefs::fresh_author();
+            let kept = made.clone();
+            if let Err(error) = prefs.update(move |prefs| prefs.author = Some(kept)) {
+                tracing::warn!(%error, "cannot keep the author key");
+            }
+            made
+        }
+    };
+    let api = api::Api::new(host.base.clone())?
+        .with_token(token.clone())
+        .with_author(author);
     let websocket = host.websocket_url();
     let runtime = tokio.handle().clone();
 

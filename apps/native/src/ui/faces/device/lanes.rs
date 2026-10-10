@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use sdrmm_wire::{
     device::{AgcSetting, Capabilities, Coherence, DeviceSettings, StreamSettings, Tuning},
-    patch::{DeviceRef, MAX_STREAMS, NodeBody, PatchGraph, port_stream, stream_port},
+    patch::{DeviceRef, MAX_STREAMS, PatchGraph, port_stream, stream_port},
     state::{DeviceFault, DeviceSet, DeviceSetStatus},
 };
 
@@ -202,29 +202,14 @@ pub fn agc_tip(set: &DeviceSet, stream: u32, advised: bool) -> String {
     format!("AGC on{reading}{advice}")
 }
 
-fn coherent_user(body: &NodeBody) -> bool {
-    matches!(
-        body,
-        NodeBody::Df(_)
-            | NodeBody::Combiner(_)
-            | NodeBody::Stitch(_)
-            | NodeBody::PassiveRadar(_)
-            | NodeBody::Array(_)
-    )
-}
-
 #[must_use]
 pub fn coherent_lanes(graph: &PatchGraph, device_node: &str) -> BTreeSet<u32> {
     graph
         .edges
         .iter()
         .filter(|edge| edge.from.node == device_node)
-        .filter(|edge| {
-            graph
-                .node(&edge.to.node)
-                .is_some_and(|node| coherent_user(&node.body))
-        })
         .filter_map(|edge| port_stream("iq", &edge.from.port))
+        .filter(|stream| graph.array_of_lane(device_node, *stream).is_some())
         .collect()
 }
 
@@ -255,7 +240,11 @@ pub struct Hearing {
 #[must_use]
 pub fn hearing(set: &DeviceSet) -> Hearing {
     let total = set.channels.len();
-    let heard = set.channels.iter().filter(|c| !c.out_of_band).count();
+    let heard = set
+        .channels
+        .iter()
+        .filter(|c| c.out_of_band.is_none())
+        .count();
     let missing = set.status != DeviceSetStatus::Running || (total > 0 && heard == 0);
     let tone = if missing {
         Tone::Danger

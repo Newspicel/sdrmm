@@ -1,7 +1,7 @@
-import { NumberField } from "../../components/NumberField";
-import { Select } from "../../components/Select";
-import { SettingRow, Settings } from "../../components/Settings";
-import { TextField } from "../../components/TextField";
+import { useQuery } from "@tanstack/react-query";
+import { Chips, ChoiceChip, NumberChip } from "../../components/face/Chips";
+import { TextChip } from "../../components/face/TextChip";
+import { aboutQuery } from "../../lib/api";
 import type { EventOutputTarget, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -9,10 +9,11 @@ import { BeastOutputControls } from "./BeastOutputControls";
 import {
   eventOutputConfigured,
   newOutputTarget,
-  OUTPUT_SERVICES,
+  outputServices,
   WEBHOOK_FORMATS,
 } from "./eventOutput";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
+import { OutputDelivery } from "./OutputDelivery";
 
 export function EventOutputFace({ node }: { node: PatchNode }) {
   if (node.kind !== "event_output") {
@@ -23,6 +24,7 @@ export function EventOutputFace({ node }: { node: PatchNode }) {
 
 function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   const workspace = useWorkspaceContext();
+  const notify = useQuery(aboutQuery(true)).data?.notify === true;
   const target = node.data.target;
   const inputs = (workspace.graph.edges ?? []).filter(
     (edge) => edge.to.node === node.id && edge.to.port === "events",
@@ -39,21 +41,16 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   return (
     <NodeShell node={node} title="Event output" category="output">
       <FaceBody>
-        <Settings className="border-b border-line p-2">
-          <SettingRow label="Service">
-            <Select
-              label="Output service"
-              value={target.service}
-              options={OUTPUT_SERVICES}
-              onChange={(service) => {
-                if (service !== target.service) {
-                  editTarget(newOutputTarget(service));
-                }
-              }}
-            />
-          </SettingRow>
-          <TargetFields target={target} onEdit={editTarget} />
-        </Settings>
+        <Chips className="p-2">
+          <ChoiceChip
+            label="Service"
+            title="Output service"
+            value={target.service}
+            options={outputServices(notify, target.service)}
+            onChange={(service) => editTarget(newOutputTarget(service))}
+          />
+          <TargetChips target={target} onEdit={editTarget} />
+        </Chips>
         {target.service === "beast" ? (
           <BeastOutputControls
             node={node.id}
@@ -62,7 +59,10 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
             onEdit={editTarget}
           />
         ) : (
-          <FaceEmpty hint={emptyHint(inputs, configured, target)} />
+          <>
+            <FaceEmpty hint={emptyHint(inputs, configured, target)} />
+            <OutputDelivery node={node.id} />
+          </>
         )}
       </FaceBody>
     </NodeShell>
@@ -72,6 +72,15 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
 function emptyHint(inputs: number, configured: boolean, target: EventOutputTarget) {
   if (inputs === 0) {
     return "Wire events in";
+  }
+  if (target.service === "recordings") {
+    return "One WAV per call in Recordings";
+  }
+  if (target.service === "desktop") {
+    return "One notification per event";
+  }
+  if (target.service === "csv") {
+    return configured ? "One row per event in Recordings" : "Enter a file name";
   }
   if (target.service === "tunnel") {
     return configured ? "Received IPv4 and IPv6 datagrams" : "Enter the interface name";
@@ -96,214 +105,265 @@ function carriesAudio(target: EventOutputTarget) {
   );
 }
 
-function TargetFields({
+type TargetOf<S extends EventOutputTarget["service"]> = Extract<EventOutputTarget, { service: S }>;
+
+function TargetChips({
   target,
   onEdit,
 }: {
   target: EventOutputTarget;
   onEdit: (next: EventOutputTarget) => void;
 }) {
-  if (target.service === "beast") {
-    return (
-      <SettingRow
-        label="Listen on"
-        title="Beast binary TCP server. Wire ADS-B events in, then connect your feeder to this address."
-      >
-        <TextField
-          label="Beast listen address"
+  switch (target.service) {
+    case "recordings":
+    case "desktop":
+      return null;
+    case "csv":
+      return (
+        <TextChip
+          label="File"
+          name="CSV file name"
+          title="Appended in Recordings/events. Letters, digits, - _ and ."
+          value={target.file}
+          onCommit={(file) => onEdit({ ...target, file })}
+        />
+      );
+    case "beast":
+      return (
+        <TextChip
+          label="Listen"
+          name="Beast listen address"
+          title="Beast binary TCP server. Wire ADS-B events in, then connect your feeder to this address."
           value={target.address}
           onCommit={(address) => onEdit({ ...target, address, enabled: false })}
         />
-      </SettingRow>
-    );
+      );
+    case "tunnel":
+      return <TunnelChips target={target} onEdit={onEdit} />;
+    case "webhook":
+      return <WebhookChips target={target} onEdit={onEdit} />;
+    case "matrix":
+      return <MatrixChips target={target} onEdit={onEdit} />;
+    case "postgres":
+      return <PostgresChips target={target} onEdit={onEdit} />;
+    case "influx":
+      return <InfluxChips target={target} onEdit={onEdit} />;
+    case "mqtt":
+      return <MqttChips target={target} onEdit={onEdit} />;
   }
-  if (target.service === "tunnel") {
-    return (
-      <>
-        <SettingRow
-          label="Interface"
-          title="TUN interface name; macOS uses utun followed by a number. Creating an interface requires system networking privileges."
-        >
-          <TextField
-            label="Network interface name"
-            value={target.interface}
-            onCommit={(name) => onEdit({ ...target, interface: name })}
-          />
-        </SettingRow>
-        <SettingRow label="Local IPv4">
-          <TextField
-            label="Interface IPv4 address"
-            value={target.address}
-            onCommit={(address) => onEdit({ ...target, address })}
-          />
-        </SettingRow>
-        <SettingRow label="Prefix length">
-          <NumberField
-            label="Interface IPv4 prefix length"
-            value={target.prefix}
-            min={0}
-            max={32}
-            step={1}
-            onCommit={(prefix) => onEdit({ ...target, prefix })}
-          />
-        </SettingRow>
-      </>
-    );
-  }
-  if (target.service === "webhook") {
-    return (
-      <>
-        <SettingRow label="Endpoint">
-          <TextField
-            label="Webhook URL"
-            value={target.url}
-            secret
-            onCommit={(url) => onEdit({ ...target, url })}
-          />
-        </SettingRow>
-        <SettingRow label="Format">
-          <Select
-            label="Webhook payload format"
-            value={target.format ?? "json"}
-            options={WEBHOOK_FORMATS}
-            onChange={(format) => onEdit({ ...target, format })}
-          />
-        </SettingRow>
-      </>
-    );
-  }
-  if (target.service === "matrix") {
-    return (
-      <>
-        <SettingRow label="Homeserver">
-          <TextField
-            label="Matrix homeserver URL"
-            value={target.homeserver_url}
-            onCommit={(homeserver_url) => onEdit({ ...target, homeserver_url })}
-          />
-        </SettingRow>
-        <SettingRow label="Room ID">
-          <TextField
-            label="Matrix room ID"
-            value={target.room_id}
-            onCommit={(room_id) => onEdit({ ...target, room_id })}
-          />
-        </SettingRow>
-        <SettingRow label="Access token">
-          <TextField
-            label="Matrix access token"
-            value={target.access_token}
-            secret
-            onCommit={(access_token) => onEdit({ ...target, access_token })}
-          />
-        </SettingRow>
-      </>
-    );
-  }
-  if (target.service === "postgres") {
-    return (
-      <>
-        <SettingRow
-          label="Server"
-          title="postgres://host:5432/database. Add ?sslmode=disable for a server without TLS."
-        >
-          <TextField
-            label="PostgreSQL URL"
-            value={target.url}
-            onCommit={(url) => onEdit({ ...target, url })}
-          />
-        </SettingRow>
-        <SettingRow label="Table" title="Created on first write. Lowercase letters, digits and _.">
-          <TextField
-            label="PostgreSQL table"
-            value={target.table}
-            onCommit={(table) => onEdit({ ...target, table })}
-          />
-        </SettingRow>
-        <SettingRow label="Username">
-          <TextField
-            label="PostgreSQL username"
-            value={target.username ?? ""}
-            onCommit={(username) => onEdit({ ...target, username })}
-          />
-        </SettingRow>
-        <SettingRow label="Password">
-          <TextField
-            label="PostgreSQL password"
-            value={target.password ?? ""}
-            secret
-            onCommit={(password) => onEdit({ ...target, password })}
-          />
-        </SettingRow>
-      </>
-    );
-  }
-  if (target.service === "influx") {
-    return (
-      <>
-        <SettingRow label="Server" title="InfluxDB 2 or 3 base URL, e.g. http://127.0.0.1:8086">
-          <TextField
-            label="InfluxDB URL"
-            value={target.url}
-            onCommit={(url) => onEdit({ ...target, url })}
-          />
-        </SettingRow>
-        <SettingRow label="Bucket" title="Bucket, or database on InfluxDB 3">
-          <TextField
-            label="InfluxDB bucket"
-            value={target.bucket}
-            onCommit={(bucket) => onEdit({ ...target, bucket })}
-          />
-        </SettingRow>
-        <SettingRow label="Org">
-          <TextField
-            label="InfluxDB organization"
-            value={target.org ?? ""}
-            onCommit={(org) => onEdit({ ...target, org })}
-          />
-        </SettingRow>
-        <SettingRow label="Token">
-          <TextField
-            label="InfluxDB token"
-            value={target.token ?? ""}
-            secret
-            onCommit={(token) => onEdit({ ...target, token })}
-          />
-        </SettingRow>
-      </>
-    );
-  }
+}
+
+function TunnelChips({
+  target,
+  onEdit,
+}: {
+  target: TargetOf<"tunnel">;
+  onEdit: (next: EventOutputTarget) => void;
+}) {
   return (
     <>
-      <SettingRow label="Broker">
-        <TextField
-          label="MQTT broker URL"
-          value={target.broker_url}
-          onCommit={(broker_url) => onEdit({ ...target, broker_url })}
-        />
-      </SettingRow>
-      <SettingRow label="Topic">
-        <TextField
-          label="MQTT topic"
-          value={target.topic}
-          onCommit={(topic) => onEdit({ ...target, topic })}
-        />
-      </SettingRow>
-      <SettingRow label="Username">
-        <TextField
-          label="MQTT username"
-          value={target.username ?? ""}
-          onCommit={(username) => onEdit({ ...target, username })}
-        />
-      </SettingRow>
-      <SettingRow label="Password">
-        <TextField
-          label="MQTT password"
-          value={target.password ?? ""}
-          secret
-          onCommit={(password) => onEdit({ ...target, password })}
-        />
-      </SettingRow>
+      <TextChip
+        label="Interface"
+        name="Network interface name"
+        title="TUN interface name; macOS uses utun followed by a number. Creating an interface requires system networking privileges."
+        value={target.interface}
+        onCommit={(name) => onEdit({ ...target, interface: name })}
+      />
+      <TextChip
+        label="IPv4"
+        name="Interface IPv4 address"
+        title="Local IPv4 address of the interface"
+        value={target.address}
+        onCommit={(address) => onEdit({ ...target, address })}
+      />
+      <NumberChip
+        label="Prefix"
+        title="Interface IPv4 prefix length"
+        value={target.prefix}
+        shown={`/${target.prefix}`}
+        min={0}
+        max={32}
+        step={1}
+        onCommit={(prefix) => onEdit({ ...target, prefix })}
+      />
+    </>
+  );
+}
+
+function WebhookChips({
+  target,
+  onEdit,
+}: {
+  target: TargetOf<"webhook">;
+  onEdit: (next: EventOutputTarget) => void;
+}) {
+  return (
+    <>
+      <TextChip
+        label="Endpoint"
+        name="Webhook URL"
+        title="Webhook URL"
+        value={target.url}
+        secret
+        onCommit={(url) => onEdit({ ...target, url })}
+      />
+      <ChoiceChip
+        label="Format"
+        title="Webhook payload format"
+        value={target.format ?? "json"}
+        options={WEBHOOK_FORMATS}
+        onChange={(format) => onEdit({ ...target, format })}
+      />
+    </>
+  );
+}
+
+function MatrixChips({
+  target,
+  onEdit,
+}: {
+  target: TargetOf<"matrix">;
+  onEdit: (next: EventOutputTarget) => void;
+}) {
+  return (
+    <>
+      <TextChip
+        label="Homeserver"
+        title="Matrix homeserver URL"
+        value={target.homeserver_url}
+        onCommit={(homeserver_url) => onEdit({ ...target, homeserver_url })}
+      />
+      <TextChip
+        label="Room"
+        title="Matrix room ID"
+        value={target.room_id}
+        onCommit={(room_id) => onEdit({ ...target, room_id })}
+      />
+      <TextChip
+        label="Token"
+        title="Matrix access token"
+        value={target.access_token}
+        secret
+        onCommit={(access_token) => onEdit({ ...target, access_token })}
+      />
+    </>
+  );
+}
+
+function PostgresChips({
+  target,
+  onEdit,
+}: {
+  target: TargetOf<"postgres">;
+  onEdit: (next: EventOutputTarget) => void;
+}) {
+  return (
+    <>
+      <TextChip
+        label="Server"
+        name="PostgreSQL URL"
+        title="postgres://host:5432/database. Add ?sslmode=disable for a server without TLS."
+        value={target.url}
+        onCommit={(url) => onEdit({ ...target, url })}
+      />
+      <TextChip
+        label="Table"
+        name="PostgreSQL table"
+        title="Created on first write. Lowercase letters, digits and _."
+        value={target.table}
+        onCommit={(table) => onEdit({ ...target, table })}
+      />
+      <TextChip
+        label="User"
+        title="PostgreSQL username"
+        value={target.username ?? ""}
+        onCommit={(username) => onEdit({ ...target, username })}
+      />
+      <TextChip
+        label="Password"
+        title="PostgreSQL password"
+        value={target.password ?? ""}
+        secret
+        onCommit={(password) => onEdit({ ...target, password })}
+      />
+    </>
+  );
+}
+
+function InfluxChips({
+  target,
+  onEdit,
+}: {
+  target: TargetOf<"influx">;
+  onEdit: (next: EventOutputTarget) => void;
+}) {
+  return (
+    <>
+      <TextChip
+        label="Server"
+        name="InfluxDB URL"
+        title="InfluxDB 2 or 3 base URL, e.g. http://127.0.0.1:8086"
+        value={target.url}
+        onCommit={(url) => onEdit({ ...target, url })}
+      />
+      <TextChip
+        label="Bucket"
+        name="InfluxDB bucket"
+        title="Bucket, or database on InfluxDB 3"
+        value={target.bucket}
+        onCommit={(bucket) => onEdit({ ...target, bucket })}
+      />
+      <TextChip
+        label="Org"
+        title="InfluxDB organization"
+        value={target.org ?? ""}
+        onCommit={(org) => onEdit({ ...target, org })}
+      />
+      <TextChip
+        label="Token"
+        title="InfluxDB token"
+        value={target.token ?? ""}
+        secret
+        onCommit={(token) => onEdit({ ...target, token })}
+      />
+    </>
+  );
+}
+
+function MqttChips({
+  target,
+  onEdit,
+}: {
+  target: TargetOf<"mqtt">;
+  onEdit: (next: EventOutputTarget) => void;
+}) {
+  return (
+    <>
+      <TextChip
+        label="Broker"
+        title="MQTT broker URL"
+        value={target.broker_url}
+        onCommit={(broker_url) => onEdit({ ...target, broker_url })}
+      />
+      <TextChip
+        label="Topic"
+        title="MQTT topic"
+        value={target.topic}
+        onCommit={(topic) => onEdit({ ...target, topic })}
+      />
+      <TextChip
+        label="User"
+        title="MQTT username"
+        value={target.username ?? ""}
+        onCommit={(username) => onEdit({ ...target, username })}
+      />
+      <TextChip
+        label="Password"
+        title="MQTT password"
+        value={target.password ?? ""}
+        secret
+        onCommit={(password) => onEdit({ ...target, password })}
+      />
     </>
   );
 }

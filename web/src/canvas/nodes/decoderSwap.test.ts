@@ -9,6 +9,7 @@ import type {
   PatchNodeOf,
   WorkspaceSnapshot,
 } from "../../lib/types";
+import { catalogBody } from "../../test/catalog";
 import type { GraphContext } from "../graph";
 import {
   ANALOG_MODES,
@@ -22,12 +23,14 @@ const CATALOG: PatchCatalog = {
   nodes: [
     {
       kind: "device",
+      default_body: catalogBody("device"),
       name: "Device",
       category: "source",
       ports: [{ name: "iq", port_type: "iq", direction: "out", multi: true }],
     },
     {
       kind: "channel",
+      default_body: catalogBody("channel"),
       name: "Channel",
       category: "channel",
       needs_channel_type: true,
@@ -53,18 +56,20 @@ const CATALOG: PatchCatalog = {
           port_type: "events",
           direction: "out",
           multi: true,
-          condition: "channel_is_decoder",
+          condition: "channel_has_events",
         },
       ],
     },
     {
       kind: "speaker",
+      default_body: catalogBody("speaker"),
       name: "Speaker",
       category: "output",
       ports: [{ name: "audio", port_type: "audio", direction: "in", multi: true }],
     },
     {
       kind: "decoder_log",
+      default_body: catalogBody("decoder_log"),
       name: "Decoder log",
       category: "output",
       ports: [{ name: "events", port_type: "events", direction: "in", multi: true }],
@@ -94,6 +99,7 @@ const descriptor = (
 const NFM = descriptor("nfm", { decoder_kind: "tone" });
 const AM = descriptor("am");
 const DMR = descriptor("dmr", { decoder_kind: "dv" });
+const PROBE = descriptor("probe", { has_audio: false });
 const ADSB = descriptor("adsb", {
   has_audio: false,
   decoder_kind: "adsb",
@@ -102,7 +108,7 @@ const ADSB = descriptor("adsb", {
 
 const context: GraphContext = {
   catalog: CATALOG,
-  channelTypes: [NFM, AM, DMR, ADSB],
+  channelTypes: [NFM, AM, DMR, ADSB, PROBE],
   facets: [],
 };
 
@@ -150,19 +156,19 @@ describe("nextAnalogMode", () => {
 describe("retypeChannel", () => {
   it("keeps what the node was set to apart from its type", () => {
     const retyped = retypeChannel(context, graph(), "ch", AM);
-    expect(channelNode(retyped).data).toEqual({
-      channel_type: "am",
-      tuning_locked: true,
-      record_calls: false,
-    });
+    expect(channelNode(retyped).data).toEqual({ channel_type: "am", tuning_locked: true });
   });
 
   it("drops the wires the new decoder has no port for", () => {
-    const retyped = retypeChannel(context, graph(), "ch", AM);
+    const retyped = retypeChannel(context, graph(), "ch", PROBE);
     expect(retyped.edges).toEqual([
       { from: { node: "dev", port: "iq" }, to: { node: "ch", port: "iq" } },
-      { from: { node: "ch", port: "audio" }, to: { node: "spk", port: "audio" } },
     ]);
+  });
+
+  it("keeps the events wire of an analog decoder, which carries its calls", () => {
+    const retyped = retypeChannel(context, graph(), "ch", AM);
+    expect(retyped.edges).toHaveLength(3);
   });
 
   it("leaves a wire the new decoder still carries", () => {
@@ -176,13 +182,6 @@ describe("retypeChannel", () => {
       { from: { node: "dev", port: "iq" }, to: { node: "ch", port: "iq" } },
       { from: { node: "ch", port: "events" }, to: { node: "log", port: "events" } },
     ]);
-  });
-
-  it("stops recording calls on a decoder that has none", () => {
-    const calling = retypeChannel(context, graph(), "ch", DMR);
-    const started = { ...calling, nodes: calling.nodes };
-    const back = retypeChannel(context, started, "ch", NFM);
-    expect(channelNode(back).data).toMatchObject({ channel_type: "nfm", record_calls: false });
   });
 });
 

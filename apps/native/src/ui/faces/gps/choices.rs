@@ -1,5 +1,6 @@
-use sdrmm_wire::position::{
-    DEFAULT_GPSD_ADDRESS, NmeaDeviceInfo, NmeaDevicesResponse, PositionSource,
+use sdrmm_wire::{
+    phone::{Phone, PhonesResponse},
+    position::{DEFAULT_GPSD_ADDRESS, NmeaDeviceInfo, NmeaDevicesResponse, PositionSource},
 };
 use zgui::prelude::*;
 
@@ -31,17 +32,34 @@ pub fn receivers(store: Store) -> Receivers {
     found
 }
 
+pub type Phones = RwSignal<Option<Result<Vec<Phone>, String>>>;
+
+pub fn phones(store: Store) -> Phones {
+    let found: Phones = RwSignal::new(None);
+    zgui::task::spawn_local(async move {
+        let fetched = store
+            .api()
+            .get::<PhonesResponse>("/api/phones")
+            .await
+            .map(|response| response.phones)
+            .map_err(|error| error.to_string());
+        found.try_set(Some(fetched));
+    });
+    found
+}
+
 pub fn gps_choices(store: Store, choose: Choose) -> impl IntoView {
     let tab = RwSignal::new(GpsTab::Receiver);
     let found = receivers(store);
     let body = move || match tab.get() {
         GpsTab::Receiver => AnyView::new(receiver_choices(found, choose.clone())),
         GpsTab::Network => AnyView::new(gpsd_form(choose.clone())),
-        GpsTab::Fixed | GpsTab::Device => AnyView::new(fixed_form(choose.clone())),
+        GpsTab::Fixed => AnyView::new(fixed_form(choose.clone())),
+        GpsTab::Phone => AnyView::new(phone_choices(phones(store), choose.clone())),
     };
     view! {
         column(class = "kit-choices") {
-            {segmented(gps_tabs(false), tab.into(), move |next| tab.set(next))}
+            {segmented(gps_tabs(), tab.into(), move |next| tab.set(next))}
             {body}
         }
     }
@@ -93,6 +111,46 @@ fn receiver_choices(found: Receivers, choose: Choose) -> impl IntoView {
             column(class = "kit-list") {{list}}
             {move || said().map(|said| AnyView::new(view! { text(class = "kit-note") {{said}} }))}
             {path_form(choose)}
+        }
+    }
+}
+
+fn phone_choices(found: Phones, choose: Choose) -> impl IntoView {
+    let list = move || {
+        found
+            .get()
+            .and_then(Result::ok)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|phone| {
+                let id = phone.id.clone();
+                let choose = choose.clone();
+                let standing = if phone.online { "Online" } else { "Offline" };
+                AnyView::new(view! {
+                    control(
+                        class = "kit-choice",
+                        tabindex = Focus::Sequential,
+                        a11y:role = Role::Button,
+                        on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation(),
+                        on:click:stop = move |_| choose(PositionSource::Phone { phone: id.clone() })
+                    ) {
+                        text {{phone.name.clone()}}
+                        text(class = "kit-choice__meta") {{standing}}
+                    }
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+    let said = move || match found.get() {
+        None => Some("Looking for phones…"),
+        Some(Err(_)) => Some("Phone list failed"),
+        Some(Ok(all)) if all.is_empty() => Some("No phones"),
+        Some(Ok(_)) => None,
+    };
+    view! {
+        column(class = "kit-choices") {
+            column(class = "kit-list") {{list}}
+            {move || said().map(|said| AnyView::new(view! { text(class = "kit-note") {{said}} }))}
         }
     }
 }

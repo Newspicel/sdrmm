@@ -1,10 +1,12 @@
+use std::f64::consts::TAU;
+
 use num_complex::Complex;
 use sdrmm_dsp::{
     Decimator, FmDemod, Nco, RealDecimator, SymbolSync, ToneCorrelator, design_lowpass,
     one_pole_coeff,
 };
 
-use super::params::CpmParams;
+use super::params::{CpmParams, Mapping};
 
 pub const TIMING_BW_BURST: f64 = 0.015;
 
@@ -28,19 +30,17 @@ const FLOOR_SETTLE: f64 = 4.0;
 
 const CARRIER_RISE: f32 = 4.0;
 
-/// How much the received power may vary, as a fraction of its own mean squared, and still be
-/// read as a carrier rather than as noise.
-///
-/// Power alone cannot tell a carrier that has never stopped from the noise it is measured
-/// against, because the floor it would be compared to was measured on the carrier itself. How
-/// steady the power is can: noise out of a receiver is Rayleigh, so its power varies by about
-/// its own mean, while a constant-envelope transmission barely varies at all. Measured through
-/// this chain a live control channel sits near 0.001 and noise near 0.99, so the bar is set well
-/// clear of both. Real-valued input never reaches it - a tone's power still swings by half its
-/// mean - which leaves those front ends judged on power alone, as before.
 const STEADY_SPREAD: f32 = 0.25;
 
+const OFFSET_SYMBOLS: f32 = 64.0;
+const OFFSET_TRUST: f32 = 0.5;
+const INNER_RUN_SYMBOLS: usize = 16;
+
 const IMAGE_TAPS: usize = 127;
+const OFFSET_LOOP_GAIN: f64 = 0.02;
+const OFFSET_LIMIT_SYMBOLS: f64 = 1.0;
+const STEP_REFRESH: usize = 16;
+const COARSE_SYMBOLS: f64 = 1024.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RealDetector {
@@ -61,6 +61,135 @@ enum FrontEnd {
         plus: ToneCorrelator,
         minus: ToneCorrelator,
     },
+    Tones {
+        plus: ToneCorrelator<Complex<f32>>,
+        minus: ToneCorrelator<Complex<f32>>,
+        tracker: OffsetTracker,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct OffsetTracker {
+    gain: f64,
+    tone: Complex<f64>,
+    frequency: f64,
+    limit: f64,
+    rotor: Complex<f64>,
+    step: Complex<f64>,
+    since_step: usize,
+    previous: [Complex<f64>; 2],
+    power: f64,
+    alpha: f64,
+    lag: Complex<f64>,
+    last: Complex<f64>,
+    coarse_alpha: f64,
+}
+
+impl OffsetTracker {
+    fn new(tone: f64, gain: f64, limit: f64, alpha: f64, coarse_alpha: f64) -> Self {
+        Self {
+            gain,
+            tone: Complex::from_polar(1.0, -TAU * tone),
+            frequency: 0.0,
+            limit: TAU * limit,
+            rotor: Complex::new(1.0, 0.0),
+            step: Complex::new(1.0, 0.0),
+            since_step: 0,
+            previous: [Complex::new(0.0, 0.0); 2],
+            power: 0.0,
+            alpha,
+            lag: Complex::new(0.0, 0.0),
+            last: Complex::new(0.0, 0.0),
+            coarse_alpha,
+        }
+    }
+
+    fn centre(&mut self, sample: Complex<f32>) -> Complex<f32> {
+        if !(sample.re.is_finite() && sample.im.is_finite()) {
+            return Complex::new(0.0, 0.0);
+        }
+        let raw = Complex::new(f64::from(sample.re), f64::from(sample.im));
+        self.lag += self.coarse_alpha * (raw * self.last.conj() - self.lag);
+        self.last = raw;
+        let turned = raw * self.rotor;
+        self.rotor *= self.step;
+        self.since_step += 1;
+        if self.since_step == STEP_REFRESH {
+            self.since_step = 0;
+            self.step = Complex::from_polar(1.0, -(self.lag.arg() + self.frequency));
+            self.rotor /= self.rotor.norm();
+        }
+        Complex::new(turned.re as f32, turned.im as f32)
+    }
+
+    fn follow(&mut self, plus: Complex<f64>, minus: Complex<f64>) {
+        let (winner, index, reference) = if plus.norm_sqr() >= minus.norm_sqr() {
+            (plus, 0, self.tone)
+        } else {
+            (minus, 1, self.tone.conj())
+        };
+        let power = winner.norm_sqr();
+        self.power += self.alpha * (power - self.power);
+        let rotation = winner * self.previous[index].conj() * reference;
+        self.previous = [plus, minus];
+        if self.power > 0.0 {
+            let error = rotation.im / self.power;
+            self.frequency = (self.frequency + self.gain * error).clamp(-self.limit, self.limit);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Gate {
+    envelope: f32,
+    floor: f32,
+    steady_level: f32,
+    mean: f32,
+    mean_square: f32,
+    envelope_alpha: f32,
+    floor_alpha: f32,
+    settling: usize,
+    settle_samples: usize,
+    keyed: usize,
+    support: usize,
+}
+
+impl Gate {
+    #[inline]
+    fn step(&mut self, power: f32) -> (bool, bool) {
+        self.envelope += self.envelope_alpha * (power - self.envelope);
+        self.mean += self.floor_alpha * (power - self.mean);
+        self.mean_square += self.floor_alpha * (power * power - self.mean_square);
+        self.settling = self.settling.saturating_sub(1);
+        let spread = self.mean_square - self.mean * self.mean;
+        let steady = spread < STEADY_SPREAD * self.mean * self.mean;
+        let keyed = self.settling == 0 && (steady || self.envelope > self.floor * CARRIER_RISE);
+        if steady {
+            self.steady_level = self.mean;
+        }
+        if self.steady_level > 0.0 && self.mean * CARRIER_RISE < self.steady_level {
+            self.floor = self.mean;
+            self.steady_level = 0.0;
+        } else if !keyed && !steady {
+            self.floor += self.floor_alpha * (self.envelope - self.floor);
+        }
+        self.keyed = if keyed {
+            (self.keyed + 1).min(self.support)
+        } else {
+            0
+        };
+        (keyed, self.keyed == self.support)
+    }
+
+    fn reset(&mut self) {
+        self.envelope = 0.0;
+        self.floor = 0.0;
+        self.steady_level = 0.0;
+        self.mean = 0.0;
+        self.mean_square = 0.0;
+        self.settling = self.settle_samples;
+        self.keyed = 0;
+    }
 }
 
 pub struct CpmDemod {
@@ -76,17 +205,10 @@ pub struct CpmDemod {
     peak_decay: f32,
     peak_hold_decay: f32,
     outer_region: f32,
-    envelope: f32,
-    floor: f32,
-    steady_level: f32,
-    mean: f32,
-    mean_square: f32,
-    envelope_alpha: f32,
-    floor_alpha: f32,
-    settling: usize,
-    settle_samples: usize,
-    keyed: usize,
-    support: usize,
+    levels: Option<Mapping>,
+    offset: f32,
+    since_outer: usize,
+    gate: Gate,
     demod_buf: Vec<f32>,
     filtered: Vec<f32>,
     carrier_run: Vec<bool>,
@@ -102,6 +224,30 @@ impl CpmDemod {
     pub fn new(params: &CpmParams, receive_filter: &[f32], timing_bw: f64) -> Self {
         let front = FrontEnd::Quadrature(FmDemod::new(params.sps(), params.h() / 2.0));
         Self::build(params, receive_filter, timing_bw, front, 0)
+    }
+
+    #[must_use]
+    pub fn tones(params: &CpmParams, receive_filter: &[f32], timing_bw: f64) -> Self {
+        assert_eq!(
+            params.mapping().m(),
+            2,
+            "a two-tone filterbank detects two levels"
+        );
+        let sps = params.sps();
+        let window = (sps.round() as usize).max(2);
+        let shift = params.h() / 2.0;
+        let front = FrontEnd::Tones {
+            plus: ToneCorrelator::complex(sps, shift, window),
+            minus: ToneCorrelator::complex(sps, -shift, window),
+            tracker: OffsetTracker::new(
+                shift / sps,
+                OFFSET_LOOP_GAIN / sps,
+                OFFSET_LIMIT_SYMBOLS / sps,
+                1.0 / sps,
+                1.0 / (COARSE_SYMBOLS * sps),
+            ),
+        };
+        Self::build(params, receive_filter, timing_bw, front, window)
     }
 
     #[must_use]
@@ -194,17 +340,22 @@ impl CpmDemod {
             peak_decay: 1.0 - 1.0 / PEAK_SYMBOLS,
             peak_hold_decay: 1.0 - 1.0 / PEAK_HOLD_SYMBOLS,
             outer_region: (level_max - params.mapping().min_spacing() / 2.0).max(0.0) / level_max,
-            envelope: 0.0,
-            floor: 0.0,
-            steady_level: 0.0,
-            mean: 0.0,
-            mean_square: 0.0,
-            envelope_alpha: one_pole_coeff(sps, ENVELOPE_TAU_SYMBOLS),
-            floor_alpha: one_pole_coeff(sps, FLOOR_TAU_SYMBOLS),
-            settling: settle,
-            settle_samples: settle,
-            keyed: 0,
-            support: receive_filter.len() + front_support,
+            levels: (params.mapping().m() > 2).then(|| params.mapping().clone()),
+            offset: 0.0,
+            since_outer: 0,
+            gate: Gate {
+                envelope: 0.0,
+                floor: 0.0,
+                steady_level: 0.0,
+                mean: 0.0,
+                mean_square: 0.0,
+                envelope_alpha: one_pole_coeff(sps, ENVELOPE_TAU_SYMBOLS),
+                floor_alpha: one_pole_coeff(sps, FLOOR_TAU_SYMBOLS),
+                settling: settle,
+                settle_samples: settle,
+                keyed: 0,
+                support: receive_filter.len() + front_support,
+            },
             demod_buf: Vec::new(),
             filtered: Vec::new(),
             carrier_run: Vec::new(),
@@ -223,30 +374,41 @@ impl CpmDemod {
 
     #[must_use]
     pub fn frequency_error_cycles_per_sample(&self) -> f64 {
-        f64::from(self.centre) * self.centre_scale
+        f64::from(self.centre + self.offset) * self.centre_scale
     }
 
     pub fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<f32>) {
         self.carrier_run.clear();
         self.settled_run.clear();
-        for sample in iq {
-            self.gate_sample(sample.norm_sqr());
+        self.gate_run(iq.iter().map(Complex::norm_sqr));
+        match &mut self.front {
+            FrontEnd::Quadrature(demod) => demod.process(iq, &mut self.demod_buf),
+            FrontEnd::Tones {
+                plus,
+                minus,
+                tracker,
+            } => {
+                self.demod_buf.clear();
+                self.demod_buf.extend(iq.iter().map(|&s| {
+                    let centred = tracker.centre(s);
+                    let difference = plus.push(centred) - minus.push(centred);
+                    tracker.follow(plus.correlation(), minus.correlation());
+                    difference
+                }));
+            }
+            _ => panic!("constructed for real input; call process_real"),
         }
-        let FrontEnd::Quadrature(demod) = &mut self.front else {
-            panic!("constructed for real input; call process_real");
-        };
-        demod.process(iq, &mut self.demod_buf);
         self.finish(out);
     }
 
     pub fn process_real(&mut self, audio: &[f32], out: &mut Vec<f32>) {
         self.carrier_run.clear();
         self.settled_run.clear();
-        for &sample in audio {
-            self.gate_sample(sample * sample);
-        }
+        self.gate_run(audio.iter().map(|&sample| sample * sample));
         match &mut self.front {
-            FrontEnd::Quadrature(_) => panic!("constructed for IQ input; call process"),
+            FrontEnd::Quadrature(_) | FrontEnd::Tones { .. } => {
+                panic!("constructed for IQ input; call process")
+            }
             FrontEnd::Analytic {
                 mixer,
                 image,
@@ -272,32 +434,14 @@ impl CpmDemod {
         self.finish(out);
     }
 
-    fn gate_sample(&mut self, power: f32) {
-        self.envelope += self.envelope_alpha * (power - self.envelope);
-        self.mean += self.floor_alpha * (power - self.mean);
-        self.mean_square += self.floor_alpha * (power * power - self.mean_square);
-        self.settling = self.settling.saturating_sub(1);
-        let spread = self.mean_square - self.mean * self.mean;
-        let steady = spread < STEADY_SPREAD * self.mean * self.mean;
-        let keyed = self.settling == 0 && (steady || self.envelope > self.floor * CARRIER_RISE);
-        if steady {
-            self.steady_level = self.mean;
+    fn gate_run(&mut self, powers: impl Iterator<Item = f32>) {
+        let mut gate = self.gate;
+        for power in powers {
+            let (keyed, settled) = gate.step(power);
+            self.carrier_run.push(keyed);
+            self.settled_run.push(settled);
         }
-        if self.steady_level > 0.0 && self.mean * CARRIER_RISE < self.steady_level {
-            // The steady carrier the floor never got to see underneath has stopped, and what is
-            // left is the noise it was hiding.
-            self.floor = self.mean;
-            self.steady_level = 0.0;
-        } else if !keyed && !steady {
-            self.floor += self.floor_alpha * (self.envelope - self.floor);
-        }
-        self.keyed = if keyed {
-            (self.keyed + 1).min(self.support)
-        } else {
-            0
-        };
-        self.carrier_run.push(keyed);
-        self.settled_run.push(self.keyed == self.support);
+        self.gate = gate;
     }
 
     fn finish(&mut self, out: &mut Vec<f32>) {
@@ -337,14 +481,19 @@ impl CpmDemod {
         let (mut peak, mut idle) = (self.peak, self.idle_peak);
         let carriers = self.retimed_carrier.iter().zip(&self.retimed_settled);
         for (symbol, (&carrier, &settled)) in self.retimed.iter().zip(carriers) {
-            let value = symbol.re;
+            let value = symbol.re - self.offset;
             let magnitude = value.abs();
             if carrier {
                 if settled {
+                    self.since_outer += 1;
                     if magnitude > peak {
                         peak += PEAK_ATTACK * (magnitude - peak);
+                        self.since_outer = 0;
                     } else if magnitude > peak * self.outer_region {
                         peak += (magnitude - peak) / PEAK_SYMBOLS;
+                        self.since_outer = 0;
+                    } else if let Some(scaled) = self.inner_scale(magnitude, peak) {
+                        peak += (scaled - peak) / PEAK_SYMBOLS;
                     } else {
                         peak *= self.peak_hold_decay;
                     }
@@ -358,9 +507,31 @@ impl CpmDemod {
             }
             let level = if carrier { &peak } else { &idle };
             let unit = *level / self.level_max;
-            out.push(if unit > 1e-6 { value / unit } else { 0.0 });
+            let normalised = if unit > 1e-6 { value / unit } else { 0.0 };
+            if carrier
+                && settled
+                && let Some(levels) = &self.levels
+            {
+                let miss = normalised - levels.level(levels.slice(normalised));
+                if miss.abs() < OFFSET_TRUST {
+                    self.offset = (self.offset + miss * unit / OFFSET_SYMBOLS).clamp(-unit, unit);
+                }
+            }
+            out.push(normalised);
         }
         (self.peak, self.idle_peak) = (peak, idle);
+    }
+
+    fn inner_scale(&self, magnitude: f32, peak: f32) -> Option<f32> {
+        let levels = self.levels.as_ref()?;
+        let unit = peak / self.level_max;
+        if self.since_outer < INNER_RUN_SYMBOLS || unit <= 1e-6 {
+            return None;
+        }
+        let decision = levels.level(levels.slice(magnitude / unit)).abs();
+        let reliable = (magnitude / unit - decision).abs() < OFFSET_TRUST;
+        (reliable && decision > 0.0 && decision < self.level_max)
+            .then(|| magnitude * self.level_max / decision)
     }
 
     pub fn reset(&mut self) {
@@ -370,15 +541,11 @@ impl CpmDemod {
             minus.reset();
         }
         self.centre = 0.0;
+        self.offset = 0.0;
+        self.since_outer = 0;
         self.peak = self.level_max;
         self.idle_peak = self.level_max;
-        self.envelope = 0.0;
-        self.floor = 0.0;
-        self.steady_level = 0.0;
-        self.mean = 0.0;
-        self.mean_square = 0.0;
-        self.settling = self.settle_samples;
-        self.keyed = 0;
+        self.gate.reset();
         self.demod_buf.clear();
         self.filtered.clear();
         self.carrier_run.clear();
@@ -401,7 +568,6 @@ fn timing_loop(params: &CpmParams, sps: f64, timing_bw: f64) -> SymbolSync {
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::TAU;
 
     use sdrmm_modem_test_support::ber::rng::Rng;
 
@@ -474,16 +640,12 @@ mod tests {
     }
 
     fn listening(demod: &mut CpmDemod, seed: u64) {
-        let len = demod.settle_samples + 4 * SPS as usize * 100;
+        let len = demod.gate.settle_samples + 4 * SPS as usize * 100;
         let quiet = noise(seed, len);
         let mut discard = Vec::new();
         demod.process(&quiet, &mut discard);
     }
 
-    /// A trunked control channel is transmitting before the receiver is switched on and never
-    /// stops, so there is no quiet stretch to measure a noise floor against and no gap to recover
-    /// in. Judging that on power alone reads the carrier as its own floor and the gate never
-    /// opens again.
     #[test]
     fn a_carrier_that_never_stopped_keys_the_gate_from_a_cold_start() {
         let params = four_level(1_944.0);
@@ -605,6 +767,55 @@ mod tests {
             assert!(total > 280, "only {total} symbols at {deviation} Hz");
             assert_eq!(errors, 0, "symbol errors at {deviation} Hz deviation");
         }
+    }
+
+    #[test]
+    fn a_noisy_four_level_burst_locks_within_a_few_hundred_symbols() {
+        let sent = symbols(600, 0x5eed, 4);
+        let params = four_level(1_944.0);
+        let clean = transmit(&params, &sent);
+        let mut errors = 0;
+        for delay in 0..SPS as usize {
+            let mut iq = noise(0x77, delay);
+            iq.extend_from_slice(&clean);
+            let mut rng = Rng::new(7 + delay as u64);
+            for sample in &mut iq {
+                let re = (rng.uniform() as f32 * 2.0 - 1.0) * 0.5;
+                let im = (rng.uniform() as f32 * 2.0 - 1.0) * 0.5;
+                *sample += Complex::new(re, im);
+            }
+            let mut demod = CpmDemod::new(&params, &rx_rrc(), TIMING_BW_BURST);
+            listening(&mut demod, 0x1157);
+            let mut soft = Vec::new();
+            demod.process(&iq, &mut soft);
+            let got: Vec<u8> = soft.iter().map(|&s| params.mapping().slice(s)).collect();
+            let (e, t) = symbol_errors(&got[..400], &sent, 100);
+            assert_eq!(t, 300);
+            errors += e;
+        }
+        assert!(
+            errors <= 100,
+            "{errors} symbol errors after a hundred symbols"
+        );
+    }
+
+    #[test]
+    fn a_long_run_of_one_level_does_not_pull_the_slicer_off_centre() {
+        let mut sent = symbols(400, 0x77, 4);
+        for _ in 0..4 {
+            sent.extend(std::iter::repeat_n(0u8, 150));
+            sent.extend(symbols(40, 0x99, 4));
+        }
+        let params = four_level(1_944.0);
+        let iq = transmit(&params, &sent);
+        let mut demod = CpmDemod::new(&params, &rx_rrc(), TIMING_BW_BURST);
+        listening(&mut demod, 0x1157);
+        let mut soft = Vec::new();
+        demod.process(&iq, &mut soft);
+        let got: Vec<u8> = soft.iter().map(|&s| params.mapping().slice(s)).collect();
+        let (errors, total) = symbol_errors(&got, &sent, 300);
+        assert!(total > 850, "only {total} symbols");
+        assert!(errors <= 2, "{errors} symbol errors in {total}");
     }
 
     #[test]
@@ -845,7 +1056,7 @@ mod tests {
         let sent = symbols(500, seed, 2);
         let audio = afsk_audio(&sent);
         let mut demod = CpmDemod::real(&params, receive_filter, TIMING_BW_BURST, RATE, detector);
-        let quiet = real_noise(0x1157, demod.settle_samples + 19_200);
+        let quiet = real_noise(0x1157, demod.gate.settle_samples + 19_200);
         let mut discard = Vec::new();
         demod.process_real(&quiet, &mut discard);
         let mut soft = Vec::new();

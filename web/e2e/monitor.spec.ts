@@ -15,14 +15,14 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
   page.on("pageerror", (error) => errors.push(error.message));
   const previous = await page.request.get("/api/workspaces").then((response) => response.json());
   const snapshot: WorkspaceSnapshot = {
-    version: 3,
+    version: 4,
     graph: {
       nodes: [
         {
           id: nodeIds.radio,
           kind: "device",
           position: { x: 0, y: 0 },
-          data: { device: { backend: "virtual", key: "siggen" } },
+          data: { device: { backend: "virtual", key: "band" } },
         },
         {
           id: nodeIds.monitor,
@@ -34,6 +34,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
           id: nodeIds.log,
           kind: "decoder_log",
           position: { x: 760, y: 0 },
+          data: {},
           size: { w: 620, h: 430 },
         },
         { id: nodeIds.export, kind: "export", position: { x: 380, y: 360 } },
@@ -64,18 +65,13 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     await expect(monitor.locator(".react-flow__handle")).toHaveCount(2);
     await expect(monitor.locator("li")).toHaveCount(0);
     await expect(monitor).not.toContainText(/\d+ (active|recent)/);
-    const confidence = monitor.getByRole("textbox", { name: "Minimum confidence" });
-    await expect(confidence).toHaveValue("70");
     const confidenceInfo =
-      "Ignore signals below this identification confidence; 0 accepts all detections";
-    await monitor.getByRole("button", { name: confidenceInfo }).click();
-    await expect(page.getByText(confidenceInfo, { exact: true })).toBeVisible();
-    await page.mouse.move(0, 0);
-    await page.waitForTimeout(500);
-    await expect(page.getByText(confidenceInfo, { exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByText(confidenceInfo, { exact: true })).toBeHidden();
-    await monitor.getByText("Spectrum monitor", { exact: true }).click();
+      "Minimum confidence. Signals identified below it are ignored; 0 accepts all";
+    const confidenceChip = monitor.getByRole("button", { name: confidenceInfo });
+    await expect(confidenceChip).toContainText("70");
+    await confidenceChip.click();
+    const confidence = monitor.getByRole("textbox", { name: confidenceInfo });
+    await expect(confidence).toHaveValue("70");
     await confidence.click();
     await confidence.press("ControlOrMeta+A");
     await confidence.pressSequentially("80");
@@ -92,7 +88,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
       })
       .toBeCloseTo(0.8);
     await page.reload();
-    await expect(confidence).toHaveValue("80");
+    await expect(confidenceChip).toContainText("80");
     const protocols = monitor.getByRole("button", { name: "Protocols to decode" });
     await expect(protocols).toContainText("All protocols");
     await protocols.click();
@@ -116,6 +112,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     await expect(analog).toBeHidden();
     await expect(protocols).toContainText("All protocols");
     await monitor.getByText("Spectrum monitor", { exact: true }).click();
+    await confidenceChip.click();
     await confidence.click();
     await confidence.press("ControlOrMeta+A");
     await confidence.pressSequentially("0");

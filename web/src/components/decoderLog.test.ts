@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DecodedState } from "../lib/decoded";
-import type { DecodedRecord, DecoderEvent, DecoderLogEntry } from "../lib/types";
+import type { DecodedRecord, DecoderEvent, DecoderLogEntry, LoraFrame } from "../lib/types";
 import {
   buildRows,
   clampColumnWidth,
@@ -12,6 +12,7 @@ import {
   eventStation,
   eventSummary,
   FLEX_COLUMN,
+  hasPosition,
   isFiltered,
   kindLabel,
   LOG_COLUMNS,
@@ -243,6 +244,25 @@ describe("eventSummary", () => {
         },
       }),
     ).toBe('DL1ABC-7>S32U6T:`(_fn"Oj/ · Returning');
+    expect(
+      eventSummary({
+        kind: "aprs",
+        data: {
+          source: "DL1WX",
+          destination: "APRS",
+          info: "_",
+          tnc2: "DL1WX>APRS:_",
+          weather: {
+            temperature_c: 12.5,
+            humidity_pct: 81,
+            pressure_hpa: 1013.2,
+            wind_dir_deg: 45,
+            wind_speed_ms: 3.1,
+            rain_1h_mm: 0.2,
+          },
+        },
+      }),
+    ).toBe("DL1WX · 12.5 °C · 81% · 1013.2 hPa · 045° 3.1 m/s · 0.2 mm/h");
     expect(eventSummary({ kind: "rtty", data: { text: "CQ CQ" } })).toBe("CQ CQ");
     expect(
       eventSummary({
@@ -272,6 +292,66 @@ describe("eventSummary", () => {
         },
       }),
     ).toBe("Robot 36 \u00b7 320\u00d7240 \u00b7 96 of 240 lines");
+    expect(
+      eventSummary({
+        kind: "apt",
+        data: {
+          seq: 1,
+          lines: 1200,
+          complete: true,
+          duration_ms: 600_400,
+          channel_a: "ch2",
+          channel_b: "ch4",
+        },
+      }),
+    ).toBe("APT · ch 2/4 · 1200 lines in 600 s");
+    expect(
+      eventSummary({
+        kind: "lrpt",
+        data: {
+          seq: 1,
+          mode: "oqpsk72",
+          width: 1568,
+          lines: 800,
+          complete: false,
+          duration_ms: 1,
+          apids: [64, 65],
+          frames: 10,
+          frames_corrected: 1,
+          frames_failed: 2,
+          packets_lost: 3,
+        },
+      }),
+    ).toBe("OQPSK 72k · APID 64/65 · 800 lines · 2 frames lost · 3 packets lost");
+    expect(
+      eventSummary({
+        kind: "wefax",
+        data: {
+          seq: 1,
+          ioc: "ioc576",
+          lpm: "lpm120",
+          width: 1810,
+          lines: 400,
+          complete: false,
+          duration_ms: 1,
+        },
+      }),
+    ).toBe("IOC 576 · 120 LPM · 400 lines, cut short");
+    expect(
+      eventSummary({
+        kind: "radiosonde",
+        data: {
+          sonde: "rs41",
+          serial: "S1234567",
+          altitude_m: 12_345.4,
+          climb_ms: 5.04,
+          temperature_c: -40.04,
+          lat: 48.1,
+          lon: 11.5,
+          errors_corrected: 0,
+        },
+      }),
+    ).toBe("RS41 S1234567 · 12345 m · +5.0 m/s · -40.0 °C · 48.10000, 11.50000");
     expect(eventSummary({ kind: "tone", data: { ctcss_hz: 88.5, open: true } })).toBe(
       "CTCSS 88.5 Hz · open",
     );
@@ -343,6 +423,45 @@ describe("eventSummary", () => {
     expect(eventStation(ermes)).toBe("45678");
   });
 
+  it("renders End-of-Train telemetry and head-end commands", () => {
+    const rear: DecoderEvent = {
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: {
+          unit: "rear",
+          message_type: 7,
+          arming: "armed",
+          pressure_psig: 87,
+          battery: "ok",
+          battery_charge_pct: 80,
+          valve_ok: true,
+          confirmed: true,
+          turbine: false,
+          motion: false,
+          marker_light: true,
+          marker_battery_low: false,
+          discretionary: false,
+          chaining: 3,
+        },
+        errors_corrected: 0,
+        rejected: 0,
+      },
+    };
+    const head: DecoderEvent = {
+      kind: "eot",
+      data: {
+        unit_address: 23456,
+        report: { unit: "head", command: "emergency", code: 0xaa, copies: 3 },
+        errors_corrected: 0,
+        rejected: 0,
+      },
+    };
+    expect(eventSummary(rear)).toBe("EOT 23456 · 87 psig · stopped · armed");
+    expect(eventSummary(head)).toBe("HOT 23456 · EMERGENCY");
+    expect(eventStation(head)).toBe("23456");
+  });
+
   it("renders each CW skimmer signal with its passband offset and speed", () => {
     const spot: DecoderEvent = {
       kind: "cw_skimmer",
@@ -376,6 +495,101 @@ describe("eventStation", () => {
     };
     expect(eventSummary(event)).toBe("CCIR-1 · 12234");
     expect(eventStation(event)).toBeNull();
+  });
+});
+
+function lora(decoded: LoraFrame["decoded"], integrity: LoraFrame["integrity"]): DecoderEvent {
+  return {
+    kind: "lora",
+    data: {
+      spreading_factor: 11,
+      bandwidth_hz: 250_000,
+      coding_rate: "4/5",
+      sync_word: 0x2b,
+      implicit_header: false,
+      low_data_rate: false,
+      inverted_iq: false,
+      integrity,
+      fec_corrected: 0,
+      snr_db: 3,
+      frequency_error_hz: 120,
+      payload: "00112233",
+      decoded,
+    },
+  };
+}
+
+describe("LoRa rows", () => {
+  it("labels the kind", () => {
+    expect(kindLabel("lora")).toBe("LoRa");
+  });
+
+  it("matches the server summary for a raw frame and a failed check", () => {
+    const raw = lora(null, "crc_failed");
+    expect(eventSummary(raw)).toBe("SF11 250 kHz · 4 bytes · CRC failed");
+    expect(eventStation(raw)).toBeNull();
+    expect(hasPosition(raw)).toBe(false);
+  });
+
+  it("names a Meshtastic node and finds its position", () => {
+    const event = lora(
+      {
+        protocol: "meshtastic",
+        to: 0xffff_ffff,
+        from: 0xa1b2c3d4,
+        id: 7,
+        hop_limit: 3,
+        hop_start: 3,
+        want_ack: false,
+        via_mqtt: false,
+        channel_hash: 8,
+        next_hop: 0,
+        relay_node: 0,
+        encryption: "channel",
+        content: { type: "position", lat: 47.5, lon: 8.25 },
+      },
+      "crc_ok",
+    );
+    expect(eventStation(event)).toBe("!a1b2c3d4");
+    expect(eventSummary(event)).toBe(
+      "SF11 250 kHz · !a1b2c3d4 → ^all · position 47.50000, 8.25000",
+    );
+    expect(hasPosition(event)).toBe(true);
+  });
+
+  it("keys LoRaWAN by DevAddr and MeshCore by advert name", () => {
+    const uplink = lora(
+      {
+        protocol: "lorawan",
+        message_type: "unconfirmed_up",
+        major: 0,
+        mic: "00",
+        dev_addr: "26011BDA",
+        f_cnt: 5,
+        f_port: 2,
+      },
+      "crc_ok",
+    );
+    expect(eventStation(uplink)).toBe("26011BDA");
+    expect(eventSummary(uplink)).toBe("SF11 250 kHz · Uplink · 26011BDA · FCnt 5 · port 2");
+    const advert = lora(
+      {
+        protocol: "meshcore",
+        route: "flood",
+        payload_type: "advert",
+        version: 1,
+        content: {
+          type: "advert",
+          public_key: "0011223344",
+          timestamp: 1,
+          node_type: "chat",
+          signature_ok: true,
+        },
+      },
+      "crc_ok",
+    );
+    expect(eventStation(advert)).toBe("00112233");
+    expect(eventSummary(advert)).toBe("SF11 250 kHz · Advert");
   });
 });
 
@@ -458,101 +672,11 @@ describe("wave-2 summaries", () => {
     );
   });
 
-  it("renders a sub-GHz frame, and a raw capture by its edge count", () => {
-    const frame: DecoderEvent = {
-      kind: "subghz",
-      data: {
-        modulation: "ook",
-        encoding: "pwm",
-        bits: 24,
-        data: "0A1B23",
-        address: 0x0_a1b2,
-        button: 3,
-        short_us: 320,
-        repeats: 6,
-      },
-    };
-    expect(eventSummary(frame)).toBe("24 bit 0A1B23 · addr 0A1B2 · btn 3 · ×6");
-    expect(eventStation(frame)).toBe("0A1B2");
-
-    const raw: DecoderEvent = {
-      kind: "subghz",
-      data: {
-        modulation: "fsk",
-        encoding: "raw",
-        bits: 0,
-        data: "",
-        short_us: 250,
-        repeats: 1,
-        timings_us: [320, 960, 320, 960],
-      },
-    };
-    expect(eventSummary(raw)).toBe("raw, 4 edges");
-    expect(eventStation(raw)).toBeNull();
-  });
-
-  it("summarises a named sensor by its reading rather than its bit pattern", () => {
-    const sensor: DecoderEvent = {
-      kind: "subghz",
-      data: {
-        modulation: "ook",
-        encoding: "pwm",
-        bits: 40,
-        data: "2AA1A95823",
-        short_us: 208,
-        repeats: 10,
-        reading: {
-          model: "LaCrosse-TX141THBv2",
-          id: 0x2a,
-          channel: 2,
-          battery_ok: false,
-          temperature_c: -7.5,
-          humidity_pct: 88,
-        },
-      },
-    };
-    expect(eventSummary(sensor)).toBe("LaCrosse-TX141THBv2 · id 2A · ch 2 · -7.5 °C · 88 % · ×10");
-    expect(eventStation(sensor)).toBe("LaCrosse-TX141THBv2 2A");
-  });
-
-  it("leads a tyre sensor with its pressure and a weather mast with its wind", () => {
-    const tyre: DecoderEvent = {
-      kind: "subghz",
-      data: {
-        modulation: "fsk",
-        encoding: "pcm",
-        bits: 64,
-        data: "",
-        short_us: 52,
-        repeats: 1,
-        reading: { model: "Toyota", id: 0x1a, pressure_kpa: 231, temperature_c: 18 },
-      },
-    };
-    expect(eventSummary(tyre)).toContain("231 kPa");
-
-    const mast: DecoderEvent = {
-      kind: "subghz",
-      data: {
-        modulation: "ook",
-        encoding: "pwm",
-        bits: 64,
-        data: "",
-        short_us: 500,
-        repeats: 1,
-        reading: { model: "WS2032", id: 7, wind_avg_kmh: 12.5, wind_dir_deg: 270, rain_mm: 3.2 },
-      },
-    };
-    expect(eventSummary(mast)).toContain("wind 12.5 km/h");
-    expect(eventSummary(mast)).toContain("rain 3.2 mm");
-  });
-
   it("gives the new kinds the names operators use for them", () => {
     expect(kindLabel("navtex")).toBe("NAVTEX");
     expect(kindLabel("acars")).toBe("ACARS");
-    expect(kindLabel("subghz")).toBe("Sub-GHz");
     expect(DECODER_KINDS).toContain("navtex");
     expect(DECODER_KINDS).toContain("acars");
-    expect(DECODER_KINDS).toContain("subghz");
   });
 });
 

@@ -34,7 +34,7 @@ fn channels(out: &[bool]) -> Value {
             .enumerate()
             .map(|(id, out_of_band)| {
                 json!({
-                    "id": id, "stream": 0, "out_of_band": out_of_band,
+                    "id": id, "stream": 0, "out_of_band": out_of_band.then(|| serde_json::json!({ "reason": "tuned_away" })),
                     "settings": { "frequency_hz": 100e6, "params": { "type": "nfm", "settings": {} } }
                 })
             })
@@ -407,16 +407,16 @@ fn the_agc_tip_reads_back_the_gain_and_advises_without_forcing() {
 }
 
 #[test]
-fn coherent_lanes_are_those_a_coherent_node_or_an_array_uses() {
+fn coherent_lanes_are_those_an_array_holds() {
     let graph: PatchGraph = serde_json::from_value(json!({
         "nodes": [
             { "id": "kraken", "kind": "device", "data": {}, "position": { "x": 0, "y": 0 } },
-            { "id": "bench", "kind": "array", "data": { "members": 1, "coherence": "time_sync", "shared_tuning": true }, "position": { "x": 0, "y": 0 } },
+            { "id": "bench", "kind": "array", "data": {}, "position": { "x": 0, "y": 0 } },
             { "id": "fm", "kind": "channel", "data": { "channel_type": "nfm" }, "position": { "x": 0, "y": 0 } }
         ],
         "edges": [
-            { "from": { "node": "kraken", "port": "iq2" }, "to": { "node": "bench", "port": "iq" } },
-            { "from": { "node": "kraken", "port": "iq4" }, "to": { "node": "bench", "port": "iq2" } },
+            { "from": { "node": "kraken", "port": "iq2" }, "to": { "node": "bench", "port": "lane" } },
+            { "from": { "node": "kraken", "port": "iq4" }, "to": { "node": "bench", "port": "lane2" } },
             { "from": { "node": "kraken", "port": "iq" }, "to": { "node": "fm", "port": "iq" } }
         ]
     }))

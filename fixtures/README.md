@@ -34,22 +34,23 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 | `navtex_518_48k` | 48 k | `navtex` @ +3 kHz | `DA07` navigational warning, `GALE WARNING` |
 | `acars_downlink_240k` | 240 k | `acars` @ −40 kHz | `D-AIBC` / `LH0400` `[H1]`, `SDR-- FIXTURE` |
 | `ysf_callsigns_48k` | 48 k | `ysf` @ 0 Hz | `DL1ABC` to `ALL` via `DB0XYZ` and `DB0ABC` |
-| `subghz_ev1527_500k` | 500 k | `subghz` @ +100 kHz | 24-bit PWM `0A1B23`, address `0A1B2`, button 3 |
 | `atv_ccir625_2m4` | 2.4 M | `atv` @ +200 kHz | 625/25 AM, five vertical bars black to white |
 | `sstv_robot36_48k` | 48 k | `sstv` @ +4 kHz | Robot 36, eight colour bars white to black |
 | `dcf77_2026_2k` | 2 k | `radio_clock` / DCF77 @ 0 Hz | 2026-08-15 12:34 CET, valid parity |
 | `gps_l1_ca_prn7_2m048` | 2.048 M | `gnss` / PRN 7 @ 0 Hz | +1 kHz Doppler, 158.3-chip code phase |
 | `dect_base_2m304` | 2.304 M | `dect` @ 0 Hz | RFPI `01234D5E6D`, class A, carrier 4, standard authentication and ciphering advertised |
+| `dect_call_2m304` | 2.304 M | `dect` @ 0 Hz | clear call on RFPI `01234D5E6D`: 1 kHz from the base, 600 Hz from the handset |
 
 ## Committed fixtures
 
-These twenty-one pairs are not regenerated: eight are recordings, two are frozen synthetic waveforms,
-and eleven are reference waveforms from generators that are independent of the Rust modulators.
+These thirty-seven pairs are not regenerated: twenty-three are recordings, two are frozen synthetic waveforms,
+and twelve are reference waveforms from generators that are independent of the Rust modulators.
 They retain cases that the current generators do not reproduce.
 
 `cargo xtask excerpt` trims a SigMF pair, WAV, or raw `cu8`/`cs8`/`cs16`/`cf32` capture. It shifts
 and resamples through the engine's `Ddc`, writes the requested window, and records the source
-SHA-256 in a SigMF annotation.
+SHA-256 in a SigMF annotation. `cargo xtask net-capture` records a public KiwiSDR or SpyServer to
+a SigMF pair; `cargo xtask replay` runs a channel over it.
 
 | stem | rate | channel | expected |
 |---|---|---|---|
@@ -65,6 +66,22 @@ SHA-256 in a SigMF annotation.
 | `inmarsat_stdc_egc_24k` | 24 k | `inmarsat_stdc` @ +216 Hz | NCS bulletin board for frame 5987 (LES 144), an LES 104 announcement, the signalling channel |
 | `inmarsat_aero_offair_48k` | 48 k | `inmarsat_aero` @ 0 Hz | 600 bps P channel, `HL8217` `[_d]` |
 | `iridium_prbs15_250k` | 250 k | `iridium` @ 0 Hz | one downlink burst whose payload holds the PRBS15 recurrence bit for bit |
+| `lora_rn2483_sf7_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | two RN2483 frames, SF7 CR 4/8, payload `deadbeef`, CRC ok |
+| `lora_epfl_sf7_strong_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0000967`, 32 dB |
+| `lora_epfl_sf7_offgrid_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0000158`, 34 dB |
+| `lora_epfl_sf7_weak_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0001413`, −6 dB |
+| `lora_epfl_sf10_500k` | 500 k | `lora` @ 0 Hz, 250 kHz | SF10 CR 4/5, 19 bytes from a drone, 6 dB |
+| `lora_epfl_sf10_weak_500k` | 500 k | `lora` @ 0 Hz, 250 kHz | SF10 CR 4/5, 19 bytes from a drone, −14 dB |
+| `lora_grlorasdr_sf7_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | gr-lora_sdr transmitter, SF7 sync 0x12, `sdrflex lora fixture` twice |
+| `remote_id_ble_dji_mini4_4m` | 4 M | Bluetooth channel 38 | 8 CRC-valid adverts, including `DJI-MINI4-Pro-98F8` from `E4:7A:2C:AB:98:F9` |
+| `remote_id_wifi_dsss_beacon_20m` | 20 M | Wi-Fi channel 1 | 1 Mbit/s beacon `Xiaomi 13`, FCS ok |
+| `remote_id_wifi_cck_20m` | 20 M | Wi-Fi channel 1 | 220-byte CCK 11 Mbit/s data frame, FCS ok |
+| `remote_id_wifi_ofdm_beacon_20m` | 20 M | Wi-Fi channel 1 | 6 Mbit/s beacon `MipsTucker`, FCS ok |
+| `dsc_offair_8k` | 8 k | `dsc` @ 0 Hz | Lyngby Radio `002191000` acknowledging a test call from `231700000` |
+| `radio_clock_dcf77_offair_2k` | 2 k | `radio_clock` / DCF77 @ 0 Hz | 2026-10-03 22:04 CEST |
+| `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
+| `radio_clock_wwvb_offair_2k` | 2 k | `radio_clock` / WWVB @ 0 Hz | 2021-03-14 05:35 UTC |
+| `flex_p2000_offair_48k` | 48 k | `flex` @ 0 Hz | P2000 page to capcode 2029574, `A2 DP2 Leidschendam-Voorburg ...` |
 | `dvbt/qpsk_2k_reference` | 9.142857 M | `dvbt` @ 0 Hz | 2K QPSK, rate 1/2, guard 1/8, 1750 Hz offset; PID 0x123 packets, TPS cell 0x5a |
 | `dab/mode_ii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | Mode II frame: ensemble `0x4a2c`, service `0xc201`, no failed FIB CRCs |
 | `dab/mode_iii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | the same ensemble in Mode III |
@@ -166,7 +183,7 @@ the global position solved from the full recording.
 
 A 15-second 20 m slot recorded on 2019-11-11 at 11:06:15 UTC. The source is the MIT-licensed
 `ft8_lib` test recording `191111_110615.wav`, pinned in the SigMF annotation. Its 12 kHz mono audio
-was converted to `cf32_le` with zero quadrature.
+was converted to `cf32_le` with zero quadrature, centered on the 14.074 MHz dial frequency.
 
 The upstream expected output contains twenty messages; this integration decodes nineteen.
 `weak_signal::tests::a_recorded_slot_reads_the_band_the_reference_decoder_published` appends a
@@ -201,9 +218,63 @@ test data), as vendored by xng: downconverted to 250 kHz and trimmed to 32 ms. T
 IQ was scaled to `cf32_le`; the annotation pins the source SHA-256.
 `iridium::tests::demodulates_the_gr_iridium_reference_burst` reads it directly.
 
+### LoRa: `lora_rn2483_sf7_250k`
+
+Two frames from a Microchip RN2483 in gr-lora's example trace
+(`usrp-868.1-sf7-cr4-bw125-crc-0`, CC0), shifted from 868.0 to 868.1 MHz and resampled from
+1 MHz to 250 kHz. The annotation pins the source SHA-256.
+`lora::tests::a_real_rn2483_capture_decodes_both_frames` reads it directly.
+
+`lora_epfl_*` are single frames from the EPFL LoRaIQ dataset (CC BY 4.0,
+zenodo.org/records/17708397), recorded by USRP-2920 rooftop receivers at 862.5 MHz with the
+transmitted payload known. The SF10 frames are trimmed around the frame. They cover cases real
+transmitters exposed: a one bin one chip offset after coarse sync, a half bin bias from folded sync
+symbols, and timing over a long frame. `lora::tests::real_epfl_frames_decode_from_strong_to_near_the_sensitivity_limit`
+reads them directly. `lora_grlorasdr_sf7_250k` is gr-lora_sdr's own transmitter output from the
+sdr-flex repository (CC0), so the encoder is independent of ours.
+
+### Remote ID PHYs: `remote_id_*`
+
+No public IQ recording holds a real Remote ID transmission, so these check the Bluetooth and Wi-Fi
+receivers on real air and the message parser runs on real frames from packet captures. Three come
+from the RFUAV dataset (Apache-2.0, huggingface.co/datasets/alley66/RFUAV), a USRP X310 at
+100 MS/s beside a DJI Mini 4 Pro. `remote_id_wifi_ofdm_beacon_20m` comes from IQEngine
+`ism_band_24` by Marc Lichtman (CC BY-SA 4.0), a USRP B210 at 56 MS/s. That capture holds only
+about 6% of the time it spans: beacon timestamps advance 1.02 s where the samples advance 62 ms,
+so long frames break at the gaps. The excerpt is one beacon inside an unbroken stretch.
+`remote_id::tests::air` reads them directly.
+
+### Public receivers: `dsc_offair_8k`, `radio_clock_*_offair_2k`, `flex_p2000_offair_48k`
+
+Excerpts of `cargo xtask net-capture` recordings from public KiwiSDRs and a public SpyServer, made
+on 2026-10-03. The SigMF metadata names the receiver and pins the source SHA-256.
+
+- `dsc_offair_8k`: 2187.5 kHz, Cobh. Real DSC puts B (bit 0) on the higher tone.
+  `dsc::tests::decodes_a_coast_station_off_air`
+- `radio_clock_dcf77_offair_2k`: 77.5 kHz near Hamburg, KiwiSDR AGC on, with fades between pulses.
+  `radio_clock::tests::dcf77_off_air_with_agc_decodes`
+- `radio_clock_jjy_offair_2k`: 40 kHz, Chiba, manual gain. `radio_clock::tests::jjy_off_air_decodes`
+- `radio_clock_wwvb_offair_2k`: a public domain archive.org KiwiSDR recording, USB with AGC, carrier at
+  1 kHz. `radio_clock::tests::wwvb_off_air_through_receiver_agc_decodes`
+- `flex_p2000_offair_48k`: 169.650 MHz, Netherlands. FLEX sync reads the low tone as 1, the FIW
+  and data the high tone. `flex::tests::decodes_a_p2000_page_off_air`
+
 ### FreeDV: `freedv_1600_8k`
 
 The first three seconds of the FreeDV GUI project's `wav/ve9qrp_1600.wav` receive test recording.
 Signed 16-bit mono audio was converted to normalized `cf32_le` with zero quadrature. The SigMF
 annotation records the source SHA-256, pinned upstream commit, and LGPL-2.1 license.
 `dv::freedv::tests::decodes_the_upstream_receive_recording` reads it directly.
+
+### Meteor LRPT: `lrpt/meteor_m2_qpsk72_symbols.bin`
+
+Not IQ: 196,864 hard QPSK symbol bits, packed MSB first, from this receiver's demodulator on a
+2018 Meteor-M N2 pass on 137.9 MHz (72k QPSK). They hold VCDUs `09BF68` to `09BF73`: one full
+MCU row of APIDs 64, 65 and 68. The source IQ is sigidwiki's LRPT sample
+(`LRPT_16-29-02_137900kHz.wav`), which states no license. `lrpt::tests::a_recorded_meteor_m2_row_decodes_cleanly` reads it.
+
+### End-of-Train: `eot/pyeot_demo3_48k.wav`
+
+Not IQ: PyEOT's `demo3eot.wav`, unmodified, 2.6 s of FM-discriminator audio from 457.9375 MHz
+with three rear-unit packets. GPL-3.0, see `eot/README.md`. The test FM-modulates it at ±3 kHz.
+`eot::tests::decodes_three_rear_units_from_an_off_air_recording` reads it.

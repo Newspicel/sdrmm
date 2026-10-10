@@ -5,8 +5,7 @@ use std::{
 };
 
 use sdrmm_wire::patch::{
-    MAX_EDGES, MAX_NODES, MAX_STREAMS, NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef,
-    Position, port_stream,
+    MAX_EDGES, MAX_NODES, NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef, Position,
 };
 
 pub const HEADER_PX: f32 = 26.0;
@@ -130,31 +129,8 @@ pub fn node_ids(graph: &PatchGraph) -> HashSet<String> {
 }
 
 #[must_use]
-pub fn settle_arrays(mut graph: PatchGraph) -> PatchGraph {
-    let highest: HashMap<String, i64> = graph
-        .edges
-        .iter()
-        .filter_map(|edge| {
-            port_stream("iq", &edge.to.port).map(|stream| (edge.to.node.clone(), i64::from(stream)))
-        })
-        .fold(HashMap::new(), |mut most, (node, stream)| {
-            let held = most.entry(node).or_insert(-1);
-            *held = (*held).max(stream);
-            most
-        });
-    for node in &mut graph.nodes {
-        if let NodeBody::Array(array) = &mut node.body {
-            let wired = highest.get(&node.id).copied().unwrap_or(-1);
-            let members = u32::try_from(wired + 1).unwrap_or(0).min(MAX_STREAMS);
-            array.members = members;
-        }
-    }
-    graph
-}
-
-#[must_use]
 pub fn remove_nodes(graph: &PatchGraph, ids: &[String]) -> PatchGraph {
-    settle_arrays(PatchGraph {
+    PatchGraph {
         nodes: graph
             .nodes
             .iter()
@@ -167,12 +143,12 @@ pub fn remove_nodes(graph: &PatchGraph, ids: &[String]) -> PatchGraph {
             .filter(|edge| !ids.contains(&edge.from.node) && !ids.contains(&edge.to.node))
             .cloned()
             .collect(),
-    })
+    }
 }
 
 #[must_use]
 pub fn remove_edges(graph: &PatchGraph, keys: &[String]) -> PatchGraph {
-    settle_arrays(PatchGraph {
+    PatchGraph {
         nodes: graph.nodes.clone(),
         edges: graph
             .edges
@@ -180,7 +156,7 @@ pub fn remove_edges(graph: &PatchGraph, keys: &[String]) -> PatchGraph {
             .filter(|edge| !keys.contains(&edge_key(edge)))
             .cloned()
             .collect(),
-    })
+    }
 }
 
 #[must_use]
@@ -189,7 +165,7 @@ pub fn add_edge(graph: &PatchGraph, edge: PatchEdge) -> PatchGraph {
     if !next.edges.contains(&edge) {
         next.edges.push(edge);
     }
-    settle_arrays(next)
+    next
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -283,12 +259,12 @@ pub fn paste_nodes(
             },
         });
     }
-    (settle_arrays(next), ids)
+    (next, ids)
 }
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::patch::{ArrayNode, DeviceNode, DeviceRef};
+    use sdrmm_wire::patch::{DeviceNode, DeviceRef};
 
     use super::*;
 
@@ -325,6 +301,7 @@ mod tests {
                     key: Some("siggen".to_owned()),
                 }),
                 locked_streams: Vec::new(),
+                split_tuning: false,
             }),
         )
     }
@@ -334,7 +311,7 @@ mod tests {
             nodes: vec![
                 radio("dev"),
                 node("scope", NodeBody::Scope),
-                node("log", NodeBody::DecoderLog),
+                node("log", NodeBody::DecoderLog(Default::default())),
             ],
             edges: vec![edge(("dev", "iq"), ("scope", "iq"))],
         }
@@ -400,22 +377,6 @@ mod tests {
         let copied = copy_nodes(&full, &["scope".to_owned()]).expect("a copy");
         assert!(paste_refusal(&full, &copied).is_some());
         assert!(paste_refusal(&graph(), &copied).is_none());
-    }
-
-    #[test]
-    fn an_array_carries_one_input_more_than_its_highest_wired_radio() {
-        let mut graph = graph();
-        graph
-            .nodes
-            .push(node("array", NodeBody::Array(ArrayNode::default())));
-        graph = add_edge(&graph, edge(("dev", "iq"), ("array", "iq2")));
-        let members = |graph: &PatchGraph| match &graph.node("array").map(|node| &node.body) {
-            Some(NodeBody::Array(array)) => array.members,
-            _ => 99,
-        };
-        assert_eq!(members(&graph), 2);
-        let graph = remove_edges(&graph, &[edge_key(&edge(("dev", "iq"), ("array", "iq2")))]);
-        assert_eq!(members(&graph), 0);
     }
 
     #[test]

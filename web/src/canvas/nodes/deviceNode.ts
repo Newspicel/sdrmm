@@ -7,11 +7,11 @@ import type {
   DeviceRef,
   DeviceSet,
   DeviceSettings,
-  PatchGraph,
   Tuning,
+  VirtualLane,
 } from "../../lib/types";
 import { forStream } from "../../lib/useDevicePatch";
-import { nodeOf, portStream, rxStreamCount, streamLabel } from "../graph";
+import { rxStreamCount, streamLabel } from "../graph";
 
 export function clippingSaid(set: DeviceSet): string | null {
   const lanes = set.clipping ?? [];
@@ -49,12 +49,34 @@ export function lanesMerged(set: DeviceSet): boolean {
   return set.capabilities.per_stream?.tuning === true && rxStreamCount(set.capabilities) > 1;
 }
 
-export function hasLaneControls(capabilities: Capabilities): boolean {
-  const scope = capabilities.per_stream;
-  return (
-    (scope?.gain === true && capabilities.gains.length > 0) ||
-    (scope?.antenna === true && capabilities.antennas.length > 1)
-  );
+export function rxStreams(capabilities: Capabilities): number[] {
+  return Array.from({ length: rxStreamCount(capabilities) }, (_, stream) => stream);
+}
+
+export function lanesAligned(set: DeviceSet): boolean {
+  const dials = tunerDials(set);
+  return dials.every((dial) => dial.hz === dials[0]?.hz);
+}
+
+export function tuneAllDelta(capabilities: Capabilities, hz: number): DeviceSettings {
+  const center_hz = reachableHz(capabilities, hz);
+  if (capabilities.per_stream?.tuning !== true) {
+    return { center_hz, tuning: "manual" };
+  }
+  return {
+    streams: rxStreams(capabilities).map((stream) => ({ stream, center_hz, tuning: "manual" })),
+  };
+}
+
+export function tuningAllDelta(capabilities: Capabilities, tuning: Tuning): DeviceSettings {
+  if (capabilities.per_stream?.tuning !== true) {
+    return { tuning };
+  }
+  return { streams: rxStreams(capabilities).map((stream) => ({ stream, tuning })) };
+}
+
+export function allAutoTuning(set: DeviceSet): boolean {
+  return rxStreams(set.capabilities).every((stream) => autoTuning(set, stream));
 }
 
 const BONDS: Record<Coherence, string | null> = {
@@ -72,17 +94,20 @@ export function autoTuning(set: DeviceSet, stream = 0): boolean {
   return (resolved.tuning ?? "auto") === "auto";
 }
 
+function virtualLane(set: DeviceSet, stream: number): VirtualLane | undefined {
+  return (set.virtual_lanes ?? []).find((lane) => lane.stream === stream);
+}
+
 export function laneCenterHz(set: DeviceSet, stream: number): number | null {
-  if (set.extra_lane?.stream === stream) {
-    return set.extra_lane.center_hz;
+  const virtual = virtualLane(set, stream);
+  if (virtual !== undefined) {
+    return virtual.center_hz;
   }
   return forStream(set.settings, stream, set.capabilities.per_stream).center_hz ?? null;
 }
 
 export function laneRateHz(set: DeviceSet, stream: number): number | undefined {
-  return set.extra_lane?.stream === stream
-    ? set.extra_lane.sample_rate
-    : (set.settings.sample_rate ?? undefined);
+  return virtualLane(set, stream)?.sample_rate ?? set.settings.sample_rate ?? undefined;
 }
 
 export function tuneDelta(capabilities: Capabilities, stream: number, hz: number): DeviceSettings {
@@ -112,30 +137,53 @@ export function agcDelta(
   return capabilities.per_stream?.agc === true ? { streams: [{ stream, agc }] } : { agc };
 }
 
+export function lossSaid(set: DeviceSet): string | null {
+  const loss = set.loss;
+  return loss == null ? null : `${Math.round(loss * 100)}%`;
+}
+
+export function radioAgc(set: DeviceSet): AgcSetting {
+  const caps = set.capabilities;
+  if (caps.per_stream?.agc !== true) {
+    return agcState(caps, set.settings);
+  }
+  const lanes = Array.from({ length: rxStreamCount(caps) }, (_, stream) => laneAgc(set, stream));
+  const running = lanes.find((lane) => lane.on);
+  return running ?? { ...(lanes[0] ?? agcState(caps, set.settings)), on: false };
+}
+
+export function agcModeDelta(set: DeviceSet, mode: string): DeviceSettings {
+  const caps = set.capabilities;
+  if (caps.per_stream?.agc !== true) {
+    return { agc: { on: true, mode } };
+  }
+  return {
+    streams: Array.from({ length: rxStreamCount(caps) }, (_, stream) => ({
+      stream,
+      agc: { on: laneAgc(set, stream).on, mode },
+    })),
+  };
+}
+
 export function agcGainDb(set: DeviceSet, stream: number): number | null {
-  if (set.capabilities.gains.length !== 1 || !laneAgc(set, stream).on) {
+  const driven = set.capabilities.gains.filter((stage) => stage.agc?.kind !== "never");
+  if (driven.length !== 1 || !laneAgc(set, stream).on) {
     return null;
   }
   return set.agc_gains?.find((reading) => reading.stream === stream)?.value_db ?? null;
 }
 
-const COHERENT_USERS = new Set(["df", "combiner", "stitch", "passive_radar", "array"]);
-
-export function coherentLanes(graph: PatchGraph, deviceNode: string): Set<number> {
-  const lanes = new Set<number>();
-  for (const edge of graph.edges ?? []) {
-    const lane = edge.from.node === deviceNode ? portStream("iq", edge.from.port) : null;
-    const kind = nodeOf(graph, edge.to.node)?.kind;
-    if (lane !== null && kind !== undefined && COHERENT_USERS.has(kind)) {
-      lanes.add(lane);
-    }
-  }
-  return lanes;
-}
-
 export function lockStream(locked: readonly number[], stream: number, held: boolean): number[] {
   const others = locked.filter((candidate) => candidate !== stream);
   return held ? [...others, stream].toSorted((a, b) => a - b) : others;
+}
+
+export function lockAll(capabilities: Capabilities, held: boolean): number[] {
+  return held ? rxStreams(capabilities) : [];
+}
+
+export function allLocked(locked: readonly number[], capabilities: Capabilities): boolean {
+  return rxStreams(capabilities).every((stream) => locked.includes(stream));
 }
 
 export interface Hearing {
@@ -176,7 +224,6 @@ export function refusalSaid(set: DeviceSet): string | null {
   return `Radio refused the new ${listed}`;
 }
 
-/** What a fault means for the operator, or null when only the raw message can say. */
 export function faultSaid(set: DeviceSet): string | null {
   const said = set.fault == null ? undefined : FAULTS[set.fault];
   return said == null ? null : `${set.device.label} ${said}`;

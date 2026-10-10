@@ -307,7 +307,7 @@ mod tests {
                 "frequency_hz": 100e6,
                 "params": { "type": "nfm", "settings": {} }
             },
-            "out_of_band": false
+            "out_of_band": null
         }))
         .expect("a channel")
     }
@@ -338,13 +338,13 @@ mod tests {
                     NodeBody::Device(DeviceNode {
                         device: Some(device_ref("siggen")),
                         locked_streams: Vec::new(),
+                        split_tuning: false,
                     }),
                 ),
                 node(
                     "nfm",
                     NodeBody::Channel(ChannelNode {
                         channel_type: "nfm".to_owned(),
-                        record_calls: false,
                         tuning_locked: false,
                     }),
                 ),
@@ -372,6 +372,7 @@ mod tests {
             NodeBody::Device(DeviceNode {
                 device: Some(device_ref("siggen")),
                 locked_streams: Vec::new(),
+                split_tuning: false,
             }),
         ));
         let sets = vec![set(1, "siggen", vec![])];
@@ -522,7 +523,7 @@ mod tests {
         let mut graph = patch();
         graph.nodes.push(node(
             "hunt",
-            NodeBody::Hunt(sdrmm_wire::patch::HuntNode { clicks: true }),
+            NodeBody::Hunt(sdrmm_wire::patch::HuntNode::default()),
         ));
         assert_eq!(controlled_node_of(&graph, "hunt"), None);
         graph

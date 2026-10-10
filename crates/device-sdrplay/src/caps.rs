@@ -1,7 +1,7 @@
 use sdrmm_device::DeviceError;
 use sdrmm_wire::{
-    Agc, ArgumentOption, Capabilities, DcArtifact, ExtraSetting, GainKind, GainStage, Range,
-    StreamScope,
+    Agc, AgcReach, ArgumentOption, Capabilities, DcArtifact, ExtraSetting, GainKind, GainStage,
+    Range, StreamScope,
 };
 
 use crate::{
@@ -475,7 +475,8 @@ pub fn capabilities(model: Model, mode: Option<DuoMode>, band: Band) -> Capabili
                     max: max_lna_reduction(band),
                     step: None,
                 },
-            ),
+            )
+            .with_agc(AgcReach::Never),
             GainStage::new(
                 GainKind::If,
                 Range {
@@ -509,8 +510,14 @@ pub fn capabilities(model: Model, mode: Option<DuoMode>, band: Band) -> Capabili
         directional: None,
         dc_artifact: DcArtifact::Operator,
         hardware_sweep: false,
-        coherence: sdrmm_wire::Coherence::None,
-        noise_source: false,
+        coherence: if streams > 1 {
+            sdrmm_wire::Coherence::TimeSync
+        } else {
+            sdrmm_wire::Coherence::None
+        },
+        noise_source: sdrmm_wire::NoiseSource::None,
+        retune_keeps_phase: false,
+        rx_inputs: Vec::new(),
     }
 }
 
@@ -713,6 +720,20 @@ mod tests {
     }
 
     #[test]
+    fn dual_tuner_is_time_sync() {
+        let dual = capabilities(
+            Model::RspDuo,
+            Some(DuoMode::DualTuner),
+            band(Model::RspDuo, 100e6),
+        );
+        assert_eq!(dual.coherence, sdrmm_wire::Coherence::TimeSync);
+        assert_eq!(dual.profile().coherence, sdrmm_wire::Coherence::TimeSync);
+        assert!(!dual.retune_keeps_phase);
+        let single = capabilities(Model::Rsp1a, None, band(Model::Rsp1a, 100e6));
+        assert_eq!(single.coherence, sdrmm_wire::Coherence::None);
+    }
+
+    #[test]
     fn a_single_tuner_device_declares_no_per_stream_settings() {
         let caps = capabilities(Model::Rsp1a, None, band(Model::Rsp1a, 100e6));
         assert_eq!(caps.rx_streams, 1);
@@ -754,6 +775,15 @@ mod tests {
             caps.stage(GainKind::If.name()).map(|s| s.range.step),
             Some(Some(1.0))
         );
+    }
+
+    #[test]
+    fn the_agc_runs_the_if_gain_and_leaves_the_lna_state_alone() {
+        let caps = capabilities(Model::Rsp1a, None, band(Model::Rsp1a, 100e6));
+        let agc = sdrmm_wire::AgcSetting::in_mode(true, AGC_5HZ);
+        let run = |kind: GainKind| caps.stage(kind.name()).map(|s| s.agc.drives(&agc));
+        assert_eq!(run(GainKind::Rf), Some(false));
+        assert_eq!(run(GainKind::If), Some(true));
     }
 
     #[test]

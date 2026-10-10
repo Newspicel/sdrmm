@@ -28,7 +28,7 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - Beam-steering CW (TX MIMO)
 
 ### Security research (own DUT, contained link)
-- Sub-GHz capture, decode, replay
+- ISM-band capture, decode, replay
 - Fixed-code analysis and generation, including de Bruijn sequences
 - Rolling-code capture and implementation analysis
 - Interference and jam-susceptibility testing
@@ -52,10 +52,7 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - Radtel RT-4D: settings blocks, keys and message templates are read but not modelled
 
 ## 3. Receive DSP
-- ESPRIT next to the correlative and MUSIC estimators. The circular array needs the beamspace form
-- Interferometer
-- Auto-squelch: tell a floor step from a signal. Today a floor that jumps in one step reads as a
-  signal until the channel next falls quiet
+- Multi-site: TDOA and one triangulation across several servers
 
 ## 4. Decoders
 
@@ -63,30 +60,8 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - TETRA, Tetrapol
 - GSM downlink analysis, OsmocomBB-style monitoring
 
-### Weather & satellites
-- NOAA APT, Meteor M-2 LRPT
-- HF WEFAX: the SSTV picture store already fits. Needs the decoder and line geometry
-- Radiosondes: RS41, DFM, M10/M20, iMet, with map and log
-- APRS weather aggregation
-
-### Broadcast & wideband
-- DRM: FAC, SDC, MSC, service selection and audio. Today it only locks and reports SNR and
-  frequency error
-- DVB-S2X Annex E superframe formats 2 to 7, non-default superframe scrambling and WH codes
-- DAB modes II to IV on air
-- Real-world validation of DVB-T and DVB-S/S2: real transmitters, fading, adjacent-channel
-  interference. Today only synthetic IQ
-
-### Sub-GHz, ISM & IoT
-- More rtl_433 sensors
-- LoRa (ChirpChat), LoRaWAN frames, Meshtastic, MeshCore
-- End-of-Train (EOT) telemetry
-- BLE advertisements, 2.4 GHz survey, Wi-Fi channel occupancy (energy only)
-
-### DECT
-- B-field voice (ADPCM/G.726 on unencrypted bearers)
-- Extended fixed part capability messages (QH = 4, C, E) with DSAA2/DSC2 bits
-- All ten carriers from one wideband capture
+### ISM & IoT
+- ISM remotes and sensors (OOK/FSK)
 
 ### Other
 - STANAG modem identification
@@ -99,10 +74,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 ## 6. Map
 - Layers for sondes, satellites, beacons
 
-## 7. Field mode
-- Redo field mode as its own app
-
-## 8. Automation & API
-- Desktop and push notifications from Event filter
+## 7. Automation & API
 - WASM plugin SDK
 - Offline bundles for TLE snapshots and callsign prefixes

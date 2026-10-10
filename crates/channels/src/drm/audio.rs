@@ -1,0 +1,549 @@
+use std::ops::Range;
+
+use super::{
+    aac::AudioConfig,
+    bits::{BitReader, byte_bits, crc},
+};
+
+pub const TEXT_BYTES: usize = 4;
+const MAX_FRAMES: usize = 11;
+const MAX_BORDERS: usize = 15;
+const MAX_CARRY: usize = 16_384;
+const XHE_INVALID: &str = "Invalid xHE-AAC super frame";
+
+#[must_use]
+pub const fn aac_frames(plus: bool, rate_hz: u32) -> Option<usize> {
+    match (plus, rate_hz) {
+        (false, 12_000) | (true, 24_000) => Some(5),
+        (false, 24_000) | (true, 48_000) => Some(10),
+        _ => None,
+    }
+}
+
+pub(crate) const fn header_bytes(frames: usize) -> usize {
+    ((frames - 1) * 12).div_ceil(8)
+}
+
+pub fn aac_superframe(
+    superframe: &[u8],
+    frames: usize,
+    out: &mut Vec<(u8, Range<usize>)>,
+) -> Result<(), &'static str> {
+    out.clear();
+    let header = header_bytes(frames);
+    let payload_start = header + frames;
+    let payload = superframe
+        .len()
+        .checked_sub(payload_start)
+        .ok_or("Audio super frame too short")?;
+    let mut reader = BitReader::new(&superframe[..header]);
+    let mut previous = 0usize;
+    if frames + 1 > MAX_FRAMES {
+        return Err("Too many audio frames");
+    }
+    let mut starts = [0usize; MAX_FRAMES];
+    for slot in &mut starts[1..frames] {
+        let raw = reader.read(12).ok_or("Audio super frame too short")? as usize;
+        let mut border = previous - previous % 4096 + raw;
+        if border < previous {
+            border += 4096;
+        }
+        if border <= previous || border > payload {
+            return Err("Invalid audio frame borders");
+        }
+        *slot = border;
+        previous = border;
+    }
+    starts[frames] = payload;
+    for (index, pair) in starts[..=frames].windows(2).enumerate() {
+        out.push((
+            superframe[header + index],
+            payload_start + pair[0]..payload_start + pair[1],
+        ));
+    }
+    Ok(())
+}
+
+pub fn join_protected(
+    superframe: &[u8],
+    frames: usize,
+    higher: usize,
+    ranges: &mut Vec<(u8, Range<usize>)>,
+    out: &mut Vec<u8>,
+) -> Result<(), &'static str> {
+    let header = header_bytes(frames);
+    let per = higher
+        .checked_sub(header + frames)
+        .ok_or("Protected audio part shorter than its header")?
+        / frames;
+    aac_superframe(superframe, frames, ranges)?;
+    out.clear();
+    out.extend_from_slice(&superframe[..header]);
+    out.extend((0..frames).map(|frame| superframe[header + frame * (per + 1) + per]));
+    let mut lower = higher;
+    for (frame, (_, range)) in ranges.iter().enumerate() {
+        let start = header + frame * (per + 1);
+        let rest = if frame + 1 == frames {
+            superframe.len().saturating_sub(lower)
+        } else {
+            range
+                .len()
+                .checked_sub(per)
+                .ok_or("Audio frame shorter than its protected part")?
+        };
+        let tail = superframe
+            .get(lower..lower + rest)
+            .ok_or("Audio super frame too short")?;
+        out.extend_from_slice(&superframe[start..start + per]);
+        out.extend_from_slice(tail);
+        lower += rest;
+    }
+    Ok(())
+}
+
+#[cfg(any(test, feature = "synth"))]
+#[must_use]
+pub fn split_protected(joined: &[u8], frames: usize, higher: usize) -> Option<Vec<u8>> {
+    let header = header_bytes(frames);
+    let per = higher.checked_sub(header + frames)? / frames;
+    let mut ranges = Vec::with_capacity(frames);
+    aac_superframe(joined, frames, &mut ranges).ok()?;
+    let mut out = joined[..header].to_vec();
+    let mut lower = Vec::with_capacity(joined.len());
+    for (check, range) in &ranges {
+        let body = joined.get(range.clone())?;
+        out.extend_from_slice(body.get(..per)?);
+        out.push(*check);
+        lower.extend_from_slice(&body[per..]);
+    }
+    out.resize(higher, 0);
+    out.extend_from_slice(&lower);
+    out.extend_from_slice(&joined[ranges.last()?.1.end..]);
+    Some(out)
+}
+
+#[derive(Default)]
+pub struct XheAssembler {
+    carry: Vec<u8>,
+    synced: bool,
+    continuous: bool,
+}
+
+impl XheAssembler {
+    pub fn reset(&mut self) {
+        self.carry.clear();
+        self.synced = false;
+        self.continuous = false;
+    }
+
+    pub fn push(
+        &mut self,
+        superframe: &[u8],
+        emit: impl FnMut(Result<&[u8], &'static str>),
+    ) -> Result<(), &'static str> {
+        let result = self.assemble(superframe, emit);
+        if result.is_err() {
+            self.reset();
+        }
+        result
+    }
+
+    fn assemble(
+        &mut self,
+        superframe: &[u8],
+        mut emit: impl FnMut(Result<&[u8], &'static str>),
+    ) -> Result<(), &'static str> {
+        let count = border_count(superframe)?;
+        let end = superframe.len().checked_sub(2 * count).ok_or(XHE_INVALID)?;
+        let payload = superframe.get(2..end).ok_or(XHE_INVALID)?;
+        if self.carry.len() + payload.len() > MAX_CARRY {
+            return Err("xHE-AAC frame too long");
+        }
+        let mut borders = [0usize; MAX_BORDERS];
+        let borders = &mut borders[..count];
+        self.locate(&superframe[end..], payload.len(), borders)?;
+        self.carry.extend_from_slice(payload);
+        let mut start = 0;
+        for &mut border in borders {
+            if self.synced {
+                let continuous = self.continuous;
+                let frame = frame_body(&self.carry[start..border])
+                    .ok_or("xHE-AAC frame CRC failure")
+                    .and_then(|body| {
+                        if continuous || body[0] & 0x80 != 0 {
+                            Ok(body)
+                        } else {
+                            Err("xHE-AAC frame follows a lost frame")
+                        }
+                    });
+                self.continuous = frame.is_ok();
+                emit(frame);
+            }
+            self.synced = true;
+            start = border;
+        }
+        let keep = if self.synced {
+            start
+        } else {
+            self.carry.len().saturating_sub(2)
+        };
+        self.carry.drain(..keep);
+        Ok(())
+    }
+
+    fn locate(
+        &self,
+        directory: &[u8],
+        payload: usize,
+        borders: &mut [usize],
+    ) -> Result<(), &'static str> {
+        let base = self.carry.len();
+        for (slot, entry) in borders
+            .iter_mut()
+            .zip(directory.as_chunks::<2>().0.iter().rev())
+        {
+            let index = usize::from(entry[0]) << 4 | usize::from(entry[1] >> 4);
+            let position = match index {
+                0xFFE => base.checked_sub(2),
+                0xFFF => base.checked_sub(1),
+                _ => Some(base + index),
+            };
+            *slot = position
+                .filter(|&position| position <= base + payload)
+                .ok_or(XHE_INVALID)?;
+        }
+        borders.sort_unstable();
+        Ok(())
+    }
+}
+
+fn border_count(superframe: &[u8]) -> Result<usize, &'static str> {
+    let [first, check, ..] = *superframe else {
+        return Err(XHE_INVALID);
+    };
+    let header_ok = crc(0x1D, 8, byte_bits(&[first])) == u32::from(check);
+    let count = if header_ok {
+        usize::from(first >> 4)
+    } else {
+        usize::from(superframe.last().map_or(0, |last| last & 0x0F))
+    };
+    let directory = superframe
+        .len()
+        .checked_sub(2 * count)
+        .filter(|&end| end >= 2)
+        .and_then(|end| superframe.get(end..))
+        .ok_or(XHE_INVALID)?;
+    let repeated = directory
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .all(|entry| usize::from(entry[1] & 0x0F) == count);
+    match (repeated, header_ok, count) {
+        (true, true, _) => Ok(count),
+        (true, false, 1..) => Ok(count),
+        (_, false, _) => Err("xHE-AAC header CRC failure"),
+        (false, true, _) => Err(XHE_INVALID),
+    }
+}
+
+fn frame_body(frame: &[u8]) -> Option<&[u8]> {
+    let (body, stored) = frame.split_at_checked(frame.len().checked_sub(2)?)?;
+    let stored = u32::from(stored[0]) << 8 | u32::from(stored[1]);
+    (!body.is_empty() && crc(0x1021, 16, byte_bits(body)) == stored).then_some(body)
+}
+
+pub struct Superframes {
+    plus: bool,
+    first: Vec<u8>,
+    waiting: bool,
+}
+
+impl Superframes {
+    #[must_use]
+    pub fn new(plus: bool) -> Self {
+        Self {
+            plus,
+            first: Vec::new(),
+            waiting: false,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.first.clear();
+        self.waiting = false;
+    }
+
+    pub fn push(&mut self, logical: &[u8], starts: bool, out: &mut Vec<u8>) -> bool {
+        if !self.plus {
+            out.clear();
+            out.extend_from_slice(logical);
+            return true;
+        }
+        if starts {
+            self.first.clear();
+            self.first.extend_from_slice(logical);
+            self.waiting = true;
+            return false;
+        }
+        if !self.waiting {
+            return false;
+        }
+        self.waiting = false;
+        out.clear();
+        out.extend_from_slice(&self.first);
+        out.extend_from_slice(logical);
+        true
+    }
+}
+
+#[must_use]
+pub fn split_text<'a>(
+    logical: &'a [u8],
+    config: &AudioConfig,
+) -> (&'a [u8], Option<[u8; TEXT_BYTES]>) {
+    if !config.text || logical.len() < TEXT_BYTES {
+        return (logical, None);
+    }
+    let (audio, text) = logical.split_at(logical.len() - TEXT_BYTES);
+    let mut piece = [0u8; TEXT_BYTES];
+    piece.copy_from_slice(text);
+    (audio, Some(piece))
+}
+
+#[cfg(any(test, feature = "synth"))]
+pub fn build_aac_superframe(frames: &[Vec<u8>], length: usize) -> Option<Vec<u8>> {
+    let count = frames.len();
+    let header = header_bytes(count);
+    let mut writer = super::bits::BitWriter::with_capacity(length);
+    let mut border = 0usize;
+    for frame in &frames[..count - 1] {
+        border += frame.len() - 1;
+        writer.put((border % 4096) as u32, 12);
+    }
+    writer.align();
+    let mut out = writer.into_bytes();
+    out.resize(header, 0);
+    out.extend(frames.iter().map(|frame| frame[0]));
+    for frame in frames {
+        out.extend_from_slice(&frame[1..]);
+    }
+    if out.len() > length {
+        return None;
+    }
+    out.resize(length, 0);
+    Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_protected_part_round_trips_through_the_receiver() {
+        let frames: Vec<Vec<u8>> = (0..5u8)
+            .map(|index| {
+                let mut frame = vec![0xA0 | index];
+                frame.extend((0..80 + usize::from(index)).map(|at| at as u8 ^ index));
+                frame
+            })
+            .collect();
+        for (higher, unused) in [(101, 0), (60, 4)] {
+            let joined = build_aac_superframe(&frames, 459 - unused).expect("fits");
+            let split = split_protected(&joined, 5, higher).expect("splits");
+            assert_eq!(split.len(), 459);
+            let mut ranges = Vec::new();
+            let mut out = Vec::new();
+            join_protected(&split, 5, higher, &mut ranges, &mut out).expect("joins");
+            assert_eq!(out, joined, "higher {higher}");
+        }
+    }
+
+    #[test]
+    fn each_frame_start_is_followed_by_its_crc_in_the_protected_part() {
+        let frames: Vec<Vec<u8>> = (0..5u8)
+            .map(|index| {
+                std::iter::once(0x4B)
+                    .chain([0xFE, index].into_iter().cycle().take(88))
+                    .collect()
+            })
+            .collect();
+        let joined = build_aac_superframe(&frames, 459).expect("fits");
+        let split = split_protected(&joined, 5, 101).expect("splits");
+        assert_eq!(&split[6..9], &[0xFE, 0x00, 0xFE]);
+        assert_eq!(split[6 + 18], 0x4B);
+        assert_eq!(&split[6 + 19..6 + 21], &[0xFE, 0x01]);
+    }
+
+    #[test]
+    fn aac_superframes_split_at_their_borders() {
+        let frames: Vec<Vec<u8>> = (0..10u8)
+            .map(|index| {
+                let mut frame = vec![0xC0 | index];
+                frame.extend(std::iter::repeat_n(index, 30 + usize::from(index)));
+                frame
+            })
+            .collect();
+        let superframe = build_aac_superframe(&frames, 500).expect("fits");
+        let mut out = Vec::new();
+        aac_superframe(&superframe, 10, &mut out).expect("valid");
+        for (index, (check, range)) in out.iter().enumerate().take(9) {
+            assert_eq!(*check, 0xC0 | index as u8);
+            assert_eq!(&superframe[range.clone()], &frames[index][1..]);
+        }
+        assert!(superframe[out[9].1.clone()].starts_with(&frames[9][1..]));
+    }
+
+    #[test]
+    fn broken_borders_are_rejected() {
+        let mut superframe = vec![0u8; 200];
+        superframe[0] = 0xFF;
+        superframe[1] = 0xF0;
+        let mut out = Vec::new();
+        assert!(aac_superframe(&superframe, 5, &mut out).is_err());
+    }
+
+    fn xhe_superframe(payload: &[u8], borders: &[u16]) -> Vec<u8> {
+        let count = borders.len() as u8;
+        let first = count << 4 | 3;
+        let mut out = vec![first, crc(0x1D, 8, byte_bits(&[first])) as u8];
+        out.extend_from_slice(payload);
+        for &border in borders.iter().rev() {
+            out.push((border >> 4) as u8);
+            out.push(((border & 0xF) as u8) << 4 | count);
+        }
+        out
+    }
+
+    fn usac_frame(body: &[u8]) -> Vec<u8> {
+        let mut frame = body.to_vec();
+        let check = crc(0x1021, 16, byte_bits(body)) as u16;
+        frame.extend_from_slice(&check.to_be_bytes());
+        frame
+    }
+
+    type Outcome = Result<Vec<u8>, &'static str>;
+
+    fn collect(
+        assembler: &mut XheAssembler,
+        superframe: &[u8],
+    ) -> (Result<(), &'static str>, Vec<Outcome>) {
+        let mut frames = Vec::new();
+        let result = assembler.push(superframe, |frame| {
+            frames.push(frame.map(<[u8]>::to_vec));
+        });
+        (result, frames)
+    }
+
+    fn body(frame: &[u8]) -> Outcome {
+        Ok(frame[..frame.len() - 2].to_vec())
+    }
+
+    #[test]
+    fn xhe_frames_span_superframes() {
+        let one = usac_frame(&[0x81; 10]);
+        let two = usac_frame(&[0x82; 30]);
+        let three = usac_frame(&[0x83; 5]);
+        let mut stream = vec![9, 9, 9];
+        let first_border = stream.len() as u16;
+        stream.extend_from_slice(&one);
+        let second_border = stream.len() as u16;
+        stream.extend_from_slice(&two);
+        let third = stream.len();
+        stream.extend_from_slice(&three);
+        stream.extend_from_slice(&[7, 7]);
+        let mut assembler = XheAssembler::default();
+        let first = xhe_superframe(&stream[..30], &[first_border, second_border]);
+        assert_eq!(collect(&mut assembler, &first), (Ok(()), vec![body(&one)]));
+        let second = xhe_superframe(
+            &stream[30..],
+            &[(third - 30) as u16, (stream.len() - 2 - 30) as u16],
+        );
+        assert_eq!(
+            collect(&mut assembler, &second),
+            (Ok(()), vec![body(&two), body(&three)])
+        );
+    }
+
+    #[test]
+    fn a_delayed_border_starts_in_the_previous_payload() {
+        let one = usac_frame(&[0x81; 12]);
+        let two = usac_frame(&[0x82; 20]);
+        let mut first = vec![9, 9, 9];
+        first.extend_from_slice(&one);
+        first.extend_from_slice(&two[..2]);
+        let mut second = two[2..].to_vec();
+        let third = second.len() as u16;
+        second.extend_from_slice(&[5; 6]);
+        let mut assembler = XheAssembler::default();
+        assert_eq!(
+            collect(&mut assembler, &xhe_superframe(&first, &[3])),
+            (Ok(()), vec![])
+        );
+        assert_eq!(
+            collect(&mut assembler, &xhe_superframe(&second, &[0xFFE, third])),
+            (Ok(()), vec![body(&one), body(&two)])
+        );
+    }
+
+    #[test]
+    fn after_a_lost_frame_only_an_independent_frame_resumes() {
+        let frames = [
+            usac_frame(&[0x81; 8]),
+            usac_frame(&[0x02; 8]),
+            usac_frame(&[0x03; 8]),
+            usac_frame(&[0x84; 8]),
+            usac_frame(&[0x05; 8]),
+        ];
+        let mut stream = vec![9];
+        let mut borders = Vec::new();
+        for frame in &frames {
+            borders.push(stream.len() as u16);
+            stream.extend_from_slice(frame);
+        }
+        borders.push(stream.len() as u16);
+        stream.push(6);
+        stream[1 + 10 + 3] ^= 0x10;
+        let mut assembler = XheAssembler::default();
+        assert_eq!(
+            collect(&mut assembler, &xhe_superframe(&stream, &borders)),
+            (
+                Ok(()),
+                vec![
+                    body(&frames[0]),
+                    Err("xHE-AAC frame CRC failure"),
+                    Err("xHE-AAC frame follows a lost frame"),
+                    body(&frames[3]),
+                    body(&frames[4]),
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn a_damaged_header_falls_back_to_the_directory_count() {
+        let one = usac_frame(&[0x81; 10]);
+        let mut stream = vec![9, 9];
+        stream.extend_from_slice(&one);
+        stream.extend_from_slice(&[4; 3]);
+        let mut superframe = xhe_superframe(&stream, &[2, 2 + one.len() as u16]);
+        superframe[1] ^= 0xFF;
+        let mut assembler = XheAssembler::default();
+        assert_eq!(
+            collect(&mut assembler, &superframe),
+            (Ok(()), vec![body(&one)])
+        );
+    }
+
+    #[test]
+    fn a_directory_disagreeing_with_its_header_is_rejected() {
+        let mut superframe = xhe_superframe(&[1; 20], &[2, 9]);
+        let last = superframe.len() - 1;
+        superframe[last] ^= 0x01;
+        let mut assembler = XheAssembler::default();
+        assert_eq!(
+            collect(&mut assembler, &superframe),
+            (Err(XHE_INVALID), vec![])
+        );
+        assert!(!assembler.synced);
+    }
+}

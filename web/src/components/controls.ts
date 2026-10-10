@@ -56,6 +56,20 @@ export const CHIP_SM =
   "inline-flex h-5 items-center rounded-[3px] border border-line bg-well px-1.5 " +
   "font-mono text-[10px] text-ink";
 
+export const CHIP_SETTING =
+  `${INTERACTIVE} h-5.5 gap-1 border border-transparent bg-ink/5 px-1.5 font-mono text-[11px] ` +
+  "whitespace-nowrap text-ink-faint hover:bg-ink/9 hover:text-ink-dim " +
+  "aria-expanded:border-accent-dim aria-expanded:bg-well aria-pressed:bg-accent/14";
+
+export const CHIP_READOUT =
+  "inline-flex h-5.5 items-center gap-1 rounded-[3px] bg-ink/5 px-1.5 font-mono text-[11px] " +
+  "whitespace-nowrap text-ink-faint";
+
+export const TOGGLE_QUIET =
+  `${INTERACTIVE} h-5.5 justify-center border border-transparent px-1.5 text-[11px] font-medium ` +
+  "text-ink-faint hover:bg-panel-2 hover:text-ink aria-pressed:bg-accent/15 aria-pressed:text-accent " +
+  "aria-[pressed=mixed]:border-dashed aria-[pressed=mixed]:border-accent-dim aria-[pressed=mixed]:bg-transparent";
+
 export const SURFACE = "rounded-[3px] border border-line-strong/70 bg-panel-3 shadow-pop";
 
 export const WELL = "flex gap-px rounded-[3px] border border-line bg-well p-px";
@@ -82,13 +96,6 @@ export function segment(selected: boolean): string {
   );
 }
 
-export function segmentSm(selected: boolean): string {
-  return (
-    `${INTERACTIVE} h-5 px-1.5 font-mono text-[10.5px] ` +
-    (selected ? "bg-accent/15 text-accent" : "text-ink-faint hover:bg-panel-2 hover:text-ink")
-  );
-}
-
 export function commitText(
   candidate: string,
   value: string,
@@ -107,7 +114,12 @@ export function listItem(selected: boolean, highlighted: boolean): string {
   );
 }
 
-export type Options<T> = readonly { value: T; label: string; title?: string }[];
+export type Options<T> = readonly {
+  value: T;
+  label: string;
+  title?: string;
+  disabled?: boolean;
+}[];
 
 export const DIALOG_TITLE = "font-mono text-sm font-medium text-ink";
 

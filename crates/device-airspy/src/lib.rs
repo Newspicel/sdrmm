@@ -12,6 +12,8 @@ use crate::driver::{Airspy, DeviceDescriptor, RX_TRANSFER_SIZE};
 mod caps;
 mod convert;
 mod driver;
+#[cfg(test)]
+mod hardware;
 
 const DRIVER_ID: &str = "airspy";
 const NOSERIAL_KEY_PREFIX: &str = "noserial-";
@@ -23,6 +25,9 @@ fn map_err(err: driver::Error) -> DeviceError {
     }
     if err.is_permission_denied() {
         return DeviceError::PermissionDenied(text);
+    }
+    if err.is_busy() {
+        return DeviceError::InUse(text);
     }
     match err {
         driver::Error::DeviceNotFound => DeviceError::NotFound(text),

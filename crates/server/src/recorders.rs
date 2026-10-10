@@ -5,68 +5,15 @@ use std::{
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    AudioRoute, MAX_AUDIO_FX_CHAIN, NodeBody, PatchGraph, RecorderNode, StateScope, StateSnapshot,
-    port_stream,
+    AudioRoute, MAX_AUDIO_FX_CHAIN, NodeBody, PatchGraph, StateScope, StateSnapshot, port_stream,
 };
 
 use crate::{
     gps::GpsHub,
     rest::{lock_gate, reconcile_recordings},
-    store::{Store, StoreError},
+    store::Store,
     workspace::{bind, bind_devices},
 };
-
-const SWITCH_ATTEMPTS: usize = 3;
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum SwitchError {
-    #[error("no workspace is open")]
-    NoWorkspace,
-    #[error("no recorder `{0}` in the open workspace")]
-    NoRecorder(String),
-    #[error(transparent)]
-    Store(#[from] StoreError),
-}
-
-fn switch_of(body: &mut NodeBody) -> Option<&mut RecorderNode> {
-    match body {
-        NodeBody::Recorder(recorder)
-        | NodeBody::AudioRecorder(recorder)
-        | NodeBody::BasebandRecorder(recorder) => Some(recorder),
-        _ => None,
-    }
-}
-
-pub(crate) fn switch(store: &Store, node: &str, recording: bool) -> Result<(), SwitchError> {
-    let mut attempt = 0;
-    loop {
-        let mut workspace = store.active_workspace()?.ok_or(SwitchError::NoWorkspace)?;
-        let recorder = workspace
-            .snapshot
-            .graph
-            .nodes
-            .iter_mut()
-            .filter(|found| found.id == node)
-            .find_map(|found| switch_of(&mut found.body))
-            .ok_or_else(|| SwitchError::NoRecorder(node.to_owned()))?;
-        if recorder.recording == recording {
-            return Ok(());
-        }
-        recorder.recording = recording;
-        let update = sdrmm_wire::UpdateWorkspaceRequest {
-            revision: workspace.info.revision,
-            name: None,
-            snapshot: Some(workspace.snapshot),
-        };
-        match store.update_workspace(workspace.info.id, &update) {
-            Ok(_) => return Ok(()),
-            Err(StoreError::WorkspaceConflict { .. }) if attempt + 1 < SWITCH_ATTEMPTS => {
-                attempt += 1;
-            }
-            Err(error) => return Err(error.into()),
-        }
-    }
-}
 
 pub(crate) struct Hooks {
     pub(crate) store: Arc<Store>,
@@ -127,17 +74,26 @@ impl Recorders {
     ) {
         let wanted = wanted_audio(graph, snapshot);
         let current = running_audio(snapshot);
-        for route in current.difference(&wanted) {
+        for route in current.iter().filter(|route| !wanted.contains_key(*route)) {
             match tick.engine.stop_route_recording(route) {
                 Ok(_) => tick.finished = true,
                 Err(error) => tracing::warn!(?route, %error, "could not stop an audio recording"),
             }
         }
-        for route in wanted.difference(&current) {
-            let result = tick.engine.start_route_recording(route).map(|_| ());
+        for (route, &skip_silence) in &wanted {
+            if current.contains(route) {
+                if let Err(error) = tick.engine.set_route_skip_silence(route, skip_silence) {
+                    tracing::warn!(?route, %error, "could not set silence skipping");
+                }
+                continue;
+            }
+            let result = tick
+                .engine
+                .start_route_recording(route, skip_silence)
+                .map(|_| ());
             self.outcome(Target::Audio(route.clone()), result);
         }
-        targets.extend(wanted.into_iter().map(Target::Audio));
+        targets.extend(wanted.into_keys().map(Target::Audio));
     }
 
     fn baseband(
@@ -257,11 +213,14 @@ impl Tick<'_> {
 
 fn recording(body: &NodeBody) -> bool {
     match body {
-        NodeBody::Recorder(recorder)
-        | NodeBody::AudioRecorder(recorder)
-        | NodeBody::BasebandRecorder(recorder) => recorder.recording,
+        NodeBody::Recorder(recorder) | NodeBody::BasebandRecorder(recorder) => recorder.recording,
+        NodeBody::AudioRecorder(recorder) => recorder.recording,
         _ => false,
     }
+}
+
+fn skips_silence(body: &NodeBody) -> bool {
+    matches!(body, NodeBody::AudioRecorder(recorder) if recorder.skip_silence)
 }
 
 fn switched_on<'a>(
@@ -305,22 +264,28 @@ fn running_audio(snapshot: &StateSnapshot) -> HashSet<AudioRoute> {
         .collect()
 }
 
-fn wanted_audio(graph: &PatchGraph, snapshot: &StateSnapshot) -> HashSet<AudioRoute> {
+fn wanted_audio(graph: &PatchGraph, snapshot: &StateSnapshot) -> HashMap<AudioRoute, bool> {
     let channels = channel_bindings(graph, snapshot);
-    switched_on(graph, "audio_recorder")
-        .flat_map(|node| audio_paths_into(graph, &node.id))
-        .flat_map(|(channel_node, fx)| {
-            channels
-                .iter()
-                .filter(|(node, _, _)| *node == channel_node)
-                .map(|&(_, device_set, channel)| AudioRoute {
+    let mut wanted = HashMap::new();
+    for node in switched_on(graph, "audio_recorder") {
+        let skip = skips_silence(&node.body);
+        for (channel_node, fx) in audio_paths_into(graph, &node.id) {
+            for &(_, device_set, channel) in
+                channels.iter().filter(|(node, _, _)| *node == channel_node)
+            {
+                let route = AudioRoute {
                     device_set,
                     channel,
                     fx: fx.clone(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+                };
+                wanted
+                    .entry(route)
+                    .and_modify(|all: &mut bool| *all &= skip)
+                    .or_insert(skip);
+            }
+        }
+    }
+    wanted
 }
 
 fn running_baseband(snapshot: &StateSnapshot) -> HashSet<(u32, u32)> {
@@ -411,7 +376,8 @@ fn walk(
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::{
-        AudioFxNode, ChannelNode, DeviceNode, DeviceRef, PatchEdge, PatchNode, PortRef, Position,
+        AudioFxNode, AudioRecorderNode, ChannelNode, DeviceNode, DeviceRef, PatchEdge, PatchNode,
+        PortRef, Position, RecorderNode,
     };
 
     use super::*;
@@ -448,7 +414,6 @@ mod tests {
             id,
             NodeBody::Channel(ChannelNode {
                 channel_type: "nfm".to_owned(),
-                record_calls: false,
                 tuning_locked: false,
             }),
         )
@@ -462,6 +427,13 @@ mod tests {
         RecorderNode { recording }
     }
 
+    fn audio_on(recording: bool) -> AudioRecorderNode {
+        AudioRecorderNode {
+            recording,
+            skip_silence: false,
+        }
+    }
+
     #[test]
     fn a_recorder_sees_each_channel_through_the_fx_chain_in_front_of_it() {
         let graph = PatchGraph {
@@ -470,7 +442,7 @@ mod tests {
                 channel("b"),
                 fx("near"),
                 fx("far"),
-                node("rec", NodeBody::AudioRecorder(on(true))),
+                node("rec", NodeBody::AudioRecorder(audio_on(true))),
             ],
             edges: vec![
                 audio("a", "near"),
@@ -490,35 +462,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn switching_any_recorder_is_stored_in_the_workspace() {
-        let store = Store::open(None).expect("store");
-        let mut snapshot = sdrmm_wire::WorkspaceSnapshot::empty();
-        snapshot.graph.nodes.extend([
-            node("iq", NodeBody::Recorder(on(false))),
-            node("base", NodeBody::BasebandRecorder(on(false))),
-            node("audio", NodeBody::AudioRecorder(on(false))),
-        ]);
-        let id = store.create_workspace("w", &snapshot).expect("workspace");
-        store.activate_workspace(id).expect("activate");
-        for recorder in ["iq", "base", "audio"] {
-            switch(&store, recorder, true).expect("switch on");
-        }
-        let stored = store.workspace(id).expect("read");
-        assert!(
-            stored
-                .snapshot
-                .graph
-                .nodes
-                .iter()
-                .all(|found| recording(&found.body))
-        );
-        assert!(matches!(
-            switch(&store, "nope", true),
-            Err(SwitchError::NoRecorder(_))
-        ));
-    }
-
     fn patch(recording: bool) -> PatchGraph {
         PatchGraph {
             nodes: vec![
@@ -536,7 +479,7 @@ mod tests {
                 channel("ch"),
                 node("iq", NodeBody::Recorder(on(recording))),
                 node("base", NodeBody::BasebandRecorder(on(recording))),
-                node("audio", NodeBody::AudioRecorder(on(recording))),
+                node("audio", NodeBody::AudioRecorder(audio_on(recording))),
             ],
             edges: vec![
                 wire(("dev", "iq"), ("ch", "iq")),
@@ -568,23 +511,54 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_switches_on_the_patch_start_and_stop_every_kind_of_recording() {
-        let dir = tempfile::TempDir::new().expect("tempdir");
+    fn radio(dir: &tempfile::TempDir) -> (Arc<Engine>, u32, u32) {
         let mut registry = sdrmm_device::DeviceRegistry::new();
         registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
         let engine = Engine::with_registry(registry, Some(dir.path().to_path_buf()));
+        let ds = engine.create_device_set("virtual:band").expect("radio");
+        let settings = sdrmm_wire::ChannelSettings::default_for("nfm").expect("nfm");
+        let ch = engine
+            .add_channel_for(ds, 0, settings, Some("ch"))
+            .expect("channel");
+        (engine, ds, ch)
+    }
+
+    #[test]
+    fn silence_is_skipped_only_when_every_recorder_on_a_route_asks() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let (engine, ds, ch) = radio(&dir);
+        let route = AudioRoute::channel(ds, ch);
+        let mut graph = patch(true);
+        graph.nodes.push(node(
+            "quiet",
+            NodeBody::AudioRecorder(AudioRecorderNode {
+                recording: true,
+                skip_silence: true,
+            }),
+        ));
+        graph.edges.push(audio("ch", "quiet"));
+        assert_eq!(
+            wanted_audio(&graph, &engine.snapshot()).get(&route),
+            Some(&false)
+        );
+        graph.nodes.retain(|found| found.id != "audio");
+        assert_eq!(
+            wanted_audio(&graph, &engine.snapshot()).get(&route),
+            Some(&true)
+        );
+        engine.remove_device_set(ds).expect("close");
+    }
+
+    #[test]
+    fn the_switches_on_the_patch_start_and_stop_every_kind_of_recording() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let (engine, ds, ch) = radio(&dir);
         let store = Arc::new(Store::open(None).expect("store"));
         let hooks = Hooks {
             store,
             gate: Arc::new(Mutex::new(())),
             gps: Arc::new(GpsHub::default()),
         };
-        let ds = engine.create_device_set("virtual:siggen").expect("radio");
-        let settings = sdrmm_wire::ChannelSettings::default_for("nfm").expect("nfm");
-        let ch = engine
-            .add_channel_for(ds, 0, settings, Some("ch"))
-            .expect("channel");
         let mut recorders = Recorders::default();
 
         recorders.reconcile(&engine, Some(&patch(true)), &hooks);

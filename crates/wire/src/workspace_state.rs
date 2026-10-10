@@ -2,7 +2,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
-use crate::{channel::ChannelSettings, device::DeviceSettings, patch::DmrChannelEntry};
+use crate::{
+    array::{ArrayTune, WorkspaceArray},
+    channel::ChannelSettings,
+    device::DeviceSettings,
+    patch::DmrChannelEntry,
+};
 
 pub const WORKSPACE_STATE_VERSION: u32 = 2;
 
@@ -15,6 +20,8 @@ pub struct WorkspaceState {
     pub channels: Vec<WorkspaceChannel>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trunks: Vec<WorkspaceTrunk>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arrays: Vec<WorkspaceArray>,
 }
 
 impl<'de> Deserialize<'de> for WorkspaceState {
@@ -28,15 +35,19 @@ impl<'de> Deserialize<'de> for WorkspaceState {
             channels: Vec<WorkspaceChannel>,
             #[serde(default)]
             trunks: Vec<WorkspaceTrunk>,
+            #[serde(default)]
+            arrays: Vec<WorkspaceArray>,
         }
         let mut document = Value::deserialize(deserializer)?;
         lift_channels_to_the_top(&mut document);
+        drop_retired_channels(&mut document);
         let stated = Stated::deserialize(document).map_err(serde::de::Error::custom)?;
         Ok(Self {
             version: stated.version,
             devices: stated.devices,
             channels: stated.channels,
             trunks: stated.trunks,
+            arrays: stated.arrays,
         })
     }
 }
@@ -74,6 +85,7 @@ impl WorkspaceState {
             devices: Vec::new(),
             channels: Vec::new(),
             trunks: Vec::new(),
+            arrays: Vec::new(),
         }
     }
 
@@ -127,10 +139,30 @@ impl WorkspaceState {
         }
     }
 
+    pub fn forget_device(&mut self, node: &str) {
+        self.devices.retain(|device| device.node != node);
+    }
+
     pub fn retain_nodes(&mut self, present: impl Fn(&str) -> bool) {
         self.devices.retain(|device| present(&device.node));
         self.channels.retain(|channel| present(&channel.node));
         self.trunks.retain(|trunk| present(&trunk.node));
+        self.arrays.retain(|array| present(&array.node));
+    }
+
+    #[must_use]
+    pub fn array(&self, node: &str) -> Option<&WorkspaceArray> {
+        self.arrays.iter().find(|array| array.node == node)
+    }
+
+    pub fn put_array(&mut self, node: &str, tune: ArrayTune) {
+        match self.arrays.iter_mut().find(|held| held.node == node) {
+            Some(held) => held.tune = tune,
+            None => self.arrays.push(WorkspaceArray {
+                node: node.to_owned(),
+                tune,
+            }),
+        }
     }
 
     #[must_use]
@@ -166,6 +198,16 @@ impl WorkspaceState {
                 None => self.trunks.push(trunk),
             }
         }
+    }
+}
+
+fn drop_retired_channels(document: &mut Value) {
+    if let Some(channels) = document.get_mut("channels").and_then(Value::as_array_mut) {
+        channels.retain(|channel| {
+            !channel
+                .get("settings")
+                .is_some_and(crate::channel::states_retired_params)
+        });
     }
 }
 
@@ -253,6 +295,26 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn a_retired_decoder_is_dropped_and_the_rest_loads() {
+        let stored = serde_json::json!({
+            "version": WORKSPACE_STATE_VERSION,
+            "channels": [
+                {
+                    "node": "gone",
+                    "settings": {
+                        "frequency_hz": 433_920_000.0,
+                        "params": { "type": "subghz", "settings": { "modulation": "ook" } }
+                    }
+                },
+                serde_json::to_value(channel("kept", 145_500_000.0)).expect("channel"),
+            ],
+        });
+        let state: WorkspaceState = serde_json::from_value(stored).expect("loads");
+        assert!(state.channel("gone").is_none());
+        assert_eq!(state.channel("kept"), Some(&channel("kept", 145_500_000.0)));
     }
 
     #[test]
@@ -417,5 +479,51 @@ mod tests {
         let read: WorkspaceState = serde_json::from_str(&json).expect("the stored state");
 
         assert_eq!(read, state);
+    }
+
+    fn tune(center_hz: f64, gain_db: f64) -> ArrayTune {
+        ArrayTune {
+            center_hz,
+            gain: crate::array::ArrayGain::Manual { db: gain_db },
+        }
+    }
+
+    #[test]
+    fn an_array_keeps_its_dial_across_a_save() {
+        let mut state = WorkspaceState::new();
+        state.put_array("array", tune(433_920_000.0, 20.0));
+        state.put_array("array", tune(434_000_000.0, 25.0));
+
+        let json = serde_json::to_value(&state).expect("serialised state");
+        let read: WorkspaceState = serde_json::from_value(json.clone()).expect("stored state");
+
+        assert_eq!(json["arrays"][0]["node"], "array");
+        assert_eq!(read.arrays.len(), 1);
+        assert_eq!(read.array("array"), Some(&state.arrays[0]));
+        assert_eq!(
+            read.array("array").map(|a| a.tune.center_hz),
+            Some(434_000_000.0)
+        );
+    }
+
+    #[test]
+    fn a_state_without_arrays_loads_and_writes_none() {
+        let state: WorkspaceState =
+            serde_json::from_str(r#"{"version":2,"devices":[],"channels":[]}"#).expect("state");
+        assert!(state.arrays.is_empty());
+        let json = serde_json::to_value(&state).expect("serialised state");
+        assert!(json.get("arrays").is_none());
+    }
+
+    #[test]
+    fn a_deleted_array_takes_its_dial_with_it() {
+        let mut state = WorkspaceState::new();
+        state.put_array("array", tune(100_000_000.0, 10.0));
+        state.put_array("kept", tune(100_000_000.0, 10.0));
+
+        state.retain_nodes(|node| node != "array");
+
+        assert!(state.array("array").is_none());
+        assert!(state.array("kept").is_some());
     }
 }

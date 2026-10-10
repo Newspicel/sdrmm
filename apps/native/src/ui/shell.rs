@@ -26,7 +26,6 @@ pub enum LibraryTab {
     Bands,
     Occupancy,
     Recordings,
-    Field,
 }
 
 type Proceed = Box<dyn FnOnce()>;

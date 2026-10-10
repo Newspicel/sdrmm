@@ -3,7 +3,7 @@ use super::*;
 #[tokio::test]
 async fn validate_honors_configured_bandwidth_and_sideband() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     engine
         .patch_device(
             ds,
@@ -41,11 +41,12 @@ async fn validate_honors_configured_bandwidth_and_sideband() {
 
     let set = &engine.snapshot().device_sets[0];
     let heard = |id: u32| {
-        !set.channels
+        set.channels
             .iter()
             .find(|channel| channel.id == id)
             .expect("the channel opened")
             .out_of_band
+            .is_none()
     };
     assert!(!heard(past_the_edge), "usb sideband runs past the edge");
     assert!(!heard(too_wide), "a 25 kHz channel does not fit there");
@@ -57,7 +58,7 @@ async fn validate_honors_configured_bandwidth_and_sideband() {
 #[tokio::test]
 async fn patch_retunes_without_error() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     engine
         .patch_device(
             ds,
@@ -227,6 +228,35 @@ async fn a_snapped_rate_is_what_channels_are_rebuilt_on() {
 }
 
 #[tokio::test]
+async fn raising_the_rate_grows_the_capture_ring_to_hold_a_block_at_the_new_rate() {
+    const FAST_RATE: f64 = 64_000_000.0 / 7.0;
+    let sink = Arc::new(Mutex::new(None));
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(HeldSinkDriver { sink: sink.clone() }));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("mock:held").unwrap();
+    engine
+        .patch_device(
+            ds,
+            DeviceSettings {
+                sample_rate: Some(FAST_RATE),
+                ..DeviceSettings::default()
+            },
+        )
+        .unwrap();
+
+    let burst = ring_samples(FAST_RATE) / 2;
+    assert!(burst > mock_ring(), "the burst must not fit the old ring");
+    lock(&sink)
+        .as_mut()
+        .expect("the radio streams")
+        .push(&vec![Complex::new(0.0f32, 0.0); burst]);
+
+    assert_eq!(engine.snapshot().device_sets[0].overruns, 0);
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
 async fn a_faulted_set_releases_its_device_so_the_replug_can_reopen_it() {
     let claimed = Arc::new(AtomicBool::new(false));
     let die = Arc::new(AtomicBool::new(false));
@@ -373,7 +403,7 @@ async fn a_channel_added_mid_tune_does_not_drag_the_radio_back_to_where_it_was()
 #[tokio::test]
 async fn a_converter_offset_moves_what_is_shown_and_leaves_the_radio_still() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     engine
         .patch_device(
             ds,
@@ -406,7 +436,7 @@ async fn a_converter_offset_moves_what_is_shown_and_leaves_the_radio_still() {
 #[tokio::test]
 async fn tuning_through_a_converter_reaches_what_the_radio_alone_cannot() {
     let engine = virtual_engine();
-    let ds = engine.create_device_set("virtual:siggen").unwrap();
+    let ds = engine.create_device_set("virtual:band").unwrap();
     engine
         .patch_device(
             ds,

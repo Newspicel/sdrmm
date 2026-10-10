@@ -20,6 +20,7 @@ import { WORKSPACE_FILE_ACCEPT } from "./workspaceExport";
 export function WorkspaceMenu({
   workspaces,
   activeWorkspace,
+  others,
   onActivate,
   onCreate,
   onRename,
@@ -29,6 +30,7 @@ export function WorkspaceMenu({
 }: {
   workspaces: readonly WorkspaceInfo[];
   activeWorkspace: number | null;
+  others: number;
   onActivate: (id: number) => void;
   onCreate: (name: string) => void;
   onRename: (id: number, name: string) => void;
@@ -45,6 +47,7 @@ export function WorkspaceMenu({
           key={workspace.id}
           workspace={workspace}
           active={workspace.id === activeWorkspace}
+          others={others}
           onActivate={onActivate}
           onRename={onRename}
           onClone={onClone}
@@ -96,6 +99,7 @@ export function WorkspaceMenu({
 function WorkspaceRow({
   workspace,
   active,
+  others,
   onActivate,
   onRename,
   onClone,
@@ -103,12 +107,13 @@ function WorkspaceRow({
 }: {
   workspace: WorkspaceInfo;
   active: boolean;
+  others: number;
   onActivate: (id: number) => void;
   onRename: (id: number, name: string) => void;
   onClone: (id: number) => void;
   onRemove: (id: number) => void;
 }) {
-  const [mode, setMode] = useState<"idle" | "rename" | "confirm">("idle");
+  const [mode, setMode] = useState<"idle" | "rename" | "confirm" | "switch">("idle");
   const [draft, setDraft] = useState(workspace.name);
   const abandoned = useRef(false);
 
@@ -168,13 +173,46 @@ function WorkspaceRow({
     );
   }
 
+  if (mode === "switch") {
+    return (
+      <div className="flex h-7 items-center gap-1 rounded-[3px] border border-accent bg-accent/10 px-2">
+        <span className="min-w-0 flex-1 truncate text-xs">
+          Switch {others === 1 ? "1 other" : `${others} others`} too?
+        </span>
+        <Button
+          type="button"
+          className={BTN_SM}
+          title="One workspace runs per server"
+          onClick={() => {
+            setMode("idle");
+            onActivate(workspace.id);
+          }}
+        >
+          Switch
+        </Button>
+        <Button autoFocus type="button" className={BTN_SM} onClick={() => setMode("idle")}>
+          Stay
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="group flex items-center gap-1">
       <Button
         type="button"
         className={`${listItem(active, false)} min-w-0 flex-1`}
         aria-pressed={active}
-        onClick={() => onActivate(workspace.id)}
+        onClick={() => {
+          if (active) {
+            return;
+          }
+          if (others > 0) {
+            setMode("switch");
+          } else {
+            onActivate(workspace.id);
+          }
+        }}
       >
         <span className="truncate">{workspace.name}</span>
       </Button>

@@ -145,14 +145,13 @@ mod tests {
         let channel = node(
             NodeBody::Channel(ChannelNode {
                 channel_type: "wfm".to_owned(),
-                record_calls: false,
                 tuning_locked: false,
             }),
             None,
         );
         assert_eq!(title_of(&channel), "WFM");
 
-        let log = node(NodeBody::DecoderLog, None);
+        let log = node(NodeBody::DecoderLog(Default::default()), None);
         assert_eq!(title_of(&log), "DECODER LOG");
     }
 }

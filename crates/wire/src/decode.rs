@@ -1,7 +1,13 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{PskBaud, RadioClockStandard, channel::SstvMode};
+use crate::{
+    PskBaud, RadioClockStandard,
+    channel::{DabTransmissionMode, SstvMode},
+    weather::AprsWeather,
+};
+
+pub const NO_CHANNEL: u32 = u32::MAX;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct RdsUpdate {
@@ -77,6 +83,97 @@ pub struct ErmesMessage {
     pub urgent: bool,
     pub alert: u8,
     pub errors_corrected: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EotBattery {
+    NotMonitored,
+    VeryLow,
+    Low,
+    Ok,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EotArming {
+    Normal,
+    Arming,
+    Armed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HotCommand {
+    StatusRequest,
+    Emergency,
+    Other,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct EotStatus {
+    pub message_type: u8,
+    pub arming: EotArming,
+    pub pressure_psig: u8,
+    pub battery: EotBattery,
+    pub battery_charge_pct: u8,
+    pub valve_ok: bool,
+    pub confirmed: bool,
+    pub turbine: bool,
+    pub motion: bool,
+    pub marker_light: bool,
+    pub marker_battery_low: bool,
+    pub discretionary: bool,
+    pub chaining: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HotRequest {
+    pub command: HotCommand,
+    pub code: u8,
+    pub copies: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "unit", rename_all = "snake_case")]
+pub enum EotReport {
+    Rear(EotStatus),
+    Head(HotRequest),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct EotMessage {
+    pub unit_address: u32,
+    pub report: EotReport,
+    pub errors_corrected: u32,
+    pub rejected: u32,
+}
+
+impl EotMessage {
+    #[must_use]
+    pub fn summary(&self) -> String {
+        match &self.report {
+            EotReport::Rear(s) => {
+                let mut parts = vec![
+                    format!("EOT {}", self.unit_address),
+                    format!("{} psig", s.pressure_psig),
+                    if s.motion { "moving" } else { "stopped" }.to_owned(),
+                ];
+                if s.arming != EotArming::Normal {
+                    parts.push(format!("{:?}", s.arming).to_lowercase());
+                }
+                parts.join(" · ")
+            }
+            EotReport::Head(h) => {
+                let command = match h.command {
+                    HotCommand::StatusRequest => "status request".to_owned(),
+                    HotCommand::Emergency => "EMERGENCY".to_owned(),
+                    HotCommand::Other => format!("command {:#04x}", h.code),
+                };
+                format!("HOT {} · {command}", self.unit_address)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -159,6 +256,8 @@ pub struct AprsPacket {
     pub altitude_ft: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mic_e_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weather: Option<crate::weather::AprsWeather>,
     pub tnc2: String,
 }
 
@@ -277,68 +376,6 @@ pub struct AcarsMessage {
     pub flight: Option<String>,
     pub text: String,
     pub more: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum SubghzEncoding {
-    Pcm,
-    Pwm,
-    Ppm,
-    Manchester,
-    Dmc,
-    #[default]
-    Raw,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct SubghzReading {
-    pub model: String,
-    pub id: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub battery_ok: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub temperature_c: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub humidity_pct: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub moisture_pct: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pressure_kpa: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wind_avg_kmh: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wind_max_kmh: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wind_dir_deg: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rain_mm: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub power_w: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub energy_kwh: Option<f64>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct SubghzFrame {
-    pub modulation: crate::channel::SubghzModulation,
-    pub encoding: SubghzEncoding,
-    pub bits: u32,
-    pub data: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub address: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub button: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tri_state: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reading: Option<SubghzReading>,
-    pub short_us: u32,
-    pub repeats: u32,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub timings_us: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -512,6 +549,36 @@ impl DvMode {
             Self::M17 => "M17",
             Self::FreeDv => "FreeDV",
         }
+    }
+
+    #[must_use]
+    pub fn type_id(self) -> &'static str {
+        match self {
+            Self::Dmr => "dmr",
+            Self::Dstar => "dstar",
+            Self::Ysf => "ysf",
+            Self::Nxdn => "nxdn",
+            Self::P25 => "p25",
+            Self::Dpmr => "dpmr",
+            Self::M17 => "m17",
+            Self::FreeDv => "freedv",
+        }
+    }
+
+    #[must_use]
+    pub fn from_type_id(type_id: &str) -> Option<Self> {
+        [
+            Self::Dmr,
+            Self::Dstar,
+            Self::Ysf,
+            Self::Nxdn,
+            Self::P25,
+            Self::Dpmr,
+            Self::M17,
+            Self::FreeDv,
+        ]
+        .into_iter()
+        .find(|mode| mode.type_id() == type_id)
     }
 }
 
@@ -713,6 +780,17 @@ pub enum BroadcastSystem {
 }
 
 impl BroadcastSystem {
+    pub const ALL: [Self; 8] = [
+        Self::Dab,
+        Self::DabPlus,
+        Self::DvbS,
+        Self::DvbS2,
+        Self::DvbT,
+        Self::DvbT2,
+        Self::Drm30,
+        Self::DrmPlus,
+    ];
+
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -763,6 +841,18 @@ pub struct BroadcastData {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SuperframeStatus {
+    pub format: u8,
+    pub sosf: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pilot: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailer: Option<u8>,
+    pub reference: u32,
+    pub payload: u32,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct BroadcastStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -792,6 +882,8 @@ pub struct BroadcastStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol_rate: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transmission_mode: Option<DabTransmissionMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ensemble_id: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_id: Option<u32>,
@@ -813,6 +905,8 @@ pub struct BroadcastStatus {
     pub frames_bad: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<BroadcastService>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superframe: Option<SuperframeStatus>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -941,6 +1035,7 @@ pub enum DectUpdate {
     Encryption,
     Paging,
     Bearer,
+    Voice,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -1004,6 +1099,79 @@ pub enum DectCapability {
     AccessRightsRequests,
     ExternalHandover,
     ConnectionHandover,
+    CrfpEncryption,
+    RelayV2,
+    ProlongedPreamble,
+    FrequencyReplacement,
+    MacSuspendResume,
+    IpqService,
+    ExtendedFpInfo2,
+    FMmsInterworking,
+    BasicOdap,
+    GmeTransport,
+    IpRoaming,
+    Ethernet,
+    TokenRing,
+    Ip,
+    Ppp,
+    V24,
+    RapPart1,
+    IsdnIntermediateSystem,
+    GpsSynchronized,
+    TpuiRegistration,
+    EmergencyCall,
+    AsymmetricBearers,
+    Lrms,
+    DataServiceProfileD,
+    DprsClass3Or4,
+    DprsClass2,
+    IsdnDataServices,
+    LongSlot640,
+    LongSlot672,
+    EuMux,
+    IpfAdvanced,
+    SipfChannel,
+    GfChannel,
+    UleWrsDelayedPaging,
+    ExtendedFpInfo3,
+    NoEmissionAnyCarrier,
+    WidebandVoice,
+    PacketData1,
+    PacketData2,
+    PacketData3,
+    PacketData4,
+    PacketData5,
+    ExtendedWidebandVoice,
+    PermanentClir,
+    ThirdPartyConference,
+    IntrusionCall,
+    CallDeflection,
+    MultipleLines,
+    NoEmission,
+    NgDect5,
+    UNemo,
+    UNemoOpportunistic,
+    UlePhase1,
+    UlePhase1Revised,
+    UlePhase2,
+    UlePhase3,
+    ReKeying,
+    Dsaa2,
+    Dsc2,
+    LightData,
+    HalfSlotSecondHalf,
+    ModulationBpsk,
+    ModulationQpsk,
+    Modulation8psk,
+    Modulation16qam,
+    Modulation64qam,
+    HighLevelAField,
+    WirelessMicrophone,
+    AudioMicrophone,
+    AudioLowLatencyMicrophone,
+    AudioSpeaker,
+    AudioHighResolution,
+    AudioGamingHeadset,
 }
 
 impl DectCapability {
@@ -1044,6 +1212,79 @@ impl DectCapability {
             Self::AccessRightsRequests => "access rights requests",
             Self::ExternalHandover => "external handover",
             Self::ConnectionHandover => "connection handover",
+            Self::CrfpEncryption => "CRFP encryption",
+            Self::RelayV2 => "relay stations V2",
+            Self::ProlongedPreamble => "prolonged preamble",
+            Self::FrequencyReplacement => "frequency replacement",
+            Self::MacSuspendResume => "MAC suspend and resume",
+            Self::IpqService => "IPQ service",
+            Self::ExtendedFpInfo2 => "extended FP info part 2",
+            Self::FMmsInterworking => "F-MMS interworking",
+            Self::BasicOdap => "basic ODAP",
+            Self::GmeTransport => "DPRS media encapsulation",
+            Self::IpRoaming => "IP roaming",
+            Self::Ethernet => "Ethernet",
+            Self::TokenRing => "Token Ring",
+            Self::Ip => "IP",
+            Self::Ppp => "PPP",
+            Self::V24 => "V.24",
+            Self::RapPart1 => "RAP part 1",
+            Self::IsdnIntermediateSystem => "ISDN intermediate system",
+            Self::GpsSynchronized => "GPS synchronized",
+            Self::TpuiRegistration => "location registration with TPUI",
+            Self::EmergencyCall => "emergency call",
+            Self::AsymmetricBearers => "asymmetric bearers",
+            Self::Lrms => "LRMS",
+            Self::DataServiceProfileD => "data service profile D",
+            Self::DprsClass3Or4 => "DPRS class 3 or 4",
+            Self::DprsClass2 => "DPRS class 2",
+            Self::IsdnDataServices => "ISDN data services",
+            Self::LongSlot640 => "long slot 640",
+            Self::LongSlot672 => "long slot 672",
+            Self::EuMux => "E+U-type mux",
+            Self::IpfAdvanced => "IPF advanced",
+            Self::SipfChannel => "SIPF channel",
+            Self::GfChannel => "GF channel",
+            Self::UleWrsDelayedPaging => "ULE relay delayed paging",
+            Self::ExtendedFpInfo3 => "extended FP info part 3",
+            Self::NoEmissionAnyCarrier => "no-emission on any carrier",
+            Self::WidebandVoice => "NG-DECT wideband voice",
+            Self::PacketData1 => "packet data category 1",
+            Self::PacketData2 => "packet data category 2",
+            Self::PacketData3 => "packet data category 3",
+            Self::PacketData4 => "packet data category 4",
+            Self::PacketData5 => "packet data category 5",
+            Self::ExtendedWidebandVoice => "extended wideband voice",
+            Self::PermanentClir => "permanent CLIR",
+            Self::ThirdPartyConference => "third party conference",
+            Self::IntrusionCall => "intrusion call",
+            Self::CallDeflection => "call deflection",
+            Self::MultipleLines => "multiple lines",
+            Self::NoEmission => "no-emission mode",
+            Self::NgDect5 => "NG-DECT part 5",
+            Self::UNemo => "U-NEMo",
+            Self::UNemoOpportunistic => "U-NEMo opportunistic transfer",
+            Self::UlePhase1 => "ULE phase 1",
+            Self::UlePhase1Revised => "ULE phase 1 v1.2",
+            Self::UlePhase2 => "ULE phase 2",
+            Self::UlePhase3 => "ULE phase 3",
+            Self::ReKeying => "re-keying and early encryption",
+            Self::Dsaa2 => "DSAA2 authentication",
+            Self::Dsc2 => "DSC2 ciphering",
+            Self::LightData => "light data services",
+            Self::HalfSlotSecondHalf => "half slot setup on second half",
+            Self::ModulationBpsk => "BPSK",
+            Self::ModulationQpsk => "up to QPSK",
+            Self::Modulation8psk => "up to 8PSK",
+            Self::Modulation16qam => "up to 16QAM",
+            Self::Modulation64qam => "up to 64QAM",
+            Self::HighLevelAField => "high level modulation in A-field",
+            Self::WirelessMicrophone => "wireless microphone profile 1",
+            Self::AudioMicrophone => "advanced audio microphone",
+            Self::AudioLowLatencyMicrophone => "advanced audio low latency microphone",
+            Self::AudioSpeaker => "advanced audio speaker or headphone",
+            Self::AudioHighResolution => "advanced audio high resolution headphone",
+            Self::AudioGamingHeadset => "advanced audio gaming headset",
         }
     }
 }
@@ -1090,6 +1331,24 @@ pub struct DectSecurity {
     pub last_command: Option<String>,
     #[serde(default)]
     pub encryption_events: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dsaa2_supported: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dsc2_supported: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DectVoice {
+    pub frames: u32,
+    pub playing: bool,
+    #[serde(default)]
+    pub x_crc_errors: u32,
+    #[serde(default)]
+    pub unsynced: u32,
+    #[serde(default)]
+    pub encrypted: u32,
+    #[serde(default)]
+    pub late: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -1123,6 +1382,8 @@ pub struct DectFrame {
     pub pmid: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub handsets: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<DectVoice>,
     pub bursts: u32,
     pub crc_errors: u32,
     pub level_dbfs: f32,
@@ -1166,6 +1427,7 @@ pub enum DecoderEvent {
     Pocsag(PocsagMessage),
     Flex(FlexMessage),
     Ermes(ErmesMessage),
+    Eot(EotMessage),
     Adsb(AdsbMessage),
     Ais(AisMessage),
     Aprs(AprsPacket),
@@ -1175,7 +1437,6 @@ pub enum DecoderEvent {
     Selcall(SelcallSequence),
     Navtex(NavtexMessage),
     Acars(AcarsMessage),
-    Subghz(SubghzFrame),
     Tone(ToneSquelchStatus),
     Scrambler(ScramblerStatus),
     Dv(DvFrame),
@@ -1185,7 +1446,6 @@ pub enum DecoderEvent {
     Psk(PskText),
     Wspr(WsprSpot),
     Ident(IdentReport),
-    Broadcast(BroadcastStatus),
     BroadcastData(BroadcastData),
     RadioClock(RadioClockFrame),
     Gnss(GnssFrame),
@@ -1198,10 +1458,19 @@ pub enum DecoderEvent {
     Vdl2(DataLinkMessage),
     Hfdl(DataLinkMessage),
     Iridium(DataLinkMessage),
-    Df(crate::coherent::DfBearing),
-    DfFix(crate::coherent::DfEstimate),
-    Radar(crate::coherent::RadarDetection),
+    Df(crate::fusion::DfBearing),
+    DfFix(crate::fusion::DfEstimate),
+    Radar(crate::radar::RadarTrackEvent),
     Dect(DectFrame),
+    Apt(crate::weather::AptImage),
+    Lrpt(crate::weather::LrptImage),
+    Wefax(crate::weather::WefaxPicture),
+    Radiosonde(crate::weather::RadiosondeFrame),
+    Lora(crate::lora::LoraFrame),
+    RemoteId(crate::remote_id::RemoteIdFrame),
+    Ble(crate::ble::BleAdvert),
+    WifiOccupancy(crate::airtime::WifiOccupancyReport),
+    IsmSurvey(crate::airtime::IsmSurveyReport),
 }
 
 fn dect_summary(f: &DectFrame) -> String {
@@ -1228,8 +1497,26 @@ fn dect_summary(f: &DectFrame) -> String {
             if cipher { "yes" } else { "no" }
         ));
     }
+    if f.security.dsaa2_supported == Some(true) || f.security.dsc2_supported == Some(true) {
+        parts.push(format!(
+            "DSAA2 {} · DSC2 {}",
+            if f.security.dsaa2_supported == Some(true) {
+                "yes"
+            } else {
+                "no"
+            },
+            if f.security.dsc2_supported == Some(true) {
+                "yes"
+            } else {
+                "no"
+            }
+        ));
+    }
     if f.security.cipher_state != DectCipherState::Clear {
         parts.push(f.security.cipher_state.label().to_owned());
+    }
+    if f.voice.is_some_and(|voice| voice.playing) {
+        parts.push("voice".to_owned());
     }
     parts.join(" · ")
 }
@@ -1266,57 +1553,18 @@ fn tone_summary(t: &ToneSquelchStatus) -> String {
     parts.join(" · ")
 }
 
-fn sensor_facts(reading: &SubghzReading) -> Vec<String> {
-    let mut parts = vec![reading.model.clone(), format!("id {:02X}", reading.id)];
-    let optional = [
-        reading.channel.map(|channel| format!("ch {channel}")),
-        reading.pressure_kpa.map(|kpa| format!("{kpa:.0} kPa")),
-        reading.temperature_c.map(|c| format!("{c:.1} °C")),
-        reading.humidity_pct.map(|pct| format!("{pct:.0} %")),
-        reading.moisture_pct.map(|pct| format!("soil {pct:.0} %")),
-        reading
-            .wind_avg_kmh
-            .map(|kmh| format!("wind {kmh:.1} km/h")),
-        reading.wind_dir_deg.map(|deg| format!("from {deg:.0}°")),
-        reading.rain_mm.map(|mm| format!("rain {mm:.1} mm")),
-        reading.power_w.map(|w| format!("{w:.0} W")),
-    ];
-    parts.extend(optional.into_iter().flatten());
-    parts
-}
-
-fn subghz_summary(f: &SubghzFrame) -> String {
-    let mut parts = match &f.reading {
-        Some(reading) => sensor_facts(reading),
-        None if f.bits == 0 => vec![format!("raw, {} edges", f.timings_us.len())],
-        None => vec![format!("{} bit {}", f.bits, f.data)],
-    };
-    if let Some(address) = f.address {
-        parts.push(format!("addr {address:05X}"));
-    }
-    if let Some(button) = f.button {
-        parts.push(format!("btn {button:X}"));
-    }
-    if f.repeats > 1 {
-        parts.push(format!("×{}", f.repeats));
-    }
-    parts.join(" · ")
-}
-
 fn call_summary(c: &crate::rest::VoiceCall) -> String {
-    let mut parts = vec![c.mode.label().to_owned()];
-    parts.push(c.destination.map_or_else(
-        || "to unknown".to_owned(),
-        |id| match c.group_call {
+    let mut parts = vec![c.mode_label()];
+    if let Some(id) = c.destination {
+        parts.push(match c.group_call {
             Some(true) => format!("talkgroup {id}"),
             Some(false) => format!("radio {id}"),
             None => format!("to {id}"),
-        },
-    ));
-    parts.push(
-        c.source
-            .map_or_else(|| "from unknown".to_owned(), |id| format!("from {id}")),
-    );
+        });
+    }
+    if let Some(id) = c.source {
+        parts.push(format!("from {id}"));
+    }
     if let Some(slot) = c.slot {
         parts.push(format!("TS{slot}"));
     }
@@ -1443,6 +1691,7 @@ impl DecoderEvent {
             Self::Pocsag(_) => "pocsag",
             Self::Flex(_) => "flex",
             Self::Ermes(_) => "ermes",
+            Self::Eot(_) => "eot",
             Self::Adsb(_) => "adsb",
             Self::Ais(_) => "ais",
             Self::Aprs(_) => "aprs",
@@ -1452,7 +1701,6 @@ impl DecoderEvent {
             Self::Selcall(_) => "selcall",
             Self::Navtex(_) => "navtex",
             Self::Acars(_) => "acars",
-            Self::Subghz(_) => "subghz",
             Self::Tone(_) => "tone",
             Self::Scrambler(_) => "scrambler",
             Self::Dv(_) => "dv",
@@ -1461,7 +1709,6 @@ impl DecoderEvent {
             Self::Psk(_) => "psk",
             Self::Wspr(_) => "wspr",
             Self::Ident(_) => "ident",
-            Self::Broadcast(_) => "broadcast",
             Self::BroadcastData(_) => "broadcast_data",
             Self::RadioClock(_) => "radio_clock",
             Self::Gnss(_) => "gnss",
@@ -1480,6 +1727,15 @@ impl DecoderEvent {
             Self::DfFix(_) => "df_fix",
             Self::Radar(_) => "radar",
             Self::Dect(_) => "dect",
+            Self::Apt(_) => "apt",
+            Self::Lrpt(_) => "lrpt",
+            Self::Wefax(_) => "wefax",
+            Self::Radiosonde(_) => "radiosonde",
+            Self::Lora(_) => "lora",
+            Self::RemoteId(_) => "remote_id",
+            Self::Ble(_) => "ble",
+            Self::WifiOccupancy(_) => "wifi_occupancy",
+            Self::IsmSurvey(_) => "ism_survey",
         }
     }
 
@@ -1508,6 +1764,7 @@ impl DecoderEvent {
                     format!("{}: {}", p.local_address, p.text)
                 }
             }
+            Self::Eot(m) => m.summary(),
             Self::Adsb(a) => {
                 let mut parts = vec![a.icao.clone()];
                 if let Some(cs) = &a.callsign {
@@ -1531,10 +1788,16 @@ impl DecoderEvent {
                 }
                 parts.join(" · ")
             }
-            Self::Aprs(p) => match &p.mic_e_message {
-                Some(message) => format!("{} · {message}", p.tnc2),
-                None => p.tnc2.clone(),
-            },
+            Self::Aprs(p) => {
+                let weather = p.weather.as_ref().map(AprsWeather::summary);
+                match (&p.mic_e_message, weather) {
+                    (Some(message), _) => format!("{} · {message}", p.tnc2),
+                    (None, Some(weather)) if !weather.is_empty() => {
+                        format!("{} · {weather}", p.source)
+                    }
+                    _ => p.tnc2.clone(),
+                }
+            }
             Self::Rtty(t) => t.text.clone(),
             Self::Morse(m) => m.text.clone(),
             Self::CwSkimmer(s) => format!("{:+.0} Hz · {:.0} WPM · {}", s.offset_hz, s.wpm, s.text),
@@ -1579,7 +1842,6 @@ impl DecoderEvent {
                 ),
                 None => "no inversion".to_owned(),
             },
-            Self::Subghz(f) => subghz_summary(f),
             Self::Call(c) => call_summary(c),
             Self::Transmission(t) => t.summary(),
             Self::Dv(f) => dv_summary(f),
@@ -1590,36 +1852,6 @@ impl DecoderEvent {
             Self::Wspr(s) => format!("{} · {:+.0} dB · {:.0} Hz", s.text, s.snr_db, s.audio_hz),
             Self::Ident(r) => ident_summary(r),
             Self::BroadcastData(data) => format!("{} · {} bytes", data.name, data.bytes.len()),
-            Self::Broadcast(status) => {
-                let mut parts = vec![status.system.label().to_owned()];
-                parts.push(if status.locked { "locked" } else { "searching" }.to_owned());
-                if status.locked {
-                    parts.push(format!("{:.1} dB SNR", status.snr_db));
-                    parts.push(format!("{:+.0} Hz", status.frequency_error_hz));
-                }
-                if let Some(label) = &status.ensemble_label {
-                    parts.push(label.clone());
-                }
-                if let Some(label) = &status.label {
-                    parts.push(label.clone());
-                }
-                if let Some(rate) = &status.code_rate {
-                    parts.push(format!("FEC {rate}"));
-                }
-                if let Some(kbps) = status.bitrate_kbps {
-                    parts.push(crate::units::bit_rate(f64::from(kbps) * 1e3));
-                }
-                if let Some(ber) = status.bit_error_rate {
-                    parts.push(format!("BER {ber:.1e}"));
-                }
-                if !status.services.is_empty() {
-                    parts.push(format!("{} services", status.services.len()));
-                }
-                if let Some(text) = &status.text {
-                    parts.push(text.clone());
-                }
-                parts.join(" · ")
-            }
             Self::RadioClock(r) => {
                 let mut parts = vec![
                     format!("{:?}", r.standard).to_uppercase(),
@@ -1652,14 +1884,18 @@ impl DecoderEvent {
                 )
             }
             Self::Df(b) => format!(
-                "{:03.1}° bearing · {:.0}%",
+                "{:.0}° ±{:.0}° · {:.0}%",
                 b.bearing_deg,
+                b.sigma_deg,
                 b.confidence * 100.0
             ),
             Self::DfFix(e) => format!("{:.5}, {:.5} · ±{:.0} m", e.lat, e.lon, e.ellipse_major_m),
-            Self::Radar(d) => format!(
-                "range bin {} · {:.1} km · {:+.1} Hz · {:.1} dB",
-                d.range_bin, d.range_km, d.doppler_hz, d.snr_db
+            Self::Radar(t) => format!(
+                "T{} {} {:.1} km {:+.0} m/s",
+                t.track_id,
+                t.change.as_str(),
+                t.range_km,
+                t.range_rate_mps
             ),
             Self::Ils(i) => {
                 let component = match i.component {
@@ -1678,6 +1914,15 @@ impl DecoderEvent {
             | Self::Hfdl(m)
             | Self::Iridium(m) => data_link_summary(m),
             Self::Dect(f) => dect_summary(f),
+            Self::Apt(p) => crate::weather::apt_summary(p),
+            Self::Lrpt(p) => crate::weather::lrpt_summary(p),
+            Self::Wefax(p) => crate::weather::wefax_summary(p),
+            Self::Radiosonde(f) => crate::weather::radiosonde_summary(f),
+            Self::Lora(f) => f.summary(),
+            Self::RemoteId(f) => f.summary(),
+            Self::Ble(a) => a.summary(),
+            Self::WifiOccupancy(r) => r.summary(),
+            Self::IsmSurvey(r) => r.summary(),
         }
     }
 
@@ -1690,6 +1935,10 @@ impl DecoderEvent {
             Self::Dv(f) => (f.lat, f.lon),
             Self::Df(b) => (b.lat, b.lon),
             Self::DfFix(e) => (Some(e.lat), Some(e.lon)),
+            Self::Radar(t) => (t.lat, t.lon),
+            Self::Radiosonde(f) => (f.lat, f.lon),
+            Self::Lora(f) => f.position().unzip(),
+            Self::RemoteId(f) => f.position().unzip(),
             Self::Dsc(m)
             | Self::InmarsatStdc(m)
             | Self::InmarsatAero(m)
@@ -1708,17 +1957,12 @@ impl DecoderEvent {
             Self::Pocsag(p) => Some(p.address.to_string()),
             Self::Flex(p) => Some(p.address.to_string()),
             Self::Ermes(p) => Some(p.local_address.to_string()),
+            Self::Eot(m) => Some(m.unit_address.to_string()),
             Self::Adsb(a) => Some(a.icao.clone()),
             Self::Ais(m) => Some(m.mmsi.to_string()),
             Self::Aprs(p) => Some(p.source.clone()),
             Self::Navtex(n) => n.station.map(String::from),
             Self::Acars(a) => Some(a.registration.clone()),
-            Self::Subghz(f) => f
-                .reading
-                .as_ref()
-                .map(|reading| format!("{} {:02X}", reading.model, reading.id))
-                .or_else(|| f.address.map(|a| format!("{a:05X}")))
-                .or_else(|| (!f.data.is_empty()).then(|| f.data.clone())),
             Self::Dv(f) => f
                 .source_call
                 .clone()
@@ -1736,16 +1980,13 @@ impl DecoderEvent {
             | Self::Ident(_)
             | Self::Selcall(_) => None,
             Self::BroadcastData(_) => None,
-            Self::Broadcast(status) => status
-                .service_id
-                .or(status.ensemble_id)
-                .map(|id| format!("{id:X}")),
             Self::Gnss(g) => Some(format!("GPS-{}", g.prn)),
             Self::RadioClock(r) => Some(format!("{:?}", r.standard).to_uppercase()),
             Self::Sstv(p) => Some(p.mode.label().to_owned()),
             Self::Vor(v) => v.station.clone(),
             Self::Df(b) => b.station_id.clone(),
-            Self::DfFix(_) | Self::Radar(_) => None,
+            Self::DfFix(_) => None,
+            Self::Radar(t) => t.icao.clone(),
             Self::Dsc(m)
             | Self::InmarsatStdc(m)
             | Self::InmarsatAero(m)
@@ -1754,6 +1995,14 @@ impl DecoderEvent {
             | Self::Iridium(m) => m.station.clone(),
             Self::Dect(f) => f.identity.as_ref().map(|id| id.rfpi.clone()),
             Self::Ils(_) => None,
+            Self::Apt(_) => Some("APT".to_owned()),
+            Self::Lrpt(_) => Some("LRPT".to_owned()),
+            Self::Wefax(p) => Some(format!("IOC {}", p.ioc.value())),
+            Self::Radiosonde(f) => Some(f.serial.clone()),
+            Self::Lora(f) => f.station(),
+            Self::RemoteId(f) => Some(f.station()),
+            Self::Ble(a) => a.station(),
+            Self::WifiOccupancy(_) | Self::IsmSurvey(_) => None,
         }
     }
 }
@@ -1806,31 +2055,6 @@ mod tests {
     }
 
     #[test]
-    fn a_named_sensor_is_summarised_by_its_reading() {
-        let sensor = DecoderEvent::Subghz(SubghzFrame {
-            bits: 40,
-            data: "2AA1A95823".to_owned(),
-            short_us: 208,
-            repeats: 10,
-            reading: Some(SubghzReading {
-                model: "LaCrosse-TX141THBv2".to_owned(),
-                id: 0x2a,
-                channel: Some(2),
-                battery_ok: Some(false),
-                temperature_c: Some(-7.5),
-                humidity_pct: Some(88.0),
-                ..SubghzReading::default()
-            }),
-            ..SubghzFrame::default()
-        });
-        assert_eq!(
-            sensor.summary(),
-            "LaCrosse-TX141THBv2 · id 2A · ch 2 · -7.5 °C · 88 % · ×10"
-        );
-        assert_eq!(sensor.station().as_deref(), Some("LaCrosse-TX141THBv2 2A"));
-    }
-
-    #[test]
     fn decoder_event_is_adjacently_tagged() {
         let ev = DecoderEvent::Pocsag(PocsagMessage {
             address: 1_234_567,
@@ -1848,6 +2072,26 @@ mod tests {
 
         let back: DecoderEvent = serde_json::from_value(json).unwrap();
         assert_eq!(back, ev);
+    }
+
+    #[test]
+    fn eot_reports_carry_the_unit_as_a_tag() {
+        let message = EotMessage {
+            unit_address: 4_242,
+            report: EotReport::Head(HotRequest {
+                command: HotCommand::StatusRequest,
+                code: 0x55,
+                copies: 3,
+            }),
+            errors_corrected: 0,
+            rejected: 0,
+        };
+        let json = serde_json::to_value(&message).unwrap();
+        assert_eq!(json["report"]["unit"], "head");
+        assert_eq!(json["report"]["command"], "status_request");
+        assert_eq!(message.summary(), "HOT 4242 · status request");
+        let back: EotMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(back, message);
     }
 
     #[test]
@@ -1895,6 +2139,16 @@ mod tests {
                 alert: 0,
                 errors_corrected: 0,
             }),
+            DecoderEvent::Eot(EotMessage {
+                unit_address: 1,
+                report: EotReport::Head(HotRequest {
+                    command: HotCommand::Emergency,
+                    code: 0xAA,
+                    copies: 3,
+                }),
+                errors_corrected: 0,
+                rejected: 0,
+            }),
             DecoderEvent::Adsb(AdsbMessage::default()),
             DecoderEvent::Ais(AisMessage::default()),
             DecoderEvent::Aprs(AprsPacket::default()),
@@ -1918,7 +2172,6 @@ mod tests {
             }),
             DecoderEvent::Navtex(NavtexMessage::default()),
             DecoderEvent::Acars(AcarsMessage::default()),
-            DecoderEvent::Subghz(SubghzFrame::default()),
             DecoderEvent::Tone(ToneSquelchStatus::default()),
             DecoderEvent::Scrambler(ScramblerStatus::default()),
             DecoderEvent::Ft8(WsjtMessage {
@@ -1949,7 +2202,6 @@ mod tests {
                 time_offset_s: 0.0,
                 drift_hz: 0.0,
             }),
-            DecoderEvent::Broadcast(BroadcastStatus::default()),
             DecoderEvent::BroadcastData(BroadcastData {
                 protocol: None,
                 label: Vec::new(),
@@ -2002,10 +2254,91 @@ mod tests {
             DecoderEvent::Vdl2(link()),
             DecoderEvent::Hfdl(link()),
             DecoderEvent::Iridium(link()),
+            DecoderEvent::Radar(radar_event()),
         ] {
             let json = serde_json::to_value(&ev).unwrap();
             assert_eq!(json["kind"], ev.kind());
         }
+    }
+
+    fn radar_event() -> crate::radar::RadarTrackEvent {
+        crate::radar::RadarTrackEvent {
+            track_id: 7,
+            change: crate::radar::TrackChange::Confirmed,
+            range_km: 32.46,
+            range_rate_mps: -365.2,
+            doppler_hz: 120.0,
+            snr_db: 17.0,
+            bearing_deg: Some(98.0),
+            lat: None,
+            lon: None,
+            icao: Some("3C6444".to_owned()),
+        }
+    }
+
+    fn bearing() -> crate::fusion::DfBearing {
+        serde_json::from_value(serde_json::json!({
+            "bearing_deg": 87.4,
+            "confidence": 0.83,
+            "sigma_deg": 4.6,
+            "lat": 52.5,
+            "lon": 13.4,
+            "node": "df"
+        }))
+        .expect("a bearing")
+    }
+
+    #[test]
+    fn a_df_bearing_states_its_spread_and_confidence() {
+        let event = DecoderEvent::Df(bearing());
+        assert_eq!(event.summary(), "87° ±5° · 83%");
+        assert_eq!(event.position(), Some((52.5, 13.4)));
+        assert_eq!(event.kind(), "df");
+    }
+
+    #[test]
+    fn a_processor_record_names_no_channel_and_its_node() {
+        let record = DecodedRecord {
+            origin: Some(crate::EventOrigin {
+                node: "df".to_owned(),
+                transmission: 0,
+            }),
+            device_set: 3,
+            channel: NO_CHANNEL,
+            at: "2026-09-28T12:00:00Z".to_owned(),
+            freq_hz: 433_920_000.0,
+            event: DecoderEvent::Df(bearing()),
+            sinks: Vec::new(),
+        };
+        let json = serde_json::to_value(&record).expect("record json");
+        assert_eq!(json["channel"], u64::from(u32::MAX));
+        assert_eq!(json["origin"]["node"], "df");
+        let back: DecodedRecord = serde_json::from_value(json).expect("record back");
+        assert_eq!(back, record);
+    }
+
+    #[test]
+    fn a_radar_track_event_names_its_track_and_place() {
+        let event = DecoderEvent::Radar(radar_event());
+        assert_eq!(event.summary(), "T7 confirmed 32.5 km -365 m/s");
+        assert_eq!(event.position(), None);
+        assert_eq!(event.station().as_deref(), Some("3C6444"));
+        let placed = DecoderEvent::Radar(crate::radar::RadarTrackEvent {
+            change: crate::radar::TrackChange::Lost,
+            range_rate_mps: 12.0,
+            lat: Some(52.4),
+            lon: Some(13.2),
+            ..radar_event()
+        });
+        assert_eq!(placed.summary(), "T7 lost 32.5 km +12 m/s");
+        assert_eq!(placed.position(), Some((52.4, 13.2)));
+        let json = serde_json::to_value(&placed).unwrap();
+        assert_eq!(json["kind"], "radar");
+        assert_eq!(json["data"]["track_id"], 7);
+        assert_eq!(
+            serde_json::from_value::<DecoderEvent>(json).unwrap(),
+            placed
+        );
     }
 
     #[test]
@@ -2056,29 +2389,6 @@ mod tests {
         assert_eq!(msg.header().as_deref(), Some("DA07"));
         msg.serial = None;
         assert_eq!(msg.header(), None);
-    }
-
-    #[test]
-    fn subghz_summary_describes_a_raw_capture() {
-        let raw = DecoderEvent::Subghz(SubghzFrame {
-            timings_us: vec![320, 960, 960, 320],
-            repeats: 1,
-            ..SubghzFrame::default()
-        });
-        assert_eq!(raw.summary(), "raw, 4 edges");
-        assert_eq!(raw.station(), None);
-
-        let decoded = DecoderEvent::Subghz(SubghzFrame {
-            encoding: SubghzEncoding::Pwm,
-            bits: 24,
-            data: "A1B2C3".to_owned(),
-            address: Some(0x0A1B2),
-            button: Some(3),
-            repeats: 4,
-            ..SubghzFrame::default()
-        });
-        assert_eq!(decoded.summary(), "24 bit A1B2C3 · addr 0A1B2 · btn 3 · ×4");
-        assert_eq!(decoded.station().as_deref(), Some("0A1B2"));
     }
 
     #[test]

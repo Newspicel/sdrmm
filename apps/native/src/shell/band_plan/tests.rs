@@ -18,6 +18,7 @@ fn allocation(id: &str, start_hz: f64, stop_hz: f64) -> BandAllocation {
         primary: false,
         reference: None,
         aliases: Vec::new(),
+        channels: Vec::new(),
         suggested: None,
         channel_step_hz: None,
         notes: None,

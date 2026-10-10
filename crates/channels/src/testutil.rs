@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use rustfft::FftPlanner;
+use sdrmm_dsp::fft::Transform;
 use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent};
 
 use crate::{AUDIO_RATE, ChannelOutputs, ChannelRx};
@@ -13,6 +13,20 @@ pub(crate) fn settings(params: ChannelParams) -> ChannelSettings {
         params,
         blanker: Default::default(),
     }
+}
+
+pub(crate) fn cf32_le(bytes: &[u8]) -> Vec<Complex<f32>> {
+    bytes
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|s| {
+            Complex::new(
+                f32::from_le_bytes([s[0], s[1], s[2], s[3]]),
+                f32::from_le_bytes([s[4], s[5], s[6], s[7]]),
+            )
+        })
+        .collect()
 }
 
 pub(crate) fn complex_tone(freq_norm: f64, len: usize) -> Vec<Complex<f32>> {
@@ -112,6 +126,62 @@ pub(crate) fn complex_noise(seed: u32, amp: f32, len: usize) -> Vec<Complex<f32>
     (0..len).map(|_| Complex::new(next(), next())).collect()
 }
 
+pub(crate) fn frequency_shift(iq: &[Complex<f32>], hz: f64, rate: f64) -> Vec<Complex<f32>> {
+    iq.iter()
+        .enumerate()
+        .map(|(index, &value)| {
+            let phase = TAU * hz * index as f64 / rate;
+            value * Complex::new(phase.cos() as f32, phase.sin() as f32)
+        })
+        .collect()
+}
+
+pub(crate) fn sample_clock_offset(iq: &[Complex<f32>], ppm: f64) -> Vec<Complex<f32>> {
+    const HALF: isize = 16;
+    let step = 1.0 / (1.0 + ppm * 1e-6);
+    let count = ((iq.len() as f64 - HALF as f64) / step) as usize;
+    (0..count)
+        .map(|index| {
+            let position = index as f64 * step;
+            let center = position.floor() as isize;
+            (center - HALF + 1..=center + HALF)
+                .filter_map(|tap| {
+                    let sample = iq.get(usize::try_from(tap).ok()?)?;
+                    let x = position - tap as f64;
+                    let sinc = if x.abs() < 1e-12 {
+                        1.0
+                    } else {
+                        (std::f64::consts::PI * x).sin() / (std::f64::consts::PI * x)
+                    };
+                    let window = 0.42
+                        + 0.5 * (std::f64::consts::PI * x / HALF as f64).cos()
+                        + 0.08 * (TAU * x / HALF as f64).cos();
+                    Some(sample * (sinc * window) as f32)
+                })
+                .sum()
+        })
+        .collect()
+}
+
+pub(crate) fn multipath(
+    iq: &[Complex<f32>],
+    paths: &[(usize, f32, f64)],
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    (0..iq.len())
+        .map(|index| {
+            paths
+                .iter()
+                .filter(|&&(delay, _, _)| delay <= index)
+                .map(|&(delay, gain, doppler_hz)| {
+                    let phase = TAU * doppler_hz * index as f64 / rate;
+                    iq[index - delay] * gain * Complex::new(phase.cos() as f32, phase.sin() as f32)
+                })
+                .sum()
+        })
+        .collect()
+}
+
 pub(crate) fn at_snr(signal: &[Complex<f32>], snr_db: f32, seed: u64) -> Vec<Complex<f32>> {
     let power = signal
         .iter()
@@ -159,7 +229,7 @@ pub(crate) fn rms(x: &[f32]) -> f32 {
 fn half_spectrum(audio: &[f32]) -> Vec<f64> {
     let n = audio.len();
     let mut buf: Vec<Complex<f32>> = audio.iter().map(|&v| Complex::new(v, 0.0)).collect();
-    FftPlanner::new().plan_fft_forward(n).process(&mut buf);
+    Transform::forward(n).process(&mut buf);
     buf[..=n / 2]
         .iter()
         .map(|v| f64::from(v.norm_sqr()))

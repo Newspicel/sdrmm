@@ -1,3 +1,5 @@
+pub mod bench;
+
 use std::{
     sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
@@ -10,13 +12,19 @@ use sdrmm_device::{
     check_stream_settings, single_rx_sink,
 };
 use sdrmm_wire::{
-    Capabilities, Coherence, DcArtifact, DeviceInfo, DeviceSettings, Duplex, Range, StreamScope,
+    Capabilities, Coherence, DcArtifact, DeviceInfo, DeviceSettings, Duplex, GainKind, GainStage,
+    Range, StreamScope,
 };
 
-pub mod array;
+use bench::BenchDevice;
+pub use bench::{
+    BEARING_SETTING, BLOCK_LEN, BenchDeviceSpec, BenchWorld, Clutter, Echo, Emitter,
+    LaneImpairments, LaneTruth, NOISE_SWITCH_LEAD_S, Path, Pilot, RADIUS_SETTING, ReportedGap,
+    Ripple, Scene, Slip, Waveform, default_devices, default_scene, default_world,
+};
 
 const DRIVER_ID: &str = "virtual";
-const SIGGEN_KEY: &str = "siggen";
+const BAND_KEY: &str = "band";
 const BLOCK_SECS: f64 = 0.025;
 
 pub const NFM_CARRIER_OFFSET_HZ: f64 = 300_000.0;
@@ -29,8 +37,6 @@ pub const MOD_TONE_HZ: f64 = 1_000.0;
 
 pub const STREAM_MARKER_SPACING_HZ: f64 = 50_000.0;
 
-/// Where the pretend firmware sweep parks its one carrier, so a sweep that works is a sweep that
-/// finds it.
 pub const SWEEP_MARKER_HZ: f64 = 101_000_000.0;
 const SWEEP_BLOCK_SAMPLES: usize = 4_096;
 
@@ -48,6 +54,7 @@ const NOISE_SEED: u64 = 0x5DEE_CE66_D00D_1234;
 
 pub struct VirtualDriver {
     synthetic_devices: bool,
+    world: Arc<BenchWorld>,
 }
 
 impl Default for VirtualDriver {
@@ -59,25 +66,37 @@ impl Default for VirtualDriver {
 impl VirtualDriver {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            synthetic_devices: true,
-        }
+        Self::with_world(default_world())
     }
 
     #[must_use]
     pub fn for_build() -> Self {
         Self {
             synthetic_devices: cfg!(debug_assertions),
+            world: default_world(),
         }
     }
 
-    fn siggen_info() -> DeviceInfo {
+    #[must_use]
+    pub fn with_world(world: Arc<BenchWorld>) -> Self {
+        Self {
+            synthetic_devices: true,
+            world,
+        }
+    }
+
+    #[must_use]
+    pub fn world(&self) -> &Arc<BenchWorld> {
+        &self.world
+    }
+
+    fn band_info() -> DeviceInfo {
         DeviceInfo {
             driver: DRIVER_ID.to_string(),
-            key: SIGGEN_KEY.to_string(),
-            label: "Signal Generator (virtual)".to_string(),
+            key: BAND_KEY.to_string(),
+            label: "Test band (virtual)".to_string(),
             serial: None,
-            profile: Some(siggen_capabilities().profile()),
+            profile: Some(band_capabilities().profile()),
         }
     }
 
@@ -100,8 +119,9 @@ impl DeviceDriver for VirtualDriver {
     fn probe(&self) -> Vec<DeviceInfo> {
         let mut infos = Vec::new();
         if self.synthetic_devices {
-            infos.push(Self::siggen_info());
+            infos.push(Self::band_info());
             infos.extend(MARKER_SHAPES.iter().map(Self::marker_info));
+            infos.extend(self.world.infos());
         }
         infos
     }
@@ -110,12 +130,12 @@ impl DeviceDriver for VirtualDriver {
         if !self.synthetic_devices {
             return Err(DeviceError::NotFound(format!("{DRIVER_ID}:{}", info.key)));
         }
-        if info.key == SIGGEN_KEY {
-            return Ok(Box::new(SigGen::new()));
+        if info.key == BAND_KEY {
+            return Ok(Box::new(BandGen::new()));
         }
         match MARKER_SHAPES.iter().find(|shape| shape.key == info.key) {
             Some(shape) => Ok(Box::new(MarkerGen::new(shape))),
-            None => Err(DeviceError::NotFound(format!("{DRIVER_ID}:{}", info.key))),
+            None => Ok(Box::new(BenchDevice::open(self.world.clone(), &info.key)?)),
         }
     }
 }
@@ -128,26 +148,26 @@ pub fn render(sample_rate: f64, n: usize) -> Vec<Complex<f32>> {
 }
 
 #[derive(Clone, Copy)]
-struct SigParams {
+struct BandParams {
     sample_rate: f64,
 }
 
-pub struct SigGen {
+pub struct BandGen {
     capabilities: Capabilities,
     settings: DeviceSettings,
-    shared: Arc<ArcSwap<SigParams>>,
+    shared: Arc<ArcSwap<BandParams>>,
     worker: Worker,
     sweeper: Worker,
 }
 
-impl Default for SigGen {
+impl Default for BandGen {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[must_use]
-fn siggen_capabilities() -> Capabilities {
+fn band_capabilities() -> Capabilities {
     Capabilities {
         freq_ranges: vec![Range {
             min: 0.0,
@@ -161,9 +181,20 @@ fn siggen_capabilities() -> Capabilities {
             2_048_000.0,
             2_400_000.0,
             3_200_000.0,
+            4_000_000.0,
+            8_000_000.0,
+            10_000_000.0,
+            20_000_000.0,
         ],
         sample_rate_ranges: Vec::new(),
-        gains: Vec::new(),
+        gains: vec![GainStage::new(
+            GainKind::Tuner,
+            Range {
+                min: 0.0,
+                max: 49.6,
+                step: Some(0.1),
+            },
+        )],
         antennas: vec!["RX".to_string()],
         bandwidths: Vec::new(),
         bandwidth_ranges: Vec::new(),
@@ -180,11 +211,12 @@ fn siggen_capabilities() -> Capabilities {
         dc_artifact: DcArtifact::Operator,
         hardware_sweep: true,
         coherence: sdrmm_wire::Coherence::None,
-        noise_source: false,
+        noise_source: sdrmm_wire::NoiseSource::None,
+        rx_inputs: Vec::new(),
+        retune_keeps_phase: false,
     }
 }
 
-/// Every tuning the sweep visits, in the order the firmware would walk them.
 fn sweep_centers(plan: &SweepPlan) -> Vec<f64> {
     let step = plan.sample_rate_hz;
     let mut centers = Vec::new();
@@ -198,13 +230,13 @@ fn sweep_centers(plan: &SweepPlan) -> Vec<f64> {
     centers
 }
 
-impl SigGen {
+impl BandGen {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            capabilities: siggen_capabilities(),
+            capabilities: band_capabilities(),
             settings: default_settings(),
-            shared: Arc::new(ArcSwap::from_pointee(SigParams {
+            shared: Arc::new(ArcSwap::from_pointee(BandParams {
                 sample_rate: DEFAULT_SAMPLE_RATE_HZ,
             })),
             worker: Worker::new(),
@@ -261,7 +293,7 @@ fn validate_tune(
     Ok(())
 }
 
-impl SdrDevice for SigGen {
+impl SdrDevice for BandGen {
     fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }
@@ -273,7 +305,7 @@ impl SdrDevice for SigGen {
     fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
         validate_tune(&self.capabilities, settings)?;
         self.settings.merge_from(settings);
-        self.shared.store(Arc::new(SigParams {
+        self.shared.store(Arc::new(BandParams {
             sample_rate: self.sample_rate(),
         }));
         Ok(())
@@ -282,7 +314,7 @@ impl SdrDevice for SigGen {
     fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
         let mut sink = single_rx_sink(sinks)?;
         let shared = self.shared.clone();
-        self.worker.start("sdrmm-siggen-rx", move |running| {
+        self.worker.start("sdrmm-band-rx", move |running| {
             let mut generator = Generator::new();
             let mut block: Vec<Complex<f32>> = Vec::new();
             let mut next = Instant::now();
@@ -317,7 +349,7 @@ impl SdrDevice for SigGen {
             ));
         }
         let sample_rate = plan.sample_rate_hz;
-        self.sweeper.start("sdrmm-siggen-sweep", move |running| {
+        self.sweeper.start("sdrmm-band-sweep", move |running| {
             let mut generator = Generator::stream_marker(0);
             let mut block = vec![Complex::new(0.0f32, 0.0); SWEEP_BLOCK_SAMPLES];
             let mut next = Instant::now();
@@ -353,15 +385,12 @@ pub struct MarkerShape {
     pub tx_streams: u32,
     pub per_stream: StreamScope,
     pub coherence: Coherence,
-    /// Whether the instrument can switch a reference into its lanes, as a bank of receivers on
-    /// one clock carries one so that its phase can be solved again after every retune.
-    pub noise_source: bool,
 }
 
-pub const MARKER_SHAPES: [MarkerShape; 4] = [
+pub const MARKER_SHAPES: [MarkerShape; 3] = [
     MarkerShape {
-        key: "array4",
-        label: "Coherent Array ×4 (virtual)",
+        key: "quad",
+        label: "Receiver ×4 (virtual)",
         duplex: Duplex::RxOnly,
         rx_streams: 4,
         tx_streams: 0,
@@ -371,8 +400,7 @@ pub const MARKER_SHAPES: [MarkerShape; 4] = [
             antenna: false,
             agc: false,
         },
-        coherence: Coherence::PhaseCoherent,
-        noise_source: true,
+        coherence: Coherence::None,
     },
     MarkerShape {
         key: "transceiver",
@@ -387,7 +415,6 @@ pub const MARKER_SHAPES: [MarkerShape; 4] = [
             agc: false,
         },
         coherence: Coherence::None,
-        noise_source: false,
     },
     MarkerShape {
         key: "halfduplex",
@@ -402,22 +429,6 @@ pub const MARKER_SHAPES: [MarkerShape; 4] = [
             agc: false,
         },
         coherence: Coherence::None,
-        noise_source: false,
-    },
-    MarkerShape {
-        key: "bank5",
-        label: "Receiver bank ×5 (virtual)",
-        duplex: Duplex::RxOnly,
-        rx_streams: 5,
-        tx_streams: 0,
-        per_stream: StreamScope {
-            tuning: true,
-            gain: true,
-            antenna: false,
-            agc: false,
-        },
-        coherence: Coherence::TimeSync,
-        noise_source: false,
     },
 ];
 
@@ -428,14 +439,11 @@ fn marker_capabilities(shape: &MarkerShape) -> Capabilities {
         tx_streams: shape.tx_streams,
         per_stream: shape.per_stream,
         coherence: shape.coherence,
-        noise_source: shape.noise_source,
-        extra: if shape.coherence.has_phase() {
-            array::extra_settings()
-        } else {
-            Vec::new()
-        },
+        noise_source: sdrmm_wire::NoiseSource::None,
+        rx_inputs: Vec::new(),
+        extra: Vec::new(),
         hardware_sweep: false,
-        ..siggen_capabilities()
+        ..band_capabilities()
     }
 }
 
@@ -456,71 +464,35 @@ pub struct MarkerGen {
     capabilities: Capabilities,
     settings: DeviceSettings,
     shared: Arc<ArcSwap<MarkerParams>>,
-    reference_on: bool,
     worker: Worker,
 }
 
 struct MarkerParams {
     sample_rate: f64,
     marker_offsets: Vec<f64>,
-    array: array::ArrayParams,
-    lane_phase: Vec<f64>,
-    reference_on: bool,
 }
 
 impl MarkerGen {
     fn new(shape: &MarkerShape) -> Self {
         let capabilities = marker_capabilities(shape);
-        let mut settings = default_settings();
-        if capabilities.coherence.has_phase() {
-            settings.extra = array::default_extra();
-        }
+        let settings = default_settings();
         let shared = Arc::new(ArcSwap::from_pointee(marker_params(
             &settings,
             &capabilities,
-            false,
         )));
         Self {
             capabilities,
             settings,
             shared,
-            reference_on: false,
             worker: Worker::new(),
         }
     }
 }
 
-/// The instrument's own reference reaches the lanes past the antennas, so while it is switched
-/// in there is no wavefront to steer and what is left on each lane is the receiver's own phase,
-/// which is the whole of what a calibration is there to measure.
-fn marker_params(
-    settings: &DeviceSettings,
-    capabilities: &Capabilities,
-    reference_on: bool,
-) -> MarkerParams {
-    let params = array::read(settings);
-    let lanes = capabilities.rx_streams as usize;
-    let center_hz = settings.center_hz.unwrap_or(DEFAULT_CENTER_HZ);
-    let lane_phase = (0..lanes)
-        .map(|lane| {
-            let steer = if reference_on {
-                0.0
-            } else {
-                array::steering_phase(lane, lanes, &params, center_hz)
-            };
-            if params.scramble {
-                steer + array::scramble_phase(lane, center_hz)
-            } else {
-                steer
-            }
-        })
-        .collect();
+fn marker_params(settings: &DeviceSettings, capabilities: &Capabilities) -> MarkerParams {
     MarkerParams {
         sample_rate: settings.sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE_HZ),
         marker_offsets: marker_offsets(settings, capabilities),
-        array: params,
-        lane_phase,
-        reference_on,
     }
 }
 
@@ -535,40 +507,12 @@ impl SdrDevice for MarkerGen {
 
     fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
         validate_tune(&self.capabilities, settings)?;
-        if self.capabilities.coherence == Coherence::None && !settings.extra.is_empty() {
-            return Err(DeviceError::Unsupported(format!(
-                "extra `{}`",
-                settings.extra[0].name
-            )));
-        }
-        if self.capabilities.coherence != Coherence::None {
-            array::validate(settings)?;
+        if let Some(extra) = settings.extra.first() {
+            return Err(DeviceError::Unsupported(format!("extra `{}`", extra.name)));
         }
         self.settings.merge_from(settings);
-        let params = marker_params(&self.settings, &self.capabilities, self.reference_on);
-        if self.capabilities.coherence != Coherence::None {
-            self.capabilities.coherence = if params.array.scramble {
-                Coherence::TimeSync
-            } else {
-                Coherence::PhaseCoherent
-            };
-        }
-        self.shared.store(Arc::new(params));
-        Ok(())
-    }
-
-    fn set_noise_source(&mut self, on: bool) -> Result<(), DeviceError> {
-        if !self.capabilities.noise_source {
-            return Err(DeviceError::Unsupported(
-                "this instrument carries no calibration reference".to_string(),
-            ));
-        }
-        self.reference_on = on;
-        self.shared.store(Arc::new(marker_params(
-            &self.settings,
-            &self.capabilities,
-            on,
-        )));
+        self.shared
+            .store(Arc::new(marker_params(&self.settings, &self.capabilities)));
         Ok(())
     }
 
@@ -581,7 +525,6 @@ impl SdrDevice for MarkerGen {
             )));
         }
         let shared = self.shared.clone();
-        let coherent = self.capabilities.coherence != Coherence::None;
         self.worker.start("sdrmm-marker-rx", move |running| {
             let mut lanes: Vec<(Generator, RxSink)> = sinks
                 .into_iter()
@@ -589,18 +532,11 @@ impl SdrDevice for MarkerGen {
                 .map(|(stream, sink)| (Generator::stream_marker(stream as u32), sink))
                 .collect();
             let mut block: Vec<Complex<f32>> = Vec::new();
-            let mut field = array::ArrayField::new();
-            let mut common: Vec<Complex<f64>> = Vec::new();
             let mut next = Instant::now();
             while running.load(Ordering::Acquire) {
                 let params = shared.load_full();
                 let n = ((params.sample_rate * BLOCK_SECS).round() as usize).max(1);
                 block.resize(n, Complex::new(0.0, 0.0));
-                let wavefront =
-                    coherent && (params.array.carries_wavefront() || params.reference_on);
-                if wavefront {
-                    field.fill(&mut common, n, params.sample_rate);
-                }
                 for (stream, (generator, sink)) in lanes.iter_mut().enumerate() {
                     let offset = params
                         .marker_offsets
@@ -609,21 +545,7 @@ impl SdrDevice for MarkerGen {
                         .unwrap_or_else(|| stream_marker_offset_hz(stream as u32));
                     generator.set_marker_offset_hz(offset);
                     generator.fill(&mut block, params.sample_rate);
-                    if wavefront {
-                        let phase = params.lane_phase.get(stream).copied().unwrap_or(0.0);
-                        field.add_lane(
-                            stream,
-                            &mut block,
-                            &common,
-                            phase,
-                            &params.array,
-                            params.sample_rate,
-                        );
-                    }
                     sink.push(&block);
-                }
-                if wavefront {
-                    field.commit(&common);
                 }
 
                 next += Duration::from_secs_f64(n as f64 / params.sample_rate);
@@ -642,13 +564,80 @@ impl SdrDevice for MarkerGen {
     }
 }
 
+const RENORMALIZE_SAMPLES: u64 = 1_024;
+const DRIFT_STEP_SAMPLES: u64 = 64;
+const SERIES_LIMIT_RAD: f64 = 0.3;
+const LFO_HZ: f64 = 0.08;
+const DRIFT_SPAN: f64 = 0.35;
+const NOISE_AMP: f64 = 0.012;
+
+#[derive(Clone, Copy)]
+struct Phasor {
+    re: f64,
+    im: f64,
+}
+
+impl Phasor {
+    const ONE: Self = Self { re: 1.0, im: 0.0 };
+
+    fn at(angle: f64) -> Self {
+        let (im, re) = angle.sin_cos();
+        Self { re, im }
+    }
+
+    fn small(angle: f64) -> Self {
+        if angle.abs() > SERIES_LIMIT_RAD {
+            return Self::at(angle);
+        }
+        let x2 = angle * angle;
+        Self {
+            re: 1.0 - x2 / 2.0 * (1.0 - x2 / 12.0 * (1.0 - x2 / 30.0)),
+            im: angle * (1.0 - x2 / 6.0 * (1.0 - x2 / 20.0 * (1.0 - x2 / 42.0))),
+        }
+    }
+
+    fn turn(self, by: Self) -> Self {
+        Self {
+            re: self.re * by.re - self.im * by.im,
+            im: self.re * by.im + self.im * by.re,
+        }
+    }
+
+    fn normalized(self) -> Self {
+        let norm = self.re.hypot(self.im);
+        Self {
+            re: self.re / norm,
+            im: self.im / norm,
+        }
+    }
+}
+
+struct Tone {
+    turn: Phasor,
+    amp: f64,
+    phasor: Phasor,
+}
+
+impl Tone {
+    fn new(fraction: f64, amp: f64) -> Self {
+        Self {
+            turn: Phasor::at(std::f64::consts::TAU * fraction),
+            amp,
+            phasor: Phasor::ONE,
+        }
+    }
+}
+
 struct ModCarrier {
     offset_hz: f64,
     amp: f64,
     block_amp: f64,
     kind: ModKind,
-    carrier_phase: f64,
-    mod_phase: f64,
+    carrier: Phasor,
+    modulation: Phasor,
+    carrier_turn: Phasor,
+    modulation_turn: Phasor,
+    deviation_rad: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -664,8 +653,11 @@ impl ModCarrier {
             amp: MOD_CARRIER_AMP,
             block_amp: 0.0,
             kind,
-            carrier_phase: 0.0,
-            mod_phase: 0.0,
+            carrier: Phasor::ONE,
+            modulation: Phasor::ONE,
+            carrier_turn: Phasor::ONE,
+            modulation_turn: Phasor::ONE,
+            deviation_rad: 0.0,
         }
     }
 
@@ -675,24 +667,74 @@ impl ModCarrier {
             ModKind::Am { .. } => MOD_TONE_HZ,
         }
     }
+
+    fn prepare(&mut self, sample_rate: f64) {
+        let hz_to_rad = std::f64::consts::TAU / sample_rate;
+        self.block_amp =
+            if self.offset_hz.abs() + self.occupied_half_width_hz() <= sample_rate / 2.0 {
+                self.amp
+            } else {
+                0.0
+            };
+        self.carrier_turn = Phasor::at(self.offset_hz * hz_to_rad);
+        self.modulation_turn = Phasor::at(MOD_TONE_HZ * hz_to_rad);
+        self.deviation_rad = match self.kind {
+            ModKind::Fm { deviation_hz } => deviation_hz * hz_to_rad,
+            ModKind::Am { .. } => 0.0,
+        };
+    }
+
+    fn next(&mut self) -> Phasor {
+        let envelope = match self.kind {
+            ModKind::Fm { .. } => {
+                self.carrier = self
+                    .carrier
+                    .turn(self.carrier_turn)
+                    .turn(Phasor::small(self.deviation_rad * self.modulation.im));
+                1.0
+            }
+            ModKind::Am { depth } => {
+                self.carrier = self.carrier.turn(self.carrier_turn);
+                1.0 + depth * self.modulation.im
+            }
+        };
+        self.modulation = self.modulation.turn(self.modulation_turn);
+        let scale = self.block_amp * envelope;
+        Phasor {
+            re: scale * self.carrier.re,
+            im: scale * self.carrier.im,
+        }
+    }
+
+    fn renormalize(&mut self) {
+        self.carrier = self.carrier.normalized();
+        self.modulation = self.modulation.normalized();
+    }
 }
 
 struct Generator {
-    tones: Vec<(f64, f64, f64)>,
+    tones: Vec<Tone>,
     drift_amp: f64,
-    drift_phase: f64,
-    lfo_phase: f64,
+    drift: Phasor,
+    drift_turn: Phasor,
+    lfo: Phasor,
     carriers: Vec<ModCarrier>,
     noise: Xorshift,
+    sample: u64,
 }
 
 impl Generator {
     fn new() -> Self {
         Self {
-            tones: vec![(0.15, 0.30, 0.0), (-0.30, 0.16, 0.0), (0.05, 0.10, 0.0)],
+            tones: vec![
+                Tone::new(0.15, 0.30),
+                Tone::new(-0.30, 0.16),
+                Tone::new(0.05, 0.10),
+            ],
             drift_amp: 0.20,
-            drift_phase: 0.0,
-            lfo_phase: 0.0,
+            drift: Phasor::ONE,
+            drift_turn: Phasor::ONE,
+            lfo: Phasor::ONE,
             carriers: vec![
                 ModCarrier::new(
                     NFM_CARRIER_OFFSET_HZ,
@@ -714,6 +756,7 @@ impl Generator {
                 ),
             ],
             noise: Xorshift::new(NOISE_SEED),
+            sample: 0,
         }
     }
 
@@ -721,8 +764,9 @@ impl Generator {
         Self {
             tones: Vec::new(),
             drift_amp: 0.0,
-            drift_phase: 0.0,
-            lfo_phase: 0.0,
+            drift: Phasor::ONE,
+            drift_turn: Phasor::ONE,
+            lfo: Phasor::ONE,
             carriers: vec![ModCarrier::new(
                 stream_marker_offset_hz(stream),
                 ModKind::Fm {
@@ -730,6 +774,7 @@ impl Generator {
                 },
             )],
             noise: Xorshift::new(NOISE_SEED ^ (u64::from(stream) << 32)),
+            sample: 0,
         }
     }
 
@@ -740,70 +785,50 @@ impl Generator {
     }
 
     fn fill(&mut self, block: &mut [Complex<f32>], sample_rate: f64) {
-        use std::f64::consts::TAU;
-
-        let hz_to_w = TAU / sample_rate;
-        let lfo_w = 0.08 * hz_to_w;
-        let noise_amp = 0.012;
-        let mod_w = MOD_TONE_HZ * hz_to_w;
-
-        let nyquist = 0.5 * sample_rate;
+        let lfo_step =
+            Phasor::at(std::f64::consts::TAU * LFO_HZ * DRIFT_STEP_SAMPLES as f64 / sample_rate);
         for carrier in &mut self.carriers {
-            carrier.block_amp =
-                if carrier.offset_hz.abs() + carrier.occupied_half_width_hz() <= nyquist {
-                    carrier.amp
-                } else {
-                    0.0
-                };
+            carrier.prepare(sample_rate);
         }
-
         for slot in block.iter_mut() {
-            let mut re = 0.0f64;
-            let mut im = 0.0f64;
-            for (frac, amp, phase) in &mut self.tones {
-                let w = TAU * *frac;
-                *phase += w;
-                re += *amp * phase.cos();
-                im += *amp * phase.sin();
+            let mut sum = Phasor { re: 0.0, im: 0.0 };
+            for tone in &mut self.tones {
+                tone.phasor = tone.phasor.turn(tone.turn);
+                sum.re += tone.amp * tone.phasor.re;
+                sum.im += tone.amp * tone.phasor.im;
             }
-
             if self.drift_amp > 0.0 {
-                self.drift_phase += TAU * 0.35 * self.lfo_phase.sin();
-                self.lfo_phase += lfo_w;
-                re += self.drift_amp * self.drift_phase.cos();
-                im += self.drift_amp * self.drift_phase.sin();
+                if self.sample.is_multiple_of(DRIFT_STEP_SAMPLES) {
+                    self.drift_turn = Phasor::at(std::f64::consts::TAU * DRIFT_SPAN * self.lfo.im);
+                    self.lfo = self.lfo.turn(lfo_step);
+                }
+                self.drift = self.drift.turn(self.drift_turn);
+                sum.re += self.drift_amp * self.drift.re;
+                sum.im += self.drift_amp * self.drift.im;
             }
-
             for carrier in &mut self.carriers {
-                let (inst_hz, envelope) = match carrier.kind {
-                    ModKind::Fm { deviation_hz } => (
-                        carrier.offset_hz + deviation_hz * carrier.mod_phase.sin(),
-                        1.0,
-                    ),
-                    ModKind::Am { depth } => {
-                        (carrier.offset_hz, 1.0 + depth * carrier.mod_phase.sin())
-                    }
-                };
-                carrier.mod_phase += mod_w;
-                carrier.carrier_phase += inst_hz * hz_to_w;
-                re += carrier.block_amp * envelope * carrier.carrier_phase.cos();
-                im += carrier.block_amp * envelope * carrier.carrier_phase.sin();
+                let value = carrier.next();
+                sum.re += value.re;
+                sum.im += value.im;
             }
-
-            re += noise_amp * self.noise.next_bipolar();
-            im += noise_amp * self.noise.next_bipolar();
-
-            *slot = Complex::new(re as f32, im as f32);
+            sum.re += NOISE_AMP * self.noise.next_bipolar();
+            sum.im += NOISE_AMP * self.noise.next_bipolar();
+            *slot = Complex::new(sum.re as f32, sum.im as f32);
+            self.sample += 1;
+            if self.sample.is_multiple_of(RENORMALIZE_SAMPLES) {
+                self.renormalize();
+            }
         }
+    }
 
-        for (_, _, phase) in &mut self.tones {
-            *phase = phase.rem_euclid(TAU);
+    fn renormalize(&mut self) {
+        for tone in &mut self.tones {
+            tone.phasor = tone.phasor.normalized();
         }
-        self.drift_phase = self.drift_phase.rem_euclid(TAU);
-        self.lfo_phase = self.lfo_phase.rem_euclid(TAU);
+        self.drift = self.drift.normalized();
+        self.lfo = self.lfo.normalized();
         for carrier in &mut self.carriers {
-            carrier.carrier_phase = carrier.carrier_phase.rem_euclid(TAU);
-            carrier.mod_phase = carrier.mod_phase.rem_euclid(TAU);
+            carrier.renormalize();
         }
     }
 }
@@ -858,9 +883,7 @@ mod tests {
                 Complex::new(f64::from(s.re) * w, f64::from(s.im) * w)
             })
             .collect();
-        rustfft::FftPlanner::new()
-            .plan_fft_forward(n)
-            .process(&mut buf);
+        sdrmm_dsp::fft::Transform::forward(n).process(&mut buf);
         buf.iter().map(|c| c.norm_sqr()).collect()
     }
 
@@ -960,20 +983,29 @@ mod tests {
     }
 
     #[test]
-    fn probe_lists_siggen_and_marker_radios() {
+    fn probe_lists_band_marker_and_bench_radios() {
         let d = VirtualDriver::new();
-        let infos = d.probe();
-        assert_eq!(infos.len(), 1 + MARKER_SHAPES.len());
-        assert_eq!(infos[0].id(), "virtual:siggen");
-        assert_eq!(infos[1].id(), "virtual:array4");
-        assert_eq!(infos[2].id(), "virtual:transceiver");
-        assert_eq!(infos[3].id(), "virtual:halfduplex");
+        let ids: Vec<String> = d.probe().iter().map(DeviceInfo::id).collect();
+        assert_eq!(
+            ids,
+            [
+                "virtual:band",
+                "virtual:quad",
+                "virtual:transceiver",
+                "virtual:halfduplex",
+                "virtual:kraken5",
+                "virtual:array4",
+                "virtual:dongle1",
+                "virtual:dongle2",
+            ]
+        );
     }
 
     fn assert_synthetic_policy(d: &VirtualDriver, enabled: bool) {
         let infos = d.probe();
-        let expected = std::iter::once(VirtualDriver::siggen_info())
-            .chain(MARKER_SHAPES.iter().map(VirtualDriver::marker_info));
+        let expected = std::iter::once(VirtualDriver::band_info())
+            .chain(MARKER_SHAPES.iter().map(VirtualDriver::marker_info))
+            .chain(d.world().infos());
         for info in expected {
             assert_eq!(
                 infos.iter().any(|probed| probed.key == info.key),
@@ -1036,14 +1068,14 @@ mod tests {
             assert_eq!(caps.rx_streams, shape.rx_streams, "{}", shape.key);
             assert_eq!(caps.tx_streams, shape.tx_streams, "{}", shape.key);
             assert_eq!(caps.per_stream, shape.per_stream, "{}", shape.key);
-            assert_eq!(caps.sample_rates, siggen_capabilities().sample_rates);
-            assert_eq!(caps.freq_ranges, siggen_capabilities().freq_ranges);
+            assert_eq!(caps.sample_rates, band_capabilities().sample_rates);
+            assert_eq!(caps.freq_ranges, band_capabilities().freq_ranges);
         }
     }
 
     #[test]
     fn marker_rx_start_requires_one_sink_per_stream() {
-        let mut dev = open_virtual("array4");
+        let mut dev = open_virtual("quad");
         for wrong in [0usize, 1, 3, 5] {
             let sinks = (0..wrong).map(|_| RxSink::new(|_, _| {})).collect();
             match dev.rx_start(sinks) {
@@ -1062,8 +1094,8 @@ mod tests {
     }
 
     #[test]
-    fn siggen_refuses_more_than_one_sink() {
-        let mut dev = SigGen::new();
+    fn band_refuses_more_than_one_sink() {
+        let mut dev = BandGen::new();
         let sinks = vec![RxSink::new(|_, _| {}), RxSink::new(|_, _| {})];
         assert!(matches!(
             dev.rx_start(sinks),
@@ -1078,7 +1110,7 @@ mod tests {
         const STREAMS: usize = 4;
         const N: usize = 1 << 17;
 
-        let mut dev = open_virtual("array4");
+        let mut dev = open_virtual("quad");
         let mut receivers = Vec::new();
         let sinks = (0..STREAMS)
             .map(|_| {
@@ -1132,8 +1164,8 @@ mod tests {
     }
 
     #[test]
-    fn siggen_refuses_any_streams_entry() {
-        let mut dev = SigGen::new();
+    fn band_refuses_any_streams_entry() {
+        let mut dev = BandGen::new();
         let delta = DeviceSettings {
             streams: vec![StreamSettings {
                 stream: 0,
@@ -1145,14 +1177,14 @@ mod tests {
             Err(DeviceError::Unsupported(message)) => {
                 assert!(message.contains("streams[0]"), "{message}");
             }
-            other => panic!("a streams entry on the siggen must be Unsupported, got {other:?}"),
+            other => panic!("a streams entry on the band must be Unsupported, got {other:?}"),
         }
         assert!(dev.settings().streams.is_empty());
     }
 
     #[test]
-    fn array4_refuses_a_per_stream_center_but_takes_per_stream_gain() {
-        let mut dev = open_virtual("array4");
+    fn quad_refuses_a_per_stream_center_but_takes_per_stream_gain() {
+        let mut dev = open_virtual("quad");
         let retune = DeviceSettings {
             streams: vec![StreamSettings {
                 stream: 1,
@@ -1165,7 +1197,7 @@ mod tests {
             Err(DeviceError::Unsupported(message)) => {
                 assert!(message.contains("center_hz"), "{message}");
             }
-            other => panic!("a per-stream centre on the array must be Unsupported, got {other:?}"),
+            other => panic!("a per-stream centre on the quad must be Unsupported, got {other:?}"),
         }
         assert!(dev.settings().streams.is_empty());
 
@@ -1286,220 +1318,32 @@ mod tests {
         );
     }
 
-    fn capture_lanes(
-        dev: &mut Box<dyn SdrDevice>,
-        lanes: usize,
-        want: usize,
-    ) -> Vec<Vec<Complex<f32>>> {
-        let mut receivers = Vec::new();
-        let sinks = (0..lanes)
-            .map(|_| {
-                let (tx, rx) = mpsc::channel::<Vec<Complex<f32>>>();
-                receivers.push(rx);
-                RxSink::new(move |s, _| {
-                    let _ = tx.send(s.to_vec());
-                })
-            })
-            .collect();
-        dev.rx_start(sinks).unwrap();
-        let captured = receivers
-            .iter()
-            .map(|rx| {
-                let mut samples = Vec::new();
-                while samples.len() < want {
-                    samples.extend(rx.recv_timeout(Duration::from_secs(5)).unwrap());
-                }
-                samples.truncate(want);
-                samples
-            })
-            .collect();
-        dev.rx_stop();
-        captured
-    }
-
-    fn cross_spectrum(
-        reference: &[Complex<f32>],
-        lane: &[Complex<f32>],
-        rate: f64,
-    ) -> Vec<Complex<f64>> {
-        let n = reference.len();
-        let bin = |samples: &[Complex<f32>]| -> Vec<Complex<f64>> {
-            let mut buf: Vec<Complex<f64>> = samples
-                .iter()
-                .map(|s| Complex::new(f64::from(s.re), f64::from(s.im)))
-                .collect();
-            rustfft::FftPlanner::new()
-                .plan_fft_forward(n)
-                .process(&mut buf);
-            buf
-        };
-        let a = bin(reference);
-        let b = bin(lane);
-        let bin_hz = rate / n as f64;
-        let low = ((array::WAVEFRONT_OFFSET_HZ - 2.0 * array::WAVEFRONT_WINDOW_HZ) / bin_hz).floor()
-            as usize;
-        let high = ((array::WAVEFRONT_OFFSET_HZ + 2.0 * array::WAVEFRONT_WINDOW_HZ) / bin_hz).ceil()
-            as usize;
-        (low..=high).map(|k| b[k] * a[k].conj()).collect()
-    }
-
-    fn wavefront_phase(reference: &[Complex<f32>], lane: &[Complex<f32>], rate: f64) -> f64 {
-        cross_spectrum(reference, lane, rate)
-            .iter()
-            .sum::<Complex<f64>>()
-            .arg()
-    }
-
-    /// A pure phase offset leaves the cross spectrum flat; a delay tilts it, one bin at a time.
-    fn wavefront_delay_samples(
-        reference: &[Complex<f32>],
-        lane: &[Complex<f32>],
-        rate: f64,
-    ) -> f64 {
-        let cross = cross_spectrum(reference, lane, rate);
-        let floor = cross.iter().map(|c| c.norm()).fold(0.0, f64::max) * 0.1;
-        let tilt: Complex<f64> = cross
-            .windows(2)
-            .filter(|w| w[0].norm() > floor && w[1].norm() > floor)
-            .map(|w| w[1] * w[0].conj())
-            .sum();
-        -tilt.arg() * reference.len() as f64 / TAU
-    }
-
-    fn wrap(angle: f64) -> f64 {
-        let mut a = angle;
-        while a > std::f64::consts::PI {
-            a -= TAU;
-        }
-        while a < -std::f64::consts::PI {
-            a += TAU;
-        }
-        a
-    }
-
-    fn array_settings(extra: Vec<(&str, serde_json::Value)>) -> DeviceSettings {
-        DeviceSettings {
-            extra: extra
-                .into_iter()
-                .map(|(name, value)| sdrmm_wire::ExtraValue {
-                    name: name.to_string(),
-                    value,
-                })
-                .collect(),
-            ..DeviceSettings::default()
-        }
-    }
-
     #[test]
-    fn a_set_wavefront_bearing_lands_on_the_analytic_steering_vector() {
-        const N: usize = 1 << 15;
-        let bearing = 137.0;
-        let radius = 0.35;
-        let mut dev = open_virtual("array4");
-        dev.apply(&DeviceSettings {
-            sample_rate: Some(1_024_000.0),
-            center_hz: Some(300_000_000.0),
-            ..array_settings(vec![
-                (array::BEARING_SETTING, bearing.into()),
-                (array::RADIUS_SETTING, radius.into()),
-            ])
-        })
-        .unwrap();
-        let rate = dev.settings().sample_rate.unwrap();
-        let lanes = capture_lanes(&mut dev, 4, N);
-
-        let params = array::ArrayParams {
-            bearing_deg: bearing,
-            radius_m: radius,
-            ..array::ArrayParams::default()
-        };
-        for lane in 1..4 {
-            let measured = wavefront_phase(&lanes[0], &lanes[lane], rate);
-            let want = array::steering_phase(lane, 4, &params, 300_000_000.0)
-                - array::steering_phase(0, 4, &params, 300_000_000.0);
-            assert!(
-                wrap(measured - want).abs() < 0.05,
-                "lane {lane}: measured {measured:.4} rad, steering vector says {want:.4}"
+    fn a_marker_radio_takes_no_extra_settings() {
+        for key in ["quad", "transceiver"] {
+            let mut dev = open_virtual(key);
+            assert!(dev.capabilities().extra.is_empty(), "{key}");
+            assert_eq!(
+                dev.capabilities().noise_source,
+                sdrmm_wire::NoiseSource::None,
+                "{key}"
             );
-        }
-    }
-
-    #[test]
-    fn the_reference_reaches_the_lanes_past_the_antennas() {
-        const N: usize = 1 << 15;
-        const CENTRE: f64 = 300_000_000.0;
-        let mut dev = open_virtual("array4");
-        assert!(
-            dev.capabilities().noise_source,
-            "the bank carries a reference"
-        );
-        dev.apply(&DeviceSettings {
-            sample_rate: Some(1_024_000.0),
-            center_hz: Some(CENTRE),
-            ..array_settings(vec![
-                (array::BEARING_SETTING, 137.0.into()),
-                (array::RADIUS_SETTING, 0.35.into()),
-                (array::SCRAMBLE_SETTING, true.into()),
-            ])
-        })
-        .unwrap();
-        let rate = dev.settings().sample_rate.unwrap();
-        dev.set_noise_source(true).unwrap();
-        let lanes = capture_lanes(&mut dev, 4, N);
-
-        for lane in 1..4 {
-            let measured = wavefront_phase(&lanes[0], &lanes[lane], rate);
-            let want = array::scramble_phase(lane, CENTRE) - array::scramble_phase(0, CENTRE);
-            assert!(
-                wrap(measured - want).abs() < 0.05,
-                "lane {lane}: measured {measured:.4} rad, the receiver's own phase is {want:.4}"
-            );
-        }
-    }
-
-    #[test]
-    fn scrambling_moves_phase_on_every_retune_and_leaves_the_lanes_aligned() {
-        const N: usize = 1 << 14;
-        let mut dev = open_virtual("array4");
-        let base = DeviceSettings {
-            sample_rate: Some(1_024_000.0),
-            ..array_settings(vec![
-                (array::SCRAMBLE_SETTING, true.into()),
-                (array::RADIUS_SETTING, 0.35.into()),
-            ])
-        };
-        dev.apply(&base).unwrap();
-        assert_eq!(dev.capabilities().coherence, Coherence::TimeSync);
-        let rate = dev.settings().sample_rate.unwrap();
-
-        let mut phases = Vec::new();
-        for center in [200_000_000.0, 240_000_000.0] {
-            dev.apply(&DeviceSettings {
-                center_hz: Some(center),
+            let err = dev.apply(&DeviceSettings {
+                extra: vec![sdrmm_wire::ExtraValue {
+                    name: "bearing_deg".to_string(),
+                    value: 10.0.into(),
+                }],
                 ..DeviceSettings::default()
-            })
-            .unwrap();
-            let lanes = capture_lanes(&mut dev, 4, N);
-            phases.push(wavefront_phase(&lanes[0], &lanes[1], rate));
-            let delay = wavefront_delay_samples(&lanes[0], &lanes[1], rate);
+            });
             assert!(
-                delay.abs() < 5.0,
-                "a shared clock leaves no delay the wavefront could resolve, measured {delay}"
+                matches!(err, Err(DeviceError::Unsupported(_))),
+                "{key}: {err:?}"
+            );
+            assert!(
+                matches!(dev.set_noise_source(true), Err(DeviceError::Unsupported(_))),
+                "{key}"
             );
         }
-        assert!(
-            wrap(phases[0] - phases[1]).abs() > 0.1,
-            "phase survived a retune: {phases:?}"
-        );
-    }
-
-    #[test]
-    fn a_non_coherent_marker_radio_takes_no_array_settings() {
-        let mut dev = open_virtual("transceiver");
-        assert_eq!(dev.capabilities().coherence, Coherence::None);
-        assert!(dev.capabilities().extra.is_empty());
-        let err = dev.apply(&array_settings(vec![(array::BEARING_SETTING, 10.0.into())]));
-        assert!(matches!(err, Err(DeviceError::Unsupported(_))), "{err:?}");
     }
 
     #[test]
@@ -1542,11 +1386,11 @@ mod tests {
     }
 
     #[test]
-    fn render_matches_the_streamed_siggen() {
+    fn render_matches_the_streamed_band() {
         let n = 8192;
         let rendered = render(250_000.0, n);
 
-        let mut dev = SigGen::new();
+        let mut dev = BandGen::new();
         dev.apply(&DeviceSettings {
             sample_rate: Some(250_000.0),
             ..DeviceSettings::default()
@@ -1573,7 +1417,7 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_rate() {
-        let mut dev = SigGen::new();
+        let mut dev = BandGen::new();
         let bad = DeviceSettings {
             sample_rate: Some(999.0),
             ..DeviceSettings::default()
@@ -1583,7 +1427,7 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_center() {
-        let mut dev = SigGen::new();
+        let mut dev = BandGen::new();
         for bad in [7_000_000_000.0, -5_000_000_000.0, f64::NAN] {
             let err = dev.apply(&DeviceSettings {
                 center_hz: Some(bad),
@@ -1605,7 +1449,7 @@ mod tests {
 
     #[test]
     fn apply_stores_every_field_for_state_round_trips() {
-        let mut dev = SigGen::new();
+        let mut dev = BandGen::new();
         dev.apply(&DeviceSettings {
             ppm: Some(1.5),
             antenna: Some("RX".to_string()),
@@ -1628,7 +1472,7 @@ mod tests {
 
     #[test]
     fn streams_finite_samples_then_stops() {
-        let mut dev = SigGen::new();
+        let mut dev = BandGen::new();
         dev.apply(&DeviceSettings {
             sample_rate: Some(250_000.0),
             ..DeviceSettings::default()

@@ -1,31 +1,32 @@
-import type { DecoderEvent } from "../lib/types";
-import { candidateScore, dvMode, dvNetwork, dvParties, modulationLabel } from "./decoderViews";
+import { ismSurveySummary, wifiOccupancySummary } from "../lib/airtime";
+import { bleStation, bleSummary } from "../lib/ble";
+import { loraPosition, loraStation, loraSummary } from "../lib/lora";
+import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
+import type { DecoderEvent, HotCommand } from "../lib/types";
+import {
+  callMode,
+  candidateScore,
+  dvMode,
+  dvNetwork,
+  dvParties,
+  modulationLabel,
+} from "./decoderViews";
 import { formatHz } from "./format";
 import { SSTV_MODE_LABELS } from "./sstvModes";
+import {
+  AVHRR_LABELS,
+  aprsWeatherFact,
+  celsius,
+  climbRate,
+  LRPT_MODE_LABELS,
+  SONDE_LABELS,
+  WEFAX_IOC_VALUES,
+  WEFAX_LPM_VALUES,
+} from "./weatherFormat";
 
 export function hex5(address: number): string {
   return address.toString(16).toUpperCase().padStart(5, "0");
 }
-
-export function hex2(value: number): string {
-  return value.toString(16).toUpperCase().padStart(2, "0");
-}
-
-export type SensorReading = {
-  model: string;
-  id: number;
-  channel?: number | null;
-  temperature_c?: number | null;
-  humidity_pct?: number | null;
-  moisture_pct?: number | null;
-  pressure_kpa?: number | null;
-  wind_avg_kmh?: number | null;
-  wind_max_kmh?: number | null;
-  wind_dir_deg?: number | null;
-  rain_mm?: number | null;
-  power_w?: number | null;
-  energy_kwh?: number | null;
-};
 
 export type DectSecurityView = {
   security: {
@@ -53,65 +54,35 @@ export const DECT_CIPHER_LABELS: Record<string, string> = {
   stopped: "encryption stopped",
 };
 
-export function sensorFacts(reading: SensorReading): (string | null)[] {
-  return [
-    reading.model,
-    `id ${hex2(reading.id)}`,
-    reading.channel == null ? null : `ch ${reading.channel}`,
-    reading.pressure_kpa == null ? null : `${reading.pressure_kpa.toFixed(0)} kPa`,
-    reading.temperature_c == null ? null : `${reading.temperature_c.toFixed(1)} °C`,
-    reading.humidity_pct == null ? null : `${reading.humidity_pct.toFixed(0)} %`,
-    reading.moisture_pct == null ? null : `soil ${reading.moisture_pct.toFixed(0)} %`,
-    reading.wind_avg_kmh == null ? null : `wind ${reading.wind_avg_kmh.toFixed(1)} km/h`,
-    reading.wind_dir_deg == null ? null : `from ${reading.wind_dir_deg.toFixed(0)}°`,
-    reading.rain_mm == null ? null : `rain ${reading.rain_mm.toFixed(1)} mm`,
-    reading.power_w == null ? null : `${reading.power_w.toFixed(0)} W`,
-  ];
-}
-
 function position(lat: number | null | undefined, lon: number | null | undefined): string | null {
   return lat == null || lon == null ? null : `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
 }
 
 export function hasPosition(event: DecoderEvent): boolean {
+  if (event.kind === "lora") {
+    return loraPosition(event.data) !== null;
+  }
+  if (event.kind === "remote_id") {
+    return remoteIdPosition(event.data) !== null;
+  }
   const data = event.data as { lat?: number | null; lon?: number | null } | undefined;
   return data?.lat != null && data?.lon != null;
-}
-
-function broadcastSystem(system: string): string {
-  const labels: Record<string, string> = {
-    dab: "DAB",
-    dab_plus: "DAB+",
-    dvb_s: "DVB-S",
-    dvb_s2: "DVB-S2",
-    dvb_t: "DVB-T",
-    dvb_t2: "DVB-T2",
-    drm30: "DRM30",
-    drm_plus: "DRM+",
-  };
-  return labels[system] ?? system;
 }
 
 function join(parts: readonly (string | null)[]): string {
   return parts.filter((p) => p !== null).join(" · ");
 }
 
-type EventData<K extends DecoderEvent["kind"]> = Extract<DecoderEvent, { kind: K }>["data"];
-
-function subghzSummary(f: EventData<"subghz">): string {
-  return join([
-    ...(f.reading == null
-      ? [f.bits === 0 ? `raw, ${(f.timings_us ?? []).length} edges` : `${f.bits} bit ${f.data}`]
-      : sensorFacts(f.reading)),
-    f.address == null ? null : `addr ${hex5(f.address)}`,
-    f.button == null ? null : `btn ${f.button.toString(16).toUpperCase()}`,
-    f.repeats > 1 ? `\u00d7${f.repeats}` : null,
-  ]);
+function signedWhole(value: number): string {
+  const whole = Math.round(value);
+  return `${whole >= 0 ? "+" : ""}${whole}`;
 }
+
+type EventData<K extends DecoderEvent["kind"]> = Extract<DecoderEvent, { kind: K }>["data"];
 
 function callSummary(c: EventData<"call">): string {
   return join([
-    c.mode.toUpperCase(),
+    callMode(c.mode),
     c.destination == null
       ? null
       : c.group_call === false
@@ -122,6 +93,32 @@ function callSummary(c: EventData<"call">): string {
     `${(c.duration_ms / 1000).toFixed(1)} s`,
     c.emergency ? "emergency" : null,
     c.encrypted ? "encrypted" : null,
+  ]);
+}
+
+export const HOT_COMMAND_LABELS: Record<HotCommand, string> = {
+  status_request: "status request",
+  emergency: "EMERGENCY",
+  other: "command",
+};
+
+export function hotCommand(request: { command: HotCommand; code: number }): string {
+  const label = HOT_COMMAND_LABELS[request.command];
+  return request.command === "other"
+    ? `${label} 0x${request.code.toString(16).padStart(2, "0")}`
+    : label;
+}
+
+function eotSummary(m: EventData<"eot">): string {
+  const r = m.report;
+  if (r.unit === "head") {
+    return join([`HOT ${m.unit_address}`, hotCommand(r)]);
+  }
+  return join([
+    `EOT ${m.unit_address}`,
+    `${r.pressure_psig} psig`,
+    r.motion ? "moving" : "stopped",
+    r.arming === "normal" ? null : r.arming,
   ]);
 }
 
@@ -155,18 +152,6 @@ function identSummary(r: EventData<"ident">): string {
   ]);
 }
 
-function broadcastSummary(status: EventData<"broadcast">): string {
-  return join([
-    broadcastSystem(status.system),
-    status.locked ? "locked" : "searching",
-    status.locked ? `${status.snr_db.toFixed(1)} dB SNR` : null,
-    status.locked
-      ? `${status.frequency_error_hz >= 0 ? "+" : ""}${status.frequency_error_hz.toFixed(0)} Hz`
-      : null,
-    status.label ?? null,
-  ]);
-}
-
 export function eventSummary(event: DecoderEvent): string {
   switch (event.kind) {
     case "rds": {
@@ -190,6 +175,8 @@ export function eventSummary(event: DecoderEvent): string {
       const p = event.data;
       return p.text === "" ? `${p.local_address} · ${p.payload}` : `${p.local_address}: ${p.text}`;
     }
+    case "eot":
+      return eotSummary(event.data);
     case "adsb": {
       const a = event.data;
       return join([
@@ -205,7 +192,11 @@ export function eventSummary(event: DecoderEvent): string {
     }
     case "aprs": {
       const p = event.data;
-      return p.mic_e_message == null ? p.tnc2 : join([p.tnc2, p.mic_e_message]);
+      if (p.mic_e_message != null) {
+        return join([p.tnc2, p.mic_e_message]);
+      }
+      const weather = p.weather == null ? "" : aprsWeatherFact(p.weather);
+      return weather === "" ? p.tnc2 : join([p.source, weather]);
     }
     case "rtty":
     case "morse":
@@ -252,8 +243,6 @@ export function eventSummary(event: DecoderEvent): string {
       const text = a.text.replaceAll("\n", " ").trim();
       return join([a.registration, a.flight?.trim() ?? null, `[${a.label}]`, text || null]);
     }
-    case "subghz":
-      return subghzSummary(event.data);
     case "scrambler": {
       const s = event.data;
       return s.inversion_hz == null
@@ -282,8 +271,6 @@ export function eventSummary(event: DecoderEvent): string {
       return identSummary(event.data);
     case "broadcast_data":
       return `${event.data.name} · ${event.data.bytes.length} bytes`;
-    case "broadcast":
-      return broadcastSummary(event.data);
     case "radio_clock": {
       const r = event.data;
       return join([r.standard.toUpperCase(), r.datetime, r.leap_warning ? "leap warning" : null]);
@@ -333,12 +320,12 @@ export function eventSummary(event: DecoderEvent): string {
       ]);
     }
     case "radar": {
-      const hit = event.data;
+      const track = event.data;
       return join([
-        `range bin ${hit.range_bin}`,
-        `${hit.range_km.toFixed(1)} km`,
-        `${hit.doppler_hz >= 0 ? "+" : ""}${hit.doppler_hz.toFixed(1)} Hz`,
-        `${hit.snr_db.toFixed(1)} dB`,
+        `T${track.track_id}`,
+        track.change,
+        `${track.range_km.toFixed(1)} km`,
+        `${signedWhole(track.range_rate_mps)} m/s`,
       ]);
     }
     case "ils": {
@@ -370,7 +357,62 @@ export function eventSummary(event: DecoderEvent): string {
         dectSecurityFact(frame),
       ]);
     }
+    case "apt":
+      return join([
+        "APT",
+        event.data.channel_a == null || event.data.channel_b == null
+          ? null
+          : `ch ${AVHRR_LABELS[event.data.channel_a]}/${AVHRR_LABELS[event.data.channel_b]}`,
+        pictureLines(event.data),
+      ]);
+    case "lrpt":
+      return lrptSummary(event.data);
+    case "wefax":
+      return join([
+        `IOC ${WEFAX_IOC_VALUES[event.data.ioc]}`,
+        `${WEFAX_LPM_VALUES[event.data.lpm]} LPM`,
+        pictureLines(event.data),
+      ]);
+    case "radiosonde":
+      return radiosondeSummary(event.data);
+    case "lora":
+      return loraSummary(event.data);
+    case "remote_id":
+      return remoteIdSummary(event.data);
+    case "ble":
+      return bleSummary(event.data);
+    case "wifi_occupancy":
+      return wifiOccupancySummary(event.data);
+    case "ism_survey":
+      return ismSurveySummary(event.data);
   }
+}
+
+function pictureLines(p: { complete: boolean; lines: number; duration_ms: number }): string {
+  return p.complete
+    ? `${p.lines} lines in ${Math.floor(p.duration_ms / 1000)} s`
+    : `${p.lines} lines, cut short`;
+}
+
+function lrptSummary(p: EventData<"lrpt">): string {
+  return join([
+    LRPT_MODE_LABELS[p.mode],
+    p.apids.length === 0 ? null : `APID ${p.apids.join("/")}`,
+    `${p.lines} lines`,
+    p.frames_failed > 0 || p.packets_lost > 0
+      ? `${p.frames_failed} frames lost · ${p.packets_lost} packets lost`
+      : null,
+  ]);
+}
+
+function radiosondeSummary(f: EventData<"radiosonde">): string {
+  return join([
+    `${SONDE_LABELS[f.sonde]} ${f.serial}`,
+    f.altitude_m == null ? null : `${f.altitude_m.toFixed(0)} m`,
+    climbRate(f.climb_ms) ?? null,
+    celsius(f.temperature_c) ?? null,
+    f.lat == null || f.lon == null ? null : `${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`,
+  ]);
 }
 
 export function eventStation(event: DecoderEvent): string | null {
@@ -387,22 +429,14 @@ export function eventStation(event: DecoderEvent): string | null {
       return String(event.data.address);
     case "ermes":
       return String(event.data.local_address);
+    case "eot":
+      return String(event.data.unit_address);
     case "rds":
       return event.data.pi ?? null;
     case "navtex":
       return event.data.station ?? null;
     case "acars":
       return event.data.registration;
-    case "subghz": {
-      const f = event.data;
-      if (f.reading != null) {
-        return `${f.reading.model} ${hex2(f.reading.id)}`;
-      }
-      if (f.address != null) {
-        return hex5(f.address);
-      }
-      return f.data === "" ? null : f.data;
-    }
     case "dv":
       return (
         event.data.source_call ?? (event.data.source == null ? null : String(event.data.source))
@@ -423,8 +457,9 @@ export function eventStation(event: DecoderEvent): string | null {
     case "df":
       return event.data.station_id ?? null;
     case "df_fix":
-    case "radar":
       return null;
+    case "radar":
+      return event.data.icao ?? null;
     case "dsc":
     case "inmarsat_stdc":
     case "inmarsat_aero":
@@ -434,6 +469,20 @@ export function eventStation(event: DecoderEvent): string | null {
       return event.data.station ?? null;
     case "dect":
       return event.data.identity?.rfpi ?? null;
+    case "radiosonde":
+      return event.data.serial;
+    case "lora":
+      return loraStation(event.data);
+    case "remote_id":
+      return remoteIdStation(event.data);
+    case "ble":
+      return bleStation(event.data);
+    case "apt":
+      return "APT";
+    case "lrpt":
+      return "LRPT";
+    case "wefax":
+      return `IOC ${WEFAX_IOC_VALUES[event.data.ioc]}`;
     case "transmission":
     case "rtty":
     case "morse":
@@ -444,15 +493,12 @@ export function eventStation(event: DecoderEvent): string | null {
     case "scrambler":
     case "ident":
     case "ils":
+    case "wifi_occupancy":
+    case "ism_survey":
       return null;
     case "sstv":
       return SSTV_MODE_LABELS[event.data.mode];
     case "broadcast_data":
       return null;
-    case "broadcast": {
-      const status = event.data;
-      const id = status.service_id ?? status.ensemble_id;
-      return id == null ? null : id.toString(16).toUpperCase();
-    }
   }
 }

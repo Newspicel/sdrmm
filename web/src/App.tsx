@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppHotkeys } from "./appHotkeys";
-import { applyToasts } from "./canvas/applyToasts";
+import { applyToasts, notConnectedToast } from "./canvas/applyToasts";
 import {
   bindCarriers,
   bindDevices,
@@ -16,34 +16,37 @@ import { WorkspaceProvider } from "./canvas/context";
 import { FullFace } from "./canvas/FullFace";
 import { pruneRack } from "./canvas/graph";
 import { Rack } from "./canvas/Rack";
+import { useSwitchStore } from "./canvas/switches";
+import { useScopedState } from "./canvas/useScopedState";
 import { useWorkspace } from "./canvas/useWorkspace";
 import { type View, WorkspaceBar } from "./canvas/WorkspaceBar";
+import { WorkspaceNotices } from "./canvas/WorkspaceNotices";
 import { WorkspaceStart } from "./canvas/WorkspaceStart";
 import { AboutPanel } from "./components/AboutPanel";
 import { AutoOffDialog } from "./components/AutoOffDialog";
+import { HelpPanel } from "./components/HelpPanel";
 import { ReportProblem } from "./components/ReportProblem";
+import { SerialDialog } from "./components/SerialDialog";
 import { ServerDown } from "./components/ServerDown";
-import { Shortcuts } from "./components/Shortcuts";
 import { Toasts } from "./components/Toasts";
 import { TokenGate } from "./components/TokenGate";
 import { channelTypesQuery, patchCatalogQuery, stateQuery } from "./lib/api";
 import { audioEngine } from "./lib/audio/useChannelAudio";
-import { watchDevicePosition } from "./lib/position";
-import { pushToast } from "./lib/toasts";
+import { useRefusalStore } from "./lib/refusals";
+import { closeToast, pushToast } from "./lib/toasts";
 import type { PatchApplyReport, PatchGraph, WorkspaceSettings } from "./lib/types";
 import { useChannelPatch } from "./lib/useChannelPatch";
 import { useDevicePatch } from "./lib/useDevicePatch";
+import { useNodeStateSync } from "./lib/useNodeStateSync";
 import { useRadioTune } from "./lib/useRadioTune";
 import { useSdrSocket } from "./lib/useSdrSocket";
 import { ToolsDialog } from "./tools/ToolsDialog";
 
 export function App() {
   const queryClient = useQueryClient();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [view, setView] = useState<View>("patch");
   const [stepHz, setStepHz] = useState(100_000);
-  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [openTool, setOpenTool] = useState<string | null>(null);
@@ -52,6 +55,10 @@ export function App() {
   const channelTypes = useQuery(channelTypesQuery());
   const catalog = useQuery(patchCatalogQuery());
   const workspace = useWorkspace();
+  const activeId = workspace.active?.id ?? null;
+  const [selected, setSelected] = useScopedState<string | null>(activeId, null);
+  const [expanded, setExpanded] = useScopedState<string | null>(activeId, null);
+  const applied = useSwitchStore((held) => held.report);
   const { cachedSettings } = useDevicePatch();
   const { tuneRadio } = useRadioTune();
   const { applyEdit } = useChannelPatch();
@@ -65,34 +72,19 @@ export function App() {
     () => snapshot?.graph ?? { nodes: [], edges: [] },
     [snapshot?.graph],
   );
-  const deviceGpsNodeKey = JSON.stringify(
-    graph.nodes
-      .filter((node) => node.kind === "gps" && node.data.source?.type === "device")
-      .map((node) => node.id)
-      .toSorted(),
-  );
-  const deviceGpsNodeIds = useMemo(
-    () => JSON.parse(deviceGpsNodeKey) as string[],
-    [deviceGpsNodeKey],
-  );
-  useEffect(() => {
-    if (socket === null) {
-      return;
-    }
-    return watchDevicePosition(socket, deviceGpsNodeIds);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new revision can bind the same node to another radio
-  }, [socket, deviceGpsNodeIds, workspace.active?.revision]);
   const announced = useRef<PatchApplyReport | null>(null);
   useEffect(() => {
-    const report = workspace.applied;
-    if (report === null || report === announced.current) {
+    if (applied === null || applied === announced.current) {
       return;
     }
-    announced.current = report;
-    for (const message of applyToasts(report, graph.nodes)) {
+    announced.current = applied;
+    for (const message of applyToasts(applied, graph.nodes)) {
       pushToast(message);
     }
-  }, [workspace.applied, graph.nodes]);
+    useRefusalStore.getState().fromReport(applied);
+  }, [applied, graph.nodes]);
+
+  useNodeStateSync(activeId, graph.nodes, state.data?.arrays);
 
   const rack = useMemo(() => pruneRack(snapshot?.rack ?? {}, graph), [snapshot?.rack, graph]);
   const settings = useMemo(() => snapshot?.settings ?? {}, [snapshot?.settings]);
@@ -107,6 +99,12 @@ export function App() {
   );
 
   const devices = useMemo(() => bindDevices(graph, deviceSets), [graph, deviceSets]);
+  useEffect(() => {
+    useRefusalStore.getState().connected(devices.keys());
+    for (const node of devices.keys()) {
+      closeToast(notConnectedToast(graph.nodes, node));
+    }
+  }, [devices, graph.nodes]);
   const carriers = useMemo(() => bindCarriers(graph, devices, trunks), [graph, devices, trunks]);
   const channels = useMemo(() => channelsOf(carriers), [carriers]);
   const owners = useMemo(() => ownersOf(carriers), [carriers]);
@@ -133,7 +131,7 @@ export function App() {
 
   const selectedNode = graph.nodes.find((node) => node.id === selected) ?? null;
   const selectedChannel = selected === null ? null : (channels.get(selected) ?? null);
-  const selectedDevice = selected === null ? null : deviceNodeOf(graph, selected, owners);
+  const selectedDevice = selected === null ? null : deviceNodeOf(graph, selected, owners, devices);
   const selectedSet = selectedDevice === null ? null : (devices.get(selectedDevice) ?? null);
 
   const channelNodes = graph.nodes.filter((node) => node.kind === "channel");
@@ -156,7 +154,7 @@ export function App() {
     applyEdit,
     setView,
     setExpanded,
-    setShowShortcuts,
+    setShowHelp,
   });
 
   return (
@@ -191,7 +189,7 @@ export function App() {
                 view={view}
                 onView={setView}
                 workspaces={workspace.workspaces}
-                activeWorkspace={workspace.active?.id ?? null}
+                activeWorkspace={activeId}
                 onActivate={workspace.activate}
                 onCreate={workspace.create}
                 onRename={workspace.rename}
@@ -202,11 +200,18 @@ export function App() {
                 onRedo={workspace.redo}
                 canUndo={workspace.canUndo}
                 canRedo={workspace.canRedo}
-                onShowShortcuts={() => setShowShortcuts(true)}
+                onShowHelp={() => setShowHelp(true)}
                 onOpenTool={setOpenTool}
               />
+              {workspace.active !== null && (
+                <WorkspaceNotices
+                  workspace={workspace.active.id}
+                  notices={workspace.active.notices ?? []}
+                  catalog={context.catalog}
+                />
+              )}
               <div className="relative flex min-h-0 flex-1 flex-col">
-                {view === "patch" ? <Canvas /> : <Rack />}
+                {view === "patch" ? <Canvas key={activeId} /> : <Rack />}
                 <FullFace />
               </div>
             </ReactFlowProvider>
@@ -225,9 +230,9 @@ export function App() {
           <WorkspaceStart onCreate={workspace.create} />
         )}
 
-        <Shortcuts
-          open={showShortcuts}
-          onOpenChange={setShowShortcuts}
+        <HelpPanel
+          open={showHelp}
+          onOpenChange={setShowHelp}
           onShowAbout={() => setShowAbout(true)}
           onShowReport={() => setShowReport(true)}
         />
@@ -235,6 +240,7 @@ export function App() {
         <ReportProblem open={showReport} onOpenChange={setShowReport} graph={graph} />
         <ToolsDialog tool={openTool} onClose={() => setOpenTool(null)} />
         <AutoOffDialog />
+        <SerialDialog />
         <Toasts onReport={() => setShowReport(true)} />
       </div>
     </TokenGate>

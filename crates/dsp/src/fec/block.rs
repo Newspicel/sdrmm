@@ -36,6 +36,11 @@ impl ParityCode {
         ],
     };
 
+    pub const HAMMING_12_8: Self = Self {
+        k: 8,
+        parity: &[0b0011_0101, 0b0110_1011, 0b1101_0111, 0b1001_1010],
+    };
+
     pub const HAMMING_10_6: Self = Self {
         k: 6,
         parity: &[0b10_0111, 0b10_1011, 0b01_1101, 0b01_1110],
@@ -225,6 +230,7 @@ mod tests {
         assert_eq!(min_distance_parity(&ParityCode::HAMMING_15_11), 3);
         assert_eq!(min_distance_parity(&ParityCode::HAMMING_16_11), 4);
         assert_eq!(min_distance_parity(&ParityCode::HAMMING_10_6), 3);
+        assert_eq!(min_distance_parity(&ParityCode::HAMMING_12_8), 3);
         assert_eq!(min_distance_parity(&ParityCode::HAMMING_17_12), 3);
     }
 
@@ -236,6 +242,7 @@ mod tests {
             ParityCode::HAMMING_15_11,
             ParityCode::HAMMING_16_11,
             ParityCode::HAMMING_10_6,
+            ParityCode::HAMMING_12_8,
             ParityCode::HAMMING_17_12,
         ] {
             let mut clean = vec![false; code.n()];
@@ -249,6 +256,22 @@ mod tests {
                 assert_eq!(code.decode(&mut word), Some(1), "bit {flip}");
                 assert_eq!(word, clean, "bit {flip} was repaired to a different word");
             }
+        }
+    }
+
+    #[test]
+    fn hamming_12_8_matches_the_dpmr_generator_matrix() {
+        let rows = [
+            0b1110, 0b0111, 0b1010, 0b0101, 0b1011, 0b1100, 0b0110, 0b0011,
+        ];
+        for (data_bit, row) in rows.into_iter().enumerate() {
+            let mut word = [false; 12];
+            word[data_bit] = true;
+            ParityCode::HAMMING_12_8.encode(&mut word);
+            let parity = word[8..]
+                .iter()
+                .fold(0, |acc, &bit| acc << 1 | u8::from(bit));
+            assert_eq!(parity, row, "data bit {data_bit}");
         }
     }
 

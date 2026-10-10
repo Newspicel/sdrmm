@@ -3,9 +3,12 @@ import createClient from "openapi-fetch";
 import { migrateSnapshot } from "../canvas/graph";
 import type { paths } from "../generated/schema";
 import { getToken, rejectToken, withToken } from "./auth";
+import { authorKey } from "./presence";
 import type {
   AboutResponse,
   ApiError,
+  ArrayRecordingStarted,
+  ArrayTuneRequest,
   AudioRecordingsResponse,
   AuthInfo,
   BandPlan,
@@ -29,7 +32,10 @@ import type {
   CpsWriteRequest,
   CreateBookmarkRequest,
   DecoderLogFilter,
+  DecoderLogGroupsResponse,
   DecoderLogResponse,
+  DenoiseModel,
+  DenoiseModelsResponse,
   DeviceSettings,
   DevicesResponse,
   DfFusionState,
@@ -41,13 +47,19 @@ import type {
   HuntStatus,
   IonosondeReport,
   LicenseTextResponse,
+  LogGroupKey,
   NetworkExportAction,
   NetworkExportSettings,
   NetworkExportStatus,
   NmeaDevicesResponse,
   OccupancyReport,
+  PairingOffer,
   PatchApplyReport,
   PatchCatalog,
+  Phone,
+  PhoneAccess,
+  PhoneAccessStatus,
+  PhonesResponse,
   PlaybackAction,
   PlaybackStatus,
   PresetInfo,
@@ -57,12 +69,15 @@ import type {
   RecordingFormat,
   RecordingInfo,
   RecordingsResponse,
-  Route,
-  RouteRequest,
+  RemoteStatus,
   SatelliteCatalogResponse,
+  SavedRadio,
+  SaveRadioRequest,
   ScannerStatus,
   ScanSettings,
   StateSnapshot,
+  SurveyAction,
+  SurveyGrid,
   TemplatesResponse,
   TimeMachineAction,
   TimeMachineNode,
@@ -74,12 +89,13 @@ import type {
   VoiceCallsResponse,
   WorkspaceDetail,
   WorkspaceExport,
-  WorkspaceInfo,
   WorkspaceSnapshot,
   WorkspacesResponse,
 } from "./types";
 
 export const client = createClient<paths>({ baseUrl: "/" });
+
+export const AUTHOR_HEADER = "x-sdrmm-author";
 
 client.use({
   onRequest({ request }) {
@@ -87,6 +103,7 @@ client.use({
     if (token !== null) {
       request.headers.set("Authorization", `Bearer ${token}`);
     }
+    request.headers.set(AUTHOR_HEADER, authorKey());
     return request;
   },
   onResponse({ response }) {
@@ -103,6 +120,7 @@ export const NMEA_DEVICES_KEY = ["get", "/api/position/nmea-devices"] as const;
 export const CHANNEL_TYPES_KEY = ["get", "/api/channeltypes"] as const;
 export const PRESETS_KEY = ["get", "/api/presets"] as const;
 export const BOOKMARKS_KEY = ["get", "/api/bookmarks"] as const;
+export const SAVED_RADIOS_KEY = ["get", "/api/saved-radios"] as const;
 export const RECORDINGS_KEY = ["get", "/api/recordings"] as const;
 export const AUDIO_RECORDINGS_KEY = ["get", "/api/audiorecordings"] as const;
 export const CALLS_KEY = ["get", "/api/calls"] as const;
@@ -115,6 +133,7 @@ export const DIAGNOSTICS_KEY = ["get", "/api/diagnostics"] as const;
 export const OCCUPANCY_KEY = ["get", "/api/occupancy"] as const;
 export const IONOSONDE_KEY = ["get", "/api/ionosonde"] as const;
 export const ABOUT_KEY = ["get", "/api/about"] as const;
+export const REMOTE_KEY = ["get", "/api/remote"] as const;
 export const WORKSPACES_KEY = ["get", "/api/workspaces"] as const;
 export const PATCH_CATALOG_KEY = ["get", "/api/patch/catalog"] as const;
 export const BAND_REGIONS_KEY = ["get", "/api/bandplan/regions"] as const;
@@ -124,6 +143,12 @@ export const CPS_PORTS_KEY = ["get", "/api/cps/ports"] as const;
 export const CPS_LIBRARY_KEY = ["get", "/api/cps/library"] as const;
 export const CPS_JOBS_KEY = ["get", "/api/cps/jobs"] as const;
 export const TOOL_RUN_KEY = ["post", "/api/tools/run"] as const;
+export const PHONES_KEY = ["get", "/api/phones"] as const;
+export const FUSION_KEY = ["get", "/api/fusion/{node}"] as const;
+export const SURVEY_KEY = ["get", "/api/survey/{node}"] as const;
+export const DENOISE_MODELS_KEY = ["get", "/api/denoise-models"] as const;
+
+const DENOISE_POLL_MS = 500;
 
 export function stateQuery() {
   return queryOptions({
@@ -216,6 +241,11 @@ export function nmeaDevicesQuery() {
   });
 }
 
+export async function writeSerial(deviceId: string, serial: string): Promise<string> {
+  const body = serial === "" ? { device_id: deviceId } : { device_id: deviceId, serial };
+  return unwrap(await client.POST("/api/devices/serial", { body })).serial;
+}
+
 export async function createDeviceSet(deviceId: string): Promise<number> {
   return unwrap(
     await client.POST("/api/devicesets", {
@@ -262,11 +292,12 @@ export async function patchChannel(
   ds: number,
   ch: number,
   settings: ChannelSettings,
+  base?: ChannelSettings,
 ): Promise<void> {
   unwrap(
     await client.PATCH("/api/devicesets/{ds}/channels/{ch}", {
       params: { path: { ds, ch } },
-      body: settings,
+      body: base === undefined ? { settings } : { settings, base },
     }),
   );
 }
@@ -320,6 +351,62 @@ export async function createBookmark(bookmark: CreateBookmarkRequest): Promise<n
 export async function deleteBookmark(id: number): Promise<void> {
   unwrap(
     await client.DELETE("/api/bookmarks/{id}", {
+      params: { path: { id } },
+    }),
+  );
+}
+
+export function remoteQuery(pollMs: (status: RemoteStatus | undefined) => number | false) {
+  return queryOptions({
+    queryKey: REMOTE_KEY,
+    queryFn: async (): Promise<RemoteStatus> => unwrap(await client.GET("/api/remote")),
+    refetchInterval: (query) => pollMs(query.state.data),
+  });
+}
+
+export async function pairRemote(): Promise<RemoteStatus> {
+  return unwrap(await client.POST("/api/remote/pair", {}));
+}
+
+export async function unpairRemote(): Promise<void> {
+  unwrap(await client.DELETE("/api/remote", {}));
+}
+
+export function denoiseModelsQuery(enabled: boolean) {
+  return queryOptions({
+    queryKey: DENOISE_MODELS_KEY,
+    queryFn: async (): Promise<DenoiseModelsResponse> =>
+      unwrap(await client.GET("/api/denoise-models")),
+    enabled,
+    refetchInterval: (query) =>
+      query.state.data?.models.some((model) => model.state === "downloading")
+        ? DENOISE_POLL_MS
+        : false,
+  });
+}
+
+export async function downloadDenoiseModel(model: DenoiseModel): Promise<void> {
+  unwrap(await client.POST("/api/denoise-models/{model}", { params: { path: { model } } }));
+}
+
+export async function deleteDenoiseModel(model: DenoiseModel): Promise<void> {
+  unwrap(await client.DELETE("/api/denoise-models/{model}", { params: { path: { model } } }));
+}
+
+export function savedRadiosQuery() {
+  return queryOptions({
+    queryKey: SAVED_RADIOS_KEY,
+    queryFn: async (): Promise<SavedRadio[]> => unwrap(await client.GET("/api/saved-radios")),
+  });
+}
+
+export async function saveRadio(radio: SaveRadioRequest): Promise<number> {
+  return unwrap(await client.POST("/api/saved-radios", { body: radio })).id;
+}
+
+export async function deleteSavedRadio(id: number): Promise<void> {
+  unwrap(
+    await client.DELETE("/api/saved-radios/{id}", {
       params: { path: { id } },
     }),
   );
@@ -553,13 +640,14 @@ export async function createWorkspace(name: string, snapshot?: WorkspaceSnapshot
 export async function updateWorkspace(
   id: number,
   update: { revision: number; name?: string; snapshot?: WorkspaceSnapshot },
-): Promise<WorkspaceInfo> {
-  return unwrap(
+): Promise<WorkspaceDetail> {
+  const detail = unwrap(
     await client.PUT("/api/workspaces/{id}", {
       params: { path: { id } },
       body: update,
     }),
   );
+  return { ...detail, snapshot: migrateSnapshot(detail.snapshot) };
 }
 
 export function workspaceExportUrl(id: number): string {
@@ -577,12 +665,20 @@ export async function cloneWorkspace(id: number): Promise<number> {
   return importWorkspace(document);
 }
 
+export async function dismissNotice(workspace: number, notice: number): Promise<void> {
+  unwrap(
+    await client.DELETE("/api/workspaces/{id}/notices/{notice}", {
+      params: { path: { id: workspace, notice } },
+    }),
+  );
+}
+
 export async function deleteWorkspace(id: number): Promise<void> {
   unwrap(await client.DELETE("/api/workspaces/{id}", { params: { path: { id } } }));
 }
 
-export async function activateWorkspace(id: number): Promise<void> {
-  unwrap(await client.POST("/api/workspaces/{id}/activate", { params: { path: { id } } }));
+export async function activateWorkspace(id: number): Promise<PatchApplyReport> {
+  return unwrap(await client.POST("/api/workspaces/{id}/activate", { params: { path: { id } } }));
 }
 
 export async function applyWorkspace(id: number): Promise<PatchApplyReport> {
@@ -648,32 +744,96 @@ export function toolRunQuery(request: ToolRequest | null) {
   });
 }
 
-export async function calibrateCoherent(node: string): Promise<void> {
-  unwrap(
-    await client.POST("/api/coherent/{node}/calibrate", {
-      params: { path: { node } },
-    }),
-  );
-}
-
-export async function fusionState(node: string): Promise<DfFusionState> {
-  return unwrap(
-    await client.GET("/api/coherent/{node}/fusion", {
-      params: { path: { node } },
-    }),
-  );
+export function fusionQuery(node: string) {
+  return queryOptions({
+    queryKey: [...FUSION_KEY, node] as const,
+    queryFn: async (): Promise<DfFusionState> =>
+      unwrap(await client.GET("/api/fusion/{node}", { params: { path: { node } } })),
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+  });
 }
 
 export async function resetFusion(node: string): Promise<void> {
   unwrap(
-    await client.DELETE("/api/coherent/{node}/fusion", {
+    await client.DELETE("/api/fusion/{node}", {
       params: { path: { node } },
     }),
   );
 }
 
-export async function getRoute(request: RouteRequest): Promise<Route> {
-  return unwrap(await client.POST("/api/routing/route", { body: request }));
+export async function calibrateArray(node: string): Promise<void> {
+  unwrap(await client.POST("/api/arrays/{node}/calibrate", { params: { path: { node } } }));
+}
+
+export async function tuneArray(node: string, tune: ArrayTuneRequest): Promise<void> {
+  unwrap(await client.PATCH("/api/arrays/{node}/tune", { params: { path: { node } }, body: tune }));
+}
+
+export async function startArrayRecording(
+  node: string,
+  name?: string,
+): Promise<ArrayRecordingStarted> {
+  return unwrap(
+    await client.POST("/api/arrays/{node}/recording", {
+      params: { path: { node } },
+      body: name === undefined ? {} : { name },
+    }),
+  );
+}
+
+export async function stopArrayRecording(node: string): Promise<void> {
+  unwrap(await client.DELETE("/api/arrays/{node}/recording", { params: { path: { node } } }));
+}
+
+export async function clearRadarTracks(node: string): Promise<void> {
+  unwrap(await client.DELETE("/api/radar/{node}/tracks", { params: { path: { node } } }));
+}
+
+export function phonesQuery() {
+  return queryOptions({
+    queryKey: PHONES_KEY,
+    queryFn: async (): Promise<PhonesResponse> => unwrap(await client.GET("/api/phones")),
+  });
+}
+
+export async function setPhoneAccess(access: PhoneAccess): Promise<PhoneAccessStatus> {
+  return unwrap(await client.PUT("/api/phones/access", { body: access }));
+}
+
+export async function createPairingOffer(name?: string): Promise<PairingOffer> {
+  return unwrap(
+    await client.POST("/api/phones/offers", { body: name === undefined ? {} : { name } }),
+  );
+}
+
+export async function cancelPairingOffer(): Promise<void> {
+  unwrap(await client.DELETE("/api/phones/offers", {}));
+}
+
+export async function renamePhone(id: string, name: string): Promise<Phone> {
+  return unwrap(
+    await client.PATCH("/api/phones/{id}", { params: { path: { id } }, body: { name } }),
+  );
+}
+
+export async function revokePhone(id: string): Promise<void> {
+  unwrap(await client.DELETE("/api/phones/{id}", { params: { path: { id } } }));
+}
+
+export function surveyQuery(node: string) {
+  return queryOptions({
+    queryKey: [...SURVEY_KEY, node] as const,
+    queryFn: async (): Promise<SurveyGrid> =>
+      unwrap(await client.GET("/api/survey/{node}", { params: { path: { node } } })),
+    refetchOnWindowFocus: false,
+  });
+}
+
+export async function controlSurvey(node: string, action: SurveyAction): Promise<SurveyGrid> {
+  return unwrap(
+    await client.POST("/api/survey/{node}", { params: { path: { node } }, body: { action } }),
+  );
 }
 
 export async function runTool(request: ToolRequest): Promise<ToolResponse> {
@@ -775,12 +935,39 @@ export async function stopHunt(decoder: DecoderRef): Promise<HuntStatus> {
   );
 }
 
+export async function sweepHunt(decoder: DecoderRef, settings: HuntSettings): Promise<HuntStatus> {
+  return unwrap(
+    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
+      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
+      body: { action: "sweep", settings },
+    }),
+  );
+}
+
+export async function markHunt(decoder: DecoderRef): Promise<void> {
+  unwrap(
+    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
+      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
+      body: { action: "mark" },
+    }),
+  );
+}
+
 export function decoderLogQuery(filter: DecoderLogFilter) {
   const query = normalizeFilter(filter);
   return queryOptions({
     queryKey: [...DECODER_LOG_KEY, query] as const,
     queryFn: async (): Promise<DecoderLogResponse> =>
       unwrap(await client.GET("/api/decoderlog", { params: { query } })),
+  });
+}
+
+export function decoderLogGroupsQuery(filter: DecoderLogFilter, by: LogGroupKey) {
+  const query = normalizeFilter(filter);
+  return queryOptions({
+    queryKey: [...DECODER_LOG_KEY, "groups", by, query] as const,
+    queryFn: async (): Promise<DecoderLogGroupsResponse> =>
+      unwrap(await client.GET("/api/decoderlog/groups/{by}", { params: { path: { by }, query } })),
   });
 }
 

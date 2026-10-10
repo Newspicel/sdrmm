@@ -153,11 +153,6 @@ pub fn channel_has_video(descriptor: Option<&ChannelDescriptor>) -> bool {
     descriptor.is_some_and(|descriptor| descriptor.has_video)
 }
 
-#[must_use]
-pub fn keeps_calls(descriptor: Option<&ChannelDescriptor>) -> bool {
-    channel_decoder_kind(descriptor) == Some(sdrmm_wire::patch::DV_DECODER_KIND)
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RadioWindow {
     pub low_hz: f64,
@@ -272,15 +267,6 @@ mod tests {
     }
 
     #[test]
-    fn only_a_digital_voice_decoder_records_calls() {
-        let mut dmr = descriptor(12_500.0);
-        dmr.decoder_kind = Some("dv".into());
-        assert!(keeps_calls(Some(&dmr)));
-        assert!(!keeps_calls(Some(&descriptor(12_500.0))));
-        assert!(!keeps_calls(None));
-    }
-
-    #[test]
     fn the_offset_limit_keeps_the_whole_passband_inside_the_span() {
         assert_eq!(
             offset_limit_hz(Some(2_400_000.0), Some(&descriptor(12_500.0))),
@@ -299,6 +285,7 @@ mod tests {
     fn a_channel_width_prefers_its_own_setting_over_the_type() {
         let am = ChannelParams::Am(AmParams {
             bandwidth_hz: 8_000.0,
+            sync: false,
         });
         assert_eq!(
             channel_width_hz(Some(&am), Some(&descriptor(10_000.0))),

@@ -59,7 +59,7 @@ pub struct Spectrum {
 
 #[must_use]
 pub fn spectrum(bytes: &[u8]) -> Option<Spectrum> {
-    let frame = SpectrumFrame::decode(bytes)?;
+    let frame = SpectrumFrame::decode(bytes).ok()?;
     Some(Spectrum {
         center_hz: frame.center_hz,
         span_hz: frame.span_hz,

@@ -194,7 +194,7 @@ fn listen(cx: ScopeCx) {
         {
             return;
         }
-        let Some(decoded) = SpectrumFrame::decode(&frame.bytes) else {
+        let Ok(decoded) = SpectrumFrame::decode(&frame.bytes) else {
             return;
         };
         receive(cx, (set, stream), &decoded);

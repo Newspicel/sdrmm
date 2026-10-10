@@ -8,7 +8,7 @@ use super::*;
 struct Server {
     api: Api,
     engine: Arc<Engine>,
-    task: tokio::task::JoinHandle<()>,
+    _handle: sdrmm_server::ServerHandle,
 }
 
 impl Server {
@@ -16,21 +16,19 @@ impl Server {
         let mut registry = sdrmm_device::DeviceRegistry::new();
         registry.register(0, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
         let engine = Engine::with_registry(registry, None);
-        let router = sdrmm_server::router(
-            engine.clone(),
-            sdrmm_server::Store::open(None).expect("in-memory store"),
-            &sdrmm_server::ServerOptions::default(),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        let config = sdrmm_server::Config {
+            bind: std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0)),
+            ..sdrmm_server::Config::default()
+        };
+        let handle = sdrmm_server::serve(config, engine.clone())
             .await
-            .expect("listener");
-        let address = listener.local_addr().expect("address");
-        let task =
-            tokio::spawn(async move { axum::serve(listener, router).await.expect("server") });
+            .expect("server");
         Self {
-            api: Api::new(format!("http://{address}")).expect("client"),
+            api: Api::new(format!("http://{}", handle.local_addr))
+                .expect("client")
+                .with_author(String::from("native-test")),
             engine,
-            task,
+            _handle: handle,
         }
     }
 
@@ -64,7 +62,6 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        self.task.abort();
         self.engine.shutdown();
     }
 }
@@ -131,7 +128,7 @@ async fn a_settings_edit_keeps_the_graph_and_rack() {
 }
 
 #[tokio::test]
-async fn an_external_edit_is_reported_without_overwriting_it() {
+async fn an_external_edit_survives_a_save_from_an_older_copy() {
     let server = Server::new().await;
     let detail = server.workspace().await;
     let (session, worker) = Session::new(server.api.clone(), detail.clone());
@@ -143,22 +140,11 @@ async fn an_external_edit_is_reported_without_overwriting_it() {
         .save_workspace(detail.info.id, detail.info.revision, external.clone())
         .await
         .expect("external edit");
-    let error = session
-        .save(detail.snapshot.graph)
-        .await
-        .expect_err("revision conflict");
-    assert_eq!(
-        error
-            .downcast_ref::<crate::api::ApiFailure>()
-            .map(|failure| failure.status),
-        Some(409)
-    );
-    let current = server
-        .api
-        .workspace(detail.info.id)
-        .await
-        .expect("current workspace");
-    assert_eq!(current.snapshot, external);
+    let mut graph = detail.snapshot.graph.clone();
+    graph.nodes[0].position.x = 321.0;
+    let merged = session.save(graph.clone()).await.expect("merged save");
+    assert_eq!(merged.snapshot.graph, graph);
+    assert_eq!(merged.snapshot.settings, external.settings);
     drop(session);
     task.await.expect("writer shutdown");
 }

@@ -21,6 +21,7 @@ function frame(bins: number[], dbMin: number, dbMax: number): SpectrumFrame {
     spanHz: 2e6,
     dbMin,
     dbMax,
+    floorDb: dbMin + 10,
     bins: Uint8Array.from(bins),
   };
 }
@@ -108,7 +109,18 @@ describe("accumulateTraces", () => {
 
     expect(Array.from(traceOf(state, "peak"))).toEqual([-40, -30]);
     expect(Array.from(traceOf(state, "min"))).toEqual([-60, -50]);
-    expect(Array.from(traceOf(state, "average"))).toEqual([-50, -40]);
+    const average = traceOf(state, "average");
+    expect(average[0]).toBeCloseTo(-42.97, 2);
+    expect(average[1]).toBeCloseTo(-32.97, 2);
+  });
+
+  it("averages noise in power, not in dB", () => {
+    let state: ReturnType<typeof newTraceState> | null = null;
+    for (let i = 0; i < 4_000; i++) {
+      const power = -Math.log((i * 0.618_034) % 1 || 0.5);
+      state = accumulateTraces(state, Float32Array.of(-80 + 10 * Math.log10(power)));
+    }
+    expect(state?.average[0]).toBeCloseTo(-80, 0);
   });
 
   it("takes the first frame as the average outright", () => {
@@ -119,7 +131,7 @@ describe("accumulateTraces", () => {
 
   it("converges on a steady level and does not overshoot it", () => {
     let state: ReturnType<typeof newTraceState> | null = null;
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 1_000; i++) {
       state = accumulateTraces(state, Float32Array.of(i === 0 ? -20 : -80));
     }
     expect(state?.average[0]).toBeCloseTo(-80, 1);

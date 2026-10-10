@@ -82,6 +82,13 @@ pub struct DcBlocker {
 
 impl DcBlocker {
     const POLE: f32 = 0.995;
+    const POWERS: [f32; STRIDE + 1] = [
+        1.0,
+        Self::POLE,
+        Self::POLE * Self::POLE,
+        Self::POLE * Self::POLE * Self::POLE,
+        Self::POLE * Self::POLE * Self::POLE * Self::POLE,
+    ];
 
     #[must_use]
     pub fn new() -> Self {
@@ -93,12 +100,30 @@ impl DcBlocker {
             self.x1 = 0.0;
             self.y1 = 0.0;
         }
-        for s in samples {
+        let (strides, tail) = samples.as_chunks_mut::<STRIDE>();
+        for stride in strides {
+            self.stride(stride);
+        }
+        for s in tail {
             let y = *s - self.x1 + Self::POLE * self.y1;
             self.x1 = *s;
             self.y1 = y;
             *s = y;
         }
+    }
+
+    fn stride(&mut self, stride: &mut [f32; STRIDE]) {
+        let [x0, x1, x2, x3] = *stride;
+        let [_, a1, a2, a3, a4] = Self::POWERS;
+        let [d0, d1, d2, d3] = [x0 - self.x1, x1 - x0, x2 - x1, x3 - x2];
+        let y = self.y1;
+        let y0 = d0 + a1 * y;
+        let y1 = d1 + a1 * d0 + a2 * y;
+        let y2 = d2 + a1 * d1 + a2 * d0 + a3 * y;
+        let y3 = d3 + a1 * d2 + a2 * d1 + a3 * d0 + a4 * y;
+        *stride = [y0, y1, y2, y3];
+        self.x1 = x3;
+        self.y1 = y3;
     }
 }
 
@@ -110,6 +135,7 @@ impl DcBlocker {
 pub struct IqDcBlocker {
     mean: Complex<f32>,
     coeff: f32,
+    powers: [f32; STRIDE + 1],
 }
 
 impl IqDcBlocker {
@@ -119,9 +145,12 @@ impl IqDcBlocker {
             rate > 0.0 && corner_hz > 0.0,
             "rate and corner must be positive"
         );
+        let coeff = one_pole_coeff(rate, 1.0 / (TAU * corner_hz));
+        let keep = 1.0 - coeff;
         Self {
             mean: Complex::new(0.0, 0.0),
-            coeff: one_pole_coeff(rate, 1.0 / (TAU * corner_hz)),
+            coeff,
+            powers: std::array::from_fn(|power| keep.powi(power as i32)),
         }
     }
 
@@ -129,20 +158,60 @@ impl IqDcBlocker {
         self.mean = Complex::new(0.0, 0.0);
     }
 
+    pub fn hold(&self, samples: &mut [Complex<f32>]) {
+        let mean = if self.mean.re.is_finite() && self.mean.im.is_finite() {
+            self.mean
+        } else {
+            Complex::new(0.0, 0.0)
+        };
+        for s in samples {
+            *s = if s.re.is_finite() && s.im.is_finite() {
+                *s - mean
+            } else {
+                Complex::new(0.0, 0.0)
+            };
+        }
+    }
+
     pub fn process(&mut self, samples: &mut [Complex<f32>]) {
         if !(self.mean.re.is_finite() && self.mean.im.is_finite()) {
             self.reset();
         }
-        for s in samples {
-            if !(s.re.is_finite() && s.im.is_finite()) {
-                *s = Complex::new(0.0, 0.0);
-                continue;
+        let (strides, tail) = samples.as_chunks_mut::<STRIDE>();
+        for stride in strides {
+            if stride.iter().all(|s| s.re.is_finite() && s.im.is_finite()) {
+                self.stride(stride);
+            } else {
+                stride.iter_mut().for_each(|s| self.step(s));
             }
+        }
+        tail.iter_mut().for_each(|s| self.step(s));
+    }
+
+    fn stride(&mut self, stride: &mut [Complex<f32>; STRIDE]) {
+        let [x1, x2, x3, x4] = *stride;
+        let [_, a1, a2, a3, a4] = self.powers;
+        let c = self.coeff;
+        let m0 = self.mean;
+        let m1 = m0 * a1 + x1 * c;
+        let m2 = m0 * a2 + (x1 * a1 + x2) * c;
+        let m3 = m0 * a3 + (x1 * a2 + x2 * a1 + x3) * c;
+        let m4 = m0 * a4 + (x1 * a3 + x2 * a2 + x3 * a1 + x4) * c;
+        *stride = [x1 - m1, x2 - m2, x3 - m3, x4 - m4];
+        self.mean = m4;
+    }
+
+    fn step(&mut self, s: &mut Complex<f32>) {
+        if s.re.is_finite() && s.im.is_finite() {
             self.mean += (*s - self.mean) * self.coeff;
             *s -= self.mean;
+        } else {
+            *s = Complex::new(0.0, 0.0);
         }
     }
 }
+
+const STRIDE: usize = 4;
 
 const HIGHPASS_SECTIONS: usize = 3;
 
@@ -277,6 +346,33 @@ mod tests {
     use super::*;
     use crate::testutil::{complex_tone, real_tone, rms_c, rms_r};
 
+    #[test]
+    fn strided_dc_blocking_matches_the_one_pole_recursion() {
+        let mut samples: Vec<Complex<f32>> = complex_tone(0.013, 3_001)
+            .into_iter()
+            .map(|s| s + Complex::new(0.4, -0.3))
+            .collect();
+        samples[1_234] = Complex::new(f32::NAN, 0.0);
+        let mut reference = samples.clone();
+        let mut blocker = IqDcBlocker::new(48_000.0, 20.0);
+        let coeff = blocker.coeff;
+        blocker.process(&mut samples);
+        let mut mean = Complex::new(0.0f64, 0.0);
+        for s in &mut reference {
+            if s.re.is_finite() && s.im.is_finite() {
+                let x = Complex::new(f64::from(s.re), f64::from(s.im));
+                mean += (x - mean) * f64::from(coeff);
+                *s = Complex::new((x - mean).re as f32, (x - mean).im as f32);
+            } else {
+                *s = Complex::new(0.0, 0.0);
+            }
+        }
+        for (got, want) in samples.iter().zip(&reference) {
+            assert!((got - want).norm() < 1e-5, "{got} vs {want}");
+        }
+        assert_eq!(samples[1_234], Complex::new(0.0, 0.0));
+    }
+
     fn deemphasis_gain(rate: f64, tau_us: f32, freq_hz: f64) -> f32 {
         let mut filter = Deemphasis::new(rate, tau_us);
         let n = (rate * 0.2) as usize;
@@ -318,6 +414,37 @@ mod tests {
         assert!(tone.iter().all(|v| v.is_finite()), "state still poisoned");
         let gain = rms_r(&tone[4_800..]) / FRAC_1_SQRT_2;
         assert!((0.9..1.0).contains(&gain), "post-recovery gain {gain}");
+    }
+
+    #[test]
+    fn strided_real_dc_blocking_matches_the_recursion_for_any_split() {
+        let input: Vec<f32> = (0..1_003)
+            .map(|n| ((n * 7919) % 4096) as f32 / 2048.0 - 0.7)
+            .collect();
+        let mut x1 = 0.0f64;
+        let mut y1 = 0.0f64;
+        let reference: Vec<f64> = input
+            .iter()
+            .map(|&x| {
+                let y = f64::from(x) - x1 + f64::from(DcBlocker::POLE) * y1;
+                x1 = f64::from(x);
+                y1 = y;
+                y
+            })
+            .collect();
+        for split in [1, 3, 4, 5, 64, 1_003] {
+            let mut blocker = DcBlocker::new();
+            let mut output = input.clone();
+            for chunk in output.chunks_mut(split) {
+                blocker.process(chunk);
+            }
+            for (n, (&got, &want)) in output.iter().zip(&reference).enumerate() {
+                assert!(
+                    (f64::from(got) - want).abs() < 1e-4,
+                    "split {split}, sample {n}: {got} vs {want}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -564,6 +691,20 @@ mod tests {
                 .all(|v| v.re.is_finite() && v.im.is_finite()),
             "a non-finite sample poisoned the stream"
         );
+    }
+
+    #[test]
+    fn a_held_iq_dc_blocker_keeps_its_estimate_through_a_burst() {
+        let offset = Complex::new(0.02, -0.01);
+        let mut blocker = IqDcBlocker::new(IQ_RATE, IQ_CORNER);
+        let mut settled = vec![offset; 1 << 19];
+        blocker.process(&mut settled);
+        let mut burst = vec![Complex::new(0.9, 0.9); 1 << 16];
+        blocker.hold(&mut burst);
+        assert!((burst[0] - Complex::new(0.88, 0.91)).norm() < 1e-3);
+        let mut after = vec![offset; 8];
+        blocker.process(&mut after);
+        assert!(after[0].norm() < 1e-3, "the burst moved the estimate");
     }
 
     #[test]

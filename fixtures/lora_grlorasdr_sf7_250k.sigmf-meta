@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "none, generated",
+    "core:description": "LoRa SF7 125 kHz CR 4/5 sync 0x12 from the gr-lora_sdr transmitter, payload sdrflex lora fixture twice"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868100000.0,
+      "core:datetime": "2026-10-07T01:46:24.666905Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "sdr-flex fixtures/lora-sf7 by livethisdream, CC0, https://github.com/livethisdream/sdr-flex; source SHA-256 b1ff120cd43cf88ffb66a822bdda71412cea0038d03346d2f36f6f63c61a8254; samples 0..30500 at 250000 Hz",
+      "core:sample_count": 30500,
+      "core:sample_start": 0
+    }
+  ]
+}

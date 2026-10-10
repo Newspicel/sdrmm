@@ -10,8 +10,8 @@ use axum::{
 };
 use reqwest::StatusCode;
 use sdrmm_wire::{
-    ChannelNode, DecoderEvent, DvMode, EventAudio, EventOutputNode, PatchEdge, PatchGraph,
-    PatchNode, PortRef, Position, RackLayout, RttyText, UpdateWorkspaceRequest, WorkspaceSnapshot,
+    ChannelNode, DecoderEvent, EventAudio, EventOutputNode, PatchEdge, PatchGraph, PatchNode,
+    PortRef, Position, RackLayout, RttyText, UpdateWorkspaceRequest, WorkspaceSnapshot,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -62,14 +62,13 @@ fn call() -> VoiceCall {
     VoiceCall {
         id: 7,
         node: "trunk".to_owned(),
-        source_node: "dmr".to_owned(),
         started_at: "2026-08-15T10:00:00Z".to_owned(),
         ended_at: "2026-08-15T10:00:01Z".to_owned(),
         duration_ms: 1_200,
         device_set: 1,
         channel: 2,
         freq_hz: 451_125_000.0,
-        mode: DvMode::Dmr,
+        mode: "dmr".to_owned(),
         slot: Some(2),
         color_code: Some(3),
         source: Some(1001),
@@ -239,7 +238,6 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
                 "decoder",
                 NodeBody::Channel(ChannelNode {
                     channel_type: "rtty".to_owned(),
-                    record_calls: false,
                     tuning_locked: false,
                 }),
             ),
@@ -264,6 +262,7 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
                 name: None,
                 snapshot: Some(WorkspaceSnapshot::new(graph, RackLayout::default())),
             },
+            None,
         )
         .expect("update workspace");
 
@@ -322,6 +321,123 @@ fn a_completed_call_travels_the_events_wire_like_any_other_decode() {
     assert_eq!(deliveries.len(), 1);
     assert_eq!(deliveries[0].event, "call 7");
     assert!(deliveries[0].message.body.contains("talkgroup 91"));
+}
+
+fn recordings_routing() -> Routing {
+    Routing {
+        bindings: vec![Binding {
+            node: "matched".to_owned(),
+            target: EventOutputTarget::Recordings,
+        }],
+    }
+}
+
+fn analog_call() -> VoiceCall {
+    VoiceCall {
+        mode: "am".to_owned(),
+        freq_hz: 144_100_000.0,
+        started_at: "2026-10-01T22:31:00.250Z".to_owned(),
+        slot: None,
+        color_code: None,
+        source: None,
+        destination: None,
+        group_call: None,
+        ..call()
+    }
+}
+
+#[test]
+fn recordings_take_only_events_that_carry_audio() {
+    let routing = recordings_routing();
+    assert!(decoded_deliveries(&routing, &decoded(), 1, &Calls::default()).is_empty());
+    let record = DecodedRecord {
+        event: DecoderEvent::Call(analog_call()),
+        ..decoded()
+    };
+    assert_eq!(
+        decoded_deliveries(&routing, &record, 1, &Calls::default()).len(),
+        1
+    );
+    let silent = DecodedRecord {
+        event: DecoderEvent::Call(VoiceCall {
+            audio: None,
+            encrypted: true,
+            ..call()
+        }),
+        ..decoded()
+    };
+    assert!(decoded_deliveries(&routing, &silent, 1, &Calls::default()).is_empty());
+}
+
+#[test]
+fn a_call_is_named_by_time_mode_frequency_and_talkgroup() {
+    assert_eq!(call_stem(&analog_call()), "20261001T223100Z_AM_144.100MHz");
+    assert_eq!(call_stem(&call()), "20260815T100000Z_DMR_451.125MHz_TG91");
+    assert_eq!(
+        call_stem(&VoiceCall {
+            group_call: Some(false),
+            ..call()
+        }),
+        "20260815T100000Z_DMR_451.125MHz_ID91"
+    );
+}
+
+#[tokio::test]
+async fn a_saved_call_lands_in_the_audio_library() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let engine = Engine::with_registry(
+        sdrmm_device::DeviceRegistry::new(),
+        Some(dir.path().to_path_buf()),
+    );
+    let calls = Calls::default();
+    let (audio, _) = calls.store_clip(&[1, 2, 3]);
+    let record = DecodedRecord {
+        event: DecoderEvent::Call(VoiceCall {
+            audio: Some(audio),
+            ..analog_call()
+        }),
+        ..decoded()
+    };
+    let deliveries = decoded_deliveries(&recordings_routing(), &record, 1, &calls);
+    let weak = Arc::downgrade(&engine);
+
+    for _ in 0..2 {
+        save_recording(&weak, &deliveries[0].message)
+            .await
+            .expect("saved");
+    }
+
+    let library = engine.audio_recordings_dir().expect("library");
+    let saved = sdrmm_recorder::scan_audio(&library).expect("scan");
+    let names: Vec<_> = saved
+        .iter()
+        .filter_map(|path| path.file_name()?.to_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "20261001T223100Z_AM_144.100MHz-2.wav",
+            "20261001T223100Z_AM_144.100MHz.wav"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_call_whose_audio_was_lost_says_why_it_saved_nothing() {
+    let engine = Engine::with_registry(sdrmm_device::DeviceRegistry::new(), None);
+    let record = DecodedRecord {
+        event: DecoderEvent::Call(VoiceCall {
+            audio: None,
+            audio_error: Some("audio stream lost 3 block(s)".to_owned()),
+            ..analog_call()
+        }),
+        ..decoded()
+    };
+    let deliveries = decoded_deliveries(&recordings_routing(), &record, 1, &Calls::default());
+    let error = save_recording(&Arc::downgrade(&engine), &deliveries[0].message)
+        .await
+        .expect_err("nothing to save");
+    assert!(error.to_string().contains("lost 3 block"), "{error}");
 }
 
 #[test]
@@ -445,7 +561,7 @@ async fn discord_sends_metadata_and_wav_in_one_webhook_message() {
     let body = String::from_utf8_lossy(&captured[0].body);
     assert!(body.contains("payload_json"));
     assert!(body.contains("DMR call"));
-    assert!(body.contains("dmr-call-7.wav"));
+    assert!(body.contains("20260815T100000Z_DMR_451.125MHz_TG91.wav"));
     assert!(body.contains("RIFF-wave"));
 }
 
@@ -543,7 +659,10 @@ async fn matrix_creates_one_audio_event_after_uploading_the_wav() {
     assert_eq!(event["msgtype"], "m.audio");
     assert_eq!(event["url"], "mxc://matrix.test/audio7");
     assert_eq!(event["info"]["duration"], 1_200);
-    assert_eq!(event["filename"], "dmr-call-7.wav");
+    assert_eq!(
+        event["filename"],
+        "20260815T100000Z_DMR_451.125MHz_TG91.wav"
+    );
     assert_eq!(event["format"], MATRIX_HTML_FORMAT);
     assert!(
         event["formatted_body"]
@@ -553,7 +672,8 @@ async fn matrix_creates_one_audio_event_after_uploading_the_wav() {
     assert!(
         event["body"]
             .as_str()
-            .is_some_and(|body| body.contains("talkgroup 91") && body != "dmr-call-7.wav"),
+            .is_some_and(|body| body.contains("talkgroup 91")
+                && body != "20260815T100000Z_DMR_451.125MHz_TG91.wav"),
         "body must differ from filename so clients treat it as a caption"
     );
 }
@@ -716,6 +836,165 @@ async fn a_json_webhook_error_does_not_expose_the_endpoint() {
 
     assert!(error.starts_with("Webhook request:"));
     assert!(!error.contains(secret));
+}
+
+fn json_webhook(url: String) -> EventOutputTarget {
+    EventOutputTarget::Webhook {
+        url,
+        format: WebhookFormat::Json,
+    }
+}
+
+#[tokio::test]
+async fn delivery_outcomes_reach_the_output_status() {
+    let (base, _) = server().await;
+    let closed = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("test listener");
+    let address = closed.local_addr().expect("local address");
+    drop(closed);
+    let good = json_webhook(format!("{base}/hook"));
+    let bad = json_webhook(format!("http://{address}/hook"));
+    let statuses = status::Statuses::default();
+    statuses.configure(&[
+        Binding {
+            node: "good".to_owned(),
+            target: good.clone(),
+        },
+        Binding {
+            node: "bad".to_owned(),
+            target: bad.clone(),
+        },
+    ]);
+    let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
+    sender
+        .send(delivery_to("good", good, &decoded()))
+        .await
+        .expect("queued");
+    sender
+        .send(delivery_to("bad", bad, &decoded()))
+        .await
+        .expect("queued");
+    drop(sender);
+
+    deliver_all(senders(None), receiver, statuses.clone()).await;
+
+    let good = statuses.get("good").expect("good status");
+    assert_eq!((good.delivered, good.failed, good.error), (1, 0, None));
+    let bad = statuses.get("bad").expect("bad status");
+    assert_eq!((bad.delivered, bad.failed), (0, 1));
+    assert!(bad.error.expect("failure").starts_with("Webhook request:"));
+}
+
+fn senders(shell: Option<Arc<dyn NativeShell>>) -> Senders {
+    Senders {
+        client: Client::new(),
+        engine: std::sync::Weak::new(),
+        shell,
+    }
+}
+
+#[derive(Debug, Default)]
+struct Notifications(Mutex<Vec<(String, String)>>);
+
+impl NativeShell for Notifications {
+    fn reveal(&self, _: &std::path::Path) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn notify(&self, title: &str, body: &str) -> std::io::Result<()> {
+        self.0
+            .lock()
+            .expect("notifications")
+            .push((title.to_owned(), body.to_owned()));
+        Ok(())
+    }
+}
+
+async fn notify_once(shell: Option<Arc<dyn NativeShell>>) -> status::Statuses {
+    let statuses = status::Statuses::default();
+    statuses.configure(&[Binding {
+        node: "desk".to_owned(),
+        target: EventOutputTarget::Desktop,
+    }]);
+    let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
+    sender
+        .send(delivery_to("desk", EventOutputTarget::Desktop, &decoded()))
+        .await
+        .expect("queued");
+    drop(sender);
+    deliver_all(senders(shell), receiver, statuses.clone()).await;
+    statuses
+}
+
+#[tokio::test]
+async fn a_desktop_output_shows_one_notification_per_event() {
+    let shell = Arc::new(Notifications::default());
+    let statuses = notify_once(Some(shell.clone())).await;
+
+    assert_eq!(statuses.get("desk").expect("status").delivered, 1);
+    let shown = shell.0.lock().expect("notifications").clone();
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].0, "RTTY decode");
+    assert!(shown[0].1.contains("Frequency:"), "{}", shown[0].1);
+}
+
+#[tokio::test]
+async fn a_desktop_output_without_the_desktop_app_reports_why() {
+    let status = notify_once(None).await.get("desk").expect("status");
+
+    assert_eq!(status.failed, 1);
+    assert_eq!(
+        status.error.as_deref(),
+        Some("Notifications need the desktop app")
+    );
+}
+
+#[test]
+fn a_call_notification_is_titled_by_its_mode() {
+    assert_eq!(
+        notification_text("DMR call · talkgroup 91 · 2.0 s"),
+        ("DMR call", "talkgroup 91 · 2.0 s")
+    );
+    assert_eq!(notification_text("plain"), ("plain", ""));
+}
+
+#[test]
+fn a_full_delivery_queue_counts_the_dropped_event() {
+    let target = json_webhook("http://127.0.0.1:9/hook".to_owned());
+    let statuses = status::Statuses::default();
+    statuses.configure(&[Binding {
+        node: "hook".to_owned(),
+        target: target.clone(),
+    }]);
+    let (sender, _receiver) = mpsc::channel(1);
+    enqueue(
+        &sender,
+        &statuses,
+        delivery_to("hook", target.clone(), &decoded()),
+    );
+    enqueue(&sender, &statuses, delivery_to("hook", target, &decoded()));
+
+    let status = statuses.get("hook").expect("status");
+    assert_eq!(status.failed, 1);
+    assert_eq!(status.error.as_deref(), Some("Delivery queue full"));
+}
+
+#[test]
+fn a_changed_target_starts_a_fresh_status() {
+    let statuses = status::Statuses::default();
+    let binding = |url: &str| Binding {
+        node: "hook".to_owned(),
+        target: json_webhook(url.to_owned()),
+    };
+    statuses.configure(&[binding("http://a.test/")]);
+    statuses.failed("hook", 2, "down".to_owned());
+    statuses.configure(&[binding("http://a.test/")]);
+    assert_eq!(statuses.get("hook").expect("kept").failed, 2);
+    statuses.configure(&[binding("http://b.test/")]);
+    assert_eq!(statuses.get("hook").expect("reset").failed, 0);
+    statuses.configure(&[]);
+    assert!(statuses.get("hook").is_none());
 }
 
 struct Published {
@@ -991,6 +1270,7 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
     assert_eq!(&attachment.bytes[..4], b"RIFF");
     assert_eq!(&attachment.bytes[44..], &[1, 0, 254, 255, 3, 0]);
     assert_eq!(calls.event_audio(&audio).unwrap(), attachment.bytes);
+    assert_eq!(attachment.stem, "20260815T100002Z_AM_14.080MHz");
     assert_eq!(
         deliveries[0].message.payload["record"]["origin"]["node"],
         "monitor"
@@ -1015,7 +1295,6 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
                 "decoder",
                 NodeBody::Channel(ChannelNode {
                     channel_type: "adsb".to_owned(),
-                    record_calls: false,
                     tuning_locked: false,
                 }),
             ),
@@ -1036,6 +1315,7 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
                 name: None,
                 snapshot: Some(WorkspaceSnapshot::new(graph, RackLayout::default())),
             },
+            None,
         )
         .unwrap();
     let routing = resolve(&store).unwrap();
@@ -1244,4 +1524,77 @@ async fn an_unreachable_postgres_surfaces_the_failure() {
         .to_string();
 
     assert!(error.starts_with("Postgres connect:"), "{error}");
+}
+
+#[test]
+fn a_csv_row_quotes_text_and_defuses_formulas() {
+    let record = DecodedRecord {
+        event: DecoderEvent::Rtty(RttyText {
+            text: "=HYPERLINK(\"x\"), hi".to_owned(),
+        }),
+        ..decoded()
+    };
+    let message = decoded_message("log", &record, 1);
+
+    let row = csv::row("log", &message.facts);
+
+    assert_eq!(
+        row,
+        "2026-08-15T10:00:02Z,rtty,log,1,2,14080000,,\"'=HYPERLINK(\"\"x\"\"), hi\",\
+         \"{\"\"text\"\":\"\"=HYPERLINK(\\\"\"x\\\"\"), hi\"\"}\"\r\n"
+    );
+}
+
+#[tokio::test]
+async fn csv_appends_rows_under_one_header() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let engine = Engine::with_registry(
+        sdrmm_device::DeviceRegistry::new(),
+        Some(dir.path().to_path_buf()),
+    );
+    let target = EventOutputTarget::Csv {
+        file: "log".to_owned(),
+    };
+    let batch = [
+        delivery_to("log", target.clone(), &decoded()),
+        delivery_to("log", target, &decoded()),
+    ];
+    let weak = Arc::downgrade(&engine);
+
+    csv::append(&weak, "log", &batch).await.expect("first");
+    csv::append(&weak, "log", &batch[..1])
+        .await
+        .expect("second");
+
+    let text = std::fs::read_to_string(csv::events_dir(dir.path()).join("log.csv")).expect("read");
+    let lines: Vec<_> = text.lines().collect();
+    assert_eq!(lines.len(), 4);
+    assert!(lines[0].starts_with("at,kind,output"));
+    assert_eq!(
+        lines.iter().filter(|line| line.starts_with("at,")).count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn csv_refuses_a_path_and_a_missing_library() {
+    let engine = Engine::with_registry(sdrmm_device::DeviceRegistry::new(), None);
+    let weak = Arc::downgrade(&engine);
+    let batch = [delivery_to(
+        "log",
+        EventOutputTarget::Csv {
+            file: "log".to_owned(),
+        },
+        &decoded(),
+    )];
+
+    let escape = csv::append(&weak, "../log", &batch)
+        .await
+        .expect_err("path");
+    let missing = csv::append(&weak, "log", &batch)
+        .await
+        .expect_err("no library");
+
+    assert!(escape.to_string().contains("plain name"), "{escape}");
+    assert!(missing.to_string().contains("recordings"), "{missing}");
 }

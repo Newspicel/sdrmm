@@ -9,6 +9,16 @@ pub struct Prefs {
     pub theme: String,
     pub auto_off_explained: bool,
     pub token: Option<String>,
+    pub author: Option<String>,
+}
+
+#[must_use]
+pub fn fresh_author() -> String {
+    use std::hash::BuildHasher;
+    let state = std::collections::hash_map::RandomState::new();
+    let high = state.hash_one(std::time::SystemTime::now());
+    let low = state.hash_one(std::process::id());
+    format!("native-{high:016x}{low:016x}")
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +78,13 @@ mod tests {
             .expect("saved");
         assert_eq!(file.load(), saved);
         assert_eq!(file.load().token, None);
+    }
+
+    #[test]
+    fn a_fresh_author_is_one_the_server_accepts_and_never_repeats() {
+        let first = fresh_author();
+        assert!(sdrmm_wire::valid_author(&first), "{first}");
+        assert_ne!(first, fresh_author());
     }
 
     #[test]

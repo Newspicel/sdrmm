@@ -4,6 +4,7 @@ mod frame_fixtures;
 #[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::mpsc::{self, RecvTimeoutError},
@@ -16,25 +17,26 @@ use notify::{Config, Event, EventKind, PollWatcher, RecursiveMode, Watcher};
 use num_complex::Complex;
 
 mod architecture;
-mod aur;
 mod bandplan;
 mod ber;
 mod broadcast_fixtures;
 mod bundle;
+mod bundled;
+mod capture;
+mod compare;
 mod denoise_model;
 mod excerpt;
-mod homebrew;
 mod icons;
 mod ident_matrix;
+mod ios;
 mod licenses;
 mod linkage;
+mod mobile;
 mod nixhash;
 mod replay;
 #[cfg(test)]
 mod site;
-mod sums;
 mod units;
-mod updater;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "SDR-- workspace tasks")]
@@ -75,6 +77,7 @@ enum Cmd {
     },
     Excerpt(excerpt::Excerpt),
     Replay(replay::Replay),
+    NetCapture(capture::NetCapture),
     Bandplan {
         #[arg(long)]
         offline: bool,
@@ -101,43 +104,27 @@ enum Cmd {
         #[arg(long)]
         bundles: Option<String>,
     },
+    BundledConfig {
+        #[arg(long)]
+        target: Option<String>,
+        #[arg(long)]
+        out: PathBuf,
+    },
     LinkCheck {
         path: PathBuf,
         #[arg(long = "external")]
         external: Vec<String>,
     },
-    SetVersion {
-        version: String,
+    #[command(flatten)]
+    Release(xtask_release::Cmd),
+    Mobile(mobile::Mobile),
+    Ios {
+        #[command(subcommand)]
+        action: ios::IosAction,
     },
-    UpdaterManifest {
-        #[arg(long)]
-        version: String,
-        #[arg(long)]
-        dir: PathBuf,
-        #[arg(long)]
-        base_url: String,
-        #[arg(long)]
-        out: Option<PathBuf>,
-    },
-    HomebrewTap {
-        #[arg(long)]
-        version: String,
-        #[arg(long)]
-        sums: PathBuf,
-        #[arg(long)]
-        repo: String,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    Aur {
-        #[arg(long)]
-        version: String,
-        #[arg(long)]
-        sums: PathBuf,
-        #[arg(long)]
-        repo: String,
-        #[arg(long)]
-        out: PathBuf,
+    Compare {
+        #[command(subcommand)]
+        suite: compare::Compare,
     },
 }
 
@@ -163,6 +150,8 @@ fn main() -> Result<()> {
         Cmd::BroadcastFixtures { out } => broadcast_fixtures::run(&out),
         Cmd::Excerpt(args) => excerpt::run(&root(), &args),
         Cmd::Replay(args) => replay::run(&args),
+        Cmd::NetCapture(args) => capture::run(&args),
+        Cmd::Compare { suite } => compare::run(&root(), &suite),
         Cmd::Bandplan { offline } => bandplan::run(&root(), offline),
         Cmd::Ber { entry, out, full } => ber::run(&root(), &entry, out.as_deref(), full),
         Cmd::DenoiseModel => denoise_model::run(&root()),
@@ -172,26 +161,13 @@ fn main() -> Result<()> {
         Cmd::Dist { target } => dist(&root(), target.as_deref()),
         Cmd::SourceDist => source_dist(&root()),
         Cmd::Desktop { target, bundles } => desktop(&root(), target.as_deref(), bundles.as_deref()),
+        Cmd::BundledConfig { target, out } => {
+            bundled::write_desktop_config(&root(), target.as_deref(), &out)
+        }
         Cmd::LinkCheck { path, external } => linkage::check(&path, &external),
-        Cmd::SetVersion { version } => set_version(&root(), &version),
-        Cmd::UpdaterManifest {
-            version,
-            dir,
-            base_url,
-            out,
-        } => updater::manifest(&dir, &version, &base_url, out.as_deref()),
-        Cmd::HomebrewTap {
-            version,
-            sums,
-            repo,
-            out,
-        } => homebrew::tap(&sums, &version, &repo, &out),
-        Cmd::Aur {
-            version,
-            sums,
-            repo,
-            out,
-        } => aur::packages(&sums, &version, &repo, &out),
+        Cmd::Release(cmd) => xtask_release::run(&root(), &cmd),
+        Cmd::Mobile(args) => mobile::run(&root(), &args),
+        Cmd::Ios { action } => ios::run(&root(), &action),
     }
 }
 
@@ -213,6 +189,21 @@ fn codegen(root: &Path) -> Result<()> {
         serde_json::to_string_pretty(&frame_fixtures::frames())?,
     )
     .context("write binary frame fixtures")?;
+    std::fs::write(
+        root.join("web/src/generated/patch-catalog.json"),
+        serde_json::to_string_pretty(&sdrmm_wire::PatchCatalog::build())?,
+    )
+    .context("write patch catalog")?;
+    std::fs::write(
+        root.join("web/src/generated/labels.json"),
+        serde_json::to_string_pretty(&sdrmm_wire::labels::generated()?)?,
+    )
+    .context("write labels")?;
+    std::fs::write(
+        root.join("web/src/generated/limits.json"),
+        sdrmm_wire::limits::generated()?,
+    )
+    .context("write limits")?;
     let frames = root.join("web/src/generated/frame.ts");
     std::fs::write(&frames, sdrmm_wire::typescript_frames()).context("write binary frame codec")?;
     let spec = sdrmm_server::openapi()
@@ -249,35 +240,55 @@ fn dev(root: &Path, watch: bool) -> Result<()> {
     #[cfg(unix)]
     let _interrupt_handler = InterruptHandler::install()?;
 
-    let mut vite = Command::new(PNPM);
-    vite.args(["--dir", "web", "dev"]).current_dir(root);
-    vite.stdin(Stdio::null());
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut vite, 0);
-    let mut vite = vite
-        .spawn()
-        .context("spawn vite dev server (is pnpm installed?)")?;
-
+    let mut vite = None;
     let result = if watch {
         watch_rust_server(root, &mut vite)
     } else {
         run_rust_server(root, &mut vite)
     };
 
-    kill_process_tree(&mut vite);
+    if let Some(mut vite) = vite {
+        kill_process_tree(&mut vite);
+    }
     result
 }
 
-fn run_rust_server(root: &Path, vite: &mut Child) -> Result<()> {
+fn spawn_vite(root: &Path) -> Result<Child> {
+    let mut vite = Command::new(PNPM);
+    vite.args(["--dir", "web", "dev"]).current_dir(root);
+    vite.stdin(Stdio::null());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut vite, 0);
+    vite.spawn()
+        .context("spawn vite dev server (is pnpm installed?)")
+}
+
+fn listening(addr: SocketAddr) -> bool {
+    TcpStream::connect_timeout(&addr, DEV_POLL_INTERVAL).is_ok()
+}
+
+fn supervise_vite(root: &Path, vite: &mut Option<Child>) -> Result<()> {
+    match vite {
+        Some(child) => match child.try_wait().context("poll Vite dev server")? {
+            Some(status) => bail!("Vite dev server exited with {status}"),
+            None => Ok(()),
+        },
+        None if listening(DEV_SERVER_ADDR) => {
+            *vite = Some(spawn_vite(root)?);
+            Ok(())
+        }
+        None => Ok(()),
+    }
+}
+
+fn run_rust_server(root: &Path, vite: &mut Option<Child>) -> Result<()> {
     let mut server = spawn_rust_server(root)?;
     let result = (|| -> Result<()> {
         loop {
             if dev_interrupted() {
                 return Ok(());
             }
-            if let Some(status) = vite.try_wait().context("poll Vite dev server")? {
-                bail!("Vite dev server exited with {status}");
-            }
+            supervise_vite(root, vite)?;
             if let Some(status) = server.try_wait().context("poll Rust server")? {
                 ensure!(status.success(), "Rust server exited with {status}");
                 return Ok(());
@@ -291,10 +302,11 @@ fn run_rust_server(root: &Path, vite: &mut Child) -> Result<()> {
 }
 
 const DEV_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const DEV_SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
 const DEV_FILE_SCAN_INTERVAL: Duration = Duration::from_millis(500);
 const DEV_RESTART_DEBOUNCE: Duration = Duration::from_millis(250);
 
-fn watch_rust_server(root: &Path, vite: &mut Child) -> Result<()> {
+fn watch_rust_server(root: &Path, vite: &mut Option<Child>) -> Result<()> {
     let (changes_tx, changes_rx) = mpsc::channel();
     let mut watcher = PollWatcher::new(
         changes_tx,
@@ -317,9 +329,7 @@ fn watch_rust_server(root: &Path, vite: &mut Child) -> Result<()> {
             if dev_interrupted() {
                 return Ok(());
             }
-            if let Some(status) = vite.try_wait().context("poll Vite dev server")? {
-                bail!("Vite dev server exited with {status}");
-            }
+            supervise_vite(root, vite)?;
             if let Some(child) = server.as_mut()
                 && let Some(status) = child.try_wait().context("poll Rust server")?
             {
@@ -370,16 +380,19 @@ fn is_backend_change(root: &Path, event: &Event) -> bool {
     })
 }
 
-fn rust_server_command(root: &Path) -> Command {
+fn rust_server_command(root: &Path, media: Option<&Path>) -> Command {
     let mut server = Command::new("cargo");
     server
         .args(["run", "-p", "sdrmm", "--", "--dev-cors"])
         .current_dir(root);
+    if let Some(dir) = media {
+        server.envs(media_env(dir));
+    }
     server
 }
 
 fn spawn_rust_server(root: &Path) -> Result<Child> {
-    let mut server = rust_server_command(root);
+    let mut server = rust_server_command(root, media_dir(root, None)?.as_deref());
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut server, 0);
     server.spawn().context("spawn Rust server")
@@ -486,6 +499,7 @@ mod dev_tests {
 #[cfg(test)]
 mod dev_command_tests {
     use super::*;
+    use std::ffi::OsStr;
 
     #[test]
     fn dev_watches_backend_only_with_the_flag() {
@@ -497,15 +511,39 @@ mod dev_command_tests {
     }
 
     #[test]
+    fn listening_detects_a_bound_rust_server() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind probe port");
+        let addr = listener.local_addr().expect("probe address");
+        assert!(listening(addr));
+    }
+
+    #[test]
     fn rust_server_command_enables_development_cors() {
         let root = Path::new("workspace");
-        let server = rust_server_command(root);
+        let server = rust_server_command(root, None);
 
         assert_eq!(server.get_program(), "cargo");
         assert_eq!(server.get_current_dir(), Some(root));
         assert_eq!(
             server.get_args().collect::<Vec<_>>(),
             ["run", "-p", "sdrmm", "--", "--dev-cors"]
+        );
+    }
+
+    #[test]
+    fn rust_server_command_builds_and_runs_against_the_bundled_media() {
+        let media = Path::new("workspace/.media/host");
+        let server = rust_server_command(Path::new("workspace"), Some(media));
+        let env: Vec<_> = server.get_envs().collect();
+
+        assert!(env.contains(&(OsStr::new("FFMPEG_DIR"), Some(media.as_os_str()))));
+        assert_eq!(
+            env.iter().any(|(key, _)| *key == "LD_LIBRARY_PATH"),
+            cfg!(target_os = "linux")
+        );
+        assert_eq!(
+            env.iter().any(|(key, _)| *key == "DYLD_LIBRARY_PATH"),
+            cfg!(target_os = "macos")
         );
     }
 
@@ -550,6 +588,9 @@ fn check(root: &Path) -> Result<()> {
     check_toolchain_pins(root)?;
     check_windows_rs_alignment(root)?;
     check_baked_in_fixtures(root)?;
+    mobile::check(root)?;
+    ios::check(root)?;
+    xtask_release::changeset::check(root)?;
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
 
     ensure_web_deps(root)?;
@@ -669,6 +710,9 @@ fn check_toolchain_pins(root: &Path) -> Result<()> {
         )?,
     ));
 
+    let workers = "site/.node-version";
+    node.push((workers.to_string(), file(workers)?.trim().to_string()));
+
     agree("pnpm", &pnpm)?;
     agree("the Node major", &node)
 }
@@ -776,12 +820,13 @@ fn agree(what: &str, pins: &[(String, String)]) -> Result<()> {
 /// Tests, smoke runs and screenshots must not reach whatever SoapySDR a developer has
 /// installed, so they are pointed at a library that cannot exist and find none.
 const NO_SOAPY_RUNTIME: (&str, &str) = ("SDRMM_SOAPY_LIBRARY", "/nonexistent/libSoapySDR");
+const NO_SOAPY_TARGET: &str = "target/no-soapy";
 
 fn release_features() -> [String; 3] {
     [
         "--no-default-features".to_string(),
         "--features".to_string(),
-        "soapy,sdrplay,rtlsdr,hackrf,airspy,airspyhf,ad936x,net-client,gpu-fft".to_string(),
+        "soapy,sdrplay,rtlsdr,hackrf,airspy,airspyhf,espsdr,ad936x,net-client,gpu-fft".to_string(),
     ]
 }
 
@@ -845,6 +890,7 @@ fn dist(root: &Path, target: Option<&str>) -> Result<()> {
 
     std::fs::copy(&built, staged.join(exe))
         .with_context(|| format!("cannot stage {}", built.display()))?;
+    bundled::stage(&bundled::libraries(root, target)?, &staged)?;
     for doc in ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"] {
         std::fs::copy(root.join(doc), staged.join(doc))
             .with_context(|| format!("cannot stage {doc}"))?;
@@ -1015,14 +1061,37 @@ fn run_against_media(args: &[&str], cwd: &Path, media: Option<&Path>) -> Result<
         1
     };
     retry(attempts, || match media {
-        Some(dir) => run_with_env(
-            "cargo",
-            args,
-            cwd,
-            &[("FFMPEG_DIR", &dir.to_string_lossy())],
-        ),
+        Some(dir) => {
+            let env = media_env(dir);
+            let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            run_with_env("cargo", args, cwd, &env)
+        }
         None => run("cargo", args, cwd),
     })
+}
+
+const LIBRARY_PATH_VAR: Option<&str> = if cfg!(target_os = "linux") {
+    Some("LD_LIBRARY_PATH")
+} else if cfg!(target_os = "macos") {
+    Some("DYLD_LIBRARY_PATH")
+} else {
+    None
+};
+
+fn media_env(dir: &Path) -> Vec<(&'static str, String)> {
+    let mut env = vec![("FFMPEG_DIR", dir.to_string_lossy().into_owned())];
+    if let Some(var) = LIBRARY_PATH_VAR {
+        env.push((var, library_path(var, dir)));
+    }
+    env
+}
+
+fn library_path(var: &str, media: &Path) -> String {
+    let lib = media.join("lib").to_string_lossy().into_owned();
+    match std::env::var(var) {
+        Ok(existing) if !existing.is_empty() => format!("{lib}:{existing}"),
+        _ => lib,
+    }
 }
 
 fn retry(attempts: usize, mut run: impl FnMut() -> Result<()>) -> Result<()> {
@@ -1101,6 +1170,7 @@ fn desktop(root: &Path, target: Option<&str>, bundles: Option<&str>) -> Result<(
         installed,
         "the Tauri CLI is missing: `cargo install --locked tauri-cli`"
     );
+    let bundled_config = bundled::desktop_config_for(root, target)?;
     let unsigned = std::env::var_os("TAURI_SIGNING_PRIVATE_KEY").is_none();
     if unsigned {
         println!(
@@ -1111,6 +1181,8 @@ fn desktop(root: &Path, target: Option<&str>, bundles: Option<&str>) -> Result<(
     let mut args = vec![
         "tauri",
         "build",
+        "--config",
+        &bundled_config,
         "--bundles",
         bundles,
         "--",
@@ -1126,55 +1198,6 @@ fn desktop(root: &Path, target: Option<&str>, bundles: Option<&str>) -> Result<(
         args.insert(2, "--no-sign");
     }
     run_against_media(&args, &root.join("apps/desktop"), media.as_deref())
-}
-
-fn set_version(root: &Path, version: &str) -> Result<()> {
-    let version = version.strip_prefix('v').unwrap_or(version);
-    let parts: Vec<&str> = version.split('.').collect();
-    let numeric: Vec<u64> = parts.iter().filter_map(|p| p.parse().ok()).collect();
-    ensure!(
-        parts.len() == 3 && numeric.len() == 3,
-        "`{version}` is not a plain major.minor.patch version, e.g. 0.2.0. \
-         Suffixes are not usable: the Windows MSI bundler cannot express one."
-    );
-    for (value, limit, field) in [
-        (numeric[0], 255, "major"),
-        (numeric[1], 255, "minor"),
-        (numeric[2], 65_535, "patch"),
-    ] {
-        ensure!(
-            value <= limit,
-            "`{version}` has a {field} of {value}: the Windows MSI bundler caps it at {limit}"
-        );
-    }
-
-    let manifest_path = root.join("Cargo.toml");
-    let manifest = std::fs::read_to_string(&manifest_path).context("read Cargo.toml")?;
-    let mut section = "";
-    let mut hits = 0;
-    let mut out = String::with_capacity(manifest.len());
-    for line in manifest.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            section = trimmed;
-        }
-        if section == "[workspace.package]" && trimmed.starts_with("version") {
-            out.push_str(&format!("version = \"{version}\"\n"));
-            hits += 1;
-        } else {
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    ensure!(
-        hits == 1,
-        "expected exactly one `version` under [workspace.package] in Cargo.toml, found {hits}"
-    );
-    std::fs::write(&manifest_path, out).context("write Cargo.toml")?;
-
-    run("cargo", &["update", "--workspace", "--offline"], root)?;
-    println!("version: {version}");
-    Ok(())
 }
 
 fn perf(root: &Path) -> Result<()> {
@@ -1461,16 +1484,35 @@ fn build_smoke_server(root: &Path) -> Result<()> {
 
 fn smoke(root: &Path) -> Result<()> {
     ensure_web_deps(root)?;
+    run_with_env(
+        PNPM,
+        &["--dir", "web", "build"],
+        root,
+        &[("VITE_ENABLE_SYNTHETIC_DEVICES", "true")],
+    )?;
     run(
         "cargo",
-        &["build", "-p", "sdrmm", "--no-default-features"],
+        &[
+            "build",
+            "-p",
+            "sdrmm",
+            "--no-default-features",
+            "--target-dir",
+            NO_SOAPY_TARGET,
+        ],
         root,
     )?;
+    let scratch = root.join("web/.e2e-tmp");
+    if scratch.exists() {
+        std::fs::remove_dir_all(&scratch)
+            .with_context(|| format!("remove {}", scratch.display()))?;
+    }
+    broadcast_fixtures::run(&scratch.join("recordings"))?;
     run_with_env(
         PNPM,
         &["--dir", "web", "exec", "playwright", "test"],
         root,
-        &[NO_SOAPY_RUNTIME],
+        &[NO_SOAPY_RUNTIME, ("E2E_PREBUILT", "1")],
     )?;
     Ok(())
 }
@@ -1504,16 +1546,16 @@ fn fixtures(root: &Path) -> Result<()> {
     let dir = root.join("fixtures");
     std::fs::create_dir_all(&dir).context("create fixtures dir")?;
 
-    const SIGGEN_RATE: f64 = 2_400_000.0;
-    let samples = sdrmm_device_virtual::render(SIGGEN_RATE, SIGGEN_RATE as usize);
+    const BAND_RATE: f64 = 2_400_000.0;
+    let samples = sdrmm_device_virtual::render(BAND_RATE, BAND_RATE as usize);
     write_fixture(
         &dir,
         "siggen_2m4_1s",
         &samples,
-        SIGGEN_RATE,
+        BAND_RATE,
         CENTER_HZ,
         "Signal Generator (virtual)",
-        "1 s of the virtual siggen: the record/replay fixture",
+        "1 s of the virtual test band: the record/replay fixture",
     )?;
 
     for fixture in decoder_fixtures() {
@@ -1538,7 +1580,7 @@ struct Fixture {
 }
 
 fn aprs_burst() -> Vec<Complex<f32>> {
-    use sdrmm_channels::{AprsTx, ChannelCtx, ChannelTx, TxPayload, testgen};
+    use sdrmm_channels::{AprsTx, ChannelCtx, ChannelTx, TxPayload, synth};
     use sdrmm_wire::{AprsMode, AprsParams, ChannelParams, ChannelSettings};
 
     let settings = ChannelSettings {
@@ -1564,25 +1606,25 @@ fn aprs_burst() -> Vec<Complex<f32>> {
         "!5230.00N/01324.00E>SDR-- fixture",
     )))
     .expect("a ui frame is a payload the modulator carries");
-    testgen::burst(&mut tx)
+    synth::burst(&mut tx)
 }
 
 const NARROW: f64 = 240_000.0;
 const AUDIO: f64 = 48_000.0;
 
 fn at(mut iq: Vec<Complex<f32>>, offset: f64, rate: f64) -> Vec<Complex<f32>> {
-    sdrmm_channels::testgen::shift(&mut iq, offset, rate);
+    sdrmm_channels::synth::shift(&mut iq, offset, rate);
     iq
 }
 
 fn pagers_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::testgen;
+    use sdrmm_channels::synth;
 
     out.push(Fixture {
         stem: "pocsag_1200_240k".to_string(),
         iq: at(
-            testgen::pocsag::transmission(
-                &[testgen::pocsag::Page {
+            synth::pocsag::transmission(
+                &[synth::pocsag::Page {
                     address: 1_234_567,
                     function: 3,
                     text: "SDR-- FIXTURE".to_string(),
@@ -1602,8 +1644,8 @@ fn pagers_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "flex_1600_2_240k".to_string(),
         iq: at(
-            testgen::flex::transmission(
-                &testgen::flex::Page {
+            synth::flex::transmission(
+                &synth::flex::Page {
                     address: 1_234_567,
                     text: "SDR-- FLEX FIXTURE".to_string(),
                 },
@@ -1622,8 +1664,8 @@ fn pagers_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "ermes_alpha_240k".to_string(),
         iq: at(
-            testgen::ermes::transmission(
-                &testgen::ermes::Page {
+            synth::ermes::transmission(
+                &synth::ermes::Page {
                     local_address: 234_567,
                     message_number: 3,
                     text: "SDR-- ERMES FIXTURE".to_string(),
@@ -1642,12 +1684,12 @@ fn pagers_fixtures(out: &mut Vec<Fixture>) {
 }
 
 fn tone_and_packet_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::testgen;
+    use sdrmm_channels::synth;
 
     out.push(Fixture {
         stem: "selcall_ccir1_48k".to_string(),
         iq: at(
-            testgen::selcall::transmission(sdrmm_wire::SelcallSystem::Ccir1, "12234", AUDIO)
+            synth::selcall::transmission(sdrmm_wire::SelcallSystem::Ccir1, "12234", AUDIO)
                 .expect("CCIR-1 fixture code is valid"),
             5_000.0,
             AUDIO,
@@ -1659,7 +1701,7 @@ fn tone_and_packet_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "selcall_zvei1_48k".to_string(),
         iq: at(
-            testgen::selcall::transmission(sdrmm_wire::SelcallSystem::Zvei1, "A11D0", AUDIO)
+            synth::selcall::transmission(sdrmm_wire::SelcallSystem::Zvei1, "A11D0", AUDIO)
                 .expect("ZVEI-1 fixture code is valid"),
             -5_000.0,
             AUDIO,
@@ -1672,8 +1714,8 @@ fn tone_and_packet_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "ais_position_240k".to_string(),
         iq: at(
-            testgen::ais::burst(
-                &testgen::ais::position_payload(&testgen::ais::PositionReport {
+            synth::ais::burst(
+                &synth::ais::position_payload(&synth::ais::PositionReport {
                     mmsi: 211_234_560,
                     lat: 53.5413,
                     lon: 9.9846,
@@ -1694,7 +1736,7 @@ fn tone_and_packet_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "aprs_afsk1200_240k".to_string(),
         iq: at(
-            testgen::resample(&aprs_burst(), AUDIO, NARROW),
+            synth::resample(&aprs_burst(), AUDIO, NARROW),
             -40_000.0,
             NARROW,
         ),
@@ -1705,7 +1747,7 @@ fn tone_and_packet_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "rtty_45_170_48k".to_string(),
         iq: at(
-            testgen::rtty::transmission("CQ CQ DE DL1ABC K\r\n", 45.45, 170.0, 1.5, AUDIO),
+            synth::rtty::transmission("CQ CQ DE DL1ABC K\r\n", 45.45, 170.0, 1.5, AUDIO),
             5_000.0,
             AUDIO,
         ),
@@ -1715,12 +1757,12 @@ fn tone_and_packet_fixtures(out: &mut Vec<Fixture>) {
 }
 
 fn morse_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::testgen;
+    use sdrmm_channels::synth;
 
     out.push(Fixture {
         stem: "morse_20wpm_48k".to_string(),
         iq: at(
-            testgen::morse::transmission("CQ DE DL1ABC K", 20.0, 0.0, AUDIO),
+            synth::morse::transmission("CQ DE DL1ABC K", 20.0, 0.0, AUDIO),
             -5_000.0,
             AUDIO,
         ),
@@ -1728,8 +1770,8 @@ fn morse_fixtures(out: &mut Vec<Fixture>) {
         note: "morse channel at -5 kHz -> \"CQ DE DL1ABC K\" at 20 wpm".to_string(),
     });
 
-    let first_cw = testgen::morse::transmission("VVV CQ DE DL1AAA K", 18.0, -3_500.0, AUDIO);
-    let second_cw = testgen::morse::transmission("VVV CQ DE G4BBB K", 27.0, 4_200.0, AUDIO);
+    let first_cw = synth::morse::transmission("VVV CQ DE DL1AAA K", 18.0, -3_500.0, AUDIO);
+    let second_cw = synth::morse::transmission("VVV CQ DE G4BBB K", 27.0, 4_200.0, AUDIO);
     let mut skimmer_iq =
         vec![Complex::new(0.0, 0.0); first_cw.len().max(second_cw.len()) + AUDIO as usize * 4];
     for (destination, source) in skimmer_iq.iter_mut().zip(first_cw) {
@@ -1748,24 +1790,24 @@ fn morse_fixtures(out: &mut Vec<Fixture>) {
 }
 
 fn aviation_and_timing_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::testgen;
+    use sdrmm_channels::synth;
 
     const ADSB_RATE: f64 = 2_000_000.0;
     let icao = 0x3C_6444;
     out.push(Fixture {
         stem: "adsb_squitters_2m".to_string(),
-        iq: testgen::adsb::transmission(
+        iq: synth::adsb::transmission(
             &[
-                testgen::adsb::squitter(icao, testgen::adsb::me_identification("DLH123")),
-                testgen::adsb::squitter(
+                synth::adsb::squitter(icao, synth::adsb::me_identification("DLH123")),
+                synth::adsb::squitter(
                     icao,
-                    testgen::adsb::me_airborne_position(38_000, 52.2572, 3.9190, false),
+                    synth::adsb::me_airborne_position(38_000, 52.2572, 3.9190, false),
                 ),
-                testgen::adsb::squitter(
+                synth::adsb::squitter(
                     icao,
-                    testgen::adsb::me_airborne_position(38_000, 52.2657, 3.9184, true),
+                    synth::adsb::me_airborne_position(38_000, 52.2657, 3.9184, true),
                 ),
-                testgen::adsb::squitter(icao, testgen::adsb::me_velocity(450.0, 275.0, -1_024)),
+                synth::adsb::squitter(icao, synth::adsb::me_velocity(450.0, 275.0, -1_024)),
             ],
             500.0,
             0.8,
@@ -1777,29 +1819,29 @@ fn aviation_and_timing_fixtures(out: &mut Vec<Fixture>) {
 
     out.push(Fixture {
         stem: "dcf77_2026_2k".to_string(),
-        iq: testgen::radio_clock::dcf77_example(),
-        rate: testgen::radio_clock::RATE,
+        iq: synth::radio_clock::dcf77(),
+        rate: synth::radio_clock::RATE,
         note: "radio_clock (DCF77) -> 2026-08-15 12:34 CET with valid parity".to_string(),
     });
 
     out.push(Fixture {
         stem: "gps_l1_ca_prn7_2m048".to_string(),
-        iq: testgen::gnss::acquisition(7, 1_000.0, 317, 2),
-        rate: testgen::gnss::RATE,
+        iq: synth::gnss::acquisition(7, 1_000.0, 317, 2),
+        rate: synth::gnss::RATE,
         note: "gnss channel -> GPS L1 C/A PRN 7, +1000 Hz Doppler, code phase 158.3 chips"
             .to_string(),
     });
 }
 
 fn broadcast_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::testgen;
+    use sdrmm_channels::synth;
 
     const RDS_RATE: f64 = 960_000.0;
     out.push(Fixture {
         stem: "rds_station_960k".to_string(),
         iq: at(
-            testgen::rds::transmission(
-                &testgen::rds::Station {
+            synth::rds::transmission(
+                &synth::rds::Station {
                     pi: 0xD3C2,
                     ps: "SDR-M4  ".to_string(),
                     radiotext: "SDR-- reference fixture".to_string(),
@@ -1824,10 +1866,7 @@ fn broadcast_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "navtex_518_48k".to_string(),
         iq: at(
-            testgen::navtex::transmission(
-                "ZCZC DA07\r\nGALE WARNING\r\nGERMAN BIGHT\r\nNNNN",
-                AUDIO,
-            ),
+            synth::navtex::transmission("ZCZC DA07\r\nGALE WARNING\r\nGERMAN BIGHT\r\nNNNN", AUDIO),
             3_000.0,
             AUDIO,
         ),
@@ -1838,8 +1877,8 @@ fn broadcast_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "acars_downlink_240k".to_string(),
         iq: at(
-            testgen::acars::transmission(
-                &testgen::acars::Block {
+            synth::acars::transmission(
+                &synth::acars::Block {
                     mode: '2',
                     registration: ".D-AIBC",
                     ack: '\x15',
@@ -1861,9 +1900,9 @@ fn broadcast_fixtures(out: &mut Vec<Fixture>) {
 
     out.push(Fixture {
         stem: "ysf_callsigns_48k".to_string(),
-        iq: testgen::dv::ysf::transmission_with_callsigns(
-            &testgen::dv::ysf::Fich::default(),
-            &testgen::dv::ysf::Call::default(),
+        iq: synth::dv::ysf::transmission_with_callsigns(
+            &synth::dv::ysf::Fich::default(),
+            &synth::dv::ysf::Call::default(),
             AUDIO,
         ),
         rate: AUDIO,
@@ -1872,19 +1911,19 @@ fn broadcast_fixtures(out: &mut Vec<Fixture>) {
 }
 
 fn wideband_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::testgen;
+    use sdrmm_channels::synth;
 
     const DECT_RATE: f64 = 2_304_000.0;
     out.push(Fixture {
         stem: "dect_base_2m304".to_string(),
-        iq: testgen::dect::dummy_bearer(
-            &testgen::dect::Station {
+        iq: synth::dect::dummy_bearer(
+            &synth::dect::Station {
                 rfpi: 0x0001_234D_5E6D,
                 carrier: 4,
                 slot: 2,
                 slot_pair: 2,
-                capabilities: testgen::dect::capability_bits(&[17, 33, 36, 37, 38]),
-                ..testgen::dect::Station::default()
+                capabilities: synth::dect::capability_bits(&[17, 33, 36, 37, 38]),
+                ..synth::dect::Station::default()
             },
             60,
         ),
@@ -1893,27 +1932,30 @@ fn wideband_fixtures(out: &mut Vec<Fixture>) {
             .to_string(),
     });
 
-    const SUBGHZ_RATE: f64 = 500_000.0;
+    const DECT_CALL_FRAMES: usize = 100;
+    let base = synth::dect::tone(1_000.0, 0.3, DECT_CALL_FRAMES * 80);
+    let handset = synth::dect::tone(600.0, 0.3, DECT_CALL_FRAMES * 80);
+    let mut air = synth::dect::Air::carrier(DECT_CALL_FRAMES);
+    synth::dect::Call {
+        station: synth::dect::Station {
+            rfpi: 0x0001_234D_5E6D,
+            carrier: 4,
+            slot: 2,
+            ..synth::dect::Station::default()
+        },
+        pmid: 0x1_2345,
+        first_frame: 0,
+        base: &base,
+        handset: &handset,
+        grant_at: None,
+    }
+    .transmit(&mut air, DECT_CALL_FRAMES);
     out.push(Fixture {
-        stem: "subghz_ev1527_500k".to_string(),
-        iq: at(
-            testgen::subghz::pwm(
-                &testgen::subghz::Pwm {
-                    bits: (0..24)
-                        .map(|i| 0x0A_1B_23u32 >> (23 - i) & 1 == 1)
-                        .collect(),
-                    short_us: 320,
-                    long_multiple: 3,
-                    sync_gap_multiple: 31,
-                    repeats: 6,
-                },
-                SUBGHZ_RATE,
-            ),
-            100_000.0,
-            SUBGHZ_RATE,
-        ),
-        rate: SUBGHZ_RATE,
-        note: "subghz channel at +100 kHz -> 24-bit PWM 0A1B23, address 0A1B2 button 3".to_string(),
+        stem: "dect_call_2m304".to_string(),
+        iq: air.into_iq(),
+        rate: DECT_RATE,
+        note: "dect channel -> clear call on RFPI 01234D5E6D, 1 kHz from the base, 600 Hz from the handset"
+            .to_string(),
     });
 
     const ATV_RATE: f64 = 2_400_000.0;
@@ -1921,7 +1963,7 @@ fn wideband_fixtures(out: &mut Vec<Fixture>) {
     out.push(Fixture {
         stem: "atv_ccir625_2m4".to_string(),
         iq: at(
-            testgen::atv::bars(&testgen::atv::AtvSource::new(&atv_params, ATV_RATE), 2),
+            synth::atv::bars(&synth::atv::AtvSource::new(&atv_params, ATV_RATE), 2),
             200_000.0,
             ATV_RATE,
         ),
@@ -1931,11 +1973,11 @@ fn wideband_fixtures(out: &mut Vec<Fixture>) {
 
     const SSTV_RATE: f64 = 48_000.0;
     const SSTV_MODE: sdrmm_wire::SstvMode = sdrmm_wire::SstvMode::Robot36;
-    let sstv = testgen::sstv::transmission(SSTV_MODE, &testgen::sstv::bars(SSTV_MODE), 16_000.0);
+    let sstv = synth::sstv::transmission(SSTV_MODE, &synth::sstv::bars(SSTV_MODE), 16_000.0);
     out.push(Fixture {
         stem: "sstv_robot36_48k".to_string(),
         iq: at(
-            testgen::resample(&sstv, 16_000.0, SSTV_RATE),
+            synth::resample(&sstv, 16_000.0, SSTV_RATE),
             4_000.0,
             SSTV_RATE,
         ),

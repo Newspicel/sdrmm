@@ -47,13 +47,12 @@ impl Tuned {
         });
     }
 
-    fn array_tuning(&self) -> Signal<bool> {
+    fn array_tuning(&self, stream: u32) -> Signal<bool> {
         let (store, node) = (self.store, self.node.clone());
         Signal::derive(move || {
-            let array = store
+            store
                 .graph
-                .with(|graph| graph.array_holding(&node).map(str::to_owned));
-            array.is_some_and(|array| store.device_set_of(&array).is_some())
+                .with(|graph| graph.array_of_lane(&node, stream).is_some())
         })
     }
 }
@@ -96,7 +95,6 @@ pub fn tuner(tuned: Tuned, advised: Signal<std::collections::BTreeSet<u32>>) -> 
                         stream,
                         port.clone(),
                         if index == 0 { bond } else { None },
-                        index == 0,
                     ))
                 });
                 let extra = (merged && controls).then(|| {
@@ -125,10 +123,9 @@ fn lane_rule(
     stream: u32,
     port: Option<String>,
     bond: Option<&'static str>,
-    first: bool,
 ) -> impl IntoView {
     let locked = tuned.locked(stream);
-    let array = tuned.array_tuning();
+    let array = tuned.array_tuning(stream);
     view! {
         row(class = "kit-rule") {
             box(class = "kit-rule__tick")
@@ -136,7 +133,7 @@ fn lane_rule(
             {move || locked.get().then(|| AnyView::new(icons::icon(icons::LOCK)))}
             box(class = "kit-rule__line") {}
             {bond.map(|bond| AnyView::new(view! { row(class = "kit-rule__badge") { {icons::icon(icons::LINK)} text {{bond}} } }))}
-            {move || (first && array.get()).then(|| AnyView::new(view! { row(class = "kit-rule__badge") { {icons::icon(icons::LINK)} text {"Array"} } }))}
+            {move || array.get().then(|| AnyView::new(view! { row(class = "kit-rule__badge") { {icons::icon(icons::LINK)} text {"Array"} } }))}
         }
     }
 }
@@ -148,7 +145,8 @@ fn dial_row(tuned: &Tuned, stream: u32, port: Option<String>) -> impl IntoView {
     let reach = reach_of(radio);
     let pinned = Signal::derive(move || !is_tunable(reach.get()));
     let locked = tuned.locked(stream);
-    let held = Signal::derive(move || pinned.get() || locked.get());
+    let array = tuned.array_tuning(stream);
+    let held = Signal::derive(move || pinned.get() || locked.get() || array.get());
     let hz = Signal::derive(move || {
         radio
             .read(|set| {

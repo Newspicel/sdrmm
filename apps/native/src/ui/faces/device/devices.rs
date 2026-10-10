@@ -1,5 +1,5 @@
 use sdrmm_wire::{
-    device::{ARRAY_DRIVER_ID, DeviceInfo, RECORDING_DRIVER_ID, SIGGEN_DRIVER_ID},
+    device::{DeviceInfo, RECORDING_DRIVER_ID, SIGGEN_DRIVER_ID},
     patch::{DeviceRef, NodeBody, PatchGraph},
 };
 
@@ -70,7 +70,7 @@ pub fn show_synthetic() -> bool {
 
 #[must_use]
 pub fn visible_devices(devices: &[DeviceInfo], synthetic: bool) -> Vec<DeviceInfo> {
-    let node_owned = [RECORDING_DRIVER_ID, SIGGEN_DRIVER_ID, ARRAY_DRIVER_ID];
+    let node_owned = [RECORDING_DRIVER_ID, SIGGEN_DRIVER_ID];
     let pickable: Vec<DeviceInfo> = devices
         .iter()
         .filter(|info| !node_owned.contains(&info.driver.as_str()))
@@ -182,7 +182,6 @@ mod tests {
             device("virtual", "array4", "Coherent Array"),
             device("recording", "airband", "airband"),
             device("siggen", "signal_gen-a1b2", "Signal generator"),
-            device("array", "array-9f2c", "Array"),
             device("rtlsdr", "00000001", "RTL-SDR 00000001"),
         ];
         assert_eq!(

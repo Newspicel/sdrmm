@@ -7,11 +7,16 @@ use sdrmm_device::{
 use sdrmm_usb_stream::RxStream;
 use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings, GainKind};
 
-use crate::driver::{AirspyHf, DeviceDescriptor, RX_TRANSFER_SIZE};
+use crate::{
+    convert::{AirspyHfConverter, SampleScale},
+    driver::{AirspyHf, DeviceDescriptor, RX_TRANSFER_SIZE},
+};
 
 mod caps;
 mod convert;
 mod driver;
+#[cfg(test)]
+mod hardware;
 
 const DRIVER_ID: &str = "airspyhf";
 const NOSERIAL_KEY_PREFIX: &str = "noserial-";
@@ -23,6 +28,9 @@ fn map_err(err: driver::Error) -> DeviceError {
     }
     if err.is_permission_denied() {
         return DeviceError::PermissionDenied(text);
+    }
+    if err.is_busy() {
+        return DeviceError::InUse(text);
     }
     match err {
         driver::Error::DeviceNotFound => DeviceError::NotFound(text),
@@ -148,12 +156,14 @@ pub struct AirspyHfDevice {
     settings: DeviceSettings,
     duplex: Arc<Mutex<DuplexState>>,
     capture: Capture<AirspyHfRadio>,
+    scale: SampleScale,
 }
 
 impl AirspyHfDevice {
     fn new(device: AirspyHf) -> Self {
-        let capabilities = caps::capabilities(device.sample_rates());
+        let capabilities = caps::capabilities(device.sample_rates(), device.is_low_if());
         let settings = caps::settings(device.config());
+        let scale = SampleScale::new(device.config().filter_gain_db);
         tracing::debug!(
             firmware = device.version(),
             serial = ?device.serial(),
@@ -168,6 +178,7 @@ impl AirspyHfDevice {
             capabilities,
             settings,
             capture: Capture::new(),
+            scale,
         }
     }
 }
@@ -181,6 +192,9 @@ fn write_to_hardware(
         let rate = u32::try_from(rate.round() as i64)
             .map_err(|_| DeviceError::Unsupported(format!("{rate} Hz is not a sample rate")))?;
         device.set_sample_rate_hz(rate).map_err(map_err)?;
+    }
+    if let Some(ppm) = delta.ppm {
+        device.set_ppm(ppm).map_err(map_err)?;
     }
     if let Some(center_hz) = delta.center_hz {
         let hz = u32::try_from(center_hz.round() as i64)
@@ -203,9 +217,6 @@ fn write_to_hardware(
         }
         device.set_agc(writes.on).map_err(map_err)?;
     }
-    if let Some(enabled) = delta.bias_tee {
-        device.set_bias_tee(enabled).map_err(map_err)?;
-    }
     if let Some(extra) = delta.extra.first() {
         return Err(DeviceError::Unsupported(format!(
             "no {} setting",
@@ -226,12 +237,14 @@ impl SdrDevice for AirspyHfDevice {
 
     fn apply(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
         caps::validate(settings, &self.capabilities)?;
-        let (result, config) = {
+        let (result, config, low_if) = {
             let mut device = self.radio.lock();
             let result = write_to_hardware(&mut device, &self.capabilities, settings);
-            (result, device.config().clone())
+            (result, device.config().clone(), device.is_low_if())
         };
         self.settings = caps::settings(&config);
+        self.scale.set(config.filter_gain_db);
+        self.capabilities.dc_artifact = caps::dc_artifact(low_if);
         result
     }
 
@@ -240,7 +253,7 @@ impl SdrDevice for AirspyHfDevice {
         lock(&self.duplex).claim(Direction::Rx)?;
         let started = self.capture.start(
             self.radio.clone(),
-            convert::AirspyHfConverter::new(RX_TRANSFER_SIZE / 4),
+            AirspyHfConverter::new(RX_TRANSFER_SIZE / 4, self.scale.clone()),
             sink,
             CaptureConfig::new("sdrmm-airspyhf-rx", DRIVER_ID)
                 .with_sample_rate(self.settings.sample_rate),

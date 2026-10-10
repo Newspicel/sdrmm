@@ -19,16 +19,16 @@ import {
   Trend,
 } from "../../components/baseband";
 import { ICON_BTN_SM, TAB_BAR, tab } from "../../components/controls";
+import { Readout, Readouts } from "../../components/face/Readouts";
 import { Icon } from "../../components/Icon";
 import { NumberField } from "../../components/NumberField";
 import { Popover } from "../../components/Popover";
 import { colormapLut } from "../../components/persistence";
-import { Readout, ReadoutRow } from "../../components/Readout";
 import { Segmented } from "../../components/Segmented";
 import { SettingsPanel, SettingsSection } from "../../components/SettingsPanel";
 import { Switch } from "../../components/Switch";
 import { FULL_VIEW } from "../../components/spectrumView";
-import type { Colormap } from "../../gl/colormap";
+import type { Palette } from "../../gl/colormap";
 import { SpectrumAnalyzer } from "../../lib/dsp/fft";
 import type { IqFrame, SymbolFrame } from "../../lib/frame";
 import { iqHub } from "../../lib/iq";
@@ -72,8 +72,6 @@ const TREND_POINTS = 240;
 const SCATTER_VIEWS: readonly BasebandView[] = ["constellation", "eye"];
 const SIGNAL_VIEWS: readonly BasebandView[] = ["spectrum", "constellation", "eye", "levels"];
 const SYMBOL_VIEWS: readonly BasebandView[] = ["states", "quality", "drift"];
-const MEASURE_COLUMNS =
-  "grid-cols-[repeat(3,auto_auto)] justify-start gap-x-4 @[36rem]:grid-cols-[repeat(4,auto_auto)] @[60rem]:grid-cols-[repeat(8,auto_auto)]";
 const SCATTER_PAD = 12;
 const PLOT_INSET: PlotInset = { top: 10, bottom: 4 };
 
@@ -84,7 +82,7 @@ export function BasebandView({
 }: {
   deviceSet: number;
   channel: ChannelInfo;
-  colormap: Colormap;
+  colormap: Palette;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [frame, setFrame] = useState<IqFrame | null>(() => iqHub.latest(deviceSet, channel.id));
@@ -255,23 +253,19 @@ export function BasebandView({
         <div className="relative min-h-0 min-w-0 flex-1 bg-plot-bg">
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
           {hint !== null && (
-            <span className="legend pointer-events-none absolute inset-0 flex items-center justify-center text-plot-ink-dim">
+            <span className="legend font-mono text-[10.5px] pointer-events-none absolute inset-0 flex items-center justify-center text-plot-ink-dim">
               {hint}
             </span>
           )}
         </div>
         {rows.length > 0 && (
-          <Readout
-            separated={false}
-            columns={MEASURE_COLUMNS}
-            className="shrink-0 border-t border-line bg-panel"
-          >
+          <Readouts ruled={false} columns="fit" className="shrink-0 border-t border-line bg-panel">
             {rows.map((row) => (
-              <ReadoutRow key={row.label} label={row.label} title={row.hint}>
+              <Readout key={row.label} label={row.label} title={row.hint}>
                 {row.value}
-              </ReadoutRow>
+              </Readout>
             ))}
-          </Readout>
+          </Readouts>
         )}
       </div>
     </div>
@@ -429,7 +423,7 @@ function draw(
   settings: { view: BasebandView; eyeComponent: EyeComponent; symbolRate: number },
   scatter: Scatter,
   bitmapRef: { current: GridBitmap | null },
-  colormap: Colormap,
+  colormap: Palette,
   analyzerRef: { current: SpectrumAnalyzer | null },
   dbRef: { current: Float32Array | null },
   trends: Trends,
@@ -486,7 +480,12 @@ function draw(
     }
     const top = Math.ceil(peak / 10) * 10;
     drawPlot(canvas, {
-      frame: { centerHz: frame.centerHz, spanHz: frame.sampleRate, db },
+      frame: {
+        centerHz: frame.centerHz,
+        spanHz: frame.sampleRate,
+        signalDb: Number.NEGATIVE_INFINITY,
+        db,
+      },
       view: FULL_VIEW,
       window: { min: top - SPECTRUM_RANGE_DB, max: top },
       traces: [],
@@ -560,7 +559,7 @@ function drawScatter(
   canvas: HTMLCanvasElement,
   { grid, scale }: Scatter,
   bitmapRef: { current: GridBitmap | null },
-  colormap: Colormap,
+  colormap: Palette,
   view: BasebandView,
   eyeComponent: EyeComponent,
 ): void {
@@ -625,7 +624,7 @@ export function tickLabel(value: number): string {
   return Number(value.toPrecision(2)).toString();
 }
 
-function recolour(grid: BasebandGrid, colormap: Colormap, out: Uint8ClampedArray): void {
+function recolour(grid: BasebandGrid, colormap: Palette, out: Uint8ClampedArray): void {
   const lut = colormapLut(colormap);
   for (let i = 0; i < grid.cells.length; i++) {
     const value = grid.cells[i] ?? 0;

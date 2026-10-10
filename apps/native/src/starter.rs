@@ -1,8 +1,8 @@
 use sdrmm_wire::{
     device::DeviceInfo,
     patch::{
-        ChannelNode, DeviceNode, DeviceRef, NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef,
-        Position, Size,
+        ChannelNode, DecoderLogNode, DeviceNode, DeviceRef, NodeBody, PatchEdge, PatchGraph,
+        PatchNode, PortRef, Position, Size,
     },
 };
 
@@ -32,7 +32,7 @@ pub fn graph(devices: &[DeviceInfo]) -> PatchGraph {
                 "device",
                 NodeBody::Device(DeviceNode {
                     device,
-                    locked_streams: Vec::new(),
+                    ..DeviceNode::default()
                 }),
                 40.0,
                 40.0,
@@ -49,7 +49,6 @@ pub fn graph(devices: &[DeviceInfo]) -> PatchGraph {
                 "nfm",
                 NodeBody::Channel(ChannelNode {
                     channel_type: STARTER_CHANNEL.to_owned(),
-                    record_calls: false,
                     tuning_locked: false,
                 }),
                 40.0,
@@ -57,7 +56,13 @@ pub fn graph(devices: &[DeviceInfo]) -> PatchGraph {
                 None,
             ),
             node("speaker", NodeBody::Speaker, 540.0, 500.0, None),
-            node("log", NodeBody::DecoderLog, 920.0, 500.0, None),
+            node(
+                "log",
+                NodeBody::DecoderLog(DecoderLogNode::default()),
+                920.0,
+                500.0,
+                None,
+            ),
         ],
         edges: vec![
             edge(("device", "iq"), ("scope", "iq")),
@@ -138,6 +143,7 @@ mod tests {
                         key: Some("0".to_owned()),
                     }),
                     locked_streams: Vec::new(),
+                    split_tuning: false,
                 }),
                 0.0,
                 0.0,

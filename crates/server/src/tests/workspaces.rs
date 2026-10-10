@@ -3,7 +3,7 @@ use super::*;
 #[tokio::test]
 async fn applying_a_workspace_opens_its_radio_and_adds_its_channels_once() {
     let app = test_router();
-    let snapshot = virtual_snapshot("siggen", &[("nfm", "nfm", "iq"), ("am", "am", "iq")]);
+    let snapshot = virtual_snapshot("band", &[("nfm", "nfm", "iq"), ("am", "am", "iq")]);
     let workspace = put_active_workspace(&app, &snapshot).await;
 
     let first = apply(&app, workspace).await;
@@ -54,10 +54,10 @@ async fn applying_a_workspace_reports_an_absent_radio() {
 async fn undoing_a_workspace_takes_the_engine_back_with_it() {
     let app = test_router();
     let workspace =
-        put_active_workspace(&app, &virtual_snapshot("siggen", &[("nfm", "nfm", "iq")])).await;
+        put_active_workspace(&app, &virtual_snapshot("band", &[("nfm", "nfm", "iq")])).await;
     apply(&app, workspace).await;
 
-    let two = virtual_snapshot("siggen", &[("nfm", "nfm", "iq"), ("am", "am", "iq")]);
+    let two = virtual_snapshot("band", &[("nfm", "nfm", "iq"), ("am", "am", "iq")]);
     let revision = workspace_detail(&app, workspace).await.info.revision;
     let (status, body) = request(
         app.clone(),
@@ -106,7 +106,7 @@ async fn undoing_a_workspace_takes_the_engine_back_with_it() {
 async fn undoing_a_dial_move_puts_the_frequency_back() {
     let app = test_router();
     let workspace =
-        put_active_workspace(&app, &virtual_snapshot("siggen", &[("nfm", "nfm", "iq")])).await;
+        put_active_workspace(&app, &virtual_snapshot("band", &[("nfm", "nfm", "iq")])).await;
     apply(&app, workspace).await;
 
     let opened = get_state(&app).await;
@@ -136,7 +136,7 @@ async fn undoing_a_dial_move_puts_the_frequency_back() {
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{ch}"),
         Some(&format!(
-            r#"{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}"#,
+            r#"{{"settings":{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}}}"#,
             was_center + 1_025_000.0
         )),
     )
@@ -231,7 +231,7 @@ async fn workspace_crud_over_http() {
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(workspaces(&app).await.active, Some(created.id));
 
     let (status, body) = request(
@@ -267,14 +267,14 @@ async fn workspace_crud_over_http() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let info: sdrmm_wire::WorkspaceInfo = serde_json::from_slice(&body).expect("json");
-    assert_eq!(info.revision, 2);
+    let stored: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
+    assert_eq!(stored.info.revision, 2);
 
     let (status, _) = request(
         app.clone(),
         "PUT",
         &format!("/api/workspaces/{}", created.id),
-        Some(&format!(r#"{{"revision":1,"snapshot":{snapshot}}}"#)),
+        Some(&format!(r#"{{"revision":77,"snapshot":{snapshot}}}"#)),
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -325,7 +325,7 @@ async fn a_workspace_comes_back_tuned_the_way_it_was_left() {
         app.clone(),
         "PATCH",
         &format!("/api/devicesets/{ds}/channels/{channel}"),
-        Some(r#"{"frequency_hz":145512500.0,"squelch":{"mode":"manual","level_db":-42.0},"params":{"type":"nfm","settings":{}}}"#),
+        Some(r#"{"settings":{"frequency_hz":145512500.0,"squelch":{"mode":"manual","level_db":-42.0},"params":{"type":"nfm","settings":{}}}}"#),
     )
     .await;
     assert_eq!(
@@ -390,6 +390,7 @@ async fn a_partial_restore_lands_what_fits_and_keeps_remembering_the_rest() {
     let workspace = store_siggen_workspace(&app).await;
     let planted = sdrmm_wire::WorkspaceState {
         trunks: Vec::new(),
+        arrays: Vec::new(),
         version: sdrmm_wire::WORKSPACE_STATE_VERSION,
         channels: Vec::new(),
         devices: vec![sdrmm_wire::WorkspaceDevice {
@@ -510,12 +511,13 @@ async fn switching_between_workspaces_sharing_a_radio_restores_each_ones_setting
     let sets = get_state(&app).await.device_sets;
     assert_eq!(sets.len(), 1, "the shared radio was closed and reopened");
     assert_eq!(sets[0].id, ds, "the shared radio was closed and reopened");
-    assert!(
-        sets[0].channels.is_empty(),
-        "the previous workspace's channel is still running"
+    assert_eq!(
+        sets[0].channels.len(),
+        1,
+        "the switch brought the new one up"
     );
+    assert_eq!(sets[0].channels[0].settings.params.type_id(), "am");
 
-    apply(&app, second).await;
     tune(162_000_000.0).await;
     let sets = get_state(&app).await.device_sets;
     assert_eq!(sets[0].channels.len(), 1);
@@ -528,14 +530,12 @@ async fn switching_between_workspaces_sharing_a_radio_restores_each_ones_setting
         Some(145_500_000.0),
         "the first workspace came back on the second one's frequency"
     );
-    assert!(
-        sets[0].channels.is_empty(),
-        "the second workspace's channel is still running"
-    );
-
-    apply(&app, first).await;
     let sets = get_state(&app).await.device_sets;
-    assert_eq!(sets[0].channels.len(), 1);
+    assert_eq!(
+        sets[0].channels.len(),
+        1,
+        "the second workspace's channel is gone"
+    );
     assert_eq!(sets[0].channels[0].settings.params.type_id(), "nfm");
     assert_eq!(sets[0].settings.center_hz, Some(145_500_000.0));
 }
@@ -640,7 +640,7 @@ async fn applying_a_workspace_lands_each_channel_on_the_stream_its_wire_names() 
 async fn a_wire_to_a_stream_the_radio_does_not_have_is_refused_not_moved() {
     let app = test_router();
     let taps = [("voice", "nfm", "iq3")];
-    let workspace = put_active_workspace(&app, &virtual_snapshot("siggen", &taps)).await;
+    let workspace = put_active_workspace(&app, &virtual_snapshot("band", &taps)).await;
 
     let report = apply(&app, workspace).await;
     assert_eq!(report.opened, 1, "the radio itself is fine and must open");
@@ -679,7 +679,7 @@ async fn capture_and_restore_pair_same_type_channels_by_stream() {
             "PATCH",
             &format!("/api/devicesets/{}/channels/{}", set.id, channel.id),
             Some(&format!(
-                r#"{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}"#,
+                r#"{{"settings":{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}}}"#,
                 frequency_for(channel.stream)
             )),
         )
@@ -764,6 +764,7 @@ fn tuned_state(center_hz: f64) -> sdrmm_wire::WorkspaceState {
     sdrmm_wire::WorkspaceState {
         version: sdrmm_wire::WORKSPACE_STATE_VERSION,
         trunks: Vec::new(),
+        arrays: Vec::new(),
         channels: Vec::new(),
         devices: vec![sdrmm_wire::WorkspaceDevice {
             node: "device".to_string(),
@@ -778,7 +779,7 @@ fn tuned_state(center_hz: f64) -> sdrmm_wire::WorkspaceState {
 #[tokio::test]
 async fn an_exported_workspace_carries_its_layout_its_tuning_and_a_download_name() {
     let (app, state) = test_router_with_state();
-    let snapshot = virtual_snapshot("siggen", &[("nfm", "nfm", "iq")]);
+    let snapshot = virtual_snapshot("band", &[("nfm", "nfm", "iq")]);
     let workspace = create_named_workspace(&app, "Airband Watch", &snapshot).await;
     state
         .store
@@ -831,7 +832,7 @@ async fn exporting_a_workspace_that_is_not_there_says_so() {
 #[tokio::test]
 async fn an_imported_workspace_lands_next_to_the_one_it_came_from_and_opens_its_radio() {
     let (app, state) = test_router_with_state();
-    let snapshot = virtual_snapshot("siggen", &[("nfm", "nfm", "iq")]);
+    let snapshot = virtual_snapshot("band", &[("nfm", "nfm", "iq")]);
     let workspace = create_named_workspace(&app, "Airband Watch", &snapshot).await;
     state
         .store
@@ -875,15 +876,15 @@ async fn an_imported_workspace_lands_next_to_the_one_it_came_from_and_opens_its_
         Some(Some(145_500_000.0))
     );
 
-    let (status, _) = request(
+    let (status, body) = request(
         app.clone(),
         "POST",
         &format!("/api/workspaces/{imported}/activate"),
         None,
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-    let report = apply(&app, imported).await;
+    assert_eq!(status, StatusCode::OK);
+    let report: sdrmm_wire::PatchApplyReport = serde_json::from_slice(&body).expect("report");
     assert_eq!(report.opened, 1);
     assert_eq!(report.created, 1);
     assert_eq!(
@@ -976,7 +977,7 @@ async fn an_import_forgets_tuning_for_nodes_the_document_never_draws() {
 #[tokio::test]
 async fn a_radio_nobody_tuned_opens_over_the_decoder_wired_into_it() {
     let app = test_router();
-    let snapshot = virtual_snapshot("siggen", &[("planes", "adsb", "iq")]);
+    let snapshot = virtual_snapshot("band", &[("planes", "adsb", "iq")]);
     let workspace = put_active_workspace(&app, &snapshot).await;
 
     let report = apply(&app, workspace).await;
@@ -992,13 +993,13 @@ async fn a_radio_nobody_tuned_opens_over_the_decoder_wired_into_it() {
         center_hz, 1_090_000_000.0,
         "the decoder was left on the DC spike"
     );
-    assert!(!set.channels[0].out_of_band);
+    assert!(set.channels[0].out_of_band.is_none());
 }
 
 #[tokio::test]
 async fn a_decoder_keeps_its_own_frequency_and_the_radio_comes_to_it() {
     let app = test_router();
-    let snapshot = virtual_snapshot("siggen", &[("voice", "nfm", "iq")]);
+    let snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
     let workspace = put_active_workspace(&app, &snapshot).await;
     apply(&app, workspace).await;
 
@@ -1010,13 +1011,13 @@ async fn a_decoder_keeps_its_own_frequency_and_the_radio_comes_to_it() {
         set.channels[0].settings.frequency_hz, default_hz,
         "the radio moved the decoder instead of following it"
     );
-    assert!(!set.channels[0].out_of_band);
+    assert!(set.channels[0].out_of_band.is_none());
 }
 
 #[tokio::test]
 async fn a_channel_node_holds_its_settings_before_any_radio_carries_it() {
     let app = test_router();
-    let snapshot = virtual_snapshot("siggen", &[("voice", "nfm", "iq")]);
+    let snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
     let workspace = put_active_workspace(&app, &snapshot).await;
 
     let mut settings = sdrmm_wire::ChannelSettings::default_for("nfm").expect("nfm is built in");
@@ -1064,7 +1065,7 @@ async fn a_channel_node_holds_its_settings_before_any_radio_carries_it() {
 #[tokio::test]
 async fn settings_of_another_channel_type_are_refused() {
     let app = test_router();
-    let snapshot = virtual_snapshot("siggen", &[("voice", "nfm", "iq")]);
+    let snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
     let workspace = put_active_workspace(&app, &snapshot).await;
 
     let settings = sdrmm_wire::ChannelSettings::default_for("am").expect("am is built in");
@@ -1108,14 +1109,13 @@ async fn every_channel_type_offers_the_settings_a_node_starts_on() {
 async fn an_open_radio_holds_its_frequency_when_a_decoder_is_wired_in() {
     let app = test_router();
     let workspace =
-        put_active_workspace(&app, &virtual_snapshot("siggen", &[("voice", "nfm", "iq")])).await;
+        put_active_workspace(&app, &virtual_snapshot("band", &[("voice", "nfm", "iq")])).await;
     apply(&app, workspace).await;
     let opened = get_state(&app).await.device_sets[0].settings.center_hz;
 
-    put_workspace_revision(
+    put_workspace(
         &app,
-        &virtual_snapshot("siggen", &[("voice", "nfm", "iq"), ("air", "adsb", "iq")]),
-        2,
+        &virtual_snapshot("band", &[("voice", "nfm", "iq"), ("air", "adsb", "iq")]),
     )
     .await;
     let report = apply(&app, workspace).await;
@@ -1141,21 +1141,24 @@ async fn cutting_a_decoders_wire_closes_it_and_hands_the_window_to_the_rest() {
     let set = &get_state(&app).await.device_sets[0];
     assert_eq!(set.channels.len(), 2);
     assert_eq!(
-        set.channels.iter().filter(|c| c.out_of_band).count(),
+        set.channels
+            .iter()
+            .filter(|c| c.out_of_band.is_some())
+            .count(),
         1,
         "one window cannot hold both of these decoders at once"
     );
 
     snapshot.graph.edges.retain(|edge| edge.to.node != "planes");
     snapshot.graph.nodes.retain(|node| node.id != "planes");
-    put_workspace_revision(&app, &snapshot, 2).await;
+    put_workspace(&app, &snapshot).await;
     let report = apply(&app, workspace).await;
     assert_eq!(report.closed, 1, "the unwired decoder went on running");
 
     let set = &get_state(&app).await.device_sets[0];
     assert_eq!(set.channels.len(), 1);
     assert!(
-        !set.channels[0].out_of_band,
+        set.channels[0].out_of_band.is_none(),
         "the radio stayed on the decoder that was cut away, at {:?}",
         set.settings.center_hz
     );
@@ -1167,7 +1170,7 @@ async fn retune(app: &Router, set: u32, channel: u32, frequency_hz: f64) {
         "PATCH",
         &format!("/api/devicesets/{set}/channels/{channel}"),
         Some(&format!(
-            r#"{{"frequency_hz":{frequency_hz},"params":{{"type":"nfm","settings":{{}}}}}}"#
+            r#"{{"settings":{{"frequency_hz":{frequency_hz},"params":{{"type":"nfm","settings":{{}}}}}}}}"#
         )),
     )
     .await;
@@ -1182,8 +1185,7 @@ async fn retune(app: &Router, set: u32, channel: u32, frequency_hz: f64) {
 #[tokio::test]
 async fn cutting_one_of_two_alike_decoders_leaves_the_other_where_it_was_set() {
     let app = test_router();
-    let mut snapshot =
-        virtual_snapshot("siggen", &[("first", "nfm", "iq"), ("second", "nfm", "iq")]);
+    let mut snapshot = virtual_snapshot("band", &[("first", "nfm", "iq"), ("second", "nfm", "iq")]);
     let workspace = put_active_workspace(&app, &snapshot).await;
     let opened = apply(&app, workspace).await;
     assert!(opened.refused.is_empty(), "{:?}", opened.refused);
@@ -1203,7 +1205,7 @@ async fn cutting_one_of_two_alike_decoders_leaves_the_other_where_it_was_set() {
 
     snapshot.graph.edges.retain(|edge| edge.to.node != "first");
     snapshot.graph.nodes.retain(|node| node.id != "first");
-    put_workspace_revision(&app, &snapshot, 2).await;
+    put_workspace(&app, &snapshot).await;
     let report = apply(&app, workspace).await;
     assert_eq!(report.closed, 1, "{report:?}");
 
@@ -1222,7 +1224,7 @@ async fn cutting_one_of_two_alike_decoders_leaves_the_other_where_it_was_set() {
 }
 
 fn two_radio_snapshot(taps: &[(&str, &str)]) -> sdrmm_wire::WorkspaceSnapshot {
-    let mut snapshot = virtual_snapshot("siggen", &[]);
+    let mut snapshot = virtual_snapshot("band", &[]);
     snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
         id: "device2".to_string(),
         body: sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
@@ -1232,6 +1234,7 @@ fn two_radio_snapshot(taps: &[(&str, &str)]) -> sdrmm_wire::WorkspaceSnapshot {
                 key: Some("halfduplex".to_string()),
             }),
             locked_streams: Vec::new(),
+            split_tuning: false,
         }),
         position: sdrmm_wire::Position { x: 0.0, y: 300.0 },
         size: None,
@@ -1242,7 +1245,6 @@ fn two_radio_snapshot(taps: &[(&str, &str)]) -> sdrmm_wire::WorkspaceSnapshot {
             id: (*id).to_string(),
             body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
                 channel_type: (*channel_type).to_string(),
-                record_calls: false,
                 tuning_locked: false,
             }),
             position: sdrmm_wire::Position { x: 400.0, y: 300.0 },
@@ -1325,7 +1327,7 @@ async fn a_decoder_wired_to_two_radios_opens_on_one_of_them() {
     let opened: usize = state.device_sets.iter().map(|set| set.channels.len()).sum();
     assert_eq!(opened, 1);
     let (_, channel) = carrier_of(&state, "voice").expect("the decoder is on a radio");
-    assert!(!channel.out_of_band);
+    assert!(channel.out_of_band.is_none());
 
     let again = apply(&app, workspace).await;
     assert_eq!(again.created, 0, "{again:?}");
@@ -1348,7 +1350,7 @@ async fn a_decoder_moves_to_the_radio_that_can_still_hear_it() {
         second, first,
         "the decoder stayed on a radio that cannot hear it"
     );
-    assert!(!moved.out_of_band);
+    assert!(moved.out_of_band.is_none());
     assert_eq!(moved.settings.frequency_hz, channel.settings.frequency_hz);
     let opened: usize = state.device_sets.iter().map(|set| set.channels.len()).sum();
     assert_eq!(opened, 1, "the decoder was copied, not moved");
@@ -1376,7 +1378,7 @@ async fn a_retuned_decoder_finds_the_radio_that_hears_its_new_frequency() {
     let state = get_state(&app).await;
     let (now, moved) = carrier_of(&state, "voice").expect("the decoder is still on a radio");
     assert_eq!(now, other);
-    assert!(!moved.out_of_band);
+    assert!(moved.out_of_band.is_none());
     assert_eq!(moved.settings.frequency_hz, 400.1e6);
 }
 
@@ -1396,7 +1398,7 @@ async fn two_self_tuning_radios_share_a_crowd_one_window_cannot_hold() {
     let state = get_state(&app).await;
     for node in ["low", "high", "low2"] {
         let (_, channel) = carrier_of(&state, node).expect("every decoder is on a radio");
-        assert!(!channel.out_of_band, "{node} is out of band");
+        assert!(channel.out_of_band.is_none(), "{node} is out of band");
     }
     let (low, _) = carrier_of(&state, "low").expect("low");
     let (low2, _) = carrier_of(&state, "low2").expect("low2");
@@ -1426,19 +1428,19 @@ async fn a_decoder_wired_to_one_radio_keeps_it_while_the_flexible_ones_move_asid
     let siggen = state
         .device_sets
         .iter()
-        .find(|set| set.device.key == "siggen")
+        .find(|set| set.device.key == "band")
         .expect("the siggen radio")
         .id;
     assert_eq!(fixed_on, siggen);
     assert_ne!(flex_on, siggen);
-    assert!(!fixed.out_of_band && !flex.out_of_band);
+    assert!(fixed.out_of_band.is_none() && flex.out_of_band.is_none());
 }
 
 #[tokio::test]
 async fn applying_adopts_an_unnamed_channel_without_copying_it() {
     let (app, state) = test_router_with_state();
     let workspace = put_active_workspace(&app, &two_radio_snapshot(&[("voice", "nfm")])).await;
-    let set = state.engine.create_device_set("virtual:siggen").unwrap();
+    let set = state.engine.create_device_set("virtual:band").unwrap();
     let settings = ChannelSettings::default_for("nfm").unwrap();
     let id = state.engine.add_channel(set, 0, settings).unwrap();
     let report = apply(&app, workspace).await;
@@ -1509,4 +1511,273 @@ async fn a_second_stream_on_the_same_radio_can_carry_a_decoder() {
     );
     assert_eq!(carrier_of(&snapshot, "voice").unwrap().1.stream, 1);
     assert_eq!(apply(&app, workspace).await.created, 0);
+}
+
+#[tokio::test]
+async fn a_converter_offset_follows_the_radio_into_another_workspace() {
+    let (app, state) = test_router_with_state();
+    let first = store_siggen_workspace(&app).await;
+    apply(&app, first).await;
+    let ds = get_state(&app).await.device_sets[0].id;
+    let (status, _) = request(
+        app.clone(),
+        "PATCH",
+        &format!("/api/devicesets/{ds}/device"),
+        Some(r#"{"offset_hz":1000000.0}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        state
+            .store
+            .radio_calibration("virtual:band")
+            .expect("calibration")
+            .offset_hz,
+        Some(1_000_000.0)
+    );
+
+    let second = store_second_workspace(&app, "Marine", "am").await;
+    activate(&app, second).await;
+    let (status, _) = request(
+        app.clone(),
+        "DELETE",
+        &format!("/api/devicesets/{ds}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    apply(&app, second).await;
+
+    let sets = get_state(&app).await.device_sets;
+    assert_ne!(sets[0].id, ds, "the radio was not reopened");
+    assert_eq!(sets[0].settings.offset_hz, Some(1_000_000.0));
+}
+
+fn kraken_export() -> serde_json::Value {
+    let at = |x: f64| serde_json::json!({ "x": x, "y": 0.0 });
+    serde_json::json!({
+        "version": sdrmm_wire::WORKSPACE_EXPORT_VERSION,
+        "name": "Kraken DF",
+        "snapshot": {
+            "version": 3,
+            "graph": {
+                "nodes": [
+                    { "id": "device", "kind": "device", "data": {}, "position": at(0.0) },
+                    { "id": "arr", "kind": "array", "data": { "members": 1 }, "position": at(300.0) },
+                    { "id": "df1", "kind": "df", "label": "Roof DF", "data": {}, "position": at(600.0) },
+                    { "id": "gps", "kind": "gps", "data": { "source": { "type": "device" } }, "position": at(900.0) },
+                    { "id": "tri", "kind": "triangulation", "position": at(1200.0) }
+                ],
+                "edges": [
+                    { "from": { "node": "device", "port": "iq" }, "to": { "node": "arr", "port": "iq0" } },
+                    { "from": { "node": "arr", "port": "iq0" }, "to": { "node": "df1", "port": "iq0" } }
+                ]
+            },
+            "rack": { "slots": [{ "node": "df1", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+        },
+        "state": {
+            "version": sdrmm_wire::WORKSPACE_STATE_VERSION,
+            "devices": [{ "node": "device", "settings": { "center_hz": 433_920_000.0 } }],
+            "channels": [{
+                "node": "df1",
+                "settings": { "frequency_hz": 433_920_000.0, "params": { "type": "df", "settings": {} } }
+            }]
+        }
+    })
+}
+
+async fn import_kraken(app: &Router) -> i64 {
+    let (status, body) = import_document(app, &kraken_export().to_string()).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    serde_json::from_slice::<sdrmm_wire::CreatedRowId>(&body)
+        .expect("json")
+        .id
+}
+
+#[tokio::test]
+async fn an_import_of_an_old_export_carries_the_notice() {
+    let (app, state) = test_router_with_state();
+
+    let imported = import_kraken(&app).await;
+
+    let detail = workspace_detail(&app, imported).await;
+    assert_eq!(
+        detail.snapshot.version,
+        sdrmm_wire::WORKSPACE_SNAPSHOT_VERSION
+    );
+    let ids: Vec<&str> = detail
+        .snapshot
+        .graph
+        .nodes
+        .iter()
+        .map(|node| node.id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["device", "gps", "tri"]);
+    assert!(detail.snapshot.graph.edges.is_empty());
+    assert!(detail.snapshot.rack.slots.is_empty());
+    let notices: Vec<&sdrmm_wire::WorkspaceNoticeKind> =
+        detail.notices.iter().map(|notice| &notice.notice).collect();
+    assert_eq!(
+        notices,
+        vec![
+            &sdrmm_wire::WorkspaceNoticeKind::DroppedNodes {
+                nodes: vec![
+                    sdrmm_wire::DroppedNode {
+                        id: "arr".to_string(),
+                        kind: "array".to_string(),
+                        label: None,
+                    },
+                    sdrmm_wire::DroppedNode {
+                        id: "df1".to_string(),
+                        kind: "df".to_string(),
+                        label: Some("Roof DF".to_string()),
+                    },
+                ]
+            },
+            &sdrmm_wire::WorkspaceNoticeKind::ClearedGps {
+                nodes: vec!["gps".to_string()]
+            },
+        ]
+    );
+    let saved = state.store.workspace_state(imported).expect("settings");
+    assert_eq!(saved.devices.len(), 1);
+    assert!(saved.channels.is_empty());
+}
+
+#[tokio::test]
+async fn dismissing_a_notice_removes_it() {
+    let app = test_router();
+    let imported = import_kraken(&app).await;
+    let notices = workspace_detail(&app, imported).await.notices;
+    assert_eq!(notices.len(), 2);
+
+    let dismiss = async |workspace: i64, notice: i64| {
+        request(
+            app.clone(),
+            "DELETE",
+            &format!("/api/workspaces/{workspace}/notices/{notice}"),
+            None,
+        )
+        .await
+    };
+    let (status, _) = dismiss(imported, notices[0].id).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let left = workspace_detail(&app, imported).await.notices;
+    assert_eq!(left, notices[1..]);
+
+    let (status, body) = dismiss(imported, notices[0].id).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    serde_json::from_slice::<ApiError>(&body).expect("ApiError body");
+
+    let other = workspaces(&app).await.workspaces[0].id;
+    let (status, _) = dismiss(other, notices[1].id).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "a notice belongs to its own workspace"
+    );
+
+    let (status, _) = request(
+        app.clone(),
+        "DELETE",
+        &format!("/api/workspaces/{imported}"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = dismiss(imported, notices[1].id).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "deleting a workspace takes its notices"
+    );
+}
+
+async fn as_author(
+    app: &Router,
+    author: &str,
+    method: &str,
+    uri: &str,
+    body: Option<&str>,
+) -> (StatusCode, Bytes) {
+    let (status, _, bytes) = request_parts(
+        app.clone(),
+        method,
+        uri,
+        body,
+        &[(sdrmm_wire::AUTHOR_HEADER, author)],
+    )
+    .await;
+    (status, bytes)
+}
+
+fn renamed(snapshot: &sdrmm_wire::WorkspaceSnapshot, node: &str, label: &str) -> String {
+    let mut snapshot = snapshot.clone();
+    if let Some(held) = snapshot.graph.nodes.iter_mut().find(|held| held.id == node) {
+        held.label = Some(label.to_owned());
+    }
+    serde_json::to_string(&snapshot).expect("snapshot")
+}
+
+#[tokio::test]
+async fn two_browsers_edit_from_one_revision_and_undo_only_their_own() {
+    let app = test_router();
+    let workspace = workspaces(&app).await.active.expect("seeded");
+    let base = workspace_detail(&app, workspace).await;
+    let uri = format!("/api/workspaces/{workspace}");
+    for (author, node, label) in [("ann", "scope", "Ann"), ("bob", "speaker", "Bob")] {
+        let body = format!(
+            r#"{{"revision":{},"snapshot":{}}}"#,
+            base.info.revision,
+            renamed(&base.snapshot, node, label)
+        );
+        let (status, body) = as_author(&app, author, "PUT", &uri, Some(&body)).await;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    }
+    let label = |detail: &sdrmm_wire::WorkspaceDetail, node: &str| {
+        detail
+            .snapshot
+            .graph
+            .node(node)
+            .and_then(|node| node.label.clone())
+    };
+    let both = workspace_detail(&app, workspace).await;
+    assert_eq!(label(&both, "scope").as_deref(), Some("Ann"));
+    assert_eq!(label(&both, "speaker").as_deref(), Some("Bob"));
+
+    let (status, body) = as_author(&app, "ann", "POST", &format!("{uri}/undo"), None).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let undone: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
+    assert_eq!(label(&undone, "scope"), None);
+    assert_eq!(label(&undone, "speaker").as_deref(), Some("Bob"));
+}
+
+#[tokio::test]
+async fn a_switch_tells_every_client_who_made_it() {
+    let (app, state) = test_router_with_state();
+    let mut events = state.engine.subscribe_events();
+    let peer = state.presence.connect();
+    state.presence.present(peer, "ann", "Ann", "");
+    let second = store_second_workspace(&app, "Marine", "am").await;
+    let (status, body) = as_author(
+        &app,
+        "ann",
+        "POST",
+        &format!("/api/workspaces/{second}/activate"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let switched = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Ok(sdrmm_wire::ServerEvent::WorkspaceSwitched { id, by, .. }) =
+                events.recv().await
+            {
+                return (id, by);
+            }
+        }
+    })
+    .await
+    .expect("announced");
+    assert_eq!(switched, (second, Some("Ann".to_owned())));
 }

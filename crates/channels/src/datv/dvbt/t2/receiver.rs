@@ -1,13 +1,13 @@
-use std::{f32::consts::TAU, sync::Arc};
+use std::f32::consts::TAU;
 
 use num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
+use sdrmm_dsp::fft::Transform;
 
 use super::{
     DecodeError,
     acquire::{Acquisition, Preamble},
     common::Multiplex,
-    equalize::Equalizer,
+    equalize::{Equalizer, Shape},
     mapping::Mapping,
     schedule::Report,
     signalling::{Pre, Signalling},
@@ -15,7 +15,7 @@ use super::{
 use crate::datv::dvbs::PACKET;
 
 struct Mode {
-    fft: Arc<dyn Fft<f32>>,
+    fft: Transform,
     map: Mapping,
 }
 
@@ -39,10 +39,12 @@ pub struct Receiver {
     scheduler: Multiplex,
     pending: Vec<Complex<f32>>,
     spectrum: Vec<Complex<f32>>,
-    scratch: Vec<Complex<f32>>,
     equalized: Vec<Complex<f32>>,
+    gains: Vec<f32>,
     cells: Vec<Complex<f32>>,
+    cell_gains: Vec<f32>,
     p2: Vec<Complex<f32>>,
+    p2_gains: Vec<f32>,
     l1: Vec<Complex<f32>>,
     state: State,
     phase: f32,
@@ -60,19 +62,13 @@ pub struct Receiver {
 
 impl Receiver {
     pub fn new(selected: Option<u8>) -> Result<Self, DecodeError> {
-        let mut planner = FftPlanner::new();
         let mut modes = Vec::with_capacity(6);
         for size in [1024, 2048, 4096, 8192, 16384, 32768] {
             modes.push(Mode {
-                fft: planner.plan_fft_forward(size),
+                fft: Transform::forward(size),
                 map: Mapping::new(size)?,
             });
         }
-        let scratch = modes
-            .iter()
-            .map(|m| m.fft.get_inplace_scratch_len())
-            .max()
-            .unwrap_or(32768);
         Ok(Self {
             modes,
             acquisition: Acquisition::default(),
@@ -81,10 +77,12 @@ impl Receiver {
             scheduler: Multiplex::new()?,
             pending: Vec::with_capacity(131072),
             spectrum: vec![Complex::default(); 32768],
-            scratch: vec![Complex::default(); scratch],
             equalized: vec![Complex::default(); 27841],
+            gains: vec![0.0; 27841],
             cells: vec![Complex::default(); 27841],
+            cell_gains: vec![0.0; 27841],
             p2: vec![Complex::default(); 22432],
+            p2_gains: vec![0.0; 22432],
             l1: vec![Complex::default(); 22432],
             state: State::Search,
             phase: 0.0,
@@ -280,15 +278,24 @@ impl Receiver {
             self.equalizer.decode(
                 &self.spectrum[..fft],
                 &self.modes[mode].map,
-                preamble.miso(),
-                0,
+                Shape {
+                    miso: preamble.miso(),
+                    history: 0,
+                    guard,
+                },
                 &mut self.equalized,
+                &mut self.gains,
             )?;
             let map = &self.modes[mode].map;
             map.deinterleave(
                 &self.equalized[..map.data],
                 symbol,
                 &mut self.p2[symbol * map.data..(symbol + 1) * map.data],
+            )?;
+            map.deinterleave(
+                &self.gains[..map.data],
+                symbol,
+                &mut self.p2_gains[symbol * map.data..(symbol + 1) * map.data],
             )?;
         }
         let capacity = self.modes[mode].map.data;
@@ -320,6 +327,7 @@ impl Receiver {
             self.scheduler.push(
                 address,
                 &self.p2[symbol * capacity + start..(symbol + 1) * capacity],
+                &self.p2_gains[symbol * capacity + start..(symbol + 1) * capacity],
                 self.equalizer.noise,
                 packets,
             )?;
@@ -363,6 +371,7 @@ impl Receiver {
         let mode = fft.ilog2() as usize - 10;
         self.modes[mode].map.data(pre, symbol)?;
         self.transform(mode, (guard as isize + adjustment) as usize);
+        self.equalizer.shift(fft, adjustment);
         let map = &self.modes[mode].map;
         let history = match pre.pilots {
             1 | 3 | 5 | 7 => 3,
@@ -372,16 +381,22 @@ impl Receiver {
         self.equalizer.decode(
             &self.spectrum[..fft],
             map,
-            pre.preamble.miso(),
-            history,
+            Shape {
+                miso: pre.preamble.miso(),
+                history,
+                guard,
+            },
             &mut self.equalized,
+            &mut self.gains,
         )?;
         map.deinterleave(&self.equalized[..map.data], symbol, &mut self.cells)?;
+        map.deinterleave(&self.gains[..map.data], symbol, &mut self.cell_gains)?;
         let active = map.active;
         let previous = self.scheduler.report().packets;
         self.scheduler.push(
             address,
             &self.cells[..active],
+            &self.cell_gains[..active],
             self.equalizer.noise,
             packets,
         )?;
@@ -412,9 +427,7 @@ impl Receiver {
             *p = self.pending[start + i]
                 * Complex::from_polar(1.0, -self.phase - self.frequency * (start + i) as f32);
         }
-        self.modes[mode]
-            .fft
-            .process_with_scratch(&mut self.spectrum[..fft], &mut self.scratch);
+        self.modes[mode].fft.process(&mut self.spectrum[..fft]);
     }
 
     fn consume(&mut self, count: usize) {

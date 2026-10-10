@@ -1,8 +1,19 @@
 ---
+import { highlights, SECTIONS } from "../bench";
+import { newest, releases } from "../changelog";
+import BenchGroup from "../components/BenchGroup.astro";
 import Patch from "../components/Patch.astro";
+import Setups from "../components/Setups.astro";
+import Shells from "../components/Shells.astro";
 import Waterfall from "../components/Waterfall.astro";
 import { DEFAULT_SCENE, demoUrl, SCENES } from "../demo/scenes";
+import { INSTALLS } from "../installs";
 import Page from "../layouts/Page.astro";
+import { DISCORD } from "../nav";
+import { REPOSITORY, structuredData } from "../seo";
+
+const description =
+  "A software-defined radio application for listening, decoding and recording. Connect a receiver, a channel and a display, on your desk or on a server at the antenna.";
 
 const outputs = [
   {
@@ -129,31 +140,86 @@ const voices = [
     quote: "This is really great software, I LOVE it.",
     who: "phpbg",
     where: "GitHub",
-    href: "https://github.com/Newspicel/sdrminusminus/issues/93",
+    href: "https://github.com/Newspicel/sdrmm/issues/93",
   },
   {
     quote: "Thanks for this great way to use SDRs.",
     who: "poetajuan",
     where: "GitHub",
-    href: "https://github.com/Newspicel/sdrminusminus/issues/110",
+    href: "https://github.com/Newspicel/sdrmm/issues/110",
   },
   {
     quote: "Fantastic software",
     who: "pbranly",
     where: "GitHub",
-    href: "https://github.com/Newspicel/sdrminusminus/issues/73",
+    href: "https://github.com/Newspicel/sdrmm/issues/73",
   },
   {
     quote: "Nice application, congratulations.",
     who: "eb3frn",
     where: "GitHub",
-    href: "https://github.com/Newspicel/sdrminusminus/issues/72",
+    href: "https://github.com/Newspicel/sdrmm/issues/72",
   },
   {
     quote: "This looks amazing! The RTL-SDR driver is in Rust (no FFI)!",
     who: "switch161",
     where: "r/RTLSDR",
     href: "https://www.reddit.com/r/RTLSDR/comments/1wgfnuz/comment/p9wf5fy/",
+  },
+  {
+    quote: "Big fan of this project, it's like if SDRangel was modern and had a friendly UI.",
+    who: "teknogeek",
+    where: "Discord",
+    href: DISCORD,
+  },
+  {
+    quote: "Thank you for the work you're doing! SDR-- is truly fantastic!",
+    who: "datosg",
+    where: "Discord",
+    href: DISCORD,
+  },
+  {
+    quote: "Very impressed with SDR--",
+    who: "drspock",
+    where: "Discord",
+    href: DISCORD,
+  },
+  {
+    quote:
+      "SDR-- is a fantastic SDR program. Impressed with Scope and its ability to show faint signal.",
+    who: "Colin",
+    where: "Discord",
+    href: DISCORD,
+  },
+  {
+    quote: "This is by far the most useful SDR program I have used. Excellent work!",
+    who: "NedTokyo",
+    where: "Discord",
+    href: DISCORD,
+  },
+  {
+    quote: "The best SDR program out there. Finally something that is intuitive and easy to use.",
+    who: "d3",
+    where: "Discord",
+    href: DISCORD,
+  },
+  {
+    quote: "Finally, something that's easy to use and looks modern.",
+    who: "fejjo",
+    where: "Discord",
+    href: DISCORD,
+  },
+  {
+    quote: "Just got this setup on Ubuntu 24.04 using the RTL-SDR. Pretty neat so far.",
+    who: "Aytrus",
+    where: "Discord",
+    href: DISCORD,
+  },
+  {
+    quote: "I've just discovered this fantastic software.",
+    who: "choupette-change",
+    where: "GitHub",
+    href: "https://github.com/Newspicel/sdrmm/issues/126",
   },
 ];
 
@@ -162,12 +228,17 @@ const half = Math.ceil(voices.length / 2);
 const rows = [voices.slice(0, half), voices.slice(half)];
 
 const copies = [0, 1, 2, 3];
+
+const latest = newest(await releases(), 3);
+
+const fastest = highlights(SECTIONS);
 ---
 
 <Page
-  title="SDR-- · patch a radio together"
-  description="A software-defined radio application for listening, decoding and recording. Connect a receiver, a channel and a display, on your desk or on a server at the antenna."
+  title="SDR-- · Software-defined radio, patched together"
+  description={description}
   summary="A software-defined radio application for listening, decoding and recording."
+  structured={structuredData(description)}
 >
   <div class="stage">
     <Waterfall />
@@ -176,15 +247,15 @@ const copies = [0, 1, 2, 3];
       <p class="lede">Wire a receiver to a channel, the channel to a speaker, a map or a recorder.
         On your desk, or on a server at the antenna.</p>
       <div class="actions">
-        <a class="btn primary" href="/download.html">Download</a>
-        <a class="btn ghost" href="/getting-started/first-receiver.html">First receiver guide</a>
+        <a class="btn primary" href="/download">Download</a>
+        <a class="btn ghost" href="/docs/getting-started/first-receiver">First receiver guide</a>
       </div>
       <p class="platforms">macOS, Windows, Linux. Free and open source.</p>
     </div>
 
     <div class="wrap demo" id="demo">
       <div class="scenes">
-        <div role="tablist" aria-label="Demo session">
+        <div class="tabs" role="tablist" aria-label="Demo session">
           {
             SCENES.map((scene) => (
               <button
@@ -192,6 +263,7 @@ const copies = [0, 1, 2, 3];
                 role="tab"
                 data-scene={scene.id}
                 aria-selected={scene.id === DEFAULT_SCENE ? "true" : "false"}
+                tabindex={scene.id === DEFAULT_SCENE ? undefined : -1}
               >
                 {scene.label}
               </button>
@@ -210,7 +282,7 @@ const copies = [0, 1, 2, 3];
           height="1350"
         />
       </div>
-      <p class="caption">The real app, replaying a recorded session. Drag, zoom, press Play on a speaker.</p>
+      <p class="caption">The real app, replaying a recorded session. Click in to zoom, press Play on a speaker.</p>
     </div>
   </div>
 
@@ -221,25 +293,28 @@ const copies = [0, 1, 2, 3];
         recorders. Nothing happens behind your back.</p>
     </div>
     <Patch />
+    <Patch narrow />
   </section>
 
   <section class="wrap">
     <h2>Choose what the signal becomes</h2>
-    <p class="section-lede">A channel turns IQ into something you can use. Its output is what sets it apart.</p>
+    <p class="section-lede">A channel turns IQ into sound, messages, pictures or a recording.</p>
 
-    <div class="outputs">
+    <ul class="outputs">
       {
         outputs.map((output) => (
-          <div class={`output ${output.port}`}>
-            <p class="port"><span class="dot" />{output.name}</p>
-            <h3>{output.title}</h3>
-            <ul class="modes">
-              {output.modes.map((mode) => <li>{mode}</li>)}
-            </ul>
-          </div>
+          <li class={output.port}>
+            <p class="port">{output.name}</p>
+            <div>
+              <h3>{output.title}</h3>
+              <ul class="modes">
+                {output.modes.map((mode) => <li>{mode}</li>)}
+              </ul>
+            </div>
+          </li>
         ))
       }
-    </div>
+    </ul>
 
     <div class="tools">
       {
@@ -253,8 +328,45 @@ const copies = [0, 1, 2, 3];
     </div>
 
     <p class="note">Modes range from tested on air to experimental. The
-      <a href="/user-guide/decoders.html#catalog">decoder catalog</a> says which.</p>
+      <a href="/docs/user-guide/decoders#catalog">decoder catalog</a> says which.</p>
   </section>
+
+  {
+    fastest.length > 0 && (
+      <section class="wrap bench">
+        <h2>Measured against the rest</h2>
+        <p class="section-lede">Same machine, same input, release builds.</p>
+        <div class="groups">
+          {fastest.map((group) => (
+            <BenchGroup group={group} />
+          ))}
+        </div>
+        <a class="more" href="/benchmarks">All benchmarks</a>
+      </section>
+    )
+  }
+
+  <section class="wrap">
+    <h2>Run it where the radio is</h2>
+    <p class="section-lede">The same software on the desk and by the antenna. All of it free.</p>
+    <Setups />
+  </section>
+
+  {
+    latest && (
+      <section class="wrap news">
+        <h2>What's new</h2>
+        <p class="version">
+          {latest.version}
+          <time datetime={latest.date}>{latest.date}</time>
+        </p>
+        <ul>
+          {latest.groups.flatMap((group) => group.items).map((item) => <li set:html={item} />)}
+        </ul>
+        <a class="more" href="/changelog">Changelog</a>
+      </section>
+    )
+  }
 
   <section class="voices">
     <div class="wrap">
@@ -285,52 +397,46 @@ const copies = [0, 1, 2, 3];
     </div>
   </section>
 
-  <section class="wrap">
-    <h2>Install it</h2>
-    <p class="section-lede">The app runs its own server. Or run the server alone by the antenna and
-      open it from any browser.</p>
-
-    <div class="install">
-      <div class="lane">
-        <h3>Desktop app</h3>
-        <p><code>.dmg</code> for macOS, <code>.msi</code> or <code>.exe</code> for Windows,
-          <code>.deb</code>, <code>.rpm</code> or <code>.AppImage</code> for Linux.</p>
-        <p class="foot"><a class="btn primary" href="/download.html">Pick your file</a></p>
-      </div>
-
-      <div class="lane">
-        <h3>Homebrew</h3>
-        <div class="shell"><pre>brew tap newspicel/tap
-brew install --cask sdrminusminus
-
-<span class="p">or the server</span>
-brew install sdrmm
-brew services start sdrmm</pre></div>
-        <p class="foot"><a href="/getting-started/install.html">All methods: WinGet, APT, DNF, AUR, Nix</a></p>
-      </div>
-
-      <div class="lane">
-        <h3>Container</h3>
-        <div class="shell"><pre>git clone https://github.com/Newspicel/sdrminusminus.git
-cd sdrminusminus
-docker compose up -d</pre></div>
-        <p class="foot"><a href="/server/deployment.html">Setup, auth and HTTPS</a></p>
-      </div>
-    </div>
-
-    <p class="note">Then open <code>localhost:8080</code> and pick your radio on a Device node. The
-      server has no auth by default: set <a href="/server/configuration.html">a token and HTTPS</a>
-      before exposing it.</p>
-  </section>
-
   <section class="closing">
     <div class="wrap">
       <h2>Plug in a radio. Start patching.</h2>
+      <p class="section-lede">One command, or an installer for macOS, Windows and Linux.</p>
       <div class="actions">
-        <a class="btn primary" href="/download.html">Download</a>
-        <a class="btn ghost" href="https://github.com/Newspicel/sdrminusminus">Source on GitHub</a>
-        <a class="btn ghost" href="https://discord.gg/dYaRyGwBNw">Join Discord</a>
+        <a class="btn primary" href="/download">Download</a>
+        <a class="btn ghost" href={REPOSITORY}>Source on GitHub</a>
       </div>
+
+      <div class="terminal">
+        <div class="tabs" role="tablist" aria-label="Install with">
+          {
+            INSTALLS.map((install, index) => (
+              <button
+                type="button"
+                role="tab"
+                id={`tab-${install.id}`}
+                aria-controls={install.id}
+                aria-selected={index === 0 ? "true" : "false"}
+                tabindex={index === 0 ? undefined : -1}
+              >
+                {install.tab}
+              </button>
+            ))
+          }
+        </div>
+        {
+          INSTALLS.map((install, index) => (
+            <div class="panel" role="tabpanel" id={install.id} aria-labelledby={`tab-${install.id}`} hidden={index > 0}>
+              <Shells shells={install.shells} />
+              {install.more && <a class="more" href={install.more.href}>{install.more.label}</a>}
+            </div>
+          ))
+        }
+      </div>
+
+      <p class="note">Then open <code>localhost:8080</code> and pick your radio on a Device node. The
+        server has no auth by default: set <a href="/docs/server/configuration">a token and HTTPS</a>
+        before exposing it.</p>
+      <p class="work">Using it at work? <a href="/business">Talk to us</a>.</p>
     </div>
   </section>
 </Page>
@@ -365,33 +471,6 @@ docker compose up -d</pre></div>
     gap: 12px;
     margin-bottom: 14px;
   }
-  .scenes [role="tablist"] {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1px;
-    padding: 1px;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--well);
-  }
-  .scenes button {
-    height: 28px;
-    padding-inline: 14px;
-    border: 1px solid transparent;
-    border-radius: 3px;
-    background: none;
-    color: var(--ink-faint);
-    font: 12px var(--mono);
-    cursor: pointer;
-    transition: color 0.1s, background-color 0.1s;
-  }
-  .scenes button:hover { color: var(--ink); background: var(--panel); }
-  .scenes button[aria-selected="true"] {
-    color: var(--accent);
-    background: var(--panel-2);
-    border-color: var(--line);
-    box-shadow: var(--shadow-raised);
-  }
   .scenes .full { font: 12px var(--mono); color: var(--ink-dim); text-decoration: none; }
   .scenes .full:hover { color: var(--ink); }
 
@@ -399,7 +478,7 @@ docker compose up -d</pre></div>
     border: 1px solid var(--line-strong);
     border-radius: var(--radius-lg);
     overflow: hidden;
-    background: var(--bg);
+    background: var(--base);
     aspect-ratio: 16 / 10;
     max-height: 82vh;
     width: 100%;
@@ -408,6 +487,34 @@ docker compose up -d</pre></div>
   .window iframe { display: block; width: 100%; height: 100%; border: 0; }
   .window .still { display: none; width: 100%; height: auto; }
   .caption { margin: 18px 0 0; text-align: center; font-size: 14px; color: var(--ink-faint); }
+
+  .bench .groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .bench .more { font: 13px var(--mono); }
+
+  .news .version {
+    display: flex;
+    gap: 14px;
+    align-items: baseline;
+    margin: 0 0 16px;
+    font: 14px var(--mono);
+    color: var(--ink);
+  }
+  .news time { font-size: 13px; color: var(--ink-faint); }
+  .news ul {
+    margin: 0 0 20px;
+    padding-left: 20px;
+    max-width: var(--measure);
+    color: var(--ink-dim);
+  }
+  .news li + li { margin-top: 10px; }
+  .news li :global(p) { margin: 0; }
+  .news li :global(p + p) { display: none; }
+  .news .more { font: 13px var(--mono); }
 
   .wiring {
     display: grid;
@@ -418,37 +525,36 @@ docker compose up -d</pre></div>
   .wiring .section-lede { margin-bottom: 0; }
 
   .outputs {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--line);
+  }
+  .outputs > li {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 8px 32px;
+    align-items: start;
+    padding-block: 24px;
+    border-bottom: 1px solid var(--line);
   }
-  .output {
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--panel);
-    box-shadow: var(--shadow-face);
-  }
-  .output .port {
+  .outputs .port {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 32px;
+    gap: 10px;
     margin: 0;
-    padding-inline: 12px;
-    border-bottom: 1px solid var(--line);
-    background: color-mix(in oklab, var(--port) 14%, var(--panel));
-    font: 500 12.5px var(--mono);
-    color: var(--ink);
+    font: 500 14px/28px var(--mono);
+    color: var(--port);
   }
-  .output .dot {
-    width: 6px;
-    height: 6px;
+  .outputs .port::before {
+    content: "";
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--port);
   }
-  .output h3 { margin: 20px 20px 14px; font-size: 1.2rem; font-weight: 600; letter-spacing: -0.01em; }
-  .modes { margin: 0 20px 22px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px; }
+  .outputs h3 { margin: 0 0 14px; font-size: 1.2rem; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
+  .modes { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px; }
   .modes li {
     font: 12px/1 var(--mono);
     padding: 6px 8px;
@@ -457,10 +563,10 @@ docker compose up -d</pre></div>
     background: var(--well);
     border: 1px solid var(--line);
   }
-  .output.audio { --port: var(--audio); }
-  .output.events { --port: var(--events); }
-  .output.video { --port: var(--video); }
-  .output.iq { --port: var(--iq); }
+  .outputs .audio { --port: var(--audio); }
+  .outputs .events { --port: var(--events); }
+  .outputs .video { --port: var(--video); }
+  .outputs .iq { --port: var(--iq); }
 
   .tools {
     margin-top: 56px;
@@ -535,13 +641,37 @@ docker compose up -d</pre></div>
   }
 
   .closing {
-    position: relative;
-    text-align: center;
-    padding-block: clamp(96px, 14vw, 180px);
-    background: radial-gradient(60% 70% at 50% 100%, color-mix(in oklab, var(--accent) 10%, transparent), transparent 70%);
+    background: radial-gradient(50% 45% at 50% 40%, color-mix(in oklab, var(--accent) 8%, transparent), transparent);
   }
-  .closing h2 { margin-bottom: 36px; font-size: clamp(2.2rem, 6vw, 4.2rem); font-weight: 600; letter-spacing: -0.05em; }
-  .closing .actions { justify-content: center; }
+  .closing h2 {
+    margin-bottom: 18px;
+    text-align: center;
+    font-size: clamp(2.2rem, 6vw, 4.2rem);
+    letter-spacing: -0.05em;
+  }
+  .closing .section-lede { margin: 0 auto 32px; text-align: center; }
+  .closing .actions { justify-content: center; margin-bottom: clamp(48px, 7vw, 72px); }
+  .terminal {
+    max-width: 720px;
+    margin-inline: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--panel);
+    box-shadow: var(--shadow-face);
+  }
+  .terminal .tabs {
+    margin: 10px 10px 0;
+  }
+  .terminal .panel {
+    padding: 10px;
+  }
+  .terminal .more {
+    display: inline-block;
+    margin: 10px 4px 2px;
+    font-size: 14px;
+  }
+  .closing .note { max-width: 720px; margin-inline: auto; text-align: center; }
+  .closing .work { margin: 16px 0 0; text-align: center; font-size: 15px; color: var(--ink-faint); }
 
   @media (max-width: 900px) {
     .wiring { grid-template-columns: minmax(0, 1fr); }
@@ -552,25 +682,24 @@ docker compose up -d</pre></div>
   }
 
   @media (max-width: 720px) {
-    .outputs { grid-template-columns: minmax(0, 1fr); }
-    .output { padding: 22px 20px 24px; }
+    .outputs > li { grid-template-columns: minmax(0, 1fr); gap: 2px; padding-block: 18px 22px; }
     .voice { width: 260px; }
   }
 </style>
 
 <script>
   import { demoUrl } from "../demo/scenes";
+  import { installFor } from "../installs";
+  import { tabs } from "../tabs";
 
   const frame = document.querySelector<HTMLIFrameElement>(".window iframe");
   const full = document.querySelector<HTMLAnchorElement>(".scenes .full");
-  const tabs = document.querySelectorAll<HTMLButtonElement>(".scenes [data-scene]");
+  const scenes = document.querySelector<HTMLElement>(".scenes .tabs");
+  const installs = document.querySelector<HTMLElement>(".terminal .tabs");
 
-  for (const tab of tabs) {
-    tab.addEventListener("click", () => {
+  if (scenes !== null) {
+    tabs(scenes, (tab) => {
       const url = demoUrl(tab.dataset.scene ?? "");
-      for (const other of tabs) {
-        other.setAttribute("aria-selected", String(other === tab));
-      }
       if (frame !== null) {
         frame.src = url;
       }
@@ -578,5 +707,17 @@ docker compose up -d</pre></div>
         full.href = url;
       }
     });
+  }
+
+  if (installs !== null) {
+    const select = tabs(installs, (tab) => {
+      for (const panel of document.querySelectorAll<HTMLElement>(".terminal [role=tabpanel]")) {
+        panel.hidden = panel.id !== tab.getAttribute("aria-controls");
+      }
+    });
+    const mine = installs.querySelector<HTMLButtonElement>(`[aria-controls="${installFor(navigator.userAgent)}"]`);
+    if (mine !== null) {
+      select(mine);
+    }
   }
 </script>

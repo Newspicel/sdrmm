@@ -1,0 +1,238 @@
+---
+import Page from "../layouts/Page.astro";
+import { LIMITS, MAX_FILE_BYTES, MAX_FILES } from "../recordings";
+
+const outcomes = [
+  { id: "sent", text: "Thank you. Your recording is in." },
+  { id: "invalid", text: "Check the signal, email and files." },
+  { id: "busy", text: "Too many uploads. Try again in a minute." },
+  { id: "failed", text: "Upload failed. Try again." },
+];
+---
+
+<Page
+  title="Donate recordings"
+  description="Upload IQ recordings to help build SDR-- decoders."
+  summary="Upload IQ recordings to help build SDR-- decoders."
+  noindex
+>
+  <div class="wrap donate">
+    <h1>Donate recordings</h1>
+    <p class="lede">Got a signal SDR-- should decode? Upload it. Recordings stay private.</p>
+
+    <form id="donate">
+      <label>
+        <span>Files</span>
+        <input
+          type="file"
+          name="files"
+          multiple
+          required
+          title={`SigMF (.sigmf-meta and .sigmf-data) or WAV. Up to ${MAX_FILES} files, ${MAX_FILE_BYTES / 1024 ** 3} GiB each.`}
+        />
+      </label>
+      <label>
+        <span>Signal</span>
+        <input
+          name="signal"
+          maxlength={LIMITS.signal}
+          placeholder="POCSAG, 466.075 MHz"
+          required
+        />
+      </label>
+      <label>
+        <span>Notes</span>
+        <textarea name="notes" rows="4" maxlength={LIMITS.notes}></textarea>
+      </label>
+      <label>
+        <span>Email (optional)</span>
+        <input type="email" name="email" autocomplete="email" maxlength={LIMITS.email} />
+      </label>
+      <label class="trap" aria-hidden="true">
+        <span>Website</span>
+        <input name="website" tabindex="-1" autocomplete="off" />
+      </label>
+      <div class="send">
+        <button class="btn primary" type="submit">Upload</button>
+        <a href="/privacy">Privacy</a>
+      </div>
+      <progress value="0" max="1" hidden></progress>
+      <div class="outcomes" role="status" aria-live="polite">
+        {
+          outcomes.map((outcome) => (
+            <p class="outcome" data-outcome={outcome.id} hidden>
+              {outcome.text}
+            </p>
+          ))
+        }
+      </div>
+    </form>
+  </div>
+</Page>
+
+<script>
+  import { MAX_FILE_BYTES, MAX_FILES } from "../recordings";
+  import { donate, UploadFailed } from "../upload";
+
+  const form = document.querySelector<HTMLFormElement>("#donate");
+  const button = form?.querySelector("button");
+  const bar = form?.querySelector("progress");
+
+  function show(outcome: string | null) {
+    for (const element of form?.querySelectorAll<HTMLElement>(".outcome") ?? []) {
+      element.hidden = element.dataset.outcome !== outcome;
+    }
+  }
+
+  function field(data: FormData, name: string): string {
+    const value = data.get(name);
+    return typeof value === "string" ? value : "";
+  }
+
+  function files(data: FormData): File[] | null {
+    const list = data.getAll("files").filter((value) => value instanceof File && value.size > 0);
+    const valid = list.length > 0 && list.length <= MAX_FILES;
+    return valid && list.every((file) => file.size <= MAX_FILE_BYTES) ? (list as File[]) : null;
+  }
+
+  async function upload(data: FormData): Promise<string> {
+    const chosen = files(data);
+    if (chosen === null) {
+      return "invalid";
+    }
+    const fields = { signal: field(data, "signal"), notes: field(data, "notes"), email: field(data, "email") };
+    try {
+      await donate(fields, chosen, field(data, "website"), {
+        fetch: (url, init) => fetch(url, init),
+        onProgress: (sent, total) => {
+          if (bar) {
+            bar.value = total === 0 ? 1 : sent / total;
+          }
+        },
+      });
+      return "sent";
+    } catch (error) {
+      return error instanceof UploadFailed ? error.reason : "failed";
+    }
+  }
+
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (button) {
+      button.disabled = true;
+    }
+    if (bar) {
+      bar.value = 0;
+      bar.hidden = false;
+    }
+    show(null);
+    const outcome = await upload(new FormData(form));
+    show(outcome);
+    if (bar) {
+      bar.hidden = true;
+    }
+    if (outcome === "sent") {
+      form.reset();
+    }
+    if (button) {
+      button.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .donate {
+    max-width: 640px;
+    padding-block: clamp(56px, 9vw, 112px);
+  }
+  h1 {
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+  }
+  .lede {
+    margin-bottom: 36px;
+  }
+  form {
+    display: grid;
+    gap: 16px;
+    padding: 28px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--panel);
+    box-shadow: var(--shadow-face);
+  }
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  label span {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-dim);
+  }
+  input,
+  textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--well);
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
+  }
+  textarea {
+    resize: vertical;
+  }
+  input:hover,
+  textarea:hover {
+    border-color: var(--line-strong);
+  }
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+    border-color: transparent;
+  }
+  input[type="file"] {
+    cursor: pointer;
+  }
+  .trap {
+    position: absolute;
+    left: -9999px;
+  }
+  .send {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .send button {
+    cursor: pointer;
+  }
+  .send button:disabled {
+    opacity: 0.6;
+    cursor: progress;
+  }
+  .send a {
+    font-size: 14px;
+    color: var(--ink-faint);
+  }
+  progress {
+    width: 100%;
+    height: 6px;
+    accent-color: var(--accent);
+  }
+  .outcome {
+    margin: 0;
+    color: var(--events);
+  }
+  .outcome[data-outcome="sent"] {
+    color: var(--audio);
+  }
+
+  @media (max-width: 560px) {
+    form {
+      padding: 22px 18px;
+    }
+  }
+</style>

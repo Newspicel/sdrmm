@@ -10,8 +10,7 @@ use axum::{
 };
 use sdrmm_engine::EngineError;
 use sdrmm_recorder::{
-    AUDIO_SUFFIX, Export, ExportKind, SigmfError, SigmfMeta, SigmfReader, data_path, meta_path,
-    read_audio_info, scan_audio, scan_stems,
+    AUDIO_SUFFIX, Export, ExportKind, SigmfError, Stored, read_audio_info, scan_audio, scan_library,
 };
 use sdrmm_tools::ToolError;
 use sdrmm_wire::{
@@ -20,55 +19,69 @@ use sdrmm_wire::{
     ChannelNetworkExportRequest, ChannelSettings, ChannelTypesResponse, ClientCommand,
     ClientsResponse, CreateBookmarkRequest, CreateChannelRequest, CreateDeviceSetRequest,
     CreatePresetRequest, CreateWorkspaceRequest, CreatedId, CreatedRowId, DecoderLogEntry,
-    DecoderLogQuery, DecoderLogResponse, DeletedCount, DeviceInfo, DeviceSettings, DevicesResponse,
-    DfFusionState, DiagnosticsReport, DoctorReport, ErrorCode, ExportFormat, HuntAction,
-    HuntRequest, HuntSettings, HuntStatus, IonosondeReport, LicenseTextResponse, LocateQuery,
-    MAX_RECORDING_UPLOAD_BYTES, MAX_SATELLITE_QUERY_LEN, NetworkExportAction, NetworkExportRequest,
-    NetworkExportStatus, NmeaDevicesResponse, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION,
-    PatchApplyReport, PatchBinding, PatchCatalog, PatchGraph, PatchRefusal, PlaybackRequest,
+    DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount, DeviceInfo,
+    DeviceSettings, DevicesResponse, DfFusionState, DiagnosticsReport, DoctorReport, ErrorCode,
+    ExportFormat, HuntAction, HuntRequest, HuntSettings, HuntStatus, IonosondeReport,
+    LicenseTextResponse, LocateQuery, LogGroupKey, MAX_RECORDING_UPLOAD_BYTES,
+    MAX_SATELLITE_QUERY_LEN, NetworkExportAction, NetworkExportRequest, NetworkExportStatus,
+    NmeaDevicesResponse, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport,
+    PatchBinding, PatchCatalog, PatchChannelRequest, PatchGraph, PatchRefusal, PlaybackRequest,
     PlaybackStatus, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
     RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
-    Route, RouteRequest, SatelliteCatalogQuery, SatelliteCatalogResponse, ScanAction, ScanRequest,
-    ScanSettings, ScannerStatus, ServerEvent, StateScope, StateSnapshot, TemplateInfo,
-    TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus, ToolRequest,
-    ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest, VoiceCallsResponse,
-    WorkspaceDetail, WorkspaceExport, WorkspaceInfo, WorkspaceSnapshot, WorkspaceState,
-    WorkspacesResponse,
+    SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScanAction,
+    ScanRequest, ScanSettings, ScannerStatus, ServerEvent, ServerStatus, StateScope, StateSnapshot,
+    TemplateInfo, TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus,
+    ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest,
+    VoiceCallsResponse, WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspaceState,
+    WorkspacesResponse, WriteSerialRequest, WrittenSerial,
 };
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
+mod arrays;
 mod audio_recordings;
 mod capture;
-mod coherent;
 mod cps;
 mod decoderlog;
+mod denoise;
 mod devices;
+mod fusion;
 mod info;
 mod media;
+mod missions;
+mod phones;
 mod presets;
+mod radar;
 mod recordings;
+mod remote;
 mod satellites;
 mod scanning;
+mod survey;
 mod workspaces;
 
 use audio_recordings::*;
 use capture::*;
-use coherent::*;
 use cps::*;
 use decoderlog::*;
 use devices::*;
+pub(crate) use devices::{patch_channel_live, patch_device_live};
 use info::*;
 use media::*;
 pub(crate) use media::{call_audio_path, captured_image_path};
 use presets::*;
 use recordings::*;
+use remote::*;
 use satellites::*;
+pub(crate) use scanning::scan;
 use scanning::*;
 use workspaces::*;
+pub(crate) use workspaces::{
+    HistoryStep, bring_up_active, check_channel_node, reconcile_graph, save_channel, step_history,
+    switch,
+};
 
 use crate::{
-    AppState,
+    AppState, calibration,
     store::{RecordingRow, SteppedWorkspace, Store, StoreError},
     workspace,
 };
@@ -91,15 +104,15 @@ impl AppError {
         }
     }
 
-    fn bad_request(message: impl Into<String>) -> Self {
+    pub(crate) fn bad_request(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, ErrorCode::Request, message.into())
     }
 
-    fn not_found(message: String) -> Self {
+    pub(crate) fn not_found(message: String) -> Self {
         Self::new(StatusCode::NOT_FOUND, ErrorCode::NotFound, message)
     }
 
-    fn internal(message: String) -> Self {
+    pub(crate) fn internal(message: String) -> Self {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             ErrorCode::Internal,
@@ -123,9 +136,36 @@ impl AppError {
         )
     }
 
+    fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, ErrorCode::Forbidden, message.into())
+    }
+
+    fn conflict(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, ErrorCode::Conflict, message.into())
+    }
+
+    fn bad_gateway(message: impl Into<String>) -> Self {
+        Self::new(
+            StatusCode::BAD_GATEWAY,
+            ErrorCode::Unavailable,
+            message.into(),
+        )
+    }
+
     fn with_detail(mut self, detail: String) -> Self {
         self.body.detail = Some(detail);
         self
+    }
+
+    pub(crate) fn is_client_error(&self) -> bool {
+        self.status.is_client_error()
+    }
+
+    pub(crate) fn message(&self) -> String {
+        match &self.body.detail {
+            Some(detail) => format!("{}: {detail}", self.body.error),
+            None => self.body.error.clone(),
+        }
     }
 }
 
@@ -154,9 +194,82 @@ impl<T: serde::Serialize> IntoResponse for Json<T> {
 #[from_request(via(axum::extract::Path), rejection(AppError))]
 pub(crate) struct Path<T>(pub T);
 
+pub(crate) struct LocalOnly;
+
+impl<S: Send + Sync> FromRequestParts<S> for LocalOnly {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        if parts.extensions.get::<sdrmm_tunnel::Relayed>().is_some() {
+            return Err(AppError::forbidden("not allowed through remote access"));
+        }
+        Ok(Self)
+    }
+}
+
 #[derive(FromRequestParts)]
 #[from_request(via(axum::extract::Query), rejection(AppError))]
 pub(crate) struct Query<T>(pub T);
+
+pub(crate) struct Author {
+    key: Option<String>,
+    phone: Option<String>,
+}
+
+impl Author {
+    pub(crate) fn as_deref(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    pub(crate) fn into_key(self) -> Option<String> {
+        self.key
+    }
+
+    pub(crate) fn name(&self, state: &AppState) -> Option<String> {
+        match &self.phone {
+            Some(phone) => state.phones.one(phone, None).ok().map(|phone| phone.name),
+            None => self
+                .key
+                .as_deref()
+                .and_then(|key| state.presence.name_of(key)),
+        }
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for Author {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        let phone = parts
+            .extensions
+            .get::<crate::auth::Identity>()
+            .and_then(|identity| identity.phone())
+            .map(str::to_owned);
+        let Some(value) = parts.headers.get(sdrmm_wire::AUTHOR_HEADER) else {
+            let key = phone.as_ref().map(|phone| format!("phone-{phone}"));
+            return Ok(Self {
+                key: key.filter(|key| sdrmm_wire::valid_author(key)),
+                phone,
+            });
+        };
+        match value.to_str() {
+            Ok(author) if sdrmm_wire::valid_author(author) => Ok(Self {
+                key: Some(author.to_owned()),
+                phone,
+            }),
+            _ => Err(AppError::bad_request(format!(
+                "{} must be a short url-safe key",
+                sdrmm_wire::AUTHOR_HEADER
+            ))),
+        }
+    }
+}
 
 impl From<JsonRejection> for AppError {
     fn from(rej: JsonRejection) -> Self {
@@ -196,8 +309,12 @@ impl From<StoreError> for AppError {
         let (status, code) = match err {
             StoreError::PresetNotFound(_)
             | StoreError::BookmarkNotFound(_)
+            | StoreError::SavedRadioNotFound(_)
             | StoreError::RecordingNotFound(_)
             | StoreError::WorkspaceNotFound(_)
+            | StoreError::NoticeNotFound(_)
+            | StoreError::PhoneNotFound(_)
+            | StoreError::OfferGone
             | StoreError::CpsUserNotFound(_)
             | StoreError::CpsDeviceNotFound(_)
             | StoreError::CpsCodeplugNotFound(_) => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
@@ -209,7 +326,7 @@ impl From<StoreError> for AppError {
             | StoreError::WorkspaceConflict { .. }
             | StoreError::CpsNameTaken
             | StoreError::WorkspaceHistoryEnd { .. } => (StatusCode::CONFLICT, ErrorCode::Conflict),
-            StoreError::Db(_) | StoreError::Corrupt(_) => {
+            StoreError::Db(_) | StoreError::Corrupt(_) | StoreError::NewerSchema { .. } => {
                 (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Storage)
             }
         };
@@ -266,60 +383,25 @@ pub(crate) fn reveal_path(
 }
 
 pub(crate) fn reconcile_recordings(dir: &std::path::Path, store: &Store) -> Result<(), AppError> {
-    let stems = scan_stems(dir)
+    let library = scan_library(dir)
         .map_err(|err| AppError::internal(format!("scan {}: {err}", dir.display())))?;
-    let mut kept = Vec::with_capacity(stems.len());
-    for stem in &stems {
-        let Some(name) = stem.file_name().and_then(|name| name.to_str()) else {
+    let mut kept = Vec::with_capacity(library.len());
+    for stored in &library {
+        let Some(name) = stored.stem().file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        let reader = match SigmfReader::open(stem) {
-            Ok(reader) => reader,
-            Err(err) => {
-                tracing::warn!(stem = %stem.display(), error = %err, "skipping unreadable recording");
-                continue;
-            }
+        let row = match stored {
+            Stored::Recording(stem) => recording_row(stem, name),
+            Stored::Collection(stem) => collection_row(stem, name),
         };
-        let samples = reader.total_samples();
-        let meta = reader.meta();
-        let Some(sample_rate) = meta.global.sample_rate else {
-            tracing::warn!(stem = %stem.display(), "skipping recording without a core:sample_rate");
+        let Some(row) = row else {
             continue;
         };
-        store.upsert_recording(&RecordingRow {
-            stem: name.to_string(),
-            name: meta.global.name.clone(),
-            created_at: recording_created_at(stem, meta),
-            device_label: meta.global.hw.clone().unwrap_or_default(),
-            center_hz: meta
-                .captures
-                .first()
-                .and_then(|c| c.frequency)
-                .unwrap_or_default(),
-            sample_rate,
-            samples,
-            bytes: samples * sdrmm_recorder::BYTES_PER_SAMPLE,
-            tags: meta.global.tags.clone(),
-            note: meta.global.description.clone(),
-        })?;
+        store.upsert_recording(&row)?;
         kept.push(name.to_string());
     }
     store.prune_recordings(&kept)?;
     Ok(())
-}
-
-fn recording_created_at(stem: &std::path::Path, meta: &SigmfMeta) -> String {
-    meta.captures
-        .first()
-        .and_then(|c| c.datetime.clone())
-        .or_else(|| {
-            std::fs::metadata(data_path(stem))
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| jiff::Timestamp::try_from(t).ok())
-                .map(|ts| ts.to_string())
-        })
-        .unwrap_or_default()
 }
 
 #[derive(OpenApi)]
@@ -330,6 +412,7 @@ fn recording_created_at(stem: &std::path::Path, meta: &SigmfMeta) -> String {
         ClientCommand,
         PresetSnapshot,
         ExportFormat,
+        LogGroupKey,
         RecordingFormat,
         TemplateInfo,
         ScannerStatus,
@@ -345,6 +428,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(get_state))
         .routes(routes!(get_devices))
+        .routes(routes!(write_serial))
         .routes(routes!(get_nmea_devices))
         .routes(routes!(get_channel_types))
         .routes(routes!(list_calls))
@@ -361,6 +445,8 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(delete_preset))
         .routes(routes!(list_bookmarks, create_bookmark))
         .routes(routes!(delete_bookmark))
+        .routes(routes!(list_saved_radios, save_radio))
+        .routes(routes!(delete_saved_radio))
         .routes(routes!(network_export_channel))
         .routes(routes!(time_machine_device_set))
         .routes(routes!(list_audio_recordings))
@@ -381,6 +467,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(download_recording))
         .routes(routes!(list_decoder_log, clear_decoder_log))
         .routes(routes!(export_decoder_log))
+        .routes(routes!(group_decoder_log))
         .routes(routes!(scan_channel))
         .routes(routes!(hunt_channel))
         .routes(routes!(search_satellites))
@@ -389,6 +476,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(apply_template))
         .routes(routes!(list_workspaces, create_workspace))
         .routes(routes!(import_workspace))
+        .routes(routes!(dismiss_workspace_notice))
         .routes(routes!(export_workspace))
         .routes(routes!(get_workspace, update_workspace, delete_workspace))
         .routes(routes!(activate_workspace))
@@ -404,6 +492,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_clients))
         .routes(routes!(get_occupancy))
         .routes(routes!(get_ionosonde))
+        .routes(routes!(get_status))
         .routes(routes!(get_doctor))
         .routes(routes!(get_diagnostics))
         .routes(routes!(list_radio_models))
@@ -428,9 +517,15 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_cps_job, cancel_cps_job))
         .routes(routes!(list_tools))
         .routes(routes!(run_tool))
-        .routes(routes!(calibrate_coherent))
-        .routes(routes!(get_fusion, reset_fusion))
-        .routes(routes!(get_route))
         .routes(routes!(get_about))
         .routes(routes!(get_license_text))
+        .routes(routes!(get_remote, unpair_remote))
+        .routes(routes!(pair_remote))
+        .merge(arrays::routes())
+        .merge(radar::routes())
+        .merge(phones::routes())
+        .merge(missions::routes())
+        .merge(survey::routes())
+        .merge(fusion::routes())
+        .merge(denoise::routes())
 }

@@ -1,7 +1,4 @@
-use sdrmm_wire::{
-    workspace::{MAX_NAME_LEN, WorkspaceExport},
-    workspace_state::WorkspaceState,
-};
+use sdrmm_wire::workspace::MAX_NAME_LEN;
 use serde_json::Value;
 
 pub const DEFAULT_NAME: &str = "Workspace";
@@ -38,46 +35,27 @@ pub fn export_file_name(name: &str) -> String {
     }
 }
 
-pub fn parse_export(text: &str) -> Result<WorkspaceExport, &'static str> {
+pub fn parse_export(text: &str) -> Result<Value, &'static str> {
     let document: Value = serde_json::from_str(text).map_err(|_| NOT_JSON)?;
-    let version = document
-        .get("version")
-        .and_then(Value::as_u64)
-        .and_then(|version| u32::try_from(version).ok())
-        .ok_or(NOT_WORKSPACE)?;
-    let name = document
+    let versioned = document.get("version").is_some_and(Value::is_u64);
+    let named = document
         .get("name")
         .and_then(Value::as_str)
-        .filter(|name| !name.trim().is_empty())
-        .ok_or(NOT_WORKSPACE)?;
-    let snapshot = document
+        .is_some_and(|name| !name.trim().is_empty());
+    let laid_out = document
         .get("snapshot")
-        .filter(|snapshot| {
-            snapshot
-                .get("graph")
-                .and_then(|graph| graph.get("nodes"))
-                .is_some_and(Value::is_array)
-        })
-        .ok_or(NOT_WORKSPACE)?;
-    let snapshot =
-        sdrmm_server::parse_workspace_snapshot(&snapshot.to_string()).map_err(|_| NOT_WORKSPACE)?;
-    let state = match document.get("state") {
-        Some(state) => {
-            serde_json::from_value::<WorkspaceState>(state.clone()).map_err(|_| NOT_WORKSPACE)?
-        }
-        None => WorkspaceState::new(),
-    };
-    Ok(WorkspaceExport {
-        version,
-        name: name.to_owned(),
-        snapshot,
-        state,
-    })
+        .and_then(|snapshot| snapshot.get("graph"))
+        .and_then(|graph| graph.get("nodes"))
+        .is_some_and(Value::is_array);
+    if versioned && named && laid_out {
+        Ok(document)
+    } else {
+        Err(NOT_WORKSPACE)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::patch::PortRef;
     use serde_json::json;
 
     use super::*;
@@ -100,13 +78,6 @@ mod tests {
             },
             "state": { "version": 2, "devices": [{ "node": "dev", "settings": { "center_hz": 145_500_000.0 } }] }
         })
-    }
-
-    fn port(node: &str, port: &str) -> PortRef {
-        PortRef {
-            node: node.to_owned(),
-            port: port.to_owned(),
-        }
     }
 
     #[test]
@@ -143,45 +114,10 @@ mod tests {
     }
 
     #[test]
-    fn keeps_the_name_the_layout_and_the_tuning_the_file_was_written_with() {
+    fn hands_the_file_over_untouched_for_the_server_to_upgrade() {
         let read = parse_export(&document().to_string()).expect("a workspace");
-        assert_eq!(read.name, "Airband Watch");
-        assert_eq!(read.version, 1);
-        assert_eq!(read.snapshot.graph.nodes.len(), 2);
-        assert_eq!(read.snapshot.graph.edges[0].to, port("scope", "iq"));
-        assert_eq!(
-            read.state.devices[0].settings.center_hz,
-            Some(145_500_000.0)
-        );
-    }
-
-    #[test]
-    fn lifts_a_control_wire_into_a_radio_onto_the_decoder_it_feeds() {
-        let mut older = document();
-        older["snapshot"]["graph"]["nodes"]
-            .as_array_mut()
-            .expect("nodes")
-            .extend([
-                json!({ "id": "nfm", "kind": "channel", "data": { "channel_type": "nfm" }, "position": { "x": 0, "y": 200 } }),
-                json!({ "id": "scan", "kind": "scanner", "position": { "x": 0, "y": 400 } }),
-            ]);
-        older["snapshot"]["graph"]["edges"]
-            .as_array_mut()
-            .expect("edges")
-            .extend([
-                json!({ "from": { "node": "dev", "port": "iq" }, "to": { "node": "nfm", "port": "iq" } }),
-                json!({ "from": { "node": "scan", "port": "control" }, "to": { "node": "dev", "port": "control" } }),
-            ]);
-
-        let read = parse_export(&older.to_string()).expect("a workspace");
-        let wire = read
-            .snapshot
-            .graph
-            .edges
-            .iter()
-            .find(|edge| edge.from.node == "scan")
-            .expect("the scanner stays wired");
-        assert_eq!(wire.to, port("nfm", "control"));
+        assert_eq!(read, document());
+        assert_eq!(read["snapshot"]["version"], 3);
     }
 
     #[test]

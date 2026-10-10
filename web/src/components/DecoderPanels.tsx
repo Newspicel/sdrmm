@@ -1,45 +1,52 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import {
-  Fragment,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ISM_KIND_LABELS, percentOf, WIFI_BAND_LABELS } from "../lib/airtime";
 import { capturedImageUrl, imagesQuery } from "../lib/api";
+import { useBroadcastStore } from "../lib/broadcast";
 import { copyText } from "../lib/copyText";
 import { useDecodedKind, useDecodedStore, useStations } from "../lib/decoded";
 import type { DecodedRecordOf, DecoderKind, IdentSignal } from "../lib/types";
 import { Button } from "./BaseControls";
 import { BroadcastDataView } from "./BroadcastDataView";
-import { ALERT, BTN, CHIP, TABLE_CELL, TABLE_HEAD } from "./controls";
+import { ALERT, BTN, TABLE_CELL, TABLE_HEAD } from "./controls";
 import {
+  type AprsWeatherStation,
   ageClass,
   aircraftRow,
+  aprsWeatherStations,
+  type BleDevice,
+  bleDevices,
   buildTranscript,
   candidateScore,
   cwSignalRows,
   type DecoderScope,
   type DectStation,
+  type Drone,
   dectStations,
   formatAge,
   formatAltFreqs,
   formatClock,
+  formatPosition,
   identMeasurements,
   identOverview,
   inScope,
   isAtBottom,
+  type LoraStation,
+  latestRecord,
   latestVorReadings,
   latestWpm,
+  loraStations,
   modulationLabel,
   multiVorFix,
   ptyLabel,
+  type RadiosondeStation,
+  radiosondeLog,
+  radiosondeStations,
   rdsPicture,
   rdsQuality,
   recordsInScope,
+  remoteIdDrones,
   shipRow,
   signalFrequency,
   sortTargets,
@@ -49,9 +56,22 @@ import {
   type TargetSort,
   toneLabel,
 } from "./decoderViews";
+import { FaceFault } from "./face/Fault";
+import { Readout, Readouts } from "./face/Readouts";
 import { formatHz } from "./format";
 import { Icon } from "./Icon";
 import { Unit } from "./Unit";
+import {
+  celsius,
+  climbRate,
+  hectopascal,
+  metres,
+  metresPerSecond,
+  millimetres,
+  percent,
+  SONDE_LABELS,
+  wind,
+} from "./weatherFormat";
 
 const PANE = "flex flex-col gap-2 p-3";
 const EMPTY = "text-sm text-ink-dim";
@@ -108,11 +128,7 @@ function RdsView({ scope = {} }: { scope?: DecoderScope }) {
           {altFreqs.length === 0 ? (
             <span className="font-mono text-xs text-ink-dim">-</span>
           ) : (
-            altFreqs.map((af) => (
-              <span key={af} className={CHIP}>
-                {af}
-              </span>
-            ))
+            <span className="font-mono text-xs tabular-nums text-ink">{altFreqs.join(" · ")}</span>
           )}
         </div>
         <div className="ml-auto flex items-center gap-2 font-mono text-xs tabular-nums text-ink-dim">
@@ -335,14 +351,7 @@ function TextView({ kind, scope = {} }: { kind: "rtty" | "morse" | "psk"; scope?
         </Button>
       </div>
 
-      {copyError !== null && (
-        <div role="alert" className={`${ALERT} flex items-center justify-between gap-3`}>
-          <span>Copy failed: {copyError}</span>
-          <Button type="button" className="shrink-0 underline" onClick={() => setCopyError(null)}>
-            dismiss
-          </Button>
-        </div>
-      )}
+      {copyError !== null && <FaceFault message={`Copy failed: ${copyError}`} />}
 
       <pre
         ref={paneRef}
@@ -473,14 +482,13 @@ function IdentView({ scope = {} }: { scope?: DecoderScope }) {
       </div>
 
       {signals.length === 0 && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+        <Readouts ruled={false} padded={false}>
           {identOverview(report).map(([label, value]) => (
-            <Fragment key={label}>
-              <dt className="legend self-center">{label}</dt>
-              <dd className="font-mono text-xs tabular-nums text-ink">{value}</dd>
-            </Fragment>
+            <Readout key={label} label={label}>
+              {value}
+            </Readout>
           ))}
-        </dl>
+        </Readouts>
       )}
 
       {signals.map((signal) => (
@@ -500,14 +508,13 @@ function IdentSignalView({ signal }: { signal: IdentSignal }) {
         <span className="legend">{Math.round(signal.confidence * 100)}% confident</span>
       </div>
 
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+      <Readouts ruled={false} padded={false}>
         {identMeasurements(signal).map(([label, value]) => (
-          <Fragment key={label}>
-            <dt className="legend self-center">{label}</dt>
-            <dd className="font-mono text-xs tabular-nums text-ink">{value}</dd>
-          </Fragment>
+          <Readout key={label} label={label}>
+            {value}
+          </Readout>
         ))}
-      </dl>
+      </Readouts>
 
       <div>
         <div className="legend">Protocol</div>
@@ -522,7 +529,9 @@ function IdentSignalView({ signal }: { signal: IdentSignal }) {
                 >
                   {match.name}
                 </span>
-                <span className={CHIP}>{candidateScore(match)}</span>
+                <span className="font-mono text-xs tabular-nums text-ink-dim">
+                  {candidateScore(match)}
+                </span>
                 <span className="text-xs text-ink-dim">{match.why}</span>
               </li>
             ))}
@@ -533,7 +542,7 @@ function IdentSignalView({ signal }: { signal: IdentSignal }) {
   );
 }
 
-const DECT_CIPHER_CHIP: Record<string, string> = {
+const DECT_CIPHER_STATE: Record<string, string> = {
   clear: "no encryption seen",
   requested: "start requested",
   confirmed: "start confirmed",
@@ -541,8 +550,9 @@ const DECT_CIPHER_CHIP: Record<string, string> = {
   stopped: "encryption stopped",
 };
 
-function dectSupport(value: boolean | null): string {
-  return value === null ? "-" : value ? "yes" : "no";
+function dectSupport(value: boolean | null, second: boolean | null, name: string): string {
+  const base = value === null ? "-" : value ? "yes" : "no";
+  return second ? `${base} · ${name}` : base;
 }
 
 function DectRow({ station }: { station: DectStation }) {
@@ -558,12 +568,13 @@ function DectRow({ station }: { station: DectStation }) {
             : `${station.carrier} · ${formatHz(station.carrierHz)}`}
       </td>
       <td className={TABLE_CELL}>{station.slotPair === null ? "-" : String(station.slotPair)}</td>
-      <td className={TABLE_CELL}>{dectSupport(station.authentication)}</td>
-      <td className={TABLE_CELL}>{dectSupport(station.ciphering)}</td>
+      <td className={TABLE_CELL}>{dectSupport(station.authentication, station.dsaa2, "DSAA2")}</td>
+      <td className={TABLE_CELL}>{dectSupport(station.ciphering, station.dsc2, "DSC2")}</td>
       <td className={TABLE_CELL}>
-        <span className={CHIP}>{DECT_CIPHER_CHIP[station.cipherState] ?? station.cipherState}</span>
+        {DECT_CIPHER_STATE[station.cipherState] ?? station.cipherState}
       </td>
       <td className={TABLE_CELL}>{station.handsets === 0 ? "-" : String(station.handsets)}</td>
+      <td className={TABLE_CELL}>{station.voice ?? "-"}</td>
       <td className={TABLE_CELL}>{station.levelDbfs.toFixed(1)}</td>
       <td className={TABLE_CELL}>
         {station.bursts}
@@ -596,6 +607,7 @@ function DectView({ scope = {} }: { scope?: DecoderScope }) {
               <th className={TABLE_HEAD}>Cipher</th>
               <th className={TABLE_HEAD}>State</th>
               <th className={TABLE_HEAD}>Handsets</th>
+              <th className={TABLE_HEAD}>Voice</th>
               <th className={TABLE_HEAD}>
                 <Unit symbol="dBFS" />
               </th>
@@ -605,6 +617,512 @@ function DectView({ scope = {} }: { scope?: DecoderScope }) {
           <tbody>
             {stations.map((station) => (
               <DectRow key={station.key} station={station} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LoraRow({ station, now }: { station: LoraStation; now: number }) {
+  const ageMs = now - Date.parse(station.at);
+  return (
+    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <td className={`${TABLE_CELL} font-mono`}>{station.key}</td>
+      <td className={TABLE_CELL}>{station.name ?? "-"}</td>
+      <td className={TABLE_CELL}>{station.protocol}</td>
+      <td className={`${TABLE_CELL} max-w-64 truncate`} title={station.message}>
+        {station.message}
+      </td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{station.snrDb.toFixed(1)}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{station.frames}</td>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+    </tr>
+  );
+}
+
+function wholeMetres(value: number | null): string {
+  return value === null ? "-" : value.toFixed(0);
+}
+
+function DroneRow({ drone, now }: { drone: Drone; now: number }) {
+  const ageMs = now - Date.parse(drone.at);
+  return (
+    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <td className={`${TABLE_CELL} font-mono`}>{drone.key}</td>
+      <td className={TABLE_CELL}>{drone.kind}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{wholeMetres(drone.heightM)}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>
+        {drone.speedMps === null ? "-" : drone.speedMps.toFixed(1)}
+      </td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{wholeMetres(drone.pilotM)}</td>
+      <td className={`${TABLE_CELL} max-w-40 truncate`} title={drone.operator ?? undefined}>
+        {drone.operator ?? "-"}
+      </td>
+      <td className={TABLE_CELL}>{drone.links.join(", ")}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{drone.levelDbfs.toFixed(0)}</td>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+    </tr>
+  );
+}
+
+function RemoteIdView({ scope = {} }: { scope?: DecoderScope }) {
+  const now = useNow();
+  const drones = remoteIdDrones(recordsInScope(useDecodedKind("remote_id"), scope));
+  if (drones.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No drones heard yet.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Drone</th>
+              <th className={TABLE_HEAD}>Type</th>
+              <th className={TABLE_HEAD}>
+                Height <Unit symbol="m" />
+              </th>
+              <th className={TABLE_HEAD}>
+                Speed <Unit symbol="m/s" />
+              </th>
+              <th className={TABLE_HEAD} title="Distance from drone to pilot">
+                Pilot <Unit symbol="m" />
+              </th>
+              <th className={TABLE_HEAD}>Operator</th>
+              <th className={TABLE_HEAD}>Link</th>
+              <th className={TABLE_HEAD}>
+                Level <Unit symbol="dBFS" />
+              </th>
+              <th className={TABLE_HEAD}>Heard</th>
+            </tr>
+          </thead>
+          <tbody>
+            {drones.map((drone) => (
+              <DroneRow key={drone.key} drone={drone} now={now} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function BleRow({ device, now }: { device: BleDevice; now: number }) {
+  const ageMs = now - Date.parse(device.at);
+  return (
+    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <td className={`${TABLE_CELL} font-mono`}>{device.key}</td>
+      <td className={`${TABLE_CELL} max-w-40 truncate`} title={device.name ?? undefined}>
+        {device.name ?? "-"}
+      </td>
+      <td className={TABLE_CELL}>{device.vendor ?? "-"}</td>
+      <td className={TABLE_CELL}>{device.beacon ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{device.channel ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{device.levelDbfs.toFixed(0)}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{device.heard}</td>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+    </tr>
+  );
+}
+
+function BleView({ scope = {} }: { scope?: DecoderScope }) {
+  const now = useNow();
+  const devices = bleDevices(recordsInScope(useDecodedKind("ble"), scope));
+  if (devices.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No Bluetooth devices heard yet.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Address</th>
+              <th className={TABLE_HEAD}>Name</th>
+              <th className={TABLE_HEAD}>Vendor</th>
+              <th className={TABLE_HEAD}>Beacon</th>
+              <th className={TABLE_HEAD}>Ch</th>
+              <th className={TABLE_HEAD}>
+                Level <Unit symbol="dBFS" />
+              </th>
+              <th className={TABLE_HEAD} title="Adverts heard, repeats included">
+                Adverts
+              </th>
+              <th className={TABLE_HEAD}>Heard</th>
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((device) => (
+              <BleRow key={device.key} device={device} now={now} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LoadBar({ share }: { share: number }) {
+  return (
+    <div className="h-2 w-24 overflow-hidden rounded bg-line">
+      <div className="h-full bg-accent" style={{ width: `${Math.min(100, share * 100)}%` }} />
+    </div>
+  );
+}
+
+function WifiOccupancyView({ scope = {} }: { scope?: DecoderScope }) {
+  const latest = latestRecord(recordsInScope(useDecodedKind("wifi_occupancy"), scope));
+  if (latest === null || latest.event.data.channels.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>
+          {latest === null ? "First report after one second." : "No Wi-Fi channel in view."}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <table className="w-full border-collapse text-left text-xs">
+        <thead>
+          <tr className="border-b border-line">
+            <th className={TABLE_HEAD}>Channel</th>
+            <th className={TABLE_HEAD}>Busy</th>
+            <th className={TABLE_HEAD} />
+            <th className={TABLE_HEAD} title="Mean level while busy">
+              Level <Unit symbol="dBFS" />
+            </th>
+            <th className={TABLE_HEAD}>
+              Floor <Unit symbol="dBFS" />
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {latest.event.data.channels.map((channel) => (
+            <tr key={`${channel.band}-${channel.number}`} className="border-b border-line/50">
+              <td className={TABLE_CELL} title={WIFI_BAND_LABELS[channel.band]}>
+                {channel.number}
+              </td>
+              <td className={`${TABLE_CELL} tabular-nums`}>{percentOf(channel.busy)}</td>
+              <td className={TABLE_CELL}>
+                <LoadBar share={channel.busy} />
+              </td>
+              <td className={`${TABLE_CELL} tabular-nums`}>
+                {channel.level_dbfs == null ? "-" : channel.level_dbfs.toFixed(0)}
+              </td>
+              <td className={`${TABLE_CELL} tabular-nums`}>
+                {channel.floor_dbfs == null ? "-" : channel.floor_dbfs.toFixed(0)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IsmSurveyView({ scope = {} }: { scope?: DecoderScope }) {
+  const latest = latestRecord(recordsInScope(useDecodedKind("ism_survey"), scope));
+  if (latest === null) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>First report after one second.</span>
+      </div>
+    );
+  }
+  const report = latest.event.data;
+  return (
+    <div className={PANE}>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="legend">Busy</span>
+        <span className="tabular-nums">{percentOf(report.busy)}</span>
+        <LoadBar share={report.busy} />
+      </div>
+      {report.kinds.length === 0 ? (
+        <span className={EMPTY}>Nothing on air.</span>
+      ) : (
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Kind</th>
+              <th className={TABLE_HEAD}>Bursts</th>
+              <th className={TABLE_HEAD}>Airtime</th>
+              <th className={TABLE_HEAD}>
+                Length <Unit symbol="µs" />
+              </th>
+              <th className={TABLE_HEAD}>
+                Peak <Unit symbol="dBFS" />
+              </th>
+              <th className={TABLE_HEAD}>
+                Where <Unit symbol="MHz" />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.kinds.map((load) => (
+              <tr key={load.kind} className="border-b border-line/50">
+                <td className={TABLE_CELL}>{ISM_KIND_LABELS[load.kind]}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{load.bursts}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{percentOf(load.airtime)}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{Math.round(load.mean_us)}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{load.peak_dbfs.toFixed(0)}</td>
+                <td className={`${TABLE_CELL} max-w-40 truncate tabular-nums`}>
+                  {(load.centres_mhz ?? []).join(", ")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function LoraView({ scope = {} }: { scope?: DecoderScope }) {
+  const now = useNow();
+  const stations = loraStations(recordsInScope(useDecodedKind("lora"), scope));
+  if (stations.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No LoRa nodes heard yet.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Node</th>
+              <th className={TABLE_HEAD}>Name</th>
+              <th className={TABLE_HEAD}>Protocol</th>
+              <th className={TABLE_HEAD}>Last</th>
+              <th className={TABLE_HEAD}>
+                SNR <Unit symbol="dB" />
+              </th>
+              <th className={TABLE_HEAD}>Frames</th>
+              <th className={TABLE_HEAD}>Heard</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stations.map((station) => (
+              <LoraRow key={station.key} station={station} now={now} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RadiosondeRow({
+  sonde,
+  now,
+  selected,
+  onSelect,
+}: {
+  sonde: RadiosondeStation;
+  now: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const ageMs = now - Date.parse(sonde.at);
+  return (
+    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <td className={`${TABLE_CELL} font-mono`}>
+        <Button
+          type="button"
+          className="hover:text-accent aria-pressed:text-accent"
+          aria-pressed={selected}
+          title="Show frames"
+          onClick={onSelect}
+        >
+          {sonde.serial}
+        </Button>
+      </td>
+      <td className={TABLE_CELL}>{SONDE_LABELS[sonde.sonde]}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{metres(sonde.altitudeM) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>
+        {metres(sonde.maxAltitudeM) ?? "-"}
+        {sonde.burst && (
+          <span className="ml-1 text-accent" title="Altitude falling: balloon burst">
+            burst
+          </span>
+        )}
+      </td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{climbRate(sonde.climbMs) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{celsius(sonde.temperatureC) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{percent(sonde.humidityPct) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{hectopascal(sonde.pressureHpa) ?? "-"}</td>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{sonde.frame ?? "-"}</td>
+    </tr>
+  );
+}
+
+const SONDE_LOG_LIMIT = 50;
+
+function RadiosondeLog({ records }: { records: readonly DecodedRecordOf<"radiosonde">[] }) {
+  return (
+    <div className="max-h-48 overflow-auto">
+      <table className="w-full border-collapse text-left text-xs">
+        <thead>
+          <tr className="border-b border-line">
+            <th className={TABLE_HEAD}>Time</th>
+            <th className={TABLE_HEAD}>Frame</th>
+            <th className={TABLE_HEAD}>Altitude</th>
+            <th className={TABLE_HEAD}>Climb</th>
+            <th className={TABLE_HEAD}>Temp</th>
+            <th className={TABLE_HEAD}>Position</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record) => {
+            const frame = record.event.data;
+            return (
+              <tr key={`${record.at}:${frame.frame ?? ""}`} className="border-b border-line/50">
+                <td className={`${TABLE_CELL} tabular-nums`}>{formatClock(record.at)}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{frame.frame ?? "-"}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{metres(frame.altitude_m) ?? "-"}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{climbRate(frame.climb_ms) ?? "-"}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>
+                  {celsius(frame.temperature_c) ?? "-"}
+                </td>
+                <td className={TABLE_CELL}>{formatPosition(frame.lat, frame.lon)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RadiosondeView({ scope = {} }: { scope?: DecoderScope }) {
+  const now = useNow();
+  const records = recordsInScope(useDecodedKind("radiosonde"), scope);
+  const sondes = radiosondeStations(records);
+  const [selected, setSelected] = useState<string | null>(null);
+  const open = sondes.find((sonde) => sonde.serial === selected) ?? sondes[0];
+  if (open === undefined) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No sonde heard yet.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[40rem] border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Serial</th>
+              <th className={TABLE_HEAD}>Type</th>
+              <th className={TABLE_HEAD}>Altitude</th>
+              <th className={TABLE_HEAD} title="Highest altitude reached">
+                Max
+              </th>
+              <th className={TABLE_HEAD}>Climb</th>
+              <th className={TABLE_HEAD}>Temp</th>
+              <th className={TABLE_HEAD} title="Relative humidity">
+                RH
+              </th>
+              <th className={TABLE_HEAD}>Pressure</th>
+              <th className={TABLE_HEAD}>Heard</th>
+              <th className={TABLE_HEAD}>Frame</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sondes.map((sonde) => (
+              <RadiosondeRow
+                key={sonde.serial}
+                sonde={sonde}
+                now={now}
+                selected={sonde.serial === open.serial}
+                onSelect={() => setSelected(sonde.serial)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <span className="legend">{open.serial}</span>
+      <RadiosondeLog records={radiosondeLog(records, open.serial, SONDE_LOG_LIMIT)} />
+    </div>
+  );
+}
+
+function AprsWeatherRow({ station, now }: { station: AprsWeatherStation; now: number }) {
+  const weather = station.weather;
+  const ageMs = now - Date.parse(station.at);
+  return (
+    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <td className={`${TABLE_CELL} font-mono`}>{station.source}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{celsius(weather.temperature_c) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>
+        {station.minTemperatureC === null
+          ? "-"
+          : `${celsius(station.minTemperatureC)} / ${celsius(station.maxTemperatureC)}`}
+      </td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{wind(weather) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{metresPerSecond(station.maxGustMs) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{percent(weather.humidity_pct) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{hectopascal(weather.pressure_hpa) ?? "-"}</td>
+      <td className={`${TABLE_CELL} tabular-nums`}>{millimetres(weather.rain_1h_mm) ?? "-"}</td>
+      <td className={`${TABLE_CELL} text-right`}>{formatAge(ageMs)}</td>
+    </tr>
+  );
+}
+
+function AprsWeatherView({ scope = {} }: { scope?: DecoderScope }) {
+  const now = useNow();
+  const stations = aprsWeatherStations(recordsInScope(useDecodedKind("aprs"), scope));
+  if (stations.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No weather station heard yet.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={PANE}>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[40rem] border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Station</th>
+              <th className={TABLE_HEAD}>Temp</th>
+              <th className={TABLE_HEAD} title="Lowest and highest temperature in the kept reports">
+                Min / max
+              </th>
+              <th className={TABLE_HEAD}>Wind</th>
+              <th className={TABLE_HEAD} title="Strongest gust in the kept reports">
+                Gust
+              </th>
+              <th className={TABLE_HEAD} title="Relative humidity">
+                RH
+              </th>
+              <th className={TABLE_HEAD}>Pressure</th>
+              <th className={TABLE_HEAD} title="Rain in the last hour">
+                Rain
+              </th>
+              <th className={TABLE_HEAD}>Heard</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stations.map((station) => (
+              <AprsWeatherRow key={station.source} station={station} now={now} />
             ))}
           </tbody>
         </table>
@@ -634,8 +1152,8 @@ function VorView({ scope = {} }: { scope?: DecoderScope }) {
           <span className="font-mono text-xl tabular-nums text-ink">
             {fix.lat.toFixed(5)}, {fix.lon.toFixed(5)}
           </span>
-          <span className={CHIP}>{fix.stations} stations</span>
           <span className="text-xs text-ink-dim">
+            {fix.stations} stations ·{" "}
             {fix.residualKm < 1
               ? `${Math.round(fix.residualKm * 1000)} m`
               : `${fix.residualKm.toFixed(1)} km`}{" "}
@@ -680,10 +1198,19 @@ function VorView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-function PicturesView({ scope = {} }: { scope?: DecoderScope }) {
+type PictureSource = "sstv" | "apt" | "lrpt" | "wefax";
+
+const PICTURE_HINTS: Record<PictureSource, string> = {
+  sstv: "No picture received yet: a scanning transmission takes between 36 s and four minutes.",
+  apt: "No NOAA pass yet.",
+  lrpt: "No Meteor pass yet.",
+  wefax: "No chart received yet.",
+};
+
+function PicturesView({ source, scope = {} }: { source: PictureSource; scope?: DecoderScope }) {
   const result = useQuery(imagesQuery());
-  const images = (result.data?.images ?? []).filter((image) =>
-    inScope(image.device_set, image.channel, scope),
+  const images = (result.data?.images ?? []).filter(
+    (image) => image.source === source && inScope(image.device_set, image.channel, scope),
   );
   const [selected, setSelected] = useState<number | null>(null);
   const open = images.find((image) => image.id === selected) ?? images[0];
@@ -691,9 +1218,7 @@ function PicturesView({ scope = {} }: { scope?: DecoderScope }) {
   if (images.length === 0) {
     return (
       <div className={PANE}>
-        <span className={EMPTY}>
-          No picture received yet: a scanning transmission takes between 36 s and four minutes.
-        </span>
+        <span className={EMPTY}>{PICTURE_HINTS[source]}</span>
       </div>
     );
   }
@@ -756,16 +1281,17 @@ function PicturesView({ scope = {} }: { scope?: DecoderScope }) {
 }
 
 function BroadcastView({ scope }: { scope: DecoderScope }) {
-  const statuses = recordsInScope(useDecodedKind("broadcast"), scope);
+  const current = useBroadcastStore((store) =>
+    Object.values(store.byChannel).find((entry) => inScope(entry.deviceSet, entry.channel, scope)),
+  );
   const objects = recordsInScope(useDecodedKind("broadcast_data"), scope);
-  const status = statuses.at(0)?.event.data;
+  const status = current?.status;
   const object = status?.locked
     ? objects.find(
         (record) =>
           record.event.data.service_id === status.service_id &&
-          record.device_set === statuses[0]?.device_set &&
-          record.channel === statuses[0]?.channel &&
-          record.freq_hz === statuses[0]?.freq_hz,
+          record.device_set === current?.deviceSet &&
+          record.channel === current?.channel,
       )?.event.data
     : undefined;
   return (
@@ -792,22 +1318,25 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   selcall: null,
   tone: (scope) => <ToneView scope={scope} />,
   ident: (scope) => <IdentView scope={scope} />,
-  aprs: null,
+  aprs: (scope) => <AprsWeatherView scope={scope} />,
   pocsag: null,
   flex: null,
   ermes: null,
+  eot: null,
   navtex: null,
   acars: null,
-  subghz: null,
   dv: null,
   ft8: null,
   ft4: null,
   wspr: null,
-  broadcast: (scope) => <BroadcastView scope={scope} />,
   broadcast_data: (scope) => <BroadcastView scope={scope} />,
   radio_clock: null,
   gnss: null,
-  sstv: (scope) => <PicturesView scope={scope} />,
+  sstv: (scope) => <PicturesView source="sstv" scope={scope} />,
+  apt: (scope) => <PicturesView source="apt" scope={scope} />,
+  lrpt: (scope) => <PicturesView source="lrpt" scope={scope} />,
+  wefax: (scope) => <PicturesView source="wefax" scope={scope} />,
+  radiosonde: (scope) => <RadiosondeView scope={scope} />,
   vor: (scope) => <VorView scope={scope} />,
   ils: null,
   df: null,
@@ -820,6 +1349,11 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   hfdl: null,
   iridium: null,
   dect: (scope) => <DectView scope={scope} />,
+  lora: (scope) => <LoraView scope={scope} />,
+  remote_id: (scope) => <RemoteIdView scope={scope} />,
+  ble: (scope) => <BleView scope={scope} />,
+  wifi_occupancy: (scope) => <WifiOccupancyView scope={scope} />,
+  ism_survey: (scope) => <IsmSurveyView scope={scope} />,
 };
 
 function isDecoderKind(kind: string): kind is DecoderKind {

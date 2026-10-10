@@ -110,7 +110,7 @@ describe("mergeChannelSettings", () => {
   });
 
   it("keeps the DAB transmission mode and service when tuning", () => {
-    for (const transmission_mode of ["i", "ii", "iii", "iv"] as const) {
+    for (const transmission_mode of ["auto", "i", "ii", "iii", "iv"] as const) {
       const dab: ChannelSettings = {
         frequency_hz: 220_352_000,
         params: {
@@ -229,6 +229,15 @@ describe("channelWidthHz", () => {
         descriptor({ bandwidth_hz: 10_000 }),
       ),
     ).toBe(8_000);
+  });
+
+  it("reads a LoRa bandwidth step", () => {
+    expect(
+      channelWidthHz(
+        { type: "lora", settings: { bandwidth: "khz250" } },
+        descriptor({ bandwidth_hz: 125_000 }),
+      ),
+    ).toBe(250_000);
   });
 
   it("falls back to the channel type width", () => {

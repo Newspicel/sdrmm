@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 use sdrmm_wire::{
-    frame::{FrameHeader, FrameKind},
-    ws::{ClientCommand, ServerEvent},
+    frame::{FrameKind, peek_header},
+    ws::{ClientCommand, ServerEvent, StreamKind},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -29,8 +29,8 @@ pub enum Source {
         channel: u32,
     },
     Surface {
-        device_set: u32,
         node: String,
+        kind: StreamKind,
     },
 }
 
@@ -97,13 +97,13 @@ impl Source {
             )),
             ServerEvent::SurfaceStreamStarted {
                 stream_id,
-                device_set,
                 node,
+                kind,
             } => Some((
                 *stream_id,
                 Self::Surface {
-                    device_set: *device_set,
                     node: node.clone(),
+                    kind: *kind,
                 },
             )),
             _ => None,
@@ -121,7 +121,7 @@ pub struct Frame {
 impl Frame {
     #[must_use]
     pub fn read(bytes: &[u8]) -> Option<Self> {
-        let header = FrameHeader::parse(bytes)?;
+        let header = peek_header(bytes).ok()?;
         Some(Self {
             kind: header.kind,
             stream_id: header.stream_id,
@@ -180,10 +180,12 @@ pub fn subscription_key(command: &ClientCommand) -> Option<(String, bool)> {
             device_set,
             channel,
         } => (key("symbols", *device_set, channel.to_string()), false),
-        ClientCommand::SubscribeSurface { node } => (format!("surface/{node}"), true),
+        ClientCommand::SubscribeSurface { node, .. } => (format!("surface/{node}"), true),
         ClientCommand::UnsubscribeSurface { node } => (format!("surface/{node}"), false),
         ClientCommand::SubscribeDiagnostics { enabled } => (String::from("diagnostics"), *enabled),
-        ClientCommand::PublishPosition { .. } => return None,
+        ClientCommand::PublishPose { .. }
+        | ClientCommand::Present { .. }
+        | ClientCommand::Point(_) => return None,
     })
 }
 
@@ -223,7 +225,7 @@ pub fn unsubscribe_of(command: &ClientCommand) -> Option<ClientCommand> {
             device_set,
             channel,
         },
-        ClientCommand::SubscribeSurface { node } => ClientCommand::UnsubscribeSurface { node },
+        ClientCommand::SubscribeSurface { node, .. } => ClientCommand::UnsubscribeSurface { node },
         ClientCommand::SubscribeDiagnostics { enabled: true } => {
             ClientCommand::SubscribeDiagnostics { enabled: false }
         }
@@ -384,6 +386,7 @@ mod tests {
             },
             ClientCommand::SubscribeSurface {
                 node: String::from("radar"),
+                fit: None,
             },
         ];
         for command in commands {
@@ -427,9 +430,17 @@ mod tests {
             .events
             .borrow_mut()
             .add(move |_| counter.set(counter.get() + 1));
-        bus.publish_event(&ServerEvent::Hello { revision: 1 });
+        bus.publish_event(&ServerEvent::Hello {
+            revision: 1,
+            protocol: sdrmm_wire::API_PROTOCOL,
+            phone: None,
+        });
         bus.events.borrow_mut().remove(id);
-        bus.publish_event(&ServerEvent::Hello { revision: 2 });
+        bus.publish_event(&ServerEvent::Hello {
+            revision: 2,
+            protocol: sdrmm_wire::API_PROTOCOL,
+            phone: None,
+        });
         assert_eq!(heard.get(), 1);
     }
 

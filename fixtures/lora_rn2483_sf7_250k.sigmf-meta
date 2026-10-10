@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "USRP, RN2483 transmitter",
+    "core:description": "LoRa SF7 BW125 CR4/8 explicit header with CRC from a Microchip RN2483, payload deadbeef twice"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868100000.0,
+      "core:datetime": "2026-10-07T00:22:06.369088Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "gr-lora example trace usrp-868.1-sf7-cr4-bw125-crc-0 by Pieter Robyns, CC0, https://research.edm.uhasselt.be/probyns/lora/; source SHA-256 212fcda35fd0fa6a60b306b175e622483016e2e03cf94b00a07d1db57ce5f6a6; samples 150000..430000 at 1000000 Hz",
+      "core:sample_count": 70000,
+      "core:sample_start": 0
+    }
+  ]
+}

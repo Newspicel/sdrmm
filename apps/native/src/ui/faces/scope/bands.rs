@@ -238,6 +238,7 @@ pub(super) mod tests {
             primary: true,
             reference: None,
             aliases: Vec::new(),
+            channels: Vec::new(),
             suggested: None,
             channel_step_hz: None,
             notes: None,

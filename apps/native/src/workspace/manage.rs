@@ -206,7 +206,7 @@ impl Store {
         });
     }
 
-    pub fn import(self, export: WorkspaceExport) {
+    pub fn import(self, export: serde_json::Value) {
         zgui::task::spawn_local(async move {
             match self
                 .api()

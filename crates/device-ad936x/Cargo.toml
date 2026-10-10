@@ -17,6 +17,8 @@ num-complex.workspace = true
 serde_json.workspace = true
 nusb.workspace = true
 sdrmm-usb-stream.workspace = true
+sdrmm-iqlink.workspace = true
+socket2.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

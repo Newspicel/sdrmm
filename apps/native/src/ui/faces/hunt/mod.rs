@@ -1,7 +1,8 @@
 mod model;
 
 use sdrmm_wire::{
-    HuntAction, HuntRequest, HuntSettings, HuntStatus, patch::NodeBody, ws::ServerEvent,
+    HuntAction, HuntRequest, HuntSettings, HuntStatus, hunt::HuntSweepParams, patch::NodeBody,
+    ws::ServerEvent,
 };
 use zgui::prelude::*;
 
@@ -69,12 +70,15 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             } else {
                 {idle(target)}
             }
-            {row_field("Clicks", check(clicks, move |on| set_clicks(store, &node, on)))}
+            {row_field("Clicks", check(clicks, {
+                let node = node.clone();
+                move |on| set_clicks(store, &node, on)
+            }))}
             if move || clicking.get() {
                 {clicker(store, strength)}
             }
             row(class = "face__foot") {
-                {controls(store, target, status, pushed)}
+                {controls(store, node.clone(), target, status, pushed)}
             }
         }
     }
@@ -159,8 +163,18 @@ fn idle(target: Signal<Option<HuntTarget>>) -> impl IntoView {
     }
 }
 
+fn sweep_of(store: Store, node: &str) -> HuntSweepParams {
+    store
+        .graph
+        .with_untracked(|graph| match graph.node(node).map(|found| &found.body) {
+            Some(NodeBody::Hunt(hunt)) => hunt.sweep,
+            _ => HuntSweepParams::default(),
+        })
+}
+
 fn controls(
     store: Store,
+    node: String,
     target: Signal<Option<HuntTarget>>,
     status: Signal<Option<HuntStatus>>,
     pushed: RwSignal<Option<HuntStatus>>,
@@ -196,8 +210,10 @@ fn controls(
                 HuntRequest {
                     action: HuntAction::Start,
                     settings: Some(HuntSettings {
-                        channel: target.channel.id,
                         interval_ms: HUNT_INTERVAL_MS,
+                        node: Some(node.clone()),
+                        sweep: sweep_of(store, &node),
+                        ..HuntSettings::for_channel(target.channel.id)
                     }),
                 }
             };
