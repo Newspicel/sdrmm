@@ -153,7 +153,7 @@ test.describe("the workspace", () => {
     await library.getByRole("searchbox", { name: "Search recordings" }).fill("099");
     const capture = library.getByRole("button", { name: /Tower watch/i });
     await expect(capture).toBeVisible();
-    await expect(capture).toContainText("100.0000 MHz · 2.048 MS/s · 2.0 s · 32.768 MB");
+    await expect(capture).toContainText("100.0000 MHz · 2.048 MS/s · 2.0 s · 32.8 MB");
     await expect(capture).toHaveAttribute("title", /RTL-SDR 00000001 · capture-099 · #airband$/);
     await expect(library.getByRole("button", { name: /capture-000/i })).toHaveCount(0);
     await library.getByRole("button", { name: "Remove Recording" }).click();
@@ -695,7 +695,11 @@ test.describe("the workspace", () => {
     const { id, centerHz } = open;
     const moved = centerHz + 2_000_000;
 
-    await page.request.patch(`/api/devicesets/${id}/device`, { data: { center_hz: moved } });
+    const author = await page.evaluate(() => localStorage.getItem("sdrmm.author") ?? "");
+    await page.request.patch(`/api/devicesets/${id}/device`, {
+      data: { center_hz: moved },
+      headers: { "x-sdrmm-author": author },
+    });
     await expect.poll(tunedTo).toBe(moved);
 
     const undo = page.getByRole("button", { name: /^undo/i });

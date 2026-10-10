@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppHotkeys } from "./appHotkeys";
-import { applyToasts } from "./canvas/applyToasts";
+import { applyToasts, notConnectedToast } from "./canvas/applyToasts";
 import {
   bindCarriers,
   bindDevices,
@@ -33,7 +33,7 @@ import { TokenGate } from "./components/TokenGate";
 import { channelTypesQuery, patchCatalogQuery, stateQuery } from "./lib/api";
 import { audioEngine } from "./lib/audio/useChannelAudio";
 import { useRefusalStore } from "./lib/refusals";
-import { pushToast } from "./lib/toasts";
+import { closeToast, pushToast } from "./lib/toasts";
 import type { PatchApplyReport, PatchGraph, WorkspaceSettings } from "./lib/types";
 import { useChannelPatch } from "./lib/useChannelPatch";
 import { useDevicePatch } from "./lib/useDevicePatch";
@@ -99,6 +99,12 @@ export function App() {
   );
 
   const devices = useMemo(() => bindDevices(graph, deviceSets), [graph, deviceSets]);
+  useEffect(() => {
+    useRefusalStore.getState().connected(devices.keys());
+    for (const node of devices.keys()) {
+      closeToast(notConnectedToast(graph.nodes, node));
+    }
+  }, [devices, graph.nodes]);
   const carriers = useMemo(() => bindCarriers(graph, devices, trunks), [graph, devices, trunks]);
   const channels = useMemo(() => channelsOf(carriers), [carriers]);
   const owners = useMemo(() => ownersOf(carriers), [carriers]);

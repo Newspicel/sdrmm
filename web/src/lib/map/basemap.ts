@@ -34,6 +34,15 @@ export interface Basemap {
   style: MapStyle;
 }
 
+export function groundOf(choice: BasemapChoice, kind: BasemapKind, background: string): string {
+  if (kind !== "online") {
+    return background;
+  }
+  return choice.preset === "custom"
+    ? PRESET_COLORS.liberty.land
+    : PRESET_COLORS[choice.preset].land;
+}
+
 export function presetUrl(preset: BasemapPreset): string {
   return `${OPENFREEMAP}/styles/${preset}`;
 }

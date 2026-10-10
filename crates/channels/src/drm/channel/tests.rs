@@ -54,7 +54,7 @@ fn run(channel: &mut DrmChannel, iq: &[Complex<f32>]) -> ChannelOutputs {
     }
     let until = Instant::now() + Duration::from_secs(3);
     while channel.media.audio_frames < 20 && Instant::now() < until {
-        channel.collect_audio(&mut out);
+        channel.media.drain(&mut out);
         std::thread::sleep(Duration::from_millis(2));
     }
     channel.report(&mut out);

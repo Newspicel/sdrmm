@@ -234,7 +234,8 @@ user to `dialout`.
 
 SDR-- talks to the iiod server of the AntSDR's Pluto firmware directly, with no libiio. The E310
 has two receive lanes on one synthesizer, so they are phase coherent. UHD firmware is not
-supported.
+supported. MicroPhase ships UHD images for the E200 and E316 only; the `e310v2` target in
+antsdr_uhd is the E316 and does not run on an E310.
 
 **USB:** connect the USB 2.0 port and the board appears with no network setup. Windows needs the
 [PlutoSDR drivers](https://wiki.analog.com/university/tools/pluto/drivers/windows).
@@ -262,6 +263,17 @@ Ethernet carries far more than USB 2.0, and two lanes split the link. The **RX1*
 toggles pick which receivers stream, one or both. The E310 locks its antenna
 and TX ports in firmware, so those menus are hidden. The other controls are the
 [AD936x ones](#plutosdr-and-other-ad936x-boards).
+
+**Faster streaming:** `sdrmm-iqlinkd` runs on the board and sends samples over UDP, about 20 MS/s
+on one lane instead of 15 with iiod. SDR-- uses it by itself when it answers on port 30432, and
+iiod otherwise. Install it once:
+
+```sh
+rustup target add armv7-unknown-linux-musleabihf
+cargo build --release --target armv7-unknown-linux-musleabihf -p sdrmm-iqlinkd
+scp -O target/armv7-unknown-linux-musleabihf/release/sdrmm-iqlinkd root@192.168.1.10:/mnt/jffs2/
+ssh root@192.168.1.10 'echo "/mnt/jffs2/sdrmm-iqlinkd > /tmp/iqlinkd.log 2>&1 &" > /mnt/jffs2/autorun.sh; reboot'
+```
 
 Tested on hardware provided by [MicroPhase](https://www.microphase.cn/). Thank you.
 

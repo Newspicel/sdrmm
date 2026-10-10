@@ -342,6 +342,12 @@ fn ids_of(devices: &[DeviceInfo]) -> Vec<String> {
     devices.iter().map(DeviceInfo::id).collect()
 }
 
+fn sorted_ids(devices: &[DeviceInfo]) -> Vec<String> {
+    let mut ids = ids_of(devices);
+    ids.sort();
+    ids
+}
+
 fn fault_kind(error: &DeviceError) -> DeviceFault {
     match error {
         DeviceError::Disconnected(_) => DeviceFault::Unplugged,
@@ -1233,11 +1239,18 @@ impl Engine {
                 let mut gate = hotplug::ProbeGate::default();
                 let pace = hotplug::Pace::start();
                 let mut woken = false;
+                let mut probe_due = None;
                 loop {
                     let Some(engine) = weak.upgrade() else { return };
-                    engine.hotplug_tick(&mut known, &mut missing_once, &mut gate, woken);
+                    let now = Instant::now();
+                    if hotplug::probe_is_due(woken, probe_due, now) {
+                        engine.hotplug_tick(&mut known, &mut missing_once, &mut gate, woken);
+                        probe_due = Some(now + interval);
+                    } else {
+                        engine.sink_tick();
+                    }
                     drop(engine);
-                    woken = pace.wait(interval);
+                    woken = pace.wait(interval.min(hotplug::SINK_POLL));
                 }
             })?;
         Ok(())
@@ -1418,14 +1431,15 @@ impl Engine {
             .name("sdrmm-discovery".to_string())
             .spawn(move || {
                 let Some(engine) = weak.upgrade() else { return };
+                let attached_before = sorted_ids(&engine.registry.probe_all());
                 let found = engine.registry.probe_all_deep();
-                let attached = ids_of(&engine.registry.probe_all());
+                let attached = sorted_ids(&engine.registry.probe_all());
                 let extras = found
                     .into_iter()
                     .filter(|device| !attached.contains(&device.id()))
                     .collect();
-                let changed = engine.lock_discovery().searched(extras, Instant::now());
-                if changed {
+                let extras_changed = engine.lock_discovery().searched(extras, Instant::now());
+                if extras_changed || attached != attached_before {
                     engine.emit(ServerEvent::StateChanged {
                         scope: StateScope::Devices,
                     });

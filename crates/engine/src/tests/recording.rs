@@ -260,6 +260,22 @@ async fn recording_growth_rides_the_hotplug_tick() {
 }
 
 #[tokio::test]
+async fn recording_growth_is_reported_between_bus_probes() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let engine = recording_engine(dir.path());
+    let ds = engine.create_device_set("virtual:band").unwrap();
+    engine.start_recording(ds, 0).unwrap();
+    wait_for_recorded_samples(&engine, ds, 1).await;
+
+    let mut events = engine.subscribe_events();
+    engine.sink_tick();
+    wait_for_deviceset_event(&mut events, ds).await;
+
+    engine.stop_recording(ds).unwrap();
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
 async fn start_during_rate_patch_cannot_commit_a_wrong_rate_recording() {
     let dir = tempfile::TempDir::new().unwrap();
     let (entered_tx, entered_rx) = mpsc::channel();

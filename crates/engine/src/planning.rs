@@ -115,6 +115,9 @@ fn tuner_meets(capabilities: &Capabilities, (low, high): Span) -> bool {
 /// Room left between the DC term at the centre and the edge of a channel it must not sit in.
 const LO_ARTIFACT_MARGIN_HZ: f64 = 2_000.0;
 
+/// A centre stepped aside from a decoder lands on this grid, so the dial reads a round number.
+const CENTRE_GRID_HZ: f64 = 1_000.0;
+
 fn channel_half_width_hz(params: &ChannelParams) -> f64 {
     descriptor_for(params).map_or(0.0, |d| d.bandwidth_hz / 2.0) + LO_ARTIFACT_MARGIN_HZ
 }
@@ -287,8 +290,8 @@ fn candidate_centers(spans: &[Span], channels: &[ChannelInfo], current_hz: f64) 
             let frequency_hz = channel.settings.frequency_hz;
             candidates.extend(
                 [
-                    frequency_hz - clear_of,
-                    frequency_hz + clear_of,
+                    ((frequency_hz - clear_of) / CENTRE_GRID_HZ).floor() * CENTRE_GRID_HZ,
+                    ((frequency_hz + clear_of) / CENTRE_GRID_HZ).ceil() * CENTRE_GRID_HZ,
                     f64::midpoint(span.0, frequency_hz),
                     f64::midpoint(frequency_hz, span.1),
                 ]

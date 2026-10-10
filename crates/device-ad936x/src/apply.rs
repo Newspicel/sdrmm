@@ -95,14 +95,14 @@ pub(crate) fn plan(
     let mut writes = Vec::new();
     let mut next = current.clone();
     next.merge_from(delta);
+    settle_lanes(&mut next, delta);
 
     plan_rate(delta, capabilities, front, layout, &mut writes)?;
     plan_bandwidth(delta, capabilities, front, layout, &mut writes)?;
     plan_tuning(delta, capabilities, layout, &mut writes)?;
     plan_trim(delta, front, &mut writes)?;
-    plan_lanes(delta, capabilities, layout, &mut writes)?;
+    plan_lanes(delta, capabilities, layout, &next, &mut writes)?;
     plan_extra(delta, capabilities, layout, &mut writes)?;
-    settle_lanes(&mut next, delta);
     next.gains = snapped(&next.gains, capabilities);
     for stream in &mut next.streams {
         stream.gains = snapped(&stream.gains, capabilities);
@@ -130,22 +130,36 @@ fn settle_lanes(next: &mut DeviceSettings, delta: &DeviceSettings) {
 }
 
 /// The top-level gain and antenna are every lane's, and a `streams` entry is one lane's own on
-/// top of that, which is the contract `DeviceSettings::for_stream` reads them by.
+/// top of that, which is the contract `DeviceSettings::for_stream` reads them by. The gain mode
+/// goes first, since the part refuses a gain while its AGC holds the lane.
 fn plan_lanes(
     delta: &DeviceSettings,
     capabilities: &Capabilities,
     layout: &Layout,
+    next: &DeviceSettings,
     writes: &mut Vec<Write>,
 ) -> Result<(), DeviceError> {
-    plan_gains(&delta.gains, capabilities, layout, None, writes)?;
     plan_antenna(delta.antenna.as_deref(), capabilities, layout, writes)?;
     plan_agc(delta.agc.as_ref(), capabilities, layout, None, writes)?;
     for stream in &delta.streams {
         let lane = Some(stream.stream as usize);
-        plan_gains(&stream.gains, capabilities, layout, lane, writes)?;
         plan_agc(stream.agc.as_ref(), capabilities, layout, lane, writes)?;
     }
+    let held = |lane: usize| agc_holds(next, capabilities, lane);
+    plan_gains(&delta.gains, capabilities, layout, None, &held, writes)?;
+    for stream in &delta.streams {
+        let lane = Some(stream.stream as usize);
+        plan_gains(&stream.gains, capabilities, layout, lane, &held, writes)?;
+    }
     Ok(())
+}
+
+fn agc_holds(next: &DeviceSettings, capabilities: &Capabilities, lane: usize) -> bool {
+    u32::try_from(lane).is_ok_and(|lane| {
+        next.for_stream(lane, &capabilities.per_stream)
+            .agc
+            .is_some_and(|agc| agc.on)
+    })
 }
 
 /// The lanes a setting reaches: the one named, or every one this direction has.
@@ -287,6 +301,7 @@ fn plan_gains(
     capabilities: &Capabilities,
     layout: &Layout,
     lane: Option<usize>,
+    held: &dyn Fn(usize) -> bool,
     writes: &mut Vec<Write>,
 ) -> Result<(), DeviceError> {
     for gain in gains {
@@ -305,7 +320,7 @@ fn plan_gains(
                 gain.stage
             )));
         }
-        for lane in reached {
+        for lane in reached.filter(|lane| output || !held(*lane)) {
             let port = layout.port(output, lane).ok_or_else(|| {
                 DeviceError::Unsupported(format!("this radio has no {} lane {lane}", gain.stage))
             })?;
@@ -521,7 +536,9 @@ pub(crate) fn read_settings(
             .ok()
     };
     DeviceSettings {
-        center_hz: read(Direction::Out, RX_LO, FREQUENCY).and_then(|v| number(&v)),
+        center_hz: read(Direction::Out, RX_LO, FREQUENCY)
+            .and_then(|v| number(&v))
+            .map(snap_lo),
         sample_rate: read_rate(client, front, rx, &read),
         bandwidth: rx
             .and_then(|rx| read(Direction::In, rx, RF_BANDWIDTH))
@@ -535,6 +552,12 @@ pub(crate) fn read_settings(
         streams: read_streams(capabilities, layout, &read),
         ..DeviceSettings::default()
     }
+}
+
+const LO_READBACK_GRAIN_HZ: f64 = 10.0;
+
+fn snap_lo(hz: f64) -> f64 {
+    (hz / LO_READBACK_GRAIN_HZ).round() * LO_READBACK_GRAIN_HZ
 }
 
 fn read_rate(
@@ -921,9 +944,55 @@ mod tests {
         });
         assert_eq!(
             writes,
+            vec![channel(false, "voltage1", GAIN_CONTROL_MODE, "fast_attack")],
+            "the lane's AGC holds its gain, so the gain is not written"
+        );
+    }
+
+    #[test]
+    fn a_receive_gain_is_not_written_while_automatic_gain_holds_it() {
+        let writes = planned(DeviceSettings {
+            agc: Some(AgcSetting::in_mode(true, "slow_attack")),
+            gains: vec![
+                GainValue {
+                    stage: RX_STAGE.to_string(),
+                    value_db: 73.0,
+                },
+                GainValue {
+                    stage: TX_STAGE.to_string(),
+                    value_db: -10.0,
+                },
+            ],
+            ..DeviceSettings::default()
+        });
+        assert_eq!(
+            writes,
             vec![
-                channel(false, "voltage1", HARDWAREGAIN, "20.000000"),
-                channel(false, "voltage1", GAIN_CONTROL_MODE, "fast_attack"),
+                channel(false, "voltage0", GAIN_CONTROL_MODE, "slow_attack"),
+                channel(false, "voltage1", GAIN_CONTROL_MODE, "slow_attack"),
+                channel(true, "voltage0", HARDWAREGAIN, "-10.000000"),
+                channel(true, "voltage1", HARDWAREGAIN, "-10.000000"),
+            ]
+        );
+    }
+
+    #[test]
+    fn manual_gain_is_set_before_the_gain_it_unlocks() {
+        let writes = planned(DeviceSettings {
+            agc: Some(AgcSetting::off()),
+            gains: vec![GainValue {
+                stage: RX_STAGE.to_string(),
+                value_db: 40.0,
+            }],
+            ..DeviceSettings::default()
+        });
+        assert_eq!(
+            writes,
+            vec![
+                channel(false, "voltage0", GAIN_CONTROL_MODE, "manual"),
+                channel(false, "voltage1", GAIN_CONTROL_MODE, "manual"),
+                channel(false, "voltage0", HARDWAREGAIN, "40.000000"),
+                channel(false, "voltage1", HARDWAREGAIN, "40.000000"),
             ]
         );
     }

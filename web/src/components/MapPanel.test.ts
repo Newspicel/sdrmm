@@ -168,7 +168,9 @@ describe("MapPanel failures", () => {
       addSource: vi.fn(),
       addLayer: vi.fn(),
     };
-    expect(installTargetLayers(map as unknown as MapLibreMap, "#000000", ["adsb"])).toBe(false);
+    expect(installTargetLayers(map as unknown as MapLibreMap, "#000000", "#f8f4f0", ["adsb"])).toBe(
+      false,
+    );
     expect(clientEvents().some((event) => event.message === "heading icons failed")).toBe(true);
     expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: "targets-adsb-dot" }));
   });

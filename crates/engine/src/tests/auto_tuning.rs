@@ -106,6 +106,15 @@ fn any_radio_steps_its_centre_off_a_decoder_parked_on_it() {
 }
 
 #[test]
+fn a_centre_stepped_off_a_decoder_reads_a_whole_kilohertz() {
+    let alone = [parked(1, 12_345.0)];
+    let center_hz = settled(&tuner_caps(), &tuned(TEST_CENTER_HZ + 12_345.0), &alone);
+    assert_eq!(center_hz % 1_000.0, 0.0, "settled on {center_hz} Hz");
+    assert!(heard(center_hz, &alone[0]));
+    assert!(clears(&tuner_caps(), &tuned(center_hz), &alone));
+}
+
+#[test]
 fn a_window_with_nowhere_left_to_park_its_artifact_steps_aside_itself() {
     let blocked: Vec<ChannelInfo> = [
         0.0, 600e3, -600e3, 450e3, -450e3, 750e3, -750e3, 300e3, -300e3,

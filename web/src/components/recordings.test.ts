@@ -141,7 +141,7 @@ describe("describeRecording", () => {
   } satisfies RecordingInfo;
 
   it("reads out what the capture holds", () => {
-    expect(describeRecording(recording)).toBe("100.0000 MHz · 2.048 MS/s · 2.0 s · 32.768 MB");
+    expect(describeRecording(recording)).toBe("100.0000 MHz · 2.048 MS/s · 2.0 s · 32.8 MB");
     expect(describeRecording({ ...recording, lanes: 1 })).toBe(describeRecording(recording));
   });
 
@@ -150,7 +150,7 @@ describe("describeRecording", () => {
     expect(recordingLanes(recording)).toBe(1);
     expect(recordingLanes(collection)).toBe(5);
     expect(describeRecording(collection)).toBe(
-      "5 lanes · 100.0000 MHz · 2.048 MS/s · 2.0 s · 32.768 MB",
+      "5 lanes · 100.0000 MHz · 2.048 MS/s · 2.0 s · 32.8 MB",
     );
     expect(formatsFor(recording).map(({ format }) => format)).toEqual(["sigmf", "wav"]);
     expect(formatsFor(collection).map(({ format }) => format)).toEqual(["sigmf"]);

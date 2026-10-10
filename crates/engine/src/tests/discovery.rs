@@ -87,3 +87,32 @@ fn soapy_hides_exactly_the_radios_this_build_drives_over_usb() {
         "the SDRplay driver reports unique serials and settles its duplicate by priority instead"
     );
 }
+
+#[tokio::test]
+async fn a_radio_the_network_search_adopts_announces_itself() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(AdoptingDriver::default()));
+    let engine = Engine::with_registry(registry, None);
+    let mut events = engine.subscribe_events();
+
+    assert!(engine.probe_devices().is_empty());
+
+    let announced = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Ok(ServerEvent::StateChanged {
+                scope: StateScope::Devices,
+            }) = events.recv().await
+            {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(announced.is_ok(), "the adopted radio must announce itself");
+    assert!(
+        engine
+            .probe_devices()
+            .iter()
+            .any(|device| device.id() == "mock:adopted")
+    );
+}

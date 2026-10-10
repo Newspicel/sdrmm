@@ -27,6 +27,8 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-device-hackrf` | Native HackRF driver |
 | `sdrmm-device-espsdr` | ESP32 running ESP-SDR firmware, over serial |
 | `sdrmm-device-ad936x` | AntSDR, PlutoSDR and other AD936x boards, speaking iiod over Ethernet or USB |
+| `sdrmm-iqlink` | UDP sample protocol shared by `sdrmm-iqlinkd` and `sdrmm-device-ad936x` |
+| `sdrmm-iqlinkd` | Daemon on AD936x boards that streams samples over UDP |
 | `sdrmm-device-soapy` | Local hardware through SoapySDR |
 | `sdrmm-device-sdrplay` | SDRplay RSP receivers through the vendor API, loaded at runtime |
 | `sdrmm-device-rtltcp` | Direct `rtl_tcp` client |
