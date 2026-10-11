@@ -16,24 +16,13 @@ pub const DEFAULT_NOTCH_WIDTH_HZ: f64 = 100.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SquelchMode {
-    Off,
     Manual,
     Auto,
 }
 
 #[must_use]
-pub fn squelch_mode(squelch: &Squelch) -> SquelchMode {
-    match squelch {
-        Squelch::Off => SquelchMode::Off,
-        Squelch::Manual { .. } => SquelchMode::Manual,
-        Squelch::Auto { .. } => SquelchMode::Auto,
-    }
-}
-
-#[must_use]
 pub fn squelch_at(mode: SquelchMode, level_db: f32, margin_db: f32) -> Squelch {
     match mode {
-        SquelchMode::Off => Squelch::Off,
         SquelchMode::Manual => Squelch::Manual { level_db },
         SquelchMode::Auto => Squelch::Auto { margin_db },
     }
@@ -188,11 +177,6 @@ pub fn channel_has_audio(descriptor: Option<&ChannelDescriptor>) -> bool {
     descriptor.is_none_or(|descriptor| descriptor.has_audio)
 }
 
-#[must_use]
-pub fn channel_decoder_kind(descriptor: Option<&ChannelDescriptor>) -> Option<&str> {
-    descriptor.and_then(|descriptor| descriptor.decoder_kind.as_deref())
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RadioWindow {
     pub low_hz: f64,
@@ -313,15 +297,6 @@ mod tests {
         assert!(!channel_has_audio(Some(&data)));
         assert!(channel_has_audio(None));
         assert!(channel_has_audio(Some(&descriptor(12_500.0))));
-    }
-
-    #[test]
-    fn the_decoder_kind_is_what_the_channel_emits() {
-        let mut pager = descriptor(12_500.0);
-        pager.decoder_kind = Some("pocsag".into());
-        assert_eq!(channel_decoder_kind(Some(&pager)), Some("pocsag"));
-        assert_eq!(channel_decoder_kind(Some(&descriptor(0.0))), None);
-        assert_eq!(channel_decoder_kind(None), None);
     }
 
     #[test]
@@ -473,21 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn the_squelch_mode_reads_off_the_tagged_value() {
-        assert_eq!(squelch_mode(&Squelch::Off), SquelchMode::Off);
-        assert_eq!(
-            squelch_mode(&Squelch::Manual { level_db: -60.0 }),
-            SquelchMode::Manual
-        );
-        assert_eq!(
-            squelch_mode(&Squelch::Auto { margin_db: 8.0 }),
-            SquelchMode::Auto
-        );
-    }
-
-    #[test]
     fn each_squelch_mode_is_built_from_the_value_held_for_it() {
-        assert_eq!(squelch_at(SquelchMode::Off, -55.0, 12.0), Squelch::Off);
         assert_eq!(
             squelch_at(SquelchMode::Manual, -55.0, 12.0),
             Squelch::Manual { level_db: -55.0 }

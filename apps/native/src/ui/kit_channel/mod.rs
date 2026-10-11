@@ -138,8 +138,8 @@ const SHEET: &str = css!(
 .kc-meter__handle.auto { background-color: var(--panel); border: 1.5px solid var(--ink-dim); }
 .kc-signal { align-items: center; gap: 8px; min-height: 28px; }
 .kc-signal .kc-name { width: 56px; }
-.kc-stats { align-items: center; gap: 12px; margin-right: auto; }
-.kc-stat { align-items: baseline; gap: 4px; font-family: var(--mono); font-size: 10px; }
+.kc-stats { flex: 1 1 auto; align-items: center; gap: 12px; }
+.kc-stat { flex: 0 0 auto; align-items: baseline; gap: 4px; font-family: var(--mono); font-size: 10px; white-space: nowrap; }
 .kc-stat__label { color: var(--ink-faint); }
 .kc-stat__value { color: var(--ink); }
 .kc-stat.ok .kc-stat__value { color: var(--ok); }

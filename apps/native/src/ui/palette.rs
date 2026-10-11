@@ -8,7 +8,6 @@ use crate::{
     ui::{node, widgets::segments},
 };
 
-
 pub fn sheet(store: Store, canvas: Canvas) -> impl IntoView {
     let search = RwSignal::new_local(String::new());
     let category = RwSignal::new(None::<NodeCategory>);

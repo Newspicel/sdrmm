@@ -93,8 +93,12 @@ mod tests {
     #[test]
     fn a_head_is_kept_until_it_is_cleared() {
         let heads: Heads = Arc::default();
-        let said = with_head(&heads, "scope", NodeHead::said("not open").toned(Tone::Warn))
-            .expect("a change");
+        let said = with_head(
+            &heads,
+            "scope",
+            NodeHead::said("not open").toned(Tone::Warn),
+        )
+        .expect("a change");
         assert_eq!(said["scope"].tone, Tone::Warn);
         assert!(with_head(&said, "scope", NodeHead::said("not open").toned(Tone::Warn)).is_none());
         let cleared = with_head(&said, "scope", NodeHead::default()).expect("cleared");
@@ -107,6 +111,9 @@ mod tests {
         let head = NodeHead::said("2 lanes").badged("FM");
         assert_eq!(head.badge.as_deref(), Some("FM"));
         assert_eq!(head.subtitle.as_deref(), Some("2 lanes"));
-        assert_eq!(head.clone().titled("3 of 5").title.as_deref(), Some("3 of 5"));
+        assert_eq!(
+            head.clone().titled("3 of 5").title.as_deref(),
+            Some("3 of 5")
+        );
     }
 }

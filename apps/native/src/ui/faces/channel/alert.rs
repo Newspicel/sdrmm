@@ -113,6 +113,11 @@ impl Store {
             .update(|held| Arc::make_mut(held).flag(node, refusal));
     }
 
+    pub fn fail_on(self, node: &str, context: &str, error: &anyhow::Error) {
+        self.flag_refusal(node, format!("{context}: {error}"), RefusalSource::Action);
+        self.fail(context, error);
+    }
+
     pub fn refusals_from_report(self, report: &PatchApplyReport) {
         let at = now_ms();
         self.refusals

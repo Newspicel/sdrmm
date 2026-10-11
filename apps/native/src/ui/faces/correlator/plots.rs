@@ -194,13 +194,7 @@ fn subscribe(
     });
     let holding = RenderEffect::new(move |_| {
         if known.get() {
-            surface(
-                store,
-                node.clone(),
-                FrameKind::Visibility,
-                None,
-                show,
-            );
+            surface(store, node.clone(), FrameKind::Visibility, None, show);
         }
     });
     on_cleanup_local(move || drop(holding));

@@ -5,8 +5,6 @@ use zgui::{
     prelude::*,
 };
 
-use crate::format;
-
 static NEXT_MENU: AtomicU32 = AtomicU32::new(1);
 
 #[derive(Clone, Copy)]
@@ -46,19 +44,6 @@ pub fn track(
 }
 
 pub type Point<T, S> = zgui::geom::Point<T, S>;
-
-fn digit_text(hz: f64, index: usize) -> String {
-    format::dial_digits(hz)
-        .get(index)
-        .copied()
-        .unwrap_or(0)
-        .to_string()
-}
-
-fn leading_zero(hz: f64, index: usize) -> bool {
-    let digits = format::dial_digits(hz);
-    index < 3 && digits[..=index].iter().all(|digit| *digit == 0)
-}
 
 pub fn row_field(name: impl Into<String>, body: impl IntoView + 'static) -> impl IntoView {
     let name = name.into();
@@ -363,14 +348,5 @@ mod tests {
         assert_eq!(toggled(0, 7), 7);
         assert_eq!(toggled(7, 7), 0);
         assert_eq!(toggled(3, 7), 7);
-    }
-
-    #[test]
-    fn a_dial_dims_the_zeros_in_front_and_carries_the_point() {
-        assert_eq!(digit_text(100_300_000.0, 3), "0");
-        assert_eq!(digit_text(100_300_000.0, 4), "3");
-        assert!(leading_zero(100_300_000.0, 0));
-        assert!(!leading_zero(100_300_000.0, 1));
-        assert!(!leading_zero(1_000_000_000.0, 0));
     }
 }

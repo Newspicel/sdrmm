@@ -12,7 +12,6 @@ use zgui::prelude::*;
 
 use super::{
     ANY_FREQUENCY, FaceStatus,
-    alert::face_alert,
     band_miss::band_miss_of,
     binding::{
         ChannelBinding, iq_lanes_of, radio_is_attached, radio_refs_of, tuning_controller_of,
@@ -155,7 +154,12 @@ fn head_of(view: &View) -> NodeHead {
         .as_ref()
         .map_or_else(NodeHead::default, |status| {
             let tone = if status.warn { Tone::Warn } else { Tone::Plain };
-            NodeHead::said(status.text.clone()).toned(tone)
+            let said = NodeHead::said(status.text.clone()).toned(tone);
+            if status.title.is_empty() {
+                said
+            } else {
+                said.titled(status.title.clone())
+            }
         });
     match view.width_hz {
         Some(width) => said.badged(format_hz(width)),
@@ -250,7 +254,6 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     };
     view! {
         column(class = "ch-face", on:key_down = keys) {
-            {face_alert(store, node.clone())}
             {top}
             {body}
             {footer(store, shown, broadcast)}

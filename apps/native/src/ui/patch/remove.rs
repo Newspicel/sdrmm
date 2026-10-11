@@ -39,9 +39,9 @@ fn feeding_node(graph: &PatchGraph, node: &str) -> Option<String> {
 }
 
 #[must_use]
-pub fn teardowns(store: Store, graph: &PatchGraph, ids: &[String]) -> Vec<Teardown> {
+pub fn teardowns(store: Store, graph: &PatchGraph, ids: &[String]) -> Vec<(String, Teardown)> {
     ids.iter()
-        .filter_map(|id| teardown_of(store, graph, id))
+        .filter_map(|id| teardown_of(store, graph, id).map(|teardown| (id.clone(), teardown)))
         .collect()
 }
 
@@ -111,9 +111,9 @@ fn teardown_of(store: Store, graph: &PatchGraph, id: &str) -> Option<Teardown> {
     }
 }
 
-pub async fn close(store: Store, teardowns: Vec<Teardown>) -> bool {
+pub async fn close(store: Store, teardowns: Vec<(String, Teardown)>) -> bool {
     let api = store.api();
-    for teardown in teardowns {
+    for (node, teardown) in teardowns {
         let outcome = match &teardown {
             Teardown::DeviceSet(set) => api.delete(&format!("/api/devicesets/{set}")).await,
             Teardown::Channel {
@@ -156,7 +156,7 @@ pub async fn close(store: Store, teardowns: Vec<Teardown>) -> bool {
                 .map(|_| ()),
         };
         if let Err(error) = outcome {
-            store.say(format!("Cannot close the node: {error}"));
+            store.fail_on(&node, "Cannot close the node", &error);
             return false;
         }
     }

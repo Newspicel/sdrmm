@@ -17,17 +17,20 @@ use sdrmm_wire::{
 };
 use zgui::{prelude::*, reactive::RenderEffect};
 use zgui_flow::prelude::{
-    BackgroundProps, ChangeSet, CommitOptions, Connection, ControlsProps, DragHandleProps,
-    EdgeChange, FlowAction, FlowConfig, KeyBinding, FlowEvents, FlowHandle, FlowProps, Graph, Interaction,
-    KeyMap, MiniMapProps, ConnectionMode, PendingConnection, NodeChange, NodeId, NodeProps, NodeResizerProps, NodeTypes, Point, Rect, Size,
-    SnapGrid, ZoomLimits,
+    BackgroundProps, ChangeSet, CommitOptions, Connection, ConnectionMode, ControlsProps,
+    DragHandleProps, EdgeChange, FlowAction, FlowConfig, FlowEvents, FlowHandle, FlowProps, Graph,
+    Interaction, KeyBinding, KeyMap, MiniMapProps, NodeChange, NodeId, NodeProps, NodeResizerProps,
+    NodeTypes, PendingConnection, Point, Rect, Size, SnapGrid, ZoomLimits,
 };
 
 use self::sync::Held;
 use crate::{
     store::Store,
     ui::{
-        faces,
+        faces::{
+            self,
+            channel::alert::{RefusalSource, face_alert},
+        },
         node::{self, Place},
         widgets::close_menus,
     },
@@ -161,10 +164,18 @@ pub fn place_new(canvas: Canvas, kind: &str) -> (f32, f32) {
     let shown = placement::Rect::new(visible.x0, visible.y0, visible.width(), visible.height());
     let gap = placement::SCREEN_GAP / viewport.zoom;
     let at = placement::drop_position(&shown, size, &occupied(canvas), gap);
-    let face = placement::Rect::new(at.0 - gap, at.1 - gap, size.0 + 2.0 * gap, size.1 + 2.0 * gap);
+    let face = placement::Rect::new(
+        at.0 - gap,
+        at.1 - gap,
+        size.0 + 2.0 * gap,
+        size.1 + 2.0 * gap,
+    );
     if !shown.encloses(&face) {
         let both = shown.union(&face);
-        view.fit_rect(Rect::new(both.x, both.y, both.x + both.w, both.y + both.h), 0.0);
+        view.fit_rect(
+            Rect::new(both.x, both.y, both.x + both.w, both.y + both.h),
+            0.0,
+        );
     }
     (at.0 as f32, at.1 as f32)
 }
@@ -304,10 +315,11 @@ fn say_refusal(store: Store, gestures: Gestures) {
     let Some(pending) = gestures.pending.try_update_value(Option::take).flatten() else {
         return;
     };
-    if let Some(reason) = attempted(&pending)
-        .and_then(|connection| refusal(store, &store.graph.get_untracked(), &connection))
-    {
-        store.say(reason);
+    let Some(connection) = attempted(&pending) else {
+        return;
+    };
+    if let Some(reason) = refusal(store, &store.graph.get_untracked(), &connection) {
+        refuse(store, &connection, reason);
     }
 }
 
@@ -358,9 +370,18 @@ fn finish_resizes(store: Store, canvas: Canvas, gestures: Gestures) -> RenderEff
     })
 }
 
+fn refuse(store: Store, connection: &Connection, reason: String) {
+    store.flag_refusal(
+        connection.target.as_str(),
+        reason.clone(),
+        RefusalSource::Wire,
+    );
+    store.say(reason);
+}
+
 fn connect(store: Store, connection: &Connection) {
     if let Some(reason) = refusal(store, &store.graph.get_untracked(), connection) {
-        store.say(reason);
+        refuse(store, connection, reason);
         return;
     }
     if let Some(edge) = edge_of(connection) {
@@ -670,7 +691,10 @@ fn card(store: Store, props: NodeProps<(), ()>) -> impl IntoView {
         Some(faces::face(store, &node))
     };
     let sized = Memo::new(move |_| {
-        node.with(|node| node.as_ref().map(|node| card_size(store, node, &places.get())))
+        node.with(|node| {
+            node.as_ref()
+                .map(|node| card_size(store, node, &places.get()))
+        })
     });
     let px = |value: Option<f32>| value.map(|value| format!("{value:.0}px"));
     let width = move || px(sized.get().and_then(|size| size.width));
@@ -689,6 +713,7 @@ fn card(store: Store, props: NodeProps<(), ()>) -> impl IntoView {
         move || remove_selection(store, vec![id.clone()], Vec::new())
     };
     let chosen = id.clone();
+    let alert = face_alert(store, id.clone());
     view! {
         column(
             on:pointer_down:capture = move |_| {
@@ -706,6 +731,7 @@ fn card(store: Store, props: NodeProps<(), ()>) -> impl IntoView {
             DragHandle(class = "node__grip") {
                 {header::header(store, id, remove)}
             }
+            {alert}
             column(class = "node__body") {
                 {face}
             }
@@ -815,7 +841,10 @@ mod tests {
     fn an_audio_channel_gets_the_wider_face_and_others_fit_their_content() {
         assert_eq!(sized("channel", true, 80.0).width, Some(AUDIO_FACE_W));
         let decoder = sized("channel", false, 80.0);
-        assert_eq!((decoder.min_width, decoder.max_width), (Some(420.0), Some(440.0)));
+        assert_eq!(
+            (decoder.min_width, decoder.max_width),
+            (Some(420.0), Some(440.0))
+        );
         let scope = sized("scope", false, 80.0);
         assert_eq!((scope.width, scope.min_width), (None, None));
         assert_eq!(scope.min_height, 80.0);

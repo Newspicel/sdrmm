@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use sdrmm_wire::{
     decode::DvTrunkProtocol,
@@ -393,53 +393,6 @@ pub fn search_summary(
     )
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TrunkChannelRole {
-    Control,
-    Call,
-    Search,
-}
-
-#[must_use]
-pub fn trunk_channel_roles(
-    trunks: &[TrunkSystemStatus],
-    device_set: u32,
-) -> HashMap<u32, (String, TrunkChannelRole)> {
-    let mut owners = HashMap::new();
-    for system in trunks {
-        if let Some(control) = system
-            .control
-            .filter(|control| control.device_set == device_set)
-        {
-            owners.insert(
-                control.channel,
-                (system.node.clone(), TrunkChannelRole::Control),
-            );
-        }
-        for follower in system
-            .followers
-            .iter()
-            .filter(|follower| follower.device_set == device_set)
-        {
-            owners.insert(
-                follower.channel,
-                (system.node.clone(), TrunkChannelRole::Call),
-            );
-        }
-        for probe in system
-            .probes
-            .iter()
-            .filter(|probe| probe.device_set == device_set)
-        {
-            owners.insert(
-                probe.channel,
-                (system.node.clone(), TrunkChannelRole::Search),
-            );
-        }
-    }
-    owners
-}
-
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::state::{TrunkControl, TrunkFollower, TrunkProbe};
@@ -697,68 +650,6 @@ mod tests {
         system.followers = followers;
         system.probes = probes;
         system
-    }
-
-    #[test]
-    fn a_trunk_system_owns_its_control_call_and_search_receivers_on_one_radio() {
-        let roles = trunk_channel_roles(
-            &[system(
-                Some(TrunkControl {
-                    device_set: 1,
-                    channel: 9,
-                    freq_hz: 460_137_500,
-                }),
-                vec![TrunkFollower {
-                    device_set: 1,
-                    channel: 10,
-                    logical_channel: Some(22),
-                    slot: 2,
-                    freq_hz: 460_262_500,
-                }],
-                vec![TrunkProbe {
-                    device_set: 1,
-                    channel: 11,
-                    freq_hz: 460_512_500,
-                }],
-            )],
-            1,
-        );
-        assert_eq!(
-            roles.get(&9),
-            Some(&(String::from("trunk"), TrunkChannelRole::Control))
-        );
-        assert_eq!(
-            roles.get(&10),
-            Some(&(String::from("trunk"), TrunkChannelRole::Call))
-        );
-        assert_eq!(
-            roles.get(&11),
-            Some(&(String::from("trunk"), TrunkChannelRole::Search))
-        );
-        let other = trunk_channel_roles(
-            &[system(
-                Some(TrunkControl {
-                    device_set: 1,
-                    channel: 9,
-                    freq_hz: 460_137_500,
-                }),
-                vec![TrunkFollower {
-                    device_set: 2,
-                    channel: 3,
-                    logical_channel: Some(42),
-                    slot: 1,
-                    freq_hz: 460_513_000,
-                }],
-                Vec::new(),
-            )],
-            2,
-        );
-        assert_eq!(other.len(), 1);
-        assert_eq!(
-            other.get(&3),
-            Some(&(String::from("trunk"), TrunkChannelRole::Call))
-        );
-        assert!(trunk_channel_roles(&[system(None, Vec::new(), Vec::new())], 1).is_empty());
     }
 
     #[test]

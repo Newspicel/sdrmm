@@ -40,8 +40,12 @@ impl PatchGraph {
         if let Some(reason) = tentative.wiring_refusal(tentative.edges.len() - 1, &input) {
             return Some(reason);
         }
-        self.crowding(edge, &out, &input)
-            .or_else(|| tentative.check_acyclic().err().map(|_| REFUSAL_LOOP.to_owned()))
+        self.crowding(edge, &out, &input).or_else(|| {
+            tentative
+                .check_acyclic()
+                .err()
+                .map(|_| REFUSAL_LOOP.to_owned())
+        })
     }
 
     fn ends(
@@ -188,8 +192,13 @@ mod tests {
     fn one_channel_can_feed_a_second_speaker() {
         let mut graph = graph();
         graph.nodes.push(node("speaker2", NodeBody::Speaker));
-        graph.edges.push(wire(("ch", "audio"), ("speaker", "audio")));
-        assert_eq!(refused(&graph, ("ch", "audio"), ("speaker2", "audio")), None);
+        graph
+            .edges
+            .push(wire(("ch", "audio"), ("speaker", "audio")));
+        assert_eq!(
+            refused(&graph, ("ch", "audio"), ("speaker2", "audio")),
+            None
+        );
     }
 
     #[test]

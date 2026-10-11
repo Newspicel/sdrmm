@@ -47,10 +47,7 @@ pub fn drop_size(kind: &str) -> (f64, f64) {
     } else {
         ASSUMED_HEIGHT
     };
-    (
-        f64::from(natural.w),
-        natural.h.map_or(fallback, f64::from),
-    )
+    (f64::from(natural.w), natural.h.map_or(fallback, f64::from))
 }
 
 fn intersects(at: (f64, f64), size: (f64, f64), rect: &Rect, gap: f64) -> bool {
@@ -95,14 +92,20 @@ fn clear_position(
         area.x,
         area.w,
         size.0,
-        &nearby.iter().map(|rect| (rect.x, rect.w)).collect::<Vec<_>>(),
+        &nearby
+            .iter()
+            .map(|rect| (rect.x, rect.w))
+            .collect::<Vec<_>>(),
         gap,
     );
     let ys = candidates(
         area.y,
         area.h,
         size.1,
-        &nearby.iter().map(|rect| (rect.y, rect.h)).collect::<Vec<_>>(),
+        &nearby
+            .iter()
+            .map(|rect| (rect.y, rect.h))
+            .collect::<Vec<_>>(),
         gap,
     );
     xs.iter()
@@ -134,12 +137,7 @@ fn widened(viewport: &Rect, size: (f64, f64), occupied: &[Rect], gap: f64) -> Re
 }
 
 #[must_use]
-pub fn drop_position(
-    viewport: &Rect,
-    size: (f64, f64),
-    occupied: &[Rect],
-    gap: f64,
-) -> (f64, f64) {
+pub fn drop_position(viewport: &Rect, size: (f64, f64), occupied: &[Rect], gap: f64) -> (f64, f64) {
     let centre = (viewport.x + viewport.w / 2.0, viewport.y + viewport.h / 2.0);
     clear_position(viewport, size, occupied, gap, centre)
         .or_else(|| {

@@ -77,9 +77,8 @@ const STARTER_DRIVER: &str = "virtual";
 const STARTER_KEY: &str = "band";
 
 fn pick(devices: &[DeviceInfo]) -> Option<&DeviceInfo> {
-    let pickable = |info: &&DeviceInfo| {
-        info.driver != RECORDING_DRIVER_ID && info.driver != SIGGEN_DRIVER_ID
-    };
+    let pickable =
+        |info: &&DeviceInfo| info.driver != RECORDING_DRIVER_ID && info.driver != SIGGEN_DRIVER_ID;
     devices
         .iter()
         .find(|info| info.driver == STARTER_DRIVER && info.key == STARTER_KEY)

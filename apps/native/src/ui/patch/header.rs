@@ -183,22 +183,25 @@ fn name(store: Store, id: String) -> impl IntoView {
             let start = start.clone();
             let keyed = start.clone();
             let title = title.clone();
-            hover("Double-click to rename", view! {
-                control(
-                    class = "node__title",
-                    tabindex = Focus::Sequential,
-                    a11y:role = Role::Button,
-                    a11y:description = "Double-click to rename",
-                    on:double_click = move |_| start(),
-                    on:key_down = move |ev: &mut EventCx<'_, events::KeyDown>| {
-                        if matches!(ev.key, Key::Named(NamedKey::F2 | NamedKey::Enter)) {
-                            ev.prevent_default();
-                            ev.stop_propagation();
-                            keyed();
+            hover(
+                "Double-click to rename",
+                view! {
+                    control(
+                        class = "node__title",
+                        tabindex = Focus::Sequential,
+                        a11y:role = Role::Button,
+                        a11y:description = "Double-click to rename",
+                        on:double_click = move |_| start(),
+                        on:key_down = move |ev: &mut EventCx<'_, events::KeyDown>| {
+                            if matches!(ev.key, Key::Named(NamedKey::F2 | NamedKey::Enter)) {
+                                ev.prevent_default();
+                                ev.stop_propagation();
+                                keyed();
+                            }
                         }
-                    }
-                ) {{title}}
-            })
+                    ) {{title}}
+                },
+            )
         }
     }
 }
@@ -206,7 +209,11 @@ fn name(store: Store, id: String) -> impl IntoView {
 fn head_view(store: Store, id: String) -> impl IntoView {
     let head = {
         let id = id.clone();
-        Memo::new(move |_| store.heads.with(|heads| heads.get(&id).cloned().unwrap_or_default()))
+        Memo::new(move |_| {
+            store
+                .heads
+                .with(|heads| heads.get(&id).cloned().unwrap_or_default())
+        })
     };
     view! {
         text(class = "node__badge", hidden = move || head.with(|head| head.badge.is_none())) {

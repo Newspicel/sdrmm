@@ -176,7 +176,9 @@ fn placed(canvas: Canvas, menu: &Menu, items: usize, hint: bool) -> (f64, f64) {
 fn replace_view(store: Store, replacing: RwSignal<Option<String>>) -> impl IntoView {
     move || {
         replacing.get().map(|node| {
-            AnyView::new(picker::replace_decoder(store, node, move || replacing.set(None)))
+            AnyView::new(picker::replace_decoder(store, node, move || {
+                replacing.set(None)
+            }))
         })
     }
 }

@@ -3,6 +3,8 @@ use std::sync::Arc;
 use sdrmm_engine::Engine;
 use sdrmm_wire::patch::{NodeBody, PatchNode, Position, RackCell, RackSlot};
 
+use sdrmm_wire::channel::{ChannelParams, ChannelSettings, NfmParams, NfmToneMode};
+
 use super::*;
 
 struct Server {
@@ -242,45 +244,21 @@ async fn decoder_controls_change_the_virtual_radio_through_the_native_client() {
     let set = state.device_sets.first().expect("device set");
     assert_eq!(set.device.driver, "virtual");
     let channel = set.channels.first().expect("channel");
-    let descriptors = server.api.channel_types().await.expect("descriptors");
-    let limits = &descriptors
-        .iter()
-        .find(|descriptor| descriptor.type_id == "nfm")
-        .expect("NFM")
-        .limits;
-    let fields = crate::params::fields("nfm").expect("controls");
-    let bandwidth = fields
-        .iter()
-        .find(|field| field.name == "bandwidth_hz")
-        .expect("bandwidth control");
     let mut settings = channel.settings.clone();
-    settings.params = crate::params::edited(
-        &settings.params,
-        bandwidth,
-        serde_json::json!(25000.0),
-        limits,
-    )
-    .expect("edit bandwidth");
+    let edit = |settings: &mut ChannelSettings, change: fn(&mut NfmParams)| {
+        if let ChannelParams::Nfm(params) = &mut settings.params {
+            change(params);
+        }
+    };
+    edit(&mut settings, |params| params.bandwidth_hz = 25_000.0);
     let first = session.channel(set.id, channel.id, settings.clone());
-    let compander = fields
-        .iter()
-        .find(|field| field.name == "compander")
-        .expect("compander control");
-    settings.params =
-        crate::params::edited(&settings.params, compander, serde_json::json!(true), limits)
-            .expect("edit compander");
+    edit(&mut settings, |params| params.compander = true);
     let second = session.channel(set.id, channel.id, settings.clone());
     first.await.expect("first edit");
     second.await.expect("second edit");
-    let tone = fields
-        .iter()
-        .find(|field| field.name == "tone_mode")
-        .expect("tone control");
-    settings.params =
-        crate::params::edited(&settings.params, tone, serde_json::json!("ctcss"), limits)
-            .expect("select tone");
-    assert!(crate::params::visible(&settings.params, "ctcss_hz"));
-    assert!(!crate::params::visible(&settings.params, "dcs_code"));
+    edit(&mut settings, |params| {
+        params.tone_mode = NfmToneMode::Ctcss
+    });
     session
         .channel(set.id, channel.id, settings.clone())
         .await

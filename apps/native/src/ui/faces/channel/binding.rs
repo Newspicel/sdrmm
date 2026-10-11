@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use sdrmm_wire::{
     device::DeviceInfo,
     patch::{DeviceRef, NodeBody, PatchGraph},
@@ -102,12 +100,6 @@ fn device_ref_of(graph: &PatchGraph, node: &str) -> Option<DeviceRef> {
 }
 
 #[must_use]
-pub fn radio_ref_of(graph: &PatchGraph, node: &str) -> Option<DeviceRef> {
-    let device = crate::binding::device_node_of(graph, node)?;
-    device_ref_of(graph, &device)
-}
-
-#[must_use]
 pub fn radio_refs_of(graph: &PatchGraph, node: &str) -> Vec<DeviceRef> {
     iq_lanes_of(graph, node)
         .iter()
@@ -120,23 +112,6 @@ pub fn radio_is_attached(references: &[DeviceRef], attached: &[DeviceInfo]) -> b
     references
         .iter()
         .any(|reference| attached.iter().any(|device| reference.matches(device)))
-}
-
-#[must_use]
-pub fn tuning_locked(graph: &PatchGraph, node: &str) -> bool {
-    graph.node(node).is_some_and(|found| match &found.body {
-        NodeBody::Channel(channel) => channel.tuning_locked,
-        _ => false,
-    })
-}
-
-#[must_use]
-pub fn locked_channels(graph: &PatchGraph, faces: &HashMap<u32, String>) -> HashSet<u32> {
-    faces
-        .iter()
-        .filter(|(_, node)| tuning_locked(graph, node))
-        .map(|(channel, _)| *channel)
-        .collect()
 }
 
 #[must_use]
@@ -233,16 +208,6 @@ mod tests {
     }
 
     #[test]
-    fn the_radio_is_the_one_the_upstream_device_node_names() {
-        let graph = graph();
-        assert_eq!(radio_ref_of(&graph, "nfm"), Some(rtl("A")));
-        assert_eq!(radio_ref_of(&graph, "dev"), Some(rtl("A")));
-        assert_eq!(radio_ref_of(&graph, "blank"), None);
-        assert_eq!(radio_ref_of(&graph, "loose"), None);
-        assert_eq!(radio_refs_of(&graph, "nfm"), vec![rtl("A")]);
-    }
-
-    #[test]
     fn only_a_named_radio_on_the_bus_counts_as_attached() {
         let attached = vec![DeviceInfo {
             driver: "rtlsdr".into(),
@@ -303,26 +268,6 @@ mod tests {
         assert_eq!(ChannelBinding::RadioAbsent.status(), "radio missing");
         assert_eq!(ChannelBinding::RadioClosed.status(), "radio closed");
         assert_eq!(ChannelBinding::NotStarted.status(), "not started");
-    }
-
-    #[test]
-    fn locked_channels_are_the_live_ones_whose_node_holds_its_frequency() {
-        let held = PatchGraph {
-            nodes: vec![
-                node("nfm", channel("nfm", true)),
-                node("am", channel("am", false)),
-                node("scope", NodeBody::Scope),
-            ],
-            edges: Vec::new(),
-        };
-        let faces = HashMap::from([
-            (1, "nfm".to_owned()),
-            (2, "am".to_owned()),
-            (3, "scope".to_owned()),
-            (4, "gone".to_owned()),
-        ]);
-        assert_eq!(locked_channels(&held, &faces), HashSet::from([1]));
-        assert!(locked_channels(&graph(), &faces).is_empty());
     }
 
     #[test]

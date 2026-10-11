@@ -5,10 +5,8 @@ mod binding;
 mod bus;
 mod decoded;
 mod decoders;
-mod format;
 mod head;
 mod host;
-mod params;
 mod position;
 mod presence;
 #[cfg(test)]
