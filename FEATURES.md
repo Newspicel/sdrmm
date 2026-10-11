@@ -70,9 +70,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - Recording scheduler and unattended satellite-pass automation
 - Radio astronomy, star tracker, sky map
 
-## 6. Map
-- Layers for sondes, satellites, beacons
-
-## 7. Automation & API
+## 6. Automation & API
 - WASM plugin SDK
 - Offline bundles for TLE snapshots and callsign prefixes
