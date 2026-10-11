@@ -8,9 +8,9 @@ use sdrmm_wire::{
     EotParams, ErmesParams, FlexParams, GnssParams, IsmSurveyParams, LrptParams, M17Params,
     MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge, PatchGraph,
     PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
-    RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SidParams, Squelch, SsbParams,
-    SstvParams, TemplateInfo, WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams, WsprParams,
-    YsfParams,
+    RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SarsatParams, SidParams, Squelch,
+    SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams,
+    WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -328,6 +328,21 @@ static TEMPLATES: &[Entry] = &[
             457_937_500.0,
             || ChannelParams::Eot(EotParams::default()),
             LOG_READ,
+        )],
+    },
+    Entry {
+        id: "distress-beacons",
+        name: "406 MHz beacons",
+        description: "EPIRB, ELT and PLB identity and position.",
+        explainer: "Distress beacons send a half-second burst every 50 seconds between 406.0 \
+                    and 406.1 MHz. The channel covers 406.024 to 406.044 MHz, where most \
+                    beacons sit. Self-test bursts are marked as such.",
+        center_hz: 406_000_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[Channel::at(
+            406_034_000.0,
+            || ChannelParams::Sarsat(SarsatParams::default()),
+            TRACK_READ,
         )],
     },
     Entry {

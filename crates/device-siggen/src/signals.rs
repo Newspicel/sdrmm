@@ -117,6 +117,12 @@ pub static SIGNALS: &[Signal] = &[
         render: eot,
     },
     Signal {
+        id: "sarsat",
+        label: "406 MHz beacon",
+        rate_hz: NARROW,
+        render: sarsat,
+    },
+    Signal {
         id: "acars",
         label: "ACARS",
         rate_hz: NARROW,
@@ -613,6 +619,16 @@ fn eot() -> Vec<Complex<f32>> {
         NARROW,
     ));
     iq
+}
+
+fn sarsat() -> Vec<Complex<f32>> {
+    let message = synth::sarsat::epirb_location(synth::sarsat::EpirbFix {
+        country: 211,
+        mmsi_tail: 406_406,
+        lat: 54.3233,
+        lon: 10.1228,
+    });
+    synth::sarsat::transmission(&message, false, NARROW)
 }
 
 fn acars() -> Vec<Complex<f32>> {

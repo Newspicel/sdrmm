@@ -86,6 +86,8 @@ fn openapi_registers_paths_and_ws_schemas() {
         "ErmesMessage",
         "EotMessage",
         "EotParams",
+        "SarsatMessage",
+        "SarsatParams",
         "CwSkimmerSpot",
         "SelcallSequence",
         "LoraParams",

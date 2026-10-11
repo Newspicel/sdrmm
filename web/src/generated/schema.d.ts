@@ -3193,6 +3193,10 @@ export interface components {
             /** @enum {string} */
             type: "eot";
         } | {
+            settings: components["schemas"]["SarsatParams"];
+            /** @enum {string} */
+            type: "sarsat";
+        } | {
             settings: components["schemas"]["AdsbParams"];
             /** @enum {string} */
             type: "adsb";
@@ -4025,6 +4029,10 @@ export interface components {
             data: components["schemas"]["EotMessage"];
             /** @enum {string} */
             kind: "eot";
+        } | {
+            data: components["schemas"]["SarsatMessage"];
+            /** @enum {string} */
+            kind: "sarsat";
         } | {
             data: components["schemas"]["AdsbMessage"];
             /** @enum {string} */
@@ -7856,6 +7864,33 @@ export interface components {
         RttyText: {
             text: string;
         };
+        /** @enum {string} */
+        SarsatBeacon: "epirb" | "elt" | "plb" | "ship_security" | "test" | "other";
+        SarsatMessage: {
+            beacon: components["schemas"]["SarsatBeacon"];
+            /** Format: int32 */
+            country: number;
+            /** Format: int32 */
+            errors_corrected: number;
+            hex_id: string;
+            homing?: boolean | null;
+            identity?: string | null;
+            /** Format: double */
+            lat?: number | null;
+            /** Format: double */
+            lon?: number | null;
+            long: boolean;
+            message: string;
+            pdf2_ok?: boolean | null;
+            protocol: components["schemas"]["SarsatProtocol"];
+            self_test: boolean;
+        };
+        SarsatParams: {
+            /** Format: double */
+            bandwidth_hz?: number;
+        };
+        /** @enum {string} */
+        SarsatProtocol: "maritime_user" | "radio_call_sign_user" | "aviation_user" | "serial_user" | "national_user" | "test_user" | "orbitography" | "second_generation" | "standard_location" | "ship_security" | "national_location" | "rls_location" | "elt_dt_location" | "standard_test" | "national_test" | "spare";
         SatelliteCatalogResponse: {
             /** Format: int64 */
             fetched?: number;

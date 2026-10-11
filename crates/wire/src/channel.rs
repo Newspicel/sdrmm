@@ -94,6 +94,12 @@ pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
     match type_id {
         "nfm" => vec![limit("inversion_hz", 1_500.0, 4_500.0, 50.0)],
         "ssb" => vec![limit("bandwidth_hz", 200.0, 10_000.0, 100.0)],
+        "sarsat" => vec![limit(
+            "bandwidth_hz",
+            crate::sarsat::MIN_SARSAT_BANDWIDTH_HZ,
+            crate::sarsat::MAX_SARSAT_BANDWIDTH_HZ,
+            1_000.0,
+        )],
         "rtty" => vec![
             limit("baud", 10.0, 1_200.0, 0.05),
             limit("shift_hz", 20.0, 2_000.0, 5.0),
@@ -1622,6 +1628,7 @@ pub enum ChannelParams {
     Flex(FlexParams),
     Ermes(ErmesParams),
     Eot(EotParams),
+    Sarsat(crate::sarsat::SarsatParams),
     Adsb(AdsbParams),
     Ais(AisParams),
     Aprs(AprsParams),
@@ -1687,6 +1694,7 @@ impl ChannelParams {
             Self::Flex(_) => "flex",
             Self::Ermes(_) => "ermes",
             Self::Eot(_) => "eot",
+            Self::Sarsat(_) => "sarsat",
             Self::Adsb(_) => "adsb",
             Self::Ais(_) => "ais",
             Self::Aprs(_) => "aprs",
@@ -1845,6 +1853,7 @@ pub fn home_frequency_hz(type_id: &str) -> Option<f64> {
         "wifi_occupancy" => 2_437_000_000.0,
         "ism_survey" => 2_442_000_000.0,
         "sid" => 30_000.0,
+        "sarsat" => 406_034_000.0,
         _ => return None,
     };
     Some(hz)

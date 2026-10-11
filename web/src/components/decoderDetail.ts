@@ -22,6 +22,7 @@ import {
   UA_STATUS_LABELS,
   UA_TYPE_LABELS,
 } from "../lib/remoteId";
+import { SARSAT_BEACON_LABELS, SARSAT_PROTOCOL_LABELS, sarsatChecks } from "../lib/sarsat";
 import type {
   AprsPacket,
   BleAdvert,
@@ -189,6 +190,23 @@ const DETAIL: {
             ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
           ],
     ),
+    body: null,
+  }),
+
+  sarsat: (m) => ({
+    fields: fields([
+      ["Beacon", SARSAT_BEACON_LABELS[m.beacon]],
+      ["Hex ID", m.hex_id],
+      ["ID", m.identity ?? undefined],
+      ["Country", String(m.country)],
+      ["Protocol", SARSAT_PROTOCOL_LABELS[m.protocol]],
+      ["Position", position(m.lat, m.lon)],
+      ["121.5 MHz", flag(m.homing)],
+      ["Self-test", m.self_test ? "yes" : undefined],
+      ["BCH", sarsatChecks(m)],
+      ["Repaired", m.errors_corrected > 0 ? String(m.errors_corrected) : undefined],
+      ["Message", m.message],
+    ]),
     body: null,
   }),
 

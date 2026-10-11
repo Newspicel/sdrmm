@@ -421,3 +421,49 @@ describe("drone targets", () => {
     expect(mapKindsOf(["remote_id"])).toEqual(["remote_id"]);
   });
 });
+
+function beacon(lat?: number, lon?: number): Target {
+  return station(
+    {
+      kind: "sarsat",
+      data: {
+        hex_id: "41A40BE4C0FFBFF",
+        message: "A0D205F260850F3DC9E0B70B6E4FD7",
+        long: true,
+        self_test: false,
+        country: 525,
+        protocol: "standard_location",
+        beacon: "epirb",
+        identity: "MMSI 525024358",
+        lat,
+        lon,
+        homing: true,
+        errors_corrected: 0,
+        pdf2_ok: true,
+      },
+    },
+    { id: "41A40BE4C0FFBFF" },
+  );
+}
+
+describe("distress beacon targets", () => {
+  it("place a located beacon without a heading and name it by its identity", () => {
+    const located = beacon(-4.952222, 121.987778);
+    expect(targetFeature(located)).toEqual({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [121.987778, -4.952222] },
+      properties: { id: "41A40BE4C0FFBFF", label: "MMSI 525024358" },
+    });
+    expect(targetHeading(located)).toBeNull();
+    const rows = targetDetail(located).rows;
+    expect(rows).toContainEqual(["Hex ID", "41A40BE4C0FFBFF"]);
+    expect(rows).toContainEqual(["Beacon", "EPIRB"]);
+    expect(rows).toContainEqual(["Position", "4.9522° S 121.9878° E"]);
+    expect(rows).toContainEqual(["BCH", "both fields ok"]);
+    expect(mapKindsOf(["sarsat", "adsb"])).toEqual(["adsb", "sarsat"]);
+  });
+
+  it("leave a beacon without a fix off the map", () => {
+    expect(targetFeature(beacon())).toBeNull();
+  });
+});

@@ -15,6 +15,7 @@ export const ZERO_COUNTS: Counts = {
   radiosonde: 0,
   lora: 0,
   remote_id: 0,
+  sarsat: 0,
 };
 
 export interface MapInputs {

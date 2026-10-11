@@ -1426,6 +1426,7 @@ pub enum DecoderEvent {
     Flex(FlexMessage),
     Ermes(ErmesMessage),
     Eot(EotMessage),
+    Sarsat(crate::sarsat::SarsatMessage),
     Adsb(AdsbMessage),
     Ais(AisMessage),
     Aprs(AprsPacket),
@@ -1693,6 +1694,7 @@ impl DecoderEvent {
             Self::Flex(_) => "flex",
             Self::Ermes(_) => "ermes",
             Self::Eot(_) => "eot",
+            Self::Sarsat(_) => "sarsat",
             Self::Adsb(_) => "adsb",
             Self::Ais(_) => "ais",
             Self::Aprs(_) => "aprs",
@@ -1769,6 +1771,7 @@ impl DecoderEvent {
                 }
             }
             Self::Eot(m) => m.summary(),
+            Self::Sarsat(m) => m.summary(),
             Self::Adsb(a) => {
                 let mut parts = vec![a.icao.clone()];
                 if let Some(cs) = &a.callsign {
@@ -1946,6 +1949,7 @@ impl DecoderEvent {
             Self::Radiosonde(f) => (f.lat, f.lon),
             Self::Lora(f) => f.position().unzip(),
             Self::RemoteId(f) => f.position().unzip(),
+            Self::Sarsat(m) => (m.lat, m.lon),
             Self::Dsc(m)
             | Self::InmarsatStdc(m)
             | Self::InmarsatAero(m)
@@ -1965,6 +1969,7 @@ impl DecoderEvent {
             Self::Flex(p) => Some(p.address.to_string()),
             Self::Ermes(p) => Some(p.local_address.to_string()),
             Self::Eot(m) => Some(m.unit_address.to_string()),
+            Self::Sarsat(m) => Some(m.hex_id.clone()),
             Self::Adsb(a) => Some(a.icao.clone()),
             Self::Ais(m) => Some(m.mmsi.to_string()),
             Self::Aprs(p) => Some(p.source.clone()),
@@ -2159,6 +2164,21 @@ mod tests {
                     copies: 3,
                 }),
                 errors_corrected: 0,
+            }),
+            DecoderEvent::Sarsat(crate::sarsat::SarsatMessage {
+                hex_id: "ADCD00800440401".to_owned(),
+                message: String::new(),
+                long: false,
+                self_test: false,
+                country: 366,
+                protocol: crate::sarsat::SarsatProtocol::SerialUser,
+                beacon: crate::sarsat::SarsatBeacon::Epirb,
+                identity: None,
+                lat: None,
+                lon: None,
+                homing: None,
+                errors_corrected: 0,
+                pdf2_ok: None,
             }),
             DecoderEvent::Adsb(AdsbMessage::default()),
             DecoderEvent::Ais(AisMessage::default()),
