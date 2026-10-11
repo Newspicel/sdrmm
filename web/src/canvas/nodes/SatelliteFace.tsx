@@ -186,18 +186,14 @@ function Downlink({
   const active = useFaceActive();
   return (
     <div className="@container flex min-w-0 items-center gap-1 p-2" title="Downlink before Doppler">
-      {hz === null ? (
-        <span className="text-xs text-ink-dim">No downlink</span>
-      ) : (
-        <FrequencyDial
-          id={dialId(node)}
-          hz={hz}
-          range={SATELLITE_RANGE}
-          disabled={held || locked}
-          wheelTunes={active}
-          onTune={onTune}
-        />
-      )}
+      <FrequencyDial
+        id={dialId(node)}
+        hz={hz ?? 0}
+        range={SATELLITE_RANGE}
+        disabled={held || locked}
+        wheelTunes={active}
+        onTune={onTune}
+      />
       <span className="ml-auto flex shrink-0 items-center gap-1">
         <TuneTo
           title="Type the downlink"
@@ -289,42 +285,30 @@ function useSecondsNow(): number {
 
 function TrackReadout({ status }: { status: SatelliteStatus | null }) {
   const now = useSecondsNow();
-  const look = status?.look;
-  if (status === null || (look == null && status.doppler_hz == null && status.uplink_hz == null)) {
-    return null;
-  }
+  const look = status?.look ?? null;
+  const doppler = status?.doppler_hz ?? null;
+  const rate = status?.doppler_rate_hz_s ?? null;
+  const uplink = status?.uplink_hz ?? null;
   return (
-    <Readouts columns={2}>
-      {look != null && (
-        <Readout label="Azimuth">
-          {look.azimuth_deg.toFixed(0)}° {compass(look.azimuth_deg)}
-        </Readout>
-      )}
-      {look != null && (
-        <Readout label="Elevation" tone={status.visible ? "ok" : undefined}>
-          {look.elevation_deg.toFixed(1)}°
-        </Readout>
-      )}
-      {look != null && <Readout label="Range">{look.range_km.toFixed(0)} km</Readout>}
-      {status.doppler_hz != null && (
-        <Readout label="Doppler" title="Added to every wired decoder">
-          {formatDoppler(status.doppler_hz)}
-          {status.doppler_rate_hz_s != null && `, ${formatDoppler(status.doppler_rate_hz_s)}/s`}
-        </Readout>
-      )}
-      {status.uplink_hz != null && (
-        <Readout
-          label="Send on"
-          title="The uplink corrected so the satellite hears it on frequency"
-        >
-          {formatMhz(status.uplink_hz)}
-        </Readout>
-      )}
-      {look != null && (
-        <Readout label="Next pass" wide>
-          {passLine(status.next_pass, now)}
-        </Readout>
-      )}
+    <Readouts>
+      <Readout label="Azimuth">
+        {look === null ? "-" : `${look.azimuth_deg.toFixed(0)}° ${compass(look.azimuth_deg)}`}
+      </Readout>
+      <Readout label="Elevation" tone={status?.visible === true ? "ok" : undefined}>
+        {look === null ? "-" : `${look.elevation_deg.toFixed(1)}°`}
+      </Readout>
+      <Readout label="Range">{look === null ? "-" : `${look.range_km.toFixed(0)} km`}</Readout>
+      <Readout label="Doppler" title="Added to every wired decoder">
+        {doppler === null
+          ? "-"
+          : `${formatDoppler(doppler)}${rate === null ? "" : `, ${formatDoppler(rate)}/s`}`}
+      </Readout>
+      <Readout label="Send on" title="The uplink corrected so the satellite hears it on frequency">
+        {uplink === null ? "-" : formatMhz(uplink)}
+      </Readout>
+      <Readout label="Next pass">
+        {status === null || look === null ? "-" : passLine(status.next_pass, now)}
+      </Readout>
     </Readouts>
   );
 }

@@ -22,6 +22,7 @@ import { toastError } from "../../lib/toasts";
 import type { NodeCategory, PatchNode, PortSpec, PortType } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import {
+  echoesWire,
   fitWidth,
   handleSignature,
   isPinned,
@@ -310,7 +311,7 @@ export function NodeShell({
             port={port}
             label={portLabel(port.name, ports)}
             offset={anchors[port.name] ?? PORT_TOP_PX + PORT_STEP_PX * indexOnSide(ports, index)}
-            anchored={port.name in anchors}
+            labelled={!(port.name in anchors) && !echoesWire(workspace.graph, node.id, port)}
           />
         ))}
       </PortalContainerProvider>
@@ -391,12 +392,12 @@ function PortHandle({
   port,
   label,
   offset,
-  anchored,
+  labelled,
 }: {
   port: PortSpec;
   label: string;
   offset: number;
-  anchored: boolean;
+  labelled: boolean;
 }) {
   const out = port.direction === "out";
   const description = port.note == null ? `${label} (${port.port_type})` : `${label}: ${port.note}`;
@@ -413,7 +414,7 @@ function PortHandle({
       >
         <PortGlyph type={port.port_type} />
       </Handle>
-      {!anchored && (
+      {labelled && (
         <span
           aria-hidden
           style={{ top: offset }}

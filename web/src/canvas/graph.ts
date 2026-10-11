@@ -51,6 +51,15 @@ export function portLabel(name: string, siblings: readonly PortSpec[]): string {
   return siblings.some((port) => port.name === numbered) ? `${name}1` : name;
 }
 
+export function echoesWire(graph: PatchGraph, node: string, port: PortSpec): boolean {
+  return (
+    port.direction === "in" &&
+    (graph.edges ?? []).some(
+      (edge) => edge.to.node === node && edge.to.port === port.name && edge.from.port === port.name,
+    )
+  );
+}
+
 export function streamLabel(base: string, index: number, streams: number): string {
   return streams > 1 && index === 0 ? `${base}1` : streamPort(base, index);
 }
@@ -331,7 +340,13 @@ export const FIT_MIN_W = 280;
 
 const DIAL_MIN_W = 420;
 
-const DIAL_KINDS: ReadonlySet<NodeKind> = new Set(["device", "signal_gen", "recording", "channel"]);
+const DIAL_KINDS: ReadonlySet<NodeKind> = new Set([
+  "device",
+  "signal_gen",
+  "recording",
+  "channel",
+  "satellite",
+]);
 
 export function fitWidth(kind: NodeKind): { minWidth: number; maxWidth: number } | null {
   const size = NODE_SIZE[kind];

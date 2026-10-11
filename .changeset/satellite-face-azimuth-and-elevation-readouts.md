@@ -2,4 +2,4 @@
 bump: patch
 ---
 
-Satellite face: azimuth and elevation readouts, compact refresh button
+Satellite face: fixed width, dial always shown, azimuth and elevation readouts

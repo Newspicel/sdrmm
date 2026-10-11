@@ -19,7 +19,9 @@ import {
   BEAM_TAKES_ONE,
   clampCells,
   connectionRefusal,
+  echoesWire,
   edgeKey,
+  fitWidth,
   type GraphContext,
   handleSignature,
   isPinned,
@@ -202,6 +204,36 @@ const deviceNode = (graph: PatchGraph): PatchNode => {
   }
   return dev;
 };
+
+const positionPort = (name: string, direction: "in" | "out") =>
+  ({ name, port_type: "position", direction, multi: false }) as PortSpec;
+
+describe("echoesWire", () => {
+  const graph = {
+    nodes: [],
+    edges: [
+      { from: { node: "gps", port: "position" }, to: { node: "sat", port: "position" } },
+      { from: { node: "dev", port: "iq" }, to: { node: "sat", port: "control" } },
+    ],
+  } as unknown as PatchGraph;
+
+  it("quiets an input wired from an output of the same name", () => {
+    expect(echoesWire(graph, "sat", positionPort("position", "in"))).toBe(true);
+  });
+
+  it("keeps labels that add something", () => {
+    expect(echoesWire(graph, "sat", positionPort("control", "in"))).toBe(false);
+    expect(echoesWire(graph, "gps", positionPort("position", "out"))).toBe(false);
+    expect(echoesWire(graph, "map", positionPort("position", "in"))).toBe(false);
+  });
+});
+
+describe("fitWidth", () => {
+  it("holds the satellite face at one width", () => {
+    const fit = fitWidth("satellite");
+    expect(fit?.minWidth).toBe(fit?.maxWidth);
+  });
+});
 
 describe("portLabel", () => {
   it("numbers the first stream only when there is a second to tell it from", () => {

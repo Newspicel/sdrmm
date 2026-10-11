@@ -8,7 +8,7 @@ shift as it passes, so the decoder never has to chase the carrier.
 1. Add [GPS position](position.md). A fixed position is fine for a station that never moves.
 2. Add **Satellite** and wire GPS `position` to its `position`.
 3. Search by name or NORAD number, or paste element lines.
-4. Pick a transmitter in **Signal**, or pick **Own frequency** and set the downlink.
+4. Pick a transmitter in **Signal**, or tune the downlink on the dial.
 5. Wire Satellite `control` to each decoder's `control`.
 
 On auto tuning the radio follows the decoder, as it does for a scanner.
