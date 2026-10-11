@@ -391,6 +391,7 @@ struct ChannelMedia {
     audio_tx: broadcast::Sender<AudioPacket>,
     encoder: Option<std::thread::JoinHandle<()>>,
     position: Option<PositionFix>,
+    rejected_seen: u32,
 }
 
 impl ChannelMedia {
@@ -414,10 +415,12 @@ impl ChannelMedia {
                 peak_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
                 squelch_db: Arc::new(AtomicU32::new(f32::NAN.to_bits())),
                 shift_hz: Arc::new(AtomicU64::new(0.0_f64.to_bits())),
+                rejected: Arc::new(AtomicU32::new(0)),
             },
             audio_tx,
             encoder: Some(encoder),
             position: None,
+            rejected_seen: 0,
         })
     }
 
@@ -699,6 +702,7 @@ impl DeviceSetState {
                 .iter()
                 .map(|channel| ChannelInfo {
                     out_of_band: self.band_miss(channel),
+                    rejected: self.rejected(channel.id),
                     audio_recordings: self.audio_recording_statuses(channel.id),
                     baseband_recording: self
                         .baseband_recordings
@@ -805,6 +809,21 @@ impl DeviceSetState {
             now.duration_since(polled).as_secs_f64(),
             sample_rate_of(&self.settings) * f64::from(self.capabilities.rx_streams.max(1)),
         )
+    }
+
+    fn rejected(&self, channel: u32) -> u32 {
+        self.media
+            .get(&channel)
+            .map_or(0, |media| media.sinks.rejected.load(Ordering::Relaxed))
+    }
+
+    fn rejects_moved(&mut self) -> bool {
+        self.media.values_mut().fold(false, |moved, media| {
+            let now = media.sinks.rejected.load(Ordering::Relaxed);
+            let changed = now != media.rejected_seen;
+            media.rejected_seen = now;
+            moved || changed
+        })
     }
 
     fn overruns_total(&self) -> u64 {

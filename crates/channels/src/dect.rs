@@ -173,6 +173,10 @@ impl ChannelRx for DectChannel {
         }
         self.playout.advance(iq.len(), out);
     }
+
+    fn rejected(&self) -> u32 {
+        self.tracker.rejected()
+    }
 }
 
 #[cfg(test)]

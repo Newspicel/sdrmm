@@ -12,7 +12,7 @@ use crate::{
         self,
         remote_id::{self as tx, BlePhy, WifiPhy},
     },
-    testutil::settings,
+    testutil::{complex_noise, settings},
 };
 
 const ADDRESS: [u8; 6] = [0xC2, 0x11, 0x22, 0x33, 0x44, 0x55];
@@ -27,6 +27,10 @@ pub(crate) fn decode(
     frequency_hz: f64,
     iq: &[Complex<f32>],
 ) -> Vec<RemoteIdFrame> {
+    run(link, frequency_hz, iq).0
+}
+
+fn run(link: RemoteIdLink, frequency_hz: f64, iq: &[Complex<f32>]) -> (Vec<RemoteIdFrame>, u32) {
     let params = RemoteIdParams { link };
     let channel_params = ChannelParams::RemoteId(params);
     let ctx = ChannelCtx {
@@ -50,7 +54,7 @@ pub(crate) fn decode(
             _ => None,
         }));
     }
-    found
+    (found, channel.rejected())
 }
 
 fn location() -> RemoteIdLocation {
@@ -296,16 +300,29 @@ fn nan_service_discovery_frames_decode() {
 }
 
 #[test]
-fn a_broken_frame_is_counted_on_the_next_one() {
+fn broken_frames_alone_are_counted_without_a_good_one() {
     let mut beacon = tx::build::beacon(WIFI_ADDRESS, "RID", 1, &tx::encode::pack(&pack()));
-    let good = wifi(WifiPhy::Ofdm { mbps: 12 }, false, &beacon);
     let last = beacon.len() - 1;
     beacon[last] ^= 0x55;
     let mut iq = wifi(WifiPhy::Ofdm { mbps: 12 }, false, &beacon);
-    iq.extend(good);
-    let frames = decode(RemoteIdLink::Wifi, WIFI_6_HZ, &iq);
-    assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0].rejected, 1);
+    iq.extend(wifi(WifiPhy::Ofdm { mbps: 12 }, false, &beacon));
+    let (frames, rejected) = run(RemoteIdLink::Wifi, WIFI_6_HZ, &iq);
+    assert!(frames.is_empty(), "{frames:?}");
+    assert_eq!(rejected, 2);
+}
+
+#[test]
+fn noise_alone_rejects_nothing() {
+    for (link, frequency_hz) in [
+        (RemoteIdLink::Wifi, WIFI_6_HZ),
+        (RemoteIdLink::Bluetooth, CHANNEL_37_HZ),
+        (RemoteIdLink::BluetoothBand, CHANNEL_38_HZ),
+    ] {
+        let noise = complex_noise(7, 0.3, 2_000_000);
+        let (frames, rejected) = run(link, frequency_hz, &noise);
+        assert!(frames.is_empty(), "{link:?}");
+        assert_eq!(rejected, 0, "{link:?}");
+    }
 }
 
 #[test]

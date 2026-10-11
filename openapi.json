@@ -9469,11 +9469,6 @@
           "phy": {
             "$ref": "#/components/schemas/BlePhy"
           },
-          "rejected": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
           "repeats": {
             "type": "integer",
             "format": "int32",
@@ -10836,6 +10831,11 @@
                 "type": "null"
               }
             ]
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           },
           "settings": {
             "$ref": "#/components/schemas/ChannelSettings"
@@ -15320,7 +15320,6 @@
           "update",
           "security",
           "bursts",
-          "crc_errors",
           "level_dbfs"
         ],
         "properties": {
@@ -15349,11 +15348,6 @@
               "null"
             ],
             "format": "double"
-          },
-          "crc_errors": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
           },
           "extended_carriers": {
             "type": "boolean"
@@ -17791,16 +17785,10 @@
         "required": [
           "unit_address",
           "report",
-          "errors_corrected",
-          "rejected"
+          "errors_corrected"
         ],
         "properties": {
           "errors_corrected": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "rejected": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
@@ -27397,11 +27385,6 @@
             ],
             "format": "float"
           },
-          "rejected": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
           "satellites": {
             "type": [
               "integer",
@@ -27900,11 +27883,6 @@
           },
           "phy": {
             "$ref": "#/components/schemas/RemoteIdPhy"
-          },
-          "rejected": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
           },
           "ssid": {
             "type": [

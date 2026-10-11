@@ -142,7 +142,7 @@ fn decodes_the_identity_of_a_modulated_dummy_bearer() {
     assert_eq!(identity.rfpi, "01234D5E6D");
     assert_eq!(identity.emc, Some(0x1234));
     assert!(decoded.iter().all(|frame| frame.side == DectSide::Rfp));
-    assert!(decoded.iter().all(|frame| frame.crc_errors == 0));
+    assert_eq!(chan.rejected(), 0);
 }
 
 #[test]
@@ -275,9 +275,33 @@ fn a_corrupt_a_field_is_counted_and_never_reported_as_identity() {
             .is_none_or(|id| id.rfpi == "01234D5E6D")
     }));
     assert!(
-        decoded.last().map(|frame| frame.crc_errors) > Some(0),
+        chan.rejected() > 0,
         "the damaged burst should be counted, not dropped silently"
     );
+}
+
+#[test]
+fn only_corrupt_a_fields_are_counted_with_nothing_reported() {
+    let broken = sig::modulate(true, sig::nt(CLASS_A_RFPI) ^ 0x0000_0000_00FF_0000);
+    let frame = super::burst::FRAME_SAMPLES as usize;
+    let mut iq = vec![Complex::default(); 6 * frame];
+    for start in (0..iq.len()).step_by(frame) {
+        iq[start..start + broken.len()].copy_from_slice(&broken);
+    }
+    let mut chan = channel(DectParams::default());
+    let decoded = frames(&run_events(&mut chan, &iq));
+    assert!(decoded.is_empty(), "{decoded:?}");
+    assert!(chan.rejected() > 0);
+}
+
+#[test]
+fn noise_alone_rejects_nothing() {
+    for (seed, amplitude) in [(0xDEC7, 0.01), (0xDEC8, 0.3), (0xDEC9, 3.0)] {
+        let mut chan = channel(DectParams::default());
+        let noise = crate::testutil::complex_noise(seed, amplitude, 3 * INPUT_RATE_HZ as usize);
+        assert!(frames(&run_events(&mut chan, &noise)).is_empty());
+        assert_eq!(chan.rejected(), 0, "{amplitude}");
+    }
 }
 
 #[test]
@@ -366,4 +390,28 @@ fn a_carrier_offset_does_not_stop_the_identity_getting_through() {
             "a {offset_hz} Hz carrier offset lost the RFPI"
         );
     }
+}
+
+fn known_station_under_noise(amplitude: f32) -> (usize, u32) {
+    let station = sig::Station {
+        rfpi: CLASS_A_RFPI,
+        ..sig::Station::default()
+    };
+    let mut iq = sig::dummy_bearer(&station, 100);
+    crate::synth::add_noise(&mut iq, 0x5EED, amplitude);
+    let mut chan = channel(DectParams::default());
+    let heard = frames(&run_events(&mut chan, &iq)).len();
+    (heard, chan.rejected())
+}
+
+#[test]
+fn weak_damaged_bursts_in_a_known_slot_are_counted() {
+    let (heard, rejected) = known_station_under_noise(0.6);
+    assert!(heard > 0);
+    assert!(rejected >= 10, "{rejected}");
+}
+
+#[test]
+fn noise_between_a_known_stations_bursts_is_not_counted() {
+    assert_eq!(known_station_under_noise(0.05).1, 0);
 }

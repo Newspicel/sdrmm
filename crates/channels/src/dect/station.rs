@@ -17,17 +17,28 @@ const PAIR_TOLERANCE: u64 = 200;
 const REFRESH_SAMPLES: u64 = (INPUT_RATE_HZ * 5.0) as u64;
 const VOICE_REFRESH_SAMPLES: u64 = (INPUT_RATE_HZ * 0.25) as u64;
 const DUPLEX_OFFSET: u64 = FRAME_SAMPLES / 2;
+const CLEAR_SYNC: f32 = 0.8;
+const EXPECTED_SYNC: f32 = 0.65;
 
 pub(crate) struct Tracker {
     tracks: Vec<Track>,
     band: DectBand,
+    rejected: u32,
 }
 
 impl Tracker {
     pub fn new(band: DectBand) -> Self {
         let mut tracks = Vec::with_capacity(MAX_TRACKS);
         tracks.resize_with(MAX_TRACKS, Track::default);
-        Self { tracks, band }
+        Self {
+            tracks,
+            band,
+            rejected: 0,
+        }
+    }
+
+    pub fn rejected(&self) -> u32 {
+        self.rejected
     }
 
     pub fn set_band(&mut self, band: DectBand) {
@@ -63,6 +74,16 @@ impl Tracker {
         index
     }
 
+    fn reject(&mut self, burst: &Burst, side: DectSide) {
+        let expected = || {
+            self.tracks
+                .iter()
+                .any(|track| track.expects(burst.sample, side, burst.carrier))
+        };
+        let counted = burst.score >= CLEAR_SYNC || (burst.score >= EXPECTED_SYNC && expected());
+        self.rejected = self.rejected.saturating_add(u32::from(counted));
+    }
+
     fn partner(&self, burst: &Burst) -> Option<usize> {
         let base_time = burst.sample.checked_sub(DUPLEX_OFFSET)?;
         self.tracks.iter().position(|track| {
@@ -79,22 +100,19 @@ impl Tracker {
         } else {
             DectSide::Pp
         };
+        if !a_field_crc_ok(burst.a_field) {
+            self.reject(burst, side);
+            return None;
+        }
         let index = self.index_for(burst, side);
         let band = self.band;
         let track = &mut self.tracks[index];
         track.anchor = burst.sample;
         track.last = burst.sample;
         track.level_dbfs = burst.level_dbfs;
-
-        if !a_field_crc_ok(burst.a_field) {
-            track.crc_errors = track.crc_errors.saturating_add(1);
-            track.pending_errors = true;
-            return None;
-        }
         track.bursts = track.bursts.saturating_add(1);
 
-        let mut dirty = !track.emitted || track.pending_errors;
-        track.pending_errors = false;
+        let mut dirty = !track.emitted;
         let header = mac::header(burst.a_field, burst.from_rfp);
         let mut update = apply_tail(track, header, burst, band, &mut dirty);
 

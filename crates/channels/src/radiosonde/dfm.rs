@@ -415,8 +415,7 @@ impl Dfm {
                 for (bit, pair) in self.payload.iter_mut().zip(self.raw.as_chunks::<2>().0) {
                     *bit = polarity.apply(pair[1] > pair[0]);
                 }
-                if let Some(mut frame) = self.frames.decode(&self.payload) {
-                    frame.rejected = self.frames.rejected();
+                if let Some(frame) = self.frames.decode(&self.payload) {
                     out.push(DecoderEvent::Radiosonde(frame));
                 }
             }

@@ -267,8 +267,6 @@ pub struct RemoteIdFrame {
     pub ssid: Option<String>,
     pub level_dbfs: f32,
     pub messages: Vec<RemoteIdMessage>,
-    #[serde(default)]
-    pub rejected: u32,
 }
 
 impl RemoteIdFrame {
@@ -356,7 +354,6 @@ mod tests {
             uas_id: Some("1596F1234567890".to_owned()),
             ssid: None,
             level_dbfs: -41.0,
-            rejected: 0,
             messages: vec![
                 RemoteIdMessage::Location(location(47.397_6, 8.545_6)),
                 RemoteIdMessage::SelfId {
@@ -389,7 +386,6 @@ mod tests {
             ssid: Some("RID-1".to_owned()),
             level_dbfs: -60.0,
             messages: vec![],
-            rejected: 2,
         };
         assert_eq!(frame.station(), "60:60:1F:00:00:01");
         assert_eq!(frame.position(), None);

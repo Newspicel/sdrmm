@@ -137,6 +137,7 @@ pub(crate) struct ChannelSinks {
     pub(crate) peak_db: Arc<AtomicU32>,
     pub(crate) squelch_db: Arc<AtomicU32>,
     pub(crate) shift_hz: Arc<AtomicU64>,
+    pub(crate) rejected: Arc<AtomicU32>,
 }
 
 pub(crate) struct ChannelHost {
@@ -442,6 +443,9 @@ impl ChannelHost {
             silence = self.zero_carry as usize;
             self.zero_carry -= silence as f64;
         }
+        self.sinks
+            .rejected
+            .store(self.rx.rejected(), Ordering::Relaxed);
         let frames = if self.outputs.audio_pcm.is_empty() {
             silence
         } else {
@@ -639,6 +643,7 @@ mod tests {
             peak_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
             squelch_db: Arc::new(AtomicU32::new(f32::NAN.to_bits())),
             shift_hz: Arc::new(AtomicU64::new(0.0_f64.to_bits())),
+            rejected: Arc::new(AtomicU32::new(0)),
         }
     }
 

@@ -83,18 +83,6 @@ pub struct RadiosondeChannel {
     imet: Imet,
 }
 
-impl RadiosondeChannel {
-    #[must_use]
-    pub fn rejected(&self, sonde: SondeType) -> u32 {
-        match sonde {
-            SondeType::Rs41 => self.rs41.rejected(),
-            SondeType::Dfm => self.dfm.rejected(),
-            SondeType::M10 | SondeType::M20 => self.meteomodem.rejected(),
-            SondeType::Imet4 => self.imet.rejected(),
-        }
-    }
-}
-
 impl ChannelRx for RadiosondeChannel {
     fn descriptor() -> &'static ChannelDescriptor {
         &DESCRIPTOR
@@ -136,5 +124,16 @@ impl ChannelRx for RadiosondeChannel {
                 self.imet.push(audio, &mut out.events);
             }
         }
+    }
+
+    fn rejected(&self) -> u32 {
+        [
+            self.rs41.rejected(),
+            self.dfm.rejected(),
+            self.meteomodem.rejected(),
+            self.imet.rejected(),
+        ]
+        .into_iter()
+        .fold(0, u32::saturating_add)
     }
 }

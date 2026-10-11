@@ -649,7 +649,6 @@ function dectFrame(side: "rfp" | "pp", playing: boolean | null) {
         : { frames: 10, playing, x_crc_errors: 0, unsynced: 0, encrypted: 0, late: 0 },
     extended_carriers: false,
     bursts: 10,
-    crc_errors: 0,
     level_dbfs: side === "rfp" ? -30 : -60,
   };
 }

@@ -255,8 +255,6 @@ pub struct BleAdvert {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aux: Option<BleAuxPointer>,
     pub data: String,
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub rejected: u32,
 }
 
 fn is_zero(value: &u32) -> bool {
@@ -322,7 +320,6 @@ mod tests {
             adi: None,
             aux: None,
             data: "020106".to_owned(),
-            rejected: 0,
         }
     }
 

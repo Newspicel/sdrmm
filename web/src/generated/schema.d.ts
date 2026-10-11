@@ -2736,8 +2736,6 @@ export interface components {
             pdu: components["schemas"]["BlePdu"];
             phy: components["schemas"]["BlePhy"];
             /** Format: int32 */
-            rejected?: number;
-            /** Format: int32 */
             repeats?: number;
             services?: components["schemas"]["BleService"][];
             target?: components["schemas"]["BleAddress"] | null;
@@ -3112,6 +3110,8 @@ export interface components {
              */
             node?: string | null;
             out_of_band?: components["schemas"]["BandMiss"] | null;
+            /** Format: int32 */
+            rejected?: number;
             settings: components["schemas"]["ChannelSettings"];
             /** Format: int32 */
             stream?: number;
@@ -4239,8 +4239,6 @@ export interface components {
             carrier?: number | null;
             /** Format: double */
             carrier_hz?: number | null;
-            /** Format: int32 */
-            crc_errors: number;
             extended_carriers?: boolean;
             /** Format: int32 */
             fmid?: number | null;
@@ -4915,8 +4913,6 @@ export interface components {
         EotMessage: {
             /** Format: int32 */
             errors_corrected: number;
-            /** Format: int32 */
-            rejected: number;
             report: components["schemas"]["EotReport"];
             /** Format: int32 */
             unit_address: number;
@@ -7495,8 +7491,6 @@ export interface components {
             /** Format: float */
             pressure_hpa?: number | null;
             /** Format: int32 */
-            rejected?: number;
-            /** Format: int32 */
             satellites?: number | null;
             serial: string;
             sonde: components["schemas"]["SondeType"];
@@ -7631,8 +7625,6 @@ export interface components {
             level_dbfs: number;
             messages: components["schemas"]["RemoteIdMessage"][];
             phy: components["schemas"]["RemoteIdPhy"];
-            /** Format: int32 */
-            rejected?: number;
             ssid?: string | null;
             transport: components["schemas"]["RemoteIdTransport"];
             uas_id?: string | null;

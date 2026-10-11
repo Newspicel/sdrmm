@@ -3,13 +3,15 @@ import { ReactFlowProvider } from "@xyflow/react";
 import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type Workspace, WorkspaceProvider } from "../canvas/context";
-import type { DeviceSet, PatchCatalog, PatchGraph, PatchNode } from "../lib/types";
+import type { ChannelInfo, DeviceSet, PatchCatalog, PatchGraph, PatchNode } from "../lib/types";
 import { SdrSocket } from "../lib/ws";
 import { CATALOG } from "./catalog";
 
 export interface FaceHarness {
   graph: PatchGraph;
   devices?: ReadonlyMap<string, DeviceSet>;
+  channels?: ReadonlyMap<string, ChannelInfo>;
+  owners?: ReadonlyMap<string, string>;
   catalog?: PatchCatalog;
   selected?: string | null;
 }
@@ -32,8 +34,8 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     deviceSets: [...devices.values()],
     trunks: [],
     devices,
-    channels: new Map(),
-    owners: new Map(),
+    channels: harness.channels ?? new Map(),
+    owners: harness.owners ?? new Map(),
     savedChannels: new Map(),
     saveChannel: () => {},
     selected: harness.selected ?? null,

@@ -576,10 +576,7 @@ function DectRow({ station }: { station: DectStation }) {
       <td className={TABLE_CELL}>{station.handsets === 0 ? "-" : String(station.handsets)}</td>
       <td className={TABLE_CELL}>{station.voice ?? "-"}</td>
       <td className={TABLE_CELL}>{station.levelDbfs.toFixed(1)}</td>
-      <td className={TABLE_CELL}>
-        {station.bursts}
-        {station.crcErrors === 0 ? "" : ` / ${station.crcErrors} bad`}
-      </td>
+      <td className={TABLE_CELL}>{station.bursts}</td>
     </tr>
   );
 }

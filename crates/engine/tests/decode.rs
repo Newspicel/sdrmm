@@ -1608,7 +1608,67 @@ async fn a_dect_base_station_survives_the_ddc_and_reports_its_identity_and_secur
     let identity = frame.identity.unwrap();
     assert_eq!(identity.rfpi, "01234D5E6D");
     assert_eq!(identity.emc, Some(0x1234));
-    assert_eq!(frame.crc_errors, 0);
+}
+
+#[tokio::test]
+async fn damaged_dect_bursts_surface_as_rejected_channel_state() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let broken = synth::dect::modulate(true, synth::dect::nt(0x0001_234D_5E6D) ^ 0xFF_0000);
+    let frame = (DECT_DEVICE_RATE / 100.0) as usize;
+    let mut iq = vec![Complex::default(); 40 * frame];
+    for start in (0..iq.len()).step_by(frame) {
+        iq[start..start + broken.len()].copy_from_slice(&broken);
+    }
+    let device = plant(dir.path(), "dect-damaged", iq, DECT_DEVICE_RATE);
+    let mut decoded = engine.subscribe_decoded();
+    let ds = engine.create_device_set(&device).unwrap();
+    let ch = engine
+        .add_channel(
+            ds,
+            0,
+            ChannelSettings {
+                frequency_hz: CENTER_HZ,
+                squelch: sdrmm_wire::Squelch::Off,
+                params: ChannelParams::Dect(DectParams::default()),
+                blanker: Default::default(),
+            },
+        )
+        .unwrap();
+    let rejected = tokio::time::timeout(DECODE_TIMEOUT, async {
+        loop {
+            let snapshot = engine.snapshot();
+            let rejected = snapshot
+                .device_sets
+                .iter()
+                .find(|set| set.id == ds)
+                .and_then(|set| set.channels.iter().find(|channel| channel.id == ch))
+                .map_or(0, |channel| channel.rejected);
+            if rejected > 0 {
+                return rejected;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("rejected bursts never reached the snapshot");
+    let mut events = engine.subscribe_events();
+    engine.hotplug_tick_for_test(&mut None, &mut std::collections::HashSet::new());
+    let announced = std::iter::from_fn(|| events.try_recv().ok()).any(|event| {
+        matches!(
+            event,
+            ServerEvent::StateChanged {
+                scope: sdrmm_wire::StateScope::DeviceSet(id)
+            } if id == ds
+        )
+    });
+    engine.remove_device_set(ds).unwrap();
+    assert!(
+        announced,
+        "the climbing count never invalidated the device set"
+    );
+    assert!(rejected > 0);
+    assert!(decoded.try_recv().is_err(), "a damaged burst was decoded");
 }
 
 #[tokio::test]

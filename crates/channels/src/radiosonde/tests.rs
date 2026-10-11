@@ -414,10 +414,8 @@ fn imet_crc_failure_emits_nothing_and_counts() {
     }
     let damaged = run(&mut damaged_chan, &iq, &BLOCKS);
     assert_eq!(damaged.len() + 1, clean.len());
-    assert!(damaged_chan.rejected(SondeType::Imet4) >= 1);
-    assert!(clean.iter().all(|frame| frame.rejected == 0));
-    let last = damaged.last().expect("frames after the damage");
-    assert_eq!(last.rejected, damaged_chan.rejected(SondeType::Imet4));
+    assert!(damaged_chan.rejected() >= 1);
+    assert_eq!(chan.rejected(), 0);
 }
 
 fn mixed_signal() -> Vec<Complex<f32>> {
@@ -493,9 +491,11 @@ fn ragged_block_splits_decode_identically() {
 }
 
 #[test]
-fn pure_noise_emits_nothing() {
+fn pure_noise_emits_and_rejects_nothing() {
     let noise = complex_noise(99, 0.7, (RATE * 6.0) as usize);
-    assert!(decode(None, &noise).is_empty());
+    let mut chan = channel(None);
+    assert!(run(&mut chan, &noise, &BLOCKS).is_empty());
+    assert_eq!(chan.rejected(), 0);
 }
 
 #[test]

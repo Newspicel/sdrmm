@@ -194,6 +194,7 @@ impl Engine {
                 node: node.map(str::to_owned),
                 settings: settings.clone(),
                 out_of_band: None,
+                rejected: 0,
                 audio_recordings: Vec::new(),
                 baseband_recording: None,
                 network_export: None,

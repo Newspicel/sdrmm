@@ -171,14 +171,16 @@ impl ChannelRx for BleChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        let rejected = self.front.rejected();
         let mut events = Events {
             repeats: &mut self.repeats,
             events: &mut out.events,
             unreadable: &mut self.unreadable,
-            rejected,
         };
         self.front.process(iq, &mut events);
+    }
+
+    fn rejected(&self) -> u32 {
+        self.front.rejected().saturating_add(self.unreadable)
     }
 }
 
@@ -186,7 +188,6 @@ struct Events<'a> {
     repeats: &'a mut Repeats,
     events: &'a mut Vec<DecoderEvent>,
     unreadable: &'a mut u32,
-    rejected: u32,
 }
 
 impl Sink for Events<'_> {
@@ -199,9 +200,8 @@ impl Sink for Events<'_> {
         let Some(repeats) = self.repeats.admit(key(&pdu), content(&pdu), packet.sample) else {
             return;
         };
-        let rejected = self.rejected.saturating_add(*self.unreadable);
         self.events
-            .push(DecoderEvent::Ble(advert(&pdu, &packet, repeats, rejected)));
+            .push(DecoderEvent::Ble(advert(&pdu, &packet, repeats)));
     }
 }
 
@@ -236,12 +236,7 @@ fn data_id(pdu: &AdvPdu<'_>) -> [u8; 2] {
     adi(pdu).map_or([0xFF; 2], |adi| adi.data_id.to_le_bytes())
 }
 
-pub(crate) fn advert(
-    pdu: &AdvPdu<'_>,
-    packet: &Packet<'_>,
-    repeats: u32,
-    rejected: u32,
-) -> BleAdvert {
+pub(crate) fn advert(pdu: &AdvPdu<'_>, packet: &Packet<'_>, repeats: u32) -> BleAdvert {
     let fields = Fields::read(pdu.data);
     let extended = pdu.extended.unwrap_or_default();
     BleAdvert {
@@ -263,7 +258,6 @@ pub(crate) fn advert(
         adi: extended.adi,
         aux: extended.aux,
         data: ad::hex(pdu.data),
-        rejected,
     }
 }
 

@@ -445,7 +445,6 @@ describe("eventSummary", () => {
           chaining: 3,
         },
         errors_corrected: 0,
-        rejected: 0,
       },
     };
     const head: DecoderEvent = {
@@ -454,7 +453,6 @@ describe("eventSummary", () => {
         unit_address: 23456,
         report: { unit: "head", command: "emergency", code: 0xaa, copies: 3 },
         errors_corrected: 0,
-        rejected: 0,
       },
     };
     expect(eventSummary(rear)).toBe("EOT 23456 · 87 psig · stopped · armed");
