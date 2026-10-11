@@ -174,6 +174,7 @@ mod tests {
             node: None,
             settings: settings(hz),
             out_of_band: None,
+            rejected: 0,
             audio_recordings: Vec::new(),
             baseband_recording: None,
             network_export: None,

@@ -18,7 +18,7 @@ use super::{
     },
     controls::Ctx,
     face_status,
-    health::{DROPS_HINT, broadcast_stat, broadcast_title, channel_queue_summary},
+    health::{DROPS_HINT, REJECTED_HINT, broadcast_stat, broadcast_title, channel_queue_summary},
     heard_hz, hotkey_of, in_tuning_range, lane_center_hz, lane_rate_hz, modes, picker, run_hotkey,
     settings::{RadioWindow, channel_has_audio, channel_width_hz, radio_window_hz, reaches_hz},
     swap, tuning_range,
@@ -515,10 +515,25 @@ fn health(store: Store, at: (u32, u32), broadcast: Signal<Option<BroadcastStatus
             {drops}
         })
     };
+    let rejected = move || {
+        let bad = store
+            .set_of(at.0)
+            .and_then(|set| set.channels.into_iter().find(|channel| channel.id == at.1))
+            .map_or(0, |channel| channel.rejected);
+        (bad > 0).then(|| {
+            stat(
+                "Bad",
+                Some(count(u64::from(bad))),
+                || REJECTED_HINT.to_owned(),
+                StatTone::Warn,
+            )
+        })
+    };
     AnyView::new(view! {
         row(class = "kc-stats") {
             {lock}
             {queue}
+            {rejected}
         }
     })
 }

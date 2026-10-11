@@ -269,11 +269,6 @@ fn dect_view(store: Store, scope: DecoderScope) -> impl IntoView {
                     (Some(carrier), None) => carrier.to_string(),
                     (Some(carrier), Some(hz)) => format!("{carrier} · {}", hertz(hz)),
                 };
-                let bad = if station.crc_errors == 0 {
-                    String::new()
-                } else {
-                    format!(" / {} bad", station.crc_errors)
-                };
                 AnyView::new(table_row(vec![
                     station.rfpi.unwrap_or_else(|| "-".to_owned()),
                     station.arc.map_or("-".to_owned(), |arc| {
@@ -293,7 +288,7 @@ fn dect_view(store: Store, scope: DecoderScope) -> impl IntoView {
                     },
                     station.voice.map_or("-", |voice| voice.label()).to_owned(),
                     format!("{:.1}", station.level_dbfs),
-                    format!("{}{bad}", station.bursts),
+                    station.bursts.to_string(),
                 ]))
             })
             .collect();

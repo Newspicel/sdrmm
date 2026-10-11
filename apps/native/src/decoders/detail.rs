@@ -431,7 +431,6 @@ fn aprs(p: &AprsPacket) -> EventDetail {
 
 fn eot(m: &EotMessage) -> EventDetail {
     let fixed = ("Repaired", repaired(m.errors_corrected, ""));
-    let rejected = ("Rejected", repaired(m.rejected, ""));
     let address = ("Address", some(m.unit_address.to_string()));
     let rows: Vec<(&'static str, Option<String>)> = match &m.report {
         EotReport::Head(head) => vec![
@@ -440,7 +439,6 @@ fn eot(m: &EotMessage) -> EventDetail {
             ("Command", some(hot_command(head))),
             ("Copies", some(format!("{}/3", head.copies))),
             fixed,
-            rejected,
         ],
         EotReport::Rear(rear) => vec![
             ("Unit", some("Rear (EOT)")),
@@ -465,7 +463,6 @@ fn eot(m: &EotMessage) -> EventDetail {
             ("Arming", some(serde_name(&rear.arming))),
             ("Message type", some(rear.message_type.to_string())),
             fixed,
-            rejected,
         ],
     };
     detail(rows, None)
@@ -995,7 +992,6 @@ fn dect(frame: &DectFrame) -> EventDetail {
         ("PMID", frame.pmid.map(|p| bare_hex(u64::from(p), 5))),
         ("Handsets", some(handsets.join(", "))),
         ("Bursts", some(frame.bursts.to_string())),
-        ("A-field CRC errors", some(frame.crc_errors.to_string())),
         ("Level", some(format!("{:.1} dBFS", frame.level_dbfs))),
     ];
     detail(rows, some(capabilities.join("\n")))

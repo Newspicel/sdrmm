@@ -105,6 +105,5 @@ pub fn drone(uas_id: Option<&str>, messages: Vec<RemoteIdMessage>) -> RemoteIdFr
         ssid: None,
         level_dbfs: -41.0,
         messages,
-        rejected: 0,
     }
 }

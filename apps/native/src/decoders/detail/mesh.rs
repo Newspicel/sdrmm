@@ -555,10 +555,6 @@ pub fn remote_id(frame: &RemoteIdFrame) -> EventDetail {
         ("SSID", frame.ssid.clone()),
         ("Counter", number(frame.counter)),
         ("Level", some(format!("{:.1} dBFS", frame.level_dbfs))),
-        (
-            "Rejected",
-            (frame.rejected > 0).then(|| frame.rejected.to_string()),
-        ),
     ];
     detail(named(rows), self_text(frame))
 }
@@ -693,10 +689,6 @@ pub fn ble(advert: &BleAdvert) -> EventDetail {
         (
             "Repeats",
             (advert.repeats > 0).then(|| advert.repeats.to_string()),
-        ),
-        (
-            "Rejected",
-            (advert.rejected > 0).then(|| advert.rejected.to_string()),
         ),
     ];
     let rows = named(head)

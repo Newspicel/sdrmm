@@ -88,7 +88,6 @@ pub fn radiosonde(f: &RadiosondeFrame) -> EventDetail {
             ("Satellites", f.satellites.map(|n| n.to_string())),
             ("Battery", f.battery_v.map(|v| format!("{v:.2} V"))),
             ("Repaired", repaired(f.errors_corrected, "")),
-            ("Frames lost", repaired(f.rejected, "")),
         ],
         None,
     )

@@ -71,7 +71,6 @@ fn a_dect_base_station_breaks_into_identity_and_security() {
             ("Ciphering", "yes"),
             ("Encryption", "encryption active"),
             ("Carriers available", "0, 1, 2, 3, 4, 5, 6, 7, 8, 9"),
-            ("A-field CRC errors", "2"),
         ],
     );
     assert!(
@@ -520,7 +519,6 @@ fn weather_pictures_and_sondes_break_down() {
             ("Altitude", "12,345 m"),
             ("Climb", "+5.0 m/s"),
             ("Humidity", "55%"),
-            ("Frames lost", "2"),
         ],
     );
 }

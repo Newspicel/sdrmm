@@ -99,7 +99,6 @@ pub struct DectStation {
     pub voice: Option<DectVoiceState>,
     pub handsets: usize,
     pub bursts: u32,
-    pub crc_errors: u32,
     pub level_dbfs: f32,
     pub at_ms: i64,
 }
@@ -168,7 +167,6 @@ fn dect_station(
         voice,
         handsets: frame.handsets.len(),
         bursts: frame.bursts,
-        crc_errors: frame.crc_errors,
         level_dbfs: frame.level_dbfs,
         at_ms: when,
     }

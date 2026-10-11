@@ -3,6 +3,7 @@ use sdrmm_wire::{PipelineQueue, PipelineStage, decode::BroadcastStatus};
 use crate::decoders::detail::broadcast_detail;
 
 pub const DROPS_HINT: &str = "Samples lost between the radio and here";
+pub const REJECTED_HINT: &str = "Rejected: packets heard but failed their check";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct QueueSummary {

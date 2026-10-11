@@ -257,7 +257,8 @@ async fn decoder_controls_change_the_virtual_radio_through_the_native_client() {
     first.await.expect("first edit");
     second.await.expect("second edit");
     edit(&mut settings, |params| {
-        params.tone_mode = NfmToneMode::Ctcss
+        params.tone_mode = NfmToneMode::Ctcss;
+        params.ctcss_hz = Some(88.5);
     });
     session
         .channel(set.id, channel.id, settings.clone())
