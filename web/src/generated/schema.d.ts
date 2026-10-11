@@ -3370,6 +3370,18 @@ export interface components {
             settings: components["schemas"]["IsmSurveyParams"];
             /** @enum {string} */
             type: "ism_survey";
+        } | {
+            settings: components["schemas"]["NoiseFigureParams"];
+            /** @enum {string} */
+            type: "noise_figure";
+        } | {
+            settings: components["schemas"]["PerParams"];
+            /** @enum {string} */
+            type: "per";
+        } | {
+            settings: components["schemas"]["SidParams"];
+            /** @enum {string} */
+            type: "sid";
         };
         ChannelSettings: {
             blanker?: components["schemas"]["NoiseBlankerSettings"];
@@ -4174,6 +4186,18 @@ export interface components {
             data: components["schemas"]["IsmSurveyReport"];
             /** @enum {string} */
             kind: "ism_survey";
+        } | {
+            data: components["schemas"]["NoiseFigureReport"];
+            /** @enum {string} */
+            kind: "noise_figure";
+        } | {
+            data: components["schemas"]["PerReport"];
+            /** @enum {string} */
+            kind: "per";
+        } | {
+            data: components["schemas"]["SidReport"];
+            /** @enum {string} */
+            kind: "sid";
         };
         /** @enum {string} */
         DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
@@ -6508,6 +6532,29 @@ export interface components {
             /** Format: float */
             threshold?: number;
         };
+        NoiseFigureParams: {
+            /** Format: float */
+            enr_db?: number;
+        };
+        NoiseFigureReport: {
+            /** Format: float */
+            cold_dbfs?: number | null;
+            /** Format: float */
+            hot_dbfs?: number | null;
+            /** Format: float */
+            level_dbfs: number;
+            /** Format: float */
+            nf_db?: number | null;
+            /** Format: float */
+            settled_s: number;
+            source_on?: boolean | null;
+            /** Format: float */
+            temperature_k?: number | null;
+            /** Format: int32 */
+            window_ms: number;
+            /** Format: float */
+            y_db?: number | null;
+        };
         /** @enum {string} */
         NoiseModel: "measured" | "white";
         /** @enum {string} */
@@ -6763,6 +6810,35 @@ export interface components {
             /** Format: int32 */
             id: number;
             name: string;
+        };
+        /** @enum {string} */
+        PerBaud: "baud1200" | "baud2400" | "baud4800" | "baud9600";
+        PerParams: {
+            baud?: components["schemas"]["PerBaud"];
+            /** Format: int32 */
+            payload_bytes?: number;
+        };
+        PerReport: {
+            /** Format: float */
+            ber?: number | null;
+            /** Format: int64 */
+            bit_errors: number;
+            /** Format: int64 */
+            bits: number;
+            /** Format: int64 */
+            errored: number;
+            /** Format: int64 */
+            expected: number;
+            /** Format: int32 */
+            last_sequence?: number | null;
+            /** Format: int64 */
+            missed: number;
+            /** Format: float */
+            per: number;
+            /** Format: int64 */
+            received: number;
+            /** Format: int32 */
+            restarts?: number;
         };
         Phone: {
             created_at: string;
@@ -8197,6 +8273,31 @@ export interface components {
         };
         /** @enum {string} */
         Sideband: "usb" | "lsb";
+        SidParams: {
+            /** Format: int32 */
+            report_s?: number;
+            /** Format: float */
+            threshold_db?: number;
+        };
+        SidReport: {
+            /** Format: float */
+            floor_dbfs_hz: number;
+            stations: components["schemas"]["SidStationLevel"][];
+            /** Format: int32 */
+            window_ms: number;
+        };
+        SidStationLevel: {
+            /** Format: float */
+            baseline_dbfs?: number | null;
+            call: string;
+            disturbed?: boolean;
+            /** Format: double */
+            frequency_hz: number;
+            /** Format: float */
+            level_dbfs: number;
+            /** Format: float */
+            snr_db: number;
+        };
         SignalGenNode: {
             /** @default true */
             running: boolean;

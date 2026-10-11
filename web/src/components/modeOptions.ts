@@ -21,6 +21,12 @@ export const AIRTIME_SPANS: Options<NonNullable<ChannelParamsOf<"wifi_occupancy"
   { value: "mhz40", label: "40", title: "40 MS/s" },
   { value: "mhz80", label: "80", title: "80 MS/s, all of 2.4 GHz" },
 ];
+export const PER_BAUDS: Options<NonNullable<ChannelParamsOf<"per">["baud"]>> = [
+  { value: "baud1200", label: "1200" },
+  { value: "baud2400", label: "2400" },
+  { value: "baud4800", label: "4800" },
+  { value: "baud9600", label: "9600" },
+];
 export const REMOTE_ID_LINKS: Options<NonNullable<ChannelParamsOf<"remote_id">["link"]>> = [
   { value: "bluetooth", label: "Bluetooth", title: "One Bluetooth channel at 4 MS/s" },
   {

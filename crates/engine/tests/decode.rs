@@ -16,10 +16,11 @@ use sdrmm_wire::{
     DvFrameKind, DvMode, EotArming, EotBattery, EotParams, EotReport, EotStatus, ErmesParams,
     FlexParams, FreeDvParams, GnssParams, IdentParams, IsmKind, IsmSurveyParams, LoraBandwidth,
     LoraParams, LrptMode, LrptParams, Modulation, MorseParams, NavtexParams, NfmParams,
-    NfmToneMode, PipelineStage, PocsagBaud, PocsagParams, PskBaud, PskParams, RadiosondeParams,
-    RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams, RemoteIdTransport, RttyParams,
-    SelcallParams, SelcallSystem, ServerEvent, SondeType, SymbolPlane, UaType, UasIdType,
-    VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+    NfmToneMode, NoiseFigureParams, PerParams, PipelineStage, PocsagBaud, PocsagParams, PskBaud,
+    PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
+    RemoteIdTransport, RttyParams, SelcallParams, SelcallSystem, ServerEvent, SidParams, SondeType,
+    SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams,
+    WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -2262,4 +2263,99 @@ async fn the_2_4_ghz_survey_reports_each_second() {
     ] {
         assert!(kinds.contains(&kind), "{kind:?} missing from {report:?}");
     }
+}
+
+#[tokio::test]
+async fn per_frames_survive_the_ddc_and_are_counted() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let offset_hz = 25_000.0;
+    let params = PerParams::default();
+    let mut iq = synth::silence((0.2 * NARROW_DEVICE_RATE) as usize);
+    iq.extend(synth::per::frames(&params, 0..50, NARROW_DEVICE_RATE));
+    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    let device = plant(dir.path(), "per", iq, NARROW_DEVICE_RATE);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ + offset_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Per(params),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Per(report) if report.restarts > 0),
+    )
+    .await;
+    let DecoderEvent::Per(report) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert!(report.received > 50, "{report:?}");
+    assert_eq!(report.missed, 0, "{report:?}");
+    assert_eq!(report.errored, 0, "{report:?}");
+}
+
+#[tokio::test]
+async fn a_switched_noise_source_reads_a_noise_figure_end_to_end() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let rate = 500_000.0;
+    let device = plant(
+        dir.path(),
+        "noise_figure",
+        synth::noise_figure::switched(10.0, 1.5, rate),
+        rate,
+    );
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::NoiseFigure(NoiseFigureParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::NoiseFigure(report) if report.nf_db.is_some()),
+    )
+    .await;
+    let DecoderEvent::NoiseFigure(report) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert!(
+        report.y_db.is_some_and(|y| (y - 10.0).abs() < 0.3),
+        "{report:?}"
+    );
+}
+
+#[tokio::test]
+async fn vlf_stations_reach_the_sid_monitor() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let centre_hz = 30_000.0;
+    let iq = synth::sid::carriers(&[(23_400.0, 0.1)], centre_hz, 3.0, AUDIO_DEVICE_RATE, 11);
+    let device = plant_at(dir.path(), "sid", iq, AUDIO_DEVICE_RATE, centre_hz);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: centre_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Sid(SidParams {
+                report_s: 1,
+                ..SidParams::default()
+            }),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Sid(_)),
+    )
+    .await;
+    let DecoderEvent::Sid(report) = record.event else {
+        unreachable!("filtered above")
+    };
+    let dho = report
+        .stations
+        .iter()
+        .find(|station| station.call == "DHO38")
+        .expect("DHO38 in view");
+    assert!(dho.snr_db > 20.0, "{report:?}");
 }

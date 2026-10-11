@@ -43,7 +43,9 @@ mod navtex;
 pub mod neural;
 pub mod neural_denoise;
 mod nfm;
+mod noise_figure;
 pub mod passive_radar;
+mod per;
 mod pocsag;
 pub mod polarimeter;
 pub mod pose_clock;
@@ -54,6 +56,7 @@ mod rds;
 mod remote_id;
 mod rtty;
 mod selcall;
+mod sid;
 pub mod spatial_spectrum;
 mod ssb;
 mod sstv;
@@ -117,7 +120,9 @@ pub use lrpt::LrptChannel;
 pub use morse::MorseChannel;
 pub use navtex::NavtexChannel;
 pub use nfm::{NfmChannel, NfmTx};
+pub use noise_figure::NoiseFigureChannel;
 use num_complex::Complex;
+pub use per::PerChannel;
 pub use pocsag::PocsagChannel;
 pub use psk::PskChannel;
 pub use radio_clock::RadioClockChannel;
@@ -130,6 +135,7 @@ use sdrmm_wire::{
     Sideband,
 };
 pub use selcall::SelcallChannel;
+pub use sid::SidChannel;
 pub use ssb::{SsbChannel, SsbTx};
 pub use sstv::SstvChannel;
 pub use symbols::SymbolTap;
@@ -226,6 +232,9 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Ble(p) => ble::occupied_band(p.link),
         ChannelParams::WifiOccupancy(p) => wifi::occupied_band(p),
         ChannelParams::IsmSurvey(p) => ism_survey::occupied_band(p),
+        ChannelParams::NoiseFigure(_) => noise_figure::occupied_band(),
+        ChannelParams::Per(p) => per::occupied_band(p),
+        ChannelParams::Sid(_) => sid::occupied_band(),
     }
 }
 
@@ -314,6 +323,9 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Ble(p) => Ok(ble::channel_filter(p.link)),
         ChannelParams::WifiOccupancy(p) => Ok(wifi::channel_filter(p)),
         ChannelParams::IsmSurvey(p) => Ok(ism_survey::channel_filter(p)),
+        ChannelParams::NoiseFigure(_) => Ok(noise_figure::channel_filter()),
+        ChannelParams::Per(p) => Ok(per::channel_filter(p)),
+        ChannelParams::Sid(_) => Ok(sid::channel_filter()),
     }
 }
 
@@ -735,6 +747,21 @@ const REGISTRY: &[Registration] = &[
         create: boxed::<IsmSurveyChannel>,
         create_tx: None,
     },
+    Registration {
+        descriptor: NoiseFigureChannel::descriptor,
+        create: boxed::<NoiseFigureChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: PerChannel::descriptor,
+        create: boxed::<PerChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: SidChannel::descriptor,
+        create: boxed::<SidChannel>,
+        create_tx: None,
+    },
 ];
 
 static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::LazyLock::new(|| {
@@ -914,6 +941,9 @@ mod tests {
                 ChannelParams::WifiOccupancy(sdrmm_wire::WifiOccupancyParams::default())
             }
             "ism_survey" => ChannelParams::IsmSurvey(sdrmm_wire::IsmSurveyParams::default()),
+            "noise_figure" => ChannelParams::NoiseFigure(sdrmm_wire::NoiseFigureParams::default()),
+            "per" => ChannelParams::Per(sdrmm_wire::PerParams::default()),
+            "sid" => ChannelParams::Sid(sdrmm_wire::SidParams::default()),
             other => panic!("unexpected type id {other}"),
         }
     }
@@ -962,7 +992,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 56);
+        assert_eq!(all.len(), 59);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -1023,6 +1053,9 @@ mod tests {
                 "ble",
                 "wifi_occupancy",
                 "ism_survey",
+                "noise_figure",
+                "per",
+                "sid",
             ])
         );
         for d in &all {
@@ -1073,6 +1106,9 @@ mod tests {
                 "lora" => (125_000.0, 250_000.0),
                 "remote_id" | "ble" => (2_000_000.0, 4_000_000.0),
                 "wifi_occupancy" | "ism_survey" => (17_000_000.0, 20_000_000.0),
+                "noise_figure" => (400_000.0, 500_000.0),
+                "per" => (28_800.0, 96_000.0),
+                "sid" => (42_000.0, 48_000.0),
                 other => panic!("unexpected type id {other}"),
             };
             assert_eq!(d.bandwidth_hz, bandwidth, "{}", d.type_id);

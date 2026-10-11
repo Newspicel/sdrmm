@@ -11978,6 +11978,60 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/NoiseFigureParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "noise_figure"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/PerParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "per"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/SidParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "sid"
+                ]
+              }
+            }
           }
         ]
       },
@@ -14982,6 +15036,60 @@
                 "type": "string",
                 "enum": [
                   "ism_survey"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/NoiseFigureReport"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "noise_figure"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/PerReport"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "per"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/SidReport"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "sid"
                 ]
               }
             }
@@ -24127,6 +24235,79 @@
           }
         }
       },
+      "NoiseFigureParams": {
+        "type": "object",
+        "properties": {
+          "enr_db": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "NoiseFigureReport": {
+        "type": "object",
+        "required": [
+          "window_ms",
+          "level_dbfs",
+          "settled_s"
+        ],
+        "properties": {
+          "cold_dbfs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "hot_dbfs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "level_dbfs": {
+            "type": "number",
+            "format": "float"
+          },
+          "nf_db": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "settled_s": {
+            "type": "number",
+            "format": "float"
+          },
+          "source_on": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "temperature_k": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "window_ms": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "y_db": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          }
+        }
+      },
       "NoiseModel": {
         "type": "string",
         "enum": [
@@ -24838,6 +25019,96 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "PerBaud": {
+        "type": "string",
+        "enum": [
+          "baud1200",
+          "baud2400",
+          "baud4800",
+          "baud9600"
+        ]
+      },
+      "PerParams": {
+        "type": "object",
+        "properties": {
+          "baud": {
+            "$ref": "#/components/schemas/PerBaud"
+          },
+          "payload_bytes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "PerReport": {
+        "type": "object",
+        "required": [
+          "received",
+          "errored",
+          "missed",
+          "expected",
+          "per",
+          "bits",
+          "bit_errors"
+        ],
+        "properties": {
+          "ber": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "bit_errors": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "bits": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "errored": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "expected": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "last_sequence": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "missed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "per": {
+            "type": "number",
+            "format": "float"
+          },
+          "received": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "restarts": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -30068,6 +30339,81 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "SidParams": {
+        "type": "object",
+        "properties": {
+          "report_s": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "threshold_db": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "SidReport": {
+        "type": "object",
+        "required": [
+          "window_ms",
+          "floor_dbfs_hz",
+          "stations"
+        ],
+        "properties": {
+          "floor_dbfs_hz": {
+            "type": "number",
+            "format": "float"
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SidStationLevel"
+            }
+          },
+          "window_ms": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SidStationLevel": {
+        "type": "object",
+        "required": [
+          "call",
+          "frequency_hz",
+          "level_dbfs",
+          "snr_db"
+        ],
+        "properties": {
+          "baseline_dbfs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "call": {
+            "type": "string"
+          },
+          "disturbed": {
+            "type": "boolean"
+          },
+          "frequency_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "level_dbfs": {
+            "type": "number",
+            "format": "float"
+          },
+          "snr_db": {
+            "type": "number",
+            "format": "float"
           }
         }
       },

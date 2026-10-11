@@ -213,6 +213,13 @@ const BLE_WIDTH_HZ: Record<NonNullable<ChannelParamsOf<"ble">["link"]>, number> 
   band: 18_000_000,
 };
 
+const PER_BAUD: Record<NonNullable<ChannelParamsOf<"per">["baud"]>, number> = {
+  baud1200: 1_200,
+  baud2400: 2_400,
+  baud4800: 4_800,
+  baud9600: 9_600,
+};
+
 const AIRTIME_WIDTH_HZ: Record<NonNullable<ChannelParamsOf<"wifi_occupancy">["span"]>, number> = {
   mhz20: 17_000_000,
   mhz40: 37_000_000,
@@ -225,6 +232,9 @@ export function paramBandwidthHz(params: ChannelParams): number | null {
   }
   if (params.type === "wifi_occupancy" || params.type === "ism_survey") {
     return AIRTIME_WIDTH_HZ[params.settings.span ?? "mhz20"];
+  }
+  if (params.type === "per") {
+    return 3 * PER_BAUD[params.settings.baud ?? "baud9600"];
   }
   if (params.type === "remote_id") {
     return REMOTE_ID_WIDTH_HZ[params.settings.link ?? "bluetooth"];

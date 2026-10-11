@@ -127,6 +127,32 @@ pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
             f64::from(crate::airtime::MAX_AIRTIME_MARGIN_DB),
             0.5,
         )],
+        "noise_figure" => vec![limit(
+            "enr_db",
+            f64::from(crate::measurement::MIN_ENR_DB),
+            f64::from(crate::measurement::MAX_ENR_DB),
+            0.01,
+        )],
+        "per" => vec![limit(
+            "payload_bytes",
+            f64::from(crate::measurement::MIN_PER_PAYLOAD_BYTES),
+            f64::from(crate::measurement::MAX_PER_PAYLOAD_BYTES),
+            1.0,
+        )],
+        "sid" => vec![
+            limit(
+                "report_s",
+                f64::from(crate::measurement::MIN_SID_REPORT_S),
+                f64::from(crate::measurement::MAX_SID_REPORT_S),
+                1.0,
+            ),
+            limit(
+                "threshold_db",
+                f64::from(crate::measurement::MIN_SID_THRESHOLD_DB),
+                f64::from(crate::measurement::MAX_SID_THRESHOLD_DB),
+                0.5,
+            ),
+        ],
         "atv" => vec![limit(
             "sound_subcarrier_hz",
             500_000.0,
@@ -1639,6 +1665,9 @@ pub enum ChannelParams {
     Ble(crate::ble::BleParams),
     WifiOccupancy(crate::airtime::WifiOccupancyParams),
     IsmSurvey(crate::airtime::IsmSurveyParams),
+    NoiseFigure(crate::measurement::NoiseFigureParams),
+    Per(crate::measurement::PerParams),
+    Sid(crate::measurement::SidParams),
 }
 
 impl ChannelParams {
@@ -1701,6 +1730,9 @@ impl ChannelParams {
             Self::Ble(_) => "ble",
             Self::WifiOccupancy(_) => "wifi_occupancy",
             Self::IsmSurvey(_) => "ism_survey",
+            Self::NoiseFigure(_) => "noise_figure",
+            Self::Per(_) => "per",
+            Self::Sid(_) => "sid",
         }
     }
 }
@@ -1808,6 +1840,7 @@ pub fn home_frequency_hz(type_id: &str) -> Option<f64> {
         "remote_id" | "ble" => 2_426_000_000.0,
         "wifi_occupancy" => 2_437_000_000.0,
         "ism_survey" => 2_442_000_000.0,
+        "sid" => 30_000.0,
         _ => return None,
     };
     Some(hz)

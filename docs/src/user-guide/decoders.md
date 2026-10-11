@@ -18,7 +18,7 @@ covers the modes that need more than a frequency.
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [LoRaWAN, Meshtastic, MeshCore](#lora) | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -311,3 +311,25 @@ and **Wi-Fi occupancy** templates set them up. The signal generator sends BLE be
 Tested on recordings: a USRP X310 at 100 MS/s beside a DJI Mini 4 Pro (RFUAV) and a 40 MS/s
 Bluetooth capture with OmniSIG labels, where the survey counted 138 Bluetooth bursts against 137
 labelled.
+
+## Measurements
+
+**Noise figure** uses the Y-factor method. Connect a calibrated noise source, set **ENR** to its
+value at this frequency and switch it on and off. Each level is averaged over 400 kHz once it
+holds for half a second; the higher one is the source on. The report gives NF, noise
+temperature and Y. Keep gain fixed while measuring. The LO spike is left out.
+
+**PER tester** counts numbered 2-FSK test frames: 32 bit preamble, sync `1ACFFC1D`, 32 bit
+sequence number, a PRBS9 payload and CRC-16/CCITT. Gaps in the sequence count as missed, a failed
+CRC as rejected, and every payload bit is compared against PRBS9 for the BER. A sequence that
+jumps back counts as a restart. Set **Baud** and **Payload** to match the sender. The signal
+generator sends PER test frames at the defaults; lower its level or add noise to find where
+frames start to drop.
+
+**SID monitor** follows the VLF transmitters between 16 and 46 kHz that fall in its 42 kHz window
+and reports their level and SNR every interval. A level that moves more than **Threshold** from
+its 30 minute baseline for 30 s is flagged as a sudden ionospheric disturbance; the baseline holds
+while it lasts. Leave it running through the day with a long wire or loop.
+
+The **Noise figure**, **PER tester** and **SID monitor** templates set them up. The signal
+generator also sends a switched noise source and VLF stations around 30 kHz.

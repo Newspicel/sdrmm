@@ -5,8 +5,8 @@ use sdrmm_channels::{
 };
 use sdrmm_wire::{
     AmParams, ArgumentOption, AtvModulation, AtvParams, AtvStandard, AvhrrChannel, ChannelParams,
-    ChannelSettings, DabTransmissionMode, EotArming, EotBattery, EotStatus, LrptMode, PskBaud,
-    SelcallSystem, Sideband, SondeType, Squelch, SsbParams, SstvMode, WefaxIoc, WefaxLpm,
+    ChannelSettings, DabTransmissionMode, EotArming, EotBattery, EotStatus, LrptMode, PerParams,
+    PskBaud, SelcallSystem, Sideband, SondeType, Squelch, SsbParams, SstvMode, WefaxIoc, WefaxLpm,
 };
 
 pub struct Signal {
@@ -22,6 +22,8 @@ const WIDE_FM: f64 = 960_000.0;
 const WIDEBAND: f64 = 2_000_000.0;
 pub const CENTER_HZ: f64 = 145_000_000.0;
 const VOICE_SECONDS: f64 = 3.0;
+const NOISE_SOURCE_RATE: f64 = 500_000.0;
+const VLF_CENTRE_HZ: f64 = 30_000.0;
 
 pub static SIGNALS: &[Signal] = &[
     Signal {
@@ -323,6 +325,24 @@ pub static SIGNALS: &[Signal] = &[
         label: "2.4 GHz traffic",
         rate_hz: 20_000_000.0,
         render: ism_24,
+    },
+    Signal {
+        id: "per_frames",
+        label: "PER test frames",
+        rate_hz: NARROW,
+        render: per_frames,
+    },
+    Signal {
+        id: "noise_source",
+        label: "Noise source · switched",
+        rate_hz: NOISE_SOURCE_RATE,
+        render: noise_source,
+    },
+    Signal {
+        id: "vlf_stations",
+        label: "VLF stations · 30 kHz",
+        rate_hz: AUDIO,
+        render: vlf_stations,
     },
     Signal {
         id: "gnss",
@@ -822,6 +842,24 @@ fn ble_beacons() -> Vec<Complex<f32>> {
 
 fn ism_24() -> Vec<Complex<f32>> {
     synth::ism::scene()
+}
+
+fn per_frames() -> Vec<Complex<f32>> {
+    synth::per::frames(&PerParams::default(), 0..100, NARROW)
+}
+
+fn noise_source() -> Vec<Complex<f32>> {
+    synth::noise_figure::switched(10.0, 1.0, NOISE_SOURCE_RATE)
+}
+
+fn vlf_stations() -> Vec<Complex<f32>> {
+    synth::sid::carriers(
+        &[(19_580.0, 0.05), (23_400.0, 0.1), (24_000.0, 0.03)],
+        VLF_CENTRE_HZ,
+        10.0,
+        AUDIO,
+        0x51D,
+    )
 }
 
 fn dect() -> Vec<Complex<f32>> {

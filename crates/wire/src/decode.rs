@@ -1469,6 +1469,9 @@ pub enum DecoderEvent {
     Ble(crate::ble::BleAdvert),
     WifiOccupancy(crate::airtime::WifiOccupancyReport),
     IsmSurvey(crate::airtime::IsmSurveyReport),
+    NoiseFigure(crate::measurement::NoiseFigureReport),
+    Per(crate::measurement::PerReport),
+    Sid(crate::measurement::SidReport),
 }
 
 fn dect_summary(f: &DectFrame) -> String {
@@ -1734,6 +1737,9 @@ impl DecoderEvent {
             Self::Ble(_) => "ble",
             Self::WifiOccupancy(_) => "wifi_occupancy",
             Self::IsmSurvey(_) => "ism_survey",
+            Self::NoiseFigure(_) => "noise_figure",
+            Self::Per(_) => "per",
+            Self::Sid(_) => "sid",
         }
     }
 
@@ -1921,6 +1927,9 @@ impl DecoderEvent {
             Self::Ble(a) => a.summary(),
             Self::WifiOccupancy(r) => r.summary(),
             Self::IsmSurvey(r) => r.summary(),
+            Self::NoiseFigure(r) => r.summary(),
+            Self::Per(r) => r.summary(),
+            Self::Sid(r) => r.summary(),
         }
     }
 
@@ -2000,7 +2009,11 @@ impl DecoderEvent {
             Self::Lora(f) => f.station(),
             Self::RemoteId(f) => Some(f.station()),
             Self::Ble(a) => a.station(),
-            Self::WifiOccupancy(_) | Self::IsmSurvey(_) => None,
+            Self::WifiOccupancy(_)
+            | Self::IsmSurvey(_)
+            | Self::NoiseFigure(_)
+            | Self::Per(_)
+            | Self::Sid(_) => None,
         }
     }
 }

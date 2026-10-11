@@ -1,6 +1,7 @@
 import { ismSurveySummary, wifiOccupancySummary } from "../lib/airtime";
 import { bleStation, bleSummary } from "../lib/ble";
 import { loraPosition, loraStation, loraSummary } from "../lib/lora";
+import { noiseFigureSummary, perSummary, sidSummary } from "../lib/measurement";
 import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
 import type { DecoderEvent, HotCommand } from "../lib/types";
 import {
@@ -385,6 +386,12 @@ export function eventSummary(event: DecoderEvent): string {
       return wifiOccupancySummary(event.data);
     case "ism_survey":
       return ismSurveySummary(event.data);
+    case "noise_figure":
+      return noiseFigureSummary(event.data);
+    case "per":
+      return perSummary(event.data);
+    case "sid":
+      return sidSummary(event.data);
   }
 }
 
@@ -495,6 +502,9 @@ export function eventStation(event: DecoderEvent): string | null {
     case "ils":
     case "wifi_occupancy":
     case "ism_survey":
+    case "noise_figure":
+    case "per":
+    case "sid":
       return null;
     case "sstv":
       return SSTV_MODE_LABELS[event.data.mode];

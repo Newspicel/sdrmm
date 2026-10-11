@@ -412,6 +412,41 @@ describe("eventDetail", () => {
           dropped: 0,
         },
       },
+      noise_figure: {
+        kind: "noise_figure",
+        data: { window_ms: 1000, level_dbfs: -60, settled_s: 3, y_db: 10, nf_db: 5.45 },
+      },
+      per: {
+        kind: "per",
+        data: {
+          received: 9,
+          errored: 1,
+          missed: 1,
+          expected: 10,
+          per: 0.1,
+          bits: 2560,
+          bit_errors: 4,
+          ber: 0.0016,
+          last_sequence: 9,
+        },
+      },
+      sid: {
+        kind: "sid",
+        data: {
+          window_ms: 5000,
+          floor_dbfs_hz: -110,
+          stations: [
+            {
+              call: "NAA",
+              frequency_hz: 24_000,
+              level_dbfs: -50,
+              snr_db: 30,
+              baseline_dbfs: -56,
+              disturbed: true,
+            },
+          ],
+        },
+      },
     };
     for (const kind of DECODER_KINDS) {
       expect(() => eventDetail(sample[kind]), kind).not.toThrow();

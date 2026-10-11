@@ -6,10 +6,11 @@ use sdrmm_wire::{
     AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink, BleParams,
     ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
     EotParams, ErmesParams, FlexParams, GnssParams, IsmSurveyParams, LrptParams, M17Params,
-    MorseParams, NavtexParams, NfmParams, NodeBody, PatchEdge, PatchGraph, PatchNode, PocsagParams,
-    PortRef, Position, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
-    RttyParams, Squelch, SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams,
-    WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
+    MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge, PatchGraph,
+    PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
+    RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SidParams, Squelch, SsbParams,
+    SstvParams, TemplateInfo, WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams, WsprParams,
+    YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -409,6 +410,48 @@ static TEMPLATES: &[Entry] = &[
         channels: &[Channel::at(
             2_437_000_000.0,
             || ChannelParams::WifiOccupancy(WifiOccupancyParams::default()),
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "noise-figure",
+        name: "Noise figure",
+        description: "Receiver noise figure with a switched noise source.",
+        explainer: "Feed a calibrated noise source into the antenna port, set its ENR and \
+                    switch it on and off. Each switch settles a new Y-factor reading.",
+        center_hz: 100_000_000.0,
+        sample_rate: 1_000_000.0,
+        channels: &[Channel::at(
+            100_000_000.0,
+            || ChannelParams::NoiseFigure(NoiseFigureParams::default()),
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "per-tester",
+        name: "PER tester",
+        description: "Packet and bit error rate of PER test frames.",
+        explainer: "Counts numbered 2-FSK test frames and compares each payload with its \
+                    known PRBS9 pattern. The signal generator sends them as PER test frames.",
+        center_hz: 145_000_000.0,
+        sample_rate: 240_000.0,
+        channels: &[Channel::at(
+            145_000_000.0,
+            || ChannelParams::Per(PerParams::default()),
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "sid-monitor",
+        name: "SID monitor",
+        description: "Solar flares in VLF transmitter levels.",
+        explainer: "Flares lift or dip daytime VLF signals for minutes to hours. Needs a radio \
+                    that reaches 16 to 46 kHz and a long wire or loop.",
+        center_hz: 30_000.0,
+        sample_rate: 250_000.0,
+        channels: &[Channel::at(
+            30_000.0,
+            || ChannelParams::Sid(SidParams::default()),
             LOG_READ,
         )],
     },

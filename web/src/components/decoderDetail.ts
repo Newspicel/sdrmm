@@ -13,6 +13,7 @@ import {
   MESHCORE_TYPE_LABELS,
   meshtasticNode,
 } from "../lib/lora";
+import { sidDeviation, signedDb, wholeDb } from "../lib/measurement";
 import {
   REMOTE_ID_TRANSPORT_LABELS,
   remoteIdLocation,
@@ -37,7 +38,10 @@ import type {
   MeshcorePacket,
   MeshtasticContent,
   MeshtasticPacket,
+  NoiseFigureReport,
+  PerReport,
   RemoteIdFrame,
+  SidReport,
   WifiOccupancyReport,
 } from "../lib/types";
 import { hex5 } from "./decoderLog";
@@ -541,6 +545,9 @@ const DETAIL: {
   ble: bleDetail,
   wifi_occupancy: wifiOccupancyDetail,
   ism_survey: ismSurveyDetail,
+  noise_figure: noiseFigureDetail,
+  per: perDetail,
+  sid: sidDetail,
   apt: (p) => ({
     fields: fields([
       ["Channels", avhrrChannels(p)],
@@ -1062,6 +1069,60 @@ function ismSurveyDetail(report: IsmSurveyReport): EventDetail {
     ["Measured", percentOf(report.measured)],
     ["Dropped", report.dropped ? String(report.dropped) : undefined],
   ];
+  return { fields: fields(rows), body: null };
+}
+
+function db(value: number | null | undefined, unit = "dB"): string | undefined {
+  return value == null ? undefined : `${value.toFixed(2)} ${unit}`;
+}
+
+function noiseFigureDetail(report: NoiseFigureReport): EventDetail {
+  const rows: Rows = [
+    ["Noise figure", db(report.nf_db)],
+    [
+      "Noise temperature",
+      report.temperature_k == null ? undefined : `${Math.round(report.temperature_k)} K`,
+    ],
+    ["Y-factor", db(report.y_db)],
+    ["Source on", db(report.hot_dbfs, "dBFS")],
+    ["Source off", db(report.cold_dbfs, "dBFS")],
+    ["Level", db(report.level_dbfs, "dBFS")],
+    ["Source", report.source_on == null ? undefined : report.source_on ? "on" : "off"],
+    ["Settled", `${report.settled_s.toFixed(1)} s`],
+  ];
+  return { fields: fields(rows), body: null };
+}
+
+function perDetail(report: PerReport): EventDetail {
+  const rows: Rows = [
+    ["PER", `${(report.per * 100).toFixed(2)}%`],
+    ["Received", `${report.received} of ${report.expected}`],
+    ["Missed", String(report.missed)],
+    ["CRC failed", String(report.errored)],
+    ["BER", report.ber == null ? undefined : report.ber.toExponential(2)],
+    ["Bit errors", `${report.bit_errors} of ${report.bits}`],
+    ["Last frame", report.last_sequence == null ? undefined : String(report.last_sequence)],
+    ["Restarts", report.restarts ? String(report.restarts) : undefined],
+  ];
+  return { fields: fields(rows), body: null };
+}
+
+function sidDetail(report: SidReport): EventDetail {
+  const rows: Rows = report.stations.map((station) => {
+    const deviation = sidDeviation(station);
+    return [
+      `${station.call} ${formatHz(station.frequency_hz)}`,
+      [
+        `${station.level_dbfs.toFixed(1)} dBFS`,
+        `SNR ${wholeDb(station.snr_db)} dB`,
+        deviation == null ? null : signedDb(deviation),
+        station.disturbed ? "SID" : null,
+      ]
+        .filter((part) => part !== null)
+        .join(" · "),
+    ];
+  });
+  rows.push(["Floor", `${report.floor_dbfs_hz.toFixed(0)} dBFS/Hz`]);
   return { fields: fields(rows), body: null };
 }
 

@@ -68,7 +68,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 
 ## 5. Recording & measurement
 - Recording scheduler and unattended satellite-pass automation
-- Noise figure, PER tester, SID monitor
 - Radio astronomy, star tracker, sky map
 
 ## 6. Map

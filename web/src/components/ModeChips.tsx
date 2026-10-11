@@ -52,6 +52,7 @@ import {
   NFM_SCRAMBLER_MODES,
   NFM_TONE_MODES,
   NXDN_WIDTHS,
+  PER_BAUDS,
   POCSAG_BAUDS,
   PSK_BAUDS,
   RADIO_CLOCK_STANDARDS,
@@ -191,6 +192,12 @@ export function ModeChips({
     case "wifi_occupancy":
     case "ism_survey":
       return <AirtimeChips params={params} {...mode} />;
+    case "noise_figure":
+      return <NoiseFigureChips params={params} {...mode} />;
+    case "per":
+      return <PerChips params={params} {...mode} />;
+    case "sid":
+      return <SidChips params={params} {...mode} />;
     case "dstar":
     case "ysf":
     case "p25":
@@ -1366,6 +1373,68 @@ function AirtimeChips({ params, limits, onParams }: Mode<"wifi_occupancy" | "ism
         {...limitOf(limits, "margin_db")}
         unit="dB"
         onCommit={(margin_db) => onParams({ type, settings: { ...settings, margin_db } })}
+      />
+    </>
+  );
+}
+
+function NoiseFigureChips({ params, limits, onParams }: Mode<"noise_figure">) {
+  return (
+    <NumberChip
+      label="ENR"
+      title="Excess noise ratio of the noise source at this frequency"
+      value={params.settings.enr_db ?? 15}
+      {...limitOf(limits, "enr_db")}
+      unit="dB"
+      onCommit={(enr_db) => onParams({ type: "noise_figure", settings: { enr_db } })}
+    />
+  );
+}
+
+function PerChips({ params, limits, onParams }: Mode<"per">) {
+  const settings = params.settings;
+  const set = (next: typeof settings) => onParams({ type: "per", settings: next });
+  return (
+    <>
+      <ChoiceChip
+        label="Baud"
+        title="2-FSK symbol rate of the test frames"
+        value={settings.baud ?? "baud9600"}
+        options={PER_BAUDS}
+        onChange={(baud) => set({ ...settings, baud })}
+      />
+      <NumberChip
+        label="Payload"
+        title="PRBS9 payload length of each frame"
+        value={settings.payload_bytes ?? 32}
+        {...limitOf(limits, "payload_bytes")}
+        unit="B"
+        onCommit={(payload_bytes) => set({ ...settings, payload_bytes })}
+      />
+    </>
+  );
+}
+
+function SidChips({ params, limits, onParams }: Mode<"sid">) {
+  const settings = params.settings;
+  const set = (next: typeof settings) => onParams({ type: "sid", settings: next });
+  return (
+    <>
+      <NumberChip
+        label="Every"
+        title="Averaging interval of each report"
+        value={settings.report_s ?? 5}
+        {...limitOf(limits, "report_s")}
+        unit="s"
+        onCommit={(report_s) => set({ ...settings, report_s })}
+      />
+      <NumberChip
+        label="Threshold"
+        title="Level change against the baseline that counts as a disturbance"
+        value={settings.threshold_db ?? 3}
+        {...limitOf(limits, "threshold_db")}
+        unit="dB"
+        onCommit={(threshold_db) => set({ ...settings, threshold_db })}
       />
     </>
   );

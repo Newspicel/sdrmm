@@ -311,6 +311,9 @@ function stationId(event: DecoderEvent): string | null {
     case "wefax":
     case "wifi_occupancy":
     case "ism_survey":
+    case "noise_figure":
+    case "per":
+    case "sid":
       return null;
     case "ble":
       return bleStation(event.data);

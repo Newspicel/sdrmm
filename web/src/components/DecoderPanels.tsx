@@ -6,6 +6,14 @@ import { capturedImageUrl, imagesQuery } from "../lib/api";
 import { useBroadcastStore } from "../lib/broadcast";
 import { copyText } from "../lib/copyText";
 import { useDecodedKind, useDecodedStore, useStations } from "../lib/decoded";
+import {
+  berText,
+  sidDeviation,
+  sidTrends,
+  signedDb,
+  sparkPoints,
+  wholeDb,
+} from "../lib/measurement";
 import type { DecodedRecordOf, DecoderKind, IdentSignal } from "../lib/types";
 import { Button } from "./BaseControls";
 import { BroadcastDataView } from "./BroadcastDataView";
@@ -1301,6 +1309,164 @@ function BroadcastView({ scope }: { scope: DecoderScope }) {
   );
 }
 
+function fixed(value: number | null | undefined, digits = 2): string {
+  return value == null ? "-" : value.toFixed(digits);
+}
+
+function NoiseFigureView({ scope = {} }: { scope?: DecoderScope }) {
+  const latest = latestRecord(recordsInScope(useDecodedKind("noise_figure"), scope));
+  if (latest === null) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>First report after one second.</span>
+      </div>
+    );
+  }
+  const report = latest.event.data;
+  return (
+    <div className={PANE}>
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span className="font-mono text-2xl tabular-nums text-ink">
+          {report.nf_db == null ? "NF -" : `NF ${report.nf_db.toFixed(2)}`}
+        </span>
+        <Unit symbol="dB" />
+        <span className="legend ml-auto">
+          {report.source_on == null ? "settling" : report.source_on ? "source on" : "source off"}
+        </span>
+      </div>
+      <Readouts ruled={false} padded={false} columns={2}>
+        <Readout label="Y-factor">{fixed(report.y_db)} dB</Readout>
+        <Readout label="Te" title="Noise temperature">
+          {report.temperature_k == null ? "-" : Math.round(report.temperature_k)} K
+        </Readout>
+        <Readout label="On">{fixed(report.hot_dbfs)} dBFS</Readout>
+        <Readout label="Off">{fixed(report.cold_dbfs)} dBFS</Readout>
+        <Readout label="Level">{fixed(report.level_dbfs)} dBFS</Readout>
+        <Readout label="Settled">{report.settled_s.toFixed(1)} s</Readout>
+      </Readouts>
+    </div>
+  );
+}
+
+function PerView({ scope = {} }: { scope?: DecoderScope }) {
+  const latest = latestRecord(recordsInScope(useDecodedKind("per"), scope));
+  if (latest === null) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>Waiting for test frames.</span>
+      </div>
+    );
+  }
+  const report = latest.event.data;
+  return (
+    <div className={PANE}>
+      <div className="flex flex-wrap items-baseline gap-x-3">
+        <span className="font-mono text-2xl tabular-nums text-ink">
+          PER {percentOf(report.per)}
+        </span>
+        <span className="legend ml-auto tabular-nums">
+          {report.received} / {report.expected}
+        </span>
+      </div>
+      <Readouts ruled={false} padded={false} columns={2}>
+        <Readout label="BER">{report.ber == null ? "-" : berText(report.ber)}</Readout>
+        <Readout label="Missed">{report.missed}</Readout>
+        <Readout label="CRC failed" tone={report.errored > 0 ? "warn" : undefined}>
+          {report.errored}
+        </Readout>
+        <Readout label="Last frame">{report.last_sequence ?? "-"}</Readout>
+      </Readouts>
+    </div>
+  );
+}
+
+const SPARK_WIDTH = 96;
+const SPARK_HEIGHT = 18;
+
+function Spark({ values }: { values: readonly number[] }) {
+  return (
+    <svg
+      width={SPARK_WIDTH}
+      height={SPARK_HEIGHT}
+      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
+      className="text-accent"
+      aria-hidden="true"
+    >
+      <polyline
+        points={sparkPoints(values, SPARK_WIDTH, SPARK_HEIGHT)}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+    </svg>
+  );
+}
+
+function SidView({ scope = {} }: { scope?: DecoderScope }) {
+  const records = recordsInScope(useDecodedKind("sid"), scope);
+  const latest = latestRecord(records);
+  if (latest === null) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>First report after one interval.</span>
+      </div>
+    );
+  }
+  const report = latest.event.data;
+  if (report.stations.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No VLF station in view.</span>
+      </div>
+    );
+  }
+  const trends = sidTrends(records.map((record) => ({ at: record.at, report: record.event.data })));
+  return (
+    <div className={PANE}>
+      <table className="w-full border-collapse text-left text-xs">
+        <thead>
+          <tr className="border-b border-line">
+            <th className={TABLE_HEAD}>Station</th>
+            <th className={TABLE_HEAD}>
+              <Unit symbol="kHz" />
+            </th>
+            <th className={TABLE_HEAD}>
+              SNR <Unit symbol="dB" />
+            </th>
+            <th className={TABLE_HEAD} title="Level against the learned baseline">
+              Δ
+            </th>
+            <th className={TABLE_HEAD} />
+          </tr>
+        </thead>
+        <tbody>
+          {report.stations.map((station) => {
+            const deviation = sidDeviation(station);
+            return (
+              <tr
+                key={`${station.call}:${station.frequency_hz}`}
+                className={`border-b border-line/50 ${station.disturbed ? "text-warn" : ""}`}
+              >
+                <td className={TABLE_CELL}>{station.call}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>
+                  {(station.frequency_hz / 1000).toFixed(2)}
+                </td>
+                <td className={`${TABLE_CELL} tabular-nums`}>{wholeDb(station.snr_db)}</td>
+                <td className={`${TABLE_CELL} tabular-nums`}>
+                  {deviation == null ? "-" : signedDb(deviation)}
+                </td>
+                <td className={TABLE_CELL}>
+                  <Spark values={trends.get(`${station.call}:${station.frequency_hz}`) ?? []} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = {
   transmission: null,
   call: null,
@@ -1351,6 +1517,9 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   ble: (scope) => <BleView scope={scope} />,
   wifi_occupancy: (scope) => <WifiOccupancyView scope={scope} />,
   ism_survey: (scope) => <IsmSurveyView scope={scope} />,
+  noise_figure: (scope) => <NoiseFigureView scope={scope} />,
+  per: (scope) => <PerView scope={scope} />,
+  sid: (scope) => <SidView scope={scope} />,
 };
 
 function isDecoderKind(kind: string): kind is DecoderKind {

@@ -387,3 +387,20 @@ fn airtime_decoders_allocate_nothing_and_keep_up_at_every_span() {
         }
     }
 }
+
+#[test]
+fn measurement_channels_allocate_nothing_between_reports() {
+    for type_id in ["noise_figure", "per", "sid"] {
+        let settings = ChannelSettings::default_for(type_id).expect("settings");
+        let rate = sdrmm_channels::input_rate(&settings.params);
+        let mut rx =
+            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        let iq = searching_signal(rate);
+        let mut outputs = ChannelOutputs::default();
+        for _ in 0..2 {
+            drive(rx.as_mut(), &iq, &mut outputs);
+        }
+        assert_no_alloc(type_id, || drive(rx.as_mut(), &iq, &mut outputs));
+        assert!(outputs.events.is_empty(), "{type_id}");
+    }
+}
