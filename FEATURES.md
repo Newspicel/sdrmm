@@ -35,11 +35,10 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - Flood, spam and malformed-broadcast testing
 - Targeted protocol fuzzing
 
-## 2. Hardware
-- Rig control: Hamlib CAT client, rigctld-compatible server
+## 2. NanoVNA
 - Make NanoVNA better: better ui, test more, saved antennas, etc.
 
-### Codeplugs
+## 3. Codeplugs
 - AnyTone D890UV: the general-settings block, GPS, both APRS flavours, roaming, encryption keys,
   DTMF/2-tone/5-tone, satellite and boot settings, and the per-channel long tail (custom CTCSS,
   talkaround, call confirm, ranging, scrambler, TX colour code) are not read
@@ -47,16 +46,17 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
   shifted channel
 - Radtel RT-4D: settings blocks, keys and message templates are read but not modelled
 
-## 3. Decoders
+## 4. Decoders
 
-- TETRA, Tetrapol
+- TETRA
+- Tetrapol
 - GSM downlink analysis, OsmocomBB-style monitoring
 - ISM remotes and sensors (OOK/FSK)
 - STANAG modem identification
 
-## 4. Recording & measurement
+## 5. Recording & measurement
 - Recording scheduler and unattended satellite-pass automation
 - Radio astronomy, star tracker, sky map
 
-## 5. Automation & API
+## 6. Automation & API
 - WASM plugin SDK
