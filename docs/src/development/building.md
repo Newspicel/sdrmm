@@ -13,7 +13,7 @@ CI and local development run the same `cargo xtask` commands.
 | Native | C/C++ compiler, Clang/libclang, CMake, GNU Make, NASM, Python 3.12+ |
 
 ```sh
-sudo apt-get install -y build-essential cmake clang libclang-dev python3 nasm   # Debian, Ubuntu
+sudo apt-get install -y build-essential cmake clang libclang-dev python3 nasm libxkbcommon-dev   # Debian, Ubuntu
 brew install cmake python nasm                                                  # macOS
 ```
 
