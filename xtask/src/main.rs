@@ -1279,11 +1279,16 @@ fn test(root: &Path) -> Result<()> {
     // pool, which is worth minutes here because most of the 48 binaries hold only a few tests.
     // Benches are excluded rather than covered by `--all-targets`: `harness = false` targets do
     // not answer `--list`. `cargo xtask check` still clippies them.
+    let media = media_dir(root, None)?
+        .map(|dir| media_env(&dir))
+        .unwrap_or_default();
+    let mut env: Vec<(&str, &str)> = media.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    env.push(NO_SOAPY_RUNTIME);
     run_with_env(
         "cargo",
         &["nextest", "run", "--lib", "--bins", "--tests"],
         root,
-        &[NO_SOAPY_RUNTIME],
+        &env,
     )?;
     ensure_web_deps(root)?;
     run(PNPM, &["--dir", "web", "test"], root)?;
