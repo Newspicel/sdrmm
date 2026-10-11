@@ -3,12 +3,13 @@ use zgui::{
     canvas::ShapeBuilder,
     elements::{kurbo, kurbo::Shape as _},
     prelude::*,
+    vocab::SharedString,
 };
 
 use super::model::{
-    Angles, ISOMETRIC, Mode, Point2, ScaleBar, Unit, Viewport, bounds_of, fit_to, format_length,
-    ground_grid, place, plan_view, project, role_label, role_style, roles_in, scale_bar,
-    structure_bounds, turn,
+    Angles, ISOMETRIC, Mode, Point2, ScaleBar, Unit, Viewport, bounds_of, design_label, fit_to,
+    format_length, ground_grid, place, plan_view, project, role_label, role_style, roles_in,
+    scale_bar, structure_bounds, turn,
 };
 use crate::ui::{
     tools::kit::{Paint, button, local_point},
@@ -26,6 +27,7 @@ const VIEWPORT: Viewport = Viewport {
 const DIMENSION_RULE: f64 = HEIGHT - 40.0;
 const RULER_LINE: f64 = HEIGHT - 12.0;
 const HOVER_REACH: f64 = 6.0;
+const FEED_RADIUS: f64 = 4.5;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stroke {
@@ -61,6 +63,13 @@ pub struct Drawing {
     pub across: Option<Rule>,
     pub down: Option<Rule>,
     pub title: &'static str,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Hover {
+    Feed,
+    Piece(String),
 }
 
 fn plain(from: Point2, to: Point2, ink: Paint, width: f64) -> Stroke {
@@ -142,6 +151,11 @@ pub fn drawing(
         (None, None)
     };
     let ruler = scale_bar(fit.scale, VIEWPORT.width / 4.0, unit);
+    let seen = if mode == Mode::Plan {
+        plan.label.to_lowercase()
+    } else {
+        "seen from an angle".to_owned()
+    };
     strokes.push(plain(
         at(16.0, RULER_LINE),
         at(16.0 + ruler.pixels, RULER_LINE),
@@ -161,6 +175,7 @@ pub fn drawing(
         } else {
             "Orbit: drag to turn"
         },
+        description: format!("{}, {seen}", design_label(&report.design)),
     }
 }
 
@@ -264,6 +279,26 @@ pub fn piece_at(pieces: &[Piece], point: Point2, reach: f64) -> Option<&Piece> {
         .map(|(piece, _)| piece)
 }
 
+#[must_use]
+pub fn hover_at(drawing: &Drawing, point: Point2) -> Option<Hover> {
+    if (point.x - drawing.feed.x).hypot(point.y - drawing.feed.y) <= FEED_RADIUS + 1.0 {
+        return Some(Hover::Feed);
+    }
+    piece_at(&drawing.pieces, point, HOVER_REACH).map(|piece| Hover::Piece(piece.label.clone()))
+}
+
+#[must_use]
+pub fn hover_text(drawing: &Drawing, hover: &Hover, unit: Unit) -> Option<String> {
+    match hover {
+        Hover::Feed => Some("Feedpoint".to_owned()),
+        Hover::Piece(label) => drawing
+            .pieces
+            .iter()
+            .find(|piece| &piece.label == label)
+            .map(|piece| format!("{}: {}", piece.label, format_length(piece.length_m, unit))),
+    }
+}
+
 fn segment_path(from: Point2, to: Point2) -> kurbo::BezPath {
     let mut path = kurbo::BezPath::new();
     path.move_to((from.x, from.y));
@@ -283,7 +318,7 @@ fn paint(scene: &mut zgui::canvas::CanvasScene, drawing: &Drawing) {
                 .build(),
         );
     }
-    let feed = kurbo::Circle::new((drawing.feed.x, drawing.feed.y), 4.5).to_path(0.1);
+    let feed = kurbo::Circle::new((drawing.feed.x, drawing.feed.y), FEED_RADIUS).to_path(0.1);
     scene.push(
         ShapeBuilder::new(feed)
             .fill(Paint::Bg.brush(1.0))
@@ -323,6 +358,7 @@ pub fn antenna_view(inputs: Inputs) -> impl IntoView {
     });
     let canvas = zgui::elements::canvas()
         .class("ant-draw__canvas")
+        .view_box(0.0, 0.0, WIDTH as f32, HEIGHT as f32)
         .draw(move |cx| {
             shown.with(|drawing| {
                 if let Some(drawing) = drawing {
@@ -331,20 +367,14 @@ pub fn antenna_view(inputs: Inputs) -> impl IntoView {
             });
         })
         .into_view();
+    let feed = RwSignal::new(false);
     let hovered = move || {
-        let label = highlight.get()?;
-        shown.with(|drawing| {
-            let piece = drawing
-                .as_ref()?
-                .pieces
-                .iter()
-                .find(|piece| piece.label == label)?;
-            Some(format!(
-                "{}: {}",
-                piece.label,
-                format_length(piece.length_m, unit.get())
-            ))
-        })
+        let hover = if feed.get() {
+            Hover::Feed
+        } else {
+            Hover::Piece(highlight.get()?)
+        };
+        shown.with(|drawing| hover_text(drawing.as_ref()?, &hover, unit.get()))
     };
     view! {
         column(class = "ant-view") {
@@ -355,8 +385,32 @@ pub fn antenna_view(inputs: Inputs) -> impl IntoView {
                 {move || (mode.get() == Mode::Orbit).then(|| AnyView::new(button("btn", || "Reset angle".to_owned(), || false, move || orbit.set(ISOMETRIC))))}
                 {segments(vec![(Mode::Plan, "2D"), (Mode::Orbit, "3D")], mode.into(), move |picked| mode.set(picked))}
             }
-            {surface(canvas, shown, highlight, mode, orbit)}
+            box(class = "ant-frame") {
+                {surface(canvas, shown, Pointing { highlight, feed }, mode, orbit)}
+            }
             {legend(report)}
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Pointing {
+    highlight: RwSignal<Option<String>>,
+    feed: RwSignal<bool>,
+}
+
+impl Pointing {
+    fn show(self, hover: Option<Hover>) {
+        let on_feed = hover == Some(Hover::Feed);
+        let piece = match hover {
+            Some(Hover::Piece(label)) => Some(label),
+            _ => None,
+        };
+        if on_feed != self.feed.get_untracked() {
+            self.feed.set(on_feed);
+        }
+        if piece != self.highlight.get_untracked() {
+            self.highlight.set(piece);
         }
     }
 }
@@ -364,7 +418,7 @@ pub fn antenna_view(inputs: Inputs) -> impl IntoView {
 fn surface(
     canvas: impl IntoView + 'static,
     shown: Memo<Option<Drawing>>,
-    highlight: RwSignal<Option<String>>,
+    pointing: Pointing,
     mode: RwSignal<Mode>,
     orbit: RwSignal<Angles>,
 ) -> impl IntoView {
@@ -393,12 +447,9 @@ fn surface(
         let found = shown.with_untracked(|drawing| {
             drawing
                 .as_ref()
-                .and_then(|drawing| piece_at(&drawing.pieces, point, HOVER_REACH))
-                .map(|piece| piece.label.clone())
+                .and_then(|drawing| hover_at(drawing, point))
         });
-        if found != highlight.get_untracked() {
-            highlight.set(found);
-        }
+        pointing.show(found);
     };
     let release = move |ev: &mut EventCx<'_, events::PointerUp>| {
         ev.release_pointer();
@@ -409,6 +460,8 @@ fn surface(
             node_ref = area,
             class = "ant-draw",
             class:orbit = move || mode.get() == Mode::Orbit,
+            a11y:role = Role::Image,
+            a11y:label = move || -> SharedString { shown.with(|drawing| drawing.as_ref().map(|drawing| drawing.description.clone()).unwrap_or_default()).into() },
             on:pointer_down = press,
             on:pointer_move = hover,
             on:pointer_up = release,
@@ -416,7 +469,7 @@ fn surface(
                 ev.release_pointer();
                 drag.set(None);
             },
-            on:pointer_leave = move |_| if drag.get_untracked().is_none() { highlight.set(None) }
+            on:pointer_leave = move |_| if drag.get_untracked().is_none() { pointing.show(None) }
         ) {
             {canvas}
             {move || labels(shown)}
@@ -468,8 +521,8 @@ fn label_at(x: f64, y: f64, text: String, anchor: Anchor) -> AnyView {
             class = "ant-label",
             class:centre = anchor == Anchor::Centre,
             class:up = anchor == Anchor::Up,
-            style:left = Some(format!("{x:.1}px")),
-            style:top = Some(format!("{y:.1}px"))
+            style:left = Some(format!("{:.2}%", x / WIDTH * 100.0)),
+            style:top = Some(format!("{:.2}%", y / HEIGHT * 100.0))
         ) {{text}}
     })
 }
@@ -598,6 +651,42 @@ mod tests {
             Some("Left leg")
         );
         assert!(piece_at(&drawn.pieces, at(100.0, drawn.feed.y + 30.0), HOVER_REACH).is_none());
+    }
+
+    #[test]
+    fn the_feedpoint_wins_over_the_legs_it_joins() {
+        let drawn = drawing(&report(), Mode::Plan, ISOMETRIC, None, Unit::Metres);
+        assert_eq!(hover_at(&drawn, drawn.feed), Some(Hover::Feed));
+        assert_eq!(
+            hover_at(&drawn, at(100.0, drawn.feed.y)),
+            Some(Hover::Piece("Left leg".to_owned()))
+        );
+        assert_eq!(hover_at(&drawn, at(100.0, drawn.feed.y + 30.0)), None);
+    }
+
+    #[test]
+    fn a_hover_reads_as_its_name_and_length() {
+        let drawn = drawing(&report(), Mode::Plan, ISOMETRIC, None, Unit::Metres);
+        assert_eq!(
+            hover_text(&drawn, &Hover::Feed, Unit::Metres),
+            Some("Feedpoint".to_owned())
+        );
+        assert_eq!(
+            hover_text(&drawn, &Hover::Piece("Right leg".to_owned()), Unit::Metres),
+            Some("Right leg: 50.0 cm".to_owned())
+        );
+        assert_eq!(
+            hover_text(&drawn, &Hover::Piece("Gone".to_owned()), Unit::Metres),
+            None
+        );
+    }
+
+    #[test]
+    fn the_drawing_names_its_design_and_view() {
+        let plan = drawing(&report(), Mode::Plan, ISOMETRIC, None, Unit::Metres);
+        assert_eq!(plan.description, "Dipole (half wave), front view");
+        let orbit = drawing(&report(), Mode::Orbit, ISOMETRIC, None, Unit::Metres);
+        assert_eq!(orbit.description, "Dipole (half wave), seen from an angle");
     }
 
     #[test]

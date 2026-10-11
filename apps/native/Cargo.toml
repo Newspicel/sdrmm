@@ -60,9 +60,16 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 rfd.workspace = true
 open.workspace = true
+qrcodegen.workspace = true
 url.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 sdrmm-device.workspace = true
 sdrmm-device-virtual.workspace = true
+sdrmm-device-siggen.workspace = true
+sdrmm-device-recording.workspace = true
+zgui-platform-headless.workspace = true
+zgui-render-wgpu.workspace = true
+zgui-render-vector-vello.workspace = true
+png.workspace = true

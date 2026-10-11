@@ -14,9 +14,45 @@ use crate::{
 
 const KEPT_PICTURES: usize = 24;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PictureSource {
+    Sstv,
+    Apt,
+    Lrpt,
+    Wefax,
+}
+
+impl PictureSource {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Sstv => "sstv",
+            Self::Apt => "apt",
+            Self::Lrpt => "lrpt",
+            Self::Wefax => "wefax",
+        }
+    }
+
+    #[must_use]
+    pub const fn waiting(self) -> &'static str {
+        match self {
+            Self::Sstv => "No picture yet: one takes 36 s to four minutes.",
+            Self::Apt => "No NOAA pass yet.",
+            Self::Lrpt => "No Meteor pass yet.",
+            Self::Wefax => "No chart received yet.",
+        }
+    }
+
+    #[must_use]
+    pub fn shows(self, image: &CapturedImage, scope: DecoderScope) -> bool {
+        image.source == self.name() && scope.holds(image.device_set, image.channel)
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Pictures {
     store: Store,
+    source: PictureSource,
     scope: DecoderScope,
     images: RwSignal<Vec<CapturedImage>>,
     urls: RwSignal<HashMap<u64, String>>,
@@ -26,9 +62,10 @@ struct Pictures {
 }
 
 impl Pictures {
-    fn new(store: Store, scope: DecoderScope) -> Self {
+    fn new(store: Store, source: PictureSource, scope: DecoderScope) -> Self {
         let pictures = Self {
             store,
+            source,
             scope,
             images: RwSignal::new(Vec::new()),
             urls: RwSignal::new(HashMap::new()),
@@ -60,12 +97,10 @@ impl Pictures {
     }
 
     fn receive(self, arrived: Vec<CapturedImage>) {
-        let scope = self.scope;
+        let (source, scope) = (self.source, self.scope);
         self.images.update(|images| {
             for image in arrived {
-                if scope.holds(image.device_set, image.channel)
-                    && !images.iter().any(|held| held.id == image.id)
-                {
+                if source.shows(&image, scope) && !images.iter().any(|held| held.id == image.id) {
                     images.push(image);
                 }
             }
@@ -114,8 +149,8 @@ impl Pictures {
     }
 }
 
-pub fn view(store: Store, scope: DecoderScope) -> impl IntoView {
-    let pictures = Pictures::new(store, scope);
+pub fn view(store: Store, source: PictureSource, scope: DecoderScope) -> impl IntoView {
+    let pictures = Pictures::new(store, source, scope);
     move || {
         let images = pictures.images.get();
         let chosen = pictures.selected.get();
@@ -125,9 +160,7 @@ pub fn view(store: Store, scope: DecoderScope) -> impl IntoView {
             .or_else(|| images.first())
             .cloned()
         else {
-            return AnyView::new(view! {
-                text(class = "hint") {"No picture yet: one takes 36 s to four minutes."}
-            });
+            return AnyView::new(view! { text(class = "hint") {{source.waiting()}} });
         };
         let thumbs =
             (images.len() > 1).then(|| AnyView::new(thumbnails(pictures, &images, open.id)));
@@ -198,4 +231,38 @@ fn thumbnails(pictures: Pictures, images: &[CapturedImage], open: u64) -> impl I
         })
         .collect();
     view! { row(class = "dk-thumbs") {{items}} }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image(source: &str, channel: u32) -> CapturedImage {
+        CapturedImage {
+            id: 1,
+            device_set: 0,
+            channel,
+            at: "2026-05-01T12:00:00Z".to_owned(),
+            freq_hz: 137_100_000.0,
+            source: source.to_owned(),
+            mode: "APT".to_owned(),
+            width: 2080,
+            height: 900,
+            lines: 900,
+            complete: true,
+            image: None,
+            image_error: None,
+        }
+    }
+
+    #[test]
+    fn a_gallery_shows_only_its_own_source_in_scope() {
+        let scope = DecoderScope {
+            device_set: Some(0),
+            channel: Some(2),
+        };
+        assert!(PictureSource::Apt.shows(&image("apt", 2), scope));
+        assert!(!PictureSource::Sstv.shows(&image("apt", 2), scope));
+        assert!(!PictureSource::Apt.shows(&image("apt", 3), scope));
+    }
 }

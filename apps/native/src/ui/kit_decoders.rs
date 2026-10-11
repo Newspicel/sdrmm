@@ -1,7 +1,8 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use sdrmm_wire::decode::BroadcastData;
 use zgui::prelude::*;
+use zgui_ui::prelude::*;
 
 use crate::store::Store;
 
@@ -79,8 +80,46 @@ pub const SHEET: &str = css!(
 .dk-picture { width: 100%; max-height: 360px; object-fit: contain; background-color: black; border-radius: 4px; }
 .dk-object { max-width: 100%; max-height: 320px; object-fit: contain; }
 .dk-more { color: var(--ink-faint); font-size: 10px; }
+.dk-bar { width: 96px; height: 8px; border-radius: 3px; background-color: var(--line); overflow: hidden; }
+.dk-bar__fill { height: 100%; background-color: var(--accent); }
+.dk-sel { cursor: pointer; }
+.dk-sel:hover, .dk-sel:focus-visible { color: var(--accent); }
+.dk-sel.on { color: var(--accent); }
+.dk-scroll { max-height: 200px; }
+.dk-clip { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 "#
 );
+
+const TOOLTIP_DELAY: Duration = Duration::from_millis(250);
+
+pub fn titled(title: String, class: &'static str, child: AnyView) -> AnyView {
+    AnyView::new(view! {
+        Tooltip(delay = TOOLTIP_DELAY) {
+            TooltipTrigger(class = class) {{child}}
+            TooltipContent {{title.clone()}}
+        }
+    })
+}
+
+pub fn titled_text(text: String, title: String, class: &'static str) -> AnyView {
+    if title.is_empty() {
+        return AnyView::new(view! { text(class = class) {{text}} });
+    }
+    titled(
+        title,
+        class,
+        AnyView::new(view! { text(class = "dk-clip") {{text}} }),
+    )
+}
+
+pub fn load_bar(share: f32) -> impl IntoView {
+    let width = format!("{}%", (share * 100.0).clamp(0.0, 100.0));
+    view! {
+        box(class = "dk-bar") {
+            box(class = "dk-bar__fill", style:width = Some(width)) {}
+        }
+    }
+}
 
 pub fn install() {
     install_stylesheet("kit-decoders", SHEET);
@@ -108,13 +147,13 @@ pub fn no_pan() -> Attrs {
         )
 }
 
-pub fn fields_view(fields: Vec<(&'static str, String)>) -> impl IntoView {
+pub fn fields_view<L: std::fmt::Display>(fields: Vec<(L, String)>) -> impl IntoView + use<L> {
     let rows: Vec<_> = fields
         .into_iter()
         .map(|(name, value)| {
             view! {
                 row(class = "dk-field") {
-                    text(class = "dk-field__name") {{name}}
+                    text(class = "dk-field__name") {{name.to_string()}}
                     text(class = "dk-field__value") {{value}}
                 }
             }

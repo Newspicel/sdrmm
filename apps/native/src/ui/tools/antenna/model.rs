@@ -44,6 +44,14 @@ pub fn default_design(type_id: &str) -> AntennaDesign {
 }
 
 #[must_use]
+pub fn design_label(design: &AntennaDesign) -> &'static str {
+    DESIGNS
+        .iter()
+        .find(|(known, _)| known.type_id() == design.type_id())
+        .map_or_else(|| design.type_id(), |(_, label)| label)
+}
+
+#[must_use]
 pub fn uses_feedline(design: &AntennaDesign) -> bool {
     matches!(design, AntennaDesign::QuadLoop)
 }
@@ -459,6 +467,17 @@ mod tests {
 
     fn close(left: f64, right: f64, digits: i32) -> bool {
         (left - right).abs() < 10f64.powi(-digits) / 2.0
+    }
+
+    #[test]
+    fn every_design_reads_by_its_listed_name() {
+        assert_eq!(design_label(&AntennaDesign::JPole), "J-pole");
+        assert_eq!(design_label(&default_design("yagi")), "Yagi");
+        assert!(
+            DESIGNS
+                .iter()
+                .all(|(design, label)| design_label(design) == *label)
+        );
     }
 
     fn segment(

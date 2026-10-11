@@ -1,23 +1,35 @@
-use std::collections::BTreeSet;
-
 use sdrmm_wire::{device::DeviceSettings, patch::NodeBody, state::DeviceSetStatus};
 use zgui::prelude::*;
 
 use super::{
     device::{
         actions::{Busy, edit_body, release},
+        gain::LaneExtras,
         radio::{Radio, radio_settings},
         tuner::reach_of,
     },
     set_signal,
 };
 use crate::{
+    head::{self, NodeHead, Tone as HeadTone},
     store::Store,
     ui::kit_sources::{
-        DialSpec, Tone, button, dial::in_tuning_range, footer, frequency_dial, install, tune_to,
-        units,
+        DialSpec, Tone, dial::in_tuning_range, footer, frequency_dial, health::source_health,
+        install, titled_button, tune_to, units,
     },
 };
+
+pub const START_TIP: &str = "Generate a decodable signal to try a decoder without a radio";
+pub const STOP_TIP: &str = "Stop generating and free the node: the wires stay drawn";
+
+#[must_use]
+pub fn failed_head(failed: bool) -> NodeHead {
+    if failed {
+        NodeHead::said("error").toned(HeadTone::Danger)
+    } else {
+        NodeHead::default()
+    }
+}
 
 fn run(store: Store, node: String, running: bool) {
     edit_body(store, node, move |body| {
@@ -39,7 +51,7 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             let node = node.clone();
             AnyView::new(view! {
                 column(class = "face") {
-                    {footer(button(|| "Start".to_owned(), Tone::Primary, Signal::stored(false), move || run(store, node.clone(), true)))}
+                    {footer(titled_button(|| "Start".to_owned(), Tone::Primary, Signal::stored(false), || START_TIP.to_owned(), move || run(store, node.clone(), true)))}
                 }
             })
         }
@@ -82,6 +94,7 @@ fn running(store: Store, node: String, radio: Radio, busy: Busy) -> impl IntoVie
             .read(|set| set.status == DeviceSetStatus::Error)
             .unwrap_or(false)
     });
+    head::show(store, node.clone(), move || failed_head(failed.get()));
     let error = Signal::derive(move || radio.read(|set| set.error.clone()).flatten());
     let stopping = busy.busy;
     let stop = move || {
@@ -93,18 +106,17 @@ fn running(store: Store, node: String, radio: Radio, busy: Busy) -> impl IntoVie
     };
     view! {
         column(class = "face") {
-            row(class = "kit-head", hidden = move || !failed.get()) {
-                spacer() {}
-                text(class = "kit-legend warn") {"error"}
-            }
             row(class = "kit-dial-row") {
                 {frequency_dial(spec, tune)}
                 spacer() {}
                 {tune_to("Type the frequency to generate at", hz, hint, move |entered| in_tuning_range(entered, reach.get_untracked()), Signal::stored(false), tune)}
             }
-            {radio_settings(radio, false, Signal::stored(BTreeSet::new()))}
+            {radio_settings(radio, LaneExtras::none())}
             {move || error.get().map(|error| AnyView::new(view! { text(class = "kit-alert") {{error}} }))}
-            {footer(button(move || if stopping.get() { "Stopping…".to_owned() } else { "Stop".to_owned() }, Tone::Quiet, stopping.into(), stop))}
+            {footer(view! {
+                {source_health(store, radio.set, |_| Vec::new())}
+                {titled_button(move || if stopping.get() { "Stopping…".to_owned() } else { "Stop".to_owned() }, Tone::Quiet, stopping.into(), || STOP_TIP.to_owned(), stop)}
+            })}
         }
     }
 }
@@ -112,6 +124,15 @@ fn running(store: Store, node: String, radio: Radio, busy: Busy) -> impl IntoVie
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::{device::SIGGEN_DRIVER_ID, patch::siggen_key};
+
+    use super::*;
+
+    #[test]
+    fn a_failed_generator_says_so_in_its_head() {
+        assert_eq!(failed_head(true).subtitle.as_deref(), Some("error"));
+        assert_eq!(failed_head(true).tone, HeadTone::Danger);
+        assert_eq!(failed_head(false), NodeHead::default());
+    }
 
     fn device_id(node: &str) -> String {
         format!("{SIGGEN_DRIVER_ID}:{}", siggen_key(node))

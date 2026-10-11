@@ -64,6 +64,7 @@ fn clear(store: Store, node: String, pending: RwSignal<bool>) {
 }
 
 pub fn face(store: Store, node: String) -> impl IntoView {
+    let titled = node.clone();
     install_stylesheet("triangulation-face", SHEET);
     install_stylesheet("processor-face", processor::SHEET);
     seed(store, node.clone());
@@ -83,9 +84,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     let plot = heat_box(store, node.clone(), fusion, sources);
     let edits = controls(store, node.clone(), settings, fusion);
     let foot = footer(store, node, fusion);
+    processor::head(store, titled, head);
     view! {
         column(class = "face tri") {
-            {processor::head(head)}
             {plot}
             {edits}
             {readouts(fusion)}

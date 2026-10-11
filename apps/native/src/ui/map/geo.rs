@@ -195,11 +195,11 @@ impl View {
     }
 
     #[must_use]
-    pub fn tiles(&self, max_source_zoom: u8) -> Vec<TilePlace> {
+    pub fn tiles_at(&self, max_source_zoom: u8, bump: u8) -> Vec<TilePlace> {
         if self.width <= 0.0 || self.height <= 0.0 {
             return Vec::new();
         }
-        let z = self.zoom.floor().clamp(0.0, f64::from(max_source_zoom)) as u8;
+        let z = (self.zoom.floor() + f64::from(bump)).clamp(0.0, f64::from(max_source_zoom)) as u8;
         let count = 1_i64 << z;
         let world = self.world();
         let size = world / count as f64;
@@ -460,7 +460,7 @@ mod tests {
             ..View::default()
         }
         .centred(Geo::new(0.0, 179.9), 1.0);
-        let tiles = view.tiles(14);
+        let tiles = view.tiles_at(14, 0);
         assert!(
             tiles
                 .iter()
@@ -476,9 +476,24 @@ mod tests {
             .map(|tile| tile.left + tile.size)
             .fold(f64::NEG_INFINITY, f64::max);
         assert!(left <= 0.0 && right >= 600.0);
-        let deep = view.centred(Geo::new(50.0, 8.0), 17.3).tiles(14);
+        let deep = view.centred(Geo::new(50.0, 8.0), 17.3).tiles_at(14, 0);
         assert!(deep.iter().all(|tile| tile.id.z == 14));
         assert!(deep.first().is_some_and(|tile| tile.size > TILE_PX * 8.0));
+    }
+
+    #[test]
+    fn small_raster_tiles_come_one_level_deeper_at_half_the_size() {
+        let view = View {
+            width: 600.0,
+            height: 400.0,
+            ..View::default()
+        }
+        .centred(Geo::new(50.0, 8.0), 5.0);
+        let vector = view.tiles_at(19, 0);
+        let raster = view.tiles_at(19, 1);
+        assert!(vector.iter().all(|tile| tile.id.z == 5));
+        assert!(raster.iter().all(|tile| tile.id.z == 6));
+        assert!((raster[0].size * 2.0 - vector[0].size).abs() < 1e-9);
     }
 
     #[test]

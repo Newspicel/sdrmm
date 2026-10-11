@@ -5,6 +5,8 @@ use zgui::{
     surface::{SurfaceRenderCx, SurfaceRenderer, wgpu},
 };
 
+use crate::ui::kit_raster::Pulse;
+
 use super::{
     gpu::{
         VERTEX_WGSL, draw, linear_sampler, pipeline, sampler_entry, texture, texture_entry,
@@ -17,7 +19,8 @@ use super::{
 };
 
 const MAX_COLUMNS: u32 = 8192;
-const COLUMN_ROWS: u32 = 5;
+const COLUMN_ROWS: u32 = 6;
+const LIVE_LINE_ROW: usize = 5;
 const MAX_X_TICKS: usize = 32;
 const MAX_Y_TICKS: usize = 16;
 const PLOT_BYTES: usize = 48 + MAX_X_TICKS * 4 + MAX_Y_TICKS * 4;
@@ -134,13 +137,16 @@ fn live(p: vec2<f32>, colour: vec3<f32>) -> vec3<f32> {
     let c = i32(floor(p.x));
     let high = column_y(c, 0);
     let low = column_y(c, 1);
+    let level = column_y(c, 5);
     if (high <= MISSING) {
         return out;
     }
     let band = clamp(min(p.y - high, low - p.y) + 0.5, 0.0, 1.0);
     out = mix(out, TRACE, band * 0.3);
-    out = mix(out, TRACE, stroke(p, 0, plot.scale * 0.625));
-    out = mix(out, TRACE, clamp(p.y - high + 0.5, 0.0, 1.0) * 0.2);
+    out = mix(out, TRACE, stroke(p, 5, plot.scale * 0.625));
+    if (level > MISSING) {
+        out = mix(out, TRACE, clamp(p.y - level + 0.5, 0.0, 1.0) * 0.2);
+    }
     return out;
 }
 
@@ -247,6 +253,29 @@ pub fn grid_lines(
     (xs, ys, centre)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Columns {
+    width: u32,
+    plot_h: f64,
+    window: DbWindow,
+    signal_db: f64,
+}
+
+fn write_column_row(staging: &mut [u8], row: usize, columns: Columns, values: &[f32]) {
+    let start = row * columns.width as usize * 4;
+    for (at, value) in values.iter().enumerate() {
+        let y = if value.is_nan() {
+            MISSING
+        } else {
+            level_y(*value, columns.plot_h, columns.window)
+        };
+        let offset = start + at * 4;
+        if let Some(slot) = staging.get_mut(offset..offset + 4) {
+            slot.copy_from_slice(&y.to_le_bytes());
+        }
+    }
+}
+
 pub struct Inputs {
     pub view: Signal<SpectrumView>,
     pub window: Signal<DbWindow>,
@@ -276,10 +305,12 @@ type Drawn = (
 pub struct TraceSurface {
     live: Rc<RefCell<Live>>,
     inputs: Inputs,
+    pulse: Pulse,
     held: Option<Resources>,
     points: TracePoints,
     high: Vec<f32>,
     low: Vec<f32>,
+    line: Vec<f32>,
     staging: Vec<u8>,
     image: Vec<u8>,
     density_revision: Option<u64>,
@@ -287,14 +318,16 @@ pub struct TraceSurface {
 }
 
 impl TraceSurface {
-    pub fn new(live: Rc<RefCell<Live>>, inputs: Inputs) -> Self {
+    pub fn new(live: Rc<RefCell<Live>>, inputs: Inputs, pulse: Pulse) -> Self {
         Self {
             live,
             inputs,
+            pulse,
             held: None,
             points: TracePoints::default(),
             high: Vec::new(),
             low: Vec::new(),
+            line: Vec::new(),
             staging: Vec::new(),
             image: Vec::new(),
             density_revision: None,
@@ -375,35 +408,25 @@ impl TraceSurface {
         self.last = None;
     }
 
-    fn fill_row(
-        &mut self,
-        row: usize,
-        width: u32,
-        plot_h: f64,
-        window: DbWindow,
-        db: &[f32],
-        view: SpectrumView,
-    ) {
-        trace_points(db, view, f64::from(width), &mut self.points);
-        columns_of(&self.points, width as usize, &mut self.high, &mut self.low);
-        let start = row * width as usize * 4;
-        let column = |value: f32| {
-            if value.is_nan() {
-                MISSING
-            } else {
-                level_y(value, plot_h, window)
-            }
-        };
-        for (at, value) in self.high.iter().enumerate() {
-            let offset = start + at * 4;
-            self.staging[offset..offset + 4].copy_from_slice(&column(*value).to_le_bytes());
-        }
+    fn fill_row(&mut self, row: usize, columns: Columns, db: &[f32], view: SpectrumView) {
+        trace_points(
+            db,
+            view,
+            f64::from(columns.width),
+            columns.signal_db,
+            &mut self.points,
+        );
+        columns_of(
+            &self.points,
+            columns.width as usize,
+            [&mut self.high, &mut self.low, &mut self.line],
+        );
         if row == 0 {
-            let low_start = width as usize * 4;
-            for (at, value) in self.low.iter().enumerate() {
-                let offset = low_start + at * 4;
-                self.staging[offset..offset + 4].copy_from_slice(&column(*value).to_le_bytes());
-            }
+            write_column_row(&mut self.staging, 0, columns, &self.high);
+            write_column_row(&mut self.staging, 1, columns, &self.low);
+            write_column_row(&mut self.staging, LIVE_LINE_ROW, columns, &self.line);
+        } else {
+            write_column_row(&mut self.staging, row, columns, &self.line);
         }
     }
 
@@ -469,7 +492,13 @@ impl SurfaceRenderer for TraceSurface {
             let db = live.tween.sample(now).to_vec();
             if db.len() >= 2 {
                 frame.flags |= FLAG_LIVE;
-                self.fill_row(0, width, plot_h, window, &db, view);
+                let columns = Columns {
+                    width,
+                    plot_h,
+                    window,
+                    signal_db: meta.signal_db(),
+                };
+                self.fill_row(0, columns, &db, view);
                 for (slot, mode) in [TraceMode::Peak, TraceMode::Average, TraceMode::Min]
                     .into_iter()
                     .enumerate()
@@ -481,7 +510,7 @@ impl SurfaceRenderer for TraceSurface {
                         .filter(|trace| modes.contains(&mode) && trace.len() == db.len());
                     if let Some(trace) = overlay {
                         frame.overlays |= 1 << slot;
-                        self.fill_row(slot + 2, width, plot_h, window, &trace, view);
+                        self.fill_row(slot + 2, columns, &trace, view);
                     }
                 }
                 let geometry = Geometry {
@@ -516,6 +545,7 @@ impl SurfaceRenderer for TraceSurface {
         );
         cx.queue.write_buffer(&held.params, 0, &plot_bytes(&frame));
         draw(cx, &held.pipeline, &held.binding);
+        self.pulse.beat();
     }
 }
 
@@ -561,6 +591,36 @@ mod tests {
         assert!(ys.iter().all(|y| (y / 2.0 - 0.5).fract() == 0.0));
         let zoomed = FULL_VIEW.zoom(0.0, 4.0);
         assert_eq!(grid_lines(geometry, 100e6, 2e6, zoomed, window).2, None);
+    }
+
+    #[test]
+    fn a_column_row_holds_pixel_heights_and_marks_gaps() {
+        let columns = Columns {
+            width: 3,
+            plot_h: 80.0,
+            window: DbWindow {
+                min: -100.0,
+                max: -20.0,
+            },
+            signal_db: -90.0,
+        };
+        let mut staging = vec![0u8; 3 * COLUMN_ROWS as usize * 4];
+        write_column_row(
+            &mut staging,
+            LIVE_LINE_ROW,
+            columns,
+            &[-20.0, -60.0, f32::NAN],
+        );
+        let at = |column: usize| {
+            let offset = (LIVE_LINE_ROW * 3 + column) * 4;
+            f32::from_le_bytes([
+                staging[offset],
+                staging[offset + 1],
+                staging[offset + 2],
+                staging[offset + 3],
+            ])
+        };
+        assert_eq!((at(0), at(1), at(2)), (0.0, 40.0, MISSING));
     }
 
     #[test]

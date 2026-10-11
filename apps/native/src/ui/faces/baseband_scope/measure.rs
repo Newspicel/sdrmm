@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use super::frames::{Block, Burst};
-use crate::format;
+use crate::ui::kit_channel::si;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
@@ -61,18 +61,22 @@ impl View {
 pub struct Measurement {
     pub label: &'static str,
     pub value: String,
+    pub hint: Option<&'static str>,
 }
 
 fn row(label: &'static str, value: String) -> Measurement {
-    Measurement { label, value }
+    Measurement {
+        label,
+        value,
+        hint: None,
+    }
 }
 
-#[must_use]
-pub fn baud(symbols_per_second: f32) -> String {
-    if symbols_per_second >= 1_000.0 {
-        format!("{:.1} kBd", symbols_per_second / 1_000.0)
-    } else {
-        format!("{symbols_per_second:.0} Bd")
+fn hinted(label: &'static str, value: String, hint: &'static str) -> Measurement {
+    Measurement {
+        label,
+        value,
+        hint: Some(hint),
     }
 }
 
@@ -85,30 +89,44 @@ pub fn measurements(
 ) -> Vec<Measurement> {
     let mut rows = Vec::new();
     if let Some(burst) = burst {
-        rows.push(row("Centre", format::frequency(burst.center_hz)));
-        rows.push(row("Rate", format::rate(f64::from(burst.sample_rate))));
+        rows.push(row("Centre", si(burst.center_hz, "Hz")));
+        rows.push(row("Rate", si(f64::from(burst.sample_rate), "S/s")));
         let folded = view == View::Eye || (block.is_none() && view != View::Spectrum);
         if folded && period > 0.0 {
-            rows.push(row("Sam/sym", format!("{period:.2}")));
+            rows.push(hinted(
+                "Sam/sym",
+                format!("{period:.2}"),
+                "Samples per symbol at the chosen symbol rate",
+            ));
         }
     }
     if let Some(block) = block.filter(|_| !matches!(view, View::Spectrum | View::Eye)) {
         let offset = block.freq_error_hz.round();
         rows.extend([
-            row("Symbols", baud(block.symbol_rate)),
-            row("EVM", format!("{:.1} %", block.evm * 100.0)),
-            row(
+            row("Symbols", si(f64::from(block.symbol_rate), "Bd")),
+            hinted(
+                "EVM",
+                format!("{:.1} %", block.evm * 100.0),
+                "Error vector magnitude, lower is better",
+            ),
+            hinted(
                 "MER",
                 if block.mer_db >= 99.0 {
                     "clean".to_owned()
                 } else {
                     format!("{:.1} dB", block.mer_db)
                 },
+                "Modulation error ratio, higher is better",
             ),
-            row("Margin", format!("\u{d7}{:.2}", block.margin)),
-            row(
+            hinted(
+                "Margin",
+                format!("\u{d7}{:.2}", block.margin),
+                "Distance to the nearest decision threshold",
+            ),
+            hinted(
                 "Offset",
                 format!("{}{offset:.0} Hz", if offset > 0.0 { "+" } else { "" }),
+                "Carrier frequency error",
             ),
         ]);
     }
@@ -295,9 +313,21 @@ mod tests {
     }
 
     #[test]
-    fn a_rate_reads_in_baud() {
-        assert_eq!(baud(4800.0), "4.8 kBd");
-        assert_eq!(baud(1200.0), "1.2 kBd");
-        assert_eq!(baud(300.0), "300 Bd");
+    fn figures_read_in_si_units_with_hints_on_the_decoder_ones() {
+        let rows = measurements(View::Levels, Some(&burst()), Some(&block()), 10.0);
+        assert_eq!(value(&rows, "Centre"), Some("145.8 MHz"));
+        assert_eq!(value(&rows, "Rate"), Some("48 kS/s"));
+        assert!(value(&rows, "Symbols").is_some_and(|text| text.ends_with("Bd")));
+        for label in ["EVM", "MER", "Margin", "Offset"] {
+            assert!(
+                rows.iter()
+                    .any(|row| row.label == label && row.hint.is_some())
+            );
+        }
+        assert!(
+            rows.iter()
+                .find(|row| row.label == "Centre")
+                .is_some_and(|row| row.hint.is_none())
+        );
     }
 }

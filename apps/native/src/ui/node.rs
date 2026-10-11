@@ -8,6 +8,8 @@ const PORT_PITCH: f32 = 22.0;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Place {
     pub name: String,
+    pub label: String,
+    pub note: Option<String>,
     pub port_type: PortType,
     pub direction: PortDirection,
     pub x: f32,
@@ -23,6 +25,7 @@ pub fn width_of(node: &PatchNode) -> f32 {
 pub fn places(node: &PatchNode, backing: Option<PortBacking<'_>>) -> Vec<Place> {
     let width = width_of(node);
     let specs = node.body.ports_with(backing);
+    let names: Vec<String> = specs.iter().map(|spec| spec.name.clone()).collect();
     let mut inputs = 0.0;
     let mut outputs = 0.0;
     specs
@@ -41,6 +44,8 @@ pub fn places(node: &PatchNode, backing: Option<PortBacking<'_>>) -> Vec<Place> 
                 }
             };
             Place {
+                label: port_label(&spec.name, &names),
+                note: spec.note,
                 name: spec.name,
                 port_type: spec.port_type,
                 direction: spec.direction,
@@ -58,6 +63,16 @@ pub fn category_class(category: NodeCategory) -> &'static str {
         NodeCategory::Channel => "channel",
         NodeCategory::Tool => "tool",
         NodeCategory::Output => "output",
+    }
+}
+
+#[must_use]
+pub fn port_label(name: &str, siblings: &[String]) -> String {
+    let numbered = format!("{name}2");
+    if siblings.iter().any(|sibling| *sibling == numbered) {
+        format!("{name}1")
+    } else {
+        name.to_owned()
     }
 }
 
@@ -153,5 +168,13 @@ mod tests {
 
         let log = node(NodeBody::DecoderLog(Default::default()), None);
         assert_eq!(title_of(&log), "DECODER LOG");
+    }
+
+    #[test]
+    fn a_numbered_port_names_its_first_sibling_with_a_one() {
+        let names = ["iq".to_owned(), "iq2".to_owned(), "audio".to_owned()];
+        assert_eq!(port_label("iq", &names), "iq1");
+        assert_eq!(port_label("iq2", &names), "iq2");
+        assert_eq!(port_label("audio", &names), "audio");
     }
 }

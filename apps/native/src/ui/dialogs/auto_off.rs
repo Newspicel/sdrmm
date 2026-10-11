@@ -1,12 +1,17 @@
 use zgui::prelude::*;
 
-use crate::ui::{dialogs::frame, kit_shell::button, shell::Shell, widgets::check};
+use crate::ui::{
+    dialogs::{frame, title},
+    kit_shell::button,
+    shell::Shell,
+    widgets::check,
+};
 
 pub fn dialog(shell: Shell) -> impl IntoView {
     let never_again = RwSignal::new(false);
     frame(
         "narrow",
-        "Leave Auto tuning?",
+        title("Leave Auto tuning?"),
         (),
         view! {
             text(class = "sk-text") {"On Auto, the radio follows your decoders."}

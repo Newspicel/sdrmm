@@ -7692,10 +7692,14 @@ dependencies = [
  "num-complex",
  "open",
  "opus",
+ "png 0.18.1",
+ "qrcodegen",
  "reqwest",
  "rfd 0.17.2",
  "rtrb",
  "sdrmm-device",
+ "sdrmm-device-recording",
+ "sdrmm-device-siggen",
  "sdrmm-device-virtual",
  "sdrmm-dsp",
  "sdrmm-engine",
@@ -7712,6 +7716,9 @@ dependencies = [
  "zgui",
  "zgui-flow",
  "zgui-image",
+ "zgui-platform-headless",
+ "zgui-render-vector-vello",
+ "zgui-render-wgpu",
  "zgui-tokio",
  "zgui-ui",
 ]
@@ -12957,6 +12964,17 @@ dependencies = [
  "raw-window-handle",
  "thiserror 2.0.21",
  "zgui-geom",
+ "zgui-vocab",
+]
+
+[[package]]
+name = "zgui-platform-headless"
+version = "0.1.0"
+source = "git+https://github.com/zortax/zgui#e5549b5b50fcc743b4202902fb17c0de206af33c"
+dependencies = [
+ "accesskit",
+ "zgui-geom",
+ "zgui-platform",
  "zgui-vocab",
 ]
 

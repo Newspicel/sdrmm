@@ -1,6 +1,10 @@
+pub mod chips;
 pub mod dial;
 mod frequency;
+pub mod health;
 pub mod icons;
+pub mod meter;
+pub mod search;
 mod sheet;
 pub mod units;
 
@@ -17,6 +21,7 @@ pub use frequency::{DialSpec, frequency_dial, tune_to};
 use crate::ui::widgets::{Menus, toggled};
 
 static NEXT_POPOVER: AtomicU32 = AtomicU32::new(1 << 30);
+const TIP_DELAY: Duration = Duration::from_millis(250);
 
 pub fn install() {
     install_stylesheet("sources", sheet::SHEET);
@@ -65,13 +70,62 @@ pub fn button(
     }
 }
 
+pub fn tip(title: impl Fn() -> String + Send + Sync + 'static, child: AnyView) -> AnyView {
+    let title = Signal::derive(title);
+    AnyView::new(view! {
+        Tooltip(delay = TIP_DELAY) {
+            TooltipTrigger {{child}}
+            TooltipContent {{move || title.get()}}
+        }
+    })
+}
+
+pub fn tip_some(
+    title: Signal<Option<String>>,
+    child: impl Fn() -> AnyView + 'static,
+) -> impl IntoView {
+    let shown = Memo::new(move |_| title.with(Option::is_some));
+    move || {
+        if shown.get() {
+            tip(move || title.get().unwrap_or_default(), child())
+        } else {
+            child()
+        }
+    }
+}
+
+pub fn titled_button(
+    label: impl Fn() -> String + Send + Sync + 'static,
+    tone: Tone,
+    disabled: Signal<bool>,
+    title: impl Fn() -> String + Send + Sync + 'static,
+    on_press: impl Fn() + 'static,
+) -> AnyView {
+    tip(title, AnyView::new(button(label, tone, disabled, on_press)))
+}
+
+pub fn titled_icon_button(
+    svg: &'static str,
+    label: impl Into<String>,
+    title: impl Fn() -> String + Send + Sync + 'static,
+    pressed: Signal<bool>,
+    disabled: Signal<bool>,
+    on_press: impl Fn() + 'static,
+) -> AnyView {
+    tip(
+        title,
+        AnyView::new(icon_button(svg, label, pressed, disabled, on_press)),
+    )
+}
+
 pub fn icon_button(
     svg: &'static str,
-    label: &'static str,
+    label: impl Into<String>,
     pressed: Signal<bool>,
     disabled: Signal<bool>,
     on_press: impl Fn() + 'static,
 ) -> impl IntoView {
+    let label: String = label.into();
     view! {
         control(
             class = "kit-icon-btn",
@@ -92,8 +146,8 @@ pub fn icon_button(
     }
 }
 
-pub fn segmented<T>(
-    options: Vec<(T, String)>,
+pub fn titled_segmented<T>(
+    options: Vec<(T, String, String)>,
     chosen: Signal<T>,
     on_pick: impl Fn(T) + Clone + 'static,
 ) -> impl IntoView
@@ -102,10 +156,10 @@ where
 {
     let items: Vec<AnyView> = options
         .into_iter()
-        .map(|(value, label)| {
+        .map(|(value, label, title)| {
             let on_pick = on_pick.clone();
             let marked = value.clone();
-            AnyView::new(view! {
+            let item = AnyView::new(view! {
                 control(
                     class = "seg__item",
                     tabindex = Focus::Sequential,
@@ -116,7 +170,12 @@ where
                 ) {
                     {label}
                 }
-            })
+            });
+            if title.is_empty() {
+                item
+            } else {
+                tip(move || title.clone(), item)
+            }
         })
         .collect();
     view! { row(class = "seg kit-tabs") {{items}} }
@@ -126,29 +185,62 @@ pub fn footer(children: impl IntoView + 'static) -> impl IntoView {
     view! { row(class = "face__foot kit-foot") {{children}} }
 }
 
-pub fn readout(rows: Vec<(String, AnyView)>) -> impl IntoView {
-    let cells: Vec<AnyView> = rows
-        .into_iter()
-        .map(|(label, value)| {
-            AnyView::new(view! {
-                row(class = "kit-read") {
-                    text(class = "kit-read__name") {{label}}
-                    box(class = "kit-read__value") {{value}}
-                }
-            })
-        })
-        .collect();
-    view! { column(class = "kit-readout") {{cells}} }
+pub struct Read {
+    pub label: String,
+    pub value: AnyView,
+    pub title: Option<String>,
 }
 
-pub fn group(label: impl Into<String>, children: impl IntoView + 'static) -> impl IntoView {
-    let label = label.into();
-    view! {
-        column(class = "kit-group") {
-            text(class = "kit-group__name") {{label}}
-            {children}
+impl Read {
+    #[must_use]
+    pub fn new(label: impl Into<String>, value: AnyView) -> Self {
+        Self {
+            label: label.into(),
+            value,
+            title: None,
         }
     }
+
+    #[must_use]
+    pub fn titled(self, title: impl Into<String>) -> Self {
+        Self {
+            title: Some(title.into()),
+            ..self
+        }
+    }
+}
+
+pub fn readout(rows: Vec<(String, AnyView)>) -> impl IntoView {
+    readout_titled(
+        rows.into_iter()
+            .map(|(label, value)| Read::new(label, value))
+            .collect(),
+    )
+}
+
+pub fn readout_titled(rows: Vec<Read>) -> impl IntoView {
+    let cells: Vec<AnyView> = rows
+        .into_iter()
+        .map(
+            |Read {
+                 label,
+                 value,
+                 title,
+             }| {
+                let cell = AnyView::new(view! {
+                    row(class = "kit-read") {
+                        text(class = "kit-read__name") {{label}}
+                        box(class = "kit-read__value") {{value}}
+                    }
+                });
+                match title {
+                    Some(title) => tip(move || title.clone(), cell),
+                    None => cell,
+                }
+            },
+        )
+        .collect();
+    view! { column(class = "kit-readout") {{cells}} }
 }
 
 pub fn collapsible(
@@ -156,18 +248,34 @@ pub fn collapsible(
     class: &'static str,
     body: impl Fn() -> AnyView + 'static,
 ) -> impl IntoView {
+    collapsible_titled(label, class, None, body)
+}
+
+pub fn collapsible_titled(
+    label: impl Fn() -> String + Send + Sync + 'static,
+    class: &'static str,
+    title: Option<&'static str>,
+    body: impl Fn() -> AnyView + 'static,
+) -> impl IntoView {
     let open = RwSignal::new(false);
+    let trigger = AnyView::new(view! {
+        control(
+            class = class,
+            tabindex = Focus::Sequential,
+            a11y:role = Role::Button,
+            on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation(),
+            on:click:stop = move |_| open.update(|open| *open = !*open)
+        ) {
+            {label}
+        }
+    });
+    let trigger = match title {
+        Some(title) => tip(move || title.to_owned(), trigger),
+        None => trigger,
+    };
     view! {
         column(class = "kit-fold") {
-            control(
-                class = class,
-                tabindex = Focus::Sequential,
-                a11y:role = Role::Button,
-                on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation(),
-                on:click:stop = move |_| open.update(|open| *open = !*open)
-            ) {
-                {label}
-            }
+            {trigger}
             {move || open.get().then(&body)}
         }
     }

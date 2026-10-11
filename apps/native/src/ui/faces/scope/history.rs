@@ -1,3 +1,5 @@
+use sdrmm_wire::SPECTRUM_SIGNAL_MARGIN_DB;
+
 use super::traces::{DbWindow, requantize};
 use super::view::above;
 
@@ -9,7 +11,54 @@ pub struct RowMeta {
     pub span_hz: f64,
     pub db_min: f64,
     pub db_max: f64,
+    pub floor_db: f64,
     pub at_ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RowLevel {
+    pub signal: f32,
+    pub span_db: f32,
+    pub at_ms: f64,
+}
+
+impl RowLevel {
+    pub const PLAIN: Self = Self {
+        signal: 0.0,
+        span_db: 0.0,
+        at_ms: f64::NAN,
+    };
+}
+
+#[must_use]
+pub fn signal_db(floor_db: f64) -> f64 {
+    floor_db + f64::from(SPECTRUM_SIGNAL_MARGIN_DB)
+}
+
+#[must_use]
+pub fn row_level(window: DbWindow, floor_db: f64, at_ms: f64) -> RowLevel {
+    let span_db = window.max - window.min;
+    let signal = signal_db(floor_db);
+    if !above(span_db, 0.0) || !signal.is_finite() {
+        return RowLevel {
+            at_ms,
+            ..RowLevel::PLAIN
+        };
+    }
+    RowLevel {
+        signal: ((signal - window.min) / span_db) as f32,
+        span_db: span_db as f32,
+        at_ms,
+    }
+}
+
+#[must_use]
+pub fn history_levels(history: &SpectrumHistory, held: Option<DbWindow>) -> Vec<RowLevel> {
+    history
+        .meta
+        .iter()
+        .map(|row| row_level(held.unwrap_or(row.window()), row.floor_db, row.at_ms))
+        .collect()
 }
 
 impl RowMeta {
@@ -284,6 +333,7 @@ mod tests {
             span_hz,
             db_min,
             db_max,
+            floor_db: -95.0,
             at_ms: 0.0,
         }
     }
@@ -507,6 +557,47 @@ mod tests {
         }
         assert_eq!(seen.len(), 8);
         assert_eq!(row, 0);
+    }
+
+    #[test]
+    fn a_row_level_places_the_signal_line_inside_its_window() {
+        let window = DbWindow {
+            min: -100.0,
+            max: -20.0,
+        };
+        let level = row_level(window, -95.0, 5.0);
+        assert!((f64::from(level.signal) - 15.0 / 80.0).abs() < 1e-6);
+        assert_eq!((level.span_db, level.at_ms), (80.0, 5.0));
+        let flat = row_level(
+            DbWindow {
+                min: -50.0,
+                max: -50.0,
+            },
+            -95.0,
+            5.0,
+        );
+        assert_eq!((flat.signal, flat.span_db, flat.at_ms), (0.0, 0.0, 5.0));
+        assert_eq!(row_level(window, f64::NEG_INFINITY, 1.0).span_db, 0.0);
+    }
+
+    #[test]
+    fn history_levels_follow_a_held_window_or_each_row_its_own() {
+        let past = history(
+            &[&[0, 0], &[0, 0]],
+            vec![
+                meta(100e6, 2e6, -100.0, -20.0),
+                meta(100e6, 2e6, -120.0, -40.0),
+            ],
+        );
+        let own = history_levels(&past, None);
+        assert_eq!(own.len(), 2);
+        assert!(own[1].signal > own[0].signal);
+        let held = DbWindow {
+            min: -100.0,
+            max: -20.0,
+        };
+        let shared = history_levels(&past, Some(held));
+        assert_eq!(shared[0], shared[1]);
     }
 
     #[test]

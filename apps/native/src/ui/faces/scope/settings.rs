@@ -3,13 +3,21 @@ use zgui::prelude::*;
 use super::{
     ScopeCx,
     actions::{apply_range, toggle_phosphor, toggle_trace},
-    colormap::{COLORMAPS, Colormap},
+    colormap::COLORMAPS,
+    dismiss::dismissable,
+    gradient,
+    overlay::tip,
+    palette::{Palette, PaletteChoice},
     traces::{
         AVERAGE_CHOICES, DB_LIMIT, DEFAULT_AVERAGE, TRACE_MODES, TraceMode, clamp_window,
         with_ceiling, with_floor,
     },
 };
 use crate::ui::widgets::{check, segments, slide};
+
+const AVERAGE_HINT: &str = "Frames blended into the trace and waterfall";
+const BANDS_HINT: &str = "Show band allocations above the trace";
+const LEVELS_HINT: &str = "dBFS range the waterfall colours span";
 
 const SLIDERS_ICON: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 17H5"/><path d="M19 7h-9"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>"#;
 
@@ -37,6 +45,7 @@ pub fn button(cx: ScopeCx) -> impl IntoView {
     };
     view! {
         control(
+            node_ref = cx.gear,
             class = "scope__button scope__gear",
             class:on = differs,
             a11y:role = Role::Button,
@@ -49,16 +58,38 @@ pub fn button(cx: ScopeCx) -> impl IntoView {
     }
 }
 
-fn swatch(cx: ScopeCx, map: Colormap) -> impl IntoView {
+fn swatch(cx: ScopeCx, choice: PaletteChoice) -> impl IntoView {
+    let fill = move || match choice {
+        PaletteChoice::Map(map) => Some(Palette::Map(map).gradient("to right")),
+        PaletteChoice::Custom => Some(Palette::Custom(cx.custom.get()).gradient("to right")),
+    };
     view! {
         control(
             class = "scope__swatch",
-            class:on = move || cx.colormap.get() == map,
+            class:on = move || cx.choice.get() == choice,
             a11y:role = Role::Button,
-            on:click:stop = move |_| cx.choose_colormap(map)
+            a11y:label = choice.key(),
+            on:click:stop = move |_| cx.choose_palette(choice)
         ) {
-            box(class = "scope__ramp", style:background-image = Some(map.gradient("to right")))
-            text(class = "scope__swatch-name") {{map.name()}}
+            box(class = "scope__ramp", style:background-image = fill)
+            text(class = "scope__swatch-name") {{choice.key()}}
+        }
+    }
+}
+
+fn colours(cx: ScopeCx) -> impl IntoView {
+    let swatches: Vec<_> = COLORMAPS
+        .iter()
+        .map(|map| AnyView::new(swatch(cx, PaletteChoice::Map(*map))))
+        .chain([AnyView::new(swatch(cx, PaletteChoice::Custom))])
+        .collect();
+    let editor = move || {
+        (cx.choice.get() == PaletteChoice::Custom).then(|| AnyView::new(gradient::editor(cx)))
+    };
+    view! {
+        column(class = "scope__colours") {
+            box(class = "scope__swatches") {{swatches}}
+            {editor}
         }
     }
 }
@@ -78,7 +109,7 @@ fn trace_chip(cx: ScopeCx, mode: TraceMode) -> impl IntoView {
 }
 
 fn phosphor_chip(cx: ScopeCx) -> impl IntoView {
-    let ramp = move || Some(cx.colormap.get().gradient("to top"));
+    let ramp = move || Some(cx.palette.get().gradient("to top"));
     view! {
         control(
             class = "scope__toggle",
@@ -92,10 +123,27 @@ fn phosphor_chip(cx: ScopeCx) -> impl IntoView {
     }
 }
 
-fn section(name: &'static str, body: impl IntoView + 'static) -> impl IntoView {
+fn section_name(name: &'static str, hint: Option<&'static str>) -> AnyView {
+    match hint {
+        None => AnyView::new(view! { text(class = "scope__section-name") {{name}} }),
+        Some(hint) => tip(
+            hint.to_owned(),
+            "scope__hint",
+            AnyView::new(
+                view! { text(class = "scope__section-name scope__section-name--tip") {{name}} },
+            ),
+        ),
+    }
+}
+
+fn section(
+    name: &'static str,
+    hint: Option<&'static str>,
+    body: impl IntoView + 'static,
+) -> impl IntoView {
     view! {
         column(class = "scope__section") {
-            text(class = "scope__section-name") {{name}}
+            {section_name(name, hint)}
             {body}
         }
     }
@@ -109,7 +157,7 @@ fn levels(cx: ScopeCx) -> impl IntoView {
     view! {
         column(class = "scope__section") {
             row(class = "scope__section-head") {
-                text(class = "scope__section-name") {"Levels"}
+                {section_name("Levels", Some(LEVELS_HINT))}
                 spacer()
                 text(class = "scope__faint") {"auto"}
                 {check(auto, move |on| {
@@ -137,10 +185,8 @@ fn levels(cx: ScopeCx) -> impl IntoView {
 }
 
 pub fn panel(cx: ScopeCx) -> impl IntoView {
-    let swatches: Vec<_> = COLORMAPS
-        .iter()
-        .map(|map| AnyView::new(swatch(cx, *map)))
-        .collect();
+    let root = NodeRef::new();
+    dismissable(root, Some(cx.gear), move || cx.settings_open.set(false));
     let choices: Vec<(u32, &'static str)> = AVERAGE_CHOICES
         .iter()
         .map(|frames| {
@@ -168,15 +214,19 @@ pub fn panel(cx: ScopeCx) -> impl IntoView {
     });
     view! {
         column(
+            node_ref = root,
             class = "scope__panel",
+            tabindex = Focus::Programmatic,
+            a11y:role = Role::Dialog,
+            a11y:label = "Scope settings",
             on:pointer_down:stop = move |_| {},
             on:wheel = hold_wheel
         ) {
-            {section("Colours", view! { box(class = "scope__swatches") {{swatches}} })}
-            {section("Average", average)}
-            {section("Traces", view! { box(class = "scope__toggles") { {chips} {phosphor_chip(cx)} } })}
+            {section("Colours", None, colours(cx))}
+            {section("Average", Some(AVERAGE_HINT), average)}
+            {section("Traces", None, view! { box(class = "scope__toggles") { {chips} {phosphor_chip(cx)} } })}
             row(class = "scope__section scope__section-head") {
-                text(class = "scope__section-name") {"Band plan"}
+                {section_name("Band plan", Some(BANDS_HINT))}
                 spacer() {}
                 {band_toggle}
             }

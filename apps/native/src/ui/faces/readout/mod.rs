@@ -1,7 +1,11 @@
+mod airtime;
+mod fleet;
 mod pictures;
+mod table;
 mod targets;
 mod text;
 mod views;
+mod weather;
 
 use std::sync::Arc;
 
@@ -35,7 +39,7 @@ impl Wired {
     }
 }
 
-const VIEWED: [&str; 14] = [
+const VIEWED: [&str; 24] = [
     "rds",
     "adsb",
     "ais",
@@ -50,6 +54,16 @@ const VIEWED: [&str; 14] = [
     "sstv",
     "vor",
     "dect",
+    "aprs",
+    "apt",
+    "lrpt",
+    "wefax",
+    "radiosonde",
+    "lora",
+    "remote_id",
+    "ble",
+    "wifi_occupancy",
+    "ism_survey",
 ];
 
 #[must_use]

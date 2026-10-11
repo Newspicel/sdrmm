@@ -1,11 +1,14 @@
+use std::borrow::Cow;
+
 use sdrmm_wire::{
     Transmission,
     channel::{IlsComponent, SelcallSystem},
     decode::{
         AcarsMessage, AdsbMessage, AisMessage, AprsPacket, BroadcastData, BroadcastStatus,
-        DataLinkMessage, DecoderEvent, DectFrame, DectSide, DvFrame, DvFrameKind, ErmesMessage,
-        FlexMessage, GnssFrame, IdentReport, NavtexMessage, PocsagMessage, RadioClockFrame,
-        RdsUpdate, VorReading, WsjtMessage, WsprSpot,
+        DataLinkMessage, DecoderEvent, DectFrame, DectSide, DvFrame, DvFrameKind, EotBattery,
+        EotMessage, EotReport, ErmesMessage, FlexMessage, GnssFrame, HotCommand, HotRequest,
+        IdentReport, NavtexMessage, PocsagMessage, RadioClockFrame, RdsUpdate, VorReading,
+        WsjtMessage, WsprSpot,
     },
     rest::VoiceCall,
     units::hertz,
@@ -19,7 +22,13 @@ use crate::decoders::{
     },
 };
 
-pub type Field = (&'static str, String);
+mod airtime;
+mod mesh;
+mod weather;
+
+pub use airtime::band_label;
+
+pub type Field = (Cow<'static, str>, String);
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EventDetail {
@@ -27,16 +36,26 @@ pub struct EventDetail {
     pub body: Option<String>,
 }
 
-type Row = (&'static str, Option<String>);
+type Row = (Cow<'static, str>, Option<String>);
 
-fn detail(rows: impl IntoIterator<Item = Row>, body: Option<String>) -> EventDetail {
+fn detail<L: Into<Cow<'static, str>>>(
+    rows: impl IntoIterator<Item = (L, Option<String>)>,
+    body: Option<String>,
+) -> EventDetail {
     EventDetail {
         fields: rows
             .into_iter()
-            .filter_map(|(label, value)| value.filter(|v| !v.is_empty()).map(|v| (label, v)))
+            .filter_map(|(label, value)| value.filter(|v| !v.is_empty()).map(|v| (label.into(), v)))
             .collect(),
         body: body.filter(|text| !text.is_empty()),
     }
+}
+
+fn owned(fields: Vec<(&'static str, String)>) -> Vec<Field> {
+    fields
+        .into_iter()
+        .map(|(label, value)| (Cow::Borrowed(label), value))
+        .collect()
 }
 
 fn some(text: impl Into<String>) -> Option<String> {
@@ -55,16 +74,16 @@ fn repaired(count: u32, unit: &str) -> Option<String> {
 pub fn event_detail(event: &DecoderEvent) -> EventDetail {
     match event {
         DecoderEvent::Transmission(t) => transmission(t),
-        DecoderEvent::Eot(_)
-        | DecoderEvent::Apt(_)
-        | DecoderEvent::Lrpt(_)
-        | DecoderEvent::Wefax(_)
-        | DecoderEvent::Radiosonde(_)
-        | DecoderEvent::Lora(_)
-        | DecoderEvent::RemoteId(_)
-        | DecoderEvent::Ble(_)
-        | DecoderEvent::WifiOccupancy(_)
-        | DecoderEvent::IsmSurvey(_) => detail([], some(event.summary())),
+        DecoderEvent::Eot(m) => eot(m),
+        DecoderEvent::Apt(p) => weather::apt(p),
+        DecoderEvent::Lrpt(p) => weather::lrpt(p),
+        DecoderEvent::Wefax(p) => weather::wefax(p),
+        DecoderEvent::Radiosonde(f) => weather::radiosonde(f),
+        DecoderEvent::Lora(f) => mesh::lora(f),
+        DecoderEvent::RemoteId(f) => mesh::remote_id(f),
+        DecoderEvent::Ble(a) => mesh::ble(a),
+        DecoderEvent::WifiOccupancy(r) => airtime::wifi_occupancy(r),
+        DecoderEvent::IsmSurvey(r) => airtime::ism_survey(r),
         DecoderEvent::Rds(r) => rds(r),
         DecoderEvent::Pocsag(p) => pocsag(p),
         DecoderEvent::Flex(p) => flex(p),
@@ -72,7 +91,7 @@ pub fn event_detail(event: &DecoderEvent) -> EventDetail {
         DecoderEvent::Adsb(a) => adsb(a),
         DecoderEvent::Ais(m) => ais(m),
         DecoderEvent::Aprs(p) => aprs(p),
-        DecoderEvent::Rtty(t) => detail([], some(&t.text)),
+        DecoderEvent::Rtty(t) => detail::<&str>([], some(&t.text)),
         DecoderEvent::Morse(m) => detail(
             [("Speed", some(format!("{:.0} WPM", m.wpm)))],
             some(&m.text),
@@ -390,21 +409,83 @@ fn ais(m: &AisMessage) -> EventDetail {
 }
 
 fn aprs(p: &AprsPacket) -> EventDetail {
-    detail(
-        [
-            ("Source", some(&p.source)),
-            ("Destination", some(&p.destination)),
-            ("Path", some(p.path.join(" → "))),
-            ("Symbol", p.symbol.clone()),
-            ("Position", position(p.lat, p.lon)),
-            ("Course", degrees(p.course_deg)),
-            ("Speed", knots(p.speed_kt)),
-            ("Altitude", feet(p.altitude_ft)),
-            ("Mic-E message", p.mic_e_message.clone()),
-            ("Comment", trimmed(p.comment.as_ref())),
+    let rows: Vec<(&'static str, Option<String>)> = vec![
+        ("Source", some(&p.source)),
+        ("Destination", some(&p.destination)),
+        ("Path", some(p.path.join(" → "))),
+        ("Symbol", p.symbol.clone()),
+        ("Position", position(p.lat, p.lon)),
+        ("Course", degrees(p.course_deg)),
+        ("Speed", knots(p.speed_kt)),
+        ("Altitude", feet(p.altitude_ft)),
+        ("Mic-E message", p.mic_e_message.clone()),
+        ("Comment", trimmed(p.comment.as_ref())),
+    ];
+    let weather = p
+        .weather
+        .as_ref()
+        .map(weather::aprs_rows)
+        .unwrap_or_default();
+    detail(rows.into_iter().chain(weather), some(&p.tnc2))
+}
+
+fn eot(m: &EotMessage) -> EventDetail {
+    let fixed = ("Repaired", repaired(m.errors_corrected, ""));
+    let rejected = ("Rejected", repaired(m.rejected, ""));
+    let address = ("Address", some(m.unit_address.to_string()));
+    let rows: Vec<(&'static str, Option<String>)> = match &m.report {
+        EotReport::Head(head) => vec![
+            ("Unit", some("Head (HOT)")),
+            address,
+            ("Command", some(hot_command(head))),
+            ("Copies", some(format!("{}/3", head.copies))),
+            fixed,
+            rejected,
         ],
-        some(&p.tnc2),
-    )
+        EotReport::Rear(rear) => vec![
+            ("Unit", some("Rear (EOT)")),
+            address,
+            ("Brake pipe", some(format!("{} psig", rear.pressure_psig))),
+            ("Motion", flag(Some(rear.motion))),
+            (
+                "Marker light",
+                some(if rear.marker_light { "on" } else { "off" }),
+            ),
+            (
+                "Marker battery",
+                some(if rear.marker_battery_low { "low" } else { "ok" }),
+            ),
+            ("Battery", some(eot_battery(rear.battery))),
+            ("Charge", some(format!("{}%", rear.battery_charge_pct))),
+            (
+                "Valve circuit",
+                some(if rear.valve_ok { "ok" } else { "fail" }),
+            ),
+            ("Turbine", flag(Some(rear.turbine))),
+            ("Arming", some(serde_name(&rear.arming))),
+            ("Message type", some(rear.message_type.to_string())),
+            fixed,
+            rejected,
+        ],
+    };
+    detail(rows, None)
+}
+
+fn hot_command(head: &HotRequest) -> String {
+    match head.command {
+        HotCommand::StatusRequest => "status request".to_owned(),
+        HotCommand::Emergency => "EMERGENCY".to_owned(),
+        HotCommand::Other => format!("command 0x{:02x}", head.code),
+    }
+}
+
+const fn eot_battery(battery: EotBattery) -> &'static str {
+    match battery {
+        EotBattery::NotMonitored => "not monitored",
+        EotBattery::VeryLow => "very low",
+        EotBattery::Low => "low",
+        EotBattery::Ok => "ok",
+    }
 }
 
 fn wsjt(m: &WsjtMessage) -> EventDetail {
@@ -508,24 +589,14 @@ fn acars(a: &AcarsMessage) -> EventDetail {
     )
 }
 
-#[must_use]
-pub fn timings(us: &[u32]) -> Option<String> {
-    let pairs: Vec<String> = us
-        .chunks(2)
-        .map(|pair| match pair {
-            [pulse, gap] => format!("{pulse}/{gap}"),
-            [pulse] => pulse.to_string(),
-            _ => String::new(),
-        })
-        .collect();
-    (!pairs.is_empty()).then(|| pairs.join("  "))
-}
-
 fn ident(r: &IdentReport) -> EventDetail {
     let Some(loudest) = r.loudest() else {
         let mut fields = vec![("Modulation", "no signal".to_owned())];
         fields.extend(ident_overview(r));
-        return EventDetail { fields, body: None };
+        return EventDetail {
+            fields: owned(fields),
+            body: None,
+        };
     };
     let mut fields = vec![
         ("Signals", r.signals.len().to_string()),
@@ -562,7 +633,7 @@ fn ident(r: &IdentReport) -> EventDetail {
         .collect::<Vec<_>>()
         .join("\n\n");
     EventDetail {
-        fields,
+        fields: owned(fields),
         body: Some(body),
     }
 }
@@ -680,11 +751,11 @@ fn broadcast_data(data: &BroadcastData) -> EventDetail {
     let body = (data.media_type == "text/plain")
         .then(|| String::from_utf8_lossy(&data.bytes).into_owned());
     EventDetail {
-        fields: vec![
+        fields: owned(vec![
             ("Name", data.name.clone()),
             ("Type", data.media_type.clone()),
             ("Size", format!("{} bytes", data.bytes.len())),
-        ],
+        ]),
         body,
     }
 }

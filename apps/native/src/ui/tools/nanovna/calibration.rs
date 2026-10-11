@@ -1,11 +1,12 @@
 use sdrmm_wire::tools::{NanoVnaCalStep, NanoVnaCalibration, NanoVnaStandard, NanoVnaSweepState};
-use zgui::prelude::*;
+use zgui::{prelude::*, vocab::SharedString};
 
 use super::rf::{calibrate_request, calibration_of};
 use crate::{
     store::Store,
     ui::{
-        tools::kit::{Query, alert, button, chip, format_hz, labelled, run_tool},
+        kit_channel::tip_text,
+        tools::kit::{Query, Tone, alert, button, chip, format_hz, labelled, run_tool, toned_chip},
         widgets::pick,
     },
 };
@@ -77,12 +78,44 @@ pub fn standard_name(standard: NanoVnaStandard) -> &'static str {
     }
 }
 
+#[must_use]
+pub fn correction_tone(applied: bool, off: Tone) -> Tone {
+    if applied { Tone::Ok } else { off }
+}
+
+pub fn correction_chip(applied: bool, off: Tone) -> AnyView {
+    toned_chip(
+        "correction",
+        if applied { "on" } else { "off" },
+        correction_tone(applied, off),
+    )
+}
+
+#[must_use]
+pub fn measured_label(name: &str, done: bool) -> String {
+    if done {
+        format!("{name} measured")
+    } else {
+        format!("{name} not measured")
+    }
+}
+
+#[must_use]
+pub fn apply_hint(ready: bool) -> &'static str {
+    if ready {
+        "Compute the error terms and switch correction on"
+    } else {
+        "Measure open, short and load first"
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Calibrate {
     pub store: Store,
     pub port: Memo<String>,
     pub range: Memo<NanoVnaSweepState>,
-    pub state: RwSignal<Option<NanoVnaCalibration>>,
+    pub state: Memo<Option<NanoVnaCalibration>>,
+    pub measured: RwSignal<Option<NanoVnaCalibration>>,
 }
 
 #[derive(Clone, Copy)]
@@ -98,7 +131,8 @@ impl Runner {
             store,
             port,
             range,
-            state,
+            measured,
+            ..
         } = self.calibrate;
         let range = matches!(step, NanoVnaCalStep::Reset).then(|| range.get_untracked());
         let request = calibrate_request(&port.get_untracked(), step, range);
@@ -109,7 +143,7 @@ impl Runner {
             pending.try_set(None);
             let response = response?;
             if let Some(next) = calibration_of(Some(&response)) {
-                state.try_set(Some(next.clone()));
+                measured.try_set(Some(next.clone()));
             }
             Ok(())
         });
@@ -158,6 +192,7 @@ pub fn panel(calibrate: Calibrate) -> impl IntoView {
         )
     };
     let applied = move || state.with(|state| state.as_ref().is_some_and(|state| state.applied));
+    let ready = move || state.with(|state| reflection_done(state.as_ref()));
     let slots: Vec<(u8, String)> = (0..=6).map(|slot| (slot, format!("Slot {slot}"))).collect();
     view! {
         column(class = "tool-stack") {
@@ -168,7 +203,7 @@ pub fn panel(calibrate: Calibrate) -> impl IntoView {
             {steps("Reflection (CH0)", &ONE_PORT, runner)}
             {steps("Transmission (CH0 \u{2192} CH1), optional", &TWO_PORT, runner)}
             row(class = "tool-bar") {
-                {button("btn primary", runner.label("finish", "Apply calibration", "Applying\u{2026}"), move || runner.busy()() || !state.with(|state| reflection_done(state.as_ref())), move || runner.run("finish", NanoVnaCalStep::Finish))}
+                {tip_text(move || apply_hint(ready()).to_owned(), AnyView::new(button("btn primary", runner.label("finish", "Apply calibration", "Applying\u{2026}"), move || runner.busy()() || !ready(), move || runner.run("finish", NanoVnaCalStep::Finish))))}
                 {button("btn", move || if applied() { "Switch correction off".to_owned() } else { "Switch correction on".to_owned() }, runner.busy(), move || {
                     let step = if applied() { NanoVnaCalStep::Disable } else { NanoVnaCalStep::Enable };
                     runner.run("toggle", step);
@@ -195,10 +230,11 @@ fn steps(title: &'static str, entries: &'static [Step], runner: Runner) -> impl 
             let done = move || state.with(|state| state.as_ref().is_some_and(|state| state.standards.contains(&standard)));
             let step = entry.step.clone();
             let key = entry.key;
+            let name = entry.label;
             AnyView::new(view! {
                 row(class = "vna-step") {
                     {button("btn", runner.label(key, entry.label, "Measuring\u{2026}"), runner.busy(), move || runner.run(key, step.clone()))}
-                    text(class = "tool-mono", class:ok = done) {{move || if done() { "\u{2713}" } else { "\u{25cb}" }}}
+                    text(class = "tool-mono", class:ok = done, a11y:label = move || -> SharedString { measured_label(name, done()).into() }) {{move || if done() { "\u{2713}" } else { "\u{25cb}" }}}
                     text(class = "tool-dim") {{entry.hint}}
                 }
             })
@@ -230,7 +266,7 @@ fn status(state: &NanoVnaCalibration) -> AnyView {
     };
     AnyView::new(view! {
         row(class = "tool-chips") {
-            {chip("correction", if state.applied { "on" } else { "off" })}
+            {correction_chip(state.applied, Tone::Dim)}
             {chip("standards", standards)}
             {chip("error terms", terms)}
         }
@@ -263,6 +299,28 @@ mod tests {
             NanoVnaStandard::Short,
             NanoVnaStandard::Open,
         ]))));
+    }
+
+    #[test]
+    fn correction_off_is_an_alarm_on_a_sweep_and_quiet_on_the_bench() {
+        assert_eq!(correction_tone(true, Tone::Danger), Tone::Ok);
+        assert_eq!(correction_tone(false, Tone::Danger), Tone::Danger);
+        assert_eq!(correction_tone(false, Tone::Dim), Tone::Dim);
+    }
+
+    #[test]
+    fn a_step_says_whether_it_was_measured() {
+        assert_eq!(measured_label("Open", true), "Open measured");
+        assert_eq!(measured_label("Load", false), "Load not measured");
+    }
+
+    #[test]
+    fn apply_explains_what_it_still_needs() {
+        assert_eq!(apply_hint(false), "Measure open, short and load first");
+        assert_eq!(
+            apply_hint(true),
+            "Compute the error terms and switch correction on"
+        );
     }
 
     #[test]

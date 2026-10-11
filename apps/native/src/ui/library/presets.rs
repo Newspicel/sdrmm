@@ -7,10 +7,11 @@ use zgui::prelude::*;
 use crate::{
     store::Store,
     ui::{
-        kit_shell::{
-            Entry, Row, button, entry, gated_button, glyph, hint, list, list_row, row_action,
+        kit_shell::{Entry, entry, glyph, hint, list},
+        library::{
+            load, on_scope, reload,
+            rows::{LibRow, Pending, act, icon_act, lib_row},
         },
-        library::{load, on_scope, reload},
     },
 };
 
@@ -21,12 +22,15 @@ pub fn panel(store: Store) -> impl IntoView {
     let again = move || reload(store, PATH.to_owned(), presets);
     on_scope(store, StateScope::Presets, again);
     let name = RwSignal::new_local(String::new());
+    let saving = Pending::new();
+    let applying = Pending::new();
+    let deleting = Pending::new();
     let save = move || {
         let typed = name.get_untracked().trim().to_owned();
         if typed.is_empty() {
             return;
         }
-        zgui::task::spawn_local(async move {
+        saving.run(async move {
             let body = CreatePresetRequest { name: typed };
             match store
                 .api()
@@ -39,7 +43,7 @@ pub fn panel(store: Store) -> impl IntoView {
             again();
         });
     };
-    let enabled = Signal::derive_local(move || !name.get().trim().is_empty());
+    let enabled = Signal::derive_local(move || !saving.busy() && !name.get().trim().is_empty());
     let listed = move || {
         presets
             .get()
@@ -50,18 +54,21 @@ pub fn panel(store: Store) -> impl IntoView {
     let rows = move || {
         listed()
             .into_iter()
-            .map(|preset| AnyView::new(preset_row(store, preset, again)))
+            .map(|preset| AnyView::new(preset_row(store, preset, (applying, deleting), again)))
             .collect::<Vec<_>>()
     };
-    let empty = move || {
-        matches!(presets.get(), Some(Ok(ref found)) if found.is_empty())
-            .then(|| hint("A preset saves every open radio as it is now."))
+    let empty = move || match presets.get() {
+        Some(Ok(found)) if found.is_empty() => {
+            Some(hint("A preset saves every open radio as it is now."))
+        }
+        Some(Err(_)) => Some(hint("Could not load the presets.")),
+        _ => None,
     };
     view! {
         column(class = "sk-panel") {
             row(class = "sk-toolbar") {
                 {entry(Entry::new(name, "Name this bench"), save, || {})}
-                {gated_button("Save", "", enabled, save)}
+                {act("Save", "", enabled, None, save)}
             }
             {empty}
             {move || (!listed().is_empty()).then(|| list(None, rows))}
@@ -72,6 +79,7 @@ pub fn panel(store: Store) -> impl IntoView {
 fn preset_row(
     store: Store,
     preset: PresetInfo,
+    (applying, deleting): (Pending, Pending),
     again: impl Fn() + Copy + 'static,
 ) -> impl IntoView {
     let id = preset.id;
@@ -81,7 +89,7 @@ fn preset_row(
         if preset.devices == 1 { "" } else { "s" }
     );
     let apply = move || {
-        zgui::task::spawn_local(async move {
+        applying.run(async move {
             if let Err(error) = store
                 .api()
                 .post_empty::<serde::de::IgnoredAny>(&format!("{PATH}/{id}/apply"))
@@ -93,7 +101,7 @@ fn preset_row(
         });
     };
     let remove = move || {
-        zgui::task::spawn_local(async move {
+        deleting.run(async move {
             if let Err(error) = store.api().delete(&format!("{PATH}/{id}")).await {
                 store.fail("Cannot delete the preset", &error);
             }
@@ -101,16 +109,16 @@ fn preset_row(
         });
     };
     let label = format!("Delete {}", preset.name);
-    list_row(
-        Row {
+    lib_row(
+        LibRow {
             primary: preset.name,
             secondary: Some(radios),
+            ..LibRow::default()
         },
         None,
-        Signal::stored_local(true),
         AnyView::new(view! {
-            {button("Apply", "sm", apply)}
-            {row_action(glyph::TRASH, label, true, remove)}
+            {act("Apply", "sm", applying.idle(), None, apply)}
+            {icon_act(glyph::TRASH, label, true, deleting.idle(), remove)}
         }),
         AnyView::new(()),
     )

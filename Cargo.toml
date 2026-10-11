@@ -135,6 +135,9 @@ zgui = { git = "https://github.com/zortax/zgui" }
 zgui-ui = { git = "https://github.com/zortax/zgui" }
 zgui-tokio = { git = "https://github.com/zortax/zgui" }
 zgui-image = { git = "https://github.com/zortax/zgui" }
+zgui-platform-headless = { git = "https://github.com/zortax/zgui" }
+zgui-render-wgpu = { git = "https://github.com/zortax/zgui" }
+zgui-render-vector-vello = { git = "https://github.com/zortax/zgui" }
 zgui-flow = { git = "https://github.com/zortax/zgui-flow", rev = "8e98f35efe5017431018e0a5091f9415f61190be", default-features = false }
 rfd = "0.17.2"
 open = "5.4.4"

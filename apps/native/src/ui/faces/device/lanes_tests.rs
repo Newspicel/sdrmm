@@ -89,20 +89,6 @@ fn lanes_are_drawn_only_when_every_stream_tunes_on_its_own() {
 }
 
 #[test]
-fn lane_controls_cover_only_what_a_lane_sets_on_its_own() {
-    let gain = json!([{ "kind": "lna", "name": "LNA", "range": { "min": 0, "max": 40 } }]);
-    let per_lane = json!({ "tuning": true, "gain": true });
-    assert!(has_lane_controls(&caps(
-        json!({ "per_stream": per_lane, "gains": gain })
-    )));
-    assert!(!has_lane_controls(&caps(json!({ "per_stream": per_lane }))));
-    assert!(!has_lane_controls(&caps(json!({ "gains": gain }))));
-    assert!(has_lane_controls(&caps(
-        json!({ "per_stream": { "antenna": true }, "antennas": ["A", "B"] })
-    )));
-}
-
-#[test]
 fn the_bond_between_lanes_is_named_and_independent_lanes_have_none() {
     assert_eq!(bond_said(Coherence::TimeSync), Some("Shared clock"));
     assert_eq!(bond_said(Coherence::PhaseCoherent), Some("Phase coherent"));
@@ -407,24 +393,18 @@ fn the_agc_tip_reads_back_the_gain_and_advises_without_forcing() {
 }
 
 #[test]
-fn coherent_lanes_are_those_an_array_holds() {
-    let graph: PatchGraph = serde_json::from_value(json!({
-        "nodes": [
-            { "id": "kraken", "kind": "device", "data": {}, "position": { "x": 0, "y": 0 } },
-            { "id": "bench", "kind": "array", "data": {}, "position": { "x": 0, "y": 0 } },
-            { "id": "fm", "kind": "channel", "data": { "channel_type": "nfm" }, "position": { "x": 0, "y": 0 } }
-        ],
-        "edges": [
-            { "from": { "node": "kraken", "port": "iq2" }, "to": { "node": "bench", "port": "lane" } },
-            { "from": { "node": "kraken", "port": "iq4" }, "to": { "node": "bench", "port": "lane2" } },
-            { "from": { "node": "kraken", "port": "iq" }, "to": { "node": "fm", "port": "iq" } }
-        ]
-    }))
-    .expect("graph");
-    assert_eq!(
-        coherent_lanes(&graph, "kraken")
-            .into_iter()
-            .collect::<Vec<_>>(),
-        vec![1, 3]
-    );
+fn the_settled_gain_reads_from_the_one_stage_the_agc_drives() {
+    let driven = set(json!({
+        "capabilities": caps(json!({
+            "agc": { "kind": "switch" },
+            "gains": [
+                { "name": "LNA", "kind": "lna", "range": { "min": 0, "max": 40 }, "agc": { "kind": "never" } },
+                { "name": "VGA", "kind": "vga", "range": { "min": 0, "max": 62 } }
+            ]
+        })),
+        "settings": { "agc": { "on": true } },
+        "agc_gains": [{ "stream": 0, "value_db": 30.0 }]
+    }));
+    assert_eq!(agc_gain_db(&driven, 0), Some(30.0));
+    assert_eq!(agc_tip(&driven, 0, false), "AGC on at 30.0 dB");
 }

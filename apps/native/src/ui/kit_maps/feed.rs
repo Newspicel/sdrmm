@@ -15,7 +15,7 @@ use sdrmm_wire::{
 use zgui::prelude::*;
 use zgui::reactive::ArcRwSignal;
 
-use super::{millis_of, now_ms};
+use super::{merge, millis_of, now_ms, tracks::Trail};
 use crate::{store::Store, ui::map::Geo};
 
 pub const POSITION_HISTORY: usize = 5_000;
@@ -23,7 +23,7 @@ pub const STATION_CAPACITY: usize = 1_000;
 pub const BEARING_HISTORY: usize = 64;
 pub const BEARING_MAX_AGE_MS: i64 = 300_000;
 pub const FIX_TRAIL_POINTS: usize = 16;
-pub const MAP_KINDS: [&str; 3] = ["adsb", "ais", "aprs"];
+pub const MAP_KINDS: [&str; 6] = ["adsb", "ais", "aprs", "radiosonde", "lora", "remote_id"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sample {
@@ -69,12 +69,30 @@ pub fn station_id(event: &DecoderEvent) -> Option<String> {
         DecoderEvent::Adsb(message) => Some(message.icao.clone()),
         DecoderEvent::Ais(message) => Some(message.mmsi.to_string()),
         DecoderEvent::Aprs(packet) => Some(packet.source.clone()),
+        DecoderEvent::Radiosonde(frame) => Some(frame.serial.clone()),
+        DecoderEvent::Lora(frame) => frame.station(),
+        DecoderEvent::RemoteId(frame) => Some(frame.station()),
         _ => None,
     }
 }
 
 #[must_use]
+pub fn event_position(event: &DecoderEvent) -> Option<Geo> {
+    let (lat, lon) = event.position()?;
+    Geo::checked(Some(lat), Some(lon))
+}
+
+#[must_use]
 pub fn merge_forward(previous: &DecoderEvent, next: &DecoderEvent) -> DecoderEvent {
+    match (previous, next) {
+        (DecoderEvent::Lora(held), DecoderEvent::Lora(fresh)) => {
+            return DecoderEvent::Lora(merge::lora(held, fresh));
+        }
+        (DecoderEvent::RemoteId(held), DecoderEvent::RemoteId(fresh)) => {
+            return DecoderEvent::RemoteId(merge::remote_id(held, fresh));
+        }
+        _ => {}
+    }
     let (Ok(mut held), Ok(fresh)) = (serde_json::to_value(previous), serde_json::to_value(next))
     else {
         return next.clone();
@@ -169,6 +187,7 @@ pub fn advance_trails(held: Option<&FixTrails>, update: &RadarUpdate) -> FixTrai
 pub struct Held {
     pub tracks: HashMap<String, Track>,
     pub stations: HashMap<&'static str, HashMap<String, Station>>,
+    pub trails: HashMap<&'static str, HashMap<String, Trail>>,
     pub bearings: HashMap<String, Vec<BearingSample>>,
     pub fix_trails: HashMap<String, FixTrails>,
     pub satellites: HashMap<String, SatelliteStatus>,
@@ -203,6 +222,15 @@ impl Held {
             return false;
         };
         let kind = record.event.kind();
+        let last_seen = millis_of(&record.at).unwrap_or_else(now_ms);
+        if let Some(at) = event_position(&record.event) {
+            self.trails
+                .entry(kind)
+                .or_default()
+                .entry(id.clone())
+                .or_default()
+                .extend(at, last_seen);
+        }
         let stations = self.stations.entry(kind).or_default();
         let previous = stations.get(&id);
         let station = Station {
@@ -212,7 +240,7 @@ impl Held {
                 || record.event.clone(),
                 |held| merge_forward(&held.event, &record.event),
             ),
-            last_seen: millis_of(&record.at).unwrap_or_else(now_ms),
+            last_seen,
             freq_hz: record.freq_hz,
             frames: previous.map_or(0, |held| held.frames) + 1,
         };
@@ -227,12 +255,27 @@ impl Held {
                 stations.remove(&id);
             }
         }
+        self.forget_trails(kind);
         true
+    }
+
+    fn forget_trails(&mut self, kind: &'static str) {
+        let (Some(trails), Some(stations)) = (self.trails.get_mut(kind), self.stations.get(kind))
+        else {
+            return;
+        };
+        if trails.len() > stations.len() {
+            trails.retain(|id, _| stations.contains_key(id));
+        }
     }
 
     pub fn age_out(&mut self, max_age_ms: i64, now: i64) {
         for stations in self.stations.values_mut() {
             stations.retain(|_, station| station.last_seen >= now - max_age_ms);
+        }
+        let kinds: Vec<&'static str> = self.trails.keys().copied().collect();
+        for kind in kinds {
+            self.forget_trails(kind);
         }
     }
 
@@ -607,5 +650,27 @@ mod tests {
         let long = long.unwrap_or_default();
         assert_eq!(long[&1].len(), FIX_TRAIL_POINTS);
         assert_eq!(long[&1][0], Geo::new(4.0, 7.0));
+    }
+
+    #[test]
+    fn a_moving_station_leaves_a_trail_that_ages_out_with_it() {
+        let mut held = Held::default();
+        let at = |lat: f64, ms: i64| {
+            adsb(
+                AdsbMessage {
+                    icao: "abc".to_owned(),
+                    lat: Some(lat),
+                    lon: Some(8.0),
+                    ..AdsbMessage::default()
+                },
+                ms,
+            )
+        };
+        held.decoded(&at(50.0, 1_000));
+        held.decoded(&at(50.1, 2_000));
+        held.decoded(&at(50.3, 3_000));
+        assert_eq!(held.trails["adsb"]["abc"].points.len(), 2);
+        held.age_out(500, 10_000);
+        assert!(held.trails["adsb"].is_empty());
     }
 }

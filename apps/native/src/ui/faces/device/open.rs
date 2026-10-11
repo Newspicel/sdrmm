@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use sdrmm_wire::{
     device::DeviceInfo,
     doctor::{CheckStatus, DoctorReport},
@@ -7,17 +9,24 @@ use zgui::prelude::*;
 use super::{
     actions::Busy,
     devices::{
-        NETWORK_BACKENDS, SourceTab, claimed_devices, group_devices, network_device_id,
-        show_synthetic, source_tabs, unclaimed_devices, visible_devices,
+        NETWORK_BACKENDS, SourceTab, address_title, claimed_devices, device_hint, group_devices,
+        network_device_id, show_synthetic, source_tabs, unclaimed_devices, visible_devices,
     },
+    saved::{Shelf, save, saved_radios, shelf},
 };
 use crate::{
     store::Store,
     ui::{
-        kit_sources::{Tone, button, collapsible, draft_field, segmented},
+        kit_sources::{
+            Tone, button, collapsible_titled, draft_field, icons, tip, titled_icon_button,
+            titled_segmented,
+        },
         widgets::pick,
     },
 };
+
+pub const DOCTOR_TIP: &str =
+    "Run the checks behind sdrmm --doctor: drivers, permissions, and what the USB bus reports";
 
 pub struct Choices {
     pub on_choose: Box<dyn Fn(DeviceInfo)>,
@@ -35,14 +44,15 @@ pub fn device_choices(store: Store, node: String, busy: Busy, choices: Choices) 
     let tabs = Memo::new(move |_| source_tabs(found.with(|(_, (_, synthetic))| synthetic.len())));
     let shown = Signal::derive(move || {
         let wanted = tab.get();
-        if tabs.with(|tabs| tabs.iter().any(|(value, _)| *value == wanted)) {
+        if tabs.with(|tabs| tabs.iter().any(|(value, _, _)| *value == wanted)) {
             wanted
         } else {
             SourceTab::Radios
         }
     });
-    let choose = std::rc::Rc::new(choices.on_choose);
-    let network = std::rc::Rc::new(choices.on_network);
+    let choose = Rc::new(choices.on_choose);
+    let network: Rc<dyn Fn(String)> = Rc::new(choices.on_network);
+    let saved = shelf(store);
     let body = move || match shown.get() {
         SourceTab::Radios => {
             let choose = choose.clone();
@@ -50,14 +60,16 @@ pub fn device_choices(store: Store, node: String, busy: Busy, choices: Choices) 
                 column(class = "kit-list-wrap") {
                     {radio_list(Signal::derive(move || found.get().1.0), busy, choose)}
                     {move || radios_said(store, found.get().0, found.with(|(_, (radios, _))| radios.is_empty()))}
-                    {collapsible(|| "Check hardware".to_owned(), "kit-fold__link", move || AnyView::new(doctor(store)))}
+                    {collapsible_titled(|| "Check hardware".to_owned(), "kit-fold__link", Some(DOCTOR_TIP), move || AnyView::new(doctor(store)))}
                 }
             })
         }
-        SourceTab::Network => {
-            let network = network.clone();
-            AnyView::new(network_form(busy, move |id| network(id)))
-        }
+        SourceTab::Network => AnyView::new(view! {
+            column(class = "kit-choices") {
+                {saved_radios(store, saved, busy, network.clone())}
+                {network_form(store, saved, busy, network.clone())}
+            }
+        }),
         SourceTab::Virtual => AnyView::new(radio_list(
             Signal::derive(move || found.get().1.1),
             busy,
@@ -66,10 +78,25 @@ pub fn device_choices(store: Store, node: String, busy: Busy, choices: Choices) 
     };
     view! {
         column(class = "kit-choices") {
-            {move || segmented(tabs.get(), shown, move |next| tab.set(next))}
+            {move || titled_segmented(tabs.get(), shown, move |next| tab.set(next))}
             {move || busy.error.get().map(|error| AnyView::new(view! { text(class = "kit-alert") {{error}} }))}
             {body}
         }
+    }
+}
+
+#[must_use]
+pub fn empty_said(elsewhere: usize) -> (&'static str, &'static str) {
+    if elsewhere > 0 {
+        (
+            "Every radio found is already open on another node.",
+            "Plug another radio in, or move that node's wires here",
+        )
+    } else {
+        (
+            "No radios found.",
+            "Plug a radio in, or pick a recording or a network radio above",
+        )
     }
 }
 
@@ -80,19 +107,18 @@ fn radios_said(store: Store, elsewhere: usize, empty: bool) -> Option<AnyView> {
         ));
     }
     empty.then(|| {
-        let said = if elsewhere > 0 {
-            "Every radio found is already open on another node."
-        } else {
-            "No radios found."
-        };
-        AnyView::new(view! { text(class = "kit-note") {{said}} })
+        let (said, hint) = empty_said(elsewhere);
+        tip(
+            move || hint.to_owned(),
+            AnyView::new(view! { text(class = "kit-note") {{said}} }),
+        )
     })
 }
 
 fn radio_list(
     devices: Signal<Vec<DeviceInfo>>,
     busy: Busy,
-    choose: std::rc::Rc<Box<dyn Fn(DeviceInfo)>>,
+    choose: Rc<Box<dyn Fn(DeviceInfo)>>,
 ) -> impl IntoView {
     move || {
         devices
@@ -101,18 +127,28 @@ fn radio_list(
             .map(|info| {
                 let choose = choose.clone();
                 let label = info.label.clone();
-                AnyView::new(button(
+                let hint = device_hint(&info);
+                let pressed = AnyView::new(button(
                     move || label.clone(),
                     Tone::Plain,
                     busy.busy.into(),
                     move || choose(info.clone()),
-                ))
+                ));
+                match hint {
+                    Some(hint) => tip(move || hint.to_owned(), pressed),
+                    None => pressed,
+                }
             })
             .collect::<Vec<_>>()
     }
 }
 
-fn network_form(busy: Busy, on_add: impl Fn(String) + Clone + 'static) -> impl IntoView {
+fn network_form(
+    store: Store,
+    saved: Shelf,
+    busy: Busy,
+    on_add: Rc<dyn Fn(String)>,
+) -> impl IntoView {
     let driver = RwSignal::new(NETWORK_BACKENDS[0].driver);
     let address = RwSignal::new_local(String::new());
     let target = Signal::derive_local(move || network_device_id(driver.get(), &address.get()));
@@ -120,24 +156,25 @@ fn network_form(busy: Busy, on_add: impl Fn(String) + Clone + 'static) -> impl I
         .iter()
         .map(|backend| (backend.driver, backend.label.to_owned()))
         .collect();
-    let placeholder = move || {
+    let backend = move || {
         NETWORK_BACKENDS
             .iter()
             .find(|backend| backend.driver == driver.get())
-            .map_or(NETWORK_BACKENDS[0].placeholder, |backend| {
-                backend.placeholder
-            })
+            .unwrap_or(&NETWORK_BACKENDS[0])
     };
-    let add = {
-        let on_add = on_add.clone();
-        move || {
-            if let Some(id) = target.get_untracked() {
-                on_add(id);
-            }
+    let add = move || {
+        if let Some(id) = target.get_untracked() {
+            on_add(id);
         }
     };
     let submit = add.clone();
     let blocked = Signal::derive(move || busy.busy.get() || target.with(Option::is_none));
+    let unsaveable = Signal::derive(move || target.with(Option::is_none));
+    let keep = move || {
+        if let Some(id) = target.get_untracked() {
+            save(store, saved, id);
+        }
+    };
     view! {
         column(class = "kit-choices") {
             row(class = "kit-pop__row") {
@@ -147,8 +184,10 @@ fn network_form(busy: Busy, on_add: impl Fn(String) + Clone + 'static) -> impl I
             row(class = "kit-pop__row") {
                 {move || {
                     let submit = submit.clone();
-                    draft_field("Radio address", address, placeholder(), Signal::derive_local(|| false), submit)
+                    let backend = backend();
+                    tip(move || address_title(backend), AnyView::new(draft_field("Radio address", address, backend.placeholder, Signal::derive_local(|| false), submit)))
                 }}
+                {titled_icon_button(icons::BOOKMARK_PLUS, "Save radio", || "Save for later".to_owned(), Signal::stored(false), unsaveable, keep)}
                 {button(|| "Add".to_owned(), Tone::Plain, blocked, add)}
             }
         }
@@ -194,5 +233,16 @@ fn doctor(store: Store) -> impl IntoView {
                 }).collect::<Vec<_>>()}
             }
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_list_says_why_and_what_to_do() {
+        assert_eq!(empty_said(0).0, "No radios found.");
+        assert!(empty_said(2).1.contains("another radio"));
     }
 }

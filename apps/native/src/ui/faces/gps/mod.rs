@@ -1,7 +1,7 @@
 pub mod choices;
 pub mod source;
 
-use std::rc::Rc;
+use std::{rc::Rc, time::Duration};
 
 use sdrmm_wire::{
     patch::NodeBody,
@@ -11,19 +11,27 @@ use zgui::prelude::*;
 
 use self::{
     choices::{Phones, gps_choices, phones, receivers},
-    source::{nmea_suggestion, phone_standing, valid_baud, valid_gpsd_address},
+    source::{
+        BAUDS, PhoneStanding, fix_age_label, heading_label, nmea_suggestion, phone_standing,
+        shown_as_standing, tilt_label, valid_baud, valid_gpsd_address,
+    },
 };
 use super::device::actions::edit_body;
 use crate::{
+    head::{self, NodeHead},
     position::{grid_locator, positions},
     store::Store,
     ui::{
+        kit_audio::{self, fault, titled},
         kit_sources::{
-            NumberSpec, Tone, button, footer, install, number_field, readout, text_field,
+            NumberSpec, Tone, button, footer, install, number_field, popover_slot, readout,
+            text_field,
         },
         widgets::{pick, row_field},
     },
 };
+
+const FIX_TICK: Duration = Duration::from_secs(1);
 
 const RATES: [(u32, &str); 5] = [
     (1_000, "1 Hz"),
@@ -71,6 +79,7 @@ fn kind_of(source: Option<&PositionSource>) -> Kind {
 
 pub fn face(store: Store, node: String) -> impl IntoView {
     install();
+    kit_audio::install();
     let source = {
         let node = node.clone();
         Memo::new(move |_| source_of(store, &node))
@@ -106,14 +115,23 @@ fn with_source(
         Kind::Gpsd => AnyView::new(gpsd_settings(source, change)),
         Kind::Fixed => AnyView::new(fixed_settings(source, change)),
         Kind::Nmea => AnyView::new(nmea_settings(store, source, change)),
-        Kind::Phone | Kind::None => AnyView::new(phone_settings(phones(store), source, state)),
+        Kind::Phone | Kind::None => {
+            let found = phones(store);
+            head::show(store, node.clone(), move || {
+                standing_head(phone_standing_of(found, source, state))
+            });
+            AnyView::new(phone_settings(found, source, change))
+        }
     };
+    let now = kit_audio::ticker(FIX_TICK);
+    let phone = kind == Kind::Phone;
     let fix = move || {
         let state = state.get()?;
         match state.fix {
-            Some(fix) => Some(AnyView::new(fix_readout(&fix))),
+            Some(fix) => Some(AnyView::new(fix_readout(&fix, phone, now))),
             None => state
                 .error
+                .filter(|error| !shown_as_standing(source.get().as_ref(), error))
                 .map(|error| AnyView::new(view! { text(class = "kit-alert") {{error}} })),
         }
     };
@@ -126,30 +144,80 @@ fn with_source(
     }
 }
 
-fn phone_settings(
+#[must_use]
+pub fn standing_head(standing: Option<PhoneStanding>) -> NodeHead {
+    match standing {
+        None => NodeHead::default(),
+        Some(PhoneStanding::NotPaired) => {
+            NodeHead::said(PhoneStanding::NotPaired.label()).toned(head::Tone::Danger)
+        }
+        Some(standing) => NodeHead::said(standing.label()),
+    }
+}
+
+fn phone_standing_of(
     found: Phones,
     source: Memo<Option<PositionSource>>,
     state: Signal<Option<crate::position::PositionState>>,
-) -> impl IntoView {
-    let said = move || {
-        let Some(PositionSource::Phone { phone }) = source.get() else {
-            return String::new();
-        };
-        let listed = found.get().and_then(Result::ok);
-        let name = listed
-            .as_ref()
-            .and_then(|all| all.iter().find(|candidate| candidate.id == phone))
-            .map_or_else(|| phone.clone(), |found| found.name.clone());
-        let error = state.get().and_then(|state| state.error);
-        match phone_standing(listed.as_deref(), &phone, error.as_deref()) {
-            Some(standing) => format!("{name} · {}", standing.label()),
-            None => name,
-        }
+) -> Option<PhoneStanding> {
+    let Some(PositionSource::Phone { phone }) = source.get() else {
+        return None;
     };
-    row_field("Phone", view! { text(class = "kit-note") {{said}} })
+    let listed = found.get().and_then(Result::ok);
+    let error = state.get().and_then(|state| state.error);
+    phone_standing(listed.as_deref(), &phone, error.as_deref())
 }
 
-fn fix_readout(fix: &PositionFix) -> impl IntoView {
+#[must_use]
+pub fn phone_options(listed: &[sdrmm_wire::phone::Phone], current: &str) -> Vec<(String, String)> {
+    let mut options: Vec<(String, String)> = listed
+        .iter()
+        .map(|phone| (phone.id.clone(), phone.name.clone()))
+        .collect();
+    if !options.iter().any(|(id, _)| id == current) {
+        options.push((current.to_owned(), current.to_owned()));
+    }
+    options
+}
+
+fn phone_settings(
+    found: Phones,
+    source: Memo<Option<PositionSource>>,
+    change: impl Fn(PositionSource) + Clone + 'static,
+) -> impl IntoView {
+    let current = Memo::new(move |_| match source.get() {
+        Some(PositionSource::Phone { phone }) => phone,
+        _ => String::new(),
+    });
+    let options = Memo::new(move |_| {
+        let listed = found.get().and_then(Result::ok).unwrap_or_default();
+        phone_options(&listed, &current.get())
+    });
+    let picker = move || {
+        let change = change.clone();
+        titled(
+            "Paired phone giving the position",
+            AnyView::new(row_field(
+                "Phone",
+                pick(
+                    options.get(),
+                    Signal::derive(move || Some(current.get())),
+                    move |phone| change(PositionSource::Phone { phone }),
+                ),
+            )),
+        )
+    };
+    let failed = move || match found.get() {
+        Some(Err(error)) => Some(fault(String::from("Phone list failed"), Some(error))),
+        _ => None,
+    };
+    view! {
+        {picker}
+        {failed}
+    }
+}
+
+fn fix_readout(fix: &PositionFix, phone: bool, now: RwSignal<i64>) -> impl IntoView {
     let mut rows = vec![
         (
             "Position".to_owned(),
@@ -172,6 +240,25 @@ fn fix_readout(fix: &PositionFix) -> impl IntoView {
             AnyView::new(format!("{:.1} km/h", speed * 3.6)),
         ));
     }
+    if phone || fix.attitude.heading_deg.is_some() {
+        rows.push((
+            "Heading".to_owned(),
+            titled("True north", AnyView::new(heading_label(fix))),
+        ));
+    }
+    if let Some(tilt) = tilt_label(fix) {
+        rows.push((
+            "Tilt".to_owned(),
+            titled("Pitch and roll", AnyView::new(tilt)),
+        ));
+    }
+    if phone {
+        let time = fix.time.clone();
+        rows.push((
+            "Fix".to_owned(),
+            AnyView::new(move || fix_age_label(&time, now.get())),
+        ));
+    }
     readout(rows)
 }
 
@@ -183,20 +270,23 @@ fn gpsd_settings(
         Some(PositionSource::Gpsd { address }) => address,
         _ => String::new(),
     });
-    row_field(
-        "GPSD address",
-        text_field(
+    titled(
+        "Host and port of the gpsd daemon",
+        AnyView::new(row_field(
             "GPSD address",
-            address,
-            "",
-            Signal::stored(false),
-            |text| valid_gpsd_address(text.trim()),
-            move |text| {
-                change(PositionSource::Gpsd {
-                    address: text.trim().to_owned(),
-                });
-            },
-        ),
+            text_field(
+                "GPSD address",
+                address,
+                "",
+                Signal::stored(false),
+                |text| valid_gpsd_address(text.trim()),
+                move |text| {
+                    change(PositionSource::Gpsd {
+                        address: text.trim().to_owned(),
+                    });
+                },
+            ),
+        )),
     )
 }
 
@@ -219,14 +309,14 @@ fn fixed_settings(
     let on_lon = change.clone();
     view! {
         column(class = "kit-radio") {
-            {row_field("Latitude", number_field("Latitude", lat, latitude, Signal::stored(false), move |value| {
+            {titled("Latitude", AnyView::new(row_field("Latitude", number_field("Latitude", lat, latitude, Signal::stored(false), move |value| {
                 let (_, lon, altitude_m) = place.get_untracked();
                 change(PositionSource::Fixed { lat: value, lon, altitude_m });
-            }))}
-            {row_field("Longitude", number_field("Longitude", lon, longitude, Signal::stored(false), move |value| {
+            }))))}
+            {titled("Longitude", AnyView::new(row_field("Longitude", number_field("Longitude", lon, longitude, Signal::stored(false), move |value| {
                 let (lat, _, altitude_m) = place.get_untracked();
                 on_lon(PositionSource::Fixed { lat, lon: value, altitude_m });
-            }))}
+            }))))}
             {row_field("Grid", view! { text(class = "kit-mono") {{move || grid_locator(lat.get(), lon.get())}} })}
         }
     }
@@ -258,8 +348,13 @@ fn nmea_settings(
             update_interval_ms: next.2,
         }
     };
-    let (on_device, on_pick, on_baud, on_rate) =
-        (change.clone(), change.clone(), change.clone(), change);
+    let (on_device, on_pick, on_baud, on_rate, on_suggest) = (
+        change.clone(),
+        change.clone(),
+        change.clone(),
+        change.clone(),
+        change,
+    );
     let detected = move || {
         let devices = found.get().and_then(Result::ok).unwrap_or_default();
         if devices.is_empty() {
@@ -294,16 +389,85 @@ fn nmea_settings(
         .collect();
     view! {
         column(class = "kit-radio") {
-            {row_field("Serial device", text_field("Serial device", device, "", Signal::stored(false), |text| !text.trim().is_empty(), move |text| {
+            {titled("Serial port of the receiver", AnyView::new(row_field("Serial device", text_field("Serial device", device, "", Signal::stored(false), |text| !text.trim().is_empty(), move |text| {
                 on_device(with(&|next| text.trim().clone_into(&mut next.0)));
-            }))}
+            }))))}
             {detected}
-            {row_field("Baud", text_field("Baud", baud, "", Signal::stored(false), |text| valid_baud(&text).is_some(), move |text| {
-                if let Some(value) = valid_baud(&text) {
-                    on_baud(with(&|next| next.1 = value));
+            {titled("Serial baud rate", AnyView::new(row_field("Baud", view! {
+                row(class = "kit-dial-row") {
+                    {text_field("Baud", baud, "", Signal::stored(false), |text| valid_baud(&text).is_some(), move |text| {
+                        if let Some(value) = valid_baud(&text) {
+                            on_baud(with(&|next| next.1 = value));
+                        }
+                    })}
+                    {baud_suggestions(move |value| on_suggest(with(&|next| next.1 = value)))}
                 }
-            }))}
-            {row_field("Update rate", pick(rates, interval, move |ms| on_rate(with(&|next| next.2 = ms))))}
+            })))}
+            {titled("Update rate", AnyView::new(row_field("Update rate", pick(rates, interval, move |ms| on_rate(with(&|next| next.2 = ms))))))}
         }
+    }
+}
+
+fn baud_suggestions(on_pick: impl Fn(u32) + Clone + 'static) -> impl IntoView {
+    let (open, toggle, close) = popover_slot();
+    let menu = move || {
+        open.get().then(|| {
+            let rows: Vec<AnyView> = BAUDS
+                .into_iter()
+                .map(|baud| {
+                    let on_pick = on_pick.clone();
+                    AnyView::new(view! {
+                        control(
+                            class = "menu__row",
+                            tabindex = Focus::Sequential,
+                            a11y:role = Role::Button,
+                            on:pointer_down:stop = move |_| {
+                                close();
+                                on_pick(baud);
+                            }
+                        ) {
+                            {baud.to_string()}
+                        }
+                    })
+                })
+                .collect();
+            view! { column(class = "kit-pop kit-pop--chip") {{rows}} }
+        })
+    };
+    view! {
+        box(class = "kit-pop-wrap") {
+            {titled("Common rates", AnyView::new(button(|| "\u{25be}".to_owned(), Tone::Quiet, Signal::stored(false), toggle)))}
+            {menu}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_paired_phone_stays_listed_even_when_the_server_forgot_it() {
+        let listed: Vec<sdrmm_wire::phone::Phone> = serde_json::from_value(serde_json::json!([
+            { "id": "a", "name": "Pixel", "platform": "android", "created_at": "2026-01-01T00:00:00Z", "online": true }
+        ]))
+        .expect("phones");
+        let options = phone_options(&listed, "gone");
+        assert_eq!(options.len(), 2);
+        assert_eq!(options.last().map(|(id, _)| id.as_str()), Some("gone"));
+        assert_eq!(phone_options(&listed, "a").len(), 1);
+    }
+
+    #[test]
+    fn the_header_names_how_the_phone_stands() {
+        assert_eq!(standing_head(None), NodeHead::default());
+        assert_eq!(
+            standing_head(Some(PhoneStanding::Online)),
+            NodeHead::said("Online")
+        );
+        assert_eq!(
+            standing_head(Some(PhoneStanding::NotPaired)).tone,
+            head::Tone::Danger
+        );
     }
 }

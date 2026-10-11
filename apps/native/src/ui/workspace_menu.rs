@@ -6,7 +6,7 @@ use crate::{
     store::Store,
     ui::{
         files,
-        kit_shell::{self, Entry, button, entry, glyph, row_action},
+        kit_shell::{self, Entry, button, entry, glyph, hover, titled_action, titled_button},
         shell::Shell,
     },
 };
@@ -36,6 +36,8 @@ const SHEET: &str = css!(
 .wm__confirm_text { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--danger); overflow: hidden; white-space: nowrap; }
 .wm__foot { flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
 .wm__add { align-items: center; gap: 6px; }
+.wm__switch { border-color: var(--accent); background-color: color-mix(in oklab, var(--accent) 10%, transparent); }
+.wm__switch .wm__confirm_text { color: var(--ink); }
 "#
 );
 
@@ -44,6 +46,7 @@ enum Mode {
     Idle,
     Rename,
     Confirm,
+    Switch,
 }
 
 pub fn menu(store: Store, shell: Shell) -> impl IntoView {
@@ -78,6 +81,7 @@ fn workspace_row(store: Store, shell: Shell, id: i64) -> impl IntoView {
     move || match mode.get() {
         Mode::Rename => AnyView::new(rename_row(store, id, mode)),
         Mode::Confirm => AnyView::new(confirm_row(store, id, mode, name())),
+        Mode::Switch => AnyView::new(switch_row(store, shell, id, mode)),
         Mode::Idle => AnyView::new(idle_row(store, shell, id, mode)),
     }
 }
@@ -92,19 +96,52 @@ fn idle_row(store: Store, shell: Shell, id: i64, mode: RwSignal<Mode>) -> impl I
                 class:on = move || store.workspace.get() == Some(id),
                 tabindex = Focus::Sequential,
                 a11y:role = Role::Button,
-                on:click:stop = move |_| {
-                    shell.menu.set(None);
-                    store.activate(id);
-                }
+                on:click:stop = move |_| pick(store, shell, id, mode)
             ) {
                 {name}
             }
-            text(class = "wm__count") {{nodes}}
-            {row_action(glyph::PENCIL, "Rename", false, move || mode.set(Mode::Rename))}
-            {row_action(glyph::COPY, "Duplicate", false, move || store.duplicate(id))}
-            {row_action(glyph::DOWNLOAD, "Export", false, move || export(store, id))}
-            {row_action(glyph::CROSS, "Delete", true, move || mode.set(Mode::Confirm))}
+            {hover(format!("{} nodes", nodes()), view! { text(class = "wm__count") {{nodes}} })}
+            {titled_action(glyph::PENCIL, "Rename", "Rename this workspace", false, move || mode.set(Mode::Rename))}
+            {titled_action(glyph::COPY, "Duplicate", "Copy this workspace, its patch and the tuning it was left on", false, move || store.duplicate(id))}
+            {titled_action(glyph::DOWNLOAD, "Export", "Save this workspace as a file", false, move || export(store, id))}
+            {titled_action(glyph::CROSS, "Delete", "Delete this workspace", true, move || mode.set(Mode::Confirm))}
         }
+    }
+}
+
+fn pick(store: Store, shell: Shell, id: i64, mode: RwSignal<Mode>) {
+    if store.workspace.get_untracked() == Some(id) {
+        return;
+    }
+    if store.presence.get_untracked().people().others.is_empty() {
+        shell.menu.set(None);
+        store.activate(id);
+    } else {
+        mode.set(Mode::Switch);
+    }
+}
+
+fn switch_row(store: Store, shell: Shell, id: i64, mode: RwSignal<Mode>) -> impl IntoView {
+    let others = store.presence.get_untracked().people().others.len();
+    view! {
+        row(class = "wm__confirm wm__switch") {
+            text(class = "wm__confirm_text") {{switch_question(others)}}
+            {titled_button("Switch", "sm", "One workspace runs per server", move || {
+                mode.set(Mode::Idle);
+                shell.menu.set(None);
+                store.activate(id);
+            })}
+            {button("Stay", "sm", move || mode.set(Mode::Idle))}
+        }
+    }
+}
+
+#[must_use]
+pub fn switch_question(others: usize) -> String {
+    if others == 1 {
+        String::from("Switch 1 other too?")
+    } else {
+        format!("Switch {others} others too?")
     }
 }
 
@@ -134,7 +171,7 @@ fn confirm_row(store: Store, id: i64, mode: RwSignal<Mode>, name: String) -> imp
     view! {
         row(class = "wm__confirm") {
             text(class = "wm__confirm_text") {{format!("Delete {name}?")}}
-            {button("Delete", "danger", move || {
+            {titled_button("Delete", "danger", "The workspace, its layout and its history are removed", move || {
                 mode.set(Mode::Idle);
                 store.remove(id);
             })}
@@ -161,7 +198,7 @@ fn footer(store: Store, shell: Shell) -> impl IntoView {
                 {entry(Entry::new(name, "New workspace"), create, || {})}
                 {kit_shell::gated_button("Add", "quiet", enabled, create)}
             }
-            {button("Import a workspace file", "quiet", move || import(store, shell))}
+            {titled_button("Import a workspace file", "quiet", "Read a workspace file exported here or on another machine", move || import(store, shell))}
         }
     }
 }
@@ -197,4 +234,15 @@ fn export(store: Store, id: i64) {
         };
         files::save(store, &export_file_name(&name), &bytes).await;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asks_to_switch_the_others_by_count() {
+        assert_eq!(switch_question(1), "Switch 1 other too?");
+        assert_eq!(switch_question(3), "Switch 3 others too?");
+    }
 }

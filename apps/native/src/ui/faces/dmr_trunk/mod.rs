@@ -9,17 +9,19 @@ use sdrmm_wire::{
 use zgui::prelude::*;
 
 use self::trunk::{
-    DMR_TRUNK_PROTOCOLS, adoptable, awaiting_control_channel, channel_entry, channel_plan_rows,
-    control_channel_label, control_channel_stalled, format_search_ranges, parse_control_hz,
-    parse_search_ranges, plan_label, plan_summary, search_summary, source_hint, source_label,
-    trunk_protocol_label, usable, with_channel, without_channel,
+    DMR_TRUNK_PROTOCOLS, activity_rows, adoptable, awaiting_control_channel, channel_entry,
+    channel_plan_rows, control_channel_stalled, control_hint, format_search_ranges,
+    parse_control_hz, parse_search_ranges, plan_label, plan_summary, search_summary, source_hint,
+    source_label, trunk_head, usable, with_channel, without_channel,
 };
 use crate::{
+    head,
     store::Store,
     ui::{
         faces::channel::settings::NumberLimit,
+        kit_audio::{self, Line, fault, lines, titled},
         kit_channel::{
-            self, NumberSpec, button, format_hz, group, number_field, setting_row, text_field, tip,
+            self, NumberSpec, button, format_hz, number_field, setting_row, text_field, tip,
             toggle_row,
         },
         widgets::pick,
@@ -30,7 +32,7 @@ const SHEET: &str = css!(
     r#"
 .dt-face { flex-direction: column; }
 .dt-section { flex-direction: column; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
-.dt-alert { padding: 8px; border-bottom: 1px solid var(--line); font-size: 11px; color: oklch(0.8 0.14 75); }
+.dt-faults { flex-direction: column; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); }
 .dt-plan { flex-direction: column; border-bottom: 1px solid var(--line); }
 .dt-plan__head { align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 0 8px; }
 .dt-table { flex-direction: column; max-height: 192px; overflow: auto; margin-top: 4px; }
@@ -66,6 +68,7 @@ fn edit(store: Store, node: &str, change: impl FnOnce(&mut DmrTrunkNode) + 'stat
 pub fn face(store: Store, node: String) -> impl IntoView {
     install_stylesheet("dmr-trunk", SHEET);
     kit_channel::install();
+    kit_audio::install();
     let settings = {
         let node = node.clone();
         Memo::new(move |_| settings_of(store, &node).unwrap_or_default())
@@ -93,41 +96,34 @@ pub fn face(store: Store, node: String) -> impl IntoView {
                 .any(|edge| edge.to.node == node && edge.to.port == "iq")
         })
     };
+    head::show(store, node.clone(), move || {
+        let held = settings.get();
+        let status = status.get();
+        trunk_head(
+            on_iq.get(),
+            awaiting_control_channel(on_iq.get(), held.control_hz),
+            held.protocol,
+            status.as_ref().and_then(|status| status.detected),
+            status.as_ref().map_or(0, |status| status.followers.len()),
+        )
+    });
     view! {
         column(class = "dt-face") {
-            {head(store, node.clone(), settings, status, on_iq)}
-            {alerts(settings, status, on_iq)}
-            {plan(store, node.clone(), settings, status)}
-            {search(store, node, settings, status)}
-            {chips(status)}
+            {setup(store, node.clone(), settings, status, on_iq)}
+            {activity(status)}
+            {faults(settings, status, on_iq)}
+            {plan(store, node, settings, status)}
         }
     }
 }
 
-fn head(
+fn setup(
     store: Store,
     node: String,
     settings: Memo<DmrTrunkNode>,
     status: Memo<Option<TrunkSystemStatus>>,
     on_iq: Memo<bool>,
 ) -> impl IntoView {
-    let summary = move || {
-        let held = settings.get();
-        if !on_iq.get() || awaiting_control_channel(true, held.control_hz) {
-            return String::new();
-        }
-        let status = status.get();
-        let following = status.as_ref().map_or(0, |status| status.followers.len());
-        let mut parts = Vec::new();
-        if held.protocol == sdrmm_wire::patch::DmrTrunkProtocol::Auto {
-            parts.push(
-                trunk_protocol_label(held.protocol, status.and_then(|status| status.detected))
-                    .to_owned(),
-            );
-        }
-        parts.push(format!("{following} following"));
-        parts.join(" · ")
-    };
     let protocol = Signal::derive(move || Some(settings.get().protocol));
     let options = DMR_TRUNK_PROTOCOLS
         .iter()
@@ -152,36 +148,82 @@ fn head(
             true
         }
     };
+    let awaiting =
+        Memo::new(move |_| awaiting_control_channel(on_iq.get(), settings.get().control_hz));
+    let control_row = move || {
+        let set_control = set_control.clone();
+        titled(
+            control_hint(awaiting.get()),
+            setting_row(
+                "Control",
+                None,
+                view! {
+                    box(class = "kc-num") {
+                        text(class = "kc-num__unit") {"MHz"}
+                        {text_field(control, "Control channel", "451.0125", "kc-fill", set_control)}
+                    }
+                },
+            ),
+        )
+    };
     view! {
         column(class = "dt-section kc-grid") {
-            text(class = "kc-note") {{summary}}
-            {setting_row("Protocol", None, pick(options, protocol, pick_protocol))}
-            {setting_row("Control", None, view! {
-                box(class = "kc-num") {
-                    text(class = "kc-num__unit") {"MHz"}
-                    {text_field(control, "Control channel", "451.0125", "kc-fill", set_control)}
-                }
-            })}
+            {titled("Trunking protocol", setting_row("Protocol", None, pick(options, protocol, pick_protocol)))}
+            {control_row}
+            {search(store, node, settings, status)}
         }
     }
 }
 
-fn alerts(
+fn faults(
     settings: Memo<DmrTrunkNode>,
     status: Memo<Option<TrunkSystemStatus>>,
     on_iq: Memo<bool>,
 ) -> impl IntoView {
-    let awaiting = move || awaiting_control_channel(on_iq.get(), settings.get().control_hz);
-    let stalled = move || {
-        control_channel_stalled(
+    let shown = move || {
+        let mut shown = Vec::new();
+        let status = status.get();
+        if control_channel_stalled(
             on_iq.get(),
             settings.get().control_hz,
-            status.get().map(|status| status.carriers),
-        )
+            status.as_ref().map(|status| status.carriers),
+        ) {
+            shown.push(fault(
+                String::from("Control channel not running"),
+                Some(String::from("Check it sits inside the radio's passband.")),
+            ));
+        }
+        for problem in status.map(|status| status.problems).unwrap_or_default() {
+            shown.push(fault(
+                format!(
+                    "Cannot follow {} TS {}",
+                    format_hz(problem.freq_hz as f64),
+                    problem.slot
+                ),
+                Some(problem.reason),
+            ));
+        }
+        (!shown.is_empty()).then(|| view! { column(class = "dt-faults") {{shown}} })
     };
-    view! {
-        {move || awaiting().then(|| view! { text(class = "dt-alert", a11y:role = Role::Alert) {"The radio stays untuned until you name the control channel."} })}
-        {move || stalled().then(|| view! { text(class = "dt-alert", a11y:role = Role::Alert) {"The control channel is not running. Check it sits inside the radio's passband."} })}
+    shown
+}
+
+fn activity(status: Memo<Option<TrunkSystemStatus>>) -> impl IntoView {
+    let rows = Memo::new(move |_| status.with(|status| activity_rows(status.as_ref())));
+    move || {
+        (!rows.with(Vec::is_empty)).then(|| {
+            let shown = move || {
+                rows.get()
+                    .into_iter()
+                    .map(|row| Line {
+                        label: row.label,
+                        value: row.value,
+                        title: row.title.map(str::to_owned),
+                    })
+                    .collect()
+            };
+            view! { column(class = "dt-section") {{lines(shown)}} }
+        })
     }
 }
 
@@ -360,96 +402,34 @@ fn search(
             status.as_ref().map_or(0, |status| status.probes.len()),
         )
     };
-    let detail = move || {
+    let range = move || {
         let node = node.clone();
         enabled.get().then(|| {
-            AnyView::new(view! {
-                column(class = "kc-grid") {
-                    {setting_row(
-                        "Range",
-                        Some("Optional: narrow the search to start-end in MHz / step in kHz"),
-                        text_field(ranges, "Search range", "whole band", "kc-num kc-num--wide", move |text| {
+            titled(
+                format!(
+                    "Narrow the search to start-end in MHz / step in kHz. {}",
+                    summary()
+                ),
+                setting_row(
+                    "Range",
+                    None,
+                    text_field(
+                        ranges,
+                        "Search range",
+                        "whole band",
+                        "kc-num kc-num--wide",
+                        move |text| {
                             let parsed = parse_search_ranges(&text);
                             edit(store, &node, move |held| held.discovery.ranges = parsed);
                             true
-                        }),
-                    )}
-                    text(class = "kc-note") {{summary}}
-                }
-            })
+                        },
+                    ),
+                ),
+            )
         })
     };
     view! {
-        column(class = "dt-section") {
-            {group("Find the rest", AnyView::new(()), view! {
-                {toggle_row("Search", None, enabled, toggle)}
-                {detail}
-            })}
-        }
-    }
-}
-
-fn chips(status: Memo<Option<TrunkSystemStatus>>) -> impl IntoView {
-    let others = move || {
-        let held = status
-            .get()
-            .map(|status| status.other_control_hz)
-            .unwrap_or_default();
-        (!held.is_empty()).then(|| {
-            AnyView::new(view! {
-                row(class = "dt-section kc-chips") {{held.into_iter().map(|hz| tip(
-                    "The site runs a control channel here too. Point the node at it if this one stops.",
-                    AnyView::new(view! { text(class = "kc-chip kc-dim") {{control_channel_label(hz)}} }),
-                )).collect::<Vec<_>>()}}
-            })
-        })
-    };
-    let probes = move || {
-        let held = status.get().map(|status| status.probes).unwrap_or_default();
-        (!held.is_empty()).then(|| {
-            AnyView::new(view! {
-                row(class = "dt-section kc-chips") {{held.into_iter().map(|probe| view! {
-                    text(class = "kc-chip kc-dim") {{format!("listening {}", format_hz(probe.freq_hz as f64))}}
-                }).collect::<Vec<_>>()}}
-            })
-        })
-    };
-    let followers = move || {
-        let held = status
-            .get()
-            .map(|status| status.followers)
-            .unwrap_or_default();
-        (!held.is_empty()).then(|| {
-            AnyView::new(view! {
-                row(class = "dt-section kc-chips") {{held.into_iter().map(|follower| {
-                    let lcn = follower.logical_channel.map(|lcn| format!(" · LCN {lcn}")).unwrap_or_default();
-                    view! { text(class = "kc-chip") {{format!("{} TS {}{lcn}", format_hz(follower.freq_hz as f64), follower.slot)}} }
-                }).collect::<Vec<_>>()}}
-            })
-        })
-    };
-    let problems = move || {
-        status
-            .get()
-            .map(|status| status.problems)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|problem| {
-                view! {
-                    text(class = "dt-alert", a11y:role = Role::Alert) {{format!(
-                        "Cannot follow {} TS {}: {}",
-                        format_hz(problem.freq_hz as f64),
-                        problem.slot,
-                        problem.reason
-                    )}}
-                }
-            })
-            .collect::<Vec<_>>()
-    };
-    view! {
-        {others}
-        {probes}
-        {followers}
-        {problems}
+        {titled("Find the rest of the site's channels", toggle_row("Search", None, enabled, toggle))}
+        {range}
     }
 }

@@ -8,7 +8,7 @@ use zgui_ui::prelude::*;
 use super::{
     Tone, button,
     dial::{Reach, dial_digits, dial_places, parse_frequency, set_dial_digit, step_dial},
-    icon_button, icons, install, popover_slot,
+    icons, install, popover_slot, titled_icon_button,
 };
 
 const PIXELS_PER_STEP: f32 = 24.0;
@@ -287,7 +287,7 @@ fn direct_entry(
 }
 
 pub fn tune_to(
-    title: &'static str,
+    title: impl Into<String>,
     hz: Signal<f64>,
     hint: Signal<String>,
     resolve: impl Fn(f64) -> Option<f64> + Clone + Send + Sync + 'static,
@@ -295,6 +295,8 @@ pub fn tune_to(
     on_tune: impl Fn(f64) + Clone + 'static,
 ) -> impl IntoView {
     install();
+    let title: String = title.into();
+    let label = title.clone();
     let (open, toggle, close) = popover_slot();
     let form = move || {
         let text = RwSignal::new_local(format!("{}", hz.get_untracked() / 1e6));
@@ -342,8 +344,8 @@ pub fn tune_to(
     };
     let form = move || open.get().then(&form);
     view! {
-        box(class = "kit-pop-wrap", a11y:description = title) {
-            {icon_button(icons::KEYBOARD, title, open, disabled, toggle)}
+        box(class = "kit-pop-wrap") {
+            {titled_icon_button(icons::KEYBOARD, label, move || title.clone(), open, disabled, toggle)}
             {form}
         }
     }

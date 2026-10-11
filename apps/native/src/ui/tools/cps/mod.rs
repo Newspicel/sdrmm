@@ -11,7 +11,6 @@ use sdrmm_wire::cps::{
     CpsWriteRequest, MergeMode, RadioIdent, RadioModelDescriptor, RadioModelsResponse,
 };
 use zgui::prelude::*;
-use zgui_ui::prelude::*;
 
 use self::logic::{
     any_active, candidate_models, describe_job, job_is_active, job_percent, latest_job,
@@ -20,7 +19,8 @@ use self::logic::{
 use crate::{
     store::Store,
     ui::{
-        tools::kit::{Query, alert, button, labelled},
+        kit_channel::tip,
+        tools::kit::{Query, alert, button, labelled, text_field},
         widgets::pick,
     },
 };
@@ -97,6 +97,15 @@ impl Cps {
         future: impl Future<Output = anyhow::Result<T>> + 'static,
         done: impl FnOnce(T) + 'static,
     ) {
+        self.act_into(self.failure, future, done);
+    }
+
+    pub fn act_into<T: 'static>(
+        self,
+        failure: RwSignal<Option<String>>,
+        future: impl Future<Output = anyhow::Result<T>> + 'static,
+        done: impl FnOnce(T) + 'static,
+    ) {
         self.pending.set(true);
         zgui::task::spawn_local(async move {
             let result = future.await;
@@ -105,10 +114,12 @@ impl Cps {
             }
             match result {
                 Ok(value) => {
-                    self.failure.set(None);
+                    failure.try_set(None);
                     done(value);
                 }
-                Err(error) => self.failure.set(Some(format!("{error:#}"))),
+                Err(error) => {
+                    failure.try_set(Some(format!("{error:#}")));
+                }
             }
         });
     }
@@ -206,6 +217,7 @@ pub fn panel(store: Store) -> impl IntoView {
             {top_bar(cps, choice)}
             {job_bar(cps)}
             {alert(move || cps.failure.get().or_else(|| cps.identify.error.get()))}
+            {alert(move || cps.ports.error.get().or_else(|| cps.models.error.get()).or_else(|| cps.jobs.error.get()))}
             row(class = "cps__main") {
                 column(class = "cps__side") {{library::panel(cps)}}
                 column(class = "cps__work") {
@@ -275,16 +287,22 @@ fn top_bar(cps: Cps, choice: Choice) -> impl IntoView {
             {labelled("Radio", models)}
             {labelled("Operator", users)}
             {button("btn", || "Identify".to_owned(), move || unready() || cps.identify.busy.get(), move || identify(cps, choice))}
-            box(class = "tool-text") {
-                Input(class = "native-input", value = choice.name, label = "Name for the read codeplug", placeholder = "Name the read")
-            }
+            {text_field(choice.name, "Name for the read codeplug", "Name the read", "tool-text")}
             {button("btn primary", || "Read radio".to_owned(), unready, move || read(cps, choice))}
-            {button("btn danger", || "Write to radio".to_owned(), move || unready() || cps.selected.get().is_none(), move || write(cps, choice))}
-            {move || cps.identify.data.get().map(|ident| {
-                let firmware = ident.firmware.map(|firmware| format!(" \u{b7} {firmware}")).unwrap_or_default();
-                AnyView::new(view! { text(class = "tool-chip") {{format!("{}{firmware}", ident.reported_model)}} })
-            })}
+            {tip(WRITE_TIP, AnyView::new(button("btn danger", || "Write to radio".to_owned(), move || unready() || cps.selected.get().is_none(), move || write(cps, choice))))}
+            {move || cps.identify.data.get().map(|ident| tip("What the radio answered", AnyView::new(view! { text(class = "tool-chip") {{identity_line(&ident)}} })))}
         }
+    }
+}
+
+const WRITE_TIP: &str = "Reads the radio first, then writes back only the blocks that differ";
+const COPY_TIP: &str = "Fits this codeplug to the target radio and stores it as a new one";
+
+#[must_use]
+pub fn identity_line(ident: &RadioIdent) -> String {
+    match &ident.firmware {
+        Some(firmware) => format!("{} \u{b7} {firmware}", ident.reported_model),
+        None => ident.reported_model.clone(),
     }
 }
 
@@ -423,7 +441,7 @@ fn copy_bar(cps: Cps, choice: Choice) -> impl IntoView {
     view! {
         row(class = "tool-row") {
             {labelled("Copy to", targets)}
-            {button("btn", || "Copy for that radio".to_owned(), move || cps.selected.get().is_none() || cps.pending.get(), move || convert(cps, choice))}
+            {tip(COPY_TIP, AnyView::new(button("btn", || "Copy for that radio".to_owned(), move || cps.selected.get().is_none() || cps.pending.get(), move || convert(cps, choice))))}
             {labelled("Take entries from", sources)}
             {labelled("Mode", pick(modes, Signal::derive(move || Some(choice.mode.get())), move |mode| choice.mode.set(mode)))}
             {button("btn", || "Merge in".to_owned(), move || cps.selected.get().is_none() || choice.source.get() == 0 || cps.pending.get(), move || merge(cps, choice))}
@@ -489,6 +507,9 @@ fn merge(cps: Cps, choice: Choice) {
 fn codeplug_area(cps: Cps) -> impl IntoView {
     let loaded = Memo::new(move |_| cps.codeplug.data.with(Option::is_some));
     move || {
+        if let Some(error) = cps.codeplug.error.get() {
+            return AnyView::new(view! { text(class = "tool-alert") {{error}} });
+        }
         if loaded.get() {
             return AnyView::new(codeplug::view(cps.codeplug));
         }
@@ -498,5 +519,25 @@ fn codeplug_area(cps: Cps) -> impl IntoView {
             "Loading the codeplug\u{2026}"
         };
         AnyView::new(view! { text(class = "tool-dim") {{hint}} })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ident(firmware: Option<&str>) -> RadioIdent {
+        RadioIdent {
+            reported_model: "RT-4D".to_owned(),
+            firmware: firmware.map(str::to_owned),
+            bands: None,
+            model_id: None,
+        }
+    }
+
+    #[test]
+    fn the_radio_answer_reads_as_model_and_firmware() {
+        assert_eq!(identity_line(&ident(Some("v3.1"))), "RT-4D \u{b7} v3.1");
+        assert_eq!(identity_line(&ident(None)), "RT-4D");
     }
 }

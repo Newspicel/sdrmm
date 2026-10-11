@@ -13,6 +13,7 @@ use crate::{
     binding,
     store::Store,
     ui::{
+        kit_audio::{self, drops_stat, titled},
         kit_sources::{NumberSpec, Tone, button, footer, install, number_field, readout, units},
         widgets::row_field,
     },
@@ -20,6 +21,9 @@ use crate::{
 
 pub const HISTORY_BYTES_PER_SAMPLE: f64 = 8.0;
 const UNWIRED: &str = "Wire a running device's IQ into this sink first.";
+const ARM_HINT: &str = "Hold the last seconds of IQ in memory";
+const CAPTURE_HINT: &str = "Write the buffered past to a SigMF pair and keep recording";
+const DISARM_HINT: &str = "Release the buffer";
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Phase {
@@ -83,8 +87,17 @@ fn settings_of(store: Store, node: &str) -> TimeMachineNode {
     })
 }
 
+#[must_use]
+pub fn drops_of(phase: &Phase) -> u64 {
+    match phase {
+        Phase::Armed(status) | Phase::Capturing(status) => status.overruns,
+        _ => 0,
+    }
+}
+
 pub fn face(store: Store, node: String) -> impl IntoView {
     install();
+    kit_audio::install();
     let set = set_signal(store, node.clone());
     let phase = {
         let node = node.clone();
@@ -184,23 +197,66 @@ fn held(status: TimeMachineStatus) -> impl IntoView {
             )),
         ),
     ];
-    if cfg!(debug_assertions) && status.overruns > 0 {
-        rows.push((
-            "Drops".to_owned(),
-            AnyView::new(status.overruns.to_string()),
-        ));
-    }
     if let Some(capture) = &status.capture {
         rows.push((
             "Written".to_owned(),
             AnyView::new(units::bytes(capture.bytes as f64)),
         ));
-        rows.push(("File".to_owned(), AnyView::new(capture.file.clone())));
+        let file = capture.file.clone();
+        rows.push((
+            "File".to_owned(),
+            titled(
+                capture.file.clone(),
+                AnyView::new(view! { text(class = "readout__value") {{file}} }),
+            ),
+        ));
     }
     let error = status
         .error
         .map(|error| AnyView::new(view! { text(class = "kit-alert") {{error}} }));
     view! { column { {readout(rows)} {error} } }
+}
+
+fn hinted(
+    hint: &'static str,
+    label: &'static str,
+    disabled: Signal<bool>,
+    press: impl Fn() + 'static,
+) -> AnyView {
+    titled(
+        hint,
+        AnyView::new(button(
+            move || label.to_owned(),
+            Tone::Plain,
+            disabled,
+            press,
+        )),
+    )
+}
+
+fn capture_button(disabled: Signal<bool>, press: impl Fn() + 'static) -> AnyView {
+    titled(
+        CAPTURE_HINT,
+        AnyView::new(view! {
+            control(
+                class = "kit-btn",
+                tabindex = Focus::Sequential,
+                a11y:role = Role::Button,
+                state:disabled = disabled,
+                on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation(),
+                on:click:stop = move |_| {
+                    if !disabled.get_untracked() {
+                        press();
+                    }
+                }
+            ) {
+                row(class = "transport") {
+                    text(class = "btn__dot") {"\u{25cf}"}
+                    text {"Capture"}
+                }
+            }
+        }),
+    )
 }
 
 fn actions(
@@ -210,49 +266,48 @@ fn actions(
 ) -> impl IntoView {
     let busy: Signal<bool> = pending.into();
     let unavailable = phase == Phase::Unavailable;
+    let drops = drops_of(&phase);
     let press = move |action: TimeMachineAction| {
         let control = control.clone();
         move || control(action)
     };
-    let buttons = match phase {
+    let mut buttons = vec![AnyView::new(kit_audio::stats(move || {
+        drops_stat(drops).into_iter().collect()
+    }))];
+    match phase {
         Phase::Idle | Phase::Unavailable => {
             let blocked = Signal::derive(move || unavailable || pending.get());
-            vec![AnyView::new(button(
-                || "Arm".to_owned(),
-                Tone::Plain,
+            buttons.push(hinted(
+                ARM_HINT,
+                "Arm",
                 blocked,
                 press(TimeMachineAction::Arm),
-            ))]
+            ));
         }
-        Phase::Armed(_) => vec![
-            AnyView::new(button(
-                || "Capture".to_owned(),
-                Tone::Plain,
-                busy,
-                press(TimeMachineAction::Capture),
-            )),
-            AnyView::new(button(
-                || "Disarm".to_owned(),
-                Tone::Plain,
+        Phase::Armed(_) => {
+            buttons.push(capture_button(busy, press(TimeMachineAction::Capture)));
+            buttons.push(hinted(
+                DISARM_HINT,
+                "Disarm",
                 busy,
                 press(TimeMachineAction::Disarm),
-            )),
-        ],
-        Phase::Capturing(_) | Phase::Busy(_) => vec![
-            AnyView::new(button(
+            ));
+        }
+        Phase::Capturing(_) | Phase::Busy(_) => {
+            buttons.push(AnyView::new(button(
                 || "Stop".to_owned(),
                 Tone::Danger,
                 busy,
                 press(TimeMachineAction::Stop),
-            )),
-            AnyView::new(button(
-                || "Disarm".to_owned(),
-                Tone::Plain,
+            )));
+            buttons.push(hinted(
+                DISARM_HINT,
+                "Disarm",
                 busy,
                 press(TimeMachineAction::Disarm),
-            )),
-        ],
-    };
+            ));
+        }
+    }
     footer(buttons)
 }
 
@@ -304,6 +359,17 @@ mod tests {
             phase_of(Some(&set("running", Some(capturing()))), "history"),
             Phase::Capturing(capturing())
         );
+    }
+
+    #[test]
+    fn drops_are_counted_whenever_a_buffer_is_held() {
+        let dropping = TimeMachineStatus {
+            overruns: 7,
+            ..held()
+        };
+        assert_eq!(drops_of(&Phase::Armed(dropping.clone())), 7);
+        assert_eq!(drops_of(&Phase::Capturing(dropping)), 7);
+        assert_eq!(drops_of(&Phase::Idle), 0);
     }
 
     #[test]

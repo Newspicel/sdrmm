@@ -79,8 +79,11 @@ fn modal(
     };
     let gone = move || !listing && tools.data.with(Option::is_some) && active.with(Option::is_none);
     let close = move || open.set(None);
+    let field = NodeRef::new();
+    crate::ui::kit_shell::trap_focus(field);
     view! {
         box(
+            node_ref = field,
             class = "tools",
             tabindex = Focus::Programmatic,
             on:pointer_down = move |ev: &mut EventCx<'_, events::PointerDown>| {

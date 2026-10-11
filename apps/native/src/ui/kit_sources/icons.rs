@@ -33,6 +33,13 @@ pub const LINK: &str = lucide!(
     r#"<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>"#
 );
 
+pub const BOOKMARK_PLUS: &str = lucide!(
+    r#"<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/><line x1="12" x2="12" y1="7" y2="13"/><line x1="15" x2="9" y1="10" y2="10"/>"#
+);
+pub const UPLOAD: &str = lucide!(
+    r#"<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>"#
+);
+
 pub fn icon(svg: &'static str) -> impl IntoView {
     zgui::elements::vector().class("kit-icon").document(svg)
 }

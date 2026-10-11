@@ -29,6 +29,13 @@ pub fn apply_toasts(report: &PatchApplyReport, nodes: &[PatchNode]) -> Vec<Strin
     refused.chain(absent).collect()
 }
 
+#[must_use]
+pub fn fresh(said: &[String], now: Vec<String>) -> Vec<String> {
+    now.into_iter()
+        .filter(|message| !said.contains(message))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::{
@@ -90,5 +97,16 @@ mod tests {
                 "device:bare: radio not connected"
             ]
         );
+    }
+
+    #[test]
+    fn a_refusal_that_stands_is_said_once() {
+        let said = vec!["NFM: no room left".to_owned()];
+        let now = vec![
+            "NFM: no room left".to_owned(),
+            "array: Wire lanes".to_owned(),
+        ];
+        assert_eq!(fresh(&said, now), ["array: Wire lanes"]);
+        assert!(fresh(&said, said.clone()).is_empty());
     }
 }

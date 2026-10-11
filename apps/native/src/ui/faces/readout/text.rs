@@ -7,6 +7,7 @@ use zgui::{
 use crate::{
     decoders::views::{DecoderScope, TRANSCRIPT_LIMIT, build_transcript, is_at_bottom, latest_wpm},
     store::Store,
+    ui::kit_decoders,
 };
 
 use super::{frames_of, records};
@@ -40,10 +41,23 @@ pub fn view(store: Store, kind: &'static str, scope: DecoderScope) -> impl IntoV
         }
     });
     on_cleanup_local(move || drop(follow));
-    let clipboard = use_clipboard();
-    let copy = move |_: &mut EventCx<'_, events::Click>| {
-        clipboard.set_text(ClipboardKind::Standard, transcript.get_untracked());
-        store.say("Transcript copied");
+    let clipboard = try_use_clipboard();
+    let failed = RwSignal::new(None::<String>);
+    let copy = move |_: &mut EventCx<'_, events::Click>| match &clipboard {
+        Some(clipboard) => {
+            clipboard.set_text(ClipboardKind::Standard, transcript.get_untracked());
+            failed.set(None);
+            store.say("Transcript copied");
+        }
+        None => failed.set(Some("this desktop has no clipboard".to_owned())),
+    };
+    let fault = move || {
+        failed.get().map(|error| {
+            AnyView::new(kit_decoders::alert(
+                format!("Copy failed: {error}"),
+                move || failed.set(None),
+            ))
+        })
     };
     let scrolled = move |ev: &mut EventCx<'_, events::Scroll>| {
         stick.set_value(is_at_bottom(
@@ -63,6 +77,7 @@ pub fn view(store: Store, kind: &'static str, scope: DecoderScope) -> impl IntoV
                     on:click:stop = copy
                 ) {"Copy all"}
             }
+            {fault}
             scroll(
                 class = "dk-pre",
                 node_ref = pane,

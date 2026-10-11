@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, sync::Arc};
 use sdrmm_wire::device::DeviceSettings;
 use zgui::prelude::*;
 
-use crate::store::Store;
+use crate::{api::error_code, store::Store};
 
 #[must_use]
 pub fn follow_offset(current: &DeviceSettings, delta: DeviceSettings) -> DeviceSettings {
@@ -17,6 +17,11 @@ pub fn follow_offset(current: &DeviceSettings, delta: DeviceSettings) -> DeviceS
         center_hz: Some(center_hz + moved),
         ..delta
     }
+}
+
+#[must_use]
+pub fn refused_by_radio(error: &anyhow::Error) -> bool {
+    error_code(error).as_deref() == Some("engine")
 }
 
 #[derive(Default)]
@@ -57,7 +62,11 @@ fn run(store: Store, set: u32) {
     let pending = store.send_device(set, settings);
     zgui::task::spawn_local(async move {
         if let Err(error) = pending.await {
-            store.say(format!("cannot change the radio: {error}"));
+            if refused_by_radio(&error) {
+                tracing::info!(%error, "radio refused a setting");
+            } else {
+                store.say(format!("Cannot change the radio: {error}"));
+            }
         }
         run(store, set);
     });
@@ -132,6 +141,28 @@ mod tests {
             ..DeviceSettings::default()
         };
         assert_eq!(follow_offset(&tuned(100e6, None), gain.clone()), gain);
+    }
+
+    #[test]
+    fn a_refusal_by_the_radio_is_told_apart_from_a_failed_request() {
+        use sdrmm_wire::rest::ErrorCode;
+
+        use crate::api::ApiFailure;
+
+        let failure = |code| {
+            anyhow::Error::new(ApiFailure {
+                status: 409,
+                code,
+                message: "no".to_owned(),
+            })
+        };
+        assert!(refused_by_radio(&failure(Some(ErrorCode::Engine))));
+        assert!(refused_by_radio(
+            &failure(Some(ErrorCode::Engine)).context("saving")
+        ));
+        assert!(!refused_by_radio(&failure(Some(ErrorCode::Request))));
+        assert!(!refused_by_radio(&failure(None)));
+        assert!(!refused_by_radio(&anyhow::anyhow!("offline")));
     }
 
     #[test]

@@ -92,6 +92,7 @@ fn mirror<T: 'static>(
 }
 
 pub fn face(store: Store, node: String) -> impl IntoView {
+    let titled = node.clone();
     kit_sources::install();
     install_stylesheet("spatial-face", view::SHEET);
     let processor = Processor::new(store, node.clone());
@@ -153,9 +154,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
         })
     };
     let chips = move || reading.with(|found| spatial_chips(found.as_ref(), bad.get()));
+    processor::head(store, titled, processor.subtitle(report_ms));
     view! {
         column(class = "face") {
-            {processor::head(processor.subtitle(report_ms))}
             {bar(Bar { shown, frame, true_known, picked, colormap, span_db })}
             {plot(scene, Plot { view: shown.into(), axis })}
             {settings::settings(&spatial, colormap)}

@@ -9,6 +9,7 @@ use zgui::{prelude::*, reactive::RenderEffect};
 
 use super::{
     ScopeCx,
+    lane::{heard_hz, tune_array, virtual_faces},
     live::FrameMeta,
     pick::{ScopePick, format_mhz, stream_channels, take_creation_tune, tune_on_create},
     plot::readout_at,
@@ -45,16 +46,10 @@ pub fn radio_of(lane: &Lane, graph: &PatchGraph, state: &StateSnapshot) -> Radio
     };
     let channels = stream_channels(&set.channels, lane.stream);
     let on_stream: HashSet<u32> = channels.iter().map(|channel| channel.id).collect();
-    let devices = binding::device_sets(graph, &state.device_sets);
-    let mut faces: HashMap<u32, String> = binding::channels(graph, &state.device_sets, &devices)
-        .into_iter()
-        .filter(|(node, info)| {
-            on_stream.contains(&info.id)
-                && binding::iq_source_of(graph, node)
-                    .is_some_and(|(source, stream)| source == lane.device && stream == lane.stream)
-        })
-        .map(|(node, info)| (info.id, node))
-        .collect();
+    let mut faces = match &lane.virtual_port {
+        Some(port) => virtual_faces(graph, &channels, port),
+        None => device_faces(graph, state, lane, &on_stream),
+    };
     let owners = trunk_roles(&state.trunk_systems, lane.set);
     for (channel, owner) in &owners {
         if on_stream.contains(channel) {
@@ -66,15 +61,56 @@ pub fn radio_of(lane: &Lane, graph: &PatchGraph, state: &StateSnapshot) -> Radio
         .filter(|(_, node)| tuning_locked(graph, node, 0))
         .map(|(channel, _)| *channel)
         .collect();
+    let arrayed = lane.tuned_array().is_some();
     Radio {
-        centre_held: tuning_locked(graph, &lane.device, lane.stream),
-        on_auto: auto_tuning(&set, lane.stream),
+        centre_held: !arrayed && tuning_locked(graph, &lane.device, lane.stream),
+        on_auto: !arrayed && auto_tuning(&set, lane.stream),
         set: Some(set),
         channels,
         faces,
         owners,
         locked,
     }
+}
+
+fn device_faces(
+    graph: &PatchGraph,
+    state: &StateSnapshot,
+    lane: &Lane,
+    on_stream: &HashSet<u32>,
+) -> HashMap<u32, String> {
+    let devices = binding::device_sets(graph, &state.device_sets);
+    binding::channels(graph, &state.device_sets, &devices)
+        .into_iter()
+        .filter(|(node, info)| {
+            on_stream.contains(&info.id)
+                && binding::iq_source_of(graph, node)
+                    .is_some_and(|(source, stream)| source == lane.device && stream == lane.stream)
+        })
+        .map(|(node, info)| (info.id, node))
+        .collect()
+}
+
+#[must_use]
+pub fn heard_of(cx: ScopeCx, channel: &sdrmm_wire::channel::ChannelInfo) -> f64 {
+    let set = cx.lane.with_value(|lane| lane.set);
+    let shift = cx.store.levels.with(|levels| {
+        levels
+            .get(&(set, channel.id))
+            .and_then(|level| level.shift_hz)
+    });
+    heard_hz(channel.settings.frequency_hz, shift)
+}
+
+#[must_use]
+pub fn untracked_heard_of(cx: ScopeCx, channel: &sdrmm_wire::channel::ChannelInfo) -> f64 {
+    let set = cx.lane.with_value(|lane| lane.set);
+    let shift = cx.store.levels.with_untracked(|levels| {
+        levels
+            .get(&(set, channel.id))
+            .and_then(|level| level.shift_hz)
+    });
+    heard_hz(channel.settings.frequency_hz, shift)
 }
 
 #[must_use]
@@ -105,6 +141,13 @@ pub fn select_channel(cx: ScopeCx, channel: u32) {
 }
 
 pub fn tune_centre(cx: ScopeCx, radio: &Radio, hz: f64) {
+    if let Some(array) = cx
+        .lane
+        .with_value(|lane| lane.tuned_array().map(str::to_owned))
+    {
+        tune_array(cx.store, array, hz.round());
+        return;
+    }
     let Some(set) = radio.set.as_ref() else {
         return;
     };
@@ -159,13 +202,8 @@ pub fn tune_to_band(cx: ScopeCx, hz: f64, suggested: Option<ChannelParams>) {
         tune_centre(cx, &radio, hz);
         return;
     };
-    let stream = cx.lane.with_value(|lane| lane.stream);
-    let held = radio
-        .set
-        .as_ref()
-        .is_none_or(|set| !auto_tuning(set, stream));
     let meta = cx.meta.get_untracked();
-    if held && meta.is_none_or(|meta| (hz - meta.centre_hz).abs() >= meta.span_hz / 2.0) {
+    if !radio.on_auto && meta.is_none_or(|meta| (hz - meta.centre_hz).abs() >= meta.span_hz / 2.0) {
         tune_centre(cx, &radio, hz);
     }
     let Some(info) = radio.channel(channel) else {
@@ -212,11 +250,7 @@ pub fn add_channel_at(cx: ScopeCx, pick: ScopePick, channel_type: String) {
             y: node.position.y,
         });
     tune_on_create(&id, pick.hz);
-    let port = if lane.stream == 0 {
-        String::from("iq")
-    } else {
-        format!("iq{}", lane.stream + 1)
-    };
+    let feeds = lane.feeds();
     let created = id.clone();
     cx.store.edit_graph(move |graph| {
         graph.nodes.push(PatchNode {
@@ -227,10 +261,7 @@ pub fn add_channel_at(cx: ScopeCx, pick: ScopePick, channel_type: String) {
             label: None,
         });
         graph.edges.push(PatchEdge {
-            from: PortRef {
-                node: lane.device,
-                port,
-            },
+            from: feeds,
             to: PortRef {
                 node: created,
                 port: String::from("iq"),

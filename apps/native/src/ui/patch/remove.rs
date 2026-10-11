@@ -111,7 +111,7 @@ fn teardown_of(store: Store, graph: &PatchGraph, id: &str) -> Option<Teardown> {
     }
 }
 
-pub async fn close(store: Store, teardowns: Vec<Teardown>) {
+pub async fn close(store: Store, teardowns: Vec<Teardown>) -> bool {
     let api = store.api();
     for teardown in teardowns {
         let outcome = match &teardown {
@@ -157,6 +157,8 @@ pub async fn close(store: Store, teardowns: Vec<Teardown>) {
         };
         if let Err(error) = outcome {
             store.say(format!("Cannot close the node: {error}"));
+            return false;
         }
     }
+    true
 }

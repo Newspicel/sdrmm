@@ -11,7 +11,12 @@ use super::{
     measure::{View, discriminator, tick_label},
 };
 use crate::ui::{
-    faces::scope::colormap::Colormap,
+    faces::scope::{
+        palette::Palette,
+        plot::{TracePoints, columns_of, level_y, trace_points},
+        traces::{DbWindow, trace_unit},
+        view::{FULL_VIEW, decibel_ticks, frequency_ticks},
+    },
     kit_raster::{PLOT_BG, PLOT_GRID, PLOT_HOLD, PLOT_INK, PLOT_TRACE, Pen, Raster, Rgba, Scene},
 };
 
@@ -19,8 +24,21 @@ pub const GRID: usize = 320;
 pub const FFT_SIZE: usize = 2048;
 pub const SPECTRUM_RANGE_DB: f32 = 90.0;
 pub const TREND_POINTS: usize = 240;
-const SPECTRUM_STEP_DB: f32 = 20.0;
+pub const AXIS_H: f32 = 16.0;
+pub const CHAR_PX: f32 = 6.0;
 const MINOR_TICKS: usize = 5;
+const PAD_LEFT: f32 = 40.0;
+const PAD_RIGHT: f32 = 8.0;
+const PAD_TOP: f32 = 6.0;
+const PAD_BOTTOM: f32 = 18.0;
+const INSET_TOP: f32 = 10.0;
+const INSET_BOTTOM: f32 = 4.0;
+const SCATTER_PAD: f32 = 12.0;
+const TICK_SPACING_PX: f32 = 110.0;
+const EDGE_PX: f32 = 2.0;
+const LEGEND_GAP_PX: f32 = 26.0;
+const BAND_FILL: f32 = 0.3;
+const TRACE_FILL: f32 = 0.2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settings {
@@ -42,50 +60,78 @@ impl Default for Settings {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Frac {
-    pub left: f32,
-    pub top: f32,
-    pub right: f32,
-    pub bottom: f32,
+pub struct PlotBox {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
-impl Frac {
-    fn px(self, raster: &Raster) -> (f32, f32, f32, f32) {
-        let (w, h) = (raster.width as f32, raster.height as f32);
-        let (x0, y0) = ((self.left * w).round(), (self.top * h).round());
+impl PlotBox {
+    fn device(self, scale: f32) -> (f32, f32, f32, f32) {
+        let (x0, y0) = ((self.x * scale).round(), (self.y * scale).round());
         (
             x0,
             y0,
-            (self.right * w).round() - x0,
-            (self.bottom * h).round() - y0,
+            ((self.x + self.w) * scale).round() - x0,
+            ((self.y + self.h) * scale).round() - y0,
         )
+    }
+
+    fn usable(self) -> bool {
+        self.w > 0.0 && self.h > 0.0
     }
 }
 
-pub const SPECTRUM_BOX: Frac = Frac {
-    left: 0.0,
-    top: 0.02,
-    right: 1.0,
-    bottom: 0.88,
-};
-pub const SCATTER_BOX: Frac = Frac {
-    left: 0.04,
-    top: 0.04,
-    right: 0.96,
-    bottom: 0.96,
-};
-pub const HISTOGRAM_BOX: Frac = Frac {
-    left: 0.02,
-    top: 0.08,
-    right: 0.98,
-    bottom: 0.86,
-};
-pub const TREND_BOX: Frac = Frac {
-    left: 0.14,
-    top: 0.08,
-    right: 0.98,
-    bottom: 0.86,
-};
+#[must_use]
+pub fn spectrum_box(width: f32, height: f32) -> PlotBox {
+    PlotBox {
+        x: 0.0,
+        y: 0.0,
+        w: width,
+        h: (height - AXIS_H).max(1.0),
+    }
+}
+
+#[must_use]
+pub fn scatter_box(constellation: bool, width: f32, height: f32) -> PlotBox {
+    let (w, h) = (width - 2.0 * SCATTER_PAD, height - 2.0 * SCATTER_PAD);
+    if !constellation {
+        return PlotBox {
+            x: SCATTER_PAD,
+            y: SCATTER_PAD,
+            w,
+            h,
+        };
+    }
+    let side = w.min(h);
+    PlotBox {
+        x: (width - side) / 2.0,
+        y: (height - side) / 2.0,
+        w: side,
+        h: side,
+    }
+}
+
+#[must_use]
+pub fn histogram_box(width: f32, height: f32) -> PlotBox {
+    PlotBox {
+        x: PAD_RIGHT,
+        y: PAD_TOP + INSET_TOP,
+        w: width - 2.0 * PAD_RIGHT,
+        h: height - PAD_TOP - PAD_BOTTOM - INSET_TOP - INSET_BOTTOM,
+    }
+}
+
+#[must_use]
+pub fn trend_box(width: f32, height: f32) -> PlotBox {
+    PlotBox {
+        x: PAD_LEFT,
+        y: PAD_TOP + INSET_TOP,
+        w: width - PAD_LEFT - PAD_RIGHT,
+        h: height - PAD_TOP - PAD_BOTTOM - INSET_TOP - INSET_BOTTOM,
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Anchor {
@@ -100,21 +146,46 @@ pub struct Label {
     pub y: f32,
     pub text: String,
     pub anchor: Anchor,
+    pub backed: bool,
 }
 
-fn label(x: f32, y: f32, text: impl Into<String>, anchor: Anchor) -> Label {
+fn plot_label(x: f32, baseline: f32, text: impl Into<String>, anchor: Anchor) -> Label {
     Label {
         x,
-        y,
+        y: baseline - 3.0,
         text: text.into(),
         anchor,
+        backed: true,
     }
+}
+
+fn axis_label(x: f32, middle: f32, text: impl Into<String>, anchor: Anchor) -> Label {
+    Label {
+        x,
+        y: middle,
+        text: text.into(),
+        anchor,
+        backed: false,
+    }
+}
+
+#[must_use]
+pub fn text_width(text: &str) -> f32 {
+    text.chars().count() as f32 * CHAR_PX
 }
 
 pub struct Trends {
     pub mer: Trend,
     pub margin: Trend,
     pub drift: Trend,
+}
+
+#[derive(Default)]
+struct Scratch {
+    points: TracePoints,
+    high: Vec<f32>,
+    low: Vec<f32>,
+    line: Vec<f32>,
 }
 
 pub struct Scope {
@@ -129,12 +200,13 @@ pub struct Scope {
     db: Vec<f32>,
     top: f32,
     lut: Vec<Rgba>,
+    scratch: Scratch,
     stamp: u64,
 }
 
 impl Scope {
     #[must_use]
-    pub fn new(palette: Colormap) -> Self {
+    pub fn new(palette: Palette) -> Self {
         Self {
             settings: Settings::default(),
             burst: None,
@@ -151,6 +223,7 @@ impl Scope {
             db: vec![0.0; FFT_SIZE],
             top: 0.0,
             lut: lut(palette),
+            scratch: Scratch::default(),
             stamp: 0,
         }
     }
@@ -218,69 +291,54 @@ impl Scope {
     }
 
     #[must_use]
-    pub fn square(&self) -> bool {
-        self.shown() == View::Constellation
-    }
-
-    #[must_use]
-    pub fn labels(&self) -> Vec<Label> {
+    pub fn labels(&self, width: f32, height: f32) -> Vec<Label> {
         match self.shown() {
             View::Spectrum => self.burst.as_ref().map_or_else(Vec::new, |burst| {
-                let mut labels = spectrum_labels(burst);
-                labels.extend(spectrum_db_labels(self.top));
-                labels
+                spectrum_labels(burst.sample_rate, self.window(), width, height)
             }),
-            View::Constellation => constellation_labels(self.scale),
-            View::Eye => vec![
-                label(
-                    SCATTER_BOX.left + 0.01,
-                    SCATTER_BOX.top + 0.03,
-                    self.settings.eye.label(),
-                    Anchor::Left,
-                ),
-                label(
-                    SCATTER_BOX.right - 0.01,
-                    SCATTER_BOX.bottom - 0.04,
-                    "2 symbols",
-                    Anchor::Right,
-                ),
-            ],
-            View::Levels => self.levels_labels(),
+            View::Constellation => {
+                constellation_labels(scatter_box(true, width, height), self.scale)
+            }
+            View::Eye => eye_labels(scatter_box(false, width, height), self.settings.eye),
+            View::Levels => self.levels_labels(histogram_box(width, height)),
             View::Quality => trend_labels(
+                trend_box(width, height),
                 &[&self.trends.mer, &self.trends.margin],
                 &["MER dB", "margin"],
                 "per block",
                 false,
             ),
-            View::Drift => trend_labels(&[&self.trends.drift], &["carrier"], "Hz", true),
+            View::Drift => trend_labels(
+                trend_box(width, height),
+                &[&self.trends.drift],
+                &["carrier"],
+                "Hz",
+                true,
+            ),
             View::States => Vec::new(),
         }
     }
 
-    fn levels_labels(&self) -> Vec<Label> {
+    fn window(&self) -> DbWindow {
+        DbWindow {
+            min: f64::from(self.top - SPECTRUM_RANGE_DB),
+            max: f64::from(self.top),
+        }
+    }
+
+    fn levels_labels(&self, plot: PlotBox) -> Vec<Label> {
         let mut labels = vec![
-            label(
-                HISTOGRAM_BOX.left + 0.01,
-                HISTOGRAM_BOX.top + 0.03,
-                "share",
-                Anchor::Left,
-            ),
-            label(
-                HISTOGRAM_BOX.right - 0.01,
-                HISTOGRAM_BOX.top + 0.03,
-                "level",
-                Anchor::Right,
-            ),
+            plot_label(plot.x + 4.0, plot.y + 11.0, "share", Anchor::Left),
+            plot_label(plot.x + plot.w - 4.0, plot.y + 11.0, "level", Anchor::Right),
         ];
         if let Some(block) = &self.block {
             let scale = block.reference_scale();
             for level in reference_levels(block) {
-                let x = histogram_x(level, scale);
-                if (0.0..=1.0).contains(&x) {
-                    let at = HISTOGRAM_BOX.left + x * (HISTOGRAM_BOX.right - HISTOGRAM_BOX.left);
-                    labels.push(label(
-                        at,
-                        HISTOGRAM_BOX.bottom + 0.06,
+                let x = (plot.x + histogram_x(level, scale) * plot.w).round() + 0.5;
+                if (plot.x..=plot.x + plot.w).contains(&x) {
+                    labels.push(plot_label(
+                        x,
+                        plot.y + plot.h + 11.0,
                         level_text(level),
                         Anchor::Centre,
                     ));
@@ -308,47 +366,79 @@ impl Scope {
         self.top = spectrum_top(&self.db);
     }
 
-    fn paint_spectrum(&self, raster: &mut Raster) {
-        if self.burst.is_none() {
+    fn paint_spectrum(&mut self, raster: &mut Raster) {
+        let Some(burst) = &self.burst else {
             return;
-        }
-        let top = self.top;
-        let (x0, y0, w, h) = SPECTRUM_BOX.px(raster);
+        };
+        let scale = raster.scale.max(0.01);
+        let (width, height) = (raster.width as f32 / scale, raster.height as f32 / scale);
+        let plot = spectrum_box(width, height);
+        let window = self.window();
         let grid = Pen::new(PLOT_GRID, 1.0, 1.0);
-        for step in 1..=4 {
-            let y = y0 + h * (step as f32 * SPECTRUM_STEP_DB / SPECTRUM_RANGE_DB);
-            raster.line((x0, y), (x0 + w, y), grid);
+        let foot = plot.h * scale;
+        for db in decibel_ticks(window.min, window.max, 4.0) {
+            let y = grid_y(db, plot.h, window) * scale;
+            raster.line((0.0, y), (raster.width as f32, y), grid);
         }
-        for column in 1..8 {
-            let x = x0 + w * column as f32 / 8.0;
-            raster.line((x, y0), (x, y0 + h), grid);
+        for at in spectrum_ticks(burst.sample_rate, width)
+            .into_iter()
+            .map(|(at, _)| at)
+        {
+            let x = ((at * width).round() + 0.5) * scale;
+            raster.line((x, 0.0), (x, foot), grid);
         }
-        let points = trace_points(&self.db, w as usize, top);
-        let foot = y0 + h;
+        let centre = (width / 2.0).round() + 0.5;
+        let dash = Pen::new(PLOT_INK, 0.7, 1.0).dashed(2.0 * scale, 4.0 * scale);
+        raster.line((centre * scale, 0.0), (centre * scale, foot), dash);
+        self.paint_trace(raster, f64::from(foot), window);
+    }
+
+    fn paint_trace(&mut self, raster: &mut Raster, foot: f64, window: DbWindow) {
+        let columns = raster.width as usize;
+        let scratch = &mut self.scratch;
+        trace_points(
+            &self.db,
+            FULL_VIEW,
+            columns as f64,
+            f64::NEG_INFINITY,
+            &mut scratch.points,
+        );
+        columns_of(
+            &scratch.points,
+            columns,
+            [&mut scratch.high, &mut scratch.low, &mut scratch.line],
+        );
+        let pen = Pen::new(PLOT_TRACE, 1.0, 1.25 * raster.scale);
         let mut last = None;
-        for (column, level) in points.iter().enumerate() {
-            let x = x0 + column as f32;
-            let y = y0 + h * (1.0 - level);
-            raster.rect(x, y, x + 1.0, foot, PLOT_TRACE, 0.22);
+        for column in 0..columns {
+            let x = column as f32;
+            let high = level_y(scratch.high[column], foot, window);
+            let low = level_y(scratch.low[column], foot, window);
+            let line = level_y(scratch.line[column], foot, window);
+            raster.rect(x, high, x + 1.0, low.max(high + 1.0), PLOT_TRACE, BAND_FILL);
+            raster.rect(x, line, x + 1.0, foot as f32, PLOT_TRACE, TRACE_FILL);
             if let Some(previous) = last {
-                raster.line(previous, (x, y), Pen::new(PLOT_TRACE, 1.0, raster.scale));
+                raster.line(previous, (x + 0.5, line), pen);
             }
-            last = Some((x, y));
+            last = Some((x + 0.5, line));
         }
     }
 
     fn paint_scatter(&self, raster: &mut Raster) {
         let constellation = self.shown() == View::Constellation;
-        if constellation {
-            let side = raster.width.min(raster.height);
-            raster.resize(side, side);
-            raster.fill(PLOT_BG);
-            raster.aspect = Some(1.0);
+        let scale = raster.scale.max(0.01);
+        let plot = scatter_box(
+            constellation,
+            raster.width as f32 / scale,
+            raster.height as f32 / scale,
+        );
+        if !plot.usable() {
+            return;
         }
-        let (x0, y0, w, h) = SCATTER_BOX.px(raster);
+        let (x0, y0, w, h) = plot.device(scale);
         graticule(raster, (x0, y0, w, h), 8, if constellation { 8 } else { 6 });
         if constellation {
-            let pen = Pen::new(PLOT_INK, 0.35, 1.0).dashed(2.0 * raster.scale, 4.0 * raster.scale);
+            let pen = Pen::new(PLOT_INK, 0.35, 1.0).dashed(2.0 * scale, 4.0 * scale);
             raster.circle((x0 + w / 2.0, y0 + h / 2.0), w / 2.0, pen);
         }
         self.recolour(raster, (x0, y0, w, h));
@@ -358,12 +448,11 @@ impl Scope {
         if w < 1.0 || h < 1.0 {
             return;
         }
-        let (grid_w, grid_h) = (self.grid.width, self.grid.height);
         for py in 0..h as usize {
-            let gy = (py * grid_h / h as usize).min(grid_h - 1);
+            let gy = (py as f32 + 0.5) * self.grid.height as f32 / h - 0.5;
             for px in 0..w as usize {
-                let gx = (px * grid_w / w as usize).min(grid_w - 1);
-                let value = self.grid.cells[gy * grid_w + gx];
+                let gx = (px as f32 + 0.5) * self.grid.width as f32 / w - 0.5;
+                let value = smoothed(&self.grid, gx, gy);
                 if value <= 0.0 {
                     continue;
                 }
@@ -397,7 +486,12 @@ impl Scope {
             }
             (None, None) => return,
         };
-        let (x0, y0, w, h) = HISTOGRAM_BOX.px(raster);
+        let pixel = raster.scale.max(0.01);
+        let plot = histogram_box(raster.width as f32 / pixel, raster.height as f32 / pixel);
+        if !plot.usable() || bins.is_empty() {
+            return;
+        }
+        let (x0, y0, w, h) = plot.device(pixel);
         graticule(raster, (x0, y0, w, h), 8, 4);
         let step = w / bins.len() as f32;
         let foot = y0 + h;
@@ -414,7 +508,7 @@ impl Scope {
                 );
             }
         }
-        let dash = Pen::new(PLOT_HOLD, 0.7, 1.0).dashed(3.0 * raster.scale, 3.0 * raster.scale);
+        let dash = Pen::new(PLOT_HOLD, 0.7, 1.0).dashed(3.0 * pixel, 3.0 * pixel);
         for level in reference {
             let x = x0 + histogram_x(level, scale) * w;
             if (x0..=x0 + w).contains(&x) {
@@ -423,15 +517,20 @@ impl Scope {
         }
     }
 
-    fn paint_trend(&self, raster: &mut Raster, series: &[(&Trend, Rgba)], zero: bool) {
-        let (x0, y0, w, h) = TREND_BOX.px(raster);
+    fn paint_trend(&self, raster: &mut Raster, series: &[(&Trend, Rgba, &str)], zero: bool) {
+        let scale = raster.scale.max(0.01);
+        let plot = trend_box(raster.width as f32 / scale, raster.height as f32 / scale);
+        if !plot.usable() {
+            return;
+        }
+        let (x0, y0, w, h) = plot.device(scale);
         graticule(raster, (x0, y0, w, h), 10, 4);
-        let trends: Vec<&Trend> = series.iter().map(|(trend, _)| *trend).collect();
+        let trends: Vec<&Trend> = series.iter().map(|(trend, _, _)| *trend).collect();
         let Some((min, max, longest)) = trend_span(&trends, zero) else {
             return;
         };
-        let pen_width = 1.5 * raster.scale;
-        for (trend, colour) in series {
+        let pen_width = 1.5 * scale;
+        for (trend, colour, _) in series {
             if trend.len() < 2 {
                 continue;
             }
@@ -445,18 +544,17 @@ impl Scope {
                 last = Some((x, y));
             }
         }
-        let mut at = x0 + 6.0 * raster.scale;
-        for (_, colour) in series {
-            let y = y0 + h * 0.04;
+        let names: Vec<&str> = series.iter().map(|(_, _, name)| *name).collect();
+        for ((_, colour, _), at) in series.iter().zip(legend_offsets(plot, &names)) {
+            let (left, top) = (at * scale, (plot.y + 7.0) * scale);
             raster.rect(
-                at,
-                y,
-                at + 8.0 * raster.scale,
-                y + 2.0 * raster.scale,
+                left,
+                top,
+                left + 8.0 * scale,
+                top + 2.0 * scale,
                 *colour,
                 1.0,
             );
-            at += w * 0.22;
         }
     }
 }
@@ -475,18 +573,39 @@ impl Scene for Scope {
             View::Quality => self.paint_trend(
                 raster,
                 &[
-                    (&self.trends.mer, PLOT_TRACE),
-                    (&self.trends.margin, PLOT_HOLD),
+                    (&self.trends.mer, PLOT_TRACE, "MER dB"),
+                    (&self.trends.margin, PLOT_HOLD, "margin"),
                 ],
                 false,
             ),
-            View::Drift => self.paint_trend(raster, &[(&self.trends.drift, PLOT_TRACE)], true),
+            View::Drift => {
+                self.paint_trend(raster, &[(&self.trends.drift, PLOT_TRACE, "carrier")], true);
+            }
             View::States => {}
         }
     }
 }
 
-fn lut(palette: Colormap) -> Vec<Rgba> {
+#[must_use]
+pub fn smoothed(grid: &Grid, x: f32, y: f32) -> f32 {
+    let cell = |gx: i64, gy: i64| {
+        let gx = gx.clamp(0, grid.width as i64 - 1) as usize;
+        let gy = gy.clamp(0, grid.height as i64 - 1) as usize;
+        grid.cells[gy * grid.width + gx]
+    };
+    let (left, top) = (x.floor(), y.floor());
+    let (fx, fy) = (x - left, y - top);
+    let (left, top) = (left as i64, top as i64);
+    let upper = cell(left, top) * (1.0 - fx) + cell(left + 1, top) * fx;
+    let lower = cell(left, top + 1) * (1.0 - fx) + cell(left + 1, top + 1) * fx;
+    upper * (1.0 - fy) + lower * fy
+}
+
+fn grid_y(db: f64, plot_h: f32, window: DbWindow) -> f32 {
+    (f64::from(plot_h) * (1.0 - trace_unit(db, window))).round() as f32 + 0.5
+}
+
+fn lut(palette: Palette) -> Vec<Rgba> {
     (0..256)
         .map(|step| {
             let [r, g, b] = palette.sample(f64::from(step as f32 / 255.0));
@@ -542,80 +661,109 @@ pub fn spectrum_top(db: &[f32]) -> f32 {
 }
 
 #[must_use]
-pub fn trace_points(db: &[f32], columns: usize, top: f32) -> Vec<f32> {
-    if db.is_empty() || columns == 0 {
-        return Vec::new();
-    }
-    (0..columns)
-        .map(|column| {
-            let from = column * db.len() / columns;
-            let to = ((column + 1) * db.len() / columns)
-                .max(from + 1)
-                .min(db.len());
-            let peak = db[from..to]
-                .iter()
-                .copied()
-                .fold(f32::NEG_INFINITY, f32::max);
-            ((peak - (top - SPECTRUM_RANGE_DB)) / SPECTRUM_RANGE_DB).clamp(0.0, 1.0)
-        })
+pub fn spectrum_ticks(sample_rate: f32, width: f32) -> Vec<(f32, String)> {
+    let target = (width / TICK_SPACING_PX).floor().max(2.0);
+    frequency_ticks(0.0, f64::from(sample_rate), FULL_VIEW, f64::from(target))
+        .into_iter()
+        .map(|tick| (tick.at as f32, format_offset(tick.hz)))
         .collect()
 }
 
-fn spectrum_labels(burst: &Burst) -> Vec<Label> {
+#[must_use]
+pub fn format_offset(hz: f64) -> String {
+    let khz = hz / 1e3;
+    let shown = if khz.abs() < 1e-9 { 0.0 } else { khz };
+    let decimals = if shown == 0.0 || shown.abs() >= 10.0 {
+        0
+    } else {
+        1
+    };
+    let sign = if shown > 0.0 { "+" } else { "" };
+    format!("{sign}{shown:.decimals$}")
+}
+
+#[must_use]
+pub fn fits(x: f32, text: &str, width: f32) -> bool {
+    let half = text_width(text) / 2.0;
+    x - half >= EDGE_PX && x + half <= width - EDGE_PX
+}
+
+#[must_use]
+pub fn spectrum_labels(sample_rate: f32, window: DbWindow, width: f32, height: f32) -> Vec<Label> {
+    let plot = spectrum_box(width, height);
     let mut labels = vec![
-        label(0.01, SPECTRUM_BOX.top + 0.03, "dBFS", Anchor::Left),
-        label(0.99, SPECTRUM_BOX.bottom + 0.06, "kHz", Anchor::Right),
+        axis_label(4.0, 8.0, "dBFS", Anchor::Left),
+        axis_label(width - 4.0, 8.0, "kHz", Anchor::Right),
     ];
-    for column in 1..8 {
-        let fraction = column as f32 / 8.0;
-        let khz = (fraction - 0.5) * burst.sample_rate / 1_000.0;
-        labels.push(label(
-            fraction,
-            SPECTRUM_BOX.bottom + 0.06,
-            format!("{khz:+.1}"),
-            Anchor::Centre,
-        ));
+    for (at, text) in spectrum_ticks(sample_rate, width) {
+        let x = (at * width).round() + 0.5;
+        if fits(x, &text, width) {
+            labels.push(axis_label(x, height - AXIS_H / 2.0, text, Anchor::Centre));
+        }
+    }
+    for db in decibel_ticks(window.min, window.max, 4.0) {
+        let y = grid_y(db, plot.h, window);
+        if y > 24.0 && y < plot.h - 4.0 {
+            labels.push(Label {
+                backed: true,
+                ..axis_label(4.0, y - 7.0, format!("{db:.0}"), Anchor::Left)
+            });
+        }
     }
     labels
 }
 
-fn spectrum_db_labels(top: f32) -> Vec<Label> {
-    (1..=4)
-        .map(|step| {
-            let db = top - step as f32 * SPECTRUM_STEP_DB;
-            let y = SPECTRUM_BOX.top
-                + (SPECTRUM_BOX.bottom - SPECTRUM_BOX.top)
-                    * (step as f32 * SPECTRUM_STEP_DB / SPECTRUM_RANGE_DB);
-            label(0.01, y - 0.03, format!("{db:.0}"), Anchor::Left)
-        })
-        .collect()
-}
-
-fn constellation_labels(scale: f32) -> Vec<Label> {
+fn constellation_labels(plot: PlotBox, scale: f32) -> Vec<Label> {
     let half = scale / 2.0;
-    let span = |fraction: f32| SCATTER_BOX.left + fraction * (SCATTER_BOX.right - SCATTER_BOX.left);
-    let rise = |fraction: f32| SCATTER_BOX.top + fraction * (SCATTER_BOX.bottom - SCATTER_BOX.top);
+    let bottom = plot.y + plot.h - 5.0;
     vec![
-        label(span(1.0) - 0.01, rise(0.5) - 0.04, "I", Anchor::Right),
-        label(span(0.5) + 0.02, rise(0.0) + 0.03, "Q", Anchor::Left),
-        label(
-            span(0.25),
-            rise(1.0) - 0.04,
+        plot_label(
+            plot.x + plot.w - 5.0,
+            plot.y + plot.h / 2.0 - 6.0,
+            "I",
+            Anchor::Right,
+        ),
+        plot_label(
+            plot.x + plot.w / 2.0 + 6.0,
+            plot.y + 12.0,
+            "Q",
+            Anchor::Left,
+        ),
+        plot_label(
+            plot.x + plot.w / 4.0,
+            bottom,
             tick_label(-half),
             Anchor::Centre,
         ),
-        label(
-            span(0.75),
-            rise(1.0) - 0.04,
+        plot_label(
+            plot.x + plot.w * 0.75,
+            bottom,
             tick_label(half),
             Anchor::Centre,
         ),
-        label(span(0.0) + 0.01, rise(0.25), tick_label(half), Anchor::Left),
-        label(
-            span(0.0) + 0.01,
-            rise(0.75),
+        plot_label(
+            plot.x + 5.0,
+            plot.y + plot.h / 4.0 + 4.0,
+            tick_label(half),
+            Anchor::Left,
+        ),
+        plot_label(
+            plot.x + 5.0,
+            plot.y + plot.h * 0.75 + 4.0,
             tick_label(-half),
             Anchor::Left,
+        ),
+    ]
+}
+
+fn eye_labels(plot: PlotBox, eye: Eye) -> Vec<Label> {
+    vec![
+        plot_label(plot.x + 5.0, plot.y + 12.0, eye.label(), Anchor::Left),
+        plot_label(
+            plot.x + plot.w - 5.0,
+            plot.y + plot.h - 5.0,
+            "2 symbols",
+            Anchor::Right,
         ),
     ]
 }
@@ -659,35 +807,38 @@ pub fn trend_span(trends: &[&Trend], zero: bool) -> Option<(f32, f32, usize)> {
     Some((min - pad, max + pad, longest))
 }
 
-fn trend_labels(trends: &[&Trend], names: &[&str], unit: &str, zero: bool) -> Vec<Label> {
+#[must_use]
+pub fn legend_offsets(plot: PlotBox, names: &[&str]) -> Vec<f32> {
+    let mut at = plot.x + 6.0;
+    names
+        .iter()
+        .map(|name| {
+            let here = at;
+            at += text_width(name) + LEGEND_GAP_PX;
+            here
+        })
+        .collect()
+}
+
+fn trend_labels(
+    plot: PlotBox,
+    trends: &[&Trend],
+    names: &[&str],
+    unit: &str,
+    zero: bool,
+) -> Vec<Label> {
     let mut labels = vec![
-        label(
-            TREND_BOX.right - 0.01,
-            TREND_BOX.top + 0.03,
-            unit,
-            Anchor::Right,
-        ),
-        label(
-            TREND_BOX.left,
-            TREND_BOX.bottom + 0.06,
-            "older",
-            Anchor::Left,
-        ),
-        label(
-            TREND_BOX.right,
-            TREND_BOX.bottom + 0.06,
+        plot_label(plot.x + plot.w - 6.0, plot.y + 11.0, unit, Anchor::Right),
+        plot_label(plot.x, plot.y + plot.h + 12.0, "older", Anchor::Left),
+        plot_label(
+            plot.x + plot.w,
+            plot.y + plot.h + 12.0,
             "now",
             Anchor::Right,
         ),
     ];
-    let width = TREND_BOX.right - TREND_BOX.left;
-    for (index, name) in names.iter().enumerate() {
-        labels.push(label(
-            TREND_BOX.left + 0.06 + width * 0.22 * index as f32,
-            TREND_BOX.top + 0.03,
-            *name,
-            Anchor::Left,
-        ));
+    for (name, at) in names.iter().zip(legend_offsets(plot, names)) {
+        labels.push(plot_label(at + 12.0, plot.y + 11.0, *name, Anchor::Left));
     }
     let Some((min, max, _)) = trend_span(trends, zero) else {
         return labels;
@@ -695,10 +846,10 @@ fn trend_labels(trends: &[&Trend], names: &[&str], unit: &str, zero: bool) -> Ve
     let decimals = if (max - min).abs() < 10.0 { 1 } else { 0 };
     for step in 0..=4 {
         let value = min + (max - min) * step as f32 / 4.0;
-        let y = TREND_BOX.bottom - (TREND_BOX.bottom - TREND_BOX.top) * step as f32 / 4.0;
-        labels.push(label(
-            TREND_BOX.left - 0.01,
-            y,
+        let y = plot.y + (1.0 - (value - min) / (max - min)) * plot.h;
+        labels.push(plot_label(
+            plot.x - 5.0,
+            y + 3.0,
             format!("{value:.decimals$}"),
             Anchor::Right,
         ));
@@ -710,6 +861,7 @@ fn trend_labels(trends: &[&Trend], names: &[&str], unit: &str, zero: bool) -> Ve
 mod tests {
     use super::super::frames::tests::block;
     use super::*;
+    use crate::ui::faces::scope::colormap::Colormap;
 
     fn burst(samples: Vec<f32>) -> Burst {
         Burst {
@@ -719,9 +871,13 @@ mod tests {
         }
     }
 
+    fn scope() -> Scope {
+        Scope::new(Palette::Map(Colormap::Viridis))
+    }
+
     #[test]
     fn a_burst_in_constellation_view_lights_the_grid_and_asks_for_a_repaint() {
-        let mut scope = Scope::new(Colormap::Viridis);
+        let mut scope = scope();
         scope.configure(Settings {
             view: View::Constellation,
             decimate: false,
@@ -737,7 +893,7 @@ mod tests {
 
     #[test]
     fn a_block_feeds_the_trends_and_unlocks_the_symbol_views() {
-        let mut scope = Scope::new(Colormap::Viridis);
+        let mut scope = scope();
         scope.configure(Settings {
             view: View::Quality,
             ..Settings::default()
@@ -750,8 +906,8 @@ mod tests {
     }
 
     #[test]
-    fn the_constellation_paints_square_and_the_spectrum_fills_the_plot() {
-        let mut scope = Scope::new(Colormap::Viridis);
+    fn every_view_paints_the_whole_plot() {
+        let mut scope = scope();
         scope.take_burst(burst((0..256).map(|i| (i as f32 * 0.3).sin()).collect()));
         let mut raster = Raster::sized(200, 100);
         scope.paint(&mut raster);
@@ -770,17 +926,71 @@ mod tests {
         });
         let mut square = Raster::sized(200, 100);
         scope.paint(&mut square);
-        assert_eq!((square.width, square.height), (100, 100));
-        assert_eq!(square.aspect, Some(1.0));
-        assert!(scope.square());
+        assert_eq!((square.width, square.height), (200, 100));
+    }
+
+    #[test]
+    fn the_constellation_sits_in_a_centred_square() {
+        let plot = scatter_box(true, 200.0, 100.0);
+        assert_eq!((plot.w, plot.h), (76.0, 76.0));
+        assert_eq!((plot.x, plot.y), (62.0, 12.0));
+        let eye = scatter_box(false, 200.0, 100.0);
+        assert_eq!((eye.w, eye.h), (176.0, 76.0));
     }
 
     #[test]
     fn the_spectrum_window_sits_below_the_rounded_peak() {
         assert_eq!(spectrum_top(&[-43.0, -71.0]), -40.0);
         assert_eq!(spectrum_top(&[]), 0.0);
-        let points = trace_points(&[-40.0, -130.0, -85.0, -85.0], 2, -40.0);
-        assert_eq!(points, vec![1.0, 0.5]);
+    }
+
+    #[test]
+    fn spectrum_ticks_space_about_one_per_110_px_and_read_in_khz() {
+        let narrow = spectrum_ticks(48_000.0, 220.0);
+        let wide = spectrum_ticks(48_000.0, 880.0);
+        assert!(wide.len() > narrow.len());
+        assert!(
+            wide.iter()
+                .any(|(at, text)| (*at - 0.5).abs() < 1e-6 && text == "0")
+        );
+        assert_eq!(format_offset(12_000.0), "+12");
+        assert_eq!(format_offset(-2_500.0), "-2.5");
+        assert_eq!(format_offset(1e-7), "0");
+    }
+
+    #[test]
+    fn spectrum_labels_name_the_axes_and_skip_what_would_clip() {
+        let window = DbWindow {
+            min: -130.0,
+            max: -40.0,
+        };
+        let labels = spectrum_labels(48_000.0, window, 400.0, 200.0);
+        assert!(labels.iter().any(|label| label.text == "dBFS"));
+        let khz = labels
+            .iter()
+            .find(|label| label.text == "kHz")
+            .expect("a unit");
+        assert_eq!((khz.x, khz.anchor), (396.0, Anchor::Right));
+        assert!(
+            labels
+                .iter()
+                .filter(|label| label.anchor == Anchor::Centre)
+                .all(|label| fits(label.x, &label.text, 400.0))
+        );
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.backed && label.text == "-80")
+        );
+    }
+
+    #[test]
+    fn a_smoothed_cell_blends_its_neighbours() {
+        let mut grid = Grid::new(2, 1);
+        grid.cells = vec![0.0, 1.0];
+        assert!((smoothed(&grid, 0.5, 0.0) - 0.5).abs() < 1e-6);
+        assert_eq!(smoothed(&grid, -3.0, 0.0), 0.0);
+        assert_eq!(smoothed(&grid, 9.0, 0.0), 1.0);
     }
 
     #[test]
@@ -797,6 +1007,14 @@ mod tests {
     }
 
     #[test]
+    fn the_trend_legend_spaces_by_its_measured_names() {
+        let plot = trend_box(400.0, 200.0);
+        let offsets = legend_offsets(plot, &["MER dB", "margin"]);
+        assert_eq!(offsets[0], plot.x + 6.0);
+        assert_eq!(offsets[1], plot.x + 6.0 + 6.0 * CHAR_PX + 26.0);
+    }
+
+    #[test]
     fn reference_levels_are_labelled_where_the_histogram_puts_them() {
         assert_eq!(reference_levels(&block()), vec![1.0, 3.0, -1.0, -3.0]);
         assert!((histogram_x(0.0, 4.2) - 0.5).abs() < 1e-6);
@@ -805,8 +1023,8 @@ mod tests {
     }
 
     #[test]
-    fn every_view_but_the_states_carries_its_labels() {
-        let mut scope = Scope::new(Colormap::Viridis);
+    fn every_view_but_the_states_carries_backed_labels() {
+        let mut scope = scope();
         scope.take_burst(burst(vec![1.0, 0.0]));
         scope.take_block(block());
         for view in [
@@ -821,12 +1039,23 @@ mod tests {
                 view,
                 ..Settings::default()
             });
-            assert!(!scope.labels().is_empty(), "{view:?}");
+            assert!(!scope.labels(400.0, 240.0).is_empty(), "{view:?}");
         }
+        scope.configure(Settings {
+            view: View::Levels,
+            ..Settings::default()
+        });
+        assert!(
+            scope
+                .labels(400.0, 240.0)
+                .iter()
+                .filter(|label| label.anchor == Anchor::Centre)
+                .all(|label| label.backed)
+        );
         scope.configure(Settings {
             view: View::States,
             ..Settings::default()
         });
-        assert!(scope.labels().is_empty());
+        assert!(scope.labels(400.0, 240.0).is_empty());
     }
 }

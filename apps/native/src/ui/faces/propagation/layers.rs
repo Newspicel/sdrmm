@@ -5,11 +5,13 @@ use crate::ui::map::{
     ACCENT, Geo,
     geo::{great_circle_line, unwrap_trail},
     heat::{Ramp, mix},
-    overlay::{Dot, EDGE, Heat, Label, Line, Overlay, WHITE},
+    overlay::{Dot, EDGE, Heat, Ink, Label, Line, Overlay, WHITE},
 };
 
 pub const MUF_MIN_MHZ: f64 = 4.0;
 pub const MUF_MAX_MHZ: f64 = 40.0;
+const MUF_LABEL_HALF_PX: f64 = 6.0;
+const SONDE_LABEL_BELOW_PX: f64 = 7.0;
 
 const MUF_STOPS: [(f64, u32); 5] = [
     (MUF_MIN_MHZ, 0x3b_4a_7a),
@@ -64,6 +66,7 @@ fn activity(cells: &[Cell]) -> Heat {
                 (1.0, 0xef_62_62, 1.0),
             ],
         },
+        max_zoom: f64::INFINITY,
     }
 }
 
@@ -82,8 +85,12 @@ fn muf_cells(cells: &[Cell], overlay: &mut Overlay) {
             key: format!("muf:{}", cell.key),
             at: cell.centre,
             text: format!("{muf:.0}"),
-            colour: WHITE,
-            below_px: -6.0,
+            ink: Ink::Fixed {
+                text: EDGE,
+                halo: WHITE,
+            },
+            bold: false,
+            below_px: -MUF_LABEL_HALF_PX,
             min_zoom: 3.0,
         });
     }
@@ -121,8 +128,12 @@ pub fn overlay(
             key: format!("sonde:{}", sonde.code),
             at,
             text: format!("{:.1}", sonde.muf3000_mhz),
-            colour: WHITE,
-            below_px: 6.0,
+            ink: Ink::Fixed {
+                text: WHITE,
+                halo: EDGE,
+            },
+            bold: false,
+            below_px: SONDE_LABEL_BELOW_PX,
             min_zoom: 3.0,
         });
     }

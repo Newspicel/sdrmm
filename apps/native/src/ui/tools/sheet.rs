@@ -44,9 +44,6 @@ pub const SHEET: &str = css!(
 .tool-box { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background-color: var(--panel-2); }
 .tool-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .tool-field .pick__wrap { min-width: 150px; }
-.tool-num { align-items: center; gap: 6px; }
-.tool-num .entry { width: 96px; flex: 0 0 auto; }
-.tool-num__unit { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
 .tool-text { width: 160px; }
 .tool-text.wide { width: 256px; }
 .tool-text.narrow { width: 104px; }
@@ -72,6 +69,9 @@ pub const SHEET: &str = css!(
     color: var(--ink);
 }
 .tool-chip__key { color: var(--ink-faint); }
+.tool-chip__value.ok { color: var(--ok); }
+.tool-chip__value.danger { color: var(--danger); }
+.tool-chip__value.dim { color: var(--ink-dim); }
 .tool-chip.on { border-color: var(--accent); color: var(--accent); }
 .tool-chip:hover { border-color: var(--line-strong); }
 
@@ -82,6 +82,7 @@ pub const SHEET: &str = css!(
 .tool-accent { color: var(--accent); }
 .tool-ok { color: var(--ok); }
 .tool-danger { color: var(--danger); }
+.tool-error { color: var(--danger); font-size: 12px; }
 .tool-warn { color: oklch(0.8 0.14 80); }
 .tool-sans { font-family: system-ui, sans-serif; }
 .tool-mono { font-family: var(--mono); font-size: 12px; }
@@ -117,9 +118,10 @@ pub const SHEET: &str = css!(
 .ant-view { display: flex; flex-direction: column; gap: 8px; }
 .ant-view__head { align-items: center; gap: 10px; }
 .ant-view__hover { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
-.ant-draw { position: relative; width: 640px; height: 320px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 4px; background-color: var(--panel-2); overflow: hidden; }
+.ant-frame { display: flex; flex-direction: column; align-items: center; border: 1px solid var(--line); border-radius: 4px; background-color: var(--panel-2); overflow: hidden; }
+.ant-draw { position: relative; width: 100%; max-width: 576px; aspect-ratio: 2 / 1; flex: 0 0 auto; }
 .ant-draw.orbit { cursor: grab; }
-.ant-draw__canvas { position: absolute; left: 0; top: 0; width: 640px; height: 320px; }
+.ant-draw__canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 .ant-label { position: absolute; font-family: var(--mono); font-size: 10px; color: var(--ink-dim); white-space: nowrap; pointer-events: none; }
 .ant-label.centre { transform: translateX(-50%); }
 .ant-label.up { transform: translate(-50%, -50%) rotate(-90deg); }
@@ -152,8 +154,8 @@ pub const SHEET: &str = css!(
 .vna-label.trace { color: #66e5ff; }
 .vna-tick { position: absolute; left: 0; width: 56px; text-align: right; }
 .vna-title { text-align: center; }
-.vna-smith { position: relative; width: 340px; height: 340px; flex: 0 0 auto; align-self: center; border: 1px solid var(--line); border-radius: 4px; background-color: #000000; overflow: hidden; }
-.vna-smith__canvas { position: absolute; left: 0; top: 0; width: 340px; height: 340px; }
+.vna-smith { position: relative; width: 100%; max-width: 460px; aspect-ratio: 1 / 1; flex: 0 0 auto; align-self: center; border: 1px solid var(--line); border-radius: 4px; background-color: #000000; overflow: hidden; }
+.vna-smith__canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 .vna-marker { align-items: center; gap: 8px; }
 .vna-marker__at { width: 110px; text-align: right; font-family: var(--mono); font-size: 12px; color: var(--ink); }
 .vna-step { align-items: center; gap: 8px; }

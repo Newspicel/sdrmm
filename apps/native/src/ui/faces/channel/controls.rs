@@ -6,12 +6,14 @@ use zgui::prelude::*;
 
 use super::{
     settings::{NumberLimit, limit_of},
-    tables::{Options, with_current},
+    tables::{Options, Titled, with_current},
 };
 use crate::{
     store::Store,
     ui::{
-        kit_channel::{NumberSpec, format_hz, number_field, setting_row, toggle_row},
+        kit_channel::{
+            NumberSpec, format_hz, number_field, setting_row, titled_segments, toggle_row,
+        },
         widgets::{pick, segments},
     },
 };
@@ -137,9 +139,12 @@ pub fn number(
     )
 }
 
+pub const CHANNEL_BANDWIDTH: Option<&str> = Some("Channel bandwidth");
+
 pub fn bandwidth(
     ctx: Ctx,
     label: &'static str,
+    title: Option<&'static str>,
     options_hz: &'static [f64],
     value: Signal<f64>,
     set: impl Fn(&mut ChannelParams, f64) + Clone + 'static,
@@ -161,12 +166,34 @@ pub fn bandwidth(
             ctx.write(move |params| set(params, next as f64));
         })
     };
-    setting_row(label, None, body)
+    setting_row(label, title, body)
+}
+
+pub fn titled<T>(
+    ctx: Ctx,
+    label: &'static str,
+    title: Option<&'static str>,
+    options: Titled<T>,
+    value: Signal<T>,
+    set: impl Fn(&mut ChannelParams, T) + Clone + 'static,
+) -> AnyView
+where
+    T: Copy + PartialEq + Send + Sync + 'static,
+{
+    setting_row(
+        label,
+        title,
+        titled_segments(options, value, move |next: T| {
+            let set = set.clone();
+            ctx.write(move |params| set(params, next));
+        }),
+    )
 }
 
 pub fn presets(
     ctx: Ctx,
     label: &'static str,
+    title: Option<&'static str>,
     spec: NumberSpec,
     presets: &'static [(f64, &'static str)],
     value: Signal<f64>,
@@ -181,7 +208,7 @@ pub fn presets(
     let field_set = set;
     setting_row(
         label,
-        None,
+        title,
         view! {
             {segments(keyed, chosen, move |bits: u64| {
                 let set = preset_set.clone();
@@ -203,7 +230,7 @@ pub fn service_picker(
     value: Signal<Option<u32>>,
     set: impl Fn(&mut ChannelParams, Option<u32>) + Clone + 'static,
 ) -> AnyView {
-    let services = Signal::derive(move || {
+    let services = Memo::new(move |_| {
         ctx.broadcast
             .get()
             .map(|status| status.services)

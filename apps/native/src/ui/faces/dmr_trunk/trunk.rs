@@ -10,7 +10,15 @@ use sdrmm_wire::{
     state::{TrunkChannel, TrunkChannelSource, TrunkSystemStatus},
 };
 
-use crate::ui::kit_channel::format_hz;
+use crate::{
+    head::{NodeHead, Tone},
+    ui::kit_channel::format_hz,
+};
+
+pub const NO_CONTROL: &str = "no control channel";
+pub const SEARCH_RECEIVERS: &str = "Search receivers";
+pub const ALSO_CONTROL_HINT: &str =
+    "The site runs a control channel here too. Point the node at it if this one stops";
 
 pub const DMR_TRUNK_PROTOCOLS: [(DmrTrunkProtocol, &str); 4] = [
     (DmrTrunkProtocol::Auto, "Auto-detect"),
@@ -267,8 +275,89 @@ pub fn adoptable(map: &[TrunkChannel], entries: &[DmrChannelEntry]) -> Vec<DmrCh
 }
 
 #[must_use]
-pub fn control_channel_label(freq_hz: u64) -> String {
-    format!("also control {}", format_hz(freq_hz as f64))
+pub fn trunk_head(
+    on_iq: bool,
+    awaiting: bool,
+    protocol: DmrTrunkProtocol,
+    detected: Option<DvTrunkProtocol>,
+    following: usize,
+) -> NodeHead {
+    if awaiting {
+        return NodeHead::said(NO_CONTROL).toned(Tone::Warn);
+    }
+    if !on_iq {
+        return NodeHead::default();
+    }
+    let mut parts = Vec::new();
+    if protocol == DmrTrunkProtocol::Auto {
+        parts.push(trunk_protocol_label(protocol, detected).to_owned());
+    }
+    parts.push(format!("{following} following"));
+    NodeHead::said(parts.join(" \u{b7} "))
+}
+
+#[must_use]
+pub fn control_hint(awaiting: bool) -> &'static str {
+    if awaiting {
+        "Name the control channel in MHz. The radio stays untuned until then"
+    } else {
+        "Control channel in MHz"
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActivityRow {
+    pub label: String,
+    pub value: String,
+    pub title: Option<&'static str>,
+}
+
+#[must_use]
+pub fn activity_rows(status: Option<&TrunkSystemStatus>) -> Vec<ActivityRow> {
+    let Some(status) = status else {
+        return Vec::new();
+    };
+    let mut rows: Vec<ActivityRow> = status
+        .followers
+        .iter()
+        .map(|follower| ActivityRow {
+            label: format!("TS {}", follower.slot),
+            value: format!(
+                "{}{}",
+                format_hz(follower.freq_hz as f64),
+                follower
+                    .logical_channel
+                    .map(|lcn| format!(" \u{b7} LCN {lcn}"))
+                    .unwrap_or_default()
+            ),
+            title: None,
+        })
+        .collect();
+    if !status.probes.is_empty() {
+        rows.push(ActivityRow {
+            label: String::from("Listening"),
+            value: status
+                .probes
+                .iter()
+                .map(|probe| format_hz(probe.freq_hz as f64))
+                .collect::<Vec<_>>()
+                .join(", "),
+            title: Some(SEARCH_RECEIVERS),
+        });
+    }
+    if !status.other_control_hz.is_empty() {
+        rows.push(ActivityRow {
+            label: String::from("Also control"),
+            value: status
+                .other_control_hz
+                .iter()
+                .map(|hz| format_hz(*hz as f64))
+                .collect::<Vec<_>>()
+                .join(", "),
+            title: Some(ALSO_CONTROL_HINT),
+        });
+    }
+    rows
 }
 
 #[must_use]
@@ -491,14 +580,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn another_control_channel_is_named_to_fall_back_on() {
-        assert_eq!(
-            control_channel_label(460_275_000),
-            "also control 460.275 MHz"
-        );
-    }
-
     fn channel(logical_channel: u16, freq_hz: u64, source: TrunkChannelSource) -> TrunkChannel {
         TrunkChannel {
             logical_channel,
@@ -678,5 +759,63 @@ mod tests {
             Some(&(String::from("trunk"), TrunkChannelRole::Call))
         );
         assert!(trunk_channel_roles(&[system(None, Vec::new(), Vec::new())], 1).is_empty());
+    }
+
+    #[test]
+    fn the_header_warns_without_a_control_channel_and_counts_followers() {
+        let warned = trunk_head(true, true, DmrTrunkProtocol::Auto, None, 0);
+        assert_eq!(warned.subtitle.as_deref(), Some(NO_CONTROL));
+        assert_eq!(warned.tone, Tone::Warn);
+        assert_eq!(
+            trunk_head(false, false, DmrTrunkProtocol::Auto, None, 0),
+            NodeHead::default()
+        );
+        let auto = trunk_head(
+            true,
+            false,
+            DmrTrunkProtocol::Auto,
+            Some(DvTrunkProtocol::CapacityPlus),
+            2,
+        );
+        assert_eq!(
+            auto.subtitle.as_deref(),
+            Some("Capacity Plus \u{b7} 2 following")
+        );
+        let fixed = trunk_head(true, false, DmrTrunkProtocol::HyteraXpt, None, 1);
+        assert_eq!(fixed.subtitle.as_deref(), Some("1 following"));
+    }
+
+    #[test]
+    fn activity_lists_each_follower_then_one_listening_row() {
+        assert!(activity_rows(None).is_empty());
+        let mut held = system(
+            None,
+            vec![TrunkFollower {
+                device_set: 1,
+                channel: 10,
+                logical_channel: Some(22),
+                slot: 2,
+                freq_hz: 460_262_500,
+            }],
+            vec![
+                TrunkProbe {
+                    device_set: 1,
+                    channel: 11,
+                    freq_hz: 460_500_000,
+                },
+                TrunkProbe {
+                    device_set: 1,
+                    channel: 12,
+                    freq_hz: 460_600_000,
+                },
+            ],
+        );
+        held.other_control_hz = vec![460_700_000];
+        let rows = activity_rows(Some(&held));
+        let labels: Vec<_> = rows.iter().map(|row| row.label.as_str()).collect();
+        assert_eq!(labels, vec!["TS 2", "Listening", "Also control"]);
+        assert_eq!(rows[0].value, "460.2625 MHz \u{b7} LCN 22");
+        assert_eq!(rows[1].value, "460.5 MHz, 460.6 MHz");
+        assert_eq!(rows[1].title, Some(SEARCH_RECEIVERS));
     }
 }

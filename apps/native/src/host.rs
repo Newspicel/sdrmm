@@ -1,6 +1,6 @@
 use std::{
     net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -22,12 +22,16 @@ impl Host {
     }
 
     pub async fn embedded(data_dir: PathBuf) -> anyhow::Result<Self> {
-        std::fs::create_dir_all(&data_dir)
-            .with_context(|| format!("cannot create {}", data_dir.display()))?;
         let engine = Engine::with_registry(
             sdrmm_engine::builtin_registry_accelerated(Some(data_dir.join("recordings")), 1.0),
             Some(data_dir.join("recordings")),
         );
+        Self::serve(engine, &data_dir).await
+    }
+
+    pub async fn serve(engine: Arc<Engine>, data_dir: &Path) -> anyhow::Result<Self> {
+        std::fs::create_dir_all(data_dir)
+            .with_context(|| format!("cannot create {}", data_dir.display()))?;
         let config = Config {
             bind: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
             db_path: Some(data_dir.join("native.db")),

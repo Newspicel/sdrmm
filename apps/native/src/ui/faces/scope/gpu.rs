@@ -1,14 +1,30 @@
-use std::{cell::RefCell, rc::Rc};
-
-use zgui::surface::{SurfaceRenderCx, SurfaceRenderer, wgpu};
-
-use super::{
-    colormap::{Colormap, colormap_wgsl},
-    history::{HISTORY_ROWS, next_ring_row, rows_for_height, seed_placement},
+use std::{
+    cell::RefCell,
+    pin::pin,
+    rc::Rc,
+    task::{Context, Poll, Waker},
 };
 
+use zgui::{
+    prelude::*,
+    surface::{SurfaceElementExt, SurfaceRenderCx, SurfaceRenderer, wgpu},
+};
+
+use crate::ui::kit_raster::Pulse;
+
+use super::{
+    clock::RowClock,
+    colormap::colormap_wgsl,
+    history::{HISTORY_ROWS, next_ring_row, rows_for_height, seed_placement},
+    palette::{CUSTOM_INDEX, CUSTOM_STOPS, Palette},
+};
+
+pub use super::history::RowLevel;
+
 const FIRST_BINS: usize = 1024;
-const PARAMS_BYTES: u64 = 32;
+const ROW_FIELDS: usize = 4;
+const PARAMS_HEAD: usize = 32;
+const PARAMS_BYTES: u64 = (PARAMS_HEAD + CUSTOM_STOPS * 16) as u64;
 
 pub const VERTEX_WGSL: &str = r"
 struct Varying {
@@ -37,34 +53,60 @@ struct Params {
     pixels: f32,
     map: u32,
     spare: u32,
+    custom: array<vec4<f32>, 5>,
 }
 
 @group(0) @binding(0) var history: texture_2d<f32>;
 @group(0) @binding(1) var linear: sampler;
-@group(0) @binding(2) var shifts: texture_2d<f32>;
+@group(0) @binding(2) var levels: texture_2d<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
+
+const MAX_TAPS: i32 = 32;
+const DB_TO_LOG2: f32 = 0.33219281;
 
 fn wrap(value: f32, size: f32) -> f32 {
     return value - size * floor(value / size);
 }
 
-fn footprint_peak(tx: f32, row: i32) -> f32 {
+fn footprint(tx: f32, row: i32, level: vec4<f32>) -> f32 {
     let bins = i32(textureDimensions(history).x);
     let left = tx * f32(bins);
     let right = left + params.view_width * f32(bins) / max(params.pixels, 1.0);
     let first = i32(floor(left));
     let last = max(first, i32(ceil(right)) - 1);
+    let scale = level.b * DB_TO_LOG2;
     var peak = 0.0;
-    for (var i = 0; i < 32; i++) {
+    var power = 0.0;
+    var taps = 0.0;
+    for (var i = 0; i < MAX_TAPS; i++) {
         let x = first + i;
         if (x > last) {
             break;
         }
         if (x >= 0 && x < bins) {
-            peak = max(peak, textureLoad(history, vec2<i32>(x, row), 0).r);
+            let v = textureLoad(history, vec2<i32>(x, row), 0).r;
+            peak = max(peak, v);
+            power += exp2(v * scale);
+            taps += 1.0;
         }
     }
-    return peak;
+    if (peak >= level.g || scale <= 0.0 || taps == 0.0) {
+        return peak;
+    }
+    return log2(power / taps) / scale;
+}
+
+fn custom(t: f32) -> vec3<f32> {
+    let x = t * 4.0;
+    let i = min(i32(floor(x)), 3);
+    return mix(params.custom[i].rgb, params.custom[i + 1].rgb, x - f32(i));
+}
+
+fn palette(level: f32) -> vec3<f32> {
+    if (params.map == CUSTOM_MAP) {
+        return custom(clamp(level, 0.0, 1.0));
+    }
+    return colormap(level, params.map);
 }
 
 @fragment
@@ -72,28 +114,29 @@ fn fragment(in: Varying) -> @location(0) vec4<f32> {
     let rows_back = in.uv.y * (params.rows - 1.0);
     let row = wrap(params.write - 1.0 - rows_back, params.height);
     let ty = (row + 0.5) / params.height;
-    let tx = params.view_start + in.uv.x * params.view_width
-        + textureLoad(shifts, vec2<i32>(0, i32(row)), 0).r;
+    let level = textureLoad(levels, vec2<i32>(0, i32(row)), 0);
+    let tx = params.view_start + in.uv.x * params.view_width + level.r;
     let bins = f32(textureDimensions(history).x);
     let per_pixel = params.view_width * bins / max(params.pixels, 1.0);
-    var level = 0.0;
+    var v = 0.0;
     if (tx >= 0.0 && tx <= 1.0) {
         if (per_pixel > 1.0) {
-            level = footprint_peak(tx, i32(row));
+            v = footprint(tx, i32(row), level);
         } else {
-            level = textureSampleLevel(history, linear, vec2<f32>(tx, ty), 0.0).r;
+            v = textureSampleLevel(history, linear, vec2<f32>(tx, ty), 0.0).r;
         }
     }
-    return vec4<f32>(colormap(level, params.map), 1.0);
+    return vec4<f32>(palette(v), 1.0);
 }
 ";
 
 pub enum Pending {
-    Row(Vec<u8>),
+    Row(Vec<u8>, RowLevel),
     Seed {
         rows: Vec<u8>,
         count: usize,
         bins: usize,
+        levels: Vec<RowLevel>,
     },
     Shift(f64),
 }
@@ -102,7 +145,8 @@ pub struct WaterfallFeed {
     pending: Vec<Pending>,
     pub start: f64,
     pub width: f64,
-    pub colormap: Colormap,
+    pub palette: Palette,
+    pub clock: RowClock,
     changed: bool,
 }
 
@@ -112,26 +156,35 @@ impl Default for WaterfallFeed {
             pending: Vec::new(),
             start: 0.0,
             width: 1.0,
-            colormap: Colormap::default(),
+            palette: Palette::default(),
+            clock: RowClock::default(),
             changed: true,
         }
     }
 }
 
 impl WaterfallFeed {
-    pub fn push_row(&mut self, bins: &[u8]) {
+    pub fn push_row(&mut self, bins: &[u8], level: RowLevel) {
         if !bins.is_empty() {
-            self.pending.push(Pending::Row(bins.to_vec()));
+            self.clock.push(level.at_ms, bins.len());
+            self.pending.push(Pending::Row(bins.to_vec(), level));
         }
     }
 
-    pub fn seed(&mut self, rows: Vec<u8>, count: usize, bins: usize) {
+    pub fn seed(&mut self, rows: Vec<u8>, count: usize, bins: usize, levels: Vec<RowLevel>) {
         if bins == 0 {
             return;
         }
+        let times: Vec<f64> = levels.iter().map(|level| level.at_ms).collect();
+        self.clock.seed(&times, count, bins);
         self.pending
             .retain(|pending| matches!(pending, Pending::Shift(_)));
-        self.pending.push(Pending::Seed { rows, count, bins });
+        self.pending.push(Pending::Seed {
+            rows,
+            count,
+            bins,
+            levels,
+        });
     }
 
     pub fn shift_rows(&mut self, delta: f64) {
@@ -146,17 +199,17 @@ impl WaterfallFeed {
         self.width = width;
     }
 
-    pub fn set_colormap(&mut self, colormap: Colormap) {
-        self.changed |= self.colormap != colormap;
-        self.colormap = colormap;
+    pub fn set_palette(&mut self, palette: Palette) {
+        self.changed |= self.palette != palette;
+        self.palette = palette;
     }
 }
 
 pub struct Ring {
     pub bins: usize,
     pub write: usize,
-    pub shifts: Vec<f32>,
-    pub shifts_dirty: bool,
+    pub rows: Vec<[f32; ROW_FIELDS]>,
+    pub rows_dirty: bool,
 }
 
 impl Default for Ring {
@@ -164,10 +217,14 @@ impl Default for Ring {
         Self {
             bins: FIRST_BINS,
             write: 0,
-            shifts: vec![0.0; HISTORY_ROWS],
-            shifts_dirty: true,
+            rows: vec![[0.0; ROW_FIELDS]; HISTORY_ROWS],
+            rows_dirty: true,
         }
     }
+}
+
+fn row_fields(shift: f32, level: RowLevel) -> [f32; ROW_FIELDS] {
+    [shift, level.signal, level.span_db, 0.0]
 }
 
 pub enum Upload<'a> {
@@ -182,15 +239,13 @@ pub enum Upload<'a> {
 impl Ring {
     pub fn apply<'a>(&mut self, pending: &'a Pending, mut upload: impl FnMut(Upload<'a>)) {
         match pending {
-            Pending::Row(bins) => {
+            Pending::Row(bins, level) => {
                 if bins.len() != self.bins {
                     self.allocate(bins.len());
                     upload(Upload::Reallocate(self.bins));
                 }
-                if self.shifts[self.write] != 0.0 {
-                    self.shifts[self.write] = 0.0;
-                    self.shifts_dirty = true;
-                }
+                self.rows[self.write] = row_fields(0.0, *level);
+                self.rows_dirty = true;
                 upload(Upload::Rows {
                     at: self.write,
                     rows: bins,
@@ -198,13 +253,25 @@ impl Ring {
                 });
                 self.write = next_ring_row(self.write, HISTORY_ROWS);
             }
-            Pending::Seed { rows, count, bins } => {
+            Pending::Seed {
+                rows,
+                count,
+                bins,
+                levels,
+            } => {
                 let place = seed_placement(*count, HISTORY_ROWS);
                 if place.rows == 0 {
                     return;
                 }
                 self.allocate(*bins);
                 upload(Upload::Reallocate(self.bins));
+                for (row, slot) in self.rows.iter_mut().take(place.rows).enumerate() {
+                    let level = levels
+                        .get(place.skip + row)
+                        .copied()
+                        .unwrap_or(RowLevel::PLAIN);
+                    *slot = row_fields(0.0, level);
+                }
                 let from = place.skip * bins;
                 upload(Upload::Rows {
                     at: 0,
@@ -214,10 +281,10 @@ impl Ring {
                 self.write = place.write;
             }
             Pending::Shift(delta) => {
-                for shift in &mut self.shifts {
-                    *shift += *delta as f32;
+                for row in &mut self.rows {
+                    row[0] += *delta as f32;
                 }
-                self.shifts_dirty = true;
+                self.rows_dirty = true;
             }
         }
     }
@@ -225,8 +292,18 @@ impl Ring {
     fn allocate(&mut self, bins: usize) {
         self.bins = bins.max(1);
         self.write = 0;
-        self.shifts.fill(0.0);
-        self.shifts_dirty = true;
+        self.rows.fill([0.0; ROW_FIELDS]);
+        self.rows_dirty = true;
+    }
+
+    fn row_bytes(&self, out: &mut Vec<u8>) {
+        out.clear();
+        out.extend(
+            self.rows
+                .iter()
+                .flatten()
+                .flat_map(|value| value.to_le_bytes()),
+        );
     }
 }
 
@@ -235,7 +312,7 @@ struct Resources {
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     history: wgpu::Texture,
-    shifts: wgpu::Texture,
+    levels: wgpu::Texture,
     params: wgpu::Buffer,
     binding: wgpu::BindGroup,
     format: wgpu::TextureFormat,
@@ -244,19 +321,60 @@ struct Resources {
 
 pub struct WaterfallSurface {
     feed: Rc<RefCell<WaterfallFeed>>,
+    failure: RwSignal<Option<String>>,
+    pulse: Pulse,
     ring: Ring,
     held: Option<Resources>,
     drawn: Option<(u32, u32)>,
+    staging: Vec<u8>,
 }
 
 impl WaterfallSurface {
-    pub fn new(feed: Rc<RefCell<WaterfallFeed>>) -> Self {
+    pub fn new(feed: Rc<RefCell<WaterfallFeed>>, failure: RwSignal<Option<String>>) -> Self {
         Self {
             feed,
+            failure,
+            pulse: Pulse::default(),
             ring: Ring::default(),
             held: None,
             drawn: None,
+            staging: Vec::new(),
         }
+    }
+}
+
+impl WaterfallSurface {
+    #[must_use]
+    pub fn pulsing(mut self, pulse: Pulse) -> Self {
+        self.pulse = pulse;
+        self
+    }
+}
+
+pub fn waterfall_view(
+    class: &'static str,
+    feed: Rc<RefCell<WaterfallFeed>>,
+    failure: RwSignal<Option<String>>,
+) -> AnyView {
+    let pulse = Pulse::default();
+    AnyView::new(
+        zgui::elements::surface()
+            .class(class)
+            .style_property("background-color", move || pulse.backdrop())
+            .renderer(WaterfallSurface::new(feed, failure).pulsing(pulse))
+            .into_view(),
+    )
+}
+
+#[must_use]
+pub fn settled<F: Future>(future: F) -> Option<F::Output> {
+    let mut future = pin!(future);
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(output) => Some(output),
+        Poll::Pending => None,
     }
 }
 
@@ -443,7 +561,10 @@ pub fn write_rows(
 
 #[must_use]
 pub fn waterfall_source() -> String {
-    format!("{VERTEX_WGSL}\n{}\n{WATERFALL_WGSL}", colormap_wgsl())
+    format!(
+        "{VERTEX_WGSL}\n{}\nconst CUSTOM_MAP: u32 = {CUSTOM_INDEX}u;\n{WATERFALL_WGSL}",
+        colormap_wgsl()
+    )
 }
 
 impl Resources {
@@ -461,12 +582,12 @@ impl Resources {
         let format = cx.texture.format();
         let pipeline = pipeline(device, "waterfall", &waterfall_source(), &layout, format);
         let sampler = linear_sampler(device);
-        let shifts = texture(
+        let levels = texture(
             device,
-            "waterfall.shifts",
+            "waterfall.levels",
             1,
             HISTORY_ROWS as u32,
-            wgpu::TextureFormat::R32Float,
+            wgpu::TextureFormat::Rgba32Float,
         );
         let params = uniform_buffer(device, "waterfall.params", PARAMS_BYTES);
         let history = texture(
@@ -476,13 +597,13 @@ impl Resources {
             HISTORY_ROWS as u32,
             wgpu::TextureFormat::R8Unorm,
         );
-        let binding = bind(device, &layout, &history, &sampler, &shifts, &params);
+        let binding = bind(device, &layout, &history, &sampler, &levels, &params);
         Self {
             pipeline,
             layout,
             sampler,
             history,
-            shifts,
+            levels,
             params,
             binding,
             format,
@@ -503,7 +624,7 @@ impl Resources {
             &self.layout,
             &self.history,
             &self.sampler,
-            &self.shifts,
+            &self.levels,
             &self.params,
         );
     }
@@ -514,7 +635,7 @@ fn bind(
     layout: &wgpu::BindGroupLayout,
     history: &wgpu::Texture,
     sampler: &wgpu::Sampler,
-    shifts: &wgpu::Texture,
+    levels: &wgpu::Texture,
     params: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     let view =
@@ -533,7 +654,7 @@ fn bind(
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: wgpu::BindingResource::TextureView(&view(shifts)),
+                resource: wgpu::BindingResource::TextureView(&view(levels)),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
@@ -544,26 +665,44 @@ fn bind(
 }
 
 #[must_use]
-pub fn params_bytes(values: [f32; 6], map: u32) -> [u8; PARAMS_BYTES as usize] {
+pub fn params_bytes(values: [f32; 6], palette: Palette) -> [u8; PARAMS_BYTES as usize] {
     let mut bytes = [0u8; PARAMS_BYTES as usize];
     for (at, value) in values.iter().enumerate() {
         bytes[at * 4..at * 4 + 4].copy_from_slice(&value.to_le_bytes());
     }
-    bytes[24..28].copy_from_slice(&map.to_le_bytes());
+    bytes[24..28].copy_from_slice(&palette.shader_index().to_le_bytes());
+    for (stop, rgb) in palette.custom_stops().iter().enumerate() {
+        for (channel, value) in rgb.iter().enumerate() {
+            let at = PARAMS_HEAD + stop * 16 + channel * 4;
+            bytes[at..at + 4].copy_from_slice(&(*value as f32).to_le_bytes());
+        }
+    }
     bytes
 }
 
 impl WaterfallSurface {
-    fn ready(&mut self, cx: &SurfaceRenderCx<'_>) -> bool {
+    fn ready(&mut self, cx: &SurfaceRenderCx<'_>) -> Option<bool> {
         let stale = self.held.as_ref().is_none_or(|held| {
             held.format != cx.texture.format() || held.device != device_id(cx.device)
         });
-        if stale {
-            self.ring = Ring::default();
-            self.held = Some(Resources::build(cx, self.ring.bins));
-            self.drawn = None;
+        if !stale {
+            return Some(true);
         }
-        !stale
+        if self.failure.with_untracked(Option::is_some) {
+            return None;
+        }
+        self.ring = Ring::default();
+        let scope = cx.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let built = Resources::build(cx, self.ring.bins);
+        if let Some(error) = settled(scope.pop()).flatten() {
+            tracing::warn!(%error, "the waterfall cannot draw");
+            self.failure.set(Some(error.to_string()));
+            self.held = None;
+            return None;
+        }
+        self.held = Some(built);
+        self.drawn = None;
+        Some(false)
     }
 
     fn upload(&mut self, cx: &SurfaceRenderCx<'_>) -> bool {
@@ -585,15 +724,18 @@ impl WaterfallSurface {
                 ),
             });
         }
-        if self.ring.shifts_dirty {
-            let bytes: Vec<u8> = self
-                .ring
-                .shifts
-                .iter()
-                .flat_map(|shift| shift.to_le_bytes())
-                .collect();
-            write_rows(cx.queue, &held.shifts, 0, &bytes, 1, HISTORY_ROWS as u32, 4);
-            self.ring.shifts_dirty = false;
+        if self.ring.rows_dirty {
+            self.ring.row_bytes(&mut self.staging);
+            write_rows(
+                cx.queue,
+                &held.levels,
+                0,
+                &self.staging,
+                1,
+                HISTORY_ROWS as u32,
+                (ROW_FIELDS * 4) as u32,
+            );
+            self.ring.rows_dirty = false;
         }
         !pending.is_empty()
     }
@@ -605,13 +747,16 @@ impl SurfaceRenderer for WaterfallSurface {
         if cx.size.width == 0 || cx.size.height == 0 {
             return;
         }
-        let fresh = !self.ready(cx);
+        let Some(ready) = self.ready(cx) else {
+            return;
+        };
+        let fresh = !ready;
         let uploaded = self.upload(cx);
         let size = (cx.size.width, cx.size.height);
-        let (start, width, map, changed) = {
+        let (start, width, palette, changed) = {
             let mut feed = self.feed.borrow_mut();
             let changed = std::mem::take(&mut feed.changed);
-            (feed.start, feed.width, feed.colormap, changed)
+            (feed.start, feed.width, feed.palette, changed)
         };
         if !(fresh || uploaded || changed || self.drawn != Some(size)) {
             return;
@@ -629,15 +774,31 @@ impl SurfaceRenderer for WaterfallSurface {
             cx.size.width as f32,
         ];
         cx.queue
-            .write_buffer(&held.params, 0, &params_bytes(values, map.index()));
+            .write_buffer(&held.params, 0, &params_bytes(values, palette));
         draw(cx, &held.pipeline, &held.binding);
         self.drawn = Some(size);
+        self.pulse.beat();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        super::{colormap::Colormap, palette::DEFAULT_CUSTOM},
+        *,
+    };
+
+    fn row(bins: usize) -> Pending {
+        Pending::Row(vec![0; bins], RowLevel::PLAIN)
+    }
+
+    fn level(signal: f32, at_ms: f64) -> RowLevel {
+        RowLevel {
+            signal,
+            span_db: 80.0,
+            at_ms,
+        }
+    }
 
     fn rows_written(ring: &mut Ring, pending: &Pending) -> Vec<(usize, usize)> {
         let mut written = Vec::new();
@@ -652,23 +813,28 @@ mod tests {
     #[test]
     fn a_row_lands_at_the_cursor_which_then_moves_on() {
         let mut ring = Ring::default();
-        assert_eq!(
-            rows_written(&mut ring, &Pending::Row(vec![0; FIRST_BINS])),
-            [(0, 1)]
-        );
-        assert_eq!(
-            rows_written(&mut ring, &Pending::Row(vec![0; FIRST_BINS])),
-            [(1, 1)]
-        );
+        assert_eq!(rows_written(&mut ring, &row(FIRST_BINS)), [(0, 1)]);
+        assert_eq!(rows_written(&mut ring, &row(FIRST_BINS)), [(1, 1)]);
         assert_eq!(ring.write, 2);
+    }
+
+    #[test]
+    fn a_row_carries_its_signal_level_to_the_shader() {
+        let mut ring = Ring::default();
+        ring.apply(&Pending::Row(vec![0; FIRST_BINS], level(0.25, 1.0)), |_| {});
+        assert_eq!(ring.rows[0], [0.0, 0.25, 80.0, 0.0]);
+        let mut bytes = Vec::new();
+        ring.row_bytes(&mut bytes);
+        assert_eq!(bytes.len(), HISTORY_ROWS * ROW_FIELDS * 4);
+        assert_eq!(&bytes[4..8], &0.25f32.to_le_bytes());
     }
 
     #[test]
     fn a_new_bin_count_clears_the_ring_first() {
         let mut ring = Ring::default();
-        ring.apply(&Pending::Row(vec![0; FIRST_BINS]), |_| {});
+        ring.apply(&row(FIRST_BINS), |_| {});
         let mut reallocated = None;
-        ring.apply(&Pending::Row(vec![0; 8]), |upload| {
+        ring.apply(&row(8), |upload| {
             if let Upload::Reallocate(bins) = upload {
                 reallocated = Some(bins);
             }
@@ -680,58 +846,78 @@ mod tests {
     #[test]
     fn a_seed_keeps_the_newest_rows_and_leaves_the_cursor_above_them() {
         let mut ring = Ring::default();
-        let rows = vec![0u8; 3 * 4];
         let written = rows_written(
             &mut ring,
             &Pending::Seed {
-                rows,
+                rows: vec![0u8; 3 * 4],
                 count: 3,
                 bins: 4,
+                levels: vec![level(0.1, 1.0), level(0.2, 2.0), level(0.3, 3.0)],
             },
         );
         assert_eq!(written, [(0, 3)]);
         assert_eq!((ring.bins, ring.write), (4, 3));
+        assert_eq!(ring.rows[2][1], 0.3);
     }
 
     #[test]
     fn a_shift_moves_every_row_and_a_new_row_starts_unshifted() {
         let mut ring = Ring::default();
         ring.apply(&Pending::Shift(0.25), |_| {});
-        assert!(ring.shifts.iter().all(|shift| *shift == 0.25));
-        ring.apply(&Pending::Row(vec![0; FIRST_BINS]), |_| {});
-        assert_eq!(ring.shifts[0], 0.0);
-        assert_eq!(ring.shifts[1], 0.25);
+        assert!(ring.rows.iter().all(|row| row[0] == 0.25));
+        ring.apply(&row(FIRST_BINS), |_| {});
+        assert_eq!(ring.rows[0][0], 0.0);
+        assert_eq!(ring.rows[1][0], 0.25);
     }
 
     #[test]
     fn the_feed_drops_rows_a_seed_replaces_and_ignores_no_ops() {
         let mut feed = WaterfallFeed::default();
-        feed.push_row(&[1, 2]);
+        feed.push_row(&[1, 2], level(0.0, 7.0));
+        assert_eq!(feed.clock.at(0), 7.0);
         feed.shift_rows(0.0);
         feed.shift_rows(0.1);
-        feed.seed(vec![0; 4], 2, 2);
+        feed.seed(vec![0; 4], 2, 2, vec![level(0.0, 3.0), level(0.0, 4.0)]);
         assert_eq!(feed.pending.len(), 2);
         assert!(matches!(feed.pending[0], Pending::Shift(_)));
+        assert_eq!(feed.clock.at(0), 4.0);
         feed.changed = false;
         feed.set_window(0.0, 1.0);
-        feed.set_colormap(Colormap::Classic);
+        feed.set_palette(Palette::Map(Colormap::Classic));
         assert!(!feed.changed);
-        feed.set_colormap(Colormap::Viridis);
+        feed.set_palette(Palette::Map(Colormap::Viridis));
         assert!(feed.changed);
     }
 
     #[test]
-    fn the_shader_parameters_pack_six_floats_and_the_map() {
-        let bytes = params_bytes([1.0, 1024.0, 300.0, 0.25, 0.5, 640.0], 4);
+    fn the_shader_parameters_pack_six_floats_the_map_and_the_custom_stops() {
+        let bytes = params_bytes(
+            [1.0, 1024.0, 300.0, 0.25, 0.5, 640.0],
+            Palette::Custom(DEFAULT_CUSTOM),
+        );
+        assert_eq!(bytes.len(), 112);
         assert_eq!(&bytes[..4], &1.0f32.to_le_bytes());
         assert_eq!(&bytes[20..24], &640.0f32.to_le_bytes());
-        assert_eq!(&bytes[24..28], &4u32.to_le_bytes());
+        assert_eq!(&bytes[24..28], &CUSTOM_INDEX.to_le_bytes());
+        let last = PARAMS_HEAD + 4 * 16;
+        assert_eq!(&bytes[last..last + 4], &1.0f32.to_le_bytes());
+        let plain = params_bytes([0.0; 6], Palette::Map(Colormap::Viridis));
+        assert_eq!(&plain[24..28], &4u32.to_le_bytes());
     }
 
     #[test]
-    fn the_waterfall_shader_parses() {
-        let source = waterfall_source();
-        let module = wgpu::naga::front::wgsl::parse_str(&source);
-        assert!(module.is_ok(), "{module:?}");
+    fn a_ready_future_settles_at_once() {
+        assert_eq!(settled(std::future::ready(3)), Some(3));
+        assert_eq!(settled(std::future::pending::<u8>()), None);
+    }
+
+    #[test]
+    fn the_waterfall_shader_validates() {
+        use wgpu::naga::{front::wgsl, valid};
+        let module = wgsl::parse_str(&waterfall_source()).expect("the waterfall shader parses");
+        let checked =
+            valid::Validator::new(valid::ValidationFlags::all(), valid::Capabilities::all())
+                .validate(&module);
+        assert!(checked.is_ok(), "{checked:?}");
     }
 }

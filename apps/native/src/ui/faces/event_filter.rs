@@ -13,6 +13,7 @@ use crate::{
         log::kind_label,
         wiring::{event_sources_of, wired_sources_of},
     },
+    head::{self, NodeHead},
     store::Store,
     ui::{
         kit_decoders,
@@ -49,6 +50,13 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             )
         })
     };
+    head::show(store, node.clone(), move || {
+        if wired.get() {
+            NodeHead::said(filter_said(&settings.get()))
+        } else {
+            NodeHead::default()
+        }
+    });
     let edit: Edit = std::rc::Rc::new(move |change| {
         let node = node.clone();
         store.edit_graph(move |graph| {
@@ -61,13 +69,13 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     });
     let hint = move || {
         let said = if !wired.get() {
-            "Wire decoder events in".to_owned()
+            "Wire decoder events in"
         } else if offered.with(Vec::is_empty) {
-            "Nothing wired in emits events".to_owned()
+            "Nothing wired in emits events"
         } else {
-            filter_said(&settings.get())
+            return None;
         };
-        view! { text(class = "hint") {{said}} }
+        Some(view! { text(class = "hint") {{said}} })
     };
     let mode = Signal::derive(move || settings.get().mode);
     let set_mode = {

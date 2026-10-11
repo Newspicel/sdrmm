@@ -9,7 +9,7 @@ fn detail_of(kind: &str, data: Value) -> EventDetail {
     event_detail(&event(kind, data))
 }
 
-fn fields_of(kind: &str, data: Value) -> HashMap<&'static str, String> {
+fn fields_of(kind: &str, data: Value) -> HashMap<Cow<'static, str>, String> {
     detail_of(kind, data).fields.into_iter().collect()
 }
 
@@ -17,18 +17,22 @@ fn broadcast_of(data: Value) -> EventDetail {
     broadcast_detail(&serde_json::from_value(data).expect("a broadcast status"))
 }
 
-fn broadcast_fields(data: Value) -> HashMap<&'static str, String> {
+fn broadcast_fields(data: Value) -> HashMap<Cow<'static, str>, String> {
     broadcast_of(data).fields.into_iter().collect()
 }
 
-fn labels(detail: &EventDetail) -> Vec<&'static str> {
-    detail.fields.iter().map(|(label, _)| *label).collect()
+fn labels(detail: &EventDetail) -> Vec<&str> {
+    detail
+        .fields
+        .iter()
+        .map(|(label, _)| label.as_ref())
+        .collect()
 }
 
-fn has(shown: &HashMap<&'static str, String>, expected: &[(&str, &str)]) {
+fn has(shown: &HashMap<Cow<'static, str>, String>, expected: &[(&str, &str)]) {
     for (label, value) in expected {
         assert_eq!(
-            shown.get(label).map(String::as_str),
+            shown.get(*label).map(String::as_str),
             Some(*value),
             "{label}"
         );
@@ -341,7 +345,7 @@ fn a_broadcast_acquisition_invents_no_multiplex_metadata() {
     let shown: Vec<(&str, &str)> = detail
         .fields
         .iter()
-        .map(|(label, value)| (*label, value.as_str()))
+        .map(|(label, value)| (label.as_ref(), value.as_str()))
         .collect();
     assert_eq!(
         shown,
@@ -396,7 +400,7 @@ fn a_utc_offset_carries_its_sign() {
 }
 
 #[test]
-fn a_newer_decoder_shows_its_wire_summary() {
+fn a_hot_emergency_reads_in_capitals() {
     let detail = detail_of(
         "eot",
         json!({
@@ -406,8 +410,16 @@ fn a_newer_decoder_shows_its_wire_summary() {
             "rejected": 0,
         }),
     );
-    assert!(detail.fields.is_empty());
-    assert_eq!(detail.body.as_deref(), Some("HOT 12345 · EMERGENCY"));
+    let shown: HashMap<_, _> = detail.fields.iter().cloned().collect();
+    has(
+        &shown,
+        &[
+            ("Command", "EMERGENCY"),
+            ("Copies", "3/3"),
+            ("Address", "12345"),
+        ],
+    );
+    assert_eq!(detail.body, None);
 }
 
 #[test]
@@ -432,4 +444,223 @@ fn a_radar_track_names_its_change_and_aircraft() {
             .get("Track")
             .is_some_and(|track| track.starts_with("T7 "))
     );
+}
+
+#[test]
+fn an_eot_rear_unit_reads_its_brake_pipe() {
+    let shown = fields_of(
+        "eot",
+        json!({
+            "unit_address": 12345, "errors_corrected": 1, "rejected": 0,
+            "report": {
+                "unit": "rear", "message_type": 1, "arming": "armed", "pressure_psig": 88,
+                "battery": "very_low", "battery_charge_pct": 40, "valve_ok": true,
+                "confirmed": true, "turbine": false, "motion": true, "marker_light": true,
+                "marker_battery_low": false, "discretionary": false, "chaining": 0,
+            },
+        }),
+    );
+    has(
+        &shown,
+        &[
+            ("Unit", "Rear (EOT)"),
+            ("Brake pipe", "88 psig"),
+            ("Battery", "very low"),
+            ("Arming", "armed"),
+            ("Repaired", "1"),
+        ],
+    );
+    assert!(!shown.contains_key("Rejected"));
+}
+
+#[test]
+fn a_hot_request_names_an_unknown_command() {
+    let shown = fields_of(
+        "eot",
+        json!({
+            "unit_address": 7, "errors_corrected": 0, "rejected": 0,
+            "report": { "unit": "head", "command": "other", "code": 10, "copies": 2 },
+        }),
+    );
+    has(
+        &shown,
+        &[
+            ("Unit", "Head (HOT)"),
+            ("Command", "command 0x0a"),
+            ("Copies", "2/3"),
+        ],
+    );
+}
+
+#[test]
+fn weather_pictures_and_sondes_break_down() {
+    let apt = fields_of(
+        "apt",
+        json!({ "seq": 1, "lines": 900, "complete": false, "duration_ms": 450_000, "channel_a": "ch2" }),
+    );
+    has(
+        &apt,
+        &[
+            ("Channels", "ch 2 + ?"),
+            ("State", "cut short"),
+            ("Took", "450.0 s"),
+        ],
+    );
+    let sonde = fields_of(
+        "radiosonde",
+        json!({
+            "sonde": "rs41", "serial": "S1234", "altitude_m": 12_345.4, "climb_ms": 5.0,
+            "humidity_pct": 54.6, "errors_corrected": 0, "rejected": 2,
+        }),
+    );
+    has(
+        &sonde,
+        &[
+            ("Type", "RS41"),
+            ("Altitude", "12,345 m"),
+            ("Climb", "+5.0 m/s"),
+            ("Humidity", "55%"),
+            ("Frames lost", "2"),
+        ],
+    );
+}
+
+#[test]
+fn an_aprs_weather_report_adds_its_readings() {
+    let shown = fields_of(
+        "aprs",
+        json!({
+            "source": "WX1", "destination": "APRS", "info": "_", "tnc2": "WX1>APRS:_",
+            "weather": { "wind_dir_deg": 90, "wind_speed_ms": 2.0, "temperature_c": 21.5, "luminosity_wm2": 300 },
+        }),
+    );
+    has(
+        &shown,
+        &[
+            ("Wind", "2.0 m/s from 90°"),
+            ("Temperature", "21.5 °C"),
+            ("Luminosity", "300 W/m²"),
+        ],
+    );
+}
+
+#[test]
+fn a_meshtastic_frame_lists_route_content_and_metrics() {
+    let detail = detail_of(
+        "lora",
+        json!({
+            "spreading_factor": 11, "bandwidth_hz": 250_000.0, "coding_rate": "4/5",
+            "sync_word": 43, "implicit_header": false, "low_data_rate": false,
+            "inverted_iq": false, "integrity": "crc_ok", "fec_corrected": 0,
+            "snr_db": 7.5, "frequency_error_hz": -120.0, "payload": "AB",
+            "decoded": {
+                "protocol": "meshtastic", "to": 4_294_967_295_u32, "from": 0x1234, "id": 1,
+                "hop_limit": 1, "hop_start": 3, "want_ack": false, "via_mqtt": false,
+                "channel_hash": 8, "next_hop": 0, "relay_node": 0, "encryption": "channel",
+                "content": { "type": "telemetry", "kind": "device", "metrics": [{ "name": "Battery", "value": 87.0 }] },
+            },
+        }),
+    );
+    let shown: HashMap<_, _> = detail.fields.iter().cloned().collect();
+    has(
+        &shown,
+        &[
+            ("Protocol", "Meshtastic"),
+            ("Sync word", "0x2B"),
+            ("From", "!00001234"),
+            ("To", "^all"),
+            ("Hops", "2 of 3"),
+            ("Encryption", "channel"),
+            ("Battery", "87"),
+            ("Frequency error", "-120 Hz"),
+        ],
+    );
+    assert_eq!(labels(&detail).last(), Some(&"Payload"));
+}
+
+#[test]
+fn a_drone_frame_names_type_pilot_and_operator() {
+    let detail = detail_of(
+        "remote_id",
+        json!({
+            "transport": "bluetooth_legacy", "phy": "le1m", "address": "D2:11",
+            "uas_id": "DRONE1", "level_dbfs": -41.0,
+            "messages": [
+                { "type": "basic_id", "id_type": "serial_number", "ua_type": "rotorcraft", "uas_id": "DRONE1" },
+                { "type": "operator_id", "id_type": 0, "operator_id": "OP-1" },
+                { "type": "self_id", "description_type": 0, "text": "Survey" },
+            ],
+        }),
+    );
+    let shown: HashMap<_, _> = detail.fields.iter().cloned().collect();
+    has(
+        &shown,
+        &[
+            ("Type", "Multirotor"),
+            ("Operator", "OP-1"),
+            ("Link", "BT4"),
+            ("Level", "-41.0 dBFS"),
+        ],
+    );
+    assert_eq!(detail.body.as_deref(), Some("Survey"));
+}
+
+#[test]
+fn a_ble_advert_lists_makers_by_name() {
+    let detail = detail_of(
+        "ble",
+        json!({
+            "pdu": "adv_ind", "phy": "le1m", "channel": 38, "level_dbfs": -40.0, "data": "0201",
+            "address": { "address": "AA:BB", "kind": "random_static" },
+            "flags": { "limited": false, "general": true, "le_only": true },
+            "manufacturer": [{ "company_id": 76, "company": "Apple", "data": "1005" }, { "company_id": 1, "data": "00" }],
+            "beacon": { "type": "find_my", "maintained": true },
+        }),
+    );
+    let shown: HashMap<_, _> = detail.fields.iter().cloned().collect();
+    has(
+        &shown,
+        &[
+            ("Address type", "random static"),
+            ("Apple", "1005"),
+            ("Company 0x0001", "00"),
+            ("Beacon", "Find My"),
+            ("Beacon data", "owner nearby"),
+            ("Flags", "general, LE only"),
+        ],
+    );
+    assert_eq!(detail.body.as_deref(), Some("0201"));
+}
+
+#[test]
+fn airtime_reports_list_channels_and_kinds() {
+    let wifi = fields_of(
+        "wifi_occupancy",
+        json!({
+            "window_ms": 1000, "measured": 0.98,
+            "channels": [{ "band": "ghz2_4", "number": 6, "centre_hz": 2.437e9, "busy": 0.05, "level_dbfs": -40.0, "floor_dbfs": -80.0 }],
+        }),
+    );
+    has(
+        &wifi,
+        &[
+            ("2.4 GHz ch 6", "5.0% busy · -40 dBFS · floor -80 dBFS"),
+            ("Measured", "98%"),
+        ],
+    );
+    let ism = fields_of(
+        "ism_survey",
+        json!({
+            "window_ms": 1000, "low_hz": 2.4e9, "high_hz": 2.42e9, "measured": 1.0, "busy": 0.3,
+            "kinds": [{ "kind": "bluetooth", "bursts": 12, "airtime": 0.02, "mean_us": 366.4, "peak_dbfs": -30.0, "centres_mhz": [2402.0] }],
+        }),
+    );
+    has(
+        &ism,
+        &[
+            ("Busy", "30%"),
+            ("Bluetooth", "12 bursts · 2.0% · 366 µs · 2402 MHz"),
+        ],
+    );
+    assert!(!ism.contains_key("Dropped"));
 }

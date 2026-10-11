@@ -120,6 +120,7 @@ impl Polar {
 }
 
 pub fn face(store: Store, node: String) -> impl IntoView {
+    let titled = node.clone();
     install_stylesheet("polarimeter-face", SHEET);
     let processor = Processor::new(store, node.clone());
     let params = settings(store, node.clone(), body);
@@ -136,9 +137,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
         params,
     };
     let health = processor.health;
+    head(store, titled, processor.subtitle(period));
     view! {
         column(class = "face") {
-            {head(processor.subtitle(period))}
             row(class = "pm__top", class:stale = move || stale.get()) {
                 box(class = "pm__glyph", a11y:label = "Polarisation") {
                     {glyph(reading)}

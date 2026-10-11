@@ -1,4 +1,6 @@
 pub mod feed;
+pub mod merge;
+pub mod tracks;
 pub mod trail;
 pub mod wiring;
 
@@ -46,6 +48,35 @@ pub fn utc_clock(ms: i64) -> String {
 #[must_use]
 pub fn mhz(hz: f64) -> String {
     format!("{:.3} MHz", hz / 1e6)
+}
+
+#[must_use]
+pub fn encode(text: &str) -> String {
+    text.bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(byte).to_string()
+            }
+            other => format!("%{other:02X}"),
+        })
+        .collect()
+}
+
+pub fn readout(
+    label: &'static str,
+    title: Option<&'static str>,
+    value: impl Fn() -> String + 'static,
+) -> AnyView {
+    let shown = AnyView::new(view! {
+        column(class = "geo__readout") {
+            text(class = "geo__readout-label") {{label}}
+            text(class = "geo__readout-value") {{value}}
+        }
+    });
+    match title {
+        Some(title) => crate::ui::kit_audio::titled(title, shown),
+        None => shown,
+    }
 }
 
 pub fn armed_clear(enabled: Signal<bool>, on_clear: impl Fn() + 'static) -> impl IntoView {
@@ -140,14 +171,19 @@ pub const SHEET: &str = css!(
     top: 8px;
     left: 8px;
     flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    font-family: var(--mono);
+    font-size: 10px;
+    pointer-events: none;
+}
+.geo__legend-box {
+    flex-direction: column;
     gap: 3px;
     padding: 5px 8px;
     border: 1px solid var(--line);
     border-radius: 5px;
-    background-color: var(--bg);
-    font-family: var(--mono);
-    font-size: 10px;
-    pointer-events: none;
+    background-color: color-mix(in oklab, var(--bg) 85%, transparent);
 }
 .geo__legend-row { align-items: center; gap: 8px; }
 .geo__legend-name { color: var(--ink-dim); flex: 1 1 auto; }
@@ -155,6 +191,15 @@ pub const SHEET: &str = css!(
 .geo__swatch { width: 8px; height: 8px; border-radius: 4px; }
 .geo__ramp { height: 6px; border-radius: 3px; min-width: 140px; }
 .geo__ends { justify-content: space-between; color: var(--ink-faint); }
+.geo__readouts { flex-wrap: wrap; gap: 4px 16px; padding: 6px 10px; border-top: 1px solid var(--line); }
+.geo__readout { gap: 0; min-width: 56px; }
+.geo__readout-label { font-size: 10px; text-transform: uppercase; color: var(--ink-faint); }
+.geo__readout-value { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+.geo__chips { flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--line); }
+.geo__foot { align-items: center; justify-content: flex-end; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--line); }
+.geo__fault { flex-direction: column; gap: 2px; padding: 6px 10px; border-top: 1px solid var(--line); background-color: color-mix(in oklab, var(--danger) 10%, transparent); }
+.geo__fault-head { color: var(--danger); font-size: 11px; }
+.geo__fault-detail { color: var(--ink-dim); font-family: var(--mono); font-size: 10px; }
 .geo__table { flex-direction: column; max-height: 160px; overflow: auto; border-top: 1px solid var(--line); }
 .geo__row { gap: 0; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 10px; }
 .geo__row.head { background-color: var(--panel-2); color: var(--ink-faint); }
@@ -170,6 +215,12 @@ pub const SHEET: &str = css!(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_path_segment_escapes_everything_but_plain_letters() {
+        assert_eq!(encode("signal map/1"), "signal%20map%2F1");
+        assert_eq!(encode("survey-1_a.b~"), "survey-1_a.b~");
+    }
 
     #[test]
     fn timestamps_read_and_write_as_utc_milliseconds() {

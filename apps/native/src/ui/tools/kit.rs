@@ -6,8 +6,15 @@ use zgui::{
     geom::{Css, CssPx, Point},
     prelude::*,
 };
+use zgui_ui::prelude::*;
 
-use crate::{store::Store, ui::params::entry};
+use crate::{
+    store::Store,
+    ui::{
+        faces::channel::settings::NumberLimit,
+        kit_channel::{self, NumberSpec, number_field},
+    },
+};
 
 pub struct Query<T: Send + Sync + 'static> {
     pub data: RwSignal<Option<T>>,
@@ -113,23 +120,6 @@ fn trim_zeros(fixed: &str) -> String {
     }
 }
 
-pub fn parse_number(text: &str, min: f64, max: f64) -> Result<f64, String> {
-    let trimmed = text.trim();
-    let value: f64 = trimmed
-        .parse()
-        .map_err(|_| format!("{trimmed} is not a number"))?;
-    if !value.is_finite() {
-        return Err(format!("{trimmed} is not a number"));
-    }
-    Ok(value.clamp(min, max))
-}
-
-#[must_use]
-pub fn shown_number(value: f64) -> String {
-    let rounded = (value * 1e9).round() / 1e9;
-    format!("{rounded}")
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Paint {
     Bg,
@@ -218,21 +208,25 @@ pub fn labelled(label: &'static str, body: impl IntoView + 'static) -> impl Into
 pub fn number(
     label: &'static str,
     value: RwSignal<f64>,
-    min: f64,
-    max: f64,
+    limit: NumberLimit,
     unit: &'static str,
 ) -> impl IntoView {
-    let shown = Signal::derive(move || shown_number(value.get()));
-    let field = entry(shown, label.to_owned(), false, move |text| {
-        value.set(parse_number(&text, min, max)?);
-        Ok(())
-    });
-    view! {
-        row(class = "tool-num") {
-            {field}
-            text(class = "tool-num__unit") {{unit}}
-        }
-    }
+    kit_channel::install();
+    let spec = NumberSpec::new(label).limit(limit);
+    let spec = if unit.is_empty() {
+        spec
+    } else {
+        spec.unit(unit)
+    };
+    number_field(
+        Signal::derive(move || Some(value.get())),
+        spec,
+        move |next| {
+            if let Some(next) = next {
+                value.set(next);
+            }
+        },
+    )
 }
 
 pub fn button(
@@ -254,15 +248,54 @@ pub fn button(
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tone {
+    #[default]
+    Plain,
+    Ok,
+    Danger,
+    Dim,
+}
+
+impl Tone {
+    #[must_use]
+    pub fn class(self) -> &'static str {
+        match self {
+            Self::Plain => "tool-chip__value",
+            Self::Ok => "tool-chip__value ok",
+            Self::Danger => "tool-chip__value danger",
+            Self::Dim => "tool-chip__value dim",
+        }
+    }
+}
+
 pub fn chip(key: impl Into<String>, value: impl Into<String>) -> AnyView {
+    toned_chip(key, value, Tone::Plain)
+}
+
+pub fn toned_chip(key: impl Into<String>, value: impl Into<String>, tone: Tone) -> AnyView {
     let key = key.into();
     let value = value.into();
     AnyView::new(view! {
         row(class = "tool-chip") {
             text(class = "tool-chip__key") {{key}}
-            text {{value}}
+            text(class = tone.class()) {{value}}
         }
     })
+}
+
+pub fn text_field(
+    value: RwSignal<String, LocalStorage>,
+    label: &'static str,
+    placeholder: impl Into<String>,
+    class: &'static str,
+) -> impl IntoView {
+    let hint: String = placeholder.into();
+    view! {
+        box(class = class, on:key_down = crate::ui::kit_shell::typing) {
+            Input(class = "native-input", value = value, label = label, placeholder = hint)
+        }
+    }
 }
 
 pub fn line(label: impl Into<String>, value: impl Into<String>, accent: bool) -> AnyView {
@@ -304,17 +337,10 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_number_is_clamped_and_nonsense_is_refused() {
-        assert_eq!(parse_number(" 12.5 ", 0.0, 100.0), Ok(12.5));
-        assert_eq!(parse_number("500", 0.0, 100.0), Ok(100.0));
-        assert!(parse_number("abc", 0.0, 1.0).is_err());
-        assert!(parse_number("inf", 0.0, 1.0).is_err());
-    }
-
-    #[test]
-    fn a_number_shows_without_float_noise() {
-        assert_eq!(shown_number(145.5), "145.5");
-        assert_eq!(shown_number(0.1 + 0.2), "0.3");
-        assert_eq!(shown_number(101.0), "101");
+    fn a_tone_paints_only_the_value() {
+        assert_eq!(Tone::default(), Tone::Plain);
+        assert_eq!(Tone::Ok.class(), "tool-chip__value ok");
+        assert_eq!(Tone::Danger.class(), "tool-chip__value danger");
+        assert_eq!(Tone::Dim.class(), "tool-chip__value dim");
     }
 }

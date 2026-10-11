@@ -30,7 +30,7 @@ pub const SHEET: &str = css!(
 .scope__chip { gap: 4px; padding: 0 4px; border: 1px solid var(--line); border-radius: 2px; background-color: rgba(13, 15, 16, 0.85); font-family: var(--mono); font-size: 10px; line-height: 14px; color: var(--ink-dim); white-space: nowrap; cursor: ew-resize; }
 .scope__chip.held { cursor: pointer; }
 .scope__chip.on { border-color: var(--accent); background-color: var(--bg); color: var(--accent); }
-.scope__chip--member { display: none; }
+.scope__chips .scope__chip--member { display: none; }
 .scope__chips:hover .scope__chip--member { display: flex; }
 .scope__chips:hover .scope__chip--stack { display: none; }
 .scope__count { color: #7f7f7f; }
@@ -85,11 +85,35 @@ pub const SHEET: &str = css!(
 .scope__form { gap: 4px; padding: 4px; }
 .scope__field .native-input { height: 26px; width: 100%; padding: 3px 8px; font-family: var(--mono); font-size: 11px; background-color: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 5px; }
 
-.scope__picker { position: absolute; z-index: 40; left: 50%; top: 8px; bottom: 8px; width: 240px; margin-left: -120px; flex-direction: column; border: 1px solid var(--line); border-radius: 6px; background-color: var(--panel); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); pointer-events: auto; cursor: default; }
-.scope__picker-head { align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--ink); }
-.scope__picker-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px; }
-.scope__close { width: 16px; text-align: center; color: var(--ink-faint); }
-.scope__close:hover { color: var(--ink); }
+.scope__ticks { position: absolute; left: 0; top: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; }
+.scope__tick { position: absolute; right: 0; height: 12px; margin-top: -6px; align-items: center; gap: 2px; opacity: 0.8; }
+.scope__tick-label { font-family: var(--mono); font-size: 10px; line-height: 12px; color: #7f7f7f; white-space: nowrap; }
+.scope__tick-mark { width: 3px; height: 1px; background-color: #7f7f7f; }
+
+.scope__failure { position: absolute; left: 0; right: 0; bottom: 0; justify-content: center; padding: 8px; pointer-events: none; }
+.scope__failure-tip { pointer-events: auto; }
+.scope__failure-chip { padding: 4px 8px; border: 1px solid var(--danger); border-radius: 3px; background-color: rgba(13, 15, 16, 0.9); font-family: var(--mono); font-size: 12px; color: var(--danger); }
+
+.scope__section-name--tip { text-decoration: underline dotted; text-decoration-color: var(--line-strong); cursor: help; }
+.scope__colours { flex-direction: column; gap: 8px; }
+.scope__gradient { flex-direction: column; gap: 8px; padding: 0 6px; }
+.scope__gradient-ramp { height: 16px; border: 1px solid var(--line); border-radius: 3px; }
+.scope__stops { position: relative; height: 16px; margin-top: -8px; }
+.scope__stop { position: absolute; top: 4px; width: 12px; height: 12px; margin-left: -6px; border: 2px solid var(--line-strong); border-radius: 2px; transform: rotate(45deg); }
+.scope__stop:hover { border-color: var(--ink-dim); }
+.scope__stop.on { border-color: var(--accent); }
+.scope__picker-body { flex-direction: column; gap: 8px; }
+.scope__sv { position: relative; height: 112px; border-radius: 3px; overflow: hidden; cursor: crosshair; }
+.scope__sv:focus-visible { outline: 2px solid var(--accent); }
+.scope__sv-white { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-image: linear-gradient(to right, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0)); pointer-events: none; }
+.scope__sv-black { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-image: linear-gradient(to top, rgba(0, 0, 0, 1), rgba(0, 0, 0, 0)); pointer-events: none; }
+.scope__sv-thumb { position: absolute; width: 12px; height: 12px; margin-left: -6px; margin-top: -6px; border: 2px solid #ffffff; border-radius: 999px; pointer-events: none; }
+.scope__hue { position: relative; height: 10px; margin: 5px 0; border-radius: 999px; cursor: pointer; }
+.scope__hue:focus-visible { outline: 2px solid var(--accent); }
+.scope__hue-thumb { position: absolute; top: -2px; width: 14px; height: 14px; margin-left: -7px; border: 2px solid #ffffff; border-radius: 999px; pointer-events: none; }
+.scope__hex { align-items: center; gap: 8px; }
+.scope__hex-swatch { flex: 0 0 auto; width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 3px; }
+.scope__hex .scope__field { flex: 1 1 auto; }
 
 .scope__ruler { position: relative; flex: 0 0 16px; height: 16px; background-color: var(--bg); border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent); cursor: pointer; }
 .scope__band { position: absolute; top: 0; bottom: 0; overflow: hidden; }

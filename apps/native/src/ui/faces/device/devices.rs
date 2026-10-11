@@ -18,7 +18,7 @@ pub struct NetworkBackend {
     pub placeholder: &'static str,
 }
 
-pub const NETWORK_BACKENDS: [NetworkBackend; 4] = [
+pub const NETWORK_BACKENDS: [NetworkBackend; 5] = [
     NetworkBackend {
         driver: "rtltcp",
         label: "rtl_tcp",
@@ -33,6 +33,11 @@ pub const NETWORK_BACKENDS: [NetworkBackend; 4] = [
         driver: "sdrconnect",
         label: "SDRconnect",
         placeholder: "192.168.1.5:5454",
+    },
+    NetworkBackend {
+        driver: "kiwisdr",
+        label: "KiwiSDR",
+        placeholder: "kiwi.example.org:8073",
     },
     NetworkBackend {
         driver: "ad936x",
@@ -108,34 +113,98 @@ pub fn group_devices(devices: &[DeviceInfo]) -> (Vec<DeviceInfo>, Vec<DeviceInfo
 }
 
 #[must_use]
-pub fn source_tabs(virtual_count: usize) -> Vec<(SourceTab, String)> {
+pub fn source_tabs(virtual_count: usize) -> Vec<(SourceTab, String, String)> {
     let mut tabs = vec![
-        (SourceTab::Radios, "Radios".to_owned()),
-        (SourceTab::Network, "Network".to_owned()),
+        (
+            SourceTab::Radios,
+            "Radios".to_owned(),
+            "Radios attached to this machine".to_owned(),
+        ),
+        (
+            SourceTab::Network,
+            "Network".to_owned(),
+            "rtl_tcp, SpyServer, SDRconnect, KiwiSDR, AntSDR or Pluto".to_owned(),
+        ),
     ];
     if virtual_count > 0 {
-        tabs.push((SourceTab::Virtual, format!("Virtual ({virtual_count})")));
+        tabs.push((
+            SourceTab::Virtual,
+            format!("Virtual ({virtual_count})"),
+            "Synthetic radios for development and tests".to_owned(),
+        ));
     }
     tabs
 }
 
-fn strip_scheme(address: &str) -> &str {
+fn split_scheme(address: &str) -> (Option<String>, &str) {
     let Some((scheme, rest)) = address.split_once("://") else {
-        return address;
+        return (None, address);
     };
     let mut chars = scheme.chars();
     let valid = chars.next().is_some_and(|c| c.is_ascii_alphabetic())
         && chars.all(|c| c.is_ascii_alphanumeric() || "+._-".contains(c));
-    if valid { rest } else { address }
+    if valid {
+        (Some(scheme.to_ascii_lowercase()), rest)
+    } else {
+        (None, address)
+    }
+}
+
+fn has_port(host: &str) -> bool {
+    host.rsplit_once(':')
+        .is_some_and(|(_, port)| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()))
 }
 
 #[must_use]
 pub fn network_device_id(driver: &str, address: &str) -> Option<String> {
-    let trimmed = strip_scheme(address.trim());
+    let (scheme, rest) = split_scheme(address.trim());
+    let trimmed = rest.trim_end_matches('/');
     if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
         return None;
     }
-    Some(format!("{driver}:{trimmed}"))
+    match scheme.as_deref() {
+        Some("https" | "wss") => Some(format!("{driver}:https://{trimmed}")),
+        Some("http" | "ws") => {
+            let host = trimmed.rsplit_once('@').map_or(trimmed, |(_, host)| host);
+            let port = if has_port(host) { "" } else { ":80" };
+            Some(format!("{driver}:{trimmed}{port}"))
+        }
+        _ => Some(format!("{driver}:{trimmed}")),
+    }
+}
+
+#[must_use]
+pub fn network_radio_label(id: &str) -> String {
+    let (driver, address) = id.split_once(':').unwrap_or(("", id));
+    let address = address.strip_prefix("https://").unwrap_or(address);
+    let host = address.rsplit_once('@').map_or(address, |(_, host)| host);
+    NETWORK_BACKENDS
+        .iter()
+        .find(|backend| backend.driver == driver)
+        .map_or_else(
+            || host.to_owned(),
+            |backend| format!("{} {host}", backend.label),
+        )
+}
+
+#[must_use]
+pub fn default_port(placeholder: &str) -> &str {
+    placeholder.rsplit(':').next().unwrap_or(placeholder)
+}
+
+#[must_use]
+pub fn address_title(backend: &NetworkBackend) -> String {
+    format!(
+        "Host or address of the {} server; without a port it uses {}",
+        backend.label,
+        default_port(backend.placeholder)
+    )
+}
+
+#[must_use]
+pub fn device_hint(info: &DeviceInfo) -> Option<&'static str> {
+    (info.driver == "rtlsdr" && info.serial.is_none())
+        .then_some("Known by USB port, not serial: give it its own serial with rtl_eeprom -s")
 }
 
 #[cfg(test)]
@@ -234,8 +303,12 @@ mod tests {
         ]);
         assert_eq!(ids(&radios), vec!["rtlsdr:00000001"]);
         assert_eq!(ids(&synthetic), vec!["virtual:siggen", "virtual:array4"]);
+        let tabs: Vec<(SourceTab, String)> = source_tabs(1)
+            .into_iter()
+            .map(|(tab, label, _)| (tab, label))
+            .collect();
         assert_eq!(
-            source_tabs(1),
+            tabs,
             vec![
                 (SourceTab::Radios, "Radios".to_owned()),
                 (SourceTab::Network, "Network".to_owned()),
@@ -276,6 +349,26 @@ mod tests {
             Some("sdrconnect:rsp.local:5454")
         );
         assert_eq!(
+            network_device_id("kiwisdr", "http://kiwi.local/").as_deref(),
+            Some("kiwisdr:kiwi.local:80")
+        );
+        assert_eq!(
+            network_device_id("kiwisdr", "ws://user@kiwi.local").as_deref(),
+            Some("kiwisdr:user@kiwi.local:80")
+        );
+        assert_eq!(
+            network_device_id("kiwisdr", "HTTPS://kiwi.example.org:8073//").as_deref(),
+            Some("kiwisdr:https://kiwi.example.org:8073")
+        );
+        assert_eq!(
+            network_device_id("kiwisdr", "wss://kiwi.example.org").as_deref(),
+            Some("kiwisdr:https://kiwi.example.org")
+        );
+        assert_eq!(
+            network_device_id("rtltcp", "10.0.0.5:1234/").as_deref(),
+            Some("rtltcp:10.0.0.5:1234")
+        );
+        assert_eq!(
             network_device_id("rtltcp", "::1").as_deref(),
             Some("rtltcp:::1")
         );
@@ -294,6 +387,38 @@ mod tests {
             .iter()
             .filter_map(|backend| backend.placeholder.rsplit(':').next())
             .collect();
-        assert_eq!(ports, vec!["1234", "5555", "5454", "30431"]);
+        assert_eq!(ports, vec!["1234", "5555", "5454", "8073", "30431"]);
+        assert_eq!(
+            address_title(&NETWORK_BACKENDS[3]),
+            "Host or address of the KiwiSDR server; without a port it uses 8073"
+        );
+    }
+
+    #[test]
+    fn a_saved_radio_is_named_by_its_protocol_and_host() {
+        assert_eq!(
+            network_radio_label("rtltcp:10.0.0.5:1234"),
+            "rtl_tcp 10.0.0.5:1234"
+        );
+        assert_eq!(
+            network_radio_label("kiwisdr:https://kiwi.example.org"),
+            "KiwiSDR kiwi.example.org"
+        );
+        assert_eq!(
+            network_radio_label("kiwisdr:user@kiwi.local:80"),
+            "KiwiSDR kiwi.local:80"
+        );
+        assert_eq!(network_radio_label("mystery:host:1"), "host:1");
+    }
+
+    #[test]
+    fn a_dongle_without_a_serial_is_told_how_to_get_one() {
+        assert!(device_hint(&device("rtlsdr", "0", "RTL-SDR")).is_some());
+        let serialed = DeviceInfo {
+            serial: Some("00000001".to_owned()),
+            ..device("rtlsdr", "0", "RTL-SDR")
+        };
+        assert!(device_hint(&serialed).is_none());
+        assert!(device_hint(&device("hackrf", "0", "HackRF")).is_none());
     }
 }

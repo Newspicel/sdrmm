@@ -2,6 +2,7 @@ use zgui::{
     canvas::{CanvasScene, ShapeBuilder},
     elements::{kurbo, kurbo::Shape as _},
     prelude::*,
+    vocab::SharedString,
 };
 
 use super::{
@@ -249,6 +250,7 @@ pub fn sweep_chart(inputs: SweepInputs) -> impl IntoView {
             class = "vna-chart",
             tabindex = Focus::Sequential,
             a11y:role = Role::Image,
+            a11y:label = move || -> SharedString { chart_label(chart.get()).into() },
             on:pointer_down = move |ev: &mut EventCx<'_, events::PointerDown>| {
                 ev.stop_propagation();
                 if ev.button != Some(PointerButton::Primary) {
@@ -288,6 +290,7 @@ pub fn sweep_chart(inputs: SweepInputs) -> impl IntoView {
                 drag.set(None);
             },
             on:key_down = move |ev: &mut EventCx<'_, events::KeyDown>| {
+                crate::ui::kit_shell::typing(ev);
                 let delta = match ev.key {
                     Key::Named(NamedKey::ArrowLeft) => -1,
                     Key::Named(NamedKey::ArrowRight) => 1,
@@ -369,6 +372,11 @@ fn marker_label(rows: Memo<Vec<PointReadout>>, marker: usize) -> Option<AnyView>
 }
 
 #[must_use]
+pub fn chart_label(chart: ChartId) -> String {
+    format!("{} against frequency", chart_view(chart).label)
+}
+
+#[must_use]
 pub fn axis_title(chart: ChartId) -> String {
     let view = chart_view(chart);
     if view.unit.is_empty() {
@@ -408,6 +416,10 @@ pub fn nearest(rows: &[PointReadout], u: f64, v: f64, fallback: usize) -> usize 
         .map(|(index, row)| (index, (row.s11.re - u).hypot(row.s11.im - v)))
         .min_by(|left, right| left.1.total_cmp(&right.1))
         .map_or(fallback, |(index, _)| index)
+}
+
+fn smith_share(units: f64) -> String {
+    format!("{:.2}%", units / SMITH_SIZE * 100.0)
 }
 
 fn smith_point(re: f64, im: f64) -> (f64, f64) {
@@ -480,6 +492,7 @@ pub fn smith_chart(
     let held = RwSignal::new(false);
     let canvas = zgui::elements::canvas()
         .class("vna-smith__canvas")
+        .view_box(0.0, 0.0, SMITH_SIZE as f32, SMITH_SIZE as f32)
         .draw(move |cx| rows.with(|rows| paint_smith(cx.scene, rows, marker.get())))
         .into_view();
     let pick = move |at| {
@@ -524,9 +537,9 @@ pub fn smith_chart(
             }
         ) {
             {canvas}
-            text(class = "vna-label hold", style:left = "8px", style:top = Some(format!("{:.0}px", SMITH_SIZE - 22.0))) {{frequency}}
-            text(class = "vna-label", style:left = Some(format!("{:.0}px", SMITH_CENTER - SMITH_RADIUS + 2.0)), style:top = Some(format!("{:.0}px", SMITH_CENTER - 18.0))) {"0"}
-            text(class = "vna-label", style:right = Some(format!("{:.0}px", SMITH_SIZE - SMITH_CENTER - SMITH_RADIUS + 2.0)), style:top = Some(format!("{:.0}px", SMITH_CENTER - 18.0))) {"\u{221e}"}
+            text(class = "vna-label hold", style:left = "8px", style:bottom = "8px") {{frequency}}
+            text(class = "vna-label", style:left = Some(smith_share(SMITH_CENTER - SMITH_RADIUS + 2.0)), style:top = Some(smith_share(SMITH_CENTER - 18.0))) {"0"}
+            text(class = "vna-label", style:right = Some(smith_share(SMITH_SIZE - SMITH_CENTER - SMITH_RADIUS + 2.0)), style:top = Some(smith_share(SMITH_CENTER - 18.0))) {"\u{221e}"}
         }
     }
 }
@@ -591,6 +604,14 @@ mod tests {
         ]);
         assert_eq!(nearest(&rows, 0.1, 0.45, 0), 1);
         assert_eq!(nearest(&[], 0.1, 0.45, 7), 7);
+    }
+
+    #[test]
+    fn a_chart_is_named_for_what_it_plots() {
+        assert_eq!(
+            chart_label(ChartId::Magnitude),
+            "Magnitude against frequency"
+        );
     }
 
     #[test]

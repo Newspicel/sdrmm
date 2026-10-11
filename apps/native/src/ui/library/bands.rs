@@ -10,8 +10,12 @@ use crate::{
     shell::band_plan::{BandMatch, band_tune_hz, search_plan, service_label, service_token},
     store::Store,
     ui::{
-        kit_shell::{Entry, Row, entry, hint, list, list_row},
-        library::{channel_type_of, load, suggest_mode, target, tune},
+        kit_shell::{Entry, entry, hint, list},
+        library::{
+            channel_type_of, load,
+            rows::{Badge, LibRow, Pick, lib_row},
+            suggest_mode, target, tune,
+        },
         shell::Shell,
         widgets::{check, pick},
     },
@@ -33,9 +37,6 @@ const SHEET: &str = css!(
 .band__swatch[data-service="ism"] { background-color: oklch(0.64 0.1 25); }
 .band__swatch[data-service="other"] { background-color: oklch(0.6 0.02 80); }
 .band__region { width: 220px; flex: 0 0 auto; }
-.band__line { align-items: center; padding-left: 8px; border-top: 1px solid var(--line); background-color: var(--panel); }
-.band__line:first-child { border-top-width: 0; }
-.band__line > .sk-row { flex: 1 1 auto; min-width: 0; border-top-width: 0; }
 "#
 );
 
@@ -149,12 +150,9 @@ fn band_row(
         .suggested
         .as_ref()
         .map(|params| params.type_id().to_owned());
-    let primary = match &suggested {
-        Some(kind) => format!("{}  {kind}", allocation.name),
-        None => allocation.name.clone(),
-    };
     let hz = band_tune_hz(&allocation);
     let service = service_token(allocation.service);
+    let badge = suggested.clone().map_or(Badge::None, Badge::Chip);
     let pick_band = move || {
         let Some(aimed) = aimed.get_untracked() else {
             return;
@@ -165,18 +163,24 @@ fn band_row(
             suggested.as_deref(),
             channel_type_of(store, &aimed).as_deref(),
             "band",
+            true,
         );
     };
-    view! {
-        row(class = "band__line") {
-            box(class = "band__swatch", attr:data-service = service) {}
-            {list_row(
-                Row { primary, secondary: Some(facts.join(" \u{b7} ")) },
-                Some(Box::new(pick_band)),
-                tunable,
-                AnyView::new(()),
-                AnyView::new(()),
-            )}
-        }
-    }
+    lib_row(
+        LibRow {
+            primary: allocation.name.clone(),
+            badge,
+            secondary: Some(facts.join(" \u{b7} ")),
+            hint: allocation.notes.clone().filter(|notes| !notes.is_empty()),
+            lead: Some(AnyView::new(view! {
+                box(class = "band__swatch", attr:data-service = service) {}
+            })),
+        },
+        Some(Pick {
+            on_pick: Box::new(pick_band),
+            enabled: tunable,
+        }),
+        AnyView::new(()),
+        AnyView::new(()),
+    )
 }

@@ -1,4 +1,6 @@
 mod model;
+mod rose;
+mod sweep;
 
 use sdrmm_wire::{
     HuntAction, HuntRequest, HuntSettings, HuntStatus, hunt::HuntSweepParams, patch::NodeBody,
@@ -6,15 +8,20 @@ use sdrmm_wire::{
 };
 use zgui::prelude::*;
 
-use self::model::{
-    Bearing, HUNT_INTERVAL_MS, HuntTarget, bearing, format_hunt_db, format_mhz, format_strength,
-    hunt_refusal, hunt_target, hunted_hz, live_hunt,
+use self::{
+    model::{
+        Bearing, HUNT_INTERVAL_MS, HuntTarget, bearing, format_hunt_db, format_mhz,
+        format_strength, hunt_refusal, hunt_target, hunted_hz, live_hunt,
+    },
+    sweep::{sweep_panel, sweep_params},
 };
 use crate::{
     audio::use_audio,
+    binding,
     store::Store,
     ui::{
-        kit_audio::{self, button, edit_body, readout},
+        kit_audio::{self, Stat, Tone, edit_body, fault, readout, titled},
+        kit_channel::{self, button},
         widgets::{check, row_field},
     },
 };
@@ -28,14 +35,82 @@ const SHEET: &str = css!(
 "#
 );
 
+#[derive(Clone, Copy)]
+struct Hunt {
+    store: Store,
+    target: Memo<Option<HuntTarget>>,
+    status: Memo<Option<HuntStatus>>,
+    pushed: RwSignal<Option<HuntStatus>>,
+    busy: RwSignal<bool>,
+    position: Memo<bool>,
+    params: Memo<HuntSweepParams>,
+}
+
+fn hunt_of(store: Store, node: &str) -> Option<sdrmm_wire::patch::HuntNode> {
+    store
+        .graph
+        .with(|graph| match graph.node(node).map(|found| &found.body) {
+            Some(NodeBody::Hunt(hunt)) => Some(hunt.clone()),
+            _ => None,
+        })
+}
+
 pub fn face(store: Store, node: String) -> impl IntoView {
     kit_audio::install();
+    kit_channel::install();
     install_stylesheet("hunt", SHEET);
-    let target = {
+    install_stylesheet("hunt-rose", rose::SHEET);
+    install_stylesheet("hunt-sweep", sweep::SHEET);
+    let hunt = hunt_state(store, &node);
+    let clicks = Signal::derive({
         let node = node.clone();
-        Signal::derive(move || {
-            hunt_target(&store.graph.get(), &store.state.get().device_sets, &node)
-        })
+        move || hunt_of(store, &node).is_none_or(|hunt| hunt.clicks)
+    });
+    let strength = Signal::derive(move || hunt.status.get().map_or(0.0, |status| status.strength));
+    let clicking = Signal::derive(move || hunt.status.get().is_some() && clicks.get());
+    let edit_sweep = {
+        let node = node.clone();
+        move |change: Box<dyn FnOnce(&mut HuntSweepParams)>| {
+            edit_body(store, &node, |body| {
+                if let NodeBody::Hunt(hunt) = body {
+                    change(&mut hunt.sweep);
+                }
+            });
+        }
+    };
+    let act = {
+        let node = node.clone();
+        move |action| act(hunt, &node, action)
+    };
+    view! {
+        column(class = "face") {
+            if move || hunt.target.get().is_none() {
+                text(class = "hint") {"Wire this node's control out to a decoder"}
+            }
+            {body(hunt, act.clone())}
+            {kit_audio::alert(move || hunt.status.get().and_then(|status| status.error))}
+            {titled("Geiger clicks", AnyView::new(row_field("Clicks", check(clicks, {
+                let node = node.clone();
+                move |on| set_clicks(store, &node, on)
+            }))))}
+            if move || hunt.position.get() {
+                {sweep_params(hunt.params, edit_sweep.clone())}
+            }
+            if move || clicking.get() {
+                {clicker(store, strength)}
+            }
+            row(class = "face__foot rec-foot") {
+                {kit_audio::stats(move || hunt.status.get().map(|status| hunt_stats(&status)).unwrap_or_default())}
+                {controls(hunt, act)}
+            }
+        }
+    }
+}
+
+fn hunt_state(store: Store, node: &str) -> Hunt {
+    let target = {
+        let node = node.to_owned();
+        Memo::new(move |_| hunt_target(&store.graph.get(), &store.state.get().device_sets, &node))
     };
     let pushed = RwSignal::new(None::<HuntStatus>);
     store.on_event(move |event| {
@@ -49,7 +124,7 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             pushed.set(Some((**status).clone()));
         }
     });
-    let status = Signal::derive(move || {
+    let status = Memo::new(move |_| {
         let target = target.get();
         live_hunt(
             target.as_ref().map(|target| &target.set),
@@ -57,41 +132,47 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             pushed.get().as_ref(),
         )
     });
-    let clicks = clicks_of(store, node.clone());
-    let strength = Signal::derive(move || status.get().map_or(0.0, |status| status.strength));
-    let clicking = Signal::derive(move || status.get().is_some() && clicks.get());
-    view! {
-        column(class = "face") {
-            if move || target.get().is_none() {
-                text(class = "hint") {"Wire this node's control out to a decoder"}
-            }
-            if move || status.get().is_some() {
-                {running(status)}
-            } else {
-                {idle(target)}
-            }
-            {row_field("Clicks", check(clicks, {
-                let node = node.clone();
-                move |on| set_clicks(store, &node, on)
-            }))}
-            if move || clicking.get() {
-                {clicker(store, strength)}
-            }
-            row(class = "face__foot") {
-                {controls(store, node.clone(), target, status, pushed)}
-            }
-        }
+    let position = {
+        let node = node.to_owned();
+        Memo::new(move |_| !binding::sources_of(&store.graph.get(), &node, "position").is_empty())
+    };
+    let params = {
+        let node = node.to_owned();
+        Memo::new(move |_| {
+            hunt_of(store, &node)
+                .map(|hunt| hunt.sweep)
+                .unwrap_or_default()
+        })
+    };
+    Hunt {
+        store,
+        target,
+        status,
+        pushed,
+        busy: RwSignal::new(false),
+        position,
+        params,
     }
 }
 
-fn clicks_of(store: Store, node: String) -> Signal<bool> {
-    Signal::derive(move || {
-        store
-            .graph
-            .get()
-            .node(&node)
-            .is_none_or(|found| !matches!(&found.body, NodeBody::Hunt(hunt) if !hunt.clicks))
-    })
+#[must_use]
+fn hunt_stats(status: &HuntStatus) -> Vec<Stat> {
+    let mut shown = vec![Stat::new(
+        "Readings",
+        status.readings.to_string(),
+        "Level readings taken",
+    )];
+    if status.pose_drops > 0 {
+        shown.push(
+            Stat::new(
+                "Pose drops",
+                status.pose_drops.to_string(),
+                "Poses refused, the queue was full",
+            )
+            .tone(Tone::Danger),
+        );
+    }
+    shown
 }
 
 fn set_clicks(store: Store, node: &str, on: bool) {
@@ -110,7 +191,25 @@ fn clicker(store: Store, strength: Signal<f32>) -> impl IntoView {
     }
 }
 
-fn running(status: Signal<Option<HuntStatus>>) -> impl IntoView {
+fn body(hunt: Hunt, act: impl Fn(HuntAction) + Clone + 'static) -> impl IntoView {
+    let running = Memo::new(move |_| hunt.status.get().is_some());
+    move || {
+        if !running.get() {
+            return AnyView::new(idle(hunt.target));
+        }
+        let sweep = Memo::new(move |_| hunt.status.get().and_then(|status| status.sweep));
+        let panel = hunt
+            .position
+            .get()
+            .then(|| AnyView::new(sweep_panel(sweep, hunt.busy.into(), act.clone())));
+        AnyView::new(view! {
+            {running_view(hunt.status)}
+            {panel}
+        })
+    }
+}
+
+fn running_view(status: Memo<Option<HuntStatus>>) -> impl IntoView {
     let heading = Signal::derive(move || bearing(status.get().as_ref()));
     let fill = move || {
         let strength = status.get().map_or(0.0, |status| status.strength);
@@ -127,7 +226,7 @@ fn running(status: Signal<Option<HuntStatus>>) -> impl IntoView {
             }
             {readout(vec![
                 ("Hunting", read(|status| format_mhz(hunted_hz(Some(status), None)))),
-                ("Bearing", AnyView::new(view! {
+                ("Trend", AnyView::new(view! {
                     text(class:hunt__warm = move || heading.get() == Bearing::Closing) {
                         {move || heading.get().label()}
                     }
@@ -135,15 +234,13 @@ fn running(status: Signal<Option<HuntStatus>>) -> impl IntoView {
                 ("Strength", read(|status| format_strength(Some(status)))),
                 ("Level", read(|status| format_hunt_db(status.level_db))),
                 ("Smoothed", read(|status| format_hunt_db(status.smooth_db))),
-                ("Walked", read(|status| format!("{} to {}", format_hunt_db(status.floor_db), format_hunt_db(status.best_db)))),
-                ("Readings", read(|status| status.readings.to_string())),
+                ("Walked", read(|status| format!("{} \u{2192} {}", format_hunt_db(status.floor_db), format_hunt_db(status.best_db)))),
             ])}
-            {kit_audio::alert(move || status.get().and_then(|status| status.error))}
         }
     }
 }
 
-fn idle(target: Signal<Option<HuntTarget>>) -> impl IntoView {
+fn idle(target: Memo<Option<HuntTarget>>) -> impl IntoView {
     let hunting = move || {
         target.get().map_or_else(String::new, |target| {
             format!(
@@ -153,84 +250,116 @@ fn idle(target: Signal<Option<HuntTarget>>) -> impl IntoView {
             )
         })
     };
+    let refusal = move || {
+        hunt_refusal(target.get().as_ref())
+            .map(|refusal| fault(refusal.label.to_owned(), Some(refusal.title.to_owned())))
+    };
     view! {
         column(class = "audio-controls") {
             if move || target.get().is_some() {
                 {readout(vec![("Hunting", AnyView::new(hunting))])}
             }
-            {kit_audio::alert(move || hunt_refusal(target.get().as_ref()).map(str::to_owned))}
+            {refusal}
         }
     }
 }
 
-fn sweep_of(store: Store, node: &str) -> HuntSweepParams {
-    store
-        .graph
-        .with_untracked(|graph| match graph.node(node).map(|found| &found.body) {
-            Some(NodeBody::Hunt(hunt)) => hunt.sweep,
-            _ => HuntSweepParams::default(),
-        })
+fn request_for(hunt: Hunt, node: &str, action: HuntAction, channel: u32) -> HuntRequest {
+    let settings = matches!(action, HuntAction::Start | HuntAction::Sweep).then(|| HuntSettings {
+        interval_ms: HUNT_INTERVAL_MS,
+        node: Some(node.to_owned()),
+        sweep: hunt.params.get_untracked(),
+        ..HuntSettings::for_channel(channel)
+    });
+    HuntRequest { action, settings }
 }
 
-fn controls(
-    store: Store,
-    node: String,
-    target: Signal<Option<HuntTarget>>,
-    status: Signal<Option<HuntStatus>>,
-    pushed: RwSignal<Option<HuntStatus>>,
-) -> impl IntoView {
-    let busy = RwSignal::new(false);
-    let running = Signal::derive(move || status.get().is_some());
-    let blocked = Signal::derive(move || {
-        let target = target.get();
-        busy.get()
-            || target.is_none()
-            || (!running.get() && hunt_refusal(target.as_ref()).is_some())
+fn act(hunt: Hunt, node: &str, action: HuntAction) {
+    let Some(target) = hunt.target.get_untracked() else {
+        return;
+    };
+    let request = request_for(hunt, node, action, target.channel.id);
+    let store = hunt.store;
+    hunt.busy.set(true);
+    zgui::task::spawn_local(async move {
+        let path = format!(
+            "/api/devicesets/{}/channels/{}/hunt",
+            target.set.id, target.channel.id
+        );
+        match store.api().post::<_, HuntStatus>(&path, &request).await {
+            Ok(_) if request.action == HuntAction::Stop => hunt.pushed.set(None),
+            Ok(_) => {}
+            Err(error) => store.say(format!("cannot drive the hunt: {error}")),
+        }
+        hunt.busy.try_set(false);
+        store.refresh_state();
     });
-    button(
-        move || {
-            String::from(if running.get() {
-                "Stop hunt"
-            } else {
-                "Start hunt"
+}
+
+fn controls(hunt: Hunt, act: impl Fn(HuntAction) + Clone + 'static) -> impl IntoView {
+    let running = Memo::new(move |_| hunt.status.get().is_some());
+    let blocked = Signal::derive(move || {
+        let target = hunt.target.get();
+        hunt.busy.get() || target.is_none() || hunt_refusal(target.as_ref()).is_some()
+    });
+    move || {
+        let act = act.clone();
+        if running.get() {
+            return AnyView::new(button(
+                "Stop hunt",
+                "kc-btn kc-btn--danger",
+                hunt.busy,
+                move || act(HuntAction::Stop),
+            ));
+        }
+        let turn = {
+            let act = act.clone();
+            hunt.position.get().then(|| {
+                titled(
+                    "Turn slowly all the way round",
+                    AnyView::new(button("Sweep", "kc-btn", blocked, move || {
+                        act(HuntAction::Sweep)
+                    })),
+                )
             })
-        },
-        running,
-        blocked,
-        move || {
-            let Some(target) = target.get_untracked() else {
-                return;
-            };
-            let request = if running.get_untracked() {
-                HuntRequest {
-                    action: HuntAction::Stop,
-                    settings: None,
-                }
-            } else {
-                HuntRequest {
-                    action: HuntAction::Start,
-                    settings: Some(HuntSettings {
-                        interval_ms: HUNT_INTERVAL_MS,
-                        node: Some(node.clone()),
-                        sweep: sweep_of(store, &node),
-                        ..HuntSettings::for_channel(target.channel.id)
-                    }),
-                }
-            };
-            busy.set(true);
-            zgui::task::spawn_local(async move {
-                let path = format!(
-                    "/api/devicesets/{}/channels/{}/hunt",
-                    target.set.id, target.channel.id
-                );
-                match store.api().post::<_, HuntStatus>(&path, &request).await {
-                    Ok(_) if request.action == HuntAction::Stop => pushed.set(None),
-                    Ok(_) => {}
-                    Err(error) => store.say(format!("cannot drive the hunt: {error}")),
-                }
-                busy.set(false);
-                store.refresh_state();
-            });
-        },
-    )
+        };
+        AnyView::new(view! {
+            {turn}
+            {button("Start hunt", "kc-btn kc-btn--primary", blocked, move || act(HuntAction::Start))}
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sdrmm_wire::hunt::HuntSweep;
+
+    use super::*;
+
+    fn status(pose_drops: u64) -> HuntStatus {
+        HuntStatus {
+            settings: HuntSettings::for_channel(1),
+            freq_hz: 0.0,
+            bw_hz: 0.0,
+            level_db: None,
+            smooth_db: None,
+            floor_db: None,
+            best_db: None,
+            strength: 0.0,
+            closing: false,
+            readings: 12,
+            at_ms: 0,
+            pose_drops,
+            sweep: Some(HuntSweep::default()),
+            error: None,
+        }
+    }
+
+    #[test]
+    fn pose_drops_join_the_footer_in_danger_only_when_some_were_refused() {
+        assert_eq!(hunt_stats(&status(0)).len(), 1);
+        let shown = hunt_stats(&status(3));
+        assert_eq!(shown[1].label, "Pose drops");
+        assert_eq!(shown[1].tone, Tone::Danger);
+    }
 }

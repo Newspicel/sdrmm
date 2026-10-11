@@ -1,3 +1,7 @@
+mod graph;
+mod presence;
+mod sync;
+
 use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use sdrmm_wire::{
@@ -6,7 +10,7 @@ use sdrmm_wire::{
     device::{DeviceInfo, DeviceSettings},
     patch::{PatchCatalog, PatchGraph, RackLayout},
     state::{ChannelLevel, DeviceSet, StateSnapshot},
-    workspace::{WorkspaceDetail, WorkspaceInfo, WorkspaceSettings},
+    workspace::{WorkspaceDetail, WorkspaceInfo, WorkspaceNotice, WorkspaceSettings},
     workspace_state::WorkspaceChannel,
     ws::{ClientCommand, ServerEvent, StateScope},
 };
@@ -18,10 +22,7 @@ use crate::{
     arrays, binding,
     bus::{Bus, Frame, Source},
     decoded::Decoded,
-    shell::{
-        apply_toasts::apply_toasts,
-        toasts::{Toasts, Tone},
-    },
+    shell::toasts::{Toasts, Tone},
     socket::{Incoming, Socket},
     workspace::Session,
 };
@@ -69,10 +70,21 @@ pub struct Store {
     pub palette_at: RwSignal<Option<(f32, f32)>>,
     pub levels: RwSignal<Arc<HashMap<(u32, u32), ChannelLevel>>>,
     pub broadcasts: RwSignal<Arc<HashMap<(u32, u32), BroadcastStatus>>>,
+    pub pipeline: RwSignal<Arc<Vec<sdrmm_wire::PipelineQueue>>>,
+    pub refusals: RwSignal<Arc<crate::ui::faces::channel::alert::Refusals>>,
     pub decoded: RwSignal<Arc<Decoded>>,
     staged: StoredValue<Vec<DecodedRecord>>,
     pub arrays: RwSignal<Arc<arrays::Book>>,
     pub saved_channels: RwSignal<Arc<Vec<WorkspaceChannel>>>,
+    pub notices: RwSignal<Arc<Vec<WorkspaceNotice>>>,
+    pub presence: RwSignal<Arc<crate::presence::Room>>,
+    sent: StoredValue<Arc<PatchGraph>>,
+    unsaved: StoredValue<u32>,
+    applying: StoredValue<sync::ApplyGate>,
+    switches: StoredValue<sync::Switches>,
+    me: StoredValue<presence::Me>,
+    said: StoredValue<Vec<String>>,
+    pub heads: RwSignal<crate::head::Heads>,
     bus: StoredValue<Rc<Bus>, LocalStorage>,
     pub(crate) editor: StoredValue<Option<Session>>,
     api: StoredValue<Api>,
@@ -105,10 +117,21 @@ impl Store {
             palette_at: RwSignal::new(None),
             levels: RwSignal::new(Arc::new(HashMap::new())),
             broadcasts: RwSignal::new(Arc::new(HashMap::new())),
+            pipeline: RwSignal::new(Arc::default()),
+            refusals: RwSignal::new(Arc::default()),
             decoded: RwSignal::new(Arc::new(Decoded::default())),
             staged: StoredValue::new(Vec::new()),
             arrays: RwSignal::new(Arc::new(arrays::Book::default())),
             saved_channels: RwSignal::new(Arc::new(Vec::new())),
+            notices: RwSignal::new(Arc::default()),
+            presence: RwSignal::new(Arc::default()),
+            sent: StoredValue::new(Arc::default()),
+            unsaved: StoredValue::new(0),
+            applying: StoredValue::new(sync::ApplyGate::Idle),
+            switches: StoredValue::new(sync::Switches::default()),
+            me: StoredValue::new(presence::Me::default()),
+            said: StoredValue::new(Vec::new()),
+            heads: RwSignal::new(Arc::default()),
             bus: StoredValue::new_local(Rc::new(Bus::default())),
             editor: StoredValue::new(None),
             api: StoredValue::new(api),
@@ -178,6 +201,18 @@ impl Store {
         }
     }
 
+    pub fn acquire(self, command: &ClientCommand) {
+        if let Some(first) = self.bus.get_value().hold(command) {
+            self.command(first);
+        }
+    }
+
+    pub fn release(self, command: &ClientCommand) {
+        if let Some(last) = self.bus.get_value().release(command) {
+            self.command(last);
+        }
+    }
+
     pub fn hold(self, command: ClientCommand) {
         if let Some(first) = self.bus.get_value().hold(&command) {
             self.command(first);
@@ -223,13 +258,18 @@ impl Store {
         match message {
             Incoming::Up => {
                 self.connected.set(true);
+                self.command(ClientCommand::SubscribeDiagnostics { enabled: true });
+                self.introduce();
                 for command in self.bus.get_value().held() {
                     self.command(command);
                 }
                 self.refresh_all();
+                self.resync();
             }
             Incoming::Down => {
                 self.connected.set(false);
+                self.presence.set(Arc::default());
+                self.pipeline.set(Arc::default());
                 self.say("Lost the server: reconnecting");
             }
             Incoming::Event(event) => {
@@ -246,8 +286,17 @@ impl Store {
             ServerEvent::StateChanged { scope } => match scope {
                 StateScope::Devices => self.refresh_devices(),
                 StateScope::Workspaces => self.refresh_workspaces(),
+                StateScope::Workspace(id) => {
+                    if self.workspace.get_untracked() == Some(id) {
+                        self.resync();
+                    }
+                }
                 _ => self.refresh_state(),
             },
+            ServerEvent::WorkspaceSwitched { id, by, report } => self.switched(id, by, &report),
+            event @ (ServerEvent::Peers { .. } | ServerEvent::PeerPointer { .. }) => {
+                self.observe_peers(&event);
+            }
             ServerEvent::ChannelLevels {
                 device_set, levels, ..
             } => {
@@ -276,6 +325,7 @@ impl Store {
                     .update(|decoded| Arc::make_mut(decoded).report_lost(count));
             }
             ServerEvent::Error { message } => self.say(message),
+            ServerEvent::PipelineHealth { queues, .. } => self.pipeline.set(Arc::new(queues)),
             event @ (ServerEvent::ArrayUpdate { .. }
             | ServerEvent::ProcessorUpdate { .. }
             | ServerEvent::DfFusionUpdate { .. }) => {
@@ -363,26 +413,12 @@ impl Store {
         };
         match self.api().apply_workspace(id).await {
             Ok(report) => {
-                for message in apply_toasts(&report, &self.graph.get_untracked().nodes) {
-                    self.say(message);
-                }
+                self.announce(&report, &self.graph.get_untracked().nodes);
                 self.refresh_state();
+                self.retry_surfaces();
             }
             Err(error) => self.fail("Cannot apply the patch", &error),
         }
-    }
-
-    pub fn edit_graph(self, edit: impl FnOnce(&mut PatchGraph)) {
-        let mut graph = (*self.graph.get_untracked()).clone();
-        edit(&mut graph);
-        self.graph.set(Arc::new(graph.clone()));
-        let save = self.write_graph(graph);
-        zgui::task::spawn_local(async move {
-            match save.await {
-                Ok(()) => self.apply().await,
-                Err(error) => self.fail("Cannot save the patch", &error),
-            }
-        });
     }
 
     pub fn move_node(self, node: String, x: f32, y: f32) {
@@ -413,15 +449,6 @@ impl Store {
         self.commit_layout();
     }
 
-    pub fn commit_layout(self) {
-        let save = self.write_graph((*self.graph.get_untracked()).clone());
-        zgui::task::spawn_local(async move {
-            if let Err(error) = save.await {
-                self.fail("Cannot save the layout", &error);
-            }
-        });
-    }
-
     pub(crate) fn read_detail(self, detail: &WorkspaceDetail) {
         self.revision.set(detail.info.revision);
         self.can_undo.set(detail.history.can_undo);
@@ -438,32 +465,9 @@ impl Store {
             self.saved_channels
                 .set(Arc::new(detail.state.channels.clone()));
         }
-    }
-
-    pub(crate) fn write_graph(self, graph: PatchGraph) -> impl Future<Output = anyhow::Result<()>> {
-        let pending = self.editor.get_value().map(|editor| editor.save(graph));
-        async move {
-            let pending = pending.ok_or_else(|| anyhow::anyhow!("workspace is still loading"))?;
-            self.read_detail(&pending.await?);
-            Ok(())
+        if *self.notices.get_untracked() != detail.notices {
+            self.notices.set(Arc::new(detail.notices.clone()));
         }
-    }
-
-    pub fn step_history(self, back: bool) {
-        let Some(editor) = self.editor.get_value() else {
-            return;
-        };
-        let pending = editor.step(back);
-        zgui::task::spawn_local(async move {
-            match pending.await {
-                Ok(detail) => {
-                    self.read_detail(&detail);
-                    self.graph.set(Arc::new(detail.snapshot.graph));
-                    self.apply().await;
-                }
-                Err(error) => self.fail("Cannot step the history", &error),
-            }
-        });
     }
 
     pub fn set_device(self, set: u32, settings: DeviceSettings) {

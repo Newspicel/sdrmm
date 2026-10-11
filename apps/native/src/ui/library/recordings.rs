@@ -6,18 +6,26 @@ use sdrmm_wire::{
     ws::StateScope,
 };
 use zgui::prelude::*;
+use zgui_ui::prelude::TextareaProps;
+
+use sdrmm_wire::rest::MAX_RECORDING_NAME_LEN;
 
 use crate::{
     shell::recordings::{
-        DOWNLOAD_FORMATS, annotation, check_upload, describe_audio, describe_recording,
-        format_tags, matches_search, open_position, recording_node_for, recording_provenance,
+        annotation, capped, check_upload, describe_audio, describe_recording, format_tags,
+        formats_for, matches_search, open_position, recording_node_for, recording_provenance,
         recording_title, upload_field,
     },
     store::Store,
     ui::{
         files,
-        kit_shell::{Entry, Row, button, entry, glyph, hint, list, list_row, row_action},
-        library::{load, on_scope, reload},
+        kit_shell::{Entry, button, entry, glyph, hint, hover, list, typing},
+        library::{
+            load, on_scope,
+            playback::{Player, play_button, transport},
+            reload,
+            rows::{LibRow, Pending, act, icon_act, lib_row},
+        },
         patch::graph,
         shell::Shell,
     },
@@ -27,10 +35,21 @@ const IQ: &str = "/api/recordings";
 const AUDIO: &str = "/api/audiorecordings";
 const CLEAR_ARM: Duration = Duration::from_secs(3);
 
+const SHEET: &str = css!(
+    r#"
+.rec-note { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-note-field { height: auto; min-height: 56px; }
+.rec-form { padding: 0 0 0 8px; border-left: 2px solid var(--accent-dim); }
+"#
+);
+
 #[derive(Clone, Copy)]
 struct Lists {
     iq: RwSignal<Option<Result<std::sync::Arc<RecordingsResponse>, String>>>,
     audio: RwSignal<Option<Result<std::sync::Arc<AudioRecordingsResponse>, String>>>,
+    deleting: Pending,
+    saving: Pending,
+    player: Player,
 }
 
 impl Lists {
@@ -57,9 +76,13 @@ impl Lists {
 }
 
 pub fn panel(store: Store, shell: Shell) -> impl IntoView {
+    install_stylesheet("library-recordings", SHEET);
     let lists = Lists {
         iq: load(store, IQ.to_owned()),
         audio: load(store, AUDIO.to_owned()),
+        deleting: Pending::new(),
+        saving: Pending::new(),
+        player: Player::new(store),
     };
     on_scope(store, StateScope::Recordings, move || lists.again(store));
     let about = load::<AboutResponse>(store, String::from("/api/about"));
@@ -81,7 +104,9 @@ pub fn panel(store: Store, shell: Shell) -> impl IntoView {
     };
     let hints = move || {
         let listed = lists.iq();
-        if listed.is_empty() {
+        if matches!(lists.iq.get(), Some(Err(_))) || matches!(lists.audio.get(), Some(Err(_))) {
+            Some(hint("Could not load the recordings."))
+        } else if listed.is_empty() {
             Some(hint("No recordings yet."))
         } else if shown().is_empty() {
             Some(hint(format!(
@@ -108,18 +133,19 @@ pub fn panel(store: Store, shell: Shell) -> impl IntoView {
             .get()
             .and_then(Result::ok)
             .and_then(|found| found.dir.clone())?;
+        let shown = dir.clone();
         Some(AnyView::new(view! {
             row(class = "sk-toolbar") {
-                text(class = "legend") {{dir}}
+                {hover(dir, view! { text(class = "legend") {{shown}} })}
                 spacer() {}
-                {move || reveal.get().then(|| AnyView::new(button("Show in folder", "sm", move || post(store, format!("{IQ}/reveal"), "Cannot show the folder"))))}
+                {move || reveal.get().then(|| act("Show in folder", "sm", Signal::stored_local(true), Some(String::from("Open this folder in the machine's file manager")), move || post(store, format!("{IQ}/reveal"), "Cannot show the folder")))}
             }
         }))
     };
     view! {
         column(class = "sk-panel") {
             row(class = "sk-toolbar") {
-                {entry(Entry::new(search, "Search name, tag or note"), || {}, || {})}
+                {move || (!lists.iq().is_empty()).then(|| AnyView::new(entry(Entry::new(search, "Search name, tag or note"), || {}, || {})))}
                 {button("Upload SigMF", "", move || upload(store, lists))}
                 {clear_all(store, lists)}
             }
@@ -141,6 +167,7 @@ fn post(store: Store, path: String, context: &'static str) {
 
 fn clear_all(store: Store, lists: Lists) -> impl IntoView {
     let armed = RwSignal::new(false);
+    let clearing = Pending::new();
     let disarm = StoredValue::new_local(None::<zgui::view::TimeoutHandle>);
     let clock = Timers::current();
     let press = move || {
@@ -154,7 +181,7 @@ fn clear_all(store: Store, lists: Lists) -> impl IntoView {
         armed.set(false);
         let iq = lists.iq();
         let audio = lists.audio();
-        zgui::task::spawn_local(async move {
+        clearing.run(async move {
             let api = store.api();
             let mut failed = 0usize;
             for recording in iq {
@@ -180,17 +207,21 @@ fn clear_all(store: Store, lists: Lists) -> impl IntoView {
         let press = press.clone();
         let any = !lists.iq().is_empty() || !lists.audio().is_empty();
         any.then(|| {
-            AnyView::new(view! {
-                control(
-                    class = "sk-btn",
-                    class:danger = move || armed.get(),
-                    tabindex = Focus::Sequential,
-                    a11y:role = Role::Button,
-                    on:click:stop = move |_| press()
-                ) {
-                    {move || if armed.get() { "Confirm clear" } else { "Clear all" }}
-                }
-            })
+            hover(
+                "Delete every IQ and audio recording",
+                view! {
+                    control(
+                        class = "sk-btn",
+                        class:danger = move || armed.get(),
+                        state:disabled = move || clearing.busy(),
+                        tabindex = Focus::Sequential,
+                        a11y:role = Role::Button,
+                        on:click:stop = move |_| if !clearing.busy() { press() }
+                    ) {
+                        {move || if armed.get() { "Confirm clear" } else { "Clear all" }}
+                    }
+                },
+            )
         })
     }
 }
@@ -232,6 +263,39 @@ fn open_as_source(store: Store, shell: Shell, recording: &RecordingInfo) {
     shell.menu.set(None);
 }
 
+fn downloads(store: Store, recording: &RecordingInfo) -> Vec<AnyView> {
+    let id = recording.id;
+    formats_for(recording)
+        .iter()
+        .map(|format| {
+            let path = format!("{IQ}/{id}/download?format={}", format.format);
+            let name = format!("{}{}", recording.file, format.label);
+            act(
+                format.label,
+                "sm",
+                Signal::stored_local(true),
+                Some(format.hint.to_owned()),
+                move || {
+                    let path = path.clone();
+                    let name = name.clone();
+                    zgui::task::spawn_local(
+                        async move { files::download(store, &path, &name).await },
+                    );
+                },
+            )
+        })
+        .collect()
+}
+
+fn delete(store: Store, lists: Lists, path: String) {
+    lists.deleting.run(async move {
+        if let Err(error) = store.api().delete(&path).await {
+            store.fail("Cannot delete the recording", &error);
+        }
+        lists.again(store);
+    });
+}
+
 fn iq_row(
     store: Store,
     shell: Shell,
@@ -244,34 +308,15 @@ fn iq_row(
     let id = recording.id;
     let title = recording_title(&recording);
     let opened = recording.clone();
-    let downloads: Vec<AnyView> = DOWNLOAD_FORMATS
-        .iter()
-        .map(|(label, format)| {
-            let path = format!("{IQ}/{id}/download?format={format}");
-            let name = format!("{}{label}", recording.file);
-            AnyView::new(button(*label, "sm", move || {
-                let path = path.clone();
-                let name = name.clone();
-                zgui::task::spawn_local(async move { files::download(store, &path, &name).await });
-            }))
-        })
-        .collect();
-    let remove = move || {
-        zgui::task::spawn_local(async move {
-            if let Err(error) = store.api().delete(&format!("{IQ}/{id}")).await {
-                store.fail("Cannot delete the recording", &error);
-            }
-            lists.again(store);
-        });
-    };
+    let idle = lists.deleting.idle();
     let actions = view! {
         {button("Open as source", "sm", move || open_as_source(store, shell, &opened))}
-        {downloads}
-        {row_action(glyph::PENCIL, format!("Annotate {title}"), false, move || {
+        {downloads(store, &recording)}
+        {icon_act(glyph::PENCIL, format!("Annotate {title}"), false, Signal::stored_local(true), move || {
             editing.update(|open| *open = if *open == Some(id) { None } else { Some(id) });
         })}
-        {move || reveal.get().then(|| AnyView::new(row_action(glyph::FOLDER, "Show in folder", false, move || post(store, format!("{IQ}/{id}/reveal"), "Cannot show the recording"))))}
-        {row_action(glyph::TRASH, format!("Delete {title}"), true, remove)}
+        {move || reveal.get().then(|| icon_act(glyph::FOLDER, "Show in folder", false, Signal::stored_local(true), move || post(store, format!("{IQ}/{id}/reveal"), "Cannot show the recording")))}
+        {icon_act(glyph::TRASH, format!("Delete {title}"), true, idle, move || delete(store, lists, format!("{IQ}/{id}")))}
     };
     let kept = recording.clone();
     let below = move || {
@@ -281,17 +326,14 @@ fn iq_row(
             AnyView::new(tags_line(&kept, search))
         }
     };
-    list_row(
-        Row {
+    lib_row(
+        LibRow {
             primary: recording_title(&recording),
-            secondary: Some(format!(
-                "{} \u{b7} {}",
-                describe_recording(&recording),
-                recording_provenance(&recording)
-            )),
+            secondary: Some(describe_recording(&recording)),
+            hint: Some(recording_provenance(&recording)),
+            ..LibRow::default()
         },
         None,
-        Signal::stored_local(true),
         AnyView::new(actions),
         AnyView::new(below),
     )
@@ -304,23 +346,29 @@ fn tags_line(recording: &RecordingInfo, search: RwSignal<String, LocalStorage>) 
         .map(|tag| {
             let picked = tag.clone();
             let shown = tag.clone();
-            AnyView::new(view! {
-                control(
-                    class = "sk-chip",
-                    tabindex = Focus::Sequential,
-                    a11y:role = Role::Button,
-                    on:click:stop = move |_| search.set(picked.clone())
-                ) {
-                    {shown}
-                }
-            })
+            hover(
+                format!("Search for {tag}"),
+                view! {
+                    control(
+                        class = "sk-chip",
+                        tabindex = Focus::Sequential,
+                        a11y:role = Role::Button,
+                        on:click:stop = move |_| search.set(picked.clone())
+                    ) {
+                        {shown}
+                    }
+                },
+            )
         })
         .collect();
     let note = recording
         .note
         .clone()
         .filter(|note| !note.is_empty())
-        .map(|note| AnyView::new(view! { text(class = "sk-text") {{note}} }));
+        .map(|note| {
+            let shown = note.lines().next().unwrap_or_default().to_owned();
+            hover(note, view! { text(class = "sk-text rec-note") {{shown}} })
+        });
     (!chips.is_empty() || note.is_some()).then(|| {
         AnyView::new(view! {
             row(class = "sk-toolbar") {
@@ -329,6 +377,19 @@ fn tags_line(recording: &RecordingInfo, search: RwSignal<String, LocalStorage>) 
             }
         })
     })
+}
+
+fn note_field(note: RwSignal<String, LocalStorage>) -> impl IntoView {
+    view! {
+        box(class = "sk-entry", on:key_down = typing) {
+            Textarea(
+                class = "sk-field rec-note-field",
+                value = note,
+                label = "Note",
+                placeholder = "What was on the air, and what to remember about it"
+            )
+        }
+    }
 }
 
 fn annotation_form(
@@ -341,13 +402,19 @@ fn annotation_form(
     let name = RwSignal::new_local(recording.name.clone().unwrap_or_default());
     let tags = RwSignal::new_local(format_tags(&recording.tags));
     let note = RwSignal::new_local(recording.note.clone().unwrap_or_default());
+    let capping = zgui::reactive::RenderEffect::new(move |_| {
+        if let Some(cut) = name.with(|typed| capped(typed, MAX_RECORDING_NAME_LEN)) {
+            name.set(cut);
+        }
+    });
+    on_cleanup_local(move || drop(capping));
     let save = move || {
         let body = annotation(
             &name.get_untracked(),
             &tags.get_untracked(),
             &note.get_untracked(),
         );
-        zgui::task::spawn_local(async move {
+        lists.saving.run(async move {
             match store
                 .api()
                 .put::<_, serde::de::IgnoredAny>(&format!("{IQ}/{id}/annotation"), &body)
@@ -361,12 +428,12 @@ fn annotation_form(
     };
     let cancel = move || editing.set(None);
     view! {
-        column(class = "sk-panel") {
+        column(class = "sk-panel rec-form") {
             {entry(Entry::new(name, "Name this recording").focused(), save, cancel)}
             {entry(Entry::new(tags, "Tags, comma separated"), save, cancel)}
-            {entry(Entry::new(note, "What was on the air"), save, cancel)}
+            {note_field(note)}
             row(class = "sk-toolbar") {
-                {button("Save", "sm", save)}
+                {act("Save", "sm", lists.saving.idle(), None, save)}
                 {button("Cancel", "sm", cancel)}
             }
         }
@@ -391,18 +458,9 @@ fn audio_row(
     reveal: Signal<bool>,
 ) -> impl IntoView {
     let file = recording.file.clone();
-    let shown = recording.file.clone();
     let revealed = file.clone();
     let fetched = file.clone();
-    let remove = move || {
-        let file = file.clone();
-        zgui::task::spawn_local(async move {
-            if let Err(error) = store.api().delete(&format!("{AUDIO}/{file}")).await {
-                store.fail("Cannot delete the recording", &error);
-            }
-            lists.again(store);
-        });
-    };
+    let removed = file.clone();
     let download = move || {
         let file = fetched.clone();
         zgui::task::spawn_local(async move {
@@ -410,21 +468,25 @@ fn audio_row(
         });
     };
     let actions = view! {
+        {play_button(lists.player, file.clone())}
         {move || {
             let revealed = revealed.clone();
-            reveal.get().then(|| AnyView::new(row_action(glyph::FOLDER, "Show in folder", false, move || post(store, format!("{AUDIO}/{revealed}/reveal"), "Cannot show the recording"))))
+            reveal.get().then(|| icon_act(glyph::FOLDER, "Show in folder", false, Signal::stored_local(true), move || post(store, format!("{AUDIO}/{revealed}/reveal"), "Cannot show the recording")))
         }}
-        {row_action(glyph::DOWNLOAD, "Download WAV", false, download)}
-        {row_action(glyph::TRASH, format!("Delete {shown}"), true, remove)}
+        {icon_act(glyph::DOWNLOAD, "Download WAV", false, Signal::stored_local(true), download)}
+        {icon_act(glyph::TRASH, format!("Delete {file}"), true, lists.deleting.idle(), move || {
+            lists.player.stop_if(&removed);
+            delete(store, lists, format!("{AUDIO}/{removed}"));
+        })}
     };
-    list_row(
-        Row {
+    lib_row(
+        LibRow {
             primary: recording.file.clone(),
             secondary: Some(describe_audio(&recording)),
+            ..LibRow::default()
         },
         None,
-        Signal::stored_local(true),
         AnyView::new(actions),
-        AnyView::new(()),
+        AnyView::new(transport(lists.player, recording.file)),
     )
 }

@@ -10,6 +10,15 @@ pub struct Prefs {
     pub auto_off_explained: bool,
     pub token: Option<String>,
     pub author: Option<String>,
+    pub name: String,
+    #[serde(deserialize_with = "crate::ui::map::style::lenient")]
+    pub map_view: crate::ui::map::style::MapView,
+    pub scope_palette: Option<String>,
+    pub scope_custom: Vec<String>,
+    pub scope_average: Option<u32>,
+    pub serial_prompt_off: bool,
+    #[serde(deserialize_with = "crate::shell::serial_prompt::lenient_ids")]
+    pub serial_asked: Vec<String>,
 }
 
 #[must_use]

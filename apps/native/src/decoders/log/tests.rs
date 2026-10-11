@@ -405,3 +405,43 @@ fn clock_gnss_navtex_and_acars_summaries() {
     });
     assert_eq!(summary("acars", acars), "D-AIBC · LH0400 · [H1]");
 }
+
+#[test]
+fn an_export_drops_the_row_limit() {
+    let filter = LogFilter {
+        q: " wx ".to_owned(),
+        limit: 100,
+    };
+    let query = filter.export_query(LOG);
+    assert_eq!(query.limit, None);
+    assert_eq!(query.q.as_deref(), Some("wx"));
+    let path = export_path("csv", &query);
+    assert!(!path.contains("limit"));
+}
+
+#[test]
+fn an_export_is_named_like_the_server_names_it() {
+    let now: jiff::Timestamp = "2026-05-01T12:03:04Z".parse().unwrap();
+    assert_eq!(export_name("csv", now), "decoderlog-20260501T120304Z.csv");
+    assert_eq!(DOWNLOADS.map(|download| download.format), ["csv", "json"]);
+}
+
+#[test]
+fn an_opened_row_reserves_detail_slots_under_itself() {
+    assert_eq!(slot_count(3, None), 3);
+    assert_eq!(slot_count(3, Some(7)), 3);
+    assert_eq!(slot_count(3, Some(1)), 3 + DETAIL_SLOTS);
+    assert_eq!(slot_at(1, 3, Some(1)), Slot::Row(1));
+    assert_eq!(slot_at(2, 3, Some(1)), Slot::Detail(1));
+    assert_eq!(slot_at(3, 3, Some(1)), Slot::Spacer);
+    assert_eq!(slot_at(1 + DETAIL_SLOTS, 3, Some(1)), Slot::Spacer);
+    assert_eq!(slot_at(2 + DETAIL_SLOTS, 3, Some(1)), Slot::Row(2));
+    assert_eq!(slot_at(2, 3, None), Slot::Row(2));
+}
+
+#[test]
+fn new_decoders_have_names() {
+    assert_eq!(kind_label("remote_id"), "Remote ID");
+    assert_eq!(kind_label("ism_survey"), "2.4 GHz");
+    assert_eq!(kind_label("eot"), "End-of-Train");
+}

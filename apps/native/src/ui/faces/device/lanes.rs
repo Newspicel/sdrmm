@@ -1,12 +1,16 @@
-use std::collections::BTreeSet;
 
 use sdrmm_wire::{
-    device::{AgcSetting, Capabilities, Coherence, DeviceSettings, StreamSettings, Tuning},
-    patch::{DeviceRef, MAX_STREAMS, PatchGraph, port_stream, stream_port},
+    device::{
+        AgcReach, AgcSetting, Capabilities, Coherence, DeviceSettings, StreamSettings, Tuning,
+    },
+    patch::{DeviceRef, MAX_STREAMS, stream_port},
     state::{DeviceFault, DeviceSet, DeviceSetStatus},
 };
 
-use super::caps::{agc_state, format_gain};
+use super::{
+    caps::{agc_state, format_gain},
+    layout::agc_stage_index,
+};
 use crate::ui::kit_sources::dial::reachable_hz;
 
 #[must_use]
@@ -75,12 +79,6 @@ pub fn tuner_dials(set: &DeviceSet) -> Vec<TunerDial> {
                 .unwrap_or(0.0),
         })
         .collect()
-}
-
-#[must_use]
-pub fn has_lane_controls(caps: &Capabilities) -> bool {
-    (caps.per_stream.gain && !caps.gains.is_empty())
-        || (caps.per_stream.antenna && caps.antennas.len() > 1)
 }
 
 #[must_use]
@@ -172,7 +170,13 @@ pub fn agc_delta(caps: &Capabilities, stream: u32, agc: AgcSetting) -> DeviceSet
 
 #[must_use]
 pub fn agc_gain_db(set: &DeviceSet, stream: u32) -> Option<f64> {
-    if set.capabilities.gains.len() != 1 || !lane_agc(set, stream).on {
+    let driven = set
+        .capabilities
+        .gains
+        .iter()
+        .filter(|stage| stage.agc != AgcReach::Never)
+        .count();
+    if driven != 1 || !lane_agc(set, stream).on {
         return None;
     }
     set.agc_gains
@@ -190,7 +194,9 @@ pub fn agc_tip(set: &DeviceSet, stream: u32, advised: bool) -> String {
             "Let the radio set its own gain".to_owned()
         };
     }
-    let reading = match (agc_gain_db(set, stream), set.capabilities.gains.first()) {
+    let gains = &set.capabilities.gains;
+    let stage = gains.get(agc_stage_index(gains));
+    let reading = match (agc_gain_db(set, stream), stage) {
         (Some(db), Some(stage)) => format!(" at {} dB", format_gain(stage.unit, db)),
         _ => String::new(),
     };
@@ -200,17 +206,6 @@ pub fn agc_tip(set: &DeviceSet, stream: u32, advised: bool) -> String {
         ""
     };
     format!("AGC on{reading}{advice}")
-}
-
-#[must_use]
-pub fn coherent_lanes(graph: &PatchGraph, device_node: &str) -> BTreeSet<u32> {
-    graph
-        .edges
-        .iter()
-        .filter(|edge| edge.from.node == device_node)
-        .filter_map(|edge| port_stream("iq", &edge.from.port))
-        .filter(|stream| graph.array_of_lane(device_node, *stream).is_some())
-        .collect()
 }
 
 #[must_use]

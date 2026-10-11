@@ -3,9 +3,12 @@ use zgui::{
     elements::{kurbo, kurbo::Shape as _},
 };
 
+use zgui_image::ImageBytes;
+
 use super::{
     geo::TileId,
     mvt::{self, Layer},
+    style::Palette,
 };
 
 pub const EXTENT: f64 = 4096.0;
@@ -73,6 +76,7 @@ pub struct TileLabel {
 pub struct Painted {
     pub shapes: Vec<Shape>,
     pub labels: Vec<TileLabel>,
+    pub picture: Option<ImageBytes>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -117,21 +121,21 @@ impl Ink {
         Self::Border,
     ];
 
-    const fn look(self) -> Look {
+    const fn look(self, palette: &Palette) -> Look {
         let (colour, alpha, fill, width_px, dash) = match self {
-            Self::Wood => (0x1d_27_22, 0.9, true, 0.0, None),
-            Self::Park => (0x1c_29_22, 0.9, true, 0.0, None),
-            Self::Landuse => (0x22_25_2b, 0.8, true, 0.0, None),
-            Self::Water => (0x13_23_33, 1.0, true, 0.0, None),
-            Self::Waterway => (0x16_2a_3d, 1.0, false, 0.9, None),
-            Self::Building => (0x27_2a_31, 1.0, true, 0.0, None),
-            Self::Rail => (0x3a_3e_46, 0.8, false, 0.6, Some([3.0, 2.0])),
-            Self::Minor => (0x30_34_3b, 1.0, false, 0.7, None),
-            Self::Secondary => (0x3a_3f_48, 1.0, false, 1.1, None),
-            Self::Primary => (0x49_4f_5a, 1.0, false, 1.5, None),
-            Self::Motorway => (0x5e_57_4b, 1.0, false, 2.0, None),
-            Self::Region => (0x4a_4e_57, 0.8, false, 0.7, Some([3.0, 2.0])),
-            Self::Border => (0x6a_70_7b, 0.9, false, 1.0, Some([3.0, 2.0])),
+            Self::Wood => (palette.wood, 0.9, true, 0.0, None),
+            Self::Park => (palette.park, 0.9, true, 0.0, None),
+            Self::Landuse => (palette.landuse, 0.8, true, 0.0, None),
+            Self::Water => (palette.water, 1.0, true, 0.0, None),
+            Self::Waterway => (palette.water, 1.0, false, 0.9, None),
+            Self::Building => (palette.building, 1.0, true, 0.0, None),
+            Self::Rail => (palette.rail, 0.8, false, 0.6, Some([3.0, 2.0])),
+            Self::Minor => (palette.minor, 1.0, false, 0.7, None),
+            Self::Secondary => (palette.secondary, 1.0, false, 1.1, None),
+            Self::Primary => (palette.primary, 1.0, false, 1.5, None),
+            Self::Motorway => (palette.motorway, 1.0, false, 2.0, None),
+            Self::Region => (palette.region, 0.8, false, 0.7, Some([3.0, 2.0])),
+            Self::Border => (palette.border, 0.9, false, 1.0, Some([3.0, 2.0])),
         };
         Look {
             colour,
@@ -234,7 +238,7 @@ fn label_of(layer: &Layer, feature: &mvt::Feature, tile: TileId, scale: f64) -> 
 }
 
 #[must_use]
-pub fn paint(tile: &mvt::Tile, id: TileId) -> Painted {
+pub fn paint(tile: &mvt::Tile, id: TileId, palette: &Palette) -> Painted {
     let mut paths: Vec<(Ink, kurbo::BezPath)> = Ink::ALL
         .iter()
         .map(|ink| (*ink, kurbo::BezPath::new()))
@@ -254,7 +258,7 @@ pub fn paint(tile: &mvt::Tile, id: TileId) -> Painted {
                 trace(
                     &feature.parts,
                     path,
-                    feature.shape == mvt::Shape::Polygon && ink.look().fill,
+                    feature.shape == mvt::Shape::Polygon && ink.look(palette).fill,
                     scale,
                 );
             }
@@ -264,13 +268,16 @@ pub fn paint(tile: &mvt::Tile, id: TileId) -> Painted {
     let shapes = paths
         .into_iter()
         .filter(|(_, path)| !path.elements().is_empty())
-        .map(|(ink, path)| shape(ink, path, &clip))
+        .map(|(ink, path)| shape(ink.look(palette), path, &clip))
         .collect();
-    Painted { shapes, labels }
+    Painted {
+        shapes,
+        labels,
+        picture: None,
+    }
 }
 
-fn shape(ink: Ink, path: kurbo::BezPath, clip: &kurbo::BezPath) -> Shape {
-    let look = ink.look();
+fn shape(look: Look, path: kurbo::BezPath, clip: &kurbo::BezPath) -> Shape {
     let brush = solid(look.colour, look.alpha);
     let builder = ShapeBuilder::new(path).clipped(clip.clone());
     if look.fill {
@@ -309,7 +316,8 @@ mod tests {
             layer("poi", &[], &[], &[feature(3, &[], &square(0, 0, 10))]),
         ]);
         let decoded = mvt::decode(&bytes).expect("a tile");
-        let painted = paint(&decoded, TileId { z: 6, x: 34, y: 21 });
+        let palette = crate::ui::map::style::Preset::Liberty.palette();
+        let painted = paint(&decoded, TileId { z: 6, x: 34, y: 21 }, &palette);
         assert_eq!(painted.shapes.len(), 2);
         assert_eq!(painted.labels.len(), 1);
         let berlin = &painted.labels[0];

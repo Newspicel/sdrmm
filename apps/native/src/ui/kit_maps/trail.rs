@@ -46,6 +46,7 @@ pub fn overlay(tracks: &[&Track]) -> Overlay {
                 (1.0, 0xef_62_62, 1.0),
             ],
         },
+        max_zoom: f64::INFINITY,
     });
     for track in tracks {
         if track.history.len() >= 2 {

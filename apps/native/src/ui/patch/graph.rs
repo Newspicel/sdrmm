@@ -5,7 +5,7 @@ use std::{
 };
 
 use sdrmm_wire::patch::{
-    MAX_EDGES, MAX_NODES, NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef, Position,
+    DeviceNode, MAX_EDGES, MAX_NODES, NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef, Position,
 };
 
 pub const HEADER_PX: f32 = 26.0;
@@ -27,11 +27,12 @@ const fn size(w: f32, h: Option<f32>) -> NodeSize {
 #[must_use]
 pub fn natural_size(kind: &str) -> NodeSize {
     match kind {
-        "device" | "recording" | "signal_gen" | "array" | "event_output" => size(420.0, None),
-        "gps" | "time_machine" => size(360.0, None),
+        "device" | "recording" | "signal_gen" | "event_output" => size(420.0, None),
+        "gps" | "time_machine" | "hunt" | "polarimeter" | "stitch" => size(360.0, None),
         "channel" => size(440.0, None),
-        "event_filter" | "network_export" | "satellite" | "triangulation" => size(380.0, None),
-        "audio_fx" | "scanner" | "df" | "combiner" => size(400.0, None),
+        "event_filter" | "network_export" | "satellite" => size(380.0, None),
+        "audio_fx" | "scanner" | "df" | "triangulation" | "beamformer" => size(400.0, None),
+        "array" => size(460.0, None),
         "scope" => size(520.0, Some(360.0)),
         "baseband_scope" => size(420.0, Some(340.0)),
         "speaker" | "spectrum_monitor" | "export" => size(320.0, None),
@@ -42,10 +43,10 @@ pub fn natural_size(kind: &str) -> NodeSize {
         "decoder_log" => size(720.0, Some(380.0)),
         "dmr_trunk" => size(480.0, Some(360.0)),
         "video" => size(380.0, Some(320.0)),
-        "recorder" | "audio_recorder" | "baseband_recorder" | "hunt" | "stitch" => {
-            size(340.0, None)
-        }
-        "passive_radar" => size(520.0, Some(420.0)),
+        "recorder" | "audio_recorder" | "baseband_recorder" => size(340.0, None),
+        "passive_radar" => size(560.0, Some(540.0)),
+        "spatial_spectrum" => size(560.0, Some(420.0)),
+        "correlator" => size(520.0, Some(460.0)),
         _ => size(320.0, None),
     }
 }
@@ -61,10 +62,7 @@ pub fn fit_width(kind: &str) -> Option<(f32, f32)> {
     if natural.h.is_some() {
         return None;
     }
-    let min = if matches!(
-        kind,
-        "device" | "signal_gen" | "recording" | "array" | "channel"
-    ) {
+    let min = if matches!(kind, "device" | "signal_gen" | "recording" | "channel") {
         DIAL_MIN_W
     } else {
         FIT_MIN_W
@@ -82,7 +80,9 @@ fn resize_floor(kind: &str) -> Option<(f32, f32)> {
         "decoder_log" => (360.0, 200.0),
         "dmr_trunk" => (380.0, 240.0),
         "video" => (240.0, 200.0),
-        "passive_radar" => (380.0, 300.0),
+        "passive_radar" => (420.0, 380.0),
+        "spatial_spectrum" => (400.0, 300.0),
+        "correlator" => (380.0, 340.0),
         _ => return None,
     })
 }
@@ -216,7 +216,7 @@ fn copy_of(node: &PatchNode, id: String, offset: Position) -> PatchNode {
         y: node.position.y + offset.y,
     };
     match &mut copy.body {
-        NodeBody::Device(device) => device.device = None,
+        NodeBody::Device(device) => *device = DeviceNode::default(),
         NodeBody::Recording(recording) => *recording = Default::default(),
         _ => {}
     }
@@ -264,7 +264,7 @@ pub fn paste_nodes(
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::patch::{DeviceNode, DeviceRef};
+    use sdrmm_wire::patch::DeviceRef;
 
     use super::*;
 

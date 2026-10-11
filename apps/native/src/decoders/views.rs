@@ -3,15 +3,19 @@ use std::{collections::HashMap, sync::Arc};
 use sdrmm_wire::{
     channel::Sideband,
     decode::{
-        AdsbMessage, AisMessage, DecodedRecord, DecoderEvent, DectArc, DectCipherState, DvFrame,
-        DvMode, DvTrunkProtocol, IdentReport, IdentSignal, Modulation, ProtocolMatch, RdsUpdate,
-        VorReading,
+        AdsbMessage, AisMessage, DecodedRecord, DecoderEvent, DectArc, DectCipherState, DectFrame,
+        DectSide, DvFrame, DvMode, DvTrunkProtocol, IdentReport, IdentSignal, Modulation,
+        ProtocolMatch, RdsUpdate, VorReading,
     },
     units,
 };
 use serde_json::Value;
 
 use crate::decoded::{Station, time_ms};
+
+mod stations;
+
+pub use stations::*;
 
 pub type Records = Vec<Arc<DecodedRecord>>;
 
@@ -89,12 +93,85 @@ pub struct DectStation {
     pub slot_pair: Option<u8>,
     pub authentication: Option<bool>,
     pub ciphering: Option<bool>,
+    pub dsaa2: Option<bool>,
+    pub dsc2: Option<bool>,
     pub cipher_state: DectCipherState,
+    pub voice: Option<DectVoiceState>,
     pub handsets: usize,
     pub bursts: u32,
     pub crc_errors: u32,
     pub level_dbfs: f32,
     pub at_ms: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DectVoiceState {
+    Playing,
+    Muted,
+}
+
+impl DectVoiceState {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Playing => "playing",
+            Self::Muted => "muted",
+        }
+    }
+}
+
+#[must_use]
+pub fn dect_support(value: Option<bool>, extended: Option<bool>, name: &str) -> String {
+    let base = value.map_or("-", |on| if on { "yes" } else { "no" });
+    if extended == Some(true) {
+        format!("{base} · {name}")
+    } else {
+        base.to_owned()
+    }
+}
+
+fn dect_key(record: &DecodedRecord, frame: &DectFrame) -> String {
+    frame.identity.as_ref().map_or_else(
+        || {
+            format!(
+                "{}:{}:{}",
+                record.device_set,
+                record.channel,
+                frame.side.label()
+            )
+        },
+        |identity| identity.rfpi.clone(),
+    )
+}
+
+fn dect_station(
+    key: String,
+    frame: &DectFrame,
+    voice: Option<DectVoiceState>,
+    when: i64,
+) -> DectStation {
+    DectStation {
+        key,
+        rfpi: frame
+            .identity
+            .as_ref()
+            .map(|identity| identity.rfpi.clone()),
+        arc: frame.identity.as_ref().map(|identity| identity.arc),
+        carrier: frame.carrier,
+        carrier_hz: frame.carrier_hz,
+        slot_pair: frame.slot_pair,
+        authentication: frame.security.authentication_supported,
+        ciphering: frame.security.ciphering_supported,
+        dsaa2: frame.security.dsaa2_supported,
+        dsc2: frame.security.dsc2_supported,
+        cipher_state: frame.security.cipher_state,
+        voice,
+        handsets: frame.handsets.len(),
+        bursts: frame.bursts,
+        crc_errors: frame.crc_errors,
+        level_dbfs: frame.level_dbfs,
+        at_ms: when,
+    }
 }
 
 #[must_use]
@@ -104,44 +181,33 @@ pub fn dect_stations(records: &[Arc<DecodedRecord>]) -> Vec<DectStation> {
         let DecoderEvent::Dect(frame) = &record.event else {
             continue;
         };
-        let rfpi = frame
-            .identity
-            .as_ref()
-            .map(|identity| identity.rfpi.clone());
-        let key = rfpi.clone().unwrap_or_else(|| {
-            format!(
-                "{}:{}:{}",
-                record.device_set,
-                record.channel,
-                frame.side.label()
-            )
-        });
+        let key = dect_key(record, frame);
         let when = at_ms(record);
-        if latest
-            .get(&key)
-            .is_some_and(|previous| when <= previous.at_ms)
-        {
+        let previous = latest.get(&key);
+        if previous.is_some_and(|previous| when <= previous.at_ms) {
             continue;
         }
-        latest.insert(
-            key.clone(),
-            DectStation {
-                key,
-                rfpi,
-                arc: frame.identity.as_ref().map(|identity| identity.arc),
-                carrier: frame.carrier,
-                carrier_hz: frame.carrier_hz,
-                slot_pair: frame.slot_pair,
-                authentication: frame.security.authentication_supported,
-                ciphering: frame.security.ciphering_supported,
-                cipher_state: frame.security.cipher_state,
-                handsets: frame.handsets.len(),
-                bursts: frame.bursts,
-                crc_errors: frame.crc_errors,
-                level_dbfs: frame.level_dbfs,
+        let voice = frame.voice.map(|voice| {
+            if voice.playing {
+                DectVoiceState::Playing
+            } else {
+                DectVoiceState::Muted
+            }
+        });
+        let next = match previous {
+            Some(previous) if frame.side == DectSide::Pp => DectStation {
+                voice: voice.or(previous.voice),
                 at_ms: when,
+                ..previous.clone()
             },
-        );
+            _ => dect_station(
+                key.clone(),
+                frame,
+                voice.or_else(|| previous.and_then(|p| p.voice)),
+                when,
+            ),
+        };
+        latest.insert(key, next);
     }
     let mut stations: Vec<DectStation> = latest.into_values().collect();
     stations.sort_by(|a, b| b.level_dbfs.total_cmp(&a.level_dbfs));

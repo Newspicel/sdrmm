@@ -87,9 +87,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             )
         })
     };
+    head(store, node.clone(), subtitle);
     view! {
         column(class = "face") {
-            {head(subtitle)}
             {plots(store, node.clone(), known, index, dim)}
             {controls(store, node, params, reading, chosen, index)}
             row(class = "cor__readouts") {

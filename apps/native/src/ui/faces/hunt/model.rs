@@ -1,8 +1,73 @@
-use sdrmm_wire::{HuntStatus, channel::ChannelInfo, patch::PatchGraph, state::DeviceSet};
+use sdrmm_wire::{
+    HuntStatus,
+    channel::ChannelInfo,
+    hunt::{HuntSweep, SweepState},
+    patch::PatchGraph,
+    state::DeviceSet,
+};
 
 use crate::binding;
 
 pub const HUNT_INTERVAL_MS: u32 = 50;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShortText {
+    pub label: &'static str,
+    pub title: &'static str,
+}
+
+pub const SCANNING: ShortText = ShortText {
+    label: "Scanning",
+    title: "Stop the scan to hunt one frequency",
+};
+
+pub const TUNED_AWAY: ShortText = ShortText {
+    label: "Tuned away",
+    title: "Unlock the radio's tuning or move it here",
+};
+
+const fn said(label: &'static str, title: &'static str) -> ShortText {
+    ShortText { label, title }
+}
+
+#[must_use]
+pub const fn sweep_text(state: SweepState) -> ShortText {
+    match state {
+        SweepState::Off => said("Off", "Warmer and colder only"),
+        SweepState::Idle => said("Ready", "Press Sweep and turn"),
+        SweepState::Sweeping => said("Sweeping", "Keep turning slowly"),
+        SweepState::NoHeading => said("No heading", "Wire a phone GPS"),
+        SweepState::ShortSpan => said("Turn more", "Not enough of the circle covered yet"),
+        SweepState::LowContrast => said("Flat", "No clear peak, turn again"),
+        SweepState::PoorFit => said("Poor fit", "The levels do not match the antenna pattern"),
+        SweepState::HeadingPoor => said("Heading poor", "The compass is unsure"),
+        SweepState::TooFast => said("Too fast", "Turn more slowly"),
+        SweepState::Done => said("Done", "Bearing found"),
+    }
+}
+
+#[must_use]
+pub fn sweep_on(sweep: Option<&HuntSweep>) -> bool {
+    sweep.is_some_and(|sweep| sweep.state != SweepState::Off)
+}
+
+#[must_use]
+pub fn degrees_label(deg: Option<f32>) -> String {
+    match deg {
+        Some(deg) if deg.is_finite() => {
+            format!("{:03}\u{b0}", (deg.round() as i64).rem_euclid(360))
+        }
+        _ => String::from("-"),
+    }
+}
+
+#[must_use]
+pub fn covered_label(sweep: Option<&HuntSweep>) -> String {
+    sweep.map_or_else(
+        || String::from("-"),
+        |sweep| format!("{:.0}\u{b0}", sweep.covered_deg.max(0.0)),
+    )
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HuntTarget {
@@ -55,7 +120,7 @@ pub fn live_hunt(
 }
 
 #[must_use]
-pub fn hunt_refusal(target: Option<&HuntTarget>) -> Option<&'static str> {
+pub fn hunt_refusal(target: Option<&HuntTarget>) -> Option<ShortText> {
     let target = target?;
     if target
         .set
@@ -63,14 +128,9 @@ pub fn hunt_refusal(target: Option<&HuntTarget>) -> Option<&'static str> {
         .iter()
         .any(|scanner| scanner.settings.channel == target.channel.id)
     {
-        return Some("This decoder is scanning. Stop the scan to hunt on one frequency.");
+        return Some(SCANNING);
     }
-    if target.channel.out_of_band.is_some() {
-        return Some(
-            "The radio is tuned away from this decoder. Unlock its tuning or move it there.",
-        );
-    }
-    None
+    target.channel.out_of_band.is_some().then_some(TUNED_AWAY)
 }
 
 #[must_use]
@@ -296,12 +356,12 @@ mod tests {
             channel: channel(true),
             ..plain.clone()
         };
-        assert!(hunt_refusal(Some(&away)).is_some_and(|said| said.contains("tuned away")));
+        assert_eq!(hunt_refusal(Some(&away)), Some(TUNED_AWAY));
         let scanning = HuntTarget {
             set: set(Vec::new(), Vec::new(), Some(9)),
             ..plain.clone()
         };
-        assert!(hunt_refusal(Some(&scanning)).is_some_and(|said| said.contains("scanning")));
+        assert_eq!(hunt_refusal(Some(&scanning)), Some(SCANNING));
         let elsewhere = HuntTarget {
             set: set(Vec::new(), Vec::new(), Some(2)),
             ..plain
@@ -409,5 +469,38 @@ mod tests {
             hunt_target(&graph(), &[set(Vec::new(), Vec::new(), None)], "hunt"),
             None
         );
+    }
+
+    #[test]
+    fn sweep_states_read_short_with_a_reason() {
+        assert_eq!(sweep_text(SweepState::Off).label, "Off");
+        assert_eq!(sweep_text(SweepState::NoHeading).title, "Wire a phone GPS");
+        assert_eq!(sweep_text(SweepState::Done).label, "Done");
+    }
+
+    #[test]
+    fn a_sweep_is_on_unless_missing_or_off() {
+        assert!(!sweep_on(None));
+        assert!(!sweep_on(Some(&HuntSweep::default())));
+        let turning = HuntSweep {
+            state: SweepState::Sweeping,
+            ..HuntSweep::default()
+        };
+        assert!(sweep_on(Some(&turning)));
+    }
+
+    #[test]
+    fn degrees_read_as_three_digit_compass_bearings() {
+        assert_eq!(degrees_label(None), "-");
+        assert_eq!(degrees_label(Some(f32::NAN)), "-");
+        assert_eq!(degrees_label(Some(7.4)), "007\u{b0}");
+        assert_eq!(degrees_label(Some(-10.0)), "350\u{b0}");
+        assert_eq!(degrees_label(Some(359.6)), "000\u{b0}");
+        let covered = HuntSweep {
+            covered_deg: 212.4,
+            ..HuntSweep::default()
+        };
+        assert_eq!(covered_label(Some(&covered)), "212\u{b0}");
+        assert_eq!(covered_label(None), "-");
     }
 }

@@ -58,7 +58,7 @@ pub fn view(store: Store, aircraft: bool, scope: DecoderScope) -> impl IntoView 
         }
     };
     let columns = if aircraft { &AIRCRAFT } else { &SHIPS };
-    let rows = move || {
+    let rows = Memo::new(move |_| {
         let at = now.get();
         let rows: Vec<TargetRow> = stations.with(|stations| {
             stations
@@ -75,9 +75,9 @@ pub fn view(store: Store, aircraft: bool, scope: DecoderScope) -> impl IntoView 
                 .collect()
         });
         sort_targets(&rows, sort.get(), descending.get())
-    };
+    });
     let table = move || {
-        let rows = rows();
+        let rows = rows.get();
         let count = rows.len();
         if count == 0 {
             let said = format!("No {} heard.", columns.title.to_lowercase());
@@ -106,11 +106,7 @@ pub fn view(store: Store, aircraft: bool, scope: DecoderScope) -> impl IntoView 
             }
         })
     };
-    let count = move || {
-        stations
-            .with(|s| s.as_ref().map_or(0, |s| s.len()))
-            .to_string()
-    };
+    let count = move || rows.with(Vec::len).to_string();
     view! {
         column(class = "dk-pane") {
             row(class = "dk-line") {

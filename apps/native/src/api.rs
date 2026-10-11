@@ -134,6 +134,11 @@ impl Api {
     }
 
     #[must_use]
+    pub fn author(&self) -> Option<&str> {
+        self.author.as_deref()
+    }
+
+    #[must_use]
     pub fn base(&self) -> &str {
         &self.base
     }

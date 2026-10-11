@@ -1,9 +1,11 @@
+pub mod detail;
 pub mod df;
+pub mod heat;
 pub mod targets;
 
 use std::{sync::Arc, time::Duration};
 
-use sdrmm_wire::channel::ChannelParams;
+use sdrmm_wire::{channel::ChannelParams, ws::ServerEvent};
 use zgui::prelude::*;
 use zgui::reactive::RenderEffect;
 
@@ -11,13 +13,14 @@ use crate::{
     arrays::Book,
     store::Store,
     ui::{
+        kit_audio::titled,
         kit_maps::{
             self, SHEET,
             feed::{Feed, Held, Topic},
             mhz, now_ms, ticker, trail,
             wiring::{channel_type_of, event_sources},
         },
-        map::{self, ACCENT, Frame, Geo, MapProps, Overlay},
+        map::{self, ACCENT, Frame, Geo, MapProps, Overlay, overlay::Image, style},
     },
 };
 
@@ -25,6 +28,8 @@ const DRAW_TICK: Duration = Duration::from_millis(500);
 const AGE_OUT_EVERY: Duration = Duration::from_secs(15);
 const TARGET_FRAME_ZOOM: f64 = 9.0;
 const TRAIL_FRAME_ZOOM: f64 = 14.0;
+const HEAT_RAMP_CSS: &str =
+    "linear-gradient(to right, #000004, #420a68, #932667, #dd513a, #fca50a, #fcffa4)";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Wiring {
@@ -64,7 +69,20 @@ struct Drawn {
     df: df::Counts,
 }
 
-fn draw(held: &Held, book: &Book, wired: &Wiring, selected: Option<&str>, now: i64) -> Drawn {
+struct Look<'a> {
+    selected: Option<&'a str>,
+    tracks: bool,
+    heat: Option<Image>,
+    now: i64,
+}
+
+fn draw(held: &Held, book: &Book, wired: &Wiring, look: Look<'_>) -> Drawn {
+    let Look {
+        selected,
+        tracks: show_tracks,
+        heat,
+        now,
+    } = look;
     let tracks: Vec<_> = wired
         .positions
         .iter()
@@ -76,6 +94,7 @@ fn draw(held: &Held, book: &Book, wired: &Wiring, selected: Option<&str>, now: i
         .map(|fix| Geo::new(fix.latitude, fix.longitude));
     let mut overlay = Overlay {
         marks: targets::reference_marks(&wired.references),
+        images: heat.into_iter().collect(),
         ..Overlay::default()
     };
     overlay.extend(trail::overlay(&tracks));
@@ -91,6 +110,11 @@ fn draw(held: &Held, book: &Book, wired: &Wiring, selected: Option<&str>, now: i
             .get(kind)
             .map(|stations| stations.values().collect())
             .unwrap_or_default();
+        if show_tracks {
+            overlay
+                .lines
+                .extend(targets::track_lines(&stations, held.trails.get(kind), now));
+        }
         let (drawn, shown) = targets::overlay(&stations, selected, now);
         target_points.extend(drawn.dots.iter().map(|dot| dot.at));
         overlay.extend(drawn);
@@ -136,6 +160,31 @@ pub fn face(store: Store, node: String) -> impl IntoView {
         Memo::new(move |_| wiring(store, &node))
     };
     let selected = RwSignal::new(None::<String>);
+    let unwiring = RenderEffect::new(move |_| {
+        let kinds = wired.with(|wired| wired.kinds.clone());
+        if selected.with_untracked(|chosen| chosen_kind_gone(chosen.as_deref(), &kinds)) {
+            selected.set(None);
+        }
+    });
+    on_cleanup_local(move || drop(unwiring));
+    let heat = RwSignal::new(None::<heat::Held>);
+    let refused = RwSignal::new(None::<(String, &'static str)>);
+    let crossing = Memo::new(move |_| wired.with(|wired| wired.df.crossings.first().cloned()));
+    let fused = Memo::new(move |_| {
+        let node = crossing.get()?;
+        store
+            .arrays
+            .with(|book| book.fusion.contains_key(&node))
+            .then_some(node)
+    });
+    store.on_event(move |event| {
+        if let ServerEvent::SurfaceRefused { node, reason } = event
+            && crossing.with_untracked(|crossing| crossing.as_deref() == Some(node.as_str()))
+        {
+            refused.set(Some((node.clone(), reason.label())));
+        }
+    });
+    let view_pref = style::map_view();
     let drawn = RwSignal::new(Drawn::default());
     let drawing = {
         let feed = feed.clone();
@@ -143,8 +192,20 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             let at = now.get();
             let wiring = wired.get();
             let chosen = selected.get();
+            let tracks = view_pref.with(|view| view.tracks);
+            let shown_heat = heat_for(heat, crossing);
             let next = store.arrays.with_untracked(|book| {
-                draw(&feed.held.borrow(), book, &wiring, chosen.as_deref(), at)
+                draw(
+                    &feed.held.borrow(),
+                    book,
+                    &wiring,
+                    Look {
+                        selected: chosen.as_deref(),
+                        tracks,
+                        heat: shown_heat,
+                        now: at,
+                    },
+                )
             });
             drawn.set(next);
         })
@@ -163,9 +224,27 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             selected.set(hit)
         })),
     };
+    let heat_shown = Signal::derive(move || heat_for(heat, crossing).is_some());
+    let refusal = Signal::derive(move || {
+        if heat_shown.get() {
+            return None;
+        }
+        let crossing = crossing.get()?;
+        refused.with(|held| {
+            held.as_ref()
+                .filter(|(node, _)| *node == crossing)
+                .map(|(_, reason)| *reason)
+        })
+    });
     let chrome = AnyView::new(view! {
-        {legend(drawn, wired)}
-        {detail(feed, selected)}
+        {move || {
+            if let Some(node) = fused.get() {
+                heat::feed(store, node, heat);
+            }
+            AnyView::new(())
+        }}
+        {legend(drawn, wired, heat_shown, refusal)}
+        {detail(feed, selected, wired)}
     });
     view! {
         column(class = "geo map-face") {
@@ -174,12 +253,34 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     }
 }
 
-fn legend(drawn: RwSignal<Drawn>, wired: Memo<Wiring>) -> impl IntoView {
-    move || {
+fn heat_for(heat: RwSignal<Option<heat::Held>>, crossing: Memo<Option<String>>) -> Option<Image> {
+    let wanted = crossing.get()?;
+    heat.with(|held| {
+        held.as_ref()
+            .filter(|held| held.node == wanted)
+            .map(|held| held.image.clone())
+    })
+}
+
+#[must_use]
+pub fn chosen_kind_gone(selected: Option<&str>, kinds: &[&'static str]) -> bool {
+    selected
+        .and_then(|key| key.split_once('/'))
+        .is_some_and(|(kind, _)| !kinds.contains(&kind))
+}
+
+fn legend(
+    drawn: RwSignal<Drawn>,
+    wired: Memo<Wiring>,
+    heat: Signal<bool>,
+    refusal: Signal<Option<&'static str>>,
+) -> impl IntoView {
+    let rows = move || {
         let counts = drawn.with(|drawn| drawn.counts.clone());
         let trail = wired.with(|wired| !wired.positions.is_empty());
         let df_rows = drawn.with(|drawn| df::legend_rows(&drawn.df));
-        if counts.is_empty() && !trail && df_rows.is_empty() {
+        let heat = heat.get();
+        if counts.is_empty() && !trail && df_rows.is_empty() && !heat {
             return None;
         }
         let rows: Vec<AnyView> = counts
@@ -204,25 +305,55 @@ fn legend(drawn: RwSignal<Drawn>, wired: Memo<Wiring>) -> impl IntoView {
                 drawn.with(|drawn| drawn.trail.to_string())
             }))
         });
+        let heat_row = heat.then(|| {
+            AnyView::new(view! {
+                row(class = "geo__legend-row") {
+                    box(class = "map-face__heat", style:background-image = Some(HEAT_RAMP_CSS.to_owned()))
+                    text(class = "geo__legend-name") {"Heat"}
+                }
+            })
+        });
         Some(view! {
-            column(class = "geo__legend") {
+            column(class = "geo__legend-box") {
                 {rows}
                 {trail_row}
                 {df_rows}
+                {heat_row}
             }
         })
+    };
+    let badge = move || {
+        refusal.get().map(|reason| {
+            titled(
+                reason,
+                AnyView::new(view! { text(class = "map-face__badge") {"no heat"} }),
+            )
+        })
+    };
+    view! {
+        column(class = "geo__legend") {
+            {rows}
+            {badge}
+        }
     }
 }
 
-fn detail(feed: std::rc::Rc<Feed>, selected: RwSignal<Option<String>>) -> impl IntoView {
+fn detail(
+    feed: std::rc::Rc<Feed>,
+    selected: RwSignal<Option<String>>,
+    wired: Memo<Wiring>,
+) -> impl IntoView {
     move || {
         let key = selected.get()?;
         let (kind, id) = key.split_once('/')?;
+        if !wired.with(|wired| wired.kinds.contains(&kind)) {
+            return None;
+        }
         let shown = feed.with(Topic::Stations, |held| {
             held.stations
                 .get(kind)
                 .and_then(|stations| stations.get(id))
-                .map(targets::detail)
+                .map(detail::detail)
         });
         let Some(shown) = shown else {
             selected.set(None);
@@ -267,6 +398,15 @@ fn detail(feed: std::rc::Rc<Feed>, selected: RwSignal<Option<String>>) -> impl I
 pub const FACE_SHEET: &str = css!(
     r#"
 .map-face { min-height: 300px; }
+.map-face__heat { width: 16px; height: 8px; border-radius: 2px; opacity: 0.75; }
+.map-face__badge {
+    padding: 1px 6px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background-color: color-mix(in oklab, var(--bg) 85%, transparent);
+    color: var(--danger);
+    pointer-events: auto;
+}
 .map-face__card {
     position: absolute;
     right: 8px;
@@ -289,3 +429,15 @@ pub const FACE_SHEET: &str = css!(
 .map-face__foot { padding: 3px 8px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10px; color: var(--ink-dim); }
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_selection_goes_when_its_kind_is_unwired() {
+        assert!(chosen_kind_gone(Some("ais/211"), &["adsb"]));
+        assert!(!chosen_kind_gone(Some("adsb/3c6444"), &["adsb"]));
+        assert!(!chosen_kind_gone(None, &[]));
+    }
+}

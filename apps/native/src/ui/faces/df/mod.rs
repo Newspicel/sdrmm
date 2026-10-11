@@ -29,6 +29,7 @@ fn df_reading(reading: &ProcessorReading) -> Option<&DfReading> {
 }
 
 pub fn face(store: Store, node: String) -> impl IntoView {
+    let titled = node.clone();
     kit_sources::install();
     install_stylesheet("df-face", SHEET);
     install_stylesheet("df-rose", rose::SHEET);
@@ -63,9 +64,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
         reading.with(|found| readout_rows(found.as_ref(), frame.get(), age_label(age.get())))
     };
     let chips = move || reading.with(|found| df_chips(found.as_ref(), gate.get(), stale.get()));
+    processor::head(store, titled, processor.subtitle(report_ms));
     view! {
         column(class = "face") {
-            {processor::head(processor.subtitle(report_ms))}
             column(class = "df__top") {
                 {frames(frame, true_available, picked)}
                 {rose(Rose { reading, frame, dim })}

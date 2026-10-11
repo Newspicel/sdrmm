@@ -1,5 +1,5 @@
 use sdrmm_wire::{
-    device::DeviceInfo,
+    device::{DeviceInfo, RECORDING_DRIVER_ID, SIGGEN_DRIVER_ID},
     patch::{
         ChannelNode, DecoderLogNode, DeviceNode, DeviceRef, NodeBody, PatchEdge, PatchGraph,
         PatchNode, PortRef, Position, Size,
@@ -73,11 +73,17 @@ pub fn graph(devices: &[DeviceInfo]) -> PatchGraph {
     }
 }
 
+const STARTER_DRIVER: &str = "virtual";
+const STARTER_KEY: &str = "band";
+
 fn pick(devices: &[DeviceInfo]) -> Option<&DeviceInfo> {
+    let pickable = |info: &&DeviceInfo| {
+        info.driver != RECORDING_DRIVER_ID && info.driver != SIGGEN_DRIVER_ID
+    };
     devices
         .iter()
-        .find(|info| info.driver == "virtual" && info.key == "siggen")
-        .or_else(|| devices.first())
+        .find(|info| info.driver == STARTER_DRIVER && info.key == STARTER_KEY)
+        .or_else(|| devices.iter().find(pickable))
 }
 
 fn node(id: &str, body: NodeBody, x: f32, y: f32, size: Option<Size>) -> PatchNode {
@@ -131,7 +137,7 @@ mod tests {
         };
         assert!(wants_seeding(&untouched));
 
-        assert!(!wants_seeding(&graph(&[info("virtual", "siggen")])));
+        assert!(!wants_seeding(&graph(&[info("virtual", "band")])));
 
         let chosen = PatchGraph {
             nodes: vec![node(
@@ -156,7 +162,7 @@ mod tests {
 
     #[test]
     fn the_starter_patch_is_a_radio_a_scope_a_channel_a_speaker_and_a_log() {
-        let graph = graph(&[info("virtual", "siggen")]);
+        let graph = graph(&[info("virtual", "band")]);
         let ids: Vec<&str> = graph.nodes.iter().map(|node| node.id.as_str()).collect();
         assert_eq!(ids, ["device", "scope", "nfm", "speaker", "log"]);
         assert_eq!(graph.edges.len(), 4);
@@ -164,8 +170,12 @@ mod tests {
     }
 
     #[test]
-    fn the_signal_generator_is_preferred_and_anything_else_will_do() {
-        let generator = graph(&[info("rtlsdr", "0"), info("virtual", "siggen")]);
+    fn the_test_band_is_preferred_and_any_pickable_radio_will_do() {
+        let generator = graph(&[
+            info("rtlsdr", "0"),
+            info("virtual", "quad"),
+            info("virtual", "band"),
+        ]);
         let NodeBody::Device(device) = &generator.nodes[0].body else {
             panic!("the first node is the radio");
         };
@@ -174,7 +184,7 @@ mod tests {
             Some("virtual")
         );
 
-        let only_hardware = graph(&[info("rtlsdr", "0")]);
+        let only_hardware = graph(&[info("siggen", "signal_gen-1"), info("rtlsdr", "0")]);
         let NodeBody::Device(device) = &only_hardware.nodes[0].body else {
             panic!("the first node is the radio");
         };

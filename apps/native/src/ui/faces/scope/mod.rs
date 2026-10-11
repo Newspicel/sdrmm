@@ -1,30 +1,29 @@
 mod actions;
 mod bands;
+mod chosen;
+mod clock;
 pub mod colormap;
+pub mod dismiss;
 pub mod gpu;
-mod history;
+mod gradient;
+pub mod history;
+mod lane;
 mod live;
 mod menu;
 mod overlay;
+pub mod palette;
 mod pick;
-mod plot;
+pub mod plot;
 mod pointer;
 mod radio;
 mod ruler;
 mod settings;
 mod sheet;
 mod trace;
-mod traces;
-mod view;
+pub mod traces;
+pub mod view;
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{
-        Arc,
-        atomic::{AtomicU8, AtomicU32, Ordering},
-    },
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use sdrmm_wire::{
     bandplan::{BandPlan, BandRegionsResponse},
@@ -35,18 +34,22 @@ use sdrmm_wire::{
 use zgui::{prelude::*, reactive::RenderEffect, surface::SurfaceElementExt};
 
 use crate::{
-    binding,
     bus::{Frame, Source},
     store::Store,
+    ui::{kit_raster::Pulse, shell::Shell},
 };
 
-use colormap::Colormap;
-use gpu::{WaterfallFeed, WaterfallSurface};
+pub use chosen::chosen_palette;
+use chosen::{chosen, keep};
+use colormap::Rgb;
+use gpu::WaterfallFeed;
 use live::{FrameMeta, Live, Settings};
+pub use overlay::tip;
+use palette::{CUSTOM_STOPS, Palette, PaletteChoice};
 use pick::ScopePick;
 use radio::Lane;
 use trace::{Inputs, TraceSurface};
-use traces::{DEFAULT_AVERAGE, DbWindow, TraceMode};
+use traces::{DbWindow, TraceMode};
 use view::SpectrumView;
 
 const SPECTRUM_FPS: u16 = 30;
@@ -55,14 +58,6 @@ const EMPTY_WINDOW: DbWindow = DbWindow {
     min: -100.0,
     max: -20.0,
 };
-
-static CHOSEN_COLORMAP: AtomicU8 = AtomicU8::new(0);
-static CHOSEN_AVERAGE: AtomicU32 = AtomicU32::new(DEFAULT_AVERAGE);
-
-#[must_use]
-pub fn chosen_colormap() -> Colormap {
-    Colormap::from_index(CHOSEN_COLORMAP.load(Ordering::Relaxed))
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MenuAt {
@@ -83,7 +78,14 @@ pub struct ScopeCx {
     pub phosphor: RwSignal<bool>,
     pub average: RwSignal<u32>,
     pub range: RwSignal<Option<DbWindow>>,
-    pub colormap: RwSignal<Colormap>,
+    pub choice: RwSignal<PaletteChoice>,
+    pub custom: RwSignal<[Rgb; CUSTOM_STOPS]>,
+    pub palette: Memo<Palette>,
+    pub failure: RwSignal<Option<String>>,
+    pub rows: RwSignal<u64>,
+    pub shell: Option<Shell>,
+    pub gear: NodeRef,
+    pub fall: NodeRef,
     pub fraction: RwSignal<f64>,
     pub preview: RwSignal<Option<(u32, f64)>>,
     pub panning: RwSignal<bool>,
@@ -124,19 +126,19 @@ pub fn face(store: Store, node: String) -> impl IntoView {
 
 fn lane_of(store: Store, node: &str) -> Option<Lane> {
     let graph = store.graph.get();
-    let (device, stream) = binding::iq_source_of(&graph, node)?;
-    let set = store.device_set_of(&device)?;
-    Some(Lane {
-        set,
-        stream,
-        device,
-    })
+    store
+        .state
+        .with(|state| lane::lane_for(&graph, &state.device_sets, node))
 }
 
 fn spectrum(store: Store, node: String, lane: Lane) -> impl IntoView {
     let key = (lane.set, lane.stream);
     let latest = live::lane_latest(key);
     let feed = Rc::new(RefCell::new(WaterfallFeed::default()));
+    let shell = Shell::current();
+    let held = chosen(shell);
+    let choice = RwSignal::new(held.choice);
+    let custom = RwSignal::new(held.custom);
     let cx = ScopeCx {
         store,
         node: StoredValue::new(node),
@@ -145,9 +147,16 @@ fn spectrum(store: Store, node: String, lane: Lane) -> impl IntoView {
         view: RwSignal::new(SpectrumView::default()),
         modes: RwSignal::new(Vec::new()),
         phosphor: RwSignal::new(false),
-        average: RwSignal::new(CHOSEN_AVERAGE.load(Ordering::Relaxed)),
+        average: RwSignal::new(held.average),
         range: RwSignal::new(None),
-        colormap: RwSignal::new(chosen_colormap()),
+        choice,
+        custom,
+        palette: Memo::new(move |_| choice.get().palette(custom.get())),
+        failure: RwSignal::new(None),
+        rows: RwSignal::new(0),
+        shell,
+        gear: NodeRef::new(),
+        fall: NodeRef::new(),
         fraction: RwSignal::new(0.32),
         preview: RwSignal::new(None),
         panning: RwSignal::new(false),
@@ -208,7 +217,7 @@ fn receive(cx: ScopeCx, lane: (u32, u32), frame: &SpectrumFrame<'_>) {
         average: cx.average.get_untracked(),
         view: cx.view.get_untracked(),
         phosphor: cx.phosphor.get_untracked(),
-        colormap: cx.colormap.get_untracked(),
+        palette: cx.palette.get_untracked(),
     };
     let live = cx.live.get_value();
     let feed = cx.feed.get_value();
@@ -220,6 +229,7 @@ fn receive(cx: ScopeCx, lane: (u32, u32), frame: &SpectrumFrame<'_>) {
     if due {
         cx.meta.set(Some(FrameMeta::of(frame)));
     }
+    cx.rows.update(|rows| *rows += 1);
     actions::update_readout(cx);
 }
 
@@ -234,10 +244,10 @@ fn follow_settings(cx: ScopeCx) {
         })
     };
     let colours = RenderEffect::new(move |_| {
-        let colormap = cx.colormap.get();
+        let palette = cx.palette.get();
         let phosphor = cx.phosphor.get();
-        feed.borrow_mut().set_colormap(colormap);
-        live.borrow_mut().sync_density(phosphor, colormap);
+        feed.borrow_mut().set_palette(palette);
+        live.borrow_mut().sync_density(phosphor, palette);
     });
     on_cleanup_local(move || {
         drop(window);
@@ -360,18 +370,28 @@ impl ScopeCx {
         )
     }
 
-    pub fn choose_colormap(self, colormap: Colormap) {
-        CHOSEN_COLORMAP.store(colormap.index() as u8, Ordering::Relaxed);
-        self.colormap.set(colormap);
+    pub fn choose_palette(self, choice: PaletteChoice) {
+        keep(self.shell, |chosen| chosen.choice = choice);
+        self.choice.set(choice);
+    }
+
+    pub fn shape_custom(self, stops: [Rgb; CUSTOM_STOPS]) {
+        self.custom.set(stops);
+    }
+
+    pub fn keep_custom(self) {
+        let stops = self.custom.get_untracked();
+        keep(self.shell, |chosen| chosen.custom = stops);
     }
 
     pub fn choose_average(self, frames: u32) {
-        CHOSEN_AVERAGE.store(frames, Ordering::Relaxed);
+        keep(self.shell, |chosen| chosen.average = frames);
         self.average.set(frames);
     }
 }
 
 fn layout(cx: ScopeCx) -> impl IntoView {
+    let trace_pulse = Pulse::default();
     let live = cx.live.get_value();
     let trace = TraceSurface::new(
         Rc::clone(&live),
@@ -385,8 +405,8 @@ fn layout(cx: ScopeCx) -> impl IntoView {
             overlays: cx.modes.into(),
             hover: cx.hover,
         },
+        trace_pulse,
     );
-    let waterfall = WaterfallSurface::new(cx.feed.get_value());
     let trace_height = move || Some(format!("{:.3}%", cx.fraction.get() * 100.0));
     view! {
         column(
@@ -399,12 +419,13 @@ fn layout(cx: ScopeCx) -> impl IntoView {
         ) {
             {ruler::ruler(cx)}
             box(node_ref = cx.trace_box, class = "scope__trace", style:height = trace_height) {
-                {zgui::elements::surface().class("scope__gpu").renderer(trace).into_view()}
+                {zgui::elements::surface().class("scope__gpu").style_property("background-color", move || trace_pulse.backdrop()).renderer(trace).into_view()}
                 {overlay::trace_labels(cx)}
             }
             {pointer::divider(cx)}
-            box(class = "scope__fall") {
-                {zgui::elements::surface().class("scope__gpu").renderer(waterfall).into_view()}
+            box(node_ref = cx.fall, class = "scope__fall") {
+                {gpu::waterfall_view("scope__gpu", cx.feed.get_value(), cx.failure)}
+                {overlay::time_ticks(cx)}
                 {overlay::bookmark_labels(cx)}
             }
             {overlay::bookmark_lines(cx)}
@@ -412,6 +433,7 @@ fn layout(cx: ScopeCx) -> impl IntoView {
             {overlay::chrome(cx)}
             {menu::menu(cx)}
             {menu::picker(cx)}
+            {overlay::failure(cx)}
         }
     }
 }

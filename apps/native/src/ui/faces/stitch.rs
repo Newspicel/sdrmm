@@ -218,9 +218,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     };
     let rows = move || reading.with(|found| summary_rows(found.as_ref(), age_label(age.get())));
     let chips = move || reading.with(|found| stitch_chips(spread.get(), found.as_ref()));
+    head(store, node.clone(), subtitle);
     view! {
         column(class = "face") {
-            {head(subtitle)}
             column(class = "st__live", class:dim = move || stale.get()) {
                 {readout(rows)}
                 {lane_table(reading)}

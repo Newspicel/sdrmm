@@ -7,18 +7,18 @@ use crate::{
     ui::kit_decoders,
 };
 
-use super::state::Log;
+use super::player::clip_player;
 
-pub fn opened(log: Log) -> Option<AnyView> {
-    let key = log.opened.get()?;
-    let row = log
-        .rows
-        .with(|rows| rows.iter().find(|row| row.key == key).cloned())?;
-    Some(AnyView::new(view! {
-        column(class = "dlog__detail") {
-            {row_detail(log.store, &row)}
+pub fn panel(store: Store, row: &LogRow) -> AnyView {
+    AnyView::new(view! {
+        column(
+            class = "dlog__detail",
+            on:click:stop = |_| {},
+            on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation()
+        ) {
+            {row_detail(store, row)}
         }
-    }))
+    })
 }
 
 fn audio_of(event: &DecoderEvent) -> Option<&EventAudio> {
@@ -29,22 +29,26 @@ fn audio_of(event: &DecoderEvent) -> Option<&EventAudio> {
     }
 }
 
+fn audio_view(store: Store, row: &LogRow, audio: &EventAudio) -> AnyView {
+    let url = audio.url.clone();
+    let saved = audio.url.clone();
+    let extension = audio.media_type.rsplit('/').next().unwrap_or("bin");
+    let name = format!("{}-{}.{extension}", row.kind, row.at.replace(':', "-"));
+    AnyView::new(view! {
+        row(class = "dlog__player") {
+            {clip_player(store, url)}
+            control(
+                class = "btn",
+                on:click:stop = move |_| kit_decoders::save_download(store, saved.clone(), name.clone())
+            ) {"Save audio"}
+        }
+    })
+}
+
 fn row_detail(store: Store, row: &LogRow) -> impl IntoView + use<> {
     let event = row.source.event();
     let detail = event_detail(event);
-    let audio = audio_of(event).map(|audio| {
-        let url = audio.url.clone();
-        let extension = audio.media_type.rsplit('/').next().unwrap_or("bin");
-        let name = format!("{}-{}.{extension}", row.kind, row.at.replace(':', "-"));
-        AnyView::new(view! {
-            row {
-                control(
-                    class = "btn",
-                    on:click:stop = move |_| kit_decoders::save_download(store, url.clone(), name.clone())
-                ) {"Save audio"}
-            }
-        })
-    });
+    let audio = audio_of(event).map(|audio| audio_view(store, row, audio));
     let object = match event {
         DecoderEvent::BroadcastData(data) => {
             Some(AnyView::new(kit_decoders::broadcast_data_view(store, data)))

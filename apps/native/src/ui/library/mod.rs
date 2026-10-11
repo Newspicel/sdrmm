@@ -1,13 +1,20 @@
 mod bands;
 mod bookmarks;
 mod occupancy;
+mod phones;
+mod playback;
 mod presets;
+mod qr;
 mod recordings;
+mod remote;
+mod rows;
 mod templates;
+mod wav;
 
 use std::sync::Arc;
 
 use sdrmm_wire::{
+    array::ArrayTuneRequest,
     patch::NodeBody,
     state::DeviceSet,
     ws::{ServerEvent, StateScope},
@@ -17,10 +24,11 @@ use zgui::prelude::*;
 use crate::{
     shell::{
         library_target::{TuneTarget, bound_sets, library_target},
-        tuner,
+        tuner::{self, Reach},
     },
     store::Store,
     ui::{
+        faces::channel::edit::descriptor_for,
         shell::{LibraryTab, Shell},
         tools,
     },
@@ -59,12 +67,14 @@ const TABS: [(LibraryTab, &str); 6] = [
     (LibraryTab::Recordings, "Recordings"),
 ];
 
-pub fn popover(store: Store, shell: Shell) -> impl IntoView {
-    install_stylesheet("shell-library", SHEET);
-    let tabs: Vec<AnyView> = TABS
-        .iter()
-        .map(|(tab, label)| {
-            let tab = *tab;
+const AFTER_TOOLS: [(LibraryTab, &str); 2] = [
+    (LibraryTab::Phones, "Phones"),
+    (LibraryTab::Remote, "Remote"),
+];
+
+fn tab_views(shell: Shell, tabs: &[(LibraryTab, &'static str)]) -> Vec<AnyView> {
+    tabs.iter()
+        .map(|&(tab, label)| {
             AnyView::new(view! {
                 control(
                     class = "lib__tab",
@@ -73,11 +83,17 @@ pub fn popover(store: Store, shell: Shell) -> impl IntoView {
                     a11y:role = Role::Tab,
                     on:click:stop = move |_| shell.library_tab.set(tab)
                 ) {
-                    {*label}
+                    {label}
                 }
             })
         })
-        .collect();
+        .collect()
+}
+
+pub fn popover(store: Store, shell: Shell) -> impl IntoView {
+    install_stylesheet("shell-library", SHEET);
+    let tabs = tab_views(shell, &TABS);
+    let later = tab_views(shell, &AFTER_TOOLS);
     let body = move || match shell.library_tab.get() {
         LibraryTab::Templates => AnyView::new(templates::panel(store)),
         LibraryTab::Presets => AnyView::new(presets::panel(store)),
@@ -85,6 +101,8 @@ pub fn popover(store: Store, shell: Shell) -> impl IntoView {
         LibraryTab::Bands => AnyView::new(bands::panel(store, shell)),
         LibraryTab::Occupancy => AnyView::new(occupancy::panel(store, shell)),
         LibraryTab::Recordings => AnyView::new(recordings::panel(store, shell)),
+        LibraryTab::Phones => AnyView::new(phones::panel(store)),
+        LibraryTab::Remote => AnyView::new(remote::panel(store)),
     };
     view! {
         column(
@@ -104,6 +122,7 @@ pub fn popover(store: Store, shell: Shell) -> impl IntoView {
                 ) {
                     "Tools"
                 }
+                {later}
             }
             column(class = "lib__body") {{body}}
         }
@@ -137,8 +156,8 @@ pub(crate) fn frequency_of(store: Store, target: &TuneTarget) -> Option<f64> {
     match target {
         TuneTarget::Device { set, .. } => tuner::center_hz(set, 0),
         TuneTarget::Channel { node, .. } => store
-            .channel_of(node)
-            .map(|channel| channel.settings.frequency_hz),
+            .channel_settings(node)
+            .map(|settings| settings.frequency_hz),
     }
 }
 
@@ -164,20 +183,41 @@ pub(crate) fn tune(store: Store, shell: Shell, target: &TuneTarget, hz: f64) {
     match target {
         TuneTarget::Device { set, .. } => tune_radio(store, shell, set, hz),
         TuneTarget::Channel { node, set, .. } => {
-            let Some(channel) = store.channel_of(node) else {
-                store.say("That channel has no radio right now");
-                return;
-            };
-            let mut settings = channel.settings;
-            settings.frequency_hz = hz;
-            store.set_channel(node.clone(), settings);
-            if let Some(set) = set
-                && let Some(pull) = tuner::radio_pull(set, hz)
-            {
-                store.set_device(set.id, pull);
+            store.edit_channel(node, |settings| settings.frequency_hz = hz);
+            if let Some(set) = set {
+                reach(store, node, set, hz);
             }
         }
     }
+}
+
+fn reach(store: Store, node: &str, set: &DeviceSet, hz: f64) {
+    let graph = store.graph.get_untracked();
+    let devices = bound_sets(&graph, &store.state.get_untracked().device_sets);
+    let types = store.channel_types.get_untracked();
+    let descriptor = descriptor_for(&graph, &types, node);
+    match tuner::reach_for(&graph, node, set, &devices, descriptor, hz) {
+        Reach::Stay => {}
+        Reach::Radio(id, delta) => store.set_device(id, *delta),
+        Reach::Array(array) => retune_array(store, array, hz),
+    }
+}
+
+fn retune_array(store: Store, array: String, hz: f64) {
+    zgui::task::spawn_local(async move {
+        let body = ArrayTuneRequest {
+            center_hz: Some(hz),
+            gain: None,
+        };
+        let path = format!("/api/arrays/{array}/tune");
+        if let Err(error) = store
+            .api()
+            .patch::<_, serde::de::IgnoredAny>(&path, &body)
+            .await
+        {
+            store.fail("Cannot tune the array", &error);
+        }
+    });
 }
 
 pub(crate) fn tune_radio(store: Store, shell: Shell, set: &DeviceSet, hz: f64) {
@@ -193,21 +233,11 @@ pub(crate) fn suggest_mode(
     mode: Option<&str>,
     channel_type: Option<&str>,
     what: &str,
+    ask_without_channel: bool,
 ) {
-    if tuner::same_mode(mode, channel_type) {
-        return;
+    if let Some(hint) = tuner::mode_hint(mode, channel_type, what, ask_without_channel) {
+        store.note(hint);
     }
-    let Some(mode) = mode else {
-        return;
-    };
-    let mode = mode.to_uppercase();
-    store.note(match channel_type {
-        Some(kind) => format!(
-            "{mode} is the mode for this {what}, not {}",
-            kind.to_uppercase()
-        ),
-        None => format!("{mode} is the mode for this {what}: set it on a channel"),
-    });
 }
 
 pub(crate) fn load<T>(store: Store, path: String) -> RwSignal<Option<Result<Arc<T>, String>>>

@@ -150,6 +150,7 @@ impl Array {
 }
 
 pub fn face(store: Store, node: String) -> impl IntoView {
+    let titled = node.clone();
     install();
     sheet::install();
     let cx = Array::new(store, node);
@@ -159,9 +160,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             status.with(|status| labels::subtitle(status.as_ref(), rows.with(Vec::len)))
         })
     };
+    head(store, titled, subtitle);
     view! {
         column(class = "face af") {
-            {head(subtitle)}
             {status::dial(&cx)}
             {settings::chips(&cx)}
             {status::readouts(&cx)}

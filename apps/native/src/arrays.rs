@@ -54,6 +54,23 @@ impl Book {
     }
 
     #[must_use]
+    pub fn held_nodes(&self) -> Vec<&String> {
+        self.arrays
+            .keys()
+            .chain(self.readings.keys())
+            .chain(self.fusion.keys())
+            .collect()
+    }
+
+    pub fn forget(&mut self, nodes: &[String]) {
+        for node in nodes {
+            self.arrays.remove(node);
+            self.readings.remove(node);
+            self.fusion.remove(node);
+        }
+    }
+
+    #[must_use]
     pub fn array<'a>(&'a self, node: &str, seeded: &'a [ArrayStatus]) -> Option<&'a ArrayStatus> {
         self.arrays
             .get(node)
@@ -163,6 +180,22 @@ mod tests {
         assert_eq!(book.fusion["grid"].samples, 4);
         book.clear_fusion("grid");
         assert!(!book.fusion.contains_key("grid"));
+    }
+
+    #[test]
+    fn a_forgotten_node_leaves_every_table() {
+        let mut book = Book::default();
+        book.observe(&df(1), SystemTime::UNIX_EPOCH);
+        book.observe(
+            &ServerEvent::ArrayUpdate {
+                status: Box::new(status("bench", 1e6)),
+            },
+            SystemTime::UNIX_EPOCH,
+        );
+        book.seed_fusion("df", DfFusionState::default());
+        assert_eq!(book.held_nodes().len(), 3);
+        book.forget(&["df".to_owned()]);
+        assert_eq!(book.held_nodes(), [&"bench".to_owned()]);
     }
 
     #[test]

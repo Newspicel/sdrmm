@@ -1,8 +1,14 @@
+use std::time::Duration;
+
+use sdrmm_wire::channel::ChannelInfo;
 use zgui::prelude::*;
+use zgui_ui::prelude::*;
 
 use super::{
     ScopeCx,
-    actions::{radio, selected_channel},
+    actions::{heard_of, radio, selected_channel},
+    clock,
+    history::{HISTORY_ROWS, rows_for_height},
     live::FrameMeta,
     pick::format_mhz,
     plot::{AXIS_H, format_tick},
@@ -16,6 +22,22 @@ use super::{
 };
 
 const READOUT_CHAR_PX: f64 = 6.0;
+const AXIS_CHAR_PX: f64 = 6.0;
+const AXIS_EDGE_PX: f64 = 2.0;
+const TICK_GAP_PX: f64 = 48.0;
+const TICK_TOP_PX: f64 = 8.0;
+const TIP_DELAY: Duration = Duration::from_millis(250);
+const GRAPHICS_HINT: &str =
+    "The GPU refused the waterfall. Update the graphics driver or restart the app.";
+
+pub fn tip(text: String, class: &'static str, child: AnyView) -> AnyView {
+    AnyView::new(view! {
+        Tooltip(delay = TIP_DELAY) {
+            TooltipTrigger(class = class) {{child}}
+            TooltipContent {{text.clone()}}
+        }
+    })
+}
 
 fn css_size(node: NodeRef) -> Signal<(f64, f64), LocalStorage> {
     let size = node.observe_content_size();
@@ -99,7 +121,54 @@ pub fn frequency_labels(meta: FrameMeta, view: SpectrumView, width: f64) -> Vec<
     frequency_ticks(meta.centre_hz, meta.span_hz, view, target)
         .into_iter()
         .map(|tick| (tick.at, format_tick(tick.hz, visible)))
+        .filter(|(at, label)| fits(*at, label, width))
         .collect()
+}
+
+#[must_use]
+pub fn fits(at: f64, label: &str, width: f64) -> bool {
+    let x = (at * width).round() + 0.5;
+    let half = label.chars().count() as f64 * AXIS_CHAR_PX / 2.0;
+    x - half >= AXIS_EDGE_PX && x + half <= width - AXIS_EDGE_PX
+}
+
+pub fn time_ticks(cx: ScopeCx) -> impl IntoView {
+    let size = css_size(cx.fall);
+    let ticks = move || {
+        cx.rows.track();
+        let (_, height) = size.get();
+        let rows = rows_for_height(height, 1.0, HISTORY_ROWS) as usize;
+        let feed = cx.feed.get_value();
+        let feed = feed.borrow();
+        clock::time_ticks(|back| feed.clock.at(back), rows, height, TICK_GAP_PX)
+            .into_iter()
+            .filter(|tick| tick.y >= TICK_TOP_PX)
+            .map(|tick| {
+                view! {
+                    row(class = "scope__tick", style:top = px(tick.y)) {
+                        text(class = "scope__tick-label") {{tick.label}}
+                        box(class = "scope__tick-mark")
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    view! { box(class = "scope__ticks") {{ticks}} }
+}
+
+pub fn failure(cx: ScopeCx) -> impl IntoView {
+    move || {
+        cx.failure.get().map(|error| {
+            let chip = AnyView::new(view! {
+                text(class = "scope__failure-chip") {{format!("waterfall unavailable: {error}")}}
+            });
+            view! {
+                row(class = "scope__failure") {
+                    {tip(GRAPHICS_HINT.to_owned(), "scope__failure-tip", chip)}
+                }
+            }
+        })
+    }
 }
 
 #[must_use]
@@ -137,6 +206,7 @@ impl Placed for Drawn {
 
 fn drawn_markers(
     radio: &Radio,
+    heard: impl Fn(&ChannelInfo) -> f64,
     meta: FrameMeta,
     view: SpectrumView,
     preview: Option<(u32, f64)>,
@@ -148,7 +218,7 @@ fn drawn_markers(
         .filter_map(|channel| {
             let offset = match preview {
                 Some((id, offset)) if id == channel.id => offset,
-                _ => channel.settings.frequency_hz - meta.centre_hz,
+                _ => heard(channel) - meta.centre_hz,
             };
             let at = view.place(offset_to_span(offset, meta.span_hz));
             let owner = radio.owners.get(&channel.id);
@@ -205,10 +275,11 @@ fn marker_chip(
     extra: Option<usize>,
     class: &'static str,
 ) -> impl IntoView {
-    let count = extra.map(|count| view! { text(class = "scope__count") {{format!("x{count}")}} });
-    view! {
+    let count =
+        extra.map(|count| view! { text(class = "scope__count") {{format!("\u{d7}{count}")}} });
+    let chip = AnyView::new(view! {
         row(
-            class = format!("scope__chip {class}"),
+            class = "scope__chip",
             class:on = on,
             class:held = marker.held,
             a11y:label = marker.hint.clone(),
@@ -217,7 +288,8 @@ fn marker_chip(
             text {{marker.name.clone()}}
             {count}
         }
-    }
+    });
+    tip(marker.hint.clone(), class, chip)
 }
 
 fn cluster_view(cx: ScopeCx, members: &[Drawn], visible: f64, selected: Option<u32>) -> AnyView {
@@ -277,7 +349,14 @@ pub fn markers(cx: ScopeCx) -> impl IntoView {
         let view = cx.view.get();
         let selected = selected_channel(cx, &radio);
         let (width, _) = size.get();
-        let markers = drawn_markers(&radio, meta, view, cx.preview.get(), width);
+        let markers = drawn_markers(
+            &radio,
+            |channel| heard_of(cx, channel),
+            meta,
+            view,
+            cx.preview.get(),
+            width,
+        );
         let visible = meta.span_hz * view.width();
         Some(
             cluster_markers(&markers)
@@ -347,7 +426,7 @@ pub fn bookmark_labels(cx: ScopeCx) -> impl IntoView {
             .filter_map(|members| {
                 let anchor = members.first()?.clone();
                 let count = (members.len() > 1)
-                    .then(|| view! { text(class = "scope__count") {{format!("x{}", members.len())}} });
+                    .then(|| view! { text(class = "scope__count") {{format!("\u{d7}{}", members.len())}} });
                 let tip: Vec<_> = members
                     .iter()
                     .map(|mark| view! { text {{format!("{}: {}", mark.label, format_mhz(mark.hz))}} })
@@ -368,7 +447,7 @@ pub fn bookmark_labels(cx: ScopeCx) -> impl IntoView {
 }
 
 #[must_use]
-pub fn legend(meta: FrameMeta, view: SpectrumView, window: DbWindow) -> String {
+pub fn legend(meta: FrameMeta, view: SpectrumView) -> String {
     let visible = meta.span_hz * view.width();
     let centre = meta.centre_hz + span_to_offset(f64::midpoint(view.start, view.end), meta.span_hz);
     let span = if visible >= 1e6 {
@@ -376,12 +455,12 @@ pub fn legend(meta: FrameMeta, view: SpectrumView, window: DbWindow) -> String {
     } else {
         format!("{:.1} kHz", visible / 1e3)
     };
-    format!(
-        "{:.4} MHz   {span}   {:.0}…{:.0} dBFS",
-        centre / 1e6,
-        window.min,
-        window.max
-    )
+    let floor = if meta.floor_db.is_finite() {
+        format!("   floor {:.0} dBFS", meta.floor_db)
+    } else {
+        String::new()
+    };
+    format!("{:.4} MHz   {span}{floor}", centre / 1e6)
 }
 
 pub fn chrome(cx: ScopeCx) -> impl IntoView {
@@ -392,10 +471,7 @@ pub fn chrome(cx: ScopeCx) -> impl IntoView {
         } else {
             ""
         };
-        Some(format!(
-            "{}{manual}",
-            legend(meta, cx.view.get(), cx.shown_window())
-        ))
+        Some(format!("{}{manual}", legend(meta, cx.view.get())))
     };
     let zoom = move || {
         let view = cx.view.get();
@@ -444,18 +520,31 @@ mod tests {
         assert!(labels.iter().any(|(_, label)| label == "-60"));
     }
 
-    #[test]
-    fn frequency_labels_follow_the_plot_width() {
-        let meta = FrameMeta {
+    fn meta() -> FrameMeta {
+        FrameMeta {
             centre_hz: 100e6,
             span_hz: 2e6,
             db_min: -100.0,
             db_max: -20.0,
-        };
-        let narrow = frequency_labels(meta, FULL_VIEW, 220.0);
-        let wide = frequency_labels(meta, FULL_VIEW, 1100.0);
+            floor_db: -95.4,
+        }
+    }
+
+    #[test]
+    fn frequency_labels_follow_the_plot_width() {
+        let narrow = frequency_labels(meta(), FULL_VIEW, 220.0);
+        let wide = frequency_labels(meta(), FULL_VIEW, 1100.0);
         assert!(wide.len() > narrow.len());
         assert!(narrow.iter().all(|(at, _)| (0.0..=1.0).contains(at)));
+    }
+
+    #[test]
+    fn an_axis_label_that_would_clip_at_an_edge_is_skipped() {
+        assert!(fits(0.5, "100.25", 400.0));
+        assert!(!fits(0.0, "100.25", 400.0));
+        assert!(!fits(1.0, "100.25", 400.0));
+        let labels = frequency_labels(meta(), FULL_VIEW, 1100.0);
+        assert!(labels.iter().all(|(at, label)| fits(*at, label, 1100.0)));
     }
 
     #[test]
@@ -466,24 +555,19 @@ mod tests {
     }
 
     #[test]
-    fn the_legend_reads_the_visible_centre_span_and_levels() {
-        let meta = FrameMeta {
-            centre_hz: 100e6,
-            span_hz: 2e6,
-            db_min: -100.0,
-            db_max: -20.0,
-        };
+    fn the_legend_reads_the_visible_centre_span_and_floor() {
         assert_eq!(
-            legend(meta, FULL_VIEW, WINDOW),
-            "100.0000 MHz   2.000 MHz   -100…-20 dBFS"
+            legend(meta(), FULL_VIEW),
+            "100.0000 MHz   2.000 MHz   floor -95 dBFS"
         );
         let zoomed = SpectrumView {
             start: 0.5,
             end: 0.55,
         };
-        assert_eq!(
-            legend(meta, zoomed, WINDOW),
-            "100.0500 MHz   100.0 kHz   -100…-20 dBFS"
-        );
+        let quiet = FrameMeta {
+            floor_db: f64::NEG_INFINITY,
+            ..meta()
+        };
+        assert_eq!(legend(quiet, zoomed), "100.0500 MHz   100.0 kHz");
     }
 }

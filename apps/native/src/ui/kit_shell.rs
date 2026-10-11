@@ -1,5 +1,9 @@
+use std::time::Duration;
+
 use zgui::prelude::*;
 use zgui_ui::prelude::*;
+
+const HOVER_DELAY: Duration = Duration::from_millis(250);
 
 pub mod glyph {
     pub const PLUS: &str = r#"<path d="M5 12h14"/><path d="M12 5v14"/>"#;
@@ -212,18 +216,53 @@ pub fn row_action(
     on_press: impl Fn() + 'static,
 ) -> impl IntoView {
     let label = label.into();
-    view! {
-        control(
-            class = "sk-iconbtn sm",
-            class:danger = danger,
-            tabindex = Focus::Sequential,
-            a11y:role = Role::Button,
-            a11y:label = label,
-            on:click:stop = move |_| on_press()
-        ) {
-            {small_icon(body)}
+    titled_action(body, label.clone(), label, danger, on_press)
+}
+
+pub fn titled_action(
+    body: &'static str,
+    label: impl Into<String>,
+    title: impl Into<String>,
+    danger: bool,
+    on_press: impl Fn() + 'static,
+) -> AnyView {
+    let label = label.into();
+    hover(
+        title,
+        view! {
+            control(
+                class = "sk-iconbtn sm",
+                class:danger = danger,
+                tabindex = Focus::Sequential,
+                a11y:role = Role::Button,
+                a11y:label = label,
+                on:click:stop = move |_| on_press()
+            ) {
+                {small_icon(body)}
+            }
+        },
+    )
+}
+
+pub fn hover(title: impl Into<String>, child: impl IntoView + 'static) -> AnyView {
+    let title = Signal::stored(title.into());
+    let child = AnyView::new(child);
+    AnyView::new(view! {
+        Tooltip(delay = HOVER_DELAY) {
+            TooltipTrigger {{child}}
+            TooltipContent {{move || title.get()}}
         }
-    }
+    })
+}
+
+pub fn titled_button(
+    label: impl Into<String>,
+    tone: &'static str,
+    title: impl Into<String>,
+    on_press: impl Fn() + 'static,
+) -> AnyView {
+    let label = label.into();
+    hover(title, button(label, tone, on_press))
 }
 
 pub fn button(
@@ -362,13 +401,29 @@ pub fn entry(
     }
 }
 
+pub fn trap_focus(field: NodeRef) {
+    let guard = StoredValue::new_local(None::<FocusTrap>);
+    let installing = zgui::reactive::RenderEffect::new(move |_| {
+        if field.get().is_some() && guard.with_value(Option::is_none) {
+            guard.set_value(field.trap_focus(FocusTrapOptions::MODAL));
+        }
+    });
+    on_cleanup_local(move || {
+        drop(installing);
+        guard.set_value(None);
+    });
+}
+
 pub fn scrim(
     on_close: impl Fn() + Clone + 'static,
     body: impl IntoView + 'static,
 ) -> impl IntoView {
     let close = on_close.clone();
+    let field = NodeRef::new();
+    trap_focus(field);
     view! {
         box(
+            node_ref = field,
             class = "sk-scrim",
             on:pointer_down = move |ev: &mut EventCx<'_, events::PointerDown>| {
                 if ev.target == ev.current {

@@ -4,6 +4,17 @@ const COMPASS: [&str; 8] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 pub const STALE_ELEMENTS_DAYS: f64 = 7.0;
 pub const RANGE_HZ: (f64, f64) = (1e6, 12e9);
 
+pub const HELD_BY_SIGNAL: &str = "Set by the signal. Pick Own frequency to tune by hand.";
+pub const DEFAULT_SOURCE: &str = "SatNOGS DB";
+
+#[must_use]
+pub fn signal_title(source: Option<&str>) -> String {
+    let source = source
+        .filter(|source| !source.is_empty())
+        .unwrap_or(DEFAULT_SOURCE);
+    format!("What this satellite sends, from {source}")
+}
+
 #[must_use]
 pub fn compass(azimuth_deg: f64) -> &'static str {
     let index = (azimuth_deg.rem_euclid(360.0) / 45.0).round() as usize % COMPASS.len();
@@ -114,6 +125,22 @@ mod tests {
             uplink_hz: None,
             alive,
         }
+    }
+
+    #[test]
+    fn the_signal_picker_names_where_its_list_came_from() {
+        assert_eq!(
+            signal_title(None),
+            "What this satellite sends, from SatNOGS DB"
+        );
+        assert_eq!(
+            signal_title(Some("")),
+            "What this satellite sends, from SatNOGS DB"
+        );
+        assert_eq!(
+            signal_title(Some("Local")),
+            "What this satellite sends, from Local"
+        );
     }
 
     #[test]

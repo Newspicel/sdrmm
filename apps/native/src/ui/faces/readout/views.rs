@@ -7,15 +7,21 @@ use zgui::prelude::*;
 use crate::{
     decoders::views::{
         CW_SPOT_TEXT_LIMIT, DecoderScope, RdsGrade, candidate_score, cw_signal_rows, dect_stations,
-        format_alt_freqs, format_clock, ident_measurements, ident_overview, latest_vor_readings,
-        modulation_label, multi_vor_fix, pty_label, rds_picture, rds_quality, signal_frequency,
-        tone_label, vor_of,
+        dect_support, format_alt_freqs, format_clock, ident_measurements, ident_overview,
+        latest_vor_readings, modulation_label, multi_vor_fix, pty_label, rds_picture, rds_quality,
+        signal_frequency, tone_label, vor_of,
     },
     store::Store,
     ui::kit_decoders::{self, fields_view},
 };
 
-use super::{frames_of, pictures, records, targets, text};
+use super::{
+    airtime, fleet, frames_of,
+    pictures::{self, PictureSource},
+    records,
+    table::{cells as table_row, empty, plain as table_head},
+    targets, text, weather,
+};
 
 pub fn decoder_view(store: Store, kind: &str, scope: DecoderScope) -> Option<AnyView> {
     Some(match kind {
@@ -30,14 +36,20 @@ pub fn decoder_view(store: Store, kind: &str, scope: DecoderScope) -> Option<Any
         "ident" => AnyView::new(ident_view(store, scope)),
         "dect" => AnyView::new(dect_view(store, scope)),
         "vor" => AnyView::new(vor_view(store, scope)),
-        "sstv" => AnyView::new(pictures::view(store, scope)),
+        "sstv" => AnyView::new(pictures::view(store, PictureSource::Sstv, scope)),
+        "apt" => AnyView::new(pictures::view(store, PictureSource::Apt, scope)),
+        "lrpt" => AnyView::new(pictures::view(store, PictureSource::Lrpt, scope)),
+        "wefax" => AnyView::new(pictures::view(store, PictureSource::Wefax, scope)),
+        "aprs" => AnyView::new(weather::aprs_view(store, scope)),
+        "radiosonde" => AnyView::new(weather::radiosonde_view(store, scope)),
+        "lora" => AnyView::new(fleet::lora_view(store, scope)),
+        "remote_id" => AnyView::new(fleet::remote_id_view(store, scope)),
+        "ble" => AnyView::new(fleet::ble_view(store, scope)),
+        "wifi_occupancy" => AnyView::new(airtime::wifi_view(store, scope)),
+        "ism_survey" => AnyView::new(airtime::ism_view(store, scope)),
         "broadcast" | "broadcast_data" => AnyView::new(broadcast_view(store, scope)),
         _ => return None,
     })
-}
-
-fn empty(said: &'static str) -> AnyView {
-    AnyView::new(view! { text(class = "hint") {{said}} })
 }
 
 fn chip(label: String, on: bool) -> impl IntoView {
@@ -109,22 +121,6 @@ fn rds_view(store: Store, scope: DecoderScope) -> impl IntoView {
             }
         })
     }
-}
-
-fn table_row(cells: Vec<String>) -> impl IntoView {
-    let cells: Vec<_> = cells
-        .into_iter()
-        .map(|cell| view! { text(class = "dk-td") {{cell}} })
-        .collect();
-    view! { row(class = "dk-tr") {{cells}} }
-}
-
-fn table_head(names: &[&'static str]) -> impl IntoView + use<> {
-    let cells: Vec<_> = names
-        .iter()
-        .map(|name| view! { text(class = "dk-td dk-th") {{*name}} })
-        .collect();
-    view! { row(class = "dk-tr") {{cells}} }
 }
 
 fn cw_view(store: Store, scope: DecoderScope) -> impl IntoView {
@@ -258,12 +254,6 @@ fn ident_view(store: Store, scope: DecoderScope) -> impl IntoView {
     }
 }
 
-fn support(value: Option<bool>) -> String {
-    value
-        .map_or("-", |on| if on { "yes" } else { "no" })
-        .to_owned()
-}
-
 fn dect_view(store: Store, scope: DecoderScope) -> impl IntoView {
     let frames = frames_of(store, "dect");
     move || {
@@ -293,14 +283,15 @@ fn dect_view(store: Store, scope: DecoderScope) -> impl IntoView {
                     station
                         .slot_pair
                         .map_or("-".to_owned(), |slot| slot.to_string()),
-                    support(station.authentication),
-                    support(station.ciphering),
+                    dect_support(station.authentication, station.dsaa2, "DSAA2"),
+                    dect_support(station.ciphering, station.dsc2, "DSC2"),
                     station.cipher_state.label().to_owned(),
                     if station.handsets == 0 {
                         "-".to_owned()
                     } else {
                         station.handsets.to_string()
                     },
+                    station.voice.map_or("-", |voice| voice.label()).to_owned(),
                     format!("{:.1}", station.level_dbfs),
                     format!("{}{bad}", station.bursts),
                 ]))
@@ -308,7 +299,7 @@ fn dect_view(store: Store, scope: DecoderScope) -> impl IntoView {
             .collect();
         AnyView::new(view! {
             column(class = "dk-table") {
-                {table_head(&["RFPI", "Class", "Carrier", "Slot", "Auth", "Cipher", "State", "Handsets", "dBFS", "Bursts"])}
+                {table_head(&["RFPI", "Class", "Carrier", "Slot", "Auth", "Cipher", "State", "Handsets", "Voice", "dBFS", "Bursts"])}
                 {rows}
             }
         })

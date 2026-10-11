@@ -253,17 +253,6 @@ pub fn group_delays(points: &[NanoVnaPoint]) -> Vec<f64> {
 }
 
 #[must_use]
-pub fn lowest_vswr_index(points: &[NanoVnaPoint]) -> usize {
-    let mut best = 0;
-    for (index, point) in points.iter().enumerate().skip(1) {
-        if vswr(point.s11) < vswr(points[best].s11) {
-            best = index;
-        }
-    }
-    best
-}
-
-#[must_use]
 pub fn format_db(value: f64) -> String {
     if value.is_finite() {
         format!("{value:.2} dB")
@@ -332,7 +321,7 @@ pub fn format_number(value: f64, digits: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::tools::nanovna::testdata::{point, sweep_of as sample};
+    use crate::ui::tools::nanovna::testdata::point;
 
     fn close(left: f64, right: f64, digits: i32) -> bool {
         (left - right).abs() < 10f64.powi(-digits) / 2.0
@@ -449,16 +438,6 @@ mod tests {
         assert_eq!(inductive.kind, ComponentKind::Inductance);
         assert!(close(inductive.value, 1e-6, 12));
         assert!(equivalent_component(0.0, 1e6).is_none());
-    }
-
-    #[test]
-    fn the_best_match_in_a_sweep_is_found() {
-        let sweep = sample(vec![
-            point(1, complex(0.5, 0.0), complex(0.0, 0.0)),
-            point(2, complex(0.1, 0.0), complex(0.0, 0.0)),
-            point(3, complex(0.3, 0.0), complex(0.0, 0.0)),
-        ]);
-        assert_eq!(lowest_vswr_index(&sweep.points), 1);
     }
 
     fn unit(degrees: f64) -> NanoVnaComplex {

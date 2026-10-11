@@ -16,6 +16,8 @@ use super::{
 };
 
 const LABEL_MIN: f64 = 0.07;
+const SECONDARY_HINT: &str = "Must accept interference from every primary service";
+const UNCITED_HINT: &str = "Not in the cited Frequenzverordnung extract";
 const TIP_WIDTH: f64 = 288.0;
 
 fn window_of(cx: ScopeCx) -> Option<(f64, f64)> {
@@ -194,8 +196,9 @@ fn band_detail(
 ) -> impl IntoView {
     let allocation = entry.allocation;
     let service = service_name(allocation.service);
-    let secondary =
-        (!allocation.primary).then(|| view! { text(class = "scope__faint") {"secondary"} });
+    let secondary = (!allocation.primary).then(|| {
+        view! { text(class = "scope__faint", a11y:tooltip = SECONDARY_HINT) {"secondary"} }
+    });
     let official = (allocation.official_name != allocation.name).then(
         || view! { text(class = "scope__tip-official") {{allocation.official_name.clone()}} },
     );
@@ -207,10 +210,11 @@ fn band_detail(
         .provisions
         .iter()
         .map(|id| {
-            let known = provision_text(plan, &allocation.layer, id).is_some();
-            AnyView::new(
-                view! { text(class = "scope__provision", class:known = known) {{id.clone()}} },
-            )
+            let text = provision_text(plan, &allocation.layer, id);
+            let hint = text.unwrap_or(UNCITED_HINT).to_owned();
+            AnyView::new(view! {
+                text(class = "scope__provision", class:known = text.is_some(), a11y:tooltip = hint) {{id.clone()}}
+            })
         })
         .collect();
     let groups: Vec<_> = if covered {

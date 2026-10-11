@@ -1,4 +1,4 @@
-use sdrmm_wire::{CreatedRowId, channel::ChannelDescriptor, rest::CreateBookmarkRequest};
+use sdrmm_wire::{CreatedRowId, rest::CreateBookmarkRequest};
 use zgui::prelude::*;
 use zgui_ui::prelude::*;
 
@@ -6,7 +6,12 @@ use super::{
     MenuAt, ScopeCx,
     actions::{add_channel_at, tunable_now, tune_to, untracked_radio},
     bands::{identify, suggested_at},
+    dismiss::{dismissable, focus_when_bound},
     pick::{BookmarkDraft, bookmark_draft, channel_type_at, format_hz, pick_text},
+};
+use crate::ui::{
+    faces::channel::picker::{channel_picker, channel_picker_dialog},
+    kit_shell::typing,
 };
 
 const MENU_HALF_PX: f64 = 112.0;
@@ -49,7 +54,7 @@ fn copy(cx: ScopeCx, what: &'static str, value: String) {
     match try_use_clipboard() {
         Some(clipboard) => {
             clipboard.set_text(ClipboardKind::Standard, value.clone());
-            cx.store.say(format!("{what} copied: {value}"));
+            cx.store.note(format!("{what} copied: {value}"));
         }
         None => cx.store.say("No clipboard here"),
     }
@@ -95,12 +100,15 @@ fn bookmark_form(cx: ScopeCx, at: MenuAt, draft: BookmarkDraft) -> impl IntoView
             if matches!(ev.key, Key::Named(NamedKey::Enter)) {
                 submit();
             }
+            typing(ev);
         }
     };
+    let field = NodeRef::new();
+    focus_when_bound(field);
     view! {
         column(class = "scope__form") {
             text(class = "scope__faint") {{heading}}
-            Input(class = "scope__field", value = label, label = "Bookmark label", on:key_down = keys)
+            Input(class = "scope__field", value = label, label = "Bookmark label", node_ref = field, on:key_down = keys)
             control(
                 class = "scope__menu-row",
                 state:disabled = move || label.with(|text| text.trim().is_empty()),
@@ -119,6 +127,8 @@ fn menu_body(cx: ScopeCx, at: MenuAt) -> impl IntoView {
     let marking = RwSignal::new(false);
     let (width, height) = plot_size(cx);
     let (left, top) = menu_place(at.x, at.y, width, height);
+    let root = NodeRef::new();
+    dismissable(root, None, move || cx.menu.set(None));
     let form = move || {
         let draft = draft.clone();
         if marking.get() {
@@ -129,16 +139,14 @@ fn menu_body(cx: ScopeCx, at: MenuAt) -> impl IntoView {
     };
     view! {
         column(
+            node_ref = root,
             class = "scope__menu",
+            tabindex = Focus::Programmatic,
             a11y:role = Role::Menu,
+            a11y:label = format!("Frequency {}", format_hz(at.pick.hz)),
             style:left = Some(format!("{left:.1}px")),
             style:top = Some(format!("{top:.1}px")),
-            on:pointer_down:stop = move |_| {},
-            on:key_down = move |ev: &mut EventCx<'_, events::KeyDown>| {
-                if matches!(ev.key, Key::Named(NamedKey::Escape)) {
-                    cx.menu.set(None);
-                }
-            }
+            on:pointer_down:stop = move |_| {}
         ) {
             text(class = "scope__menu-head") {{format_hz(at.pick.hz)}}
             {row("Tune here", move || {
@@ -160,20 +168,6 @@ pub fn menu(cx: ScopeCx) -> impl IntoView {
     move || fresh(cx, cx.menu).map(|at| AnyView::new(menu_body(cx, at)))
 }
 
-#[must_use]
-pub fn picker_order(descriptors: &[ChannelDescriptor], suggested: &str) -> Vec<(String, String)> {
-    let mut listed: Vec<(String, String)> = descriptors
-        .iter()
-        .map(|descriptor| (descriptor.type_id.clone(), descriptor.name.clone()))
-        .collect();
-    listed.sort_by(|a, b| {
-        (a.0 != suggested)
-            .cmp(&(b.0 != suggested))
-            .then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase()))
-    });
-    listed
-}
-
 fn suggested_type(cx: ScopeCx, hz: f64) -> String {
     let plan = cx.plan.get_untracked();
     let suggested = plan
@@ -186,45 +180,17 @@ fn suggested_type(cx: ScopeCx, hz: f64) -> String {
 
 fn picker_body(cx: ScopeCx, at: MenuAt) -> impl IntoView {
     let suggested = suggested_type(cx, at.pick.hz);
-    let rows: Vec<_> = picker_order(&cx.store.channel_types.get_untracked(), &suggested)
-        .into_iter()
-        .map(|(type_id, name)| {
-            let on = type_id == suggested;
-            view! {
-                control(
-                    class = "scope__menu-row",
-                    class:on = on,
-                    a11y:role = Role::MenuItem,
-                    on:click:stop = move |_| {
-                        add_channel_at(cx, at.pick, type_id.clone());
-                        cx.picker.set(None);
-                    }
-                ) {
-                    {name}
-                }
-            }
-        })
-        .collect();
-    view! {
-        column(
-            class = "scope__picker",
-            on:pointer_down:stop = move |_| {},
-            on:wheel = move |ev: &mut EventCx<'_, events::Wheel>| ev.stop_propagation(),
-            on:key_down = move |ev: &mut EventCx<'_, events::KeyDown>| {
-                if matches!(ev.key, Key::Named(NamedKey::Escape)) {
-                    cx.picker.set(None);
-                }
-            }
-        ) {
-            row(class = "scope__picker-head") {
-                text {"New channel"}
-                text(class = "scope__faint") {{format_hz(at.pick.hz)}}
-                spacer()
-                control(class = "scope__close", a11y:label = "Close", on:click:stop = move |_| cx.picker.set(None)) {"x"}
-            }
-            column(class = "scope__picker-list") {{rows}}
-        }
-    }
+    let groups = Signal::derive(move || channel_picker(&cx.store.channel_types.get(), &suggested));
+    channel_picker_dialog(
+        "New channel",
+        Signal::stored(format_hz(at.pick.hz)),
+        groups,
+        move |type_id| {
+            add_channel_at(cx, at.pick, type_id);
+            cx.picker.set(None);
+        },
+        move || cx.picker.set(None),
+    )
 }
 
 pub fn picker(cx: ScopeCx) -> impl IntoView {
@@ -234,30 +200,6 @@ pub fn picker(cx: ScopeCx) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn descriptor(type_id: &str, name: &str) -> ChannelDescriptor {
-        serde_json::from_value(serde_json::json!({
-            "type_id": type_id,
-            "name": name,
-            "bandwidth_hz": 12500.0,
-            "input_rate_hz": 48000.0
-        }))
-        .expect("a descriptor")
-    }
-
-    #[test]
-    fn the_suggested_decoder_leads_the_picker() {
-        let listed = [
-            descriptor("wfm", "Wide FM"),
-            descriptor("am", "AM"),
-            descriptor("nfm", "Narrow FM"),
-        ];
-        let order: Vec<String> = picker_order(&listed, "nfm")
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect();
-        assert_eq!(order, ["nfm", "am", "wfm"]);
-    }
 
     #[test]
     fn the_menu_stays_inside_the_plot() {

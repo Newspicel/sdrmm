@@ -30,7 +30,13 @@ pub fn overlay(store: Store) -> impl IntoView {
     move || {
         let id = store.expanded.get()?;
         let found = store.graph.get_untracked().node(&id).cloned()?;
-        let title = node::title_of(&found);
+        let titled = id.clone();
+        let title = move || {
+            store
+                .graph
+                .with(|graph| graph.node(&titled).map(node::title_of))
+                .unwrap_or_default()
+        };
         let category = node::category_class(found.body.category());
         let body = faces::face(store, &found);
         Some(view! {

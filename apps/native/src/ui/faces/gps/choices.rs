@@ -1,16 +1,27 @@
 use sdrmm_wire::{
     phone::{Phone, PhonesResponse},
     position::{DEFAULT_GPSD_ADDRESS, NmeaDeviceInfo, NmeaDevicesResponse, PositionSource},
+    ws::{ServerEvent, StateScope},
 };
 use zgui::prelude::*;
 
 use super::source::{
-    GpsTab, filter_nmea_devices, gps_tabs, nmea_detail, nmea_source, valid_gpsd_address,
+    GpsTab, filter_nmea_devices, gps_tabs, nmea_detail, nmea_source, tab_hint, valid_gpsd_address,
 };
 use crate::{
     store::Store,
-    ui::kit_sources::{NumberSpec, Tone, button, draft_field, number_field, segmented},
+    ui::{
+        kit_audio::titled,
+        kit_sources::{NumberSpec, Tone, button, draft_field, number_field},
+    },
 };
+
+const SHEET: &str = css!(
+    r#"
+.gps-dot { width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; background-color: var(--ink-faint); }
+.gps-dot.on { background-color: var(--ok); }
+"#
+);
 
 const SEARCH_FROM: usize = 4;
 
@@ -34,8 +45,7 @@ pub fn receivers(store: Store) -> Receivers {
 
 pub type Phones = RwSignal<Option<Result<Vec<Phone>, String>>>;
 
-pub fn phones(store: Store) -> Phones {
-    let found: Phones = RwSignal::new(None);
+fn fetch_phones(store: Store, found: Phones) {
     zgui::task::spawn_local(async move {
         let fetched = store
             .api()
@@ -45,10 +55,50 @@ pub fn phones(store: Store) -> Phones {
             .map_err(|error| error.to_string());
         found.try_set(Some(fetched));
     });
+}
+
+pub fn phones(store: Store) -> Phones {
+    let found: Phones = RwSignal::new(None);
+    fetch_phones(store, found);
+    store.on_event(move |event| {
+        if matches!(
+            event,
+            ServerEvent::StateChanged {
+                scope: StateScope::Phones
+            }
+        ) {
+            fetch_phones(store, found);
+        }
+    });
     found
 }
 
+fn tabs(tab: RwSignal<GpsTab>) -> impl IntoView {
+    let items: Vec<AnyView> = gps_tabs()
+        .into_iter()
+        .map(|(value, label)| {
+            titled(
+                tab_hint(value),
+                AnyView::new(view! {
+                    control(
+                        class = "seg__item",
+                        tabindex = Focus::Sequential,
+                        a11y:role = Role::Tab,
+                        class:on = move || tab.get() == value,
+                        on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation(),
+                        on:click:stop = move |_| tab.set(value)
+                    ) {
+                        {label}
+                    }
+                }),
+            )
+        })
+        .collect();
+    view! { row(class = "seg kit-tabs", a11y:role = Role::TabList) {{items}} }
+}
+
 pub fn gps_choices(store: Store, choose: Choose) -> impl IntoView {
+    install_stylesheet("gps-choices", SHEET);
     let tab = RwSignal::new(GpsTab::Receiver);
     let found = receivers(store);
     let body = move || match tab.get() {
@@ -59,7 +109,7 @@ pub fn gps_choices(store: Store, choose: Choose) -> impl IntoView {
     };
     view! {
         column(class = "kit-choices") {
-            {segmented(gps_tabs(), tab.into(), move |next| tab.set(next))}
+            {tabs(tab)}
             {body}
         }
     }
@@ -125,7 +175,8 @@ fn phone_choices(found: Phones, choose: Choose) -> impl IntoView {
             .map(|phone| {
                 let id = phone.id.clone();
                 let choose = choose.clone();
-                let standing = if phone.online { "Online" } else { "Offline" };
+                let online = phone.online;
+                let standing = if online { "Online" } else { "Offline" };
                 AnyView::new(view! {
                     control(
                         class = "kit-choice",
@@ -134,6 +185,7 @@ fn phone_choices(found: Phones, choose: Choose) -> impl IntoView {
                         on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation(),
                         on:click:stop = move |_| choose(PositionSource::Phone { phone: id.clone() })
                     ) {
+                        box(class = "gps-dot", class:on = online)
                         text {{phone.name.clone()}}
                         text(class = "kit-choice__meta") {{standing}}
                     }
@@ -142,15 +194,22 @@ fn phone_choices(found: Phones, choose: Choose) -> impl IntoView {
             .collect::<Vec<_>>()
     };
     let said = move || match found.get() {
-        None => Some("Looking for phones…"),
-        Some(Err(_)) => Some("Phone list failed"),
-        Some(Ok(all)) if all.is_empty() => Some("No phones"),
+        None => Some(AnyView::new(
+            view! { text(class = "kit-note") {"Looking for phones\u{2026}"} },
+        )),
+        Some(Err(_)) => Some(AnyView::new(
+            view! { text(class = "kit-alert") {"Phone list failed"} },
+        )),
+        Some(Ok(all)) if all.is_empty() => Some(titled(
+            "Pair one in Library > Phones",
+            AnyView::new(view! { text(class = "kit-note") {"No phones"} }),
+        )),
         Some(Ok(_)) => None,
     };
     view! {
         column(class = "kit-choices") {
             column(class = "kit-list") {{list}}
-            {move || said().map(|said| AnyView::new(view! { text(class = "kit-note") {{said}} }))}
+            {said}
         }
     }
 }
@@ -164,13 +223,16 @@ fn path_form(choose: Choose) -> impl IntoView {
         }
     };
     let empty = Signal::derive(move || path.with(|path| path.trim().is_empty()));
-    view! {
-        row(class = "kit-pop__row") {
-            text(class = "kit-legend") {"Path"}
-            {draft_field("Serial device path", path, "/dev/ttyUSB0", Signal::derive_local(|| false), read.clone())}
-            {button(|| "Read".to_owned(), Tone::Plain, empty, read)}
-        }
-    }
+    titled(
+        "The serial port of a receiver that is not listed above",
+        AnyView::new(view! {
+            row(class = "kit-pop__row") {
+                text(class = "kit-legend") {"Path"}
+                {draft_field("Serial device path", path, "/dev/ttyUSB0", Signal::derive_local(|| false), read.clone())}
+                {button(|| "Read".to_owned(), Tone::Plain, empty, read)}
+            }
+        }),
+    )
 }
 
 fn gpsd_form(choose: Choose) -> impl IntoView {
@@ -183,13 +245,16 @@ fn gpsd_form(choose: Choose) -> impl IntoView {
         }
     };
     let blocked = Signal::derive(move || !valid_gpsd_address(address.get().trim()));
-    view! {
-        row(class = "kit-pop__row") {
-            text(class = "kit-legend") {"gpsd"}
-            {draft_field("GPSD address", address, DEFAULT_GPSD_ADDRESS, invalid, read.clone())}
-            {button(|| "Read".to_owned(), Tone::Plain, blocked, read)}
-        }
-    }
+    titled(
+        "Host and port of a gpsd daemon, on this machine or another one",
+        AnyView::new(view! {
+            row(class = "kit-pop__row") {
+                text(class = "kit-legend") {"gpsd"}
+                {draft_field("GPSD address", address, DEFAULT_GPSD_ADDRESS, invalid, read.clone())}
+                {button(|| "Read".to_owned(), Tone::Plain, blocked, read)}
+            }
+        }),
+    )
 }
 
 fn fixed_form(choose: Choose) -> impl IntoView {
@@ -203,9 +268,9 @@ fn fixed_form(choose: Choose) -> impl IntoView {
             {number_field("Latitude", lat.into(), latitude, Signal::stored(false), move |value| lat.set(value))}
             text(class = "kit-legend") {"Lon"}
             {number_field("Longitude", lon.into(), longitude, Signal::stored(false), move |value| lon.set(value))}
-            {button(|| "Set".to_owned(), Tone::Plain, Signal::stored(false), move || {
+            {titled("Use these coordinates as the position", AnyView::new(button(|| "Set".to_owned(), Tone::Plain, Signal::stored(false), move || {
                 choose(PositionSource::Fixed { lat: lat.get_untracked(), lon: lon.get_untracked(), altitude_m: None });
-            })}
+            })))}
         }
     }
 }

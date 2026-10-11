@@ -1,6 +1,7 @@
 pub mod ionosonde;
 pub mod layers;
 pub mod model;
+pub mod sondes;
 
 use std::{cell::RefCell, collections::HashMap, sync::Arc, time::Duration};
 
@@ -8,11 +9,11 @@ use sdrmm_wire::{
     DecoderLogResponse,
     decode::DecodedRecord,
     patch::NodeBody,
-    propagation::{IonosondeReport, IonosondeStation, PropagationNode},
+    propagation::{IonosondeStation, PropagationNode},
     ws::ServerEvent,
 };
 use zgui::prelude::*;
-use zgui::reactive::RenderEffect;
+use zgui::reactive::{ArcRwSignal, RenderEffect};
 
 use self::{
     ionosonde::{Agreement, Comparison, Forecast},
@@ -22,19 +23,20 @@ use self::{
 use crate::{
     store::Store,
     ui::{
+        kit_audio::titled,
         kit_maps::{
-            SHEET, armed_clear, every,
+            SHEET, armed_clear, encode,
             feed::{Feed, Topic},
-            iso_of, mhz, now_ms, ticker, trail,
+            iso_of, mhz, now_ms, readout, ticker, trail,
             wiring::{channel_type_of, event_sources},
         },
-        map::{self, Frame, Geo, MapProps, Overlay},
+        map::{self, ACCENT, Frame, Geo, MapProps, Overlay},
         widgets::{check, pick, segments},
     },
 };
 
 const REDRAW: Duration = Duration::from_secs(2);
-const IONOSONDE_EVERY: Duration = Duration::from_secs(15 * 60);
+const MUF_HINT: &str = "Measured MUF is a floor: the highest frequency decoded over each path, projected onto a 3000 km hop";
 const HISTORY_LIMIT: usize = 2_000;
 const TABLE_ROWS: usize = 12;
 const RECEIVER_ZOOM: f64 = 3.0;
@@ -123,17 +125,6 @@ fn inputs_of(store: Store, node: &str) -> Vec<Input> {
                 channel: channel.id,
                 node: source,
             })
-        })
-        .collect()
-}
-
-fn encode(text: &str) -> String {
-    text.bytes()
-        .map(|byte| match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                char::from(byte).to_string()
-            }
-            other => format!("%{other:02X}"),
         })
         .collect()
 }
@@ -247,11 +238,12 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     let layer = RwSignal::new(Layer::Activity);
     let now = ticker(REDRAW);
     let seed = RwSignal::new(Vec::<DecodedRecord>::new());
-    let report = RwSignal::new(None::<Result<IonosondeReport, String>>);
+    let compare = Memo::new(move |_| settings.get().compare_forecast);
+    let report = sondes::answer();
 
     listen(store, inputs, receiver, settings, session);
     load_history(store, inputs, seed);
-    load_ionosondes(store, settings, report);
+    sondes::follow(store, compare);
 
     let computed = RwSignal::new(Computed::default());
     let computing = RenderEffect::new(move |_| {
@@ -272,7 +264,7 @@ pub fn face(store: Store, node: String) -> impl IntoView {
                 session.cleared_at,
             )
         });
-        let sondes = report.with(|report| {
+        let sondes = report.with(|report: &sondes::Answer| {
             report
                 .as_ref()
                 .and_then(|report| report.as_ref().ok())
@@ -329,14 +321,43 @@ pub fn face(store: Store, node: String) -> impl IntoView {
         frame: frame.into(),
         on_pick: None,
     };
+    let chrome = AnyView::new(legend(positions));
     view! {
         column(class = "geo propagation") {
-            {controls(store, node.clone(), settings, layer, session, computed)}
-            {strip(settings, computed)}
-            {map::map(store, props, AnyView::new(()))}
+            {map::map(store, props, chrome)}
+            {controls(store, node.clone(), settings, layer)}
+            {readouts(settings, sondes::answer(), computed)}
+            {fault(compare, sondes::answer())}
             {table(settings, computed)}
-            {notice(settings, report, computed)}
+            {foot(session, computed)}
         }
+    }
+}
+
+fn legend(positions: Memo<Vec<String>>) -> impl IntoView {
+    let feed = Feed::get();
+    let count = move || {
+        let nodes = positions.get();
+        feed.with(Topic::Positions, |held| {
+            nodes
+                .iter()
+                .filter_map(|node| held.tracks.get(node))
+                .map(|track| track.history.len())
+                .sum::<usize>()
+                .to_string()
+        })
+    };
+    move || {
+        (!positions.get().is_empty()).then(|| {
+            let count = count.clone();
+            view! {
+                column(class = "geo__legend") {
+                    column(class = "geo__legend-box") {
+                        {trail::legend_row(ACCENT, "GPS trail", count)}
+                    }
+                }
+            }
+        })
     }
 }
 
@@ -406,36 +427,11 @@ fn load_history(store: Store, inputs: Memo<Vec<Input>>, seed: RwSignal<Vec<Decod
     on_cleanup_local(move || drop(loading));
 }
 
-fn load_ionosondes(
-    store: Store,
-    settings: Memo<PropagationNode>,
-    report: RwSignal<Option<Result<IonosondeReport, String>>>,
-) {
-    let fetch = move || {
-        if !settings.get_untracked().compare_forecast {
-            return;
-        }
-        zgui::task::spawn_local(async move {
-            let answer = store.api().get::<IonosondeReport>("/api/ionosonde").await;
-            report.set(Some(answer.map_err(|error| error.to_string())));
-        });
-    };
-    let asking = RenderEffect::new(move |_| {
-        if settings.get().compare_forecast {
-            fetch();
-        }
-    });
-    on_cleanup_local(move || drop(asking));
-    every(IONOSONDE_EVERY, fetch);
-}
-
 fn controls(
     store: Store,
     node: String,
     settings: Memo<PropagationNode>,
     layer: RwSignal<Layer>,
-    session: RwSignal<Session>,
-    computed: RwSignal<Computed>,
 ) -> impl IntoView {
     let half_node = node.clone();
     let height_node = node.clone();
@@ -484,14 +480,39 @@ fn controls(
             });
         },
     );
+    view! {
+        row(class = "geo__chips", on:pointer_down:stop = |_| {}) {
+            {titled("Decay half-life", chip("Half-life", AnyView::new(half_life)))}
+            {titled("Reflecting layer height", chip("Height", AnyView::new(height)))}
+            {titled("Map layer", chip("Map", AnyView::new(layers)))}
+            {titled("Draw the path to every station heard", toggle("Paths", AnyView::new(paths)))}
+            {titled("Compare against the ionosonde network", toggle("Ionosondes", AnyView::new(sondes)))}
+        }
+    }
+}
+
+fn chip(name: &'static str, body: AnyView) -> AnyView {
+    AnyView::new(view! {
+        column(class = "geo__entry") {
+            text(class = "geo__label") {{name}}
+            {body}
+        }
+    })
+}
+
+fn toggle(name: &'static str, body: AnyView) -> AnyView {
+    AnyView::new(view! {
+        row(class = "geo__check") {
+            {body}
+            text(class = "geo__label") {{name}}
+        }
+    })
+}
+
+fn foot(session: RwSignal<Session>, computed: RwSignal<Computed>) -> impl IntoView {
     let clearable = Signal::derive(move || computed.with(|computed| computed.live > 0));
     view! {
-        row(class = "geo__bar", on:pointer_down:stop = |_| {}) {
-            column(class = "geo__entry") { text(class = "geo__label") {"Half-life"} {half_life} }
-            column(class = "geo__entry") { text(class = "geo__label") {"Reflection"} {height} }
-            {layers}
-            row(class = "geo__check") { {paths} text(class = "geo__label") {"Paths"} }
-            row(class = "geo__check") { {sondes} text(class = "geo__label") {"Ionosondes"} }
+        row(class = "geo__foot", on:pointer_down:stop = |_| {}) {
             {armed_clear(clearable, move || session.update(|session| {
                 session.observations.clear();
                 session.cleared_at = now_ms();
@@ -500,20 +521,130 @@ fn controls(
     }
 }
 
-fn strip(settings: Memo<PropagationNode>, computed: RwSignal<Computed>) -> impl IntoView {
+fn readouts(
+    settings: Memo<PropagationNode>,
+    report: ArcRwSignal<sondes::Answer>,
+    computed: RwSignal<Computed>,
+) -> impl IntoView {
     let read = move |pick: fn(&Computed) -> String| move || computed.with(pick);
+    let base = vec![
+        readout("Decodes", None, read(|c| c.summary.decodes.to_string())),
+        readout("Grids", None, read(|c| c.summary.grids.to_string())),
+        readout("Cells", None, read(|c| c.cells.len().to_string())),
+        readout(
+            "Highest",
+            Some("Highest frequency heard"),
+            read(|c| mhz(c.summary.best_freq_hz)),
+        ),
+        readout(
+            "MUF(3000)",
+            Some(MUF_HINT),
+            read(|c| muf_floor(c.summary.best_muf3000_mhz)),
+        ),
+        readout(
+            "Farthest",
+            None,
+            read(|c| format!("{:.0} km", c.summary.farthest_km)),
+        ),
+    ];
+    let forecast = move || {
+        settings
+            .get()
+            .compare_forecast
+            .then(|| forecast_readouts(&report, computed))
+    };
     view! {
-        row(class = "geo__strip") {
-            row(class = "geo__pair") { text(class = "geo__num") {{read(|c| c.summary.decodes.to_string())}} text {"decodes"} }
-            row(class = "geo__pair") { text(class = "geo__num") {{read(|c| c.summary.grids.to_string())}} text {"grids"} }
-            row(class = "geo__pair") { text(class = "geo__num") {{read(|c| c.cells.len().to_string())}} text {"cells"} }
-            row(class = "geo__pair") { text {"highest"} text(class = "geo__num") {{read(|c| mhz(c.summary.best_freq_hz))}} }
-            row(class = "geo__pair") { text {"MUF(3000)"} text(class = "geo__num") {{read(|c| c.summary.best_muf3000_mhz.map_or_else(|| String::from("-"), |muf| format!("\u{2265} {muf:.1} MHz")))}} }
-            row(class = "geo__pair") { text {"farthest"} text(class = "geo__num") {{read(|c| format!("{:.0} km", c.summary.farthest_km))}} }
-            if move || settings.get().compare_forecast {
-                row(class = "geo__pair") { text {"overhead"} text(class = "geo__num") {{read(|c| c.overhead.as_ref().map_or_else(|| String::from("-"), |forecast| format!("{:.1} MHz", forecast.muf3000_mhz)))}} }
-            }
+        row(class = "geo__readouts") {
+            {base}
+            {forecast}
         }
+    }
+}
+
+fn forecast_readouts(
+    report: &ArcRwSignal<sondes::Answer>,
+    computed: RwSignal<Computed>,
+) -> Vec<AnyView> {
+    let (sites, source) = report.with(|answer| {
+        let report = answer.as_ref().and_then(|answer| answer.as_ref().ok());
+        (
+            report.map_or(0, |report| report.stations.len()),
+            report.map(|report| report.source.clone()),
+        )
+    });
+    let overhead = move || {
+        computed.with(|c| {
+            c.overhead.as_ref().map_or_else(
+                || String::from("-"),
+                |forecast| format!("{:.1} MHz", forecast.muf3000_mhz),
+            )
+        })
+    };
+    let mut out = vec![
+        readout(
+            "Forecast",
+            Some("The ionosonde MUF(3000) over your location"),
+            overhead,
+        ),
+        titled(
+            sites_hint(source.as_deref()),
+            readout("Sites", None, move || sites_text(sites)),
+        ),
+    ];
+    if sites > 0 {
+        out.push(readout(
+            "Above",
+            Some("Compared cells that sit above the forecast"),
+            move || computed.with(|c| format!("{}/{}", c.agreement.above, c.agreement.cells)),
+        ));
+        out.push(readout(
+            "Median \u{0394}",
+            Some("Median of measured minus forecast MUF"),
+            move || computed.with(|c| format!("{:+.1} MHz", c.agreement.median_delta_mhz)),
+        ));
+    }
+    out
+}
+
+#[must_use]
+pub fn muf_floor(muf: Option<f64>) -> String {
+    muf.map_or_else(|| String::from("-"), |muf| format!("\u{2265} {muf:.1} MHz"))
+}
+
+#[must_use]
+pub fn sites_text(sites: usize) -> String {
+    if sites == 0 {
+        String::from("waiting")
+    } else {
+        sites.to_string()
+    }
+}
+
+#[must_use]
+pub fn sites_hint(source: Option<&str>) -> String {
+    format!(
+        "Sounding sites, from {}",
+        source.unwrap_or("the ionosonde network")
+    )
+}
+
+#[must_use]
+pub fn feed_failure(answer: &sondes::Answer) -> Option<String> {
+    match answer.as_ref()? {
+        Err(error) => Some(error.clone()),
+        Ok(report) => report.error.clone(),
+    }
+}
+
+fn fault(compare: Memo<bool>, report: ArcRwSignal<sondes::Answer>) -> impl IntoView {
+    move || {
+        let detail = report.with(feed_failure).filter(|_| compare.get())?;
+        Some(view! {
+            column(class = "geo__fault") {
+                text(class = "geo__fault-head") {"Ionosonde feed failed"}
+                text(class = "geo__fault-detail") {{detail}}
+            }
+        })
     }
 }
 
@@ -562,7 +693,7 @@ fn table(settings: Memo<PropagationNode>, computed: RwSignal<Computed>) -> impl 
             }
         });
         if rows.is_empty() {
-            return AnyView::new(view! { text(class = "geo__note") {"No reflection points yet"} });
+            return AnyView::new(view! { text(class = "geo__note") {"No reflection points yet."} });
         }
         let mut head = vec!["Midpoint", "Decodes", "Highest", "Measured MUF"];
         if compare {
@@ -579,50 +710,6 @@ fn table(settings: Memo<PropagationNode>, computed: RwSignal<Computed>) -> impl 
                 {body}
             }
         })
-    }
-}
-
-fn notice(
-    settings: Memo<PropagationNode>,
-    report: RwSignal<Option<Result<IonosondeReport, String>>>,
-    computed: RwSignal<Computed>,
-) -> impl IntoView {
-    let text = move || -> (bool, String) {
-        if !settings.get().compare_forecast {
-            return (
-                false,
-                String::from(
-                    "Measured MUF is a floor: the highest decode per path, projected onto 3000 km",
-                ),
-            );
-        }
-        match report.get() {
-            None => (false, String::from("Waiting for the ionosonde network")),
-            Some(Err(error)) => (true, format!("Ionosonde feed: {error}")),
-            Some(Ok(report)) => match &report.error {
-                Some(error) => (true, format!("Ionosonde feed: {error}")),
-                None if report.stations.is_empty() => {
-                    (false, String::from("Waiting for the ionosonde network"))
-                }
-                None => {
-                    let agreement = computed.with(|computed| computed.agreement.clone());
-                    (
-                        false,
-                        format!(
-                            "{} sounding sites · {} of {} cells above forecast · median \u{0394} {:+.1} MHz · {}",
-                            report.stations.len(),
-                            agreement.above,
-                            agreement.cells,
-                            agreement.median_delta_mhz,
-                            report.source
-                        ),
-                    )
-                }
-            },
-        }
-    };
-    view! {
-        text(class = "geo__note", class:bad = move || text().0) {{move || text().1}}
     }
 }
 
@@ -649,6 +736,36 @@ mod tests {
             "/api/decoderlog?kind=ft8&nodes=ft8%20a%2Cwspr&sources=1%3A2%2C1%3A3&since="
         ));
         assert!(path.ends_with("&limit=2000"));
+    }
+
+    #[test]
+    fn the_forecast_readouts_say_waiting_and_name_their_source() {
+        assert_eq!(sites_text(0), "waiting");
+        assert_eq!(sites_text(12), "12");
+        assert_eq!(
+            sites_hint(None),
+            "Sounding sites, from the ionosonde network"
+        );
+        assert_eq!(sites_hint(Some("GIRO")), "Sounding sites, from GIRO");
+        assert_eq!(muf_floor(None), "-");
+        assert_eq!(muf_floor(Some(21.04)), "\u{2265} 21.0 MHz");
+    }
+
+    #[test]
+    fn a_feed_failure_is_either_a_dead_request_or_a_reported_error() {
+        assert_eq!(feed_failure(&None), None);
+        assert_eq!(
+            feed_failure(&Some(Err("timeout".to_owned()))).as_deref(),
+            Some("timeout")
+        );
+        let report = sdrmm_wire::propagation::IonosondeReport {
+            source: "GIRO".to_owned(),
+            url: String::new(),
+            fetched_at: None,
+            stations: Vec::new(),
+            error: Some("HTTP 503".to_owned()),
+        };
+        assert_eq!(feed_failure(&Some(Ok(report))).as_deref(), Some("HTTP 503"));
     }
 
     #[test]

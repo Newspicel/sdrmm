@@ -71,6 +71,8 @@ pub fn head(store: Store, shell: Shell) -> impl IntoView {
                 "Add"
             }
             spacer() {}
+            {crate::ui::presence::stack(store, shell)}
+            box(class = "hb__rule") {}
             {history(store)}
             box(class = "hb__rule")
             control(
@@ -85,7 +87,7 @@ pub fn head(store: Store, shell: Shell) -> impl IntoView {
             }
             box(class = "hb__rule") {}
             {theme_button(shell)}
-            {icon_button(glyph::HELP, "Keyboard shortcuts, licenses and reports", move || shell.open(Dialog::Shortcuts))}
+            {icon_button(glyph::HELP, "Help", move || shell.open(Dialog::Help))}
         }
     }
 }

@@ -1,6 +1,7 @@
-use std::net::Ipv4Addr;
+use std::{cell::Cell, net::Ipv4Addr};
 
 use sdrmm_wire::{
+    about::AboutResponse,
     event_output::{EventOutputTarget, WebhookFormat},
     patch::NodeBody,
     ws::ServerEvent,
@@ -20,6 +21,27 @@ use crate::{
 };
 
 type Commit = std::rc::Rc<dyn Fn(EventOutputTarget)>;
+
+thread_local! {
+    static NOTIFY: Cell<Option<bool>> = const { Cell::new(None) };
+}
+
+fn server_notifies(store: Store) -> RwSignal<bool> {
+    let known = NOTIFY.with(Cell::get);
+    let notify = RwSignal::new(known.unwrap_or(false));
+    if known.is_none() {
+        zgui::task::spawn_local(async move {
+            match store.api().get::<AboutResponse>("/api/about").await {
+                Ok(about) => {
+                    NOTIFY.with(|held| held.set(Some(about.notify)));
+                    notify.try_set(about.notify);
+                }
+                Err(error) => tracing::debug!(%error, "no about"),
+            }
+        });
+    }
+    notify
+}
 
 fn target_of(store: Store, node: &str) -> Option<EventOutputTarget> {
     match &store.graph.get().node(node)?.body {
@@ -56,10 +78,13 @@ pub fn face(store: Store, node: String) -> impl IntoView {
         })
     };
     let chosen = Signal::derive(move || target.get().as_ref().map(service_of));
-    let options: Vec<(Service, String)> = services_offered(false, chosen.get_untracked())
-        .into_iter()
-        .map(|(service, label)| (service, label.to_owned()))
-        .collect();
+    let notify = server_notifies(store);
+    let offered = Memo::new(move |_| {
+        services_offered(notify.get(), chosen.get())
+            .into_iter()
+            .map(|(service, label)| (service, label.to_owned()))
+            .collect::<Vec<_>>()
+    });
     let pick_service = {
         let commit = commit.clone();
         move |service: Service| {
@@ -85,7 +110,7 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     };
     view! {
         column(class = "face", {..kit_decoders::no_pan()}) {
-            {row_field("Service", pick(options, chosen, pick_service))}
+            {move || row_field("Service", pick(offered.get(), chosen, pick_service.clone()))}
             {fields}
             {status}
         }

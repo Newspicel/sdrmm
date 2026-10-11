@@ -8,6 +8,7 @@ use sdrmm_wire::{
 };
 
 use super::{
+    lane::VirtualPort,
     pick::format_mhz,
     view::{SpectrumView, offset_to_span},
 };
@@ -17,6 +18,7 @@ pub struct Lane {
     pub set: u32,
     pub stream: u32,
     pub device: String,
+    pub virtual_port: Option<VirtualPort>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -184,22 +186,32 @@ pub fn marker_hint(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Reach {
+    pub view: SpectrumView,
+    pub centre_hz: f64,
+    pub span_hz: f64,
+    pub at: f64,
+    pub tolerance: f64,
+}
+
 #[must_use]
 pub fn marker_at(
     channels: &[ChannelInfo],
-    view: SpectrumView,
-    centre_hz: f64,
-    span_hz: f64,
-    at: f64,
-    tolerance: f64,
+    heard: impl Fn(&ChannelInfo) -> f64,
+    reach: Reach,
 ) -> Option<u32> {
+    let Reach {
+        view,
+        centre_hz,
+        span_hz,
+        at,
+        tolerance,
+    } = reach;
     let mut best = None;
     let mut best_distance = tolerance;
     for channel in channels {
-        let position = view.place(offset_to_span(
-            channel.settings.frequency_hz - centre_hz,
-            span_hz,
-        ));
+        let position = view.place(offset_to_span(heard(channel) - centre_hz, span_hz));
         let distance = (position - at).abs();
         if distance <= best_distance {
             best = Some(channel.id);
@@ -278,10 +290,19 @@ mod tests {
     #[test]
     fn a_marker_is_grabbed_within_reach_and_the_nearest_wins() {
         let listed = [channel(1, 100.2e6, "nfm"), channel(2, 100.25e6, "am")];
-        let grab = |at| marker_at(&listed, FULL_VIEW, 100e6, 2e6, at, 0.03);
-        assert_eq!(grab(0.6), Some(1));
-        assert_eq!(grab(0.63), Some(2));
-        assert_eq!(grab(0.9), None);
+        let reach = |at| Reach {
+            view: FULL_VIEW,
+            centre_hz: 100e6,
+            span_hz: 2e6,
+            at,
+            tolerance: 0.03,
+        };
+        let tuned = |channel: &ChannelInfo| channel.settings.frequency_hz;
+        assert_eq!(marker_at(&listed, tuned, reach(0.6)), Some(1));
+        assert_eq!(marker_at(&listed, tuned, reach(0.63)), Some(2));
+        assert_eq!(marker_at(&listed, tuned, reach(0.9)), None);
+        let shifted = |channel: &ChannelInfo| channel.settings.frequency_hz + 300e3;
+        assert_eq!(marker_at(&listed, shifted, reach(0.75)), Some(1));
     }
 
     #[test]

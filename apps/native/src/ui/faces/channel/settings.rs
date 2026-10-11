@@ -1,4 +1,5 @@
 use sdrmm_wire::{
+    airtime::AirtimeSpan,
     audio::{AudioProcessing, MAX_AUDIO_NOTCHES, NotchSettings},
     channel::{
         ChannelDescriptor, ChannelParams, MAX_SQUELCH_AUTO_MARGIN_DB, MIN_SQUELCH_AUTO_MARGIN_DB,
@@ -50,6 +51,50 @@ pub fn nudged_squelch(squelch: &Squelch, delta_db: f32) -> Squelch {
     Squelch::Manual {
         level_db: level.clamp(SQUELCH_MIN_DB, SQUELCH_MAX_DB),
     }
+}
+
+#[must_use]
+pub fn dragged_squelch(db: f32) -> Squelch {
+    if db <= SQUELCH_MIN_DB {
+        Squelch::Off
+    } else {
+        Squelch::Manual {
+            level_db: db.min(SQUELCH_MAX_DB),
+        }
+    }
+}
+
+#[must_use]
+pub fn squelch_handle_db(squelch: &Squelch, gate_db: Option<f32>, held_db: f32) -> f32 {
+    if squelch.is_off() {
+        SQUELCH_MIN_DB
+    } else {
+        gate_db.unwrap_or(held_db)
+    }
+}
+
+#[must_use]
+pub fn squelch_meter_tip(off: bool) -> String {
+    let far_left = if off { ". Far left: off" } else { "" };
+    format!("Fill: signal. Handle: where the squelch opens{far_left}")
+}
+
+#[must_use]
+pub fn auto_squelch_tip(squelch: &Squelch) -> String {
+    match squelch.auto_margin_db() {
+        Some(margin) => format!("Opens {margin} dB above the noise floor"),
+        None => String::from("Open a margin above the measured noise floor"),
+    }
+}
+
+#[must_use]
+pub fn squelch_switched(auto: bool, level_db: f32, margin_db: f32) -> Squelch {
+    let mode = if auto {
+        SquelchMode::Auto
+    } else {
+        SquelchMode::Manual
+    };
+    squelch_at(mode, level_db, margin_db)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -178,8 +223,26 @@ pub fn reaches_hz(frequency_hz: f64, window: Option<RadioWindow>) -> bool {
     window.is_none_or(|window| frequency_hz >= window.low_hz && frequency_hz <= window.high_hz)
 }
 
+pub const AIRTIME_GUARD_HZ: f64 = 3_000_000.0;
+
 #[must_use]
 pub fn param_bandwidth_hz(params: &ChannelParams) -> Option<f64> {
+    match params {
+        ChannelParams::Lora(lora) => Some(lora.bandwidth.hz()),
+        ChannelParams::Ble(ble) => Some(ble.link.bandwidth_hz()),
+        ChannelParams::RemoteId(remote) => Some(remote.link.bandwidth_hz()),
+        ChannelParams::WifiOccupancy(wifi) => Some(airtime_width_hz(wifi.span)),
+        ChannelParams::IsmSurvey(survey) => Some(airtime_width_hz(survey.span)),
+        _ => named_bandwidth_hz(params),
+    }
+}
+
+#[must_use]
+pub fn airtime_width_hz(span: AirtimeSpan) -> f64 {
+    span.sample_rate_hz() - AIRTIME_GUARD_HZ
+}
+
+fn named_bandwidth_hz(params: &ChannelParams) -> Option<f64> {
     serde_json::to_value(params)
         .ok()?
         .pointer("/settings/bandwidth_hz")?
@@ -297,6 +360,44 @@ mod tests {
         );
         assert_eq!(channel_width_hz(None, Some(&descriptor(0.0))), None);
         assert_eq!(channel_width_hz(None, None), None);
+    }
+
+    #[test]
+    fn widths_the_wire_names_by_choice_map_to_hertz() {
+        use sdrmm_wire::{
+            airtime::{IsmSurveyParams, WifiOccupancyParams},
+            ble::{BleLink, BleParams},
+            lora::{LoraBandwidth, LoraParams},
+            remote_id::{RemoteIdLink, RemoteIdParams},
+        };
+        let lora = ChannelParams::Lora(LoraParams {
+            bandwidth: LoraBandwidth::Khz250,
+            ..LoraParams::default()
+        });
+        assert_eq!(param_bandwidth_hz(&lora), Some(250_000.0));
+        let ble = ChannelParams::Ble(BleParams {
+            link: BleLink::Band,
+        });
+        assert_eq!(param_bandwidth_hz(&ble), Some(18_000_000.0));
+        let remote = ChannelParams::RemoteId(RemoteIdParams {
+            link: RemoteIdLink::Wifi,
+        });
+        assert_eq!(param_bandwidth_hz(&remote), Some(20_000_000.0));
+        let wifi = ChannelParams::WifiOccupancy(WifiOccupancyParams {
+            span: AirtimeSpan::Mhz40,
+            ..WifiOccupancyParams::default()
+        });
+        assert_eq!(param_bandwidth_hz(&wifi), Some(37_000_000.0));
+        let survey = ChannelParams::IsmSurvey(IsmSurveyParams {
+            span: AirtimeSpan::Mhz80,
+            ..IsmSurveyParams::default()
+        });
+        assert_eq!(param_bandwidth_hz(&survey), Some(77_000_000.0));
+        let am = ChannelParams::Am(AmParams {
+            bandwidth_hz: 8_000.0,
+            sync: true,
+        });
+        assert_eq!(param_bandwidth_hz(&am), Some(8_000.0));
     }
 
     #[test]
@@ -423,6 +524,55 @@ mod tests {
         assert_eq!(
             nudged_squelch(&Squelch::Auto { margin_db: 39.0 }, 2.0),
             Squelch::Auto { margin_db: 40.0 }
+        );
+    }
+
+    #[test]
+    fn dragging_to_the_far_left_turns_the_squelch_off() {
+        assert_eq!(dragged_squelch(SQUELCH_MIN_DB), Squelch::Off);
+        assert_eq!(dragged_squelch(-130.0), Squelch::Off);
+        assert_eq!(dragged_squelch(-70.0), Squelch::Manual { level_db: -70.0 });
+        assert_eq!(dragged_squelch(5.0), Squelch::Manual { level_db: 0.0 });
+    }
+
+    #[test]
+    fn the_handle_sits_far_left_when_off_and_on_the_gate_otherwise() {
+        assert_eq!(squelch_handle_db(&Squelch::Off, Some(-50.0), -60.0), -120.0);
+        assert_eq!(
+            squelch_handle_db(&Squelch::Auto { margin_db: 8.0 }, Some(-50.0), -60.0),
+            -50.0
+        );
+        assert_eq!(
+            squelch_handle_db(&Squelch::Manual { level_db: -40.0 }, None, -60.0),
+            -60.0
+        );
+    }
+
+    #[test]
+    fn the_squelch_tips_say_what_the_handle_and_auto_do() {
+        assert_eq!(
+            squelch_meter_tip(true),
+            "Fill: signal. Handle: where the squelch opens. Far left: off"
+        );
+        assert_eq!(
+            squelch_meter_tip(false),
+            "Fill: signal. Handle: where the squelch opens"
+        );
+        assert_eq!(
+            auto_squelch_tip(&Squelch::Auto { margin_db: 8.0 }),
+            "Opens 8 dB above the noise floor"
+        );
+        assert_eq!(
+            auto_squelch_tip(&Squelch::Off),
+            "Open a margin above the measured noise floor"
+        );
+        assert_eq!(
+            squelch_switched(true, -60.0, 10.0),
+            Squelch::Auto { margin_db: 10.0 }
+        );
+        assert_eq!(
+            squelch_switched(false, -60.0, 10.0),
+            Squelch::Manual { level_db: -60.0 }
         );
     }
 

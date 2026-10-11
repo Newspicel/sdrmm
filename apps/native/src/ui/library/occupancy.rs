@@ -10,7 +10,7 @@ use crate::{
     },
     store::Store,
     ui::{
-        kit_shell::{Entry, entry, hint},
+        kit_shell::{Entry, entry, hint, hover},
         library::{active_set, load, reload, tune_radio},
         shell::Shell,
         widgets::segments,
@@ -120,22 +120,26 @@ fn bucket_row(
         .collect();
     let freq_hz = bucket.freq_hz as f64;
     let label = row_hint(&bucket);
-    view! {
-        control(
-            class = "occ__row",
-            tabindex = Focus::Sequential,
-            a11y:role = Role::Button,
-            a11y:label = label,
-            state:disabled = move || !enabled.get(),
-            on:click:stop = move |_| {
-                if let Some(set) = active.get_untracked() {
-                    tune_radio(store, shell, &set, freq_hz);
+    let tooltip = label.clone();
+    hover(
+        tooltip,
+        view! {
+            control(
+                class = "occ__row",
+                tabindex = Focus::Sequential,
+                a11y:role = Role::Button,
+                a11y:label = label,
+                state:disabled = move || !enabled.get(),
+                on:click:stop = move |_| {
+                    if let Some(set) = active.get_untracked() {
+                        tune_radio(store, shell, &set, freq_hz);
+                    }
                 }
+            ) {
+                text(class = "occ__hz") {{bucket_hz(bucket.freq_hz)}}
+                row(class = "occ__hours") {{cells}}
+                text(class = "occ__duty") {{duty_text(bucket.duty)}}
             }
-        ) {
-            text(class = "occ__hz") {{bucket_hz(bucket.freq_hz)}}
-            row(class = "occ__hours") {{cells}}
-            text(class = "occ__duty") {{duty_text(bucket.duty)}}
-        }
-    }
+        },
+    )
 }

@@ -14,26 +14,90 @@ pub const DEFAULT_STEP_HZ: f64 = 100_000.0;
 pub const DEFAULT_SQUELCH_DB: f32 = -60.0;
 pub const SQUELCH_RANGE_DB: (f32, f32) = (-120.0, 0.0);
 pub const SQUELCH_NUDGE_DB: f32 = 2.0;
-pub const ANALOG_MODES: [&str; 4] = ["nfm", "wfm", "am", "ssb"];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Group {
+    Tune,
+    Channels,
+    Canvas,
+    Edit,
+    General,
+}
 
-pub const BINDINGS: &[(&str, &str)] = &[
-    ("\u{2190} \u{2192}", "Tune down / up one step"),
-    ("Shift \u{2190} \u{2192}", "Tune ten steps"),
-    ("[ ]", "Smaller / larger tune step"),
-    (", .", "Previous / next channel"),
-    ("m / M", "Cycle the channel's analog mode"),
-    ("- / + =", "Squelch down / up 2 dB"),
-    ("s", "Squelch on / off"),
-    ("1 \u{2013} 9", "Select the nth node"),
-    ("p", "Pin / unpin on the rack"),
-    ("v", "Swap patch and rack"),
-    ("z", "Full screen face, Esc returns"),
-    ("Ctrl / \u{2318} Z", "Undo"),
-    ("Ctrl / \u{2318} Shift Z", "Redo (Ctrl / \u{2318} Y too)"),
-    ("Backspace", "Delete the selected node or wire"),
-    ("?", "This list"),
-    ("Esc", "Close an overlay or menu, or drop the selection"),
+impl Group {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Tune => "Tune",
+            Self::Channels => "Channels",
+            Self::Canvas => "Canvas",
+            Self::Edit => "Edit",
+            Self::General => "General",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Binding {
+    pub keys: &'static str,
+    pub what: &'static str,
+    pub group: Group,
+}
+
+const fn bind(keys: &'static str, what: &'static str, group: Group) -> Binding {
+    Binding { keys, what, group }
+}
+
+pub const BINDINGS: &[Binding] = &[
+    bind("\u{2190} \u{2192}", "Tune one step", Group::Tune),
+    bind("Shift \u{2190} \u{2192}", "Tune ten steps", Group::Tune),
+    bind("[ ]", "Smaller / larger step", Group::Tune),
+    bind("f", "Focus the dial, Enter to type", Group::Tune),
+    bind(", .", "Previous / next channel", Group::Channels),
+    bind("m / M", "Cycle analog mode", Group::Channels),
+    bind("- / +", "Squelch down / up 2 dB", Group::Channels),
+    bind("s", "Squelch on / off", Group::Channels),
+    bind("1 \u{2013} 9", "Select the nth node", Group::Canvas),
+    bind("p", "Pin / unpin on the rack", Group::Canvas),
+    bind("v", "Swap patch and rack", Group::Canvas),
+    bind("z", "Fill the window, Esc returns", Group::Canvas),
+    bind("Ctrl / \u{2318} Z", "Undo your last change", Group::Edit),
+    bind("Ctrl / \u{2318} Shift Z", "Redo", Group::Edit),
+    bind(
+        "Ctrl / \u{2318} C",
+        "Copy nodes and their wires",
+        Group::Edit,
+    ),
+    bind(
+        "Ctrl / \u{2318} V",
+        "Paste beside the originals",
+        Group::Edit,
+    ),
+    bind("Backspace", "Delete node or wire", Group::Edit),
+    bind("?", "Help", Group::General),
+    bind("Esc", "Close or deselect", Group::General),
 ];
+
+#[must_use]
+pub fn grouped(bindings: &[Binding]) -> Vec<(Group, Vec<Binding>)> {
+    let mut groups: Vec<(Group, Vec<Binding>)> = Vec::new();
+    for binding in bindings {
+        match groups.iter_mut().find(|(group, _)| *group == binding.group) {
+            Some((_, held)) => held.push(*binding),
+            None => groups.push((binding.group, vec![*binding])),
+        }
+    }
+    groups
+}
+
+#[must_use]
+pub fn key_caps(keys: &str, apple: bool) -> Vec<(String, bool)> {
+    let local = keys.replace("Ctrl / \u{2318}", if apple { "\u{2318}" } else { "Ctrl" });
+    local
+        .split(' ')
+        .filter(|text| !text.is_empty())
+        .map(|text| (text.to_owned(), !matches!(text, "/" | "\u{2013}")))
+        .collect()
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Chord {
@@ -51,6 +115,7 @@ pub enum Action {
     Squelch(f32),
     ToggleSquelch,
     SelectChannel(i32),
+    FocusDial,
     SelectNode(usize),
     TogglePin,
     ToggleView,
@@ -87,6 +152,7 @@ pub fn action(key: &str, chord: Chord) -> Option<Action> {
         "ArrowRight" => Action::Tune(tens),
         "[" => Action::StepBy(-1),
         "]" => Action::StepBy(1),
+        "f" => Action::FocusDial,
         "," => Action::SelectChannel(-1),
         "." => Action::SelectChannel(1),
         "m" => Action::CycleMode(if chord.shift { -1 } else { 1 }),
@@ -119,16 +185,6 @@ pub fn stepped(current: f64, direction: i32) -> f64 {
         .ok()
         .and_then(|next| TUNE_STEPS_HZ.get(next).copied())
         .unwrap_or(current)
-}
-
-#[must_use]
-pub fn next_analog_mode(current: &str, direction: i32) -> &'static str {
-    let Some(at) = ANALOG_MODES.iter().position(|mode| *mode == current) else {
-        return ANALOG_MODES[0];
-    };
-    let length = ANALOG_MODES.len() as i32;
-    let next = (at as i32 + direction).rem_euclid(length);
-    ANALOG_MODES[next as usize]
 }
 
 #[must_use]
@@ -237,6 +293,43 @@ mod tests {
         assert_eq!(action("0", Chord::default()), None);
         assert_eq!(action("q", Chord::default()), None);
         assert_eq!(action("?", shift), Some(Action::ShowShortcuts));
+        assert_eq!(action("f", Chord::default()), Some(Action::FocusDial));
+    }
+
+    #[test]
+    fn groups_the_bindings_in_their_first_order() {
+        let groups = grouped(BINDINGS);
+        let names: Vec<Group> = groups.iter().map(|(group, _)| *group).collect();
+        assert_eq!(
+            names,
+            [
+                Group::Tune,
+                Group::Channels,
+                Group::Canvas,
+                Group::Edit,
+                Group::General
+            ]
+        );
+        assert_eq!(
+            groups.iter().map(|(_, held)| held.len()).sum::<usize>(),
+            BINDINGS.len()
+        );
+    }
+
+    #[test]
+    fn spells_the_command_key_for_the_platform() {
+        let caps = key_caps("Ctrl / \u{2318} Shift Z", true);
+        assert_eq!(
+            caps,
+            [
+                ("\u{2318}".to_owned(), true),
+                ("Shift".to_owned(), true),
+                ("Z".to_owned(), true)
+            ]
+        );
+        let plain = key_caps("m / M", false);
+        assert_eq!(plain[1], ("/".to_owned(), false));
+        assert_eq!(key_caps("Ctrl / \u{2318} C", false)[0].0, "Ctrl");
     }
 
     #[test]
@@ -245,14 +338,6 @@ mod tests {
         assert_eq!(stepped(1_000_000.0, 1), 1_000_000.0);
         assert_eq!(stepped(10.0, -1), 10.0);
         assert_eq!(stepped(12_500.0, -1), 5_000.0);
-    }
-
-    #[test]
-    fn cycles_the_analog_modes_and_starts_a_digital_one_on_nfm() {
-        assert_eq!(next_analog_mode("nfm", 1), "wfm");
-        assert_eq!(next_analog_mode("nfm", -1), "ssb");
-        assert_eq!(next_analog_mode("ssb", 1), "nfm");
-        assert_eq!(next_analog_mode("dmr", 1), "nfm");
     }
 
     #[test]

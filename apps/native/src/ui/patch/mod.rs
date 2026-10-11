@@ -1,20 +1,25 @@
 pub mod graph;
 mod header;
 mod menu;
+mod placement;
 mod ports;
 mod remove;
 mod sync;
 
 use std::collections::{HashMap, HashSet};
 
-use sdrmm_wire::patch::{
-    NodeBody, PatchEdge, PatchGraph, PatchNode, PortBacking, PortDirection, PortRef, Position,
+use sdrmm_wire::{
+    device::Coherence,
+    patch::{
+        ARRAY_LANE_PORT, NodeBody, PatchEdge, PatchGraph, PatchNode, PortBacking, PortDirection,
+        PortRef, Position, REFUSAL_NO_PORT, REFUSAL_SHARED_CLOCK, port_stream,
+    },
 };
 use zgui::{prelude::*, reactive::RenderEffect};
 use zgui_flow::prelude::{
     BackgroundProps, ChangeSet, CommitOptions, Connection, ControlsProps, DragHandleProps,
-    EdgeChange, FlowAction, FlowConfig, FlowEvents, FlowHandle, FlowProps, Graph, Interaction,
-    KeyMap, MiniMapProps, NodeChange, NodeId, NodeProps, NodeResizerProps, NodeTypes, Point, Size,
+    EdgeChange, FlowAction, FlowConfig, KeyBinding, FlowEvents, FlowHandle, FlowProps, Graph, Interaction,
+    KeyMap, MiniMapProps, ConnectionMode, PendingConnection, NodeChange, NodeId, NodeProps, NodeResizerProps, NodeTypes, Point, Rect, Size,
     SnapGrid, ZoomLimits,
 };
 
@@ -88,22 +93,30 @@ fn edge_of(connection: &Connection) -> Option<PatchEdge> {
 }
 
 pub fn refusal(store: Store, graph: &PatchGraph, connection: &Connection) -> Option<String> {
-    if connection.source == connection.target {
-        return Some(String::from("a node cannot wire to itself"));
-    }
     let Some(edge) = edge_of(connection) else {
-        return Some(String::from("pick a port"));
+        return Some(String::from(REFUSAL_NO_PORT));
     };
-    if graph.edges.contains(&edge) {
-        return Some(String::from("already wired"));
-    }
-    let mut tentative = graph.clone();
-    tentative.edges.push(edge);
     let descriptors = store.channel_types.get_untracked();
-    tentative
-        .validate_against(&descriptors)
-        .err()
-        .map(|error| error.to_string())
+    graph
+        .connection_refusal(&edge, Some(&descriptors))
+        .or_else(|| shared_clock_refusal(store, graph, &edge))
+}
+
+fn shared_clock_refusal(store: Store, graph: &PatchGraph, edge: &PatchEdge) -> Option<String> {
+    let lands_on_array = graph
+        .node(&edge.to.node)
+        .is_some_and(|node| matches!(node.body, NodeBody::Array(_)))
+        && port_stream(ARRAY_LANE_PORT, &edge.to.port).is_some();
+    let same_radio = graph.edges.iter().any(|other| {
+        other.to.node == edge.to.node
+            && other.from.node == edge.from.node
+            && port_stream(ARRAY_LANE_PORT, &other.to.port).is_some()
+    });
+    let unclocked = store
+        .device_set_of(&edge.from.node)
+        .and_then(|id| store.set_of(id))
+        .is_some_and(|set| set.capabilities.coherence == Coherence::None);
+    (lands_on_array && same_radio && unclocked).then(|| REFUSAL_SHARED_CLOCK.to_owned())
 }
 
 pub fn remove_selection(store: Store, nodes: Vec<String>, edges: Vec<String>) {
@@ -113,11 +126,47 @@ pub fn remove_selection(store: Store, nodes: Vec<String>, edges: Vec<String>) {
     let graph = store.graph.get_untracked();
     let closing = remove::teardowns(store, &graph, &nodes);
     zgui::task::spawn_local(async move {
-        remove::close(store, closing).await;
+        if !remove::close(store, closing).await {
+            return;
+        }
         store.edit_graph(move |graph| {
             *graph = graph::remove_edges(&graph::remove_nodes(graph, &nodes), &edges);
         });
     });
+}
+
+fn occupied(canvas: Canvas) -> Vec<placement::Rect> {
+    canvas.with_graph(|shown| {
+        shown
+            .nodes()
+            .map(|node| {
+                let size = node.size_or_zero();
+                placement::Rect::new(node.position.x, node.position.y, size.width, size.height)
+            })
+            .collect()
+    })
+}
+
+pub fn place_new(canvas: Canvas, kind: &str) -> (f32, f32) {
+    let view = canvas.view();
+    let viewport = view.viewport().get_untracked();
+    let pane = view.pane_size().get_untracked();
+    let size = placement::drop_size(kind);
+    if pane.width <= 0.0 || pane.height <= 0.0 || viewport.zoom <= 0.0 {
+        let room = placement::Rect::new(0.0, 0.0, 1200.0, 800.0);
+        let at = placement::drop_position(&room, size, &occupied(canvas), placement::SCREEN_GAP);
+        return (at.0 as f32, at.1 as f32);
+    }
+    let visible = viewport.visible_rect(pane);
+    let shown = placement::Rect::new(visible.x0, visible.y0, visible.width(), visible.height());
+    let gap = placement::SCREEN_GAP / viewport.zoom;
+    let at = placement::drop_position(&shown, size, &occupied(canvas), gap);
+    let face = placement::Rect::new(at.0 - gap, at.1 - gap, size.0 + 2.0 * gap, size.1 + 2.0 * gap);
+    if !shown.encloses(&face) {
+        let both = shown.union(&face);
+        view.fit_rect(Rect::new(both.x, both.y, both.x + both.w, both.y + both.h), 0.0);
+    }
+    (at.0 as f32, at.1 as f32)
 }
 
 #[must_use]
@@ -132,9 +181,20 @@ pub fn canvas() -> Canvas {
     config.zoom.limits = ZoomLimits::new(0.15, 2.0);
     config.zoom.fit_max = Some(1.0);
     config.snap.grid = Some(SnapGrid::square(GRID_STEP));
-    config.keys = KeyMap::default()
-        .unbind(FlowAction::Undo)
-        .unbind(FlowAction::Redo);
+    config.edges.reconnectable = false;
+    config.keys = KeyMap::empty()
+        .bind(
+            KeyBinding::named(NamedKey::Delete, Modifiers::NONE),
+            FlowAction::Delete,
+        )
+        .bind(
+            KeyBinding::named(NamedKey::Backspace, Modifiers::NONE),
+            FlowAction::Delete,
+        )
+        .bind(
+            KeyBinding::named(NamedKey::Escape, Modifiers::NONE),
+            FlowAction::Escape,
+        );
     FlowHandle::with_config(Graph::new(), config)
 }
 
@@ -226,9 +286,47 @@ fn removals(set: &mut ChangeSet<(), ()>) -> (Vec<String>, Vec<String>) {
 #[derive(Clone, Copy)]
 struct Gestures {
     resized: StoredValue<HashSet<String>, LocalStorage>,
+    pending: StoredValue<Option<PendingConnection>, LocalStorage>,
+    selecting: StoredValue<Vec<NodeId>, LocalStorage>,
 }
 
-fn observe_changes(store: Store, canvas: Canvas, gestures: Gestures, changes: &[NodeChange<()>]) {
+fn attempted(pending: &PendingConnection) -> Option<Connection> {
+    let target = pending.target.as_ref()?;
+    Connection::orient(&pending.from, &target.handle, ConnectionMode::Loose)
+}
+
+fn say_refusal(store: Store, gestures: Gestures) {
+    let Some(pending) = gestures.pending.try_update_value(Option::take).flatten() else {
+        return;
+    };
+    if let Some(reason) = attempted(&pending)
+        .and_then(|connection| refusal(store, &store.graph.get_untracked(), &connection))
+    {
+        store.say(reason);
+    }
+}
+
+fn remember_pending(canvas: Canvas, gestures: Gestures) -> RenderEffect<()> {
+    RenderEffect::new(move |_| {
+        if let Some(pending) = canvas.view().pending_connection().get() {
+            gestures.pending.set_value(Some(pending));
+        }
+    })
+}
+
+fn select_pasted(canvas: Canvas, gestures: Gestures) {
+    let wanted = gestures.selecting.get_value();
+    if wanted.is_empty() {
+        return;
+    }
+    let landed = canvas.with_graph(|shown| wanted.iter().all(|id| shown.node(id).is_some()));
+    if landed {
+        gestures.selecting.set_value(Vec::new());
+        canvas.select(&wanted, &[]);
+    }
+}
+
+fn observe_changes(canvas: Canvas, gestures: Gestures, changes: &[NodeChange<()>]) {
     match canvas.view().interaction().get_untracked() {
         Interaction::Resizing => gestures.resized.update_value(|held| {
             held.extend(changes.iter().filter_map(|change| match change {
@@ -236,16 +334,6 @@ fn observe_changes(store: Store, canvas: Canvas, gestures: Gestures, changes: &[
                 _ => None,
             }));
         }),
-        Interaction::Idle => {
-            let nudged: Vec<NodeId> = changes
-                .iter()
-                .filter_map(|change| match change {
-                    NodeChange::Position { id, .. } => Some(id.clone()),
-                    _ => None,
-                })
-                .collect();
-            persist_positions(store, canvas, &nudged);
-        }
         _ => {}
     }
 }
@@ -306,7 +394,13 @@ fn events(
             remove_selection(store, nodes, edges);
             set
         })
-        .on_nodes_change(move |changes| observe_changes(store, canvas, gestures, &changes))
+        .on_nodes_change(move |changes| observe_changes(canvas, gestures, &changes))
+        .on_connect_end(move |made| {
+            if made.is_none() {
+                say_refusal(store, gestures);
+            }
+        })
+        .on_viewport_change(move |_| close_menus())
         .on_connect(move |connection| connect(store, &connection))
         .on_node_drag_stop(move |ids| persist_positions(store, canvas, &ids))
         .on_selection_change(move |change| select(store, &change.nodes))
@@ -335,7 +429,7 @@ fn copy(store: Store, canvas: Canvas, clipboard: Clipboard) -> bool {
     let count = copied.nodes.len();
     clipboard.held.set_value(Some(copied));
     clipboard.pastes.set_value(0);
-    store.say(if count == 1 {
+    store.note(if count == 1 {
         String::from("Copied 1 node")
     } else {
         format!("Copied {count} nodes")
@@ -343,7 +437,7 @@ fn copy(store: Store, canvas: Canvas, clipboard: Clipboard) -> bool {
     true
 }
 
-fn paste(store: Store, clipboard: Clipboard) -> bool {
+fn paste(store: Store, clipboard: Clipboard, gestures: Gestures) -> bool {
     let Some(held) = clipboard.held.get_value() else {
         return false;
     };
@@ -358,6 +452,9 @@ fn paste(store: Store, clipboard: Clipboard) -> bool {
     let (next, ids) = graph::paste_nodes(&current, &held, Position { x: step, y: step });
     store.edit_graph(move |graph| *graph = next);
     store.selected.set(ids.first().cloned());
+    gestures
+        .selecting
+        .set_value(ids.iter().map(|id| id.as_str().into()).collect());
     true
 }
 
@@ -384,12 +481,32 @@ fn follow_zoom(canvas: Canvas) -> RenderEffect<()> {
     })
 }
 
+fn refit_on_switch(store: Store, canvas: Canvas) -> RenderEffect<Option<i64>> {
+    let owed = StoredValue::new_local(false);
+    RenderEffect::new(move |shown: Option<Option<i64>>| {
+        let workspace = store.workspace.get();
+        if shown.is_some_and(|before| before != workspace) {
+            owed.set_value(true);
+        }
+        let view = canvas.view();
+        view.with_geometry(|_| ());
+        let measured = canvas.with_graph(|graph| {
+            graph.node_count() > 0 && graph.nodes().all(|node| node.measured.is_some())
+        });
+        if owed.get_value() && measured {
+            owed.set_value(false);
+            view.fit_view();
+        }
+        workspace
+    })
+}
+
 fn follow_selection(store: Store, canvas: Canvas) -> RenderEffect<()> {
     RenderEffect::new(move |_| {
         let wanted = store.selected.get();
         let held = canvas.selected_nodes();
         let same = match &wanted {
-            Some(id) => held.len() == 1 && held[0].as_str() == id,
+            Some(id) => held.iter().any(|shown| shown.as_str() == id),
             None => held.is_empty(),
         };
         if !same {
@@ -400,21 +517,28 @@ fn follow_selection(store: Store, canvas: Canvas) -> RenderEffect<()> {
 }
 
 pub fn pane(store: Store, canvas: Canvas) -> impl IntoView {
+    let gestures = Gestures {
+        resized: StoredValue::new_local(HashSet::new()),
+        pending: StoredValue::new_local(None),
+        selecting: StoredValue::new_local(Vec::new()),
+    };
+    let remembering = remember_pending(canvas, gestures);
+    on_cleanup_local(move || drop(remembering));
     let syncing = RenderEffect::new(move |_| {
         let graph = store.graph.get();
         store.state.with(|_| ());
         store.channel_types.with(|_| ());
         sync(store, canvas, &graph);
+        select_pasted(canvas, gestures);
     });
     on_cleanup_local(move || drop(syncing));
     let following = follow_selection(store, canvas);
     on_cleanup_local(move || drop(following));
+    let refitting = refit_on_switch(store, canvas);
+    on_cleanup_local(move || drop(refitting));
     let zooming = follow_zoom(canvas);
     on_cleanup_local(move || drop(zooming));
     let gap = Signal::derive_local(move || grid_step(canvas.view().viewport().get().zoom));
-    let gestures = Gestures {
-        resized: StoredValue::new_local(HashSet::new()),
-    };
     let resizes = finish_resizes(store, canvas, gestures);
     on_cleanup_local(move || drop(resizes));
 
@@ -433,7 +557,7 @@ pub fn pane(store: Store, canvas: Canvas) -> impl IntoView {
         }
         let done = match chord(&ev.key_without_modifiers, ev.modifiers) {
             Some('c') => copy(store, canvas, clipboard),
-            Some('v') => paste(store, clipboard),
+            Some('v') => paste(store, clipboard, gestures),
             _ => false,
         };
         if done {
@@ -457,9 +581,48 @@ pub fn pane(store: Store, canvas: Canvas) -> impl IntoView {
     }
 }
 
-fn node_width(node: &PatchNode) -> f32 {
-    node.size
-        .map_or(graph::natural_size(node.body.kind()).w, |size| size.w)
+const AUDIO_FACE_W: f32 = 460.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CardSize {
+    width: Option<f32>,
+    min_width: Option<f32>,
+    max_width: Option<f32>,
+    min_height: f32,
+}
+
+fn card_size(store: Store, node: &PatchNode, places: &[Place]) -> CardSize {
+    let kind = node.body.kind();
+    let inputs = places
+        .iter()
+        .filter(|place| place.direction == PortDirection::In)
+        .count();
+    let (_, min_height) = graph::min_size(kind, inputs, places.len() - inputs);
+    let audio = match &node.body {
+        NodeBody::Channel(channel) => store
+            .descriptor_of(&channel.channel_type)
+            .is_some_and(|descriptor| descriptor.has_audio),
+        _ => false,
+    };
+    sized(kind, audio, min_height)
+}
+
+fn sized(kind: &str, audio: bool, min_height: f32) -> CardSize {
+    if audio {
+        return CardSize {
+            width: Some(AUDIO_FACE_W),
+            min_width: None,
+            max_width: None,
+            min_height,
+        };
+    }
+    let fit = graph::fit_width(kind);
+    CardSize {
+        width: None,
+        min_width: fit.map(|(min, _)| min),
+        max_width: fit.map(|(_, max)| max),
+        min_height,
+    }
 }
 
 fn resizer(node: &PatchNode, places: &[Place]) -> Option<AnyView> {
@@ -493,13 +656,14 @@ fn card(store: Store, props: NodeProps<(), ()>) -> impl IntoView {
         let node = node.get_untracked()?;
         Some(faces::face(store, &node))
     };
-    let width = move || {
-        node.with(|node| {
-            node.as_ref()
-                .filter(|node| !graph::is_resizable(node.body.kind()))
-                .map(|node| format!("{:.0}px", node_width(node)))
-        })
-    };
+    let sized = Memo::new(move |_| {
+        node.with(|node| node.as_ref().map(|node| card_size(store, node, &places.get())))
+    });
+    let px = |value: Option<f32>| value.map(|value| format!("{value:.0}px"));
+    let width = move || px(sized.get().and_then(|size| size.width));
+    let min_width = move || px(sized.get().and_then(|size| size.min_width));
+    let max_width = move || px(sized.get().and_then(|size| size.max_width));
+    let min_height = move || px(sized.get().map(|size| size.min_height));
     let category = node.with_untracked(|node| {
         node.as_ref()
             .map_or("", |node| node::category_class(node.body.category()))
@@ -511,8 +675,21 @@ fn card(store: Store, props: NodeProps<(), ()>) -> impl IntoView {
         let id = id.clone();
         move || remove_selection(store, vec![id.clone()], Vec::new())
     };
+    let chosen = id.clone();
     view! {
-        column(class = "node", attr:data-category = category, style:width = width) {
+        column(
+            on:pointer_down:capture = move |_| {
+                if store.selected.get_untracked().as_deref() != Some(chosen.as_str()) {
+                    store.selected.set(Some(chosen.clone()));
+                }
+            },
+            class = "node",
+            attr:data-category = category,
+            style:width = width,
+            style:min-width = min_width,
+            style:max-width = max_width,
+            style:min-height = min_height
+        ) {
             DragHandle(class = "node__grip") {
                 {header::header(store, id, remove)}
             }
@@ -619,6 +796,16 @@ mod tests {
             None
         );
         assert_eq!(chord(&key("x"), Modifiers::CONTROL), None);
+    }
+
+    #[test]
+    fn an_audio_channel_gets_the_wider_face_and_others_fit_their_content() {
+        assert_eq!(sized("channel", true, 80.0).width, Some(AUDIO_FACE_W));
+        let decoder = sized("channel", false, 80.0);
+        assert_eq!((decoder.min_width, decoder.max_width), (Some(420.0), Some(440.0)));
+        let scope = sized("scope", false, 80.0);
+        assert_eq!((scope.width, scope.min_width), (None, None));
+        assert_eq!(scope.min_height, 80.0);
     }
 
     #[test]

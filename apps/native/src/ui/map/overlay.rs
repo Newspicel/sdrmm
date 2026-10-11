@@ -3,10 +3,12 @@ use zgui::{
     elements::{kurbo, kurbo::Shape as _},
 };
 
+pub use super::raster::Image;
 use super::{
     geo::{Geo, View},
     heat::{self, Ramp},
     paint::solid,
+    raster,
 };
 
 pub const EDGE: u32 = 0x16_18_1b;
@@ -22,6 +24,7 @@ pub struct Heat {
     pub intensity: Stops,
     pub opacity: Stops,
     pub ramp: Ramp,
+    pub max_zoom: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,6 +54,7 @@ pub struct Dot {
     pub stroke_width: f64,
     pub pick: Option<String>,
     pub min_zoom: f64,
+    pub fade: Stops,
 }
 
 impl Dot {
@@ -65,7 +69,16 @@ impl Dot {
             stroke_width: 1.0,
             pick: None,
             min_zoom: 0.0,
+            fade: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn opacity(&self, zoom: f64) -> f32 {
+        if self.fade.is_empty() {
+            return self.alpha;
+        }
+        self.alpha * heat::interpolate(&self.fade, zoom).clamp(0.0, 1.0) as f32
     }
 }
 
@@ -85,18 +98,26 @@ pub struct Mark {
     pub colour: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ink {
+    Ground,
+    Fixed { text: u32, halo: u32 },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Label {
     pub key: String,
     pub at: Geo,
     pub text: String,
-    pub colour: u32,
+    pub ink: Ink,
+    pub bold: bool,
     pub below_px: f64,
     pub min_zoom: f64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Overlay {
+    pub images: Vec<Image>,
     pub heat: Vec<Heat>,
     pub polygons: Vec<Polygon>,
     pub lines: Vec<Line>,
@@ -107,6 +128,7 @@ pub struct Overlay {
 
 impl Overlay {
     pub fn extend(&mut self, other: Self) {
+        self.images.extend(other.images);
         self.heat.extend(other.heat);
         self.polygons.extend(other.polygons);
         self.lines.extend(other.lines);
@@ -132,7 +154,10 @@ fn polyline(points: &[(f64, f64)], close: bool) -> kurbo::BezPath {
 }
 
 pub fn draw(scene: &mut CanvasScene, view: &View, overlay: &Overlay) {
-    for heat in &overlay.heat {
+    for image in &overlay.images {
+        raster::draw(scene, view, image);
+    }
+    for heat in overlay.heat.iter().filter(|heat| view.zoom < heat.max_zoom) {
         draw_heat(scene, view, heat);
     }
     for polygon in &overlay.polygons {
@@ -160,7 +185,7 @@ pub fn draw(scene: &mut CanvasScene, view: &View, overlay: &Overlay) {
         let (x, y) = view.screen(dot.at);
         let radius = heat::interpolate(&dot.radius, view.zoom);
         let path = kurbo::Circle::new((x, y), radius).to_path(0.1);
-        let mut shape = ShapeBuilder::new(path).fill(solid(dot.fill, dot.alpha));
+        let mut shape = ShapeBuilder::new(path).fill(solid(dot.fill, dot.opacity(view.zoom)));
         if dot.stroke_width > 0.0 {
             shape = shape.stroke(solid(dot.stroke, 1.0), dot.stroke_width);
         }
@@ -327,7 +352,8 @@ pub fn pick(overlay: &Overlay, view: &View, sx: f64, sy: f64) -> Option<String> 
 pub struct Placed {
     pub key: String,
     pub text: String,
-    pub colour: u32,
+    pub ink: Ink,
+    pub bold: bool,
     pub x: f64,
     pub y: f64,
 }
@@ -345,7 +371,8 @@ pub fn placed_labels(overlay: &Overlay, view: &View, cap: usize) -> Vec<Placed> 
             inside.then(|| Placed {
                 key: label.key.clone(),
                 text: label.text.clone(),
-                colour: label.colour,
+                ink: label.ink,
+                bold: label.bold,
                 x,
                 y: y + label.below_px,
             })
@@ -403,7 +430,8 @@ mod tests {
             key: key.to_owned(),
             at,
             text: key.to_owned(),
-            colour: WHITE,
+            ink: Ink::Ground,
+            bold: false,
             below_px: 10.0,
             min_zoom: 0.0,
         };
@@ -418,5 +446,18 @@ mod tests {
         assert_eq!(placed.len(), 1);
         assert_eq!(placed[0].key, "in");
         assert!((placed[0].y - 160.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_dot_fades_in_over_its_zoom_stops() {
+        let plain = Dot::plain(Geo::new(0.0, 0.0), 2.0, WHITE);
+        assert_eq!(plain.opacity(3.0), 1.0);
+        let fading = Dot {
+            fade: vec![(13.0, 0.0), (15.0, 0.9)],
+            ..plain
+        };
+        assert_eq!(fading.opacity(12.0), 0.0);
+        assert!((fading.opacity(14.0) - 0.45).abs() < 1e-6);
+        assert!((fading.opacity(18.0) - 0.9).abs() < 1e-6);
     }
 }

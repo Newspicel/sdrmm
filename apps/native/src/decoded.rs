@@ -6,6 +6,8 @@ use std::{
 use sdrmm_wire::decode::{DecodedRecord, DecoderEvent};
 use serde_json::Value;
 
+use crate::decoders::views::{with_lora_position, with_remote_id_state};
+
 pub const RING_CAPACITY: usize = 2000;
 pub const BROADCAST_DATA_CAPACITY: usize = 8;
 pub const STATION_CAPACITY: usize = 1000;
@@ -168,15 +170,30 @@ pub fn station_id(event: &DecoderEvent) -> Option<String> {
         DecoderEvent::Pocsag(page) => Some(page.address.to_string()),
         DecoderEvent::Flex(page) => Some(page.address.to_string()),
         DecoderEvent::Ermes(page) => Some(page.local_address.to_string()),
+        DecoderEvent::Eot(message) => Some(message.unit_address.to_string()),
         DecoderEvent::Rds(update) => update.pi.clone(),
         DecoderEvent::Dect(frame) => frame.identity.as_ref().map(|id| id.rfpi.clone()),
         DecoderEvent::Df(bearing) => bearing.station_id.clone(),
+        DecoderEvent::Ble(advert) => advert.station(),
+        DecoderEvent::Radiosonde(frame) => Some(frame.serial.clone()),
+        DecoderEvent::Lora(frame) => frame.station(),
+        DecoderEvent::RemoteId(frame) => Some(frame.station()),
+        DecoderEvent::Radar(track) => track.icao.clone(),
         _ => None,
     }
 }
 
 #[must_use]
 pub fn merge_forward(previous: &DecoderEvent, next: &DecoderEvent) -> DecoderEvent {
+    match (previous, next) {
+        (DecoderEvent::Lora(previous), DecoderEvent::Lora(next)) => {
+            return DecoderEvent::Lora(with_lora_position(previous, next));
+        }
+        (DecoderEvent::RemoteId(previous), DecoderEvent::RemoteId(next)) => {
+            return DecoderEvent::RemoteId(with_remote_id_state(previous, next));
+        }
+        _ => {}
+    }
     let (Ok(Value::Object(mut older)), Ok(Value::Object(newer))) =
         (serde_json::to_value(previous), serde_json::to_value(next))
     else {

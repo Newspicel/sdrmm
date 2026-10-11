@@ -7,7 +7,7 @@ use crate::{
     shell::about::{group_components, summary_line},
     store::Store,
     ui::{
-        dialogs::frame,
+        dialogs::{Loaded, frame, legend, load, title},
         files::open_link,
         kit_shell::{Entry, button, entry},
         shell::Shell,
@@ -28,32 +28,17 @@ const SHEET: &str = css!(
 .about__text:hover { color: var(--accent); }
 .about__note { font-size: 11px; color: var(--ink-dim); }
 .about__filter { align-items: center; gap: 12px; margin-top: 6px; }
+.about__search { display: flex; flex: 0 0 192px; width: 192px; }
 .about__overlay { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 5; flex-direction: column; gap: 10px; padding: 16px; border-radius: 8px; background-color: var(--panel); }
 .about__frame { position: relative; flex-direction: column; gap: 8px; min-height: 0; }
 "#
 );
 
-type Loaded<T> = RwSignal<Option<Result<Arc<T>, String>>>;
-
-fn fetch<T: serde::de::DeserializeOwned + Send + Sync + 'static>(
-    store: Store,
-    path: String,
-    into: Loaded<T>,
-) {
-    zgui::task::spawn_local(async move {
-        let result = store.api().get::<T>(&path).await;
-        into.set(Some(
-            result.map(Arc::new).map_err(|error| error.to_string()),
-        ));
-    });
-}
-
 pub fn dialog(store: Store, shell: Shell) -> impl IntoView {
     install_stylesheet("shell-about", SHEET);
-    let about: Loaded<AboutResponse> = RwSignal::new(None);
-    fetch(store, String::from("/api/about"), about);
+    let about: Loaded<AboutResponse> = load(store, String::from("/api/about"));
     let reading = RwSignal::new(None::<String>);
-    let title = move || match about.get() {
+    let heading = move || match about.get() {
         Some(Ok(about)) => format!("SDR-- {}", about.version),
         _ => String::from("SDR--"),
     };
@@ -71,8 +56,8 @@ pub fn dialog(store: Store, shell: Shell) -> impl IntoView {
     };
     frame(
         "wide",
-        title,
-        view! { text(class = "legend") {{aside}} },
+        move || title(heading()),
+        move || legend(aside()),
         view! {
             column(class = "about__frame") {
                 {body}
@@ -144,7 +129,7 @@ fn contents(
         row(class = "about__filter") {
             text(class = "about__section") {{format!("Third-party components ({count})")}}
             spacer() {}
-            {entry(Entry::new(query, "Filter by name or license").narrow(), || {}, || {})}
+            box(class = "about__search") {{entry(Entry::new(query, "Filter by name or license"), || {}, || {})}}
         }
         text(class = "legend") {{summary}}
         {groups}
@@ -182,11 +167,13 @@ fn component_row(
             } else {
                 String::from("text")
             };
+            let read = format!("Read license text {} for {}", at + 1, component.name);
             AnyView::new(view! {
                 control(
                     class = "about__text",
                     tabindex = Focus::Sequential,
                     a11y:role = Role::Button,
+                    a11y:label = read,
                     on:click:stop = move |_| reading.set(Some(id.clone()))
                 ) {
                     {label}
@@ -205,8 +192,7 @@ fn component_row(
 }
 
 fn license_text(store: Store, id: String, reading: RwSignal<Option<String>>) -> impl IntoView {
-    let text: Loaded<LicenseTextResponse> = RwSignal::new(None);
-    fetch(store, format!("/api/about/licenses/{id}"), text);
+    let text: Loaded<LicenseTextResponse> = load(store, format!("/api/about/licenses/{id}"));
     let shown = move || match text.get() {
         Some(Ok(license)) => license.text.clone(),
         Some(Err(_)) => String::from("Could not load this license text."),

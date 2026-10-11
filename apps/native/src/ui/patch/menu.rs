@@ -1,9 +1,9 @@
 use sdrmm_wire::patch::NodeBody;
-use zgui::prelude::*;
+use zgui::{prelude::*, reactive::RenderEffect};
 use zgui_flow::prelude::Point;
 
-use super::{Canvas, graph, remove_selection};
-use crate::store::Store;
+use super::{Canvas, graph};
+use crate::{shell::rack_grid, store::Store, ui::faces::channel::picker};
 
 const SHEET: &str = css!(
     r#"
@@ -55,9 +55,13 @@ pub struct Menu {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
     AddHere,
-    DeleteWire,
-    DeleteNode,
+    Replace,
+    ShowFull,
+    LeaveFull,
+    Pin,
+    Unpin,
     ResetSize,
+    DeleteWire,
     Fit,
 }
 
@@ -65,46 +69,85 @@ impl Action {
     const fn label(self) -> &'static str {
         match self {
             Self::AddHere => "Add node here",
-            Self::DeleteWire => "Delete wire",
-            Self::DeleteNode => "Delete node",
+            Self::Replace => "Replace with\u{2026}",
+            Self::ShowFull => "Show full screen",
+            Self::LeaveFull => "Leave full screen",
+            Self::Pin => "Pin to the rack",
+            Self::Unpin => "Unpin from the rack",
             Self::ResetSize => "Reset size",
+            Self::DeleteWire => "Delete wire",
             Self::Fit => "Fit the patch on screen",
         }
     }
 
     const fn danger(self) -> bool {
-        matches!(self, Self::DeleteWire | Self::DeleteNode)
+        matches!(self, Self::DeleteWire)
     }
 }
 
-fn actions(store: Store, target: &Target) -> Vec<Action> {
+const ITEM_PX: f64 = 28.0;
+const MENU_W: f64 = 208.0;
+const EDGE_PX: f64 = 4.0;
+
+#[must_use]
+pub fn within(start: f64, extent: f64, low: f64, high: f64) -> f64 {
+    start.min(high - extent - EDGE_PX).max(low + EDGE_PX)
+}
+
+fn node_actions(store: Store, id: &str) -> Vec<Action> {
+    let graph = store.graph.get_untracked();
+    let Some(node) = graph.node(id) else {
+        return Vec::new();
+    };
     let mut listed = Vec::new();
-    match target {
-        Target::Pane => listed.push(Action::AddHere),
-        Target::Edge(_) => listed.push(Action::DeleteWire),
-        Target::Node(id) => {
-            let graph = store.graph.get_untracked();
-            if let Some(node) = graph.node(id) {
-                if node.size.is_some() && graph::is_resizable(node.body.kind()) {
-                    listed.push(Action::ResetSize);
-                }
-                listed.push(Action::DeleteNode);
-            }
-        }
+    if matches!(node.body, NodeBody::Channel(_)) {
+        listed.push(Action::Replace);
     }
+    listed.push(if store.expanded.get_untracked().as_deref() == Some(id) {
+        Action::LeaveFull
+    } else {
+        Action::ShowFull
+    });
+    listed.push(if rack_grid::is_pinned(&store.rack.get_untracked(), id) {
+        Action::Unpin
+    } else {
+        Action::Pin
+    });
+    if node.size.is_some() && graph::is_resizable(node.body.kind()) {
+        listed.push(Action::ResetSize);
+    }
+    listed
+}
+
+fn actions(store: Store, target: &Target) -> Vec<Action> {
+    let mut listed = match target {
+        Target::Pane => vec![Action::AddHere],
+        Target::Edge(_) => vec![Action::DeleteWire],
+        Target::Node(id) => node_actions(store, id),
+    };
     listed.push(Action::Fit);
     listed
 }
 
-fn run(store: Store, canvas: Canvas, menu: &Menu, action: Action) {
+fn run(
+    store: Store,
+    canvas: Canvas,
+    menu: &Menu,
+    action: Action,
+    replacing: RwSignal<Option<String>>,
+) {
     match (action, &menu.target) {
         (Action::AddHere, _) => store.open_palette_at(menu.flow.x as f32, menu.flow.y as f32),
         (Action::DeleteWire, Target::Edge(id)) => {
             let key = id.clone();
             store.edit_graph(move |graph| *graph = graph::remove_edges(graph, &[key]));
         }
-        (Action::DeleteNode, Target::Node(id)) => {
-            remove_selection(store, vec![id.clone()], Vec::new());
+        (Action::Replace, Target::Node(id)) => replacing.set(Some(id.clone())),
+        (Action::ShowFull, Target::Node(id)) => store.expanded.set(Some(id.clone())),
+        (Action::LeaveFull, _) => store.expanded.set(None),
+        (Action::Pin | Action::Unpin, Target::Node(id)) => {
+            let id = id.clone();
+            store.edit_rack(move |rack| rack_grid::toggle_pin(rack, &id));
         }
         (Action::ResetSize, Target::Node(id)) => {
             let id = id.clone();
@@ -119,43 +162,68 @@ fn run(store: Store, canvas: Canvas, menu: &Menu, action: Action) {
     }
 }
 
+fn placed(canvas: Canvas, menu: &Menu, items: usize, hint: bool) -> (f64, f64) {
+    let view = canvas.view();
+    let origin = view.pane_origin();
+    let size = view.pane_size().get_untracked();
+    let height = ITEM_PX * items as f64 + if hint { 24.0 } else { 8.0 };
+    (
+        within(menu.window.x, MENU_W, origin.x, origin.x + size.width),
+        within(menu.window.y, height, origin.y, origin.y + size.height),
+    )
+}
+
+fn replace_view(store: Store, replacing: RwSignal<Option<String>>) -> impl IntoView {
+    move || {
+        replacing.get().map(|node| {
+            AnyView::new(picker::replace_decoder(store, node, move || replacing.set(None)))
+        })
+    }
+}
+
+fn item(
+    store: Store,
+    canvas: Canvas,
+    open: RwSignal<Option<Menu>>,
+    replacing: RwSignal<Option<String>>,
+    chosen: Menu,
+    action: Action,
+) -> AnyView {
+    AnyView::new(view! {
+        control(
+            class = "canvas-menu__item",
+            class:danger = action.danger(),
+            a11y:role = Role::MenuItem,
+            on:click = move |_| {
+                open.set(None);
+                run(store, canvas, &chosen, action, replacing);
+            }
+        ) {{action.label()}}
+    })
+}
+
 pub fn view(store: Store, canvas: Canvas, open: RwSignal<Option<Menu>>) -> impl IntoView {
     install_stylesheet("canvas-menu", SHEET);
-    move || {
+    let replacing = RwSignal::new(None::<String>);
+    let menu = move || {
         open.get().map(|menu| {
-            let shows_hint = matches!(menu.target, Target::Node(_) | Target::Edge(_));
-            let is_channel = match &menu.target {
-                Target::Node(id) => store
-                    .graph
-                    .get_untracked()
-                    .node(id)
-                    .is_some_and(|node| matches!(node.body, NodeBody::Channel(_))),
-                _ => false,
-            };
-            let listed = menu.clone();
+            let hint = matches!(menu.target, Target::Node(_));
+            let listed = actions(store, &menu.target);
+            let (left, top) = placed(canvas, &menu, listed.len(), hint);
+            let chosen = menu.clone();
             let items = move || -> Vec<AnyView> {
-                actions(store, &listed.target)
-                .into_iter()
-                .map(|action| {
-                    let chosen = listed.clone();
-                    AnyView::new(view! {
-                        control(
-                            class = "canvas-menu__item",
-                            class:danger = action.danger(),
-                            on:click = move |_| {
-                                open.set(None);
-                                run(store, canvas, &chosen, action);
-                            }
-                        ) {{action.label()}}
-                    })
-                })
-                .collect()
+                listed
+                    .iter()
+                    .map(|action| item(store, canvas, open, replacing, chosen.clone(), *action))
+                    .collect()
             };
-            let hint = if is_channel {
-                "m and M cycle the analog modes. Backspace deletes."
-            } else {
-                "Backspace deletes the selection."
-            };
+            let field = NodeRef::new();
+            let focus = RenderEffect::new(move |_| {
+                if field.get().is_some() {
+                    field.focus();
+                }
+            });
+            on_cleanup_local(move || drop(focus));
             AnyView::new(view! {
                 Portal(layer = OverlayLayer::Popover) {
                     box(
@@ -164,17 +232,31 @@ pub fn view(store: Store, canvas: Canvas, open: RwSignal<Option<Menu>>) -> impl 
                         on:pointer_down = move |_: &mut EventCx<'_, events::PointerDown>| open.set(None)
                     )
                     column(
+                        node_ref = field,
                         class = "canvas-menu",
-                        style:left = Some(format!("{:.0}px", menu.window.x)),
-                        style:top = Some(format!("{:.0}px", menu.window.y)),
-                        on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation()
+                        tabindex = Focus::Programmatic,
+                        a11y:role = Role::Menu,
+                        style:left = Some(format!("{left:.0}px")),
+                        style:top = Some(format!("{top:.0}px")),
+                        on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation(),
+                        on:key_down = move |ev: &mut EventCx<'_, events::KeyDown>| {
+                            if matches!(ev.key, Key::Named(NamedKey::Escape)) {
+                                ev.prevent_default();
+                                ev.stop_propagation();
+                                open.set(None);
+                            }
+                        }
                     ) {
                         {items()}
-                        {shows_hint.then(|| AnyView::new(view! { text(class = "canvas-menu__hint") {{hint}} }))}
+                        {hint.then(|| AnyView::new(view! { text(class = "canvas-menu__hint") {"Backspace deletes the selection: a node or a wire."} }))}
                     }
                 }
             })
         })
+    };
+    view! {
+        {menu}
+        {replace_view(store, replacing)}
     }
 }
 
@@ -182,15 +264,21 @@ pub fn view(store: Store, canvas: Canvas, open: RwSignal<Option<Menu>>) -> impl 
 mod tests {
     use super::*;
 
+    const ALL: [Action; 9] = [
+        Action::AddHere,
+        Action::Replace,
+        Action::ShowFull,
+        Action::LeaveFull,
+        Action::Pin,
+        Action::Unpin,
+        Action::ResetSize,
+        Action::DeleteWire,
+        Action::Fit,
+    ];
+
     #[test]
     fn every_action_has_a_short_label_without_dashes() {
-        for action in [
-            Action::AddHere,
-            Action::DeleteWire,
-            Action::DeleteNode,
-            Action::ResetSize,
-            Action::Fit,
-        ] {
+        for action in ALL {
             let label = action.label();
             assert!(!label.is_empty() && label.len() < 32);
             assert!(!label.contains('\u{2014}'));
@@ -198,9 +286,16 @@ mod tests {
     }
 
     #[test]
-    fn only_deletions_are_dangerous() {
-        assert!(Action::DeleteWire.danger());
-        assert!(Action::DeleteNode.danger());
-        assert!(!Action::Fit.danger());
+    fn only_deleting_a_wire_is_dangerous() {
+        for action in ALL {
+            assert_eq!(action.danger(), action == Action::DeleteWire);
+        }
+    }
+
+    #[test]
+    fn the_menu_stays_inside_the_pane() {
+        assert_eq!(within(50.0, 208.0, 0.0, 1000.0), 50.0);
+        assert_eq!(within(900.0, 208.0, 0.0, 1000.0), 788.0);
+        assert_eq!(within(-20.0, 208.0, 0.0, 1000.0), 4.0);
     }
 }

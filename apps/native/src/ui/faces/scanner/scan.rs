@@ -1,5 +1,5 @@
 use sdrmm_wire::{
-    scan::{ScanRange, ScannerStatus},
+    scan::{ScanRange, ScanSettings, ScannerStatus},
     state::DeviceSet,
 };
 
@@ -32,29 +32,62 @@ impl RangeValues {
     }
 }
 
-pub fn parse_ranges(inputs: &[RangeValues]) -> Result<Vec<ScanRange>, String> {
-    let many = inputs.len() > 1;
-    let mut ranges = Vec::with_capacity(inputs.len());
-    for (index, input) in inputs.iter().enumerate() {
-        if input.stop_mhz < input.start_mhz {
-            let line = if many {
-                format!("range {}: ", index + 1)
-            } else {
-                String::new()
-            };
-            return Err(format!("{line}the stop frequency is below the start"));
-        }
-        ranges.push(input.wire());
+#[must_use]
+pub fn range_problem(settings: &ScanSettings) -> Option<String> {
+    if settings.ranges.is_empty() && settings.frequencies.is_empty() {
+        return Some(String::from("add a range"));
     }
-    if ranges.is_empty() {
-        return Err(String::from("add at least one range"));
-    }
-    Ok(ranges)
+    let reversed = settings
+        .ranges
+        .iter()
+        .position(|range| range.stop_hz < range.start_hz)?;
+    let line = if settings.ranges.len() > 1 {
+        format!("range {}: ", reversed + 1)
+    } else {
+        String::new()
+    };
+    Some(format!("{line}the stop frequency is below the start"))
 }
 
-pub fn check_ranges(ranges: &[ScanRange]) -> Result<Vec<ScanRange>, String> {
-    let values: Vec<RangeValues> = ranges.iter().map(RangeValues::of).collect();
-    parse_ranges(&values)
+#[must_use]
+pub fn scan_targets(settings: &ScanSettings) -> u64 {
+    target_count(&settings.ranges) + settings.frequencies.len() as u64
+}
+
+#[must_use]
+pub fn with_hz(list: &[f64], hz: f64) -> Vec<f64> {
+    let mut next = list.to_vec();
+    if !next.contains(&hz) {
+        next.push(hz);
+        next.sort_by(f64::total_cmp);
+    }
+    next
+}
+
+#[must_use]
+pub fn without_hz(list: &[f64], hz: f64) -> Vec<f64> {
+    list.iter().copied().filter(|held| *held != hz).collect()
+}
+
+fn trimmed_mhz(hz: f64) -> String {
+    let fixed = format!("{:.6}", hz / 1e6);
+    fixed.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+#[must_use]
+pub fn range_value(range: &ScanRange) -> String {
+    format!(
+        "{}-{} MHz",
+        trimmed_mhz(range.start_hz),
+        trimmed_mhz(range.stop_hz)
+    )
+}
+
+#[must_use]
+pub fn range_title(index: usize, range: &ScanRange) -> String {
+    let step = format!("{:.3}", range.step_hz / 1e3);
+    let step = step.trim_end_matches('0').trim_end_matches('.');
+    format!("Range {}, every {step} kHz", index + 1)
 }
 
 #[must_use]
@@ -143,34 +176,62 @@ mod tests {
     #[test]
     fn the_editor_units_become_whole_wire_hertz() {
         assert_eq!(
-            parse_ranges(&[values(145.6, 145.8, 12.5)]),
-            Ok(vec![range(145_600_000.0, 145_800_000.0, 12_500.0)])
-        );
-        assert_eq!(
-            parse_ranges(&[values(433.075, 434.79, 8.33)]),
-            Ok(vec![range(433_075_000.0, 434_790_000.0, 8_330.0)])
+            values(433.075, 434.79, 8.33).wire(),
+            range(433_075_000.0, 434_790_000.0, 8_330.0)
         );
     }
 
-    #[test]
-    fn what_no_single_field_catches_is_refused() {
-        let backwards = parse_ranges(&[values(146.0, 145.0, 12.5)]);
-        assert!(backwards.is_err_and(|error| error.contains("below the start")));
-        let empty = parse_ranges(&[]);
-        assert!(empty.is_err_and(|error| error.contains("at least one range")));
+    fn settings(ranges: Vec<ScanRange>, frequencies: Vec<f64>) -> ScanSettings {
+        ScanSettings {
+            ranges,
+            frequencies,
+            ..ScanSettings::for_channel(1)
+        }
     }
 
     #[test]
-    fn the_offending_line_is_named_when_there_are_several() {
-        let parsed = parse_ranges(&[values(145.6, 145.8, 12.5), values(2.0, 1.0, 25.0)]);
-        assert!(parsed.is_err_and(|error| error.starts_with("range 2: ")));
-    }
-
-    #[test]
-    fn a_new_scanner_starts_on_a_range_that_parses() {
+    fn a_scan_needs_a_range_or_a_listed_frequency() {
         assert_eq!(
-            check_ranges(&[DEFAULT_SCAN_RANGE]),
-            Ok(vec![DEFAULT_SCAN_RANGE])
+            range_problem(&settings(vec![], vec![])).as_deref(),
+            Some("add a range")
+        );
+        assert_eq!(range_problem(&settings(vec![], vec![446e6])), None);
+        assert_eq!(
+            range_problem(&settings(vec![DEFAULT_SCAN_RANGE], vec![])),
+            None
+        );
+    }
+
+    #[test]
+    fn a_reversed_range_is_named_when_there_are_several() {
+        let one = settings(vec![range(146e6, 145e6, 12_500.0)], vec![]);
+        assert_eq!(
+            range_problem(&one).as_deref(),
+            Some("the stop frequency is below the start")
+        );
+        let two = settings(vec![DEFAULT_SCAN_RANGE, range(2.0, 1.0, 25.0)], vec![]);
+        assert!(range_problem(&two).is_some_and(|said| said.starts_with("range 2: ")));
+    }
+
+    #[test]
+    fn listed_frequencies_add_to_the_targets() {
+        let held = settings(vec![range(100.0, 200.0, 50.0)], vec![1.0, 2.0]);
+        assert_eq!(scan_targets(&held), 5);
+    }
+
+    #[test]
+    fn frequency_lists_stay_sorted_and_unique() {
+        assert_eq!(with_hz(&[3.0, 1.0], 2.0), vec![1.0, 2.0, 3.0]);
+        assert_eq!(with_hz(&[1.0], 1.0), vec![1.0]);
+        assert_eq!(without_hz(&[1.0, 2.0], 1.0), vec![2.0]);
+    }
+
+    #[test]
+    fn a_range_reads_short_with_its_step_in_the_tooltip() {
+        assert_eq!(range_value(&DEFAULT_SCAN_RANGE), "145.6-145.8 MHz");
+        assert_eq!(
+            range_title(0, &DEFAULT_SCAN_RANGE),
+            "Range 1, every 12.5 kHz"
         );
     }
 

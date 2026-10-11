@@ -11,7 +11,7 @@ use crate::{
     store::Store,
     ui::{
         faces::device::radio::{LOOP_SETTING, Radio},
-        kit_sources::{debounced, icon_button, icons, units},
+        kit_sources::{debounced, icons, titled_icon_button, units},
         widgets::slide,
     },
 };
@@ -74,6 +74,17 @@ fn drive(store: Store, set: u32, action: PlaybackAction, position_samples: Optio
         }
         store.refresh_state();
     });
+}
+
+#[must_use]
+pub fn loop_title(looping: bool, at_end: bool) -> &'static str {
+    if looping {
+        "Looping: replays from the start"
+    } else if at_end {
+        "At the end: turn looping on, or stop and play again"
+    } else {
+        "Plays once, then holds silent"
+    }
 }
 
 pub fn transport(radio: Radio) -> impl IntoView {
@@ -142,15 +153,20 @@ pub fn transport(radio: Radio) -> impl IntoView {
         )
     };
     let playing = Signal::derive(move || !paused.get());
+    let at_end = Signal::derive(move || {
+        status.get().is_some_and(|status| {
+            status.total_samples > 0 && position.get() >= status.total_samples as f64
+        })
+    });
     view! {
         row(class = "kit-transport") {
             {move || {
                 let label = if paused.get() { "Play" } else { "Pause" };
                 let svg = if paused.get() { icons::PLAY } else { icons::PAUSE };
-                icon_button(svg, label, playing, Signal::stored(false), move || act(if paused.get_untracked() { PlaybackAction::Play } else { PlaybackAction::Pause }))
+                titled_icon_button(svg, label, move || label.to_owned(), playing, Signal::stored(false), move || act(if paused.get_untracked() { PlaybackAction::Play } else { PlaybackAction::Pause }))
             }}
-            {icon_button(icons::STOP, "Stop", Signal::stored(false), Signal::stored(false), move || act(PlaybackAction::Stop))}
-            {icon_button(icons::LOOP, "Loop", looping, Signal::stored(false), move || {
+            {titled_icon_button(icons::STOP, "Stop", || "Stop and return to the start".to_owned(), Signal::stored(false), Signal::stored(false), move || act(PlaybackAction::Stop))}
+            {titled_icon_button(icons::LOOP, "Loop", move || loop_title(looping.get(), at_end.get()).to_owned(), looping, Signal::stored(false), move || {
                 radio.patch(DeviceSettings {
                     extra: vec![ExtraValue { name: LOOP_SETTING.to_owned(), value: serde_json::Value::Bool(!looping.get_untracked()) }],
                     ..DeviceSettings::default()
@@ -230,6 +246,13 @@ mod tests {
     fn samples_convert_at_the_rate_of_the_set() {
         assert_eq!(samples_to_seconds(96_000.0, 48_000.0), 2.0);
         assert_eq!(samples_to_seconds(96_000.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn the_loop_button_says_what_happens_at_the_end() {
+        assert!(loop_title(true, true).starts_with("Looping"));
+        assert!(loop_title(false, true).starts_with("At the end"));
+        assert!(loop_title(false, false).starts_with("Plays once"));
     }
 
     #[test]

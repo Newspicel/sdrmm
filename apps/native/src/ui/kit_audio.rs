@@ -1,26 +1,36 @@
 use std::time::Duration;
 
+use zgui_ui::prelude::*;
+
 use sdrmm_wire::{
     channel::ChannelInfo,
-    device::{DeviceSettings, ExtraValue},
     patch::NodeBody,
-    rest::{PlaybackAction, PlaybackRequest},
-    state::{AudioRecordingStatus, DeviceSet, PlaybackStatus, RecordingStatus},
+    state::{AudioRecordingStatus, RecordingStatus},
 };
 use zgui::prelude::*;
 
-use crate::{store::Store, ui::widgets::slide};
+use crate::store::Store;
 
-pub const LOOP_SETTING: &str = "loop";
+pub const DROPS_HINT: &str = "Samples lost between the radio and here";
+pub const IDLE: &str = "-";
+const TIP_DELAY: Duration = Duration::from_millis(250);
+const BYTE_DECIMALS: usize = 1;
+const SI_DECIMALS: usize = 9;
+const COMPACT: [(f64, &str); 4] = [(1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K")];
 const PREFIXES: [(f64, &str); 4] = [(1e9, "G"), (1e6, "M"), (1e3, "k"), (1.0, "")];
-const TRANSPORT_TICK: Duration = Duration::from_millis(200);
-const SEEK_SETTLE: Duration = Duration::from_millis(250);
 
 const SHEET: &str = css!(
     r#"
 .btn.danger { border-color: var(--danger); color: var(--danger); }
 .btn.primary { border-color: var(--accent); color: var(--accent); }
 .btn:disabled { opacity: 0.45; }
+.btn__dot { color: var(--danger); }
+.stats { flex: 1 1 auto; min-width: 0; flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 2px; }
+.stat { flex-direction: row; gap: 4px; align-items: baseline; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); white-space: nowrap; }
+.stat__value { color: var(--ink); font-weight: 500; }
+.stat.warn, .stat.warn .stat__value { color: oklch(0.8 0.14 85); }
+.stat.danger, .stat.danger .stat__value { color: var(--danger); }
+.rec-foot { gap: 8px; }
 .readout { flex-direction: column; gap: 3px; }
 .readout__row { flex-direction: row; gap: 8px; align-items: baseline; min-width: 0; }
 .readout__label { flex: 0 0 76px; color: var(--ink-faint); font-size: 10px; text-transform: uppercase; }
@@ -33,8 +43,6 @@ const SHEET: &str = css!(
 .lane__head { flex-direction: row; gap: 8px; align-items: center; min-width: 0; }
 .lane__name { flex: 1 1 auto; min-width: 0; font-size: 10px; text-transform: uppercase; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .transport { flex-direction: row; gap: 6px; align-items: center; }
-.transport__clock { flex: 0 0 auto; font-family: var(--mono); font-size: 10px; color: var(--ink-dim); }
-.transport .field__body { flex: 1 1 auto; min-width: 0; }
 "#
 );
 
@@ -44,6 +52,11 @@ pub fn install() {
 
 #[must_use]
 pub fn si(value: f64, unit: &str) -> String {
+    si_to(value, unit, SI_DECIMALS)
+}
+
+#[must_use]
+pub fn si_to(value: f64, unit: &str, decimals: usize) -> String {
     if !value.is_finite() {
         return format!("? {unit}");
     }
@@ -52,7 +65,7 @@ pub fn si(value: f64, unit: &str) -> String {
         .copied()
         .find(|(step, _)| value.abs() >= *step)
         .unwrap_or((1.0, ""));
-    let fixed = format!("{:.9}", value / scale);
+    let fixed = format!("{:.decimals$}", value / scale);
     let trimmed = if fixed.contains('.') {
         fixed.trim_end_matches('0').trim_end_matches('.')
     } else {
@@ -63,7 +76,23 @@ pub fn si(value: f64, unit: &str) -> String {
 
 #[must_use]
 pub fn format_bytes(bytes: u64) -> String {
-    si(bytes as f64, "B")
+    si_to(bytes as f64, "B", BYTE_DECIMALS)
+}
+
+#[must_use]
+pub fn format_count(count: u64) -> String {
+    let value = count as f64;
+    let Some(at) = COMPACT.iter().position(|(step, _)| value >= *step) else {
+        return count.to_string();
+    };
+    let mut at = at;
+    let mut shown = (value / COMPACT[at].0 * 10.0).round() / 10.0;
+    if shown >= 1_000.0 && at > 0 {
+        at -= 1;
+        shown = (value / COMPACT[at].0 * 10.0).round() / 10.0;
+    }
+    let text = format!("{shown:.1}");
+    format!("{}{}", text.trim_end_matches(".0"), COMPACT[at].1)
 }
 
 #[must_use]
@@ -117,47 +146,6 @@ pub fn recording_for<'a>(
         .audio_recordings
         .iter()
         .find(|status| status.fx == fx)
-}
-
-#[must_use]
-pub fn playback_position_at(
-    status: &PlaybackStatus,
-    elapsed_ms: f64,
-    sample_rate: f64,
-    looping: bool,
-) -> f64 {
-    let total = status.total_samples as f64;
-    let reported = (status.position_samples as f64).min(total);
-    if status.paused || sample_rate <= 0.0 || status.total_samples == 0 {
-        return reported;
-    }
-    let advanced = reported + (elapsed_ms / 1_000.0).max(0.0) * sample_rate;
-    if advanced < total {
-        advanced
-    } else if looping {
-        advanced % total
-    } else {
-        total
-    }
-}
-
-#[must_use]
-pub fn samples_to_seconds(samples: f64, sample_rate: f64) -> f64 {
-    if sample_rate > 0.0 {
-        samples / sample_rate
-    } else {
-        0.0
-    }
-}
-
-#[must_use]
-pub fn is_looping(set: &DeviceSet) -> bool {
-    set.settings
-        .extra
-        .iter()
-        .find(|extra| extra.name == LOOP_SETTING)
-        .and_then(|extra| extra.value.as_bool())
-        .unwrap_or(true)
 }
 
 pub fn ticker(every: Duration) -> RwSignal<i64> {
@@ -231,6 +219,191 @@ pub fn alert(message: impl Fn() -> Option<String> + 'static) -> impl IntoView {
     }
 }
 
+pub fn fault(message: String, detail: Option<String>) -> AnyView {
+    let shown = AnyView::new(view! {
+        text(class = "alert", a11y:role = Role::Alert) {{message}}
+    });
+    match detail {
+        Some(detail) => titled(detail, shown),
+        None => shown,
+    }
+}
+
+pub fn titled(title: impl Into<String>, child: AnyView) -> AnyView {
+    let title = Signal::stored(title.into());
+    AnyView::new(view! {
+        Tooltip(delay = TIP_DELAY) {
+            TooltipTrigger {{child}}
+            TooltipContent {{move || title.get()}}
+        }
+    })
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tone {
+    #[default]
+    Plain,
+    Warn,
+    Danger,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stat {
+    pub label: String,
+    pub value: Option<String>,
+    pub title: String,
+    pub tone: Tone,
+}
+
+impl Stat {
+    #[must_use]
+    pub fn new(
+        label: impl Into<String>,
+        value: impl Into<String>,
+        title: impl Into<String>,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            value: Some(value.into()),
+            title: title.into(),
+            tone: Tone::Plain,
+        }
+    }
+
+    #[must_use]
+    pub fn tone(mut self, tone: Tone) -> Self {
+        self.tone = tone;
+        self
+    }
+}
+
+#[must_use]
+pub fn drops_stat(drops: u64) -> Option<Stat> {
+    (drops > 0).then(|| Stat::new("Drops", format_count(drops), DROPS_HINT).tone(Tone::Warn))
+}
+
+fn stat_view(stat: Stat) -> AnyView {
+    let Stat {
+        label,
+        value,
+        title,
+        tone,
+    } = stat;
+    let shown = AnyView::new(view! {
+        row(
+            class = "stat",
+            class:warn = tone == Tone::Warn,
+            class:danger = tone == Tone::Danger
+        ) {
+            text {{label}}
+            {value.map(|value| view! { text(class = "stat__value") {{value}} })}
+        }
+    });
+    titled(title, shown)
+}
+
+pub fn stats(items: impl Fn() -> Vec<Stat> + 'static) -> impl IntoView {
+    view! {
+        row(class = "stats") {
+            {move || items().into_iter().map(stat_view).collect::<Vec<_>>()}
+        }
+    }
+}
+
+pub struct Line {
+    pub label: String,
+    pub value: String,
+    pub title: Option<String>,
+}
+
+pub fn lines(rows: impl Fn() -> Vec<Line> + 'static) -> impl IntoView {
+    let shown = move || {
+        rows()
+            .into_iter()
+            .map(|line| {
+                let value = AnyView::new(view! { text {{line.value}} });
+                let value = match line.title {
+                    Some(title) => titled(title, value),
+                    None => value,
+                };
+                view! {
+                    row(class = "readout__row") {
+                        text(class = "readout__label") {{line.label}}
+                        box(class = "readout__value") {{value}}
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    view! { column(class = "readout") {{shown}} }
+}
+
+#[must_use]
+pub fn take_line(name: String, file: Option<&str>, recording: bool) -> Line {
+    match file {
+        Some(file) => Line {
+            label: name,
+            value: file.to_owned(),
+            title: Some(file.to_owned()),
+        },
+        None => Line {
+            label: name,
+            value: String::from(if recording { "Waiting" } else { IDLE }),
+            title: None,
+        },
+    }
+}
+
+#[must_use]
+pub fn idle_file_line() -> Line {
+    Line {
+        label: String::from("File"),
+        value: String::from(IDLE),
+        title: None,
+    }
+}
+
+#[must_use]
+pub fn take_fault(name: &str, error: Option<&str>) -> Option<String> {
+    error.map(|error| format!("{name}: {error}"))
+}
+
+#[must_use]
+pub fn time_stat(seconds: Option<f64>) -> Stat {
+    Stat::new(
+        "Time",
+        seconds.map_or_else(|| IDLE.to_owned(), format_duration),
+        "Recording length",
+    )
+}
+
+#[must_use]
+pub fn written_stat(bytes: Option<u64>) -> Stat {
+    Stat::new(
+        "Written",
+        bytes.map_or_else(|| IDLE.to_owned(), format_bytes),
+        "Bytes on disk",
+    )
+}
+
+#[must_use]
+pub fn samples_stat(samples: Option<u64>) -> Stat {
+    Stat::new(
+        "Samples",
+        samples.map_or_else(|| IDLE.to_owned(), format_count),
+        "Samples written",
+    )
+}
+
+pub fn faults(messages: impl Fn() -> Vec<String> + 'static) -> impl IntoView {
+    move || {
+        messages()
+            .into_iter()
+            .map(|said| view! { text(class = "alert") {{said}} })
+            .collect::<Vec<_>>()
+    }
+}
+
 pub fn is_recording(store: Store, node: String) -> Signal<bool> {
     Signal::derive(move || {
         store
@@ -245,154 +418,57 @@ pub fn is_recording(store: Store, node: String) -> Signal<bool> {
     })
 }
 
-pub fn recorder_switch(store: Store, node: String) -> impl IntoView {
+pub fn recorder_switch(
+    store: Store,
+    node: String,
+    title: &'static str,
+    unwired: Signal<Option<&'static str>>,
+) -> impl IntoView {
     let recording = is_recording(store, node.clone());
-    button(
-        move || {
-            String::from(if recording.get() {
-                "Stop"
-            } else {
-                "\u{25cf} Record"
-            })
-        },
-        recording,
-        Signal::stored(false),
-        move || {
-            let next = !recording.get_untracked();
-            edit_body(store, &node, |body| match body {
-                NodeBody::Recorder(recorder) | NodeBody::BasebandRecorder(recorder) => {
-                    recorder.recording = next;
-                }
-                NodeBody::AudioRecorder(recorder) => recorder.recording = next,
-                _ => {}
-            });
-        },
-    )
-}
-
-fn drive_playback(store: Store, set: u32, action: PlaybackAction, position: Option<u64>) {
-    let request = PlaybackRequest {
-        action,
-        position_samples: position,
-    };
-    zgui::task::spawn_local(async move {
-        let path = format!("/api/devicesets/{set}/playback");
-        if let Err(error) = store.api().post::<_, PlaybackStatus>(&path, &request).await {
-            store.say(format!("cannot drive playback: {error}"));
-        }
-        store.refresh_state();
-    });
-}
-
-pub fn transport(store: Store, set: u32) -> impl IntoView {
-    install();
-    let device = Signal::derive(move || store.set_of(set));
-    let status = Signal::derive(move || device.get().and_then(|device| device.playback));
-    let rate = Signal::derive(move || {
-        device
-            .get()
-            .and_then(|device| device.settings.sample_rate)
-            .unwrap_or(0.0)
-    });
-    let looping = Signal::derive(move || device.get().is_none_or(|device| is_looping(&device)));
-    let now = ticker(TRANSPORT_TICK);
-    let anchor = RwSignal::new((0u64, now_ms()));
-    let scrub = RwSignal::new(None::<f64>);
-    let settle = StoredValue::new_local(None::<zgui::view::TimeoutHandle>);
-    let clock = Timers::current();
-    let anchoring = zgui::reactive::RenderEffect::new(move |_| {
-        if let Some(status) = status.get() {
-            anchor.set((status.position_samples, now_ms()));
-        }
-    });
-    on_cleanup_local(move || drop(anchoring));
-    let live = Signal::derive(move || {
-        let Some(status) = status.get() else {
-            return 0.0;
-        };
-        let (position, at) = anchor.get();
-        let moved = PlaybackStatus {
-            position_samples: position,
-            ..status
-        };
-        playback_position_at(&moved, (now.get() - at) as f64, rate.get(), looping.get())
-    });
-    let position = Signal::derive(move || scrub.get().unwrap_or_else(|| live.get()));
-    let total = Signal::derive(move || {
-        status
-            .get()
-            .map_or(1.0, |status| status.total_samples.max(1) as f64)
-    });
-    let paused = Signal::derive(move || status.get().is_none_or(|status| status.paused));
-    let seek = move |target: f64| {
-        scrub.set(Some(target));
-        let Some(clock) = clock.clone() else {
-            drive_playback(
-                store,
-                set,
-                PlaybackAction::Seek,
-                Some(target.max(0.0) as u64),
-            );
-            scrub.set(None);
-            return;
-        };
-        let handle = clock.set_timeout(SEEK_SETTLE, move || {
-            drive_playback(
-                store,
-                set,
-                PlaybackAction::Seek,
-                Some(target.max(0.0) as u64),
-            );
-            scrub.set(None);
+    let disabled = Signal::derive(move || unwired.get().is_some() && !recording.get());
+    let press = move || {
+        let next = !recording.get_untracked();
+        edit_body(store, &node, |body| match body {
+            NodeBody::Recorder(recorder) | NodeBody::BasebandRecorder(recorder) => {
+                recorder.recording = next;
+            }
+            NodeBody::AudioRecorder(recorder) => recorder.recording = next,
+            _ => {}
         });
-        settle.set_value(Some(handle));
     };
-    let read = move |at: f64| {
-        format!(
-            "{} / {}",
-            format_clock(samples_to_seconds(at, rate.get_untracked())),
-            format_clock(samples_to_seconds(
-                total.get_untracked(),
-                rate.get_untracked()
-            ))
-        )
-    };
-    view! {
-        row(class = "transport") {
-            {button(
-                move || String::from(if paused.get() { "Play" } else { "Pause" }),
-                Signal::stored(false),
-                Signal::stored(false),
-                move || {
-                    let action = if paused.get_untracked() { PlaybackAction::Play } else { PlaybackAction::Pause };
-                    drive_playback(store, set, action, None);
-                },
-            )}
-            {button(
-                || String::from("Stop"),
-                Signal::stored(false),
-                Signal::stored(false),
-                move || drive_playback(store, set, PlaybackAction::Stop, None),
-            )}
-            {button(
-                move || String::from(if looping.get() { "Loop on" } else { "Loop off" }),
-                Signal::stored(false),
-                Signal::stored(false),
-                move || {
-                    let settings = DeviceSettings {
-                        extra: vec![ExtraValue {
-                            name: LOOP_SETTING.to_owned(),
-                            value: serde_json::Value::Bool(!looping.get_untracked()),
-                        }],
-                        ..DeviceSettings::default()
-                    };
-                    store.set_device(set, settings);
-                },
-            )}
-            {move || {
-                let total = total.get();
-                AnyView::new(slide(position, 0.0, total, read, seek.clone()))
-            }}
+    let press = std::rc::Rc::new(press);
+    move || {
+        let press = press.clone();
+        let switch = AnyView::new(view! {
+            control(
+                class = "btn",
+                class:danger = recording,
+                state:disabled = disabled,
+                tabindex = Focus::Sequential,
+                a11y:role = Role::Button,
+                on:pointer_down:stop = move |_| {},
+                on:click:stop = move |_| {
+                    if !disabled.get_untracked() {
+                        press();
+                    }
+                }
+            ) {
+                {move || if recording.get() {
+                    AnyView::new("Stop")
+                } else {
+                    AnyView::new(view! {
+                        row(class = "transport") {
+                            text(class = "btn__dot") {"\u{25cf}"}
+                            text {"Record"}
+                        }
+                    })
+                }}
+            }
+        });
+        if recording.get() {
+            switch
+        } else {
+            titled(unwired.get().unwrap_or(title), switch)
         }
     }
 }
@@ -400,14 +476,6 @@ pub fn transport(store: Store, set: u32) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn playback(position: u64, paused: bool) -> PlaybackStatus {
-        PlaybackStatus {
-            position_samples: position,
-            total_samples: 48_000,
-            paused,
-        }
-    }
 
     fn recording(started_at: &str, samples: u64, error: Option<&str>) -> RecordingStatus {
         RecordingStatus {
@@ -424,9 +492,29 @@ mod tests {
     #[test]
     fn sizes_read_in_the_unit_they_belong_in() {
         assert_eq!(format_bytes(0), "0 B");
-        assert_eq!(format_bytes(1_536), "1.536 kB");
+        assert_eq!(format_bytes(1_536), "1.5 kB");
         assert_eq!(format_bytes(12_000_000), "12 MB");
         assert_eq!(si(f64::NAN, "B"), "? B");
+        assert_eq!(si(1_536.0, "Hz"), "1.536 kHz");
+    }
+
+    #[test]
+    fn counts_read_compact_with_one_decimal() {
+        assert_eq!(format_count(0), "0");
+        assert_eq!(format_count(999), "999");
+        assert_eq!(format_count(1_234), "1.2K");
+        assert_eq!(format_count(1_250_000), "1.3M");
+        assert_eq!(format_count(2_000_000_000), "2B");
+        assert_eq!(format_count(999_960), "1M");
+    }
+
+    #[test]
+    fn drops_show_only_when_some_were_lost() {
+        assert_eq!(drops_stat(0), None);
+        let shown = drops_stat(1_500).expect("a drops stat");
+        assert_eq!(shown.value.as_deref(), Some("1.5K"));
+        assert_eq!(shown.tone, Tone::Warn);
+        assert_eq!(shown.title, DROPS_HINT);
     }
 
     #[test]
@@ -445,40 +533,6 @@ mod tests {
         assert_eq!(format_clock(3_600.0), "1:00:00");
         assert_eq!(format_clock(3_725.0), "1:02:05");
         assert_eq!(format_clock(-5.0), "0:00");
-    }
-
-    #[test]
-    fn playback_advances_on_the_clock_and_holds_while_paused() {
-        let at = playback_position_at(&playback(1_000, false), 500.0, 48_000.0, true);
-        assert!((at - 25_000.0).abs() < f64::EPSILON);
-        let held = playback_position_at(&playback(1_000, true), 60_000.0, 48_000.0, true);
-        assert!((held - 1_000.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn playback_wraps_with_the_loop_and_holds_at_the_end_without() {
-        let looped = playback_position_at(&playback(0, false), 1_500.0, 48_000.0, true);
-        assert!((looped - 24_000.0).abs() < f64::EPSILON);
-        let ended = playback_position_at(&playback(0, false), 5_000.0, 48_000.0, false);
-        assert!((ended - 48_000.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn playback_never_runs_backwards_or_past_the_recording() {
-        let back = playback_position_at(&playback(100, false), -5_000.0, 48_000.0, true);
-        assert!((back - 100.0).abs() < f64::EPSILON);
-        let no_rate = playback_position_at(&playback(100, false), 5_000.0, 0.0, true);
-        assert!((no_rate - 100.0).abs() < f64::EPSILON);
-        let beyond = playback_position_at(&playback(99_999, true), 0.0, 48_000.0, false);
-        assert!((beyond - 48_000.0).abs() < f64::EPSILON);
-        let empty = PlaybackStatus {
-            position_samples: 0,
-            total_samples: 0,
-            paused: false,
-        };
-        assert!(playback_position_at(&empty, 5_000.0, 48_000.0, true).abs() < f64::EPSILON);
-        assert!((samples_to_seconds(96_000.0, 48_000.0) - 2.0).abs() < f64::EPSILON);
-        assert!(samples_to_seconds(96_000.0, 0.0).abs() < f64::EPSILON);
     }
 
     #[test]

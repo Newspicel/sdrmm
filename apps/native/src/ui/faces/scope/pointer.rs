@@ -7,11 +7,12 @@ use zgui::{
 use super::{
     MenuAt, ScopeCx,
     actions::{
-        select_channel, tunable_now, tune_centre, tune_channel, untracked_radio, update_readout,
+        select_channel, tunable_now, tune_centre, tune_channel, untracked_heard_of,
+        untracked_radio, update_readout,
     },
     live::now_ms,
     pick::{drag_tune_hz, pick_at},
-    radio::marker_at,
+    radio::{Reach, marker_at},
     view::{FULL_VIEW, SpectrumView, span_to_offset},
 };
 
@@ -141,11 +142,14 @@ fn press(cx: ScopeCx, ev: &mut EventCx<'_, events::PointerDown>) {
         .or_else(|| {
             marker_at(
                 &radio.channels,
-                view,
-                meta.centre_hz,
-                meta.span_hz,
-                spot.at,
-                GRAB_PX / spot.width,
+                |channel| untracked_heard_of(cx, channel),
+                Reach {
+                    view,
+                    centre_hz: meta.centre_hz,
+                    span_hz: meta.span_hz,
+                    at: spot.at,
+                    tolerance: GRAB_PX / spot.width,
+                },
             )
         });
     if let Some(channel) = channel {

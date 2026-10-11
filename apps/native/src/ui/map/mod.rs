@@ -1,10 +1,14 @@
+mod custom;
 pub mod geo;
 pub mod heat;
 pub mod mvt;
 pub mod overlay;
 pub mod paint;
 pub mod pmtiles;
+pub mod raster;
+mod settings;
 pub mod source;
+pub mod style;
 mod tiles;
 
 use std::sync::Arc;
@@ -21,7 +25,12 @@ pub use self::{
     geo::{Geo, View},
     overlay::Overlay,
 };
-use self::{source::Kind, tiles::Shared};
+use self::{
+    overlay::{Ink, Placed},
+    source::Kind,
+    style::{halo, hex, label_ink},
+    tiles::Shared,
+};
 
 pub const ACCENT: u32 = 0x76_ac_fc;
 const DRAG_THRESHOLD_PX: f64 = 3.0;
@@ -62,6 +71,7 @@ const SHEET: &str = css!(
     cursor: grab;
     isolation: isolate;
 }
+.map.pointing { cursor: pointer; }
 .map.dragging, .map.dragging * { cursor: grabbing; }
 .map__layer {
     position: absolute;
@@ -83,11 +93,12 @@ const SHEET: &str = css!(
     font-size: 10px;
     line-height: 1.2;
 }
-.map__place { color: #8a909b; transform: translate(-50%, -50%); }
-.map__place[data-class="country"] { color: #6f7580; letter-spacing: 0.12em; text-transform: uppercase; font-size: 9px; }
-.map__place[data-class="state"] { color: #5f656f; font-size: 9px; }
-.map__place[data-class="city"] { color: #b7bcc5; font-size: 11px; }
-.map__label { font-family: var(--mono); transform: translate(-50%, 0); }
+.map__place { transform: translate(-50%, -50%); }
+.map__place[data-class="country"] { letter-spacing: 0.12em; text-transform: uppercase; font-size: 9px; }
+.map__place[data-class="state"] { font-size: 9px; }
+.map__place[data-class="city"] { font-size: 11px; }
+.map__label { transform: translate(-50%, 0); }
+.map__label.bold { font-size: 12px; font-weight: 700; }
 .map__zoom {
     position: absolute;
     top: 8px;
@@ -120,7 +131,7 @@ const SHEET: &str = css!(
 }
 .map__badge {
     position: absolute;
-    left: 8px;
+    left: 40px;
     bottom: 8px;
     padding: 1px 6px;
     border: 1px solid var(--line);
@@ -137,7 +148,13 @@ const SHEET: &str = css!(
 pub fn map(store: Store, props: MapProps, chrome: AnyView) -> impl IntoView {
     install_stylesheet("map", SHEET);
     let shared = Shared::get();
-    shared.discover(store);
+    let chosen = style::map_view();
+    let ensuring = {
+        let shared = shared.clone();
+        RenderEffect::new(move |_| shared.ensure(store, &chosen.get().basemap))
+    };
+    on_cleanup_local(move || drop(ensuring));
+    let pointing = RwSignal::new(false);
     let root = NodeRef::new();
     let view = RwSignal::new(View::default());
     let drag = StoredValue::new(None::<Drag>);
@@ -207,7 +224,17 @@ pub fn map(store: Store, props: MapProps, chrome: AnyView) -> impl IntoView {
         }));
     };
     let moving = move |ev: &mut EventCx<'_, events::PointerMove>| {
-        let (Some(mut held), Some((x, y))) = (drag.get_value(), local(ev.position)) else {
+        let Some((x, y)) = local(ev.position) else {
+            return;
+        };
+        let Some(mut held) = drag.get_value() else {
+            let over = props.on_pick.is_some()
+                && props.active.get_untracked()
+                && overlay::pick(&props.overlay.get_untracked(), &view.get_untracked(), x, y)
+                    .is_some();
+            if over != pointing.get_untracked() {
+                pointing.set(over);
+            }
             return;
         };
         let (dx, dy) = (x - held.x, y - held.y);
@@ -285,11 +312,17 @@ pub fn map(store: Store, props: MapProps, chrome: AnyView) -> impl IntoView {
         let shared = shared.clone();
         move || shared.credit()
     };
+    let ground = {
+        let shared = shared.clone();
+        Signal::derive_local(move || shared.ground())
+    };
     view! {
         box(
             node_ref = root,
             class = "map",
             class:dragging = dragging,
+            class:pointing = pointing,
+            style:background-color = move || Some(hex(ground.get())),
             on:pointer_down = down,
             on:pointer_move = moving,
             on:pointer_up = up,
@@ -297,12 +330,14 @@ pub fn map(store: Store, props: MapProps, chrome: AnyView) -> impl IntoView {
                 drag.set_value(None);
                 dragging.set(false);
             },
+            on:pointer_leave = move |_| pointing.set(false),
             on:wheel = wheel
         ) {
             {tiles::layer(shared.clone(), view)}
             {marks}
-            {labels(props.overlay, view)}
+            {labels(props.overlay, view, ground)}
             box(class = "map__chrome") {{chrome}}
+            {settings::settings()}
             column(class = "map__zoom") {
                 control(
                     class = "map__zoom-step",
@@ -327,7 +362,7 @@ fn badge(shared: std::rc::Rc<Shared>) -> impl IntoView {
     move || {
         let text = match shared.kind() {
             Kind::Offline => "offline basemap",
-            Kind::Blank => "no basemap (offline)",
+            Kind::Blank => "no basemap",
             Kind::Pending | Kind::Online if shared.failures() > 0 => "some tiles failed",
             Kind::Pending | Kind::Online => return None,
         };
@@ -335,28 +370,62 @@ fn badge(shared: std::rc::Rc<Shared>) -> impl IntoView {
     }
 }
 
-fn labels(overlay: Signal<Arc<Overlay>>, view: RwSignal<View>) -> impl IntoView {
+fn labels(
+    overlay: Signal<Arc<Overlay>>,
+    view: RwSignal<View>,
+    ground: Signal<u32, LocalStorage>,
+) -> impl IntoView {
     let spots =
         Memo::new(move |_| overlay::placed_labels(&overlay.get(), &view.get(), LABELS_SHOWN));
     let keys = Memo::new(move |_| {
         spots.with(|spots| {
             spots
                 .iter()
-                .map(|spot| (spot.key.clone(), spot.text.clone(), spot.colour))
+                .map(|spot| Spot {
+                    key: spot.key.clone(),
+                    text: spot.text.clone(),
+                    ink: spot.ink,
+                    bold: spot.bold,
+                })
                 .collect::<Vec<_>>()
         })
     });
     view! {
         box(class = "map__layer") {
-            for spot in move || keys.get(), key = |spot: &(String, String, u32)| spot.0.clone() {
-                {label_view(spot, spots)}
+            for spot in move || keys.get(), key = |spot: &Spot| spot.key.clone() {
+                {label_view(spot, spots, ground)}
             }
         }
     }
 }
 
-fn label_view(spot: (String, String, u32), spots: Memo<Vec<overlay::Placed>>) -> impl IntoView {
-    let (key, text, colour) = spot;
+#[derive(Clone, Debug, PartialEq)]
+struct Spot {
+    key: String,
+    text: String,
+    ink: Ink,
+    bold: bool,
+}
+
+#[must_use]
+pub fn resolve_ink(ink: Ink, ground: u32) -> (u32, u32) {
+    match ink {
+        Ink::Ground => label_ink(ground),
+        Ink::Fixed { text, halo } => (text, halo),
+    }
+}
+
+fn label_view(
+    spot: Spot,
+    spots: Memo<Vec<Placed>>,
+    ground: Signal<u32, LocalStorage>,
+) -> impl IntoView {
+    let Spot {
+        key,
+        text,
+        ink,
+        bold,
+    } = spot;
     let at = move || {
         spots.with(|spots| {
             spots
@@ -366,10 +435,14 @@ fn label_view(spot: (String, String, u32), spots: Memo<Vec<overlay::Placed>>) ->
         })
     };
     let left = at.clone();
+    let colour = move || Some(hex(resolve_ink(ink, ground.get()).0));
+    let shadow = move || Some(halo(resolve_ink(ink, ground.get()).1));
     view! {
         text(
             class = "map__label",
-            style:color = Some(format!("#{colour:06x}")),
+            class:bold = bold,
+            style:color = colour,
+            style:text-shadow = shadow,
             style:left = move || left().map(|(x, _)| format!("{x:.1}px")),
             style:top = move || at().map(|(_, y)| format!("{y:.1}px"))
         ) {{text}}

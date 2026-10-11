@@ -256,6 +256,16 @@ mod tests {
     }
 
     #[test]
+    fn the_best_match_is_the_lowest_vswr_point() {
+        let points = [
+            point(1, complex(0.5, 0.0), complex(0.0, 0.0)),
+            point(2, complex(0.1, 0.0), complex(0.0, 0.0)),
+            point(3, complex(0.3, 0.0), complex(0.0, 0.0)),
+        ];
+        assert_eq!(analyse(&points).resonance.map(|row| row.index), Some(1));
+    }
+
+    #[test]
     fn the_vswr_bands_nest_and_carry_a_loaded_q() {
         let analysis = analyse(&resonant_sweep(201).points);
         let spans: Vec<f64> = analysis

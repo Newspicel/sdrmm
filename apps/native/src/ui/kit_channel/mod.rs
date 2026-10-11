@@ -1,4 +1,5 @@
 pub mod radio;
+pub mod signal;
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},
@@ -13,13 +14,12 @@ use zgui::{prelude::*, reactive::RenderEffect, view::TimeoutHandle};
 use zgui_ui::prelude::*;
 
 use crate::ui::{
-    faces::channel::settings::{NumberLimit, SQUELCH_MAX_DB, SQUELCH_MIN_DB},
+    faces::channel::settings::NumberLimit,
     widgets::{Menus, check, slide, toggled},
 };
 
 pub const LEVEL_FLOOR_DB: f32 = -140.0;
 const DEBOUNCE: Duration = Duration::from_millis(150);
-const LEVEL_SEGMENTS: usize = 12;
 
 static NEXT_POPOVER: AtomicU32 = AtomicU32::new(1 << 24);
 
@@ -89,6 +89,7 @@ const SHEET: &str = css!(
 .kc-btn--primary { border-color: var(--accent); background-color: var(--accent); color: var(--bg); font-weight: 600; }
 .kc-btn--primary:hover { background-color: var(--accent); border-color: var(--accent); }
 .kc-btn--danger:hover { border-color: var(--danger); color: var(--danger); }
+.kc-btn.kc-danger { border-color: var(--danger); color: var(--danger); }
 .kc-btn.on { border-color: var(--accent); background-color: var(--accent); color: var(--bg); }
 .kc-btn--mono { font-family: var(--mono); width: 44px; text-align: center; padding: 3px 0; }
 
@@ -127,6 +128,34 @@ const SHEET: &str = css!(
 .kc-meter__gate { position: absolute; top: -2px; bottom: -2px; width: 2px; background-color: var(--ink); }
 .kc-meter__read { flex: 0 0 auto; width: 64px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
 .kc-meter__read.heard { color: var(--ink); }
+.kc-meter__bar--drag { height: 8px; }
+.kc-meter__bar--drag:focus-visible { outline: 2px solid color-mix(in oklab, var(--accent) 45%, transparent); }
+.kc-meter__handle {
+    position: absolute; top: -4px; bottom: -4px; width: 4px; border-radius: 2px;
+    background-color: var(--ink); border: 1px solid var(--panel);
+}
+.kc-meter__handle:hover { background-color: var(--accent); }
+.kc-meter__handle.auto { background-color: var(--panel); border: 1.5px solid var(--ink-dim); }
+.kc-signal { align-items: center; gap: 8px; min-height: 28px; }
+.kc-signal .kc-name { width: 56px; }
+.kc-stats { align-items: center; gap: 12px; margin-right: auto; }
+.kc-stat { align-items: baseline; gap: 4px; font-family: var(--mono); font-size: 10px; }
+.kc-stat__label { color: var(--ink-faint); }
+.kc-stat__value { color: var(--ink); }
+.kc-stat.ok .kc-stat__value { color: var(--ok); }
+.kc-stat.warn .kc-stat__label, .kc-stat.warn .kc-stat__value { color: oklch(0.8 0.14 75); }
+.kc-seg { flex-direction: row; flex-wrap: wrap; gap: 2px; }
+.kc-keys { width: 400px; }
+.kc-key-row { align-items: center; gap: 6px; }
+.kc-key-kind { width: 64px; }
+.kc-key { width: 104px; }
+.kc-alert {
+    align-items: center; gap: 4px; padding: 2px 4px 2px 8px;
+    border-bottom: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
+    background-color: color-mix(in oklab, var(--danger) 10%, transparent);
+    color: var(--danger); font-size: 11px;
+}
+.kc-alert__text { flex: 1 1 auto; min-width: 0; overflow: hidden; }
 
 .kc-chip {
     align-items: center; height: 22px; padding: 0 7px;
@@ -304,6 +333,79 @@ pub fn tip(text: &'static str, child: AnyView) -> AnyView {
             TooltipContent {{text}}
         }
     })
+}
+
+pub fn tip_text(text: impl Fn() -> String + Send + Sync + 'static, child: AnyView) -> AnyView {
+    let text = Signal::derive(text);
+    AnyView::new(view! {
+        Tooltip(delay = Duration::from_millis(250)) {
+            TooltipTrigger {{child}}
+            TooltipContent {{move || text.get()}}
+        }
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StatTone {
+    Plain,
+    Ok,
+    Warn,
+}
+
+pub fn stat(
+    label: &'static str,
+    value: Option<String>,
+    title: impl Fn() -> String + Send + Sync + 'static,
+    tone: StatTone,
+) -> AnyView {
+    let class = match tone {
+        StatTone::Plain => "kc-stat",
+        StatTone::Ok => "kc-stat ok",
+        StatTone::Warn => "kc-stat warn",
+    };
+    tip_text(
+        title,
+        AnyView::new(view! {
+            row(class = class) {
+                text(class = "kc-stat__label") {{label}}
+                {value.map(|value| view! { text(class = "kc-stat__value") {{value}} })}
+            }
+        }),
+    )
+}
+
+pub fn titled_segments<T>(
+    options: &'static [(T, &'static str, Option<&'static str>)],
+    chosen: Signal<T>,
+    on_pick: impl Fn(T) + Clone + 'static,
+) -> impl IntoView
+where
+    T: Copy + PartialEq + Send + Sync + 'static,
+{
+    let items = options
+        .iter()
+        .map(|(value, label, title)| {
+            let on_pick = on_pick.clone();
+            let value = *value;
+            let item = AnyView::new(view! {
+                control(
+                    class = "kc-btn kc-btn--sm",
+                    class:on = move || chosen.get() == value,
+                    tabindex = Focus::Sequential,
+                    a11y:role = Role::Button,
+                    on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation(),
+                    on:click:stop = move |_| on_pick(value)
+                ) {
+                    {*label}
+                }
+            });
+            match title {
+                Some(title) => tip(title, item),
+                None => item,
+            }
+        })
+        .collect::<Vec<_>>();
+    view! { row(class = "kc-seg") {{items}} }
 }
 
 pub fn setting_row(
@@ -662,56 +764,6 @@ impl Popover {
 impl Default for Popover {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub fn level_meter(
-    level: Signal<Option<ChannelLevel>>,
-    squelch_db: Signal<Option<f32>>,
-) -> impl IntoView {
-    let floor = SQUELCH_MIN_DB;
-    let span = SQUELCH_MAX_DB - SQUELCH_MIN_DB;
-    let now = move || {
-        level_unit(
-            level
-                .get()
-                .map_or(f32::NEG_INFINITY, |level| level.level_db),
-            floor,
-        )
-    };
-    let peak = move || {
-        level_unit(
-            level.get().map_or(f32::NEG_INFINITY, |level| level.peak_db),
-            floor,
-        )
-    };
-    let gate = move || gate_db(level.get().as_ref(), squelch_db.get());
-    let open = move || gate().is_none() || gate_open(level.get().as_ref(), squelch_db.get());
-    let heard = move || {
-        level
-            .get()
-            .is_some_and(|level| level.level_db > LEVEL_FLOOR_DB)
-    };
-    let gaps = (1..LEVEL_SEGMENTS)
-        .map(|at| {
-            let left = format!("{}%", at as f32 * 100.0 / LEVEL_SEGMENTS as f32);
-            view! { box(class = "kc-meter__gap", style:left = Some(left)) }
-        })
-        .collect::<Vec<_>>();
-    view! {
-        row(class = "kc-meter", a11y:role = Role::Meter, a11y:label = "Signal level") {
-            box(class = "kc-meter__bar") {
-                box(class = "kc-meter__fill", class:closed = move || !open(), style:width = move || Some(format!("{}%", now() * 100.0))) {}
-                {gaps}
-                {move || (peak() > 0.0).then(|| view! {
-                    box(class = "kc-meter__peak", style:left = Some(format!("calc({}% - 1px)", peak() * 100.0)))
-                })}
-                {move || gate().map(|gate| view! {
-                    box(class = "kc-meter__gate", style:left = Some(format!("calc({}% - 1px)", ((gate - floor) / span).clamp(0.0, 1.0) * 100.0)))
-                })}
-            }
-            text(class = "kc-meter__read", class:heard = heard) {{move || format_level(level.get().map(|level| level.level_db))}}
-        }
     }
 }
 

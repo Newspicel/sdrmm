@@ -3,12 +3,13 @@ use std::{cell::RefCell, collections::HashMap, sync::OnceLock, time::Instant};
 use sdrmm_wire::frame::SpectrumFrame;
 
 use super::{
-    colormap::Colormap,
+    clock::wall_ms,
     gpu::WaterfallFeed,
     history::{
         FrameKey, FrequencyKey, History, Retune, RowMeta, SpectrumHistory, align_history,
-        retune_action, seed_rows,
+        history_levels, retune_action, row_level, seed_rows, signal_db,
     },
+    palette::Palette,
     plot::DensityLayer,
     traces::{
         DbWindow, FrameTween, ReadoutHold, TraceState, VideoAverage, dequantize, quantize_db,
@@ -31,6 +32,7 @@ pub struct FrameMeta {
     pub span_hz: f64,
     pub db_min: f64,
     pub db_max: f64,
+    pub floor_db: f64,
 }
 
 impl FrameMeta {
@@ -41,7 +43,13 @@ impl FrameMeta {
             span_hz: f64::from(frame.span_hz),
             db_min: f64::from(frame.db_min),
             db_max: f64::from(frame.db_max),
+            floor_db: f64::from(frame.floor_db),
         }
+    }
+
+    #[must_use]
+    pub fn signal_db(self) -> f64 {
+        signal_db(self.floor_db)
     }
 
     #[must_use]
@@ -89,7 +97,8 @@ pub fn record(lane: (u32, u32), frame: &SpectrumFrame<'_>) {
                 span_hz: meta.span_hz,
                 db_min: meta.db_min,
                 db_max: meta.db_max,
-                at_ms: now_ms(),
+                floor_db: meta.floor_db,
+                at_ms: wall_ms(),
             },
         );
     });
@@ -98,7 +107,7 @@ pub fn record(lane: (u32, u32), frame: &SpectrumFrame<'_>) {
 fn fresh(lane: &Lane) -> bool {
     lane.history
         .newest()
-        .is_some_and(|newest| now_ms() - newest.at_ms < LANE_GRACE_MS)
+        .is_some_and(|newest| wall_ms() - newest.at_ms < LANE_GRACE_MS)
 }
 
 #[must_use]
@@ -130,7 +139,7 @@ pub struct Settings {
     pub average: u32,
     pub view: SpectrumView,
     pub phosphor: bool,
-    pub colormap: Colormap,
+    pub palette: Palette,
 }
 
 pub type Shown = (u64, u64);
@@ -177,10 +186,10 @@ impl Live {
         )
     }
 
-    pub fn sync_density(&mut self, on: bool, colormap: Colormap) {
+    pub fn sync_density(&mut self, on: bool, palette: Palette) {
         match (&mut self.density, on) {
-            (Some(layer), true) => layer.set_colormap(colormap),
-            (None, true) => self.density = Some(DensityLayer::new(colormap)),
+            (Some(layer), true) => layer.set_palette(palette),
+            (None, true) => self.density = Some(DensityLayer::new(palette)),
             (_, false) => self.density = None,
         }
     }
@@ -223,7 +232,7 @@ impl Live {
         let seeded = self.retune(action, meta, settings.range, feed, history);
         if !seeded {
             self.waterfall_row(frame.bins, &db, averaged, meta, settings.range);
-            feed.push_row(&self.row);
+            feed.push_row(&self.row, row_level(window, meta.floor_db, wall_ms()));
         }
         TraceState::accumulate(&mut self.traces, &db);
         if let Some(layer) = self.density.as_mut() {
@@ -261,6 +270,7 @@ impl Live {
                     align_history(&rows, meta.frequency(), held),
                     rows.count,
                     rows.bins,
+                    history_levels(&rows, held),
                 );
                 true
             }
@@ -300,7 +310,7 @@ pub fn reseed(
         return;
     }
     let rows = seed_rows(&past, frame.map(FrameMeta::frequency), held);
-    feed.seed(rows, past.count, past.bins);
+    feed.seed(rows, past.count, past.bins, history_levels(&past, held));
 }
 
 #[cfg(test)]
@@ -327,7 +337,7 @@ mod tests {
             average,
             view: SpectrumView::default(),
             phosphor: false,
-            colormap: Colormap::Classic,
+            palette: Palette::default(),
         }
     }
 
@@ -340,6 +350,23 @@ mod tests {
         assert_eq!(lane_history(lane).count, 2);
         assert_eq!(lane_latest(lane).map(|(_, bins)| bins), Some(2));
         assert_eq!(lane_history((91, 0)).count, 0);
+        let newest = lane_history(lane).meta[1];
+        assert_eq!(newest.floor_db, -100.0);
+        assert!((wall_ms() - newest.at_ms).abs() < LANE_GRACE_MS);
+    }
+
+    #[test]
+    fn a_row_reaches_the_waterfall_with_its_level_and_time() {
+        let mut live = Live::default();
+        let mut feed = WaterfallFeed::default();
+        live.receive(
+            &frame(0, 100e6, &[10, 20]),
+            settings(1),
+            &mut feed,
+            SpectrumHistory::default,
+        );
+        assert!((wall_ms() - feed.clock.at(0)).abs() < LANE_GRACE_MS);
+        assert_eq!(live.frame.map(FrameMeta::signal_db), Some(-90.0));
     }
 
     #[test]
@@ -418,9 +445,9 @@ mod tests {
     #[test]
     fn phosphor_follows_its_switch_and_colours() {
         let mut live = Live::default();
-        live.sync_density(true, Colormap::Classic);
+        live.sync_density(true, Palette::default());
         assert!(live.density.is_some());
-        live.sync_density(false, Colormap::Classic);
+        live.sync_density(false, Palette::default());
         assert!(live.density.is_none());
     }
 }

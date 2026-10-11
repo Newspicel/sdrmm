@@ -13,11 +13,26 @@ use tokio::sync::{mpsc, oneshot};
 use crate::{api::Api, shell::rack_grid};
 
 pub mod manage;
+pub mod rebase;
+
+pub use rebase::GraphPatch;
+
+#[derive(Debug)]
+pub struct Folded;
+
+impl std::fmt::Display for Folded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("saved together with a later edit")
+    }
+}
+
+impl std::error::Error for Folded {}
 
 type Reply = oneshot::Sender<anyhow::Result<WorkspaceDetail>>;
 
 enum Edit {
-    Graph(PatchGraph),
+    Graph(GraphPatch),
+    Refresh,
     Rack(RackLayout),
     Settings(WorkspaceSettings),
     Rename(String),
@@ -36,6 +51,7 @@ pub struct Worker {
     api: Api,
     detail: WorkspaceDetail,
     edits: mpsc::UnboundedReceiver<(Edit, Reply)>,
+    held: Option<(Edit, Reply)>,
 }
 
 type Pending = std::pin::Pin<Box<dyn Future<Output = anyhow::Result<WorkspaceDetail>>>>;
@@ -49,15 +65,20 @@ impl Session {
                 api,
                 detail,
                 edits: receiver,
+                held: None,
             },
         )
     }
 
     pub fn save(
         &self,
-        graph: PatchGraph,
+        patch: GraphPatch,
     ) -> impl Future<Output = anyhow::Result<WorkspaceDetail>> + use<> {
-        self.enqueue(Edit::Graph(graph))
+        self.enqueue(Edit::Graph(patch))
+    }
+
+    pub fn refresh(&self) -> impl Future<Output = anyhow::Result<WorkspaceDetail>> + use<> {
+        self.enqueue(Edit::Refresh)
     }
 
     pub fn rack(&self, rack: RackLayout) -> Pending {
@@ -118,23 +139,72 @@ impl Session {
 
 impl Worker {
     pub async fn run(mut self) {
-        while let Some((edit, reply)) = self.edits.recv().await {
-            let result = self.edit(edit).await;
-            if let Err(undelivered) = reply.send(result)
-                && let Err(error) = undelivered
-            {
-                tracing::error!(%error, "workspace edit failed after its caller closed");
+        while let Some((edit, reply)) = self.next().await {
+            match edit {
+                Edit::Graph(patch) => self.save_batch(patch, reply).await,
+                edit => {
+                    let result = self.edit(edit).await;
+                    deliver(reply, result);
+                }
             }
         }
+    }
+
+    async fn next(&mut self) -> Option<(Edit, Reply)> {
+        match self.held.take() {
+            Some(held) => Some(held),
+            None => self.edits.recv().await,
+        }
+    }
+
+    async fn save_batch(&mut self, mut patch: GraphPatch, reply: Reply) {
+        let mut replies = vec![reply];
+        while let Ok((edit, reply)) = self.edits.try_recv() {
+            match edit {
+                Edit::Graph(more) => {
+                    patch.then(more);
+                    replies.push(reply);
+                }
+                other => {
+                    self.held = Some((other, reply));
+                    break;
+                }
+            }
+        }
+        let result = self.save_graph(&patch).await;
+        let last = replies.pop();
+        for earlier in replies {
+            deliver(earlier, folded(&result));
+        }
+        if let Some(last) = last {
+            deliver(last, result);
+        }
+    }
+
+    async fn save_graph(&mut self, patch: &GraphPatch) -> anyhow::Result<WorkspaceDetail> {
+        let id = self.detail.info.id;
+        let first = self.write(self.patched(patch)).await;
+        if let Err(error) = first {
+            if crate::api::error_code(&error).as_deref() != Some("conflict") {
+                return Err(error);
+            }
+            self.detail = self.api.workspace(id).await?;
+            self.write(self.patched(patch)).await?;
+        }
+        self.detail = self.api.workspace(id).await?;
+        Ok(self.detail.clone())
+    }
+
+    fn patched(&self, patch: &GraphPatch) -> WorkspaceSnapshot {
+        let graph = patch.onto(&self.detail.snapshot.graph);
+        with_graph(self.detail.snapshot.clone(), graph)
     }
 
     async fn edit(&mut self, edit: Edit) -> anyhow::Result<WorkspaceDetail> {
         let id = self.detail.info.id;
         match edit {
-            Edit::Graph(graph) => {
-                let snapshot = with_graph(self.detail.snapshot.clone(), graph);
-                self.write(snapshot).await?;
-            }
+            Edit::Graph(patch) => return self.save_graph(&patch).await,
+            Edit::Refresh => {}
             Edit::Rack(rack) => {
                 let snapshot = WorkspaceSnapshot {
                     rack: rack_grid::prune(&rack, &self.detail.snapshot.graph),
@@ -187,6 +257,21 @@ impl Worker {
             .await?;
         self.detail.snapshot = snapshot;
         Ok(())
+    }
+}
+
+fn deliver(reply: Reply, result: anyhow::Result<WorkspaceDetail>) {
+    if let Err(undelivered) = reply.send(result)
+        && let Err(error) = undelivered
+    {
+        tracing::error!(%error, "workspace edit failed after its caller closed");
+    }
+}
+
+fn folded(result: &anyhow::Result<WorkspaceDetail>) -> anyhow::Result<WorkspaceDetail> {
+    match result {
+        Ok(detail) => Ok(detail.clone()),
+        Err(_) => Err(anyhow::Error::new(Folded)),
     }
 }
 

@@ -100,16 +100,17 @@ fn follow(
     on_cleanup_local(move || drop((marking, colouring)));
 }
 
-fn head(subtitle: Memo<Subtitle>) -> impl IntoView {
-    view! {
-        row(class = "kit-head") {
-            spacer() {}
-            text(
-                class = "kit-legend",
-                class:warn = move || subtitle.with(|shown| shown.warn)
-            ) {{move || subtitle.with(|shown| shown.text.clone())}}
-        }
-    }
+fn head(store: Store, node: String, subtitle: Memo<Subtitle>) {
+    crate::head::show(store, node, move || {
+        subtitle.with(|shown| {
+            let head = crate::head::NodeHead::said(shown.text.clone());
+            if shown.warn {
+                head.toned(crate::head::Tone::Warn)
+            } else {
+                head
+            }
+        })
+    });
 }
 
 fn stat_view(stat: Stat) -> impl IntoView {
@@ -308,9 +309,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
     let rate = move || status.with(|status| status.as_ref().map(|status| status.sample_rate));
     let figures = move || update.with(|update| stats(update.as_ref(), rate(), age.get()));
     let footer_chips = move || update.with(|update| chips(update.as_ref()));
+    head(store, node.clone(), subtitle);
     view! {
         column(class = "face rd") {
-            {head(subtitle)}
             {plot::plot(Plot { scene, axes, marks: shown, refused, colormap })}
             {controls::main(&form, lanes, colormap)}
             {strip(figures)}

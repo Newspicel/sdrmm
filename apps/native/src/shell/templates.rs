@@ -17,6 +17,25 @@ pub fn templates_hint(templates: &[TemplateInfo], set: Option<&DeviceSet>) -> Op
     .then(|| format!("{} cannot run these templates.", set.device.label))
 }
 
+#[must_use]
+pub fn template_size(template: &TemplateInfo) -> String {
+    if template.min_lanes > 1 {
+        format!("{} lanes", template.min_lanes)
+    } else {
+        format!("{} ch", template.channels.len())
+    }
+}
+
+#[must_use]
+pub fn apply_title(template: &TemplateInfo, set: Option<&DeviceSet>) -> Option<String> {
+    let set = set?;
+    Some(if supports(template, Some(set)) {
+        format!("Apply to {}", set.device.label)
+    } else {
+        format!("{} cannot run this template", set.device.label)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +93,26 @@ mod tests {
             None
         );
         assert_eq!(templates_hint(&[], Some(&set())), None);
+    }
+
+    #[test]
+    fn sizes_a_template_by_lanes_or_channels() {
+        assert_eq!(template_size(&template(&[])), "0 ch");
+        let mut array = template(&[]);
+        array.min_lanes = 4;
+        assert_eq!(template_size(&array), "4 lanes");
+    }
+
+    #[test]
+    fn titles_apply_with_the_radio_it_lands_on() {
+        assert_eq!(apply_title(&template(&["rtlsdr:0"]), None), None);
+        assert_eq!(
+            apply_title(&template(&["rtlsdr:0"]), Some(&set())).as_deref(),
+            Some("Apply to RTL-SDR")
+        );
+        assert_eq!(
+            apply_title(&template(&["hackrf:0"]), Some(&set())).as_deref(),
+            Some("RTL-SDR cannot run this template")
+        );
     }
 }

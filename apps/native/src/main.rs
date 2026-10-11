@@ -6,9 +6,13 @@ mod bus;
 mod decoded;
 mod decoders;
 mod format;
+mod head;
 mod host;
 mod params;
 mod position;
+mod presence;
+#[cfg(test)]
+mod screens;
 mod shell;
 mod socket;
 mod starter;
@@ -32,6 +36,20 @@ struct Args {
     server: Option<String>,
     #[arg(long)]
     data_dir: Option<PathBuf>,
+}
+
+const WINDOW: (f32, f32) = (1440.0, 900.0);
+
+fn boot(
+    api: &api::Api,
+    runtime: &tokio::runtime::Handle,
+    websocket: &str,
+    token: &api::Token,
+) -> store::Store {
+    let store = store::Store::new(api.clone());
+    let (socket, incoming) = socket::connect(runtime, websocket.to_owned(), token.clone());
+    store.start(socket, incoming);
+    store
 }
 
 fn data_dir(cli: Option<PathBuf>) -> anyhow::Result<PathBuf> {
@@ -87,15 +105,10 @@ fn main() -> anyhow::Result<()> {
     let outcome = app()
         .with_application_id("dev.sdrmm.Native")
         .with_title("sdr-- native")
-        .with_size(1440.0, 900.0)
+        .with_size(WINDOW.0, WINDOW.1)
         .with_min_size(880.0, 560.0)
         .with_stylesheet(theme::SHEET)
-        .run(move || {
-            let store = store::Store::new(api.clone());
-            let (socket, incoming) = socket::connect(&runtime, websocket.clone(), token.clone());
-            store.start(socket, incoming);
-            ui::app(store, prefs.clone())
-        });
+        .run(move || ui::app(boot(&api, &runtime, &websocket, &token), prefs.clone()));
 
     host.shutdown();
     outcome.map_err(anyhow::Error::from)

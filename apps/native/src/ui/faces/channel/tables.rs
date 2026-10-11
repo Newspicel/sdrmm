@@ -1,20 +1,20 @@
-use sdrmm_wire::channel::{
-    AeroChannel, AisChannel, AprsMode, AtvColor, AtvModulation, AtvStandard, DabMode,
-    DabTransmissionMode, DatvCodeRate, DatvRollOff, DatvStandard, DectBand, DectSides, DmrSlots,
-    DrmMode, DvbtBandwidth, DvbtStandard, IlsComponent, IridiumSpan, NfmScramblerMode, NfmToneMode,
-    NxdnBandwidth, PocsagBaud, PskBaud, RadioClockStandard, RttyStopBits, SelcallSystem, Sideband,
-    SstvMode,
+use sdrmm_wire::{
+    airtime::AirtimeSpan,
+    ble::BleLink,
+    channel::{
+        AeroChannel, AisChannel, AprsMode, AtvColor, AtvModulation, AtvStandard, DabMode,
+        DabTransmissionMode, DatvCodeRate, DatvRollOff, DatvStandard, DectBand, DectSides,
+        DectSpan, DmrSlots, DrmMode, DvbtBandwidth, DvbtStandard, IlsComponent, IridiumSpan,
+        NfmScramblerMode, NfmToneMode, NxdnBandwidth, PocsagBaud, PskBaud, RadioClockStandard,
+        RttyStopBits, SelcallSystem, Sideband, SstvMode, SstvModulation,
+    },
+    remote_id::RemoteIdLink,
+    weather::{LrptMode, SondeType, WefaxIoc, WefaxLpm},
 };
 
-use super::settings::SquelchMode;
-
 pub type Options<T> = &'static [(T, &'static str)];
+pub type Titled<T> = &'static [(T, &'static str, Option<&'static str>)];
 
-pub const SQUELCH_MODES: Options<SquelchMode> = &[
-    (SquelchMode::Off, "Off"),
-    (SquelchMode::Manual, "Manual"),
-    (SquelchMode::Auto, "Auto"),
-];
 pub const DMR_SLOTS: Options<DmrSlots> = &[
     (DmrSlots::Both, "Both"),
     (DmrSlots::One, "TS1"),
@@ -25,6 +25,54 @@ pub const NXDN_WIDTHS: Options<NxdnBandwidth> = &[
     (NxdnBandwidth::Wide, "12.5"),
 ];
 pub const DECT_BANDS: Options<DectBand> = &[(DectBand::Eu, "EU"), (DectBand::Us, "US")];
+pub const DECT_SPANS: Titled<DectSpan> = &[
+    (
+        DectSpan::Carrier,
+        "Carrier",
+        Some("One carrier at 2.304 MS/s"),
+    ),
+    (
+        DectSpan::Band,
+        "Band",
+        Some(
+            "Every carrier at once. Tune to the band centre, radio at 20 MS/s (EU) or 10 MS/s (US)",
+        ),
+    ),
+];
+pub const BLE_LINKS: Titled<BleLink> = &[
+    (
+        BleLink::Channel,
+        "Channel",
+        Some("One Bluetooth channel at 4 MS/s"),
+    ),
+    (
+        BleLink::Band,
+        "Band",
+        Some("Every Bluetooth channel in a 20 MS/s window"),
+    ),
+];
+pub const AIRTIME_SPANS: Titled<AirtimeSpan> = &[
+    (AirtimeSpan::Mhz20, "20", Some("20 MS/s")),
+    (AirtimeSpan::Mhz40, "40", Some("40 MS/s")),
+    (AirtimeSpan::Mhz80, "80", Some("80 MS/s, all of 2.4 GHz")),
+];
+pub const REMOTE_ID_LINKS: Titled<RemoteIdLink> = &[
+    (
+        RemoteIdLink::Bluetooth,
+        "Bluetooth",
+        Some("One Bluetooth channel at 4 MS/s"),
+    ),
+    (
+        RemoteIdLink::BluetoothBand,
+        "BT band",
+        Some("Every Bluetooth channel in a 20 MS/s window, for long range"),
+    ),
+    (
+        RemoteIdLink::Wifi,
+        "Wi-Fi",
+        Some("One 20 MHz Wi-Fi channel"),
+    ),
+];
 pub const DECT_SIDES: Options<DectSides> = &[
     (DectSides::Both, "Both"),
     (DectSides::Rfp, "Base"),
@@ -46,17 +94,33 @@ pub const POCSAG_BAUDS: Options<PocsagBaud> = &[
     (PocsagBaud::B2400, "2400"),
 ];
 pub const AIS_CHANNELS: Options<AisChannel> = &[(AisChannel::A, "A"), (AisChannel::B, "B")];
-pub const AERO_CHANNELS: Options<AeroChannel> = &[
-    (AeroChannel::P, "P"),
-    (AeroChannel::Burst, "R/T"),
-    (AeroChannel::C, "C"),
+pub const AERO_CHANNELS: Titled<AeroChannel> = &[
+    (AeroChannel::P, "P", Some("Forward channel to aircraft")),
+    (AeroChannel::Burst, "R/T", Some("Bursts from aircraft")),
+    (AeroChannel::C, "C", Some("Voice circuit")),
 ];
-pub const IRIDIUM_SPANS: Options<IridiumSpan> = &[
-    (IridiumSpan::Channel, "50 kHz"),
-    (IridiumSpan::Mhz1, "1 MHz"),
-    (IridiumSpan::Mhz2_5, "2.5 MHz"),
-    (IridiumSpan::Mhz5, "5 MHz"),
-    (IridiumSpan::Mhz10, "10 MHz"),
+pub const IRIDIUM_SPANS: Titled<IridiumSpan> = &[
+    (IridiumSpan::Channel, "50 kHz", Some("One channel")),
+    (
+        IridiumSpan::Mhz1,
+        "1 MHz",
+        Some("Radio at 1 MS/s, decodes the middle 800 kHz"),
+    ),
+    (
+        IridiumSpan::Mhz2_5,
+        "2.5 MHz",
+        Some("Radio at 2.5 MS/s, decodes the middle 2 MHz"),
+    ),
+    (
+        IridiumSpan::Mhz5,
+        "5 MHz",
+        Some("Radio at 5 MS/s, decodes the middle 4 MHz"),
+    ),
+    (
+        IridiumSpan::Mhz10,
+        "10 MHz",
+        Some("Radio at 10 MS/s, decodes the middle 8 MHz"),
+    ),
 ];
 pub const APRS_MODES: Options<AprsMode> = &[
     (AprsMode::Afsk1200, "AFSK 1200"),
@@ -112,6 +176,7 @@ pub const DAB_MODES: Options<DabMode> = &[
     (DabMode::DabPlus, "DAB+"),
 ];
 pub const DAB_TRANSMISSION_MODES: Options<DabTransmissionMode> = &[
+    (DabTransmissionMode::Auto, "Auto"),
     (DabTransmissionMode::I, "I"),
     (DabTransmissionMode::Ii, "II"),
     (DabTransmissionMode::Iii, "III"),
@@ -142,7 +207,12 @@ pub const DVBT_STANDARDS: Options<DvbtStandard> = &[
     (DvbtStandard::DvbT2, "DVB-T2"),
 ];
 pub const DVBT_BANDWIDTHS: Options<DvbtBandwidth> = &[
+    (DvbtBandwidth::Khz250, "250 kHz"),
+    (DvbtBandwidth::Khz333, "333 kHz"),
+    (DvbtBandwidth::Khz500, "500 kHz"),
+    (DvbtBandwidth::Mhz1, "1 MHz"),
     (DvbtBandwidth::Mhz1_7, "1.7 MHz"),
+    (DvbtBandwidth::Mhz2, "2 MHz"),
     (DvbtBandwidth::Mhz5, "5 MHz"),
     (DvbtBandwidth::Mhz6, "6 MHz"),
     (DvbtBandwidth::Mhz7, "7 MHz"),
@@ -153,6 +223,19 @@ pub const DRM_MODES: Options<DrmMode> = &[
     (DrmMode::Auto, "Auto"),
     (DrmMode::Drm30, "DRM30"),
     (DrmMode::DrmPlus, "DRM+"),
+];
+pub const SSTV_MODULATIONS: Options<SstvModulation> = &[
+    (SstvModulation::Usb, "USB"),
+    (SstvModulation::Lsb, "LSB"),
+    (SstvModulation::Fm, "FM"),
+    (SstvModulation::Am, "AM"),
+];
+pub const WEFAX_IOCS: Options<WefaxIoc> = &[(WefaxIoc::Ioc576, "576"), (WefaxIoc::Ioc288, "288")];
+pub const WEFAX_LPMS: Options<WefaxLpm> = &[
+    (WefaxLpm::Lpm60, "60"),
+    (WefaxLpm::Lpm90, "90"),
+    (WefaxLpm::Lpm120, "120"),
+    (WefaxLpm::Lpm240, "240"),
 ];
 pub const DEEMPHASIS_US: Options<u32> = &[(50, "50 µs"), (75, "75 µs")];
 pub const RTTY_BAUDS: &[(f64, &str)] = &[(45.45, "45.45"), (50.0, "50"), (75.0, "75")];
@@ -181,6 +264,47 @@ pub fn sstv_modes() -> Vec<(Option<SstvMode>, String)> {
                 .map(|mode| (Some(mode), mode.label().to_owned())),
         )
         .collect()
+}
+
+#[must_use]
+pub fn lrpt_modes() -> Vec<(LrptMode, String)> {
+    LrptMode::ALL
+        .into_iter()
+        .map(|mode| (mode, mode.label().to_owned()))
+        .collect()
+}
+
+#[must_use]
+pub fn sonde_types() -> Vec<(Option<SondeType>, String)> {
+    std::iter::once((None, String::from("Auto")))
+        .chain(
+            SondeType::ALL
+                .into_iter()
+                .map(|sonde| (Some(sonde), sonde.label().to_owned())),
+        )
+        .collect()
+}
+
+#[must_use]
+pub fn dab_transmission_modes(
+    detected: Option<DabTransmissionMode>,
+) -> Vec<(DabTransmissionMode, String)> {
+    let detected = detected.and_then(|mode| label_of(DAB_TRANSMISSION_MODES, mode));
+    DAB_TRANSMISSION_MODES
+        .iter()
+        .map(|(mode, label)| match (mode, detected) {
+            (DabTransmissionMode::Auto, Some(seen)) => (*mode, format!("Auto {seen}")),
+            _ => (*mode, (*label).to_owned()),
+        })
+        .collect()
+}
+
+#[must_use]
+pub fn label_of<T: PartialEq>(options: Options<T>, value: T) -> Option<&'static str> {
+    options
+        .iter()
+        .find(|(option, _)| *option == value)
+        .map(|(_, label)| *label)
 }
 
 #[must_use]
@@ -269,6 +393,37 @@ mod tests {
             drm_bandwidth_for(DrmMode::Auto, DrmMode::Drm30, 4_500.0),
             100_000.0
         );
+    }
+
+    #[test]
+    fn dab_auto_names_the_mode_it_detected() {
+        let plain = dab_transmission_modes(None);
+        assert_eq!(plain[0], (DabTransmissionMode::Auto, String::from("Auto")));
+        assert_eq!(plain.len(), 5);
+        let heard = dab_transmission_modes(Some(DabTransmissionMode::Ii));
+        assert_eq!(heard[0].1, "Auto II");
+        assert_eq!(heard[2].1, "II");
+    }
+
+    #[test]
+    fn every_dvbt_bandwidth_on_the_wire_is_offered() {
+        assert_eq!(DVBT_BANDWIDTHS.len(), 11);
+        assert_eq!(DVBT_BANDWIDTHS[0], (DvbtBandwidth::Khz250, "250 kHz"));
+        assert_eq!(
+            label_of(DVBT_BANDWIDTHS, DvbtBandwidth::Mhz2),
+            Some("2 MHz")
+        );
+    }
+
+    #[test]
+    fn weather_choices_read_their_wire_labels() {
+        assert_eq!(
+            lrpt_modes()[1],
+            (LrptMode::Oqpsk72, String::from("OQPSK 72k"))
+        );
+        let sondes = sonde_types();
+        assert_eq!(sondes[0], (None, String::from("Auto")));
+        assert_eq!(sondes[5], (Some(SondeType::Imet4), String::from("iMet-4")));
     }
 
     #[test]

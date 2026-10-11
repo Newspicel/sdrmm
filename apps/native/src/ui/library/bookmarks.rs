@@ -8,9 +8,11 @@ use crate::{
     shell::recordings::format_mhz,
     store::Store,
     ui::{
-        kit_shell::{Entry, Row, entry, gated_button, glyph, hint, list, list_row, row_action},
+        kit_shell::{Entry, entry, glyph, hint, list},
         library::{
-            channel_type_of, frequency_of, load, on_scope, reload, suggest_mode, target, tune,
+            channel_type_of, frequency_of, load, on_scope, reload,
+            rows::{Badge, LibRow, Pending, Pick, act, icon_act, lib_row},
+            suggest_mode, target, tune,
         },
         shell::Shell,
     },
@@ -25,6 +27,8 @@ pub fn panel(store: Store, shell: Shell) -> impl IntoView {
     let aimed = target(store);
     let label = RwSignal::new_local(String::new());
     let mode = RwSignal::new_local(String::new());
+    let saving = Pending::new();
+    let deleting = Pending::new();
     let save = move || {
         let Some(freq_hz) = aimed
             .get_untracked()
@@ -37,7 +41,7 @@ pub fn panel(store: Store, shell: Shell) -> impl IntoView {
             return;
         }
         let picked = mode.get_untracked().trim().to_owned();
-        zgui::task::spawn_local(async move {
+        saving.run(async move {
             let body = CreateBookmarkRequest {
                 label: typed,
                 freq_hz,
@@ -59,7 +63,8 @@ pub fn panel(store: Store, shell: Shell) -> impl IntoView {
         });
     };
     let enabled = Signal::derive_local(move || {
-        !label.get().trim().is_empty()
+        !saving.busy()
+            && !label.get().trim().is_empty()
             && aimed
                 .get()
                 .and_then(|aimed| frequency_of(store, &aimed))
@@ -78,28 +83,39 @@ pub fn panel(store: Store, shell: Shell) -> impl IntoView {
     let rows = move || {
         sorted()
             .into_iter()
-            .map(|bookmark| AnyView::new(bookmark_row(store, shell, bookmark, aimed, ready, again)))
+            .map(|bookmark| {
+                AnyView::new(bookmark_row(
+                    store, shell, bookmark, aimed, ready, deleting, again,
+                ))
+            })
             .collect::<Vec<_>>()
     };
+    let pick_first = move || {
+        aimed
+            .get()
+            .is_none()
+            .then(|| hint("Select a device or decoder first."))
+    };
     let hints = move || {
-        let aimed = aimed.get();
-        let listed = sorted();
-        if aimed.is_none() {
-            Some(hint("Select a device or decoder first."))
-        } else if aimed.is_some_and(|aimed| aimed.locked()) && !listed.is_empty() {
-            Some(hint("Tuning is locked here."))
-        } else if matches!(bookmarks.get(), Some(Ok(ref found)) if found.is_empty()) {
-            Some(hint("No bookmarks yet."))
-        } else {
-            None
-        }
+        let locked = aimed.get().is_some_and(|aimed| aimed.locked()) && !sorted().is_empty();
+        let empty = matches!(bookmarks.get(), Some(Ok(ref found)) if found.is_empty());
+        let failed = matches!(bookmarks.get(), Some(Err(_)));
+        [
+            locked.then(|| hint("Tuning is locked here.")),
+            empty.then(|| hint("No bookmarks yet.")),
+            failed.then(|| hint("Could not load the bookmarks.")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
     };
     view! {
         column(class = "sk-panel") {
+            {pick_first}
             row(class = "sk-toolbar") {
                 {entry(Entry::new(label, "Label current frequency"), save, || {})}
                 {entry(Entry::new(mode, "mode").narrow(), save, || {})}
-                {gated_button("Save", "", enabled, save)}
+                {act("Save", "", enabled, None, save)}
             }
             {hints}
             {move || (!sorted().is_empty()).then(|| list(None, rows))}
@@ -113,6 +129,7 @@ fn bookmark_row(
     bookmark: Bookmark,
     aimed: Signal<Option<crate::shell::library_target::TuneTarget>>,
     ready: Signal<bool, LocalStorage>,
+    deleting: Pending,
     again: impl Fn() + Copy + 'static,
 ) -> impl IntoView {
     let id = bookmark.id;
@@ -128,29 +145,35 @@ fn bookmark_row(
             saved_mode.as_deref(),
             channel_type_of(store, &aimed).as_deref(),
             "bookmark",
+            false,
         );
     };
     let remove = move || {
-        zgui::task::spawn_local(async move {
+        deleting.run(async move {
             if let Err(error) = store.api().delete(&format!("{PATH}/{id}")).await {
                 store.fail("Cannot delete the bookmark", &error);
             }
             again();
         });
     };
-    let primary = match bookmark.mode.as_deref().filter(|mode| !mode.is_empty()) {
-        Some(mode) => format!("{}  {mode}", format_mhz(bookmark.freq_hz)),
-        None => format_mhz(bookmark.freq_hz),
-    };
+    let badge = bookmark
+        .mode
+        .clone()
+        .filter(|mode| !mode.is_empty())
+        .map_or(Badge::None, Badge::Chip);
     let label = format!("Delete {}", bookmark.label);
-    list_row(
-        Row {
-            primary,
+    lib_row(
+        LibRow {
+            primary: format_mhz(bookmark.freq_hz),
+            badge,
             secondary: Some(bookmark.label),
+            ..LibRow::default()
         },
-        Some(Box::new(recall)),
-        ready,
-        AnyView::new(row_action(glyph::TRASH, label, true, remove)),
+        Some(Pick {
+            on_pick: Box::new(recall),
+            enabled: ready,
+        }),
+        icon_act(glyph::TRASH, label, true, deleting.idle(), remove),
         AnyView::new(()),
     )
 }

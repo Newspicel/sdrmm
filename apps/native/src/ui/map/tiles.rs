@@ -16,6 +16,7 @@ use super::{
     geo::{TileId, View},
     paint::{EXTENT, LabelClass, Painted},
     source::{Basemap, Cache, Kind, Net, OFFLINE_PATH, Slot},
+    style::{BLANK_GROUND, BasemapChoice, Palette, Preset, halo, hex},
 };
 use crate::store::Store;
 
@@ -27,11 +28,14 @@ const PLACE_GAP_Y: f64 = 18.0;
 
 pub struct Shared {
     basemap: ArcRwSignal<Option<Basemap>>,
+    preset: ArcRwSignal<Preset>,
     arrivals: ArcRwSignal<u64>,
     failed: ArcRwSignal<u32>,
     cache: RefCell<Cache>,
     net: Option<Net>,
-    asked: Cell<bool>,
+    wanted: RefCell<Option<BasemapChoice>>,
+    vector: RefCell<Option<Basemap>>,
+    generation: Cell<u64>,
 }
 
 thread_local! {
@@ -49,11 +53,14 @@ impl Shared {
         };
         Self {
             basemap: ArcRwSignal::new(None),
+            preset: ArcRwSignal::new(Preset::default()),
             arrivals: ArcRwSignal::new(0),
             failed: ArcRwSignal::new(0),
             cache: RefCell::new(Cache::new(CACHED_TILES)),
             net,
-            asked: Cell::new(false),
+            wanted: RefCell::new(None),
+            vector: RefCell::new(None),
+            generation: Cell::new(0),
         }
     }
 
@@ -61,21 +68,54 @@ impl Shared {
         SHARED.with(Rc::clone)
     }
 
-    pub fn discover(self: &Rc<Self>, store: Store) {
-        if self.asked.replace(true) {
+    pub fn ensure(self: &Rc<Self>, store: Store, choice: &BasemapChoice) {
+        if self.wanted.borrow().as_ref() == Some(choice) {
             return;
         }
+        self.wanted.replace(Some(choice.clone()));
+        let generation = self.generation.get() + 1;
+        self.generation.set(generation);
+        self.failed.set(0);
+        self.preset.set(choice.preset);
         let Some(net) = self.net.clone() else {
             self.basemap.set(Some(Basemap::Blank));
             store.say("the map cannot reach the network");
             return;
         };
+        if choice.preset != Preset::Custom
+            && let Some(found) = self.vector.borrow().clone()
+        {
+            self.basemap.set(Some(found));
+            return;
+        }
+        self.basemap.set(None);
+        let shared = self.clone();
+        let custom = (choice.preset == Preset::Custom).then(|| choice.custom.clone());
         let url = store.api().url(OFFLINE_PATH);
-        let basemap = self.basemap.clone();
         zgui::task::spawn_detached(async move {
-            let found = zgui::task::background(async move { net.discover(url).await }).await;
-            basemap.set(Some(found));
+            let found = zgui::task::background(async move {
+                match custom {
+                    Some(custom) => net.custom(&custom).await.map_err(|error| error.to_string()),
+                    None => Ok(net.discover(url).await),
+                }
+            })
+            .await;
+            shared.settle_basemap(store, generation, found);
         });
+    }
+
+    fn settle_basemap(&self, store: Store, generation: u64, found: Result<Basemap, String>) {
+        if self.generation.get() != generation {
+            return;
+        }
+        let found = found.unwrap_or_else(|error| {
+            store.say(format!("Custom map: {error}"));
+            Basemap::Blank
+        });
+        if found.is_vector() && self.preset.get_untracked() != Preset::Custom {
+            self.vector.replace(Some(found.clone()));
+        }
+        self.basemap.set(Some(found));
     }
 
     pub fn kind(&self) -> Kind {
@@ -83,6 +123,13 @@ impl Shared {
             .get()
             .as_ref()
             .map_or(Kind::Pending, Basemap::kind)
+    }
+
+    pub fn ground(&self) -> u32 {
+        match self.kind() {
+            Kind::Online | Kind::Offline => self.preset.get().palette().land,
+            Kind::Pending | Kind::Blank => BLANK_GROUND,
+        }
     }
 
     pub fn failures(&self) -> u32 {
@@ -93,18 +140,24 @@ impl Shared {
         self.basemap.get().as_ref().map_or("", Basemap::attribution)
     }
 
+    fn key_of(&self, basemap: &Basemap) -> String {
+        format!("{}|{}", self.preset.get_untracked().key(), basemap.key())
+    }
+
     fn request(self: &Rc<Self>, basemap: &Basemap, id: TileId) {
         let Some(net) = self.net.clone() else {
             return;
         };
-        if !self.cache.borrow_mut().claim(basemap.key(), id) {
+        let source = self.key_of(basemap);
+        if !self.cache.borrow_mut().claim(&source, id) {
             return;
         }
         let shared = self.clone();
         let basemap = basemap.clone();
+        let palette = self.preset.get_untracked().palette();
         zgui::task::spawn_detached(async move {
-            let source = basemap.key().to_owned();
-            let fetched = zgui::task::background(async move { net.tile(&basemap, id).await }).await;
+            let fetched =
+                zgui::task::background(async move { net.tile(&basemap, id, &palette).await }).await;
             let slot = match fetched {
                 Ok(painted) => Slot::Ready(Arc::new(painted)),
                 Err(error) => {
@@ -126,6 +179,7 @@ impl Shared {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Drawn {
     key: String,
+    source: String,
     id: TileId,
     column: i64,
 }
@@ -161,14 +215,16 @@ fn visible(view: &View, id: TileId, column: i64) -> (String, Option<[f64; 4]>) {
 }
 
 fn drawn(shared: &Shared, basemap: &Basemap, view: &View) -> Vec<Drawn> {
-    let source = basemap.key();
+    let source = shared.key_of(basemap);
+    let source = source.as_str();
     let mut children = Vec::new();
     let mut parents = Vec::new();
     let mut seen = HashSet::new();
-    for spot in view.tiles(basemap.max_zoom()) {
+    for spot in view.tiles_at(basemap.max_zoom(), basemap.zoom_bump()) {
         if shared.ready(source, spot.id).is_some() {
             children.push(Drawn {
-                key: format!("{}/{}/{}", spot.id.z, spot.column, spot.id.y),
+                key: format!("{source}#{}/{}/{}", spot.id.z, spot.column, spot.id.y),
+                source: source.to_owned(),
                 id: spot.id,
                 column: spot.column,
             });
@@ -182,9 +238,14 @@ fn drawn(shared: &Shared, basemap: &Basemap, view: &View) -> Vec<Drawn> {
             id = parent;
             column = column.div_euclid(2);
             if shared.ready(source, id).is_some() {
-                let key = format!("{}/{}/{}", id.z, column, id.y);
+                let key = format!("{source}#{}/{}/{}", id.z, column, id.y);
                 if seen.insert(key.clone()) {
-                    parents.push(Drawn { key, id, column });
+                    parents.push(Drawn {
+                        key,
+                        source: source.to_owned(),
+                        id,
+                        column,
+                    });
                 }
                 break;
             }
@@ -201,6 +262,7 @@ fn current<T>(
     read: fn(&Shared, &Basemap, &View) -> Vec<T>,
 ) -> Vec<T> {
     shared.arrivals.with(|_| ());
+    shared.preset.with(|_| ());
     shared
         .basemap
         .get()
@@ -215,8 +277,9 @@ pub fn layer(shared: Rc<Shared>, view: RwSignal<View>) -> impl IntoView {
             let Some(basemap) = shared.basemap.get() else {
                 return;
             };
+            shared.preset.with(|_| ());
             let current = view.get();
-            for spot in current.tiles(basemap.max_zoom()) {
+            for spot in current.tiles_at(basemap.max_zoom(), basemap.zoom_bump()) {
                 shared.request(&basemap, spot.id);
             }
         })
@@ -225,16 +288,23 @@ pub fn layer(shared: Rc<Shared>, view: RwSignal<View>) -> impl IntoView {
 
     let tiles = shared.clone();
     let places = shared.clone();
+    let palette = shared.preset.clone();
 
     let row = move |tile: Drawn| {
-        let source = shared
-            .basemap
-            .get_untracked()
-            .map(|basemap| basemap.key().to_owned())
-            .unwrap_or_default();
-        let painted = shared.ready(&source, tile.id);
+        let painted = shared.ready(&tile.source, tile.id);
         let (id, column) = (tile.id, tile.column);
-        zgui::elements::canvas()
+        if let Some(picture) = painted.as_ref().and_then(|painted| painted.picture.clone()) {
+            let url = picture.url();
+            on_cleanup_local(move || drop(picture));
+            return AnyView::new(
+                zgui::elements::image()
+                    .class("map__tile")
+                    .src(Some(url))
+                    .alt(Some(String::new()))
+                    .style_text(move || Some(visible(&view.get(), id, column).0)),
+            );
+        }
+        let canvas = zgui::elements::canvas()
             .class("map__tile")
             .view_box(0.0, 0.0, EXTENT as f32, EXTENT as f32)
             .style_text(move || Some(visible(&view.get(), id, column).0))
@@ -254,7 +324,8 @@ pub fn layer(shared: Rc<Shared>, view: RwSignal<View>) -> impl IntoView {
                     cx.scene.push(shape);
                 }
             })
-            .into_view()
+            .into_view();
+        AnyView::new(canvas)
     };
 
     view! {
@@ -265,7 +336,7 @@ pub fn layer(shared: Rc<Shared>, view: RwSignal<View>) -> impl IntoView {
         }
         box(class = "map__layer") {
             for spot in move || current(&places, view, places_of), key = |spot: &Place| spot.key.clone() {
-                {place_label(spot, view)}
+                {place_label(spot, view, palette.get_untracked().palette())}
             }
         }
     }
@@ -281,12 +352,12 @@ struct Place {
 }
 
 fn places_of(shared: &Shared, basemap: &Basemap, view: &View) -> Vec<Place> {
-    let source = basemap.key();
+    let source = shared.key_of(basemap);
     let mut candidates: Vec<Place> = Vec::new();
     let mut names = HashSet::new();
     let mut ranked: Vec<(i64, Place)> = Vec::new();
-    for spot in view.tiles(basemap.max_zoom()) {
-        let Some(painted) = shared.ready(source, spot.id) else {
+    for spot in view.tiles_at(basemap.max_zoom(), basemap.zoom_bump()) {
+        let Some(painted) = shared.ready(&source, spot.id) else {
             continue;
         };
         let shift = (spot.column - i64::from(spot.id.x)) as f64 / f64::from(1u32 << spot.id.z);
@@ -294,7 +365,7 @@ fn places_of(shared: &Shared, basemap: &Basemap, view: &View) -> Vec<Place> {
             ranked.push((
                 label.score,
                 Place {
-                    key: format!("{}:{:.5}:{:.5}", label.text, label.x, label.y),
+                    key: format!("{source}:{}:{:.5}:{:.5}", label.text, label.x, label.y),
                     text: label.text.clone(),
                     class: label.class,
                     x: label.x + shift,
@@ -321,13 +392,19 @@ fn places_of(shared: &Shared, basemap: &Basemap, view: &View) -> Vec<Place> {
     candidates
 }
 
-fn place_label(spot: Place, view: RwSignal<View>) -> impl IntoView {
+fn place_label(spot: Place, view: RwSignal<View>, palette: Palette) -> impl IntoView {
     let (x, y) = (spot.x, spot.y);
     let at = move || view.with(|view| view.screen_of_unit(x, y));
+    let colour = match spot.class {
+        LabelClass::Country | LabelClass::State => palette.place_faint,
+        LabelClass::City | LabelClass::Town | LabelClass::Village => palette.place,
+    };
     view! {
         text(
             class = "map__place",
             attr:data-class = spot.class.css(),
+            style:color = Some(hex(colour)),
+            style:text-shadow = Some(halo(palette.land)),
             style:left = move || Some(format!("{:.1}px", at().0)),
             style:top = move || Some(format!("{:.1}px", at().1))
         ) {{spot.text}}

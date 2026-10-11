@@ -11,7 +11,10 @@ use crate::{
         rack_grid, tuner,
     },
     store::{Pane, Phase, Store},
-    ui::shell::{Shell, leave_auto},
+    ui::{
+        faces::channel::swap,
+        shell::{Shell, leave_auto},
+    },
 };
 
 fn key_name(key: &Key) -> Option<String> {
@@ -42,7 +45,19 @@ pub fn escape(store: Store, shell: Shell) -> bool {
     true
 }
 
-pub fn press(store: Store, shell: Shell, ev: &mut EventCx<'_, events::KeyDown>) {
+pub fn press(
+    store: Store,
+    shell: Shell,
+    tools: RwSignal<Option<String>>,
+    ev: &mut EventCx<'_, events::KeyDown>,
+) {
+    if tools.get_untracked().is_some() {
+        if matches!(ev.key, Key::Named(NamedKey::Escape)) {
+            tools.set(None);
+            ev.prevent_default();
+        }
+        return;
+    }
     if matches!(ev.key, Key::Named(NamedKey::Escape)) {
         if escape(store, shell) {
             ev.prevent_default();
@@ -50,7 +65,7 @@ pub fn press(store: Store, shell: Shell, ev: &mut EventCx<'_, events::KeyDown>) 
         return;
     }
     let busy = shell.dialog.get_untracked().is_some() || shell.asking_auto_off.get_untracked();
-    if busy || store.phase.get_untracked() != Phase::Ready {
+    if busy || store.phase.get_untracked() != Phase::Ready || focus_is_text_entry() {
         return;
     }
     let Some(name) = key_name(&ev.key) else {
@@ -75,6 +90,7 @@ fn run(store: Store, shell: Shell, action: Action) {
             .step_hz
             .update(|step| *step = hotkeys::stepped(*step, direction)),
         Action::CycleMode(direction) => cycle_mode(store, direction),
+        Action::FocusDial => focus_dial(store, shell),
         Action::Squelch(delta) => {
             edit_squelch(store, |squelch| hotkeys::nudged_squelch(squelch, delta));
         }
@@ -109,7 +125,7 @@ fn run(store: Store, shell: Shell, action: Action) {
         }
         Action::Undo => store.step_history(true),
         Action::Redo => store.step_history(false),
-        Action::ShowShortcuts => shell.open(crate::ui::shell::Dialog::Shortcuts),
+        Action::ShowShortcuts => shell.open(crate::ui::shell::Dialog::Help),
     }
 }
 
@@ -137,24 +153,56 @@ fn tune(store: Store, shell: Shell, steps: i32) {
 }
 
 fn cycle_mode(store: Store, direction: i32) {
+    if let Some(selected) = store.selected.get_untracked() {
+        swap::cycle_analog(store, &selected, direction);
+    }
+}
+
+fn focus_dial(store: Store, shell: Shell) {
     let Some(selected) = store.selected.get_untracked() else {
         return;
     };
-    let graph = store.graph.get_untracked();
-    let Some(NodeBody::Channel(channel)) = graph.node(&selected).map(|node| &node.body) else {
+    if let Some(device) = binding::device_node_of(&store.graph.get_untracked(), &selected) {
+        shell
+            .dial_focus
+            .update(|asked| *asked = DialFocus::next(asked.as_ref(), device));
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DialFocus {
+    pub node: String,
+    pub serial: u64,
+}
+
+impl DialFocus {
+    #[must_use]
+    pub fn next(last: Option<&Self>, node: String) -> Option<Self> {
+        let serial = last.map_or(1, |last| last.serial + 1);
+        Some(Self { node, serial })
+    }
+}
+
+pub fn focus_dial_of(node: String, dial: NodeRef) {
+    let Some(shell) = Shell::current() else {
         return;
     };
-    let wanted = hotkeys::next_analog_mode(&channel.channel_type, direction);
-    if store.descriptor_of(wanted).is_none() {
-        return;
-    }
-    store.edit_graph(move |graph| {
-        if let Some(node) = graph.nodes.iter_mut().find(|node| node.id == selected)
-            && let NodeBody::Channel(channel) = &mut node.body
-        {
-            wanted.clone_into(&mut channel.channel_type);
+    let seen = StoredValue::new(
+        shell
+            .dial_focus
+            .get_untracked()
+            .map_or(0, |asked| asked.serial),
+    );
+    let following = zgui::reactive::RenderEffect::new(move |_| {
+        let Some(asked) = shell.dial_focus.get() else {
+            return;
+        };
+        if asked.node == node && asked.serial > seen.get_value() {
+            seen.set_value(asked.serial);
+            dial.focus_move(FocusMove::First);
         }
     });
+    on_cleanup_local(move || drop(following));
 }
 
 fn edit_squelch(
@@ -183,5 +231,18 @@ fn select_channel(store: Store, direction: i32) {
     if let Some(next) = hotkeys::cycled(&ids, store.selected.get_untracked().as_deref(), direction)
     {
         store.selected.set(Some(next));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_dial_request_is_newer_than_the_last() {
+        let first = DialFocus::next(None, "dev".to_owned());
+        assert_eq!(first.as_ref().map(|asked| asked.serial), Some(1));
+        let again = DialFocus::next(first.as_ref(), "dev".to_owned());
+        assert_eq!(again.map(|asked| asked.serial), Some(2));
     }
 }

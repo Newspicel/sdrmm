@@ -372,6 +372,8 @@ pub fn slide(
     }
 }
 
+const CHECK_MARK: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>"#;
+
 pub fn check(on: Signal<bool>, on_change: impl Fn(bool) + 'static) -> impl IntoView {
     view! {
         control(
@@ -381,7 +383,7 @@ pub fn check(on: Signal<bool>, on_change: impl Fn(bool) + 'static) -> impl IntoV
             a11y:role = Role::CheckBox,
             on:click:stop = move |_| on_change(!on.get_untracked())
         ) {
-            "x"
+            {zgui::elements::vector().class("check__mark").document(CHECK_MARK)}
         }
     }
 }

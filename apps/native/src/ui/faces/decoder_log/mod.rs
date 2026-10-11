@@ -1,20 +1,24 @@
 mod columns;
 mod detail;
+mod footer;
+mod groups;
+mod list;
+mod player;
 mod state;
 
 use zgui::prelude::*;
 use zgui_ui::prelude::*;
 
 use crate::{
-    decoders::log::{LIMIT_OPTIONS, LogRow, dropped_notice, export_path, kind_label},
-    decoders::views::format_clock,
+    decoders::{
+        groups::{LogView, VIEW_CHOICES},
+        log::LIMIT_OPTIONS,
+    },
     store::Store,
     ui::{kit_decoders, widgets::pick},
 };
 
 use self::state::Log;
-
-const ROW_HEIGHT: f32 = 20.0;
 
 const SHEET: &str = css!(
     r#"
@@ -22,8 +26,8 @@ const SHEET: &str = css!(
 .dlog__bar { flex-direction: row; align-items: center; gap: 8px; }
 .dlog__search { flex: 1 1 auto; min-width: 0; }
 .dlog__search .native-input { height: 26px; width: 100%; padding: 3px 8px; font-family: var(--mono); font-size: 11px; }
-.dlog__limit { flex: 0 0 110px; }
-.dlog__stats { flex-direction: row; gap: 10px; font-family: var(--mono); font-size: 10px; color: var(--ink-dim); }
+.dlog__choice { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 4px; }
+.dlog__choice .pick__wrap { width: 104px; }
 .dlog__table { flex-direction: column; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
 .dlog__head { flex-direction: row; background-color: var(--panel); border-bottom: 1px solid var(--line); }
 .dlog__th {
@@ -40,19 +44,52 @@ const SHEET: &str = css!(
     overflow: hidden;
 }
 .dlog__th.flex { flex: 1 1 0; border-right: 0; }
+.dlog__th.num { text-align: right; }
+.dlog__sort { cursor: pointer; }
+.dlog__sort:hover, .dlog__sort:focus-visible, .dlog__sort.on { color: var(--ink); }
 .dlog__grip { position: absolute; top: 0; bottom: 0; right: 0; width: 7px; cursor: col-resize; }
 .dlog__grip:hover, .dlog__grip:focus-visible, .dlog__grip.on { background-color: var(--accent); }
 .dlog__list { height: 260px; }
 .dlog__row { flex-direction: row; height: 20px; align-items: center; font-family: var(--mono); font-size: 11px; cursor: pointer; }
-.dlog__row:hover { background-color: var(--panel-2); }
+.dlog__row:hover, .dlog__row:focus-visible { background-color: var(--panel-2); }
 .dlog__row.on { background-color: var(--panel-3); }
 .dlog__cell { flex: 0 1 auto; min-width: 36px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink); }
 .dlog__cell.dim { color: var(--ink-dim); }
 .dlog__cell.num { text-align: right; }
 .dlog__cell.flex { flex: 1 1 0; min-width: 0; }
+.dlog__tip { width: 100%; min-width: 0; }
 .dlog__empty { padding: 6px 8px; color: var(--ink-dim); font-size: 12px; }
-.dlog__detail { padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; background-color: var(--panel-2); max-height: 320px; overflow: auto; flex-direction: column; gap: 6px; }
+.dlog__detail {
+    position: relative;
+    z-index: 2;
+    height: 236px;
+    margin: 0 4px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background-color: var(--panel-2);
+    overflow: auto;
+    flex-direction: column;
+    gap: 6px;
+}
+.dlog__foot { flex-direction: row; align-items: center; gap: 8px; }
+.dlog__stats { flex: 1 1 auto; flex-direction: row; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.dlog__stat { flex-direction: row; gap: 4px; align-items: baseline; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); white-space: nowrap; }
+.dlog__stat_value { color: var(--ink); font-weight: 500; }
+.dlog__stat.warn, .dlog__stat.warn .dlog__stat_value { color: oklch(0.8 0.14 85); }
 .dlog__armed { color: var(--danger); border-color: var(--danger); }
+.dlog__pop { position: relative; flex: 0 0 auto; }
+.dlog__menu {
+    position: absolute; right: 0; bottom: 30px; z-index: 70;
+    width: 180px;
+    flex-direction: column; gap: 2px; padding: 4px;
+    border: 1px solid var(--line-strong); border-radius: 6px;
+    background-color: var(--panel-3);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+}
+.dlog__menu .btn { justify-content: flex-start; border-color: transparent; background-color: transparent; }
+.dlog__player { flex-direction: row; align-items: center; gap: 8px; }
+.dlog__player .dk-num { min-width: 80px; }
 "#
 );
 
@@ -64,27 +101,47 @@ pub fn panel(store: Store, sink: String) -> impl IntoView {
     kit_decoders::install();
     install_stylesheet("decoder-log", SHEET);
     let log = Log::new(store, sink);
+    let body = move || {
+        if log.group.get().is_some() {
+            AnyView::new(groups::table(log))
+        } else {
+            AnyView::new(list::table(log))
+        }
+    };
     view! {
         column(class = "face dlog", {..kit_decoders::no_pan()}) {
             {toolbar(log)}
             {notices(log)}
-            {stats(log)}
-            column(class = "dlog__table") {
-                {columns::header(log)}
-                {list(log)}
-            }
-            {move || detail::opened(log)}
-            {footer(log)}
+            {body}
+            {footer::footer(log)}
         }
     }
 }
 
+fn choice(label: &'static str, title: &'static str, body: AnyView) -> AnyView {
+    kit_decoders::titled(
+        title.to_owned(),
+        "dlog__choice",
+        AnyView::new(view! {
+            row(class = "dlog__choice") {
+                text(class = "legend") {{label}}
+                {body}
+            }
+        }),
+    )
+}
+
 fn toolbar(log: Log) -> impl IntoView {
-    let options: Vec<(u32, String)> = LIMIT_OPTIONS
+    let limits: Vec<(u32, String)> = LIMIT_OPTIONS
         .iter()
-        .map(|limit| (*limit, format!("{limit} rows")))
+        .map(|limit| (*limit, limit.to_string()))
         .collect();
-    let chosen = Signal::derive(move || Some(log.filter.get().limit));
+    let views: Vec<(LogView, String)> = VIEW_CHOICES
+        .iter()
+        .map(|(view, label)| (*view, (*label).to_owned()))
+        .collect();
+    let limit = Signal::derive(move || Some(log.filter.get().limit));
+    let view = Signal::derive(move || Some(LogView::of(log.group.get())));
     view! {
         row(class = "dlog__bar") {
             box(class = "dlog__search") {
@@ -95,9 +152,8 @@ fn toolbar(log: Log) -> impl IntoView {
                     placeholder = "Search station or summary",
                 )
             }
-            box(class = "dlog__limit") {
-                {pick(options, chosen, move |limit| log.set_limit(limit))}
-            }
+            {choice("Group", "One row per frequency or station", AnyView::new(pick(views, view, move |view: LogView| log.set_group(view.group()))))}
+            {choice("Rows", "Row limit", AnyView::new(pick(limits, limit, move |limit| log.set_limit(limit))))}
         }
     }
 }
@@ -118,119 +174,19 @@ fn notices(log: Log) -> impl IntoView {
             )
         })
     };
-    let dropped = move || {
-        let lost = log.store.decoded.with(|decoded| decoded.lost);
-        let dropped = log
-            .page
-            .with(|page| page.as_ref().map_or(0, |page| page.dropped));
-        dropped_notice(lost, dropped)
-            .map(|notice| AnyView::new(view! { text(class = "dk-num dk-danger") {{notice}} }))
-    };
-    view! { column(class = "dk-pane") { {rejected} {unavailable} {dropped} } }
+    view! { column(class = "dk-pane") { {rejected} {unavailable} } }
 }
 
-fn stats(log: Log) -> impl IntoView {
-    let counts = move || {
-        let shown = log.rows.with(|rows| rows.len());
-        let total = log
-            .page
-            .with(|page| page.as_ref().map_or(0, |page| page.total));
-        format!("{shown} shown · {total} stored")
-    };
-    let cleared = move || {
-        log.cleared
-            .get()
-            .map(|count| format!("{count} rows cleared"))
-    };
-    let armed = move || {
-        log.armed
-            .get()
-            .then_some("Clear removes every stored row this node sees")
-    };
-    view! {
-        row(class = "dlog__stats") {
-            text {{counts}}
-            text(class = "dk-danger") {{armed}}
-            text {{cleared}}
-        }
-    }
-}
-
-fn list(log: Log) -> impl IntoView {
-    let count = Signal::derive_local(move || log.rows.with(|rows| rows.len()));
-    let empty = move || {
-        (count.get() == 0).then(|| {
-            let said = if log.page.with(Option::is_none) {
-                "Loading…"
-            } else if log.filter.with(|filter| filter.filtered()) {
-                "No rows match this filter."
-            } else {
-                "Nothing logged yet."
-            };
-            AnyView::new(view! { text(class = "dlog__empty") {{said}} })
-        })
-    };
-    view! {
-        {empty}
-        VirtualList(
-            count = count,
-            row_size = ROW_HEIGHT,
-            class = "dlog__list",
-            label = "Decoder log",
-            row = move |index: usize| move || {
-                log.rows
-                    .with(|rows| rows.get(index).cloned())
-                    .map(|row| AnyView::new(row_view(log, row)))
-            }
-        )
-    }
-}
-
-fn row_view(log: Log, row: LogRow) -> impl IntoView {
-    let key = row.key.clone();
-    let marked = row.key.clone();
-    let widths = log.widths;
-    let width = move |index: usize| move || Some(format!("{}px", widths.get().0[index]));
-    let station = row.station.clone().unwrap_or_else(|| "-".to_owned());
-    view! {
-        row(
-            class = "dlog__row",
-            class:on = move || log.opened.get().as_deref() == Some(marked.as_str()),
-            on:click:stop = move |_| log.toggle(&key)
-        ) {
-            text(class = "dlog__cell dim", style:width = width(0)) {{format_clock(&row.at)}}
-            text(class = "dlog__cell dim", style:width = width(1)) {{kind_label(&row.kind)}}
-            text(class = "dlog__cell num", style:width = width(2)) {{format!("{:.4} MHz", row.freq_hz / 1e6)}}
-            text(class = "dlog__cell", style:width = width(3)) {{station}}
-            text(class = "dlog__cell flex") {{row.summary.clone()}}
-        }
-    }
-}
-
-fn footer(log: Log) -> impl IntoView {
-    let store = log.store;
-    let export = move |format: &'static str| {
-        move |_: &mut EventCx<'_, events::Click>| {
-            let query = log.filter.get_untracked().query(&log.sink.get_value());
-            kit_decoders::save_download(
-                store,
-                export_path(format, &query),
-                format!("decoder-log.{format}"),
-            );
-        }
-    };
-    view! {
-        row(class = "face__foot") {
-            control(class = "btn", on:click:stop = export("csv")) {"CSV"}
-            control(class = "btn", on:click:stop = export("json")) {"JSON"}
-            spacer()
-            control(
-                class = "btn",
-                class:dlog__armed = move || log.armed.get(),
-                on:click:stop = move |_| log.press_clear()
-            ) {
-                {move || if log.armed.get() { "Confirm clear" } else { "Clear" }}
-            }
-        }
-    }
+pub(super) fn empty_hint(log: Log) -> Option<AnyView> {
+    let totals = log.totals();
+    (totals.shown == 0).then(|| {
+        let said = if !totals.loaded {
+            "Loading…"
+        } else if log.filter.with(|filter| filter.filtered()) {
+            "No rows match this filter."
+        } else {
+            "Nothing logged yet."
+        };
+        AnyView::new(view! { text(class = "dlog__empty") {{said}} })
+    })
 }

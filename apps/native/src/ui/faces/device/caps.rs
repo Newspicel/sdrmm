@@ -148,11 +148,6 @@ pub fn agc_state(caps: &Capabilities, settings: &DeviceSettings) -> AgcSetting {
 }
 
 #[must_use]
-pub fn automatic_gain_is_on(caps: &Capabilities, settings: &DeviceSettings) -> bool {
-    agc_state(caps, settings).on
-}
-
-#[must_use]
 pub fn has_filter(caps: &Capabilities) -> bool {
     caps.bandwidth_auto || !caps.bandwidths.is_empty() || !caps.bandwidth_ranges.is_empty()
 }
@@ -361,14 +356,14 @@ mod tests {
             agc: Some(AgcSetting::switched(false)),
             ..DeviceSettings::default()
         };
-        assert!(automatic_gain_is_on(&switch, &on));
-        assert!(!automatic_gain_is_on(&switch, &off));
-        assert!(!automatic_gain_is_on(&caps(), &on));
+        assert!(agc_state(&switch, &on).on);
+        assert!(!agc_state(&switch, &off).on);
+        assert!(!agc_state(&caps(), &on).on);
         let mut modes = caps();
         modes.agc = Agc::Modes {
             options: vec![ArgumentOption::plain("fast"), ArgumentOption::plain("slow")],
         };
-        assert!(!automatic_gain_is_on(&modes, &DeviceSettings::default()));
+        assert!(!agc_state(&modes, &DeviceSettings::default()).on);
         assert_eq!(
             agc_state(&modes, &DeviceSettings::default()),
             AgcSetting::in_mode(false, "fast")

@@ -1,5 +1,6 @@
 use sdrmm_wire::cps::{Codeplug, CpsCodeplugDetail};
 use zgui::prelude::*;
+use zgui_ui::prelude::*;
 
 use super::logic::{
     channel_detail, channel_kind, contact_kind_label, format_mhz, format_shift, kind_label,
@@ -77,9 +78,9 @@ fn table(codeplug: &Codeplug, section: Section) -> impl IntoView {
                 .iter()
                 .map(|contact| {
                     vec![
-                        (contact.name.clone(), ""),
-                        (contact_kind_label(contact.kind).to_owned(), "tool-dim"),
-                        (contact.number.to_string(), ""),
+                        Cell::new(contact.name.clone(), ""),
+                        Cell::new(contact_kind_label(contact.kind), "tool-dim"),
+                        Cell::new(contact.number.to_string(), ""),
                     ]
                 })
                 .collect(),
@@ -110,13 +111,35 @@ fn table(codeplug: &Codeplug, section: Section) -> impl IntoView {
             codeplug
                 .radio_ids
                 .iter()
-                .map(|id| vec![(id.name.clone(), ""), (id.number.to_string(), "")])
+                .map(|id| {
+                    vec![
+                        Cell::new(id.name.clone(), ""),
+                        Cell::new(id.number.to_string(), ""),
+                    ]
+                })
                 .collect(),
         ),
     }
 }
 
-type Row = Vec<(String, &'static str)>;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Cell {
+    pub text: String,
+    pub tone: &'static str,
+    pub tip: Option<String>,
+}
+
+impl Cell {
+    fn new(text: impl Into<String>, tone: &'static str) -> Self {
+        Self {
+            text: text.into(),
+            tone,
+            tip: None,
+        }
+    }
+}
+
+type Row = Vec<Cell>;
 
 fn channel_rows(codeplug: &Codeplug) -> Vec<Row> {
     codeplug
@@ -125,14 +148,14 @@ fn channel_rows(codeplug: &Codeplug) -> Vec<Row> {
         .enumerate()
         .map(|(index, channel)| {
             vec![
-                ((index + 1).to_string(), "tool-faint"),
-                (channel.name.clone(), ""),
-                (format_mhz(channel.rx_hz), ""),
-                (format_shift(channel), "tool-dim"),
-                (kind_label(channel_kind(channel)).to_owned(), ""),
-                (power_label(channel.power).to_owned(), "tool-dim"),
-                (channel_detail(channel), "tool-dim"),
-                (
+                Cell::new((index + 1).to_string(), "tool-faint"),
+                Cell::new(channel.name.clone(), ""),
+                Cell::new(format_mhz(channel.rx_hz), ""),
+                Cell::new(format_shift(channel), "tool-dim"),
+                Cell::new(kind_label(channel_kind(channel)), ""),
+                Cell::new(power_label(channel.power), "tool-dim"),
+                Cell::new(channel_detail(channel), "tool-dim"),
+                Cell::new(
                     channel.scan_list.clone().unwrap_or_else(|| "-".to_owned()),
                     "tool-dim",
                 ),
@@ -150,8 +173,16 @@ pub fn member_line(members: &[String]) -> String {
     }
 }
 
+#[must_use]
+pub fn member_cell(members: &[String]) -> Cell {
+    Cell {
+        tip: (!members.is_empty()).then(|| members.join(", ")),
+        ..Cell::new(member_line(members), "tool-dim")
+    }
+}
+
 fn members(rows: impl Iterator<Item = (String, Vec<String>)>) -> Vec<Row> {
-    rows.map(|(name, members)| vec![(name, ""), (member_line(&members), "tool-dim")])
+    rows.map(|(name, members)| vec![Cell::new(name, ""), member_cell(&members)])
         .collect()
 }
 
@@ -161,17 +192,30 @@ fn grid(columns: &'static str, head: &[&'static str], rows: Vec<Row>) -> impl In
         .map(|title| AnyView::new(view! { text(class = "tool-th") {{*title}} }))
         .collect();
     for row in rows {
-        for (text, tone) in row {
-            cells.push(AnyView::new(view! {
-                text(
-                    class = "tool-td",
-                    class:dim = tone == "tool-dim",
-                    class:faint = tone == "tool-faint"
-                ) {{text}}
-            }));
-        }
+        cells.extend(row.into_iter().map(cell_view));
     }
     view! { box(class = "tool-table", class = columns) {{cells}} }
+}
+
+fn cell_view(cell: Cell) -> AnyView {
+    let Cell { text, tone, tip } = cell;
+    let class = match tone {
+        "tool-dim" => "tool-td dim",
+        "tool-faint" => "tool-td faint",
+        _ => "tool-td",
+    };
+    match tip {
+        Some(tip) => {
+            let tip = Signal::stored(tip);
+            AnyView::new(view! {
+                Tooltip(delay = std::time::Duration::from_millis(250)) {
+                    TooltipTrigger(class = class) { text {{text}} }
+                    TooltipContent {{move || tip.get()}}
+                }
+            })
+        }
+        None => AnyView::new(view! { text(class = class) {{text}} }),
+    }
 }
 
 #[cfg(test)]
@@ -185,5 +229,12 @@ mod tests {
             member_line(&["A".to_owned(), "B".to_owned()]),
             "2 \u{b7} A, B"
         );
+    }
+
+    #[test]
+    fn a_member_cell_carries_the_full_list_as_its_hint() {
+        let names = ["A".to_owned(), "B".to_owned()];
+        assert_eq!(member_cell(&names).tip.as_deref(), Some("A, B"));
+        assert_eq!(member_cell(&[]).tip, None);
     }
 }

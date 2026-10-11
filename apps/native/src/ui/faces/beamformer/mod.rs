@@ -78,6 +78,7 @@ pub fn rows(
 }
 
 pub fn face(store: Store, node: String) -> impl IntoView {
+    let titled = node.clone();
     install_stylesheet("beamformer-face", SHEET);
     let processor = Processor::new(store, node.clone());
     let params = settings(store, node.clone(), controls::body);
@@ -112,9 +113,9 @@ pub fn face(store: Store, node: String) -> impl IntoView {
         wired,
     };
     let health = processor.health;
+    head(store, titled, processor.subtitle(period));
     view! {
         column(class = "face") {
-            {head(processor.subtitle(period))}
             row(class = "bf__top", class:stale = move || stale.get()) {
                 box(class = "bf__pattern", a11y:label = "Beam pattern") {
                     {pattern(reading)}

@@ -5,7 +5,9 @@ use sdrmm_wire::{
     device::DeviceSettings,
     patch::RackLayout,
     rest::AuthInfo,
-    workspace::{WorkspaceDetail, WorkspaceExport, WorkspaceSettings, WorkspacesResponse},
+    workspace::{
+        PatchApplyReport, WorkspaceDetail, WorkspaceExport, WorkspaceSettings, WorkspacesResponse,
+    },
 };
 use zgui::prelude::*;
 
@@ -64,6 +66,7 @@ impl Store {
 
     pub async fn load(self, id: i64, seed: bool) {
         let api = self.api();
+        self.expect_switch(id);
         if let Err(error) = api.activate_workspace(id).await {
             self.fail("Cannot open the workspace", &error);
             return;
@@ -81,9 +84,8 @@ impl Store {
         let seeding = seed && starter::wants_seeding(&detail.snapshot.graph);
         if seeding {
             let devices = api.devices().await.unwrap_or_default();
-            let graph = starter::graph(&devices);
-            self.graph.set(Arc::new(graph.clone()));
-            if let Err(error) = self.write_graph(graph).await {
+            self.graph.set(Arc::new(starter::graph(&devices)));
+            if let Err(error) = self.commit().await {
                 self.fail("Cannot save the starter patch", &error);
                 return;
             }
@@ -94,15 +96,33 @@ impl Store {
         }
     }
 
+    pub(crate) async fn follow(self, id: i64, report: PatchApplyReport) {
+        let detail = match self.api().workspace(id).await {
+            Ok(detail) => detail,
+            Err(error) => {
+                self.fail("Cannot read the workspace", &error);
+                return;
+            }
+        };
+        self.take_detail(&detail);
+        self.phase.set(Phase::Ready);
+        self.refresh_workspaces();
+        self.refresh_state();
+        self.announce(&report, &detail.snapshot.graph.nodes);
+    }
+
     fn take_detail(self, detail: &WorkspaceDetail) {
         let (editor, worker) = Session::new(self.api(), detail.clone());
         self.editor.set_value(Some(editor));
         zgui::task::spawn_local(worker.run());
+        if self.workspace.get_untracked() != Some(detail.info.id) {
+            self.arrays.set(Arc::default());
+        }
         self.workspace.set(Some(detail.info.id));
         self.selected.set(None);
         self.expanded.set(None);
         self.read_detail(detail);
-        self.graph.set(Arc::new(detail.snapshot.graph.clone()));
+        self.adopt_graph(detail.snapshot.graph.clone());
     }
 
     async fn tune_starter(self) {

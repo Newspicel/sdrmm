@@ -8,7 +8,6 @@ use crate::{
     ui::{node, widgets::segments},
 };
 
-const SPAWN_STEP: f32 = 36.0;
 
 pub fn sheet(store: Store, canvas: Canvas) -> impl IntoView {
     let search = RwSignal::new_local(String::new());
@@ -104,38 +103,24 @@ fn add(store: Store, canvas: Canvas, kind: &str) {
         store.say(format!("Unknown node kind: {kind}"));
         return;
     };
-    let at = store.palette_at.get_untracked().unwrap_or_else(|| {
-        let view = canvas.view();
-        let centre = view
-            .viewport()
-            .get_untracked()
-            .visible_rect(view.pane_size().get_untracked())
-            .center();
-        (
-            centre.x as f32 - node::DEFAULT_WIDTH / 2.0,
-            centre.y as f32 - 80.0,
-        )
-    });
+    let at = store
+        .palette_at
+        .get_untracked()
+        .unwrap_or_else(|| crate::ui::patch::place_new(canvas, body.kind()));
     store.palette_at.set(None);
+    let taken = crate::ui::patch::graph::node_ids(&store.graph.get_untracked());
+    let id = crate::ui::patch::graph::new_node_id(body.kind(), &taken);
+    let added = id.clone();
     store.edit_graph(move |graph| {
-        let taken = crate::ui::patch::graph::node_ids(graph);
-        let step = graph
-            .nodes
-            .iter()
-            .filter(|node| {
-                (node.position.x - at.0).abs() < 1.0 && (node.position.y - at.1).abs() < 1.0
-            })
-            .count() as f32
-            * SPAWN_STEP;
-        let (x, y) = (at.0 + step, at.1 + step);
         graph.nodes.push(PatchNode {
-            id: crate::ui::patch::graph::new_node_id(body.kind(), &taken),
+            id: added,
             body,
-            position: Position { x, y },
+            position: Position { x: at.0, y: at.1 },
             size: None,
             label: None,
         });
     });
+    store.selected.set(Some(id));
 }
 
 #[cfg(test)]

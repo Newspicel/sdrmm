@@ -15,9 +15,11 @@ pub mod kit_sources;
 pub mod library;
 pub mod map;
 pub mod node;
+pub mod notices;
 pub mod palette;
 pub mod params;
 pub mod patch;
+pub mod presence;
 pub mod rack;
 pub mod shell;
 pub mod toasts;
@@ -55,6 +57,8 @@ pub fn app(store: Store, prefs: PrefsFile) -> impl IntoView {
     provide_context(shell);
     shell::themed(shell);
     watch_token(store, shell);
+    presence::start(store, shell);
+    watch_nodes(store);
     let audio = crate::audio::provide();
     crate::position::Positions::provide(store);
     let canvas = patch::canvas();
@@ -71,9 +75,10 @@ pub fn app(store: Store, prefs: PrefsFile) -> impl IntoView {
                 close_menus();
                 shell.menu.set(None);
             },
-            on:key_down = move |ev: &mut EventCx<'_, events::KeyDown>| hotkeys::press(store, shell, ev)
+            on:key_down = move |ev: &mut EventCx<'_, events::KeyDown>| hotkeys::press(store, shell, tools_open, ev)
         ) {
             {move || (phase.get() == Phase::Ready).then(|| AnyView::new(bar::head(store, shell)))}
+            {move || (phase.get() == Phase::Ready).then(|| AnyView::new(notices::strip(store)))}
             {crate::audio::player(store, audio)}
             box(class = "pane") {
                 {move || match phase.get() {
@@ -85,6 +90,7 @@ pub fn app(store: Store, prefs: PrefsFile) -> impl IntoView {
             {move || match shell.menu.get() {
                 Some(Menu::Workspaces) => Some(AnyView::new(workspace_menu::menu(store, shell))),
                 Some(Menu::Library) => Some(AnyView::new(library::popover(store, shell))),
+                Some(Menu::People) => Some(AnyView::new(presence::people(store, shell))),
                 None => None,
             }}
             {gates::gate(store, shell)}
@@ -117,6 +123,11 @@ fn listen_everywhere(root: NodeRef) {
         }
     });
     on_cleanup_local(move || drop(binding));
+}
+
+fn watch_nodes(store: Store) {
+    let forgetting = zgui::reactive::RenderEffect::new(move |_| store.forget_gone_nodes());
+    on_cleanup_local(move || drop(forgetting));
 }
 
 fn watch_token(store: Store, shell: Shell) {

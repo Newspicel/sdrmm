@@ -1,4 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+};
 
 use sdrmm_wire::{
     frame::{FrameKind, peek_header},
@@ -275,6 +280,7 @@ pub struct Bus {
     pub frames: RefCell<Listeners<Frame>>,
     pub sources: RefCell<HashMap<u16, Source>>,
     pub holds: RefCell<HashMap<String, (ClientCommand, usize)>>,
+    pub refused: RefCell<HashSet<String>>,
 }
 
 impl Bus {
@@ -282,8 +288,17 @@ impl Bus {
         if let Some((stream_id, source)) = Source::started(event) {
             self.sources.borrow_mut().insert(stream_id, source);
         }
-        if let ServerEvent::StreamStopped { stream_id, .. } = event {
-            self.sources.borrow_mut().remove(stream_id);
+        match event {
+            ServerEvent::StreamStopped { stream_id, .. } => {
+                self.sources.borrow_mut().remove(stream_id);
+            }
+            ServerEvent::SurfaceRefused { node, .. } => {
+                self.refused.borrow_mut().insert(node.clone());
+            }
+            ServerEvent::SurfaceStreamStarted { node, .. } => {
+                self.refused.borrow_mut().remove(node);
+            }
+            _ => {}
         }
         let handlers = self.events.borrow().snapshot();
         for handler in handlers {
@@ -321,6 +336,18 @@ impl Bus {
         }
         holds.remove(&key);
         unsubscribe_of(command)
+    }
+
+    pub fn retry_refused(&self) -> Vec<ClientCommand> {
+        let refused = std::mem::take(&mut *self.refused.borrow_mut());
+        self.holds
+            .borrow()
+            .values()
+            .filter(|(command, _)| {
+                matches!(command, ClientCommand::SubscribeSurface { node, .. } if refused.contains(node))
+            })
+            .map(|(command, _)| command.clone())
+            .collect()
     }
 
     #[must_use]
@@ -419,6 +446,33 @@ mod tests {
             kind: StreamKind::Iq,
         });
         assert_eq!(bus.source_of(9), None);
+    }
+
+    #[test]
+    fn only_a_refused_surface_is_asked_again() {
+        let bus = Bus::default();
+        let surface = |node: &str| ClientCommand::SubscribeSurface {
+            node: node.to_owned(),
+            fit: None,
+        };
+        bus.hold(&surface("radar"));
+        bus.hold(&surface("df"));
+        bus.publish_event(&ServerEvent::SurfaceRefused {
+            node: String::from("radar"),
+            reason: sdrmm_wire::ws::SurfaceRefusal::NoSurface,
+        });
+        assert_eq!(bus.retry_refused(), vec![surface("radar")]);
+        assert!(bus.retry_refused().is_empty());
+        bus.publish_event(&ServerEvent::SurfaceRefused {
+            node: String::from("df"),
+            reason: sdrmm_wire::ws::SurfaceRefusal::NoSurface,
+        });
+        bus.publish_event(&ServerEvent::SurfaceStreamStarted {
+            stream_id: 3,
+            node: String::from("df"),
+            kind: StreamKind::Spectrum,
+        });
+        assert!(bus.retry_refused().is_empty());
     }
 
     #[test]

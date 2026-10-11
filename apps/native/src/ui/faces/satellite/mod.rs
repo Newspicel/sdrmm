@@ -14,16 +14,24 @@ use zgui::{
 use zgui_ui::prelude::*;
 
 use crate::{
-    format,
+    head::{self, NodeHead},
     store::Store,
     ui::{
+        kit_audio::{self, Stat, Tone, titled},
+        kit_channel::{self, tuning_lock},
         kit_maps::{
             SHEET,
             feed::{Feed, Topic},
             mhz, ticker,
         },
-        widgets::{check, dial, pick, row_field},
+        kit_sources::{self, DialSpec, dial::Reach, frequency_dial, search::searchable_pick},
+        widgets::row_field,
     },
+};
+
+const REACH: Reach = Reach {
+    min: text::RANGE_HZ.0,
+    max: text::RANGE_HZ.1,
 };
 
 const SEARCH_DELAY: Duration = Duration::from_millis(350);
@@ -100,7 +108,7 @@ fn picker(store: Store, node: String) -> impl IntoView {
     let timers = Timers::current();
     let searching = RenderEffect::new(move |_| {
         let query = draft.get().trim().to_owned();
-        if query.is_empty() || text::pasted_elements(&query).is_some() {
+        if text::pasted_elements(&query).is_some() {
             waiting.set_value(None);
             results.set(None);
             return;
@@ -164,17 +172,83 @@ fn picker(store: Store, node: String) -> impl IntoView {
             }
         }
     };
-    view! {
-        column(class = "entry satellite__pick") {
+    let search = titled(
+        "A name, a NORAD number, or pasted element lines",
+        AnyView::new(view! {
             Input(
                 class = "native-input",
                 value = draft,
                 label = "Search satellites",
                 placeholder = "ISS, 25544 or element lines"
             )
+        }),
+    );
+    view! {
+        column(class = "entry satellite__pick") {
+            {search}
             box(class = "satellite__found") {{found}}
         }
     }
+}
+
+#[must_use]
+pub fn elements_stat(age_days: Option<f64>) -> Option<Stat> {
+    let days = age_days?;
+    let shown = Stat::new(
+        "Elements",
+        format!("{days:.1} d"),
+        "Age of the orbital elements. Older ones drift; refresh them",
+    );
+    Some(if days > text::STALE_ELEMENTS_DAYS {
+        shown.tone(Tone::Warn)
+    } else {
+        shown
+    })
+}
+
+fn downlink(store: Store, node: String, settings: Memo<SatelliteNode>) -> impl IntoView {
+    let held = Signal::derive(move || settings.get().transmitter.is_some());
+    let locked = Signal::derive(move || settings.get().tuning_locked);
+    let frozen = Signal::derive(move || held.get() || locked.get());
+    let hz = Signal::derive(move || settings.get().downlink_hz.unwrap_or(0.0));
+    let tune = {
+        let node = node.clone();
+        move |hz: f64| {
+            edit(store, &node, move |held| {
+                held.downlink_hz = Some(hz);
+                held.uplink_hz = None;
+                held.transmitter = None;
+            });
+        }
+    };
+    let selected = {
+        let node = node.clone();
+        Signal::derive(move || store.selected.get().as_deref() == Some(node.as_str()))
+    };
+    let spec = DialSpec {
+        hz,
+        reach: Signal::stored(REACH),
+        disabled: frozen,
+        wheel: selected,
+    };
+    let dial = {
+        move || match settings.get().downlink_hz {
+            None => AnyView::new(view! { text(class = "hint") {"No downlink"} }),
+            Some(_) => AnyView::new(frequency_dial(spec, tune.clone())),
+        }
+    };
+    let hold = Signal::derive(move || held.get().then(|| text::HELD_BY_SIGNAL.to_owned()));
+    let lock = move |on: bool| edit(store, &node, move |held| held.tuning_locked = on);
+    titled(
+        "Downlink before Doppler",
+        AnyView::new(view! {
+            row(class = "satellite__downlink kit-dial-row") {
+                {dial}
+                spacer() {}
+                {tuning_lock(frozen, "Downlink locked", "Lock downlink", hold, lock)}
+            }
+        }),
+    )
 }
 
 fn tracked(
@@ -183,60 +257,47 @@ fn tracked(
     settings: Memo<SatelliteNode>,
     status: Signal<Option<SatelliteStatus>, LocalStorage>,
 ) -> impl IntoView {
-    let held = Signal::derive(move || settings.get().transmitter.is_some());
-    let locked = Signal::derive(move || settings.get().tuning_locked);
-    let downlink = {
-        let node = node.clone();
-        move || {
-            let chosen = settings.get();
-            match chosen.downlink_hz {
-                None => AnyView::new(view! { text(class = "hint") {"No downlink"} }),
-                Some(hz) if chosen.tuning_locked || chosen.transmitter.is_some() => AnyView::new(
-                    view! { text(class = "mono satellite__fixed") {{format::frequency(hz)}} },
-                ),
-                Some(_) => {
-                    let node = node.clone();
-                    AnyView::new(dial(
-                        Signal::derive(move || settings.get().downlink_hz.unwrap_or(0.0)),
-                        move |hz| {
-                            let hz = hz.clamp(text::RANGE_HZ.0, text::RANGE_HZ.1);
-                            edit(store, &node, move |held| {
-                                held.downlink_hz = Some(hz);
-                                held.uplink_hz = None;
-                                held.transmitter = None;
-                            });
-                        },
-                    ))
-                }
-            }
-        }
-    };
-    let lock_node = node.clone();
-    let lock = check(
-        Signal::derive(move || locked.get() || held.get()),
-        move |on| {
-            edit(store, &lock_node, move |held| held.tuning_locked = on);
-        },
-    );
+    kit_audio::install();
+    kit_channel::install();
+    kit_sources::install();
+    head::show(store, node.clone(), move || {
+        status
+            .get()
+            .and_then(|status| status.name.or(status.catalog))
+            .map_or_else(NodeHead::default, NodeHead::said)
+    });
     let catalog = Signal::derive_local(move || status.get().and_then(|status| status.catalog));
     let refresh_node = node.clone();
     let change_node = node.clone();
+    let age = Signal::derive_local(move || status.get().and_then(|status| status.tle_age_days));
+    let refreshing = RwSignal::new(false);
+    let failed = RwSignal::new(None::<String>);
+    let refresh_hint = move || {
+        failed
+            .get()
+            .unwrap_or_else(|| String::from("Fetch the newest elements"))
+    };
     view! {
-        row(class = "satellite__downlink") {
-            {downlink}
-            spacer()
-            box(class = "satellite__lock") {{lock}}
-            text(class = "geo__label") {"Lock"}
-        }
+        {downlink(store, node.clone(), settings)}
         {signals(store, node, settings, catalog)}
         {readout(status)}
-        row(class = "face__foot") {
-            control(
-                class = "btn",
-                state:disabled = move || catalog.get().is_none(),
-                on:click:stop = move |_| refresh(store, refresh_node.clone(), catalog.get_untracked())
-            ) {"Refresh elements"}
-            spacer()
+        {move || status.get().and_then(|status| status.error).map(|error| view! { text(class = "geo__bad") {{error}} })}
+        row(class = "face__foot rec-foot") {
+            {kit_audio::stats(move || elements_stat(age.get()).into_iter().collect())}
+            {move || {
+                let refresh_node = refresh_node.clone();
+                catalog.get().is_some().then(|| titled(refresh_hint(), AnyView::new(view! {
+                    control(
+                        class = "btn",
+                        state:disabled = move || refreshing.get(),
+                        on:click:stop = move |_| {
+                            if !refreshing.get_untracked() {
+                                refresh(store, refresh_node.clone(), catalog.get_untracked(), (refreshing, failed));
+                            }
+                        }
+                    ) {"Refresh elements"}
+                })))
+            }}
             control(
                 class = "btn",
                 on:click:stop = move |_| edit(store, &change_node, |held| *held = SatelliteNode::default())
@@ -245,22 +306,36 @@ fn tracked(
     }
 }
 
-fn refresh(store: Store, node: String, catalog: Option<String>) {
+fn refresh(
+    store: Store,
+    node: String,
+    catalog: Option<String>,
+    (busy, failed): (RwSignal<bool>, RwSignal<Option<String>>),
+) {
     let Some(catalog) = catalog else {
         return;
     };
+    busy.set(true);
     zgui::task::spawn_local(async move {
         let path = format!("/api/satellites?q={}", encode(&catalog));
-        match store.api().get::<SatelliteCatalogResponse>(&path).await {
-            Ok(found) => match found
-                .satellites
-                .into_iter()
-                .find(|satellite| satellite.catalog == catalog)
-            {
-                Some(fresh) => edit(store, &node, move |held| held.tle = Some(fresh.tle)),
-                None => store.say(format!("{catalog} is not in the catalogue")),
-            },
-            Err(error) => store.say(format!("cannot refresh the elements: {error}")),
+        let answer = store.api().get::<SatelliteCatalogResponse>(&path).await;
+        busy.try_set(false);
+        match answer {
+            Ok(found) => {
+                failed.try_set(None);
+                match found
+                    .satellites
+                    .into_iter()
+                    .find(|satellite| satellite.catalog == catalog)
+                {
+                    Some(fresh) => edit(store, &node, move |held| held.tle = Some(fresh.tle)),
+                    None => store.say(format!("{catalog} is not in the catalogue")),
+                }
+            }
+            Err(error) => {
+                failed.try_set(Some(error.to_string()));
+                store.say(format!("cannot refresh the elements: {error}"));
+            }
         }
     });
 }
@@ -293,6 +368,7 @@ fn signals(
         if shown.is_empty() {
             return None;
         }
+        let title = text::signal_title(Some(found.source.as_str()));
         let mut options = vec![(String::new(), String::from("Own frequency"))];
         options.extend(
             shown
@@ -301,7 +377,8 @@ fn signals(
         );
         let transmitters: Vec<_> = shown.into_iter().cloned().collect();
         let node = node.clone();
-        let choice = pick(
+        let choice = searchable_pick(
+            "Signal",
             options,
             Signal::derive(move || Some(settings.get().transmitter.unwrap_or_default())),
             move |id: String| {
@@ -316,7 +393,7 @@ fn signals(
                 });
             },
         );
-        Some(AnyView::new(row_field("Signal", choice)))
+        Some(titled(title, AnyView::new(row_field("Signal", choice))))
     }
 }
 
@@ -346,13 +423,19 @@ fn readout(status: Signal<Option<SatelliteStatus>, LocalStorage>) -> impl IntoVi
             let rate = status
                 .doppler_rate_hz_s
                 .map_or_else(String::new, |rate| format!(", {}/s", text::doppler(rate)));
-            rows.push(AnyView::new(row_field(
-                "Doppler",
-                format!("{}{rate}", text::doppler(shift)),
-            )));
+            rows.push(titled(
+                "Added to every wired decoder",
+                AnyView::new(row_field(
+                    "Doppler",
+                    format!("{}{rate}", text::doppler(shift)),
+                )),
+            ));
         }
         if let Some(uplink) = status.uplink_hz {
-            rows.push(AnyView::new(row_field("Send on", mhz(uplink))));
+            rows.push(titled(
+                "The uplink corrected so the satellite hears it on frequency",
+                AnyView::new(row_field("Send on", mhz(uplink))),
+            ));
         }
         if status.look.is_some() {
             let pass = status.next_pass;
@@ -361,20 +444,7 @@ fn readout(status: Signal<Option<SatelliteStatus>, LocalStorage>) -> impl IntoVi
                 view! { text(class = "mono") {{move || text::pass_line(pass.as_ref(), now.get() / 1_000)}} },
             )));
         }
-        if let Some(age) = status.tle_age_days {
-            let stale = age > text::STALE_ELEMENTS_DAYS;
-            rows.push(AnyView::new(row_field(
-                "Elements",
-                view! { text(class = "mono", class:warn = stale) {{format!("{age:.1} days old")}} },
-            )));
-        }
-        if let Some(error) = status.error {
-            rows.push(AnyView::new(row_field(
-                "Fault",
-                view! { text(class = "geo__bad") {{error}} },
-            )));
-        }
-        Some(view! { column(class = "satellite__readout") {{rows}} })
+        (!rows.is_empty()).then(|| view! { column(class = "satellite__readout") {{rows}} })
     }
 }
 
@@ -393,9 +463,24 @@ const FACE_SHEET: &str = css!(
 }
 .satellite__hit:hover { background-color: var(--panel-3); color: var(--ink); }
 .satellite__downlink { align-items: center; gap: 6px; }
-.satellite__fixed { font-size: 15px; color: var(--ink); }
 .satellite__readout { gap: 2px; }
 .satellite__readout .on { color: var(--accent); }
-.satellite__readout .warn { color: oklch(0.8 0.14 80); }
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn element_age_warns_once_the_elements_go_stale() {
+        assert_eq!(elements_stat(None), None);
+        let fresh = elements_stat(Some(2.04)).expect("a stat");
+        assert_eq!(
+            (fresh.value.as_deref(), fresh.tone),
+            (Some("2.0 d"), Tone::Plain)
+        );
+        let stale = elements_stat(Some(9.0)).expect("a stat");
+        assert_eq!(stale.tone, Tone::Warn);
+    }
+}

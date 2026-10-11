@@ -353,3 +353,113 @@ fn a_live_frame_the_backlog_carried_leaves_one_row() {
     assert_eq!(stations(&decoded, "adsb"), Some(1));
     assert_eq!(station.as_ref().map(|s| s.last_seen_ms), Some(T0));
 }
+
+fn parsed(kind: &str, data: serde_json::Value, offset_ms: i64) -> DecodedRecord {
+    record(
+        crate::decoders::testing::event(kind, data),
+        1,
+        433_000_000.0,
+        offset_ms,
+    )
+}
+
+fn meshtastic(content: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "spreading_factor": 11, "bandwidth_hz": 250_000.0, "coding_rate": "4/5",
+        "sync_word": 43, "implicit_header": false, "low_data_rate": false,
+        "inverted_iq": false, "integrity": "crc_ok", "fec_corrected": 0,
+        "snr_db": 7.5, "frequency_error_hz": 0.0, "payload": "00",
+        "decoded": {
+            "protocol": "meshtastic", "to": 1, "from": 0x1234, "id": 1,
+            "hop_limit": 3, "hop_start": 3, "want_ack": false, "via_mqtt": false,
+            "channel_hash": 8, "next_hop": 0, "relay_node": 0, "encryption": "open",
+            "content": content,
+        },
+    })
+}
+
+#[test]
+fn sondes_mesh_nodes_drones_and_beacons_become_stations() {
+    let mut decoded = Decoded::default();
+    decoded.publish(vec![
+        parsed(
+            "radiosonde",
+            serde_json::json!({ "sonde": "rs41", "serial": "S1", "errors_corrected": 0 }),
+            0,
+        ),
+        parsed(
+            "ble",
+            serde_json::json!({
+                "pdu": "adv_ind", "phy": "le1m", "level_dbfs": -40.0, "data": "00",
+                "address": { "address": "AA:BB", "kind": "public" },
+            }),
+            0,
+        ),
+        parsed(
+            "remote_id",
+            serde_json::json!({
+                "transport": "bluetooth_legacy", "phy": "le1m", "address": "D2:11",
+                "level_dbfs": -50.0, "messages": [],
+            }),
+            0,
+        ),
+        parsed(
+            "lora",
+            meshtastic(serde_json::json!({ "type": "text", "text": "hi" })),
+            0,
+        ),
+    ]);
+    for kind in ["radiosonde", "ble", "remote_id", "lora"] {
+        assert_eq!(stations(&decoded, kind), Some(1), "{kind}");
+    }
+}
+
+#[test]
+fn a_mesh_node_keeps_its_last_position() {
+    let mut decoded = Decoded::default();
+    decoded.publish(vec![parsed(
+        "lora",
+        meshtastic(serde_json::json!({ "type": "position", "lat": 47.5, "lon": 8.5 })),
+        0,
+    )]);
+    decoded.publish(vec![parsed(
+        "lora",
+        meshtastic(serde_json::json!({ "type": "text", "text": "hi" })),
+        1_000,
+    )]);
+    let position = decoded
+        .stations("lora")
+        .and_then(|found| found.get("!00001234").cloned())
+        .and_then(|station| station.event.position());
+    assert_eq!(position, Some((47.5, 8.5)));
+}
+
+#[test]
+fn a_drone_keeps_messages_a_later_frame_left_out() {
+    let mut decoded = Decoded::default();
+    let frame = |messages: serde_json::Value, offset_ms| {
+        parsed(
+            "remote_id",
+            serde_json::json!({
+                "transport": "bluetooth_legacy", "phy": "le1m", "address": "D2:11",
+                "uas_id": "DRONE1", "level_dbfs": -50.0, "messages": messages,
+            }),
+            offset_ms,
+        )
+    };
+    decoded.publish(vec![frame(
+        serde_json::json!([{ "type": "operator_id", "id_type": 0, "operator_id": "OP-1" }]),
+        0,
+    )]);
+    decoded.publish(vec![frame(
+        serde_json::json!([{ "type": "self_id", "description_type": 0, "text": "Survey" }]),
+        1_000,
+    )]);
+    let merged = decoded
+        .stations("remote_id")
+        .and_then(|found| found.get("DRONE1").cloned());
+    let Some(DecoderEvent::RemoteId(frame)) = merged.map(|station| station.event.clone()) else {
+        panic!("the drone is a station");
+    };
+    assert_eq!(frame.messages.len(), 2);
+}

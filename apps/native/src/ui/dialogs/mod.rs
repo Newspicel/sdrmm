@@ -1,7 +1,10 @@
 mod about;
 mod auto_off;
+mod help;
 mod report;
-mod shortcuts;
+mod serial;
+
+use std::sync::Arc;
 
 use zgui::prelude::*;
 
@@ -17,7 +20,7 @@ pub fn layer(store: Store, shell: Shell) -> impl IntoView {
     let dialog = move || {
         let open = shell.dialog.get()?;
         let body = match open {
-            Dialog::Shortcuts => AnyView::new(shortcuts::dialog(shell)),
+            Dialog::Help => AnyView::new(help::dialog(store, shell)),
             Dialog::About => AnyView::new(about::dialog(store, shell)),
             Dialog::Report(seed) => AnyView::new(report::dialog(store, shell, seed)),
         };
@@ -34,12 +37,37 @@ pub fn layer(store: Store, shell: Shell) -> impl IntoView {
     view! {
         {dialog}
         {asking}
+        {serial::layer(store, shell)}
     }
+}
+
+type Loaded<T> = RwSignal<Option<Result<Arc<T>, String>>>;
+
+fn load<T: serde::de::DeserializeOwned + Send + Sync + 'static>(
+    store: Store,
+    path: String,
+) -> Loaded<T> {
+    let into: Loaded<T> = RwSignal::new(None);
+    zgui::task::spawn_local(async move {
+        let result = store.api().get::<T>(&path).await;
+        into.set(Some(
+            result.map(Arc::new).map_err(|error| error.to_string()),
+        ));
+    });
+    into
+}
+
+pub fn title(text: impl IntoView + 'static) -> impl IntoView {
+    view! { text(class = "sk-dialog__title") {{text}} }
+}
+
+pub fn legend(text: impl IntoView + 'static) -> impl IntoView {
+    view! { text(class = "legend sk-dialog__aside") {{text}} }
 }
 
 pub fn frame(
     class: &'static str,
-    title: impl IntoView + 'static,
+    head: impl IntoView + 'static,
     aside: impl IntoView + 'static,
     body: impl IntoView + 'static,
     foot: impl IntoView + 'static,
@@ -51,7 +79,7 @@ pub fn frame(
             on:pointer_down = |ev: &mut EventCx<'_, events::PointerDown>| ev.stop_propagation()
         ) {
             row(class = "sk-dialog__head") {
-                text(class = "sk-dialog__title") {{title}}
+                {head}
                 spacer() {}
                 {aside}
             }

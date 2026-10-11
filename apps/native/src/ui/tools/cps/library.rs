@@ -3,10 +3,12 @@ use sdrmm_wire::{
     cps::{CpsCodeplugInfo, CpsDeviceRequest, CpsUserRequest},
 };
 use zgui::prelude::*;
-use zgui_ui::prelude::*;
 
 use super::{Cps, logic::model_label};
-use crate::ui::{tools::kit::button, widgets::pick};
+use crate::ui::{
+    tools::kit::{alert, button, text_field},
+    widgets::pick,
+};
 
 #[derive(Clone, Copy)]
 enum Kind {
@@ -26,10 +28,10 @@ impl Kind {
     }
 }
 
-fn drop_row(cps: Cps, kind: Kind, id: i64) {
+fn drop_row(cps: Cps, failure: RwSignal<Option<String>>, kind: Kind, id: i64) {
     let api = cps.store.api();
     let path = kind.path(id);
-    cps.act(async move { api.delete(&path).await }, move |()| {
+    cps.act_into(failure, async move { api.delete(&path).await }, move |()| {
         if matches!(kind, Kind::Codeplug) && cps.selected.get_untracked() == Some(id) {
             cps.selected.set(None);
         }
@@ -48,17 +50,32 @@ pub fn parse_dmr_id(text: &str) -> Result<Option<u32>, String> {
         .map_err(|_| format!("{trimmed} is not a DMR ID"))
 }
 
-fn remove(cps: Cps, kind: Kind, id: i64) -> impl IntoView {
+fn remove(cps: Cps, failure: RwSignal<Option<String>>, kind: Kind, id: i64) -> impl IntoView {
     button(
         "btn small",
         || "Remove".to_owned(),
         || false,
-        move || drop_row(cps, kind, id),
+        move || drop_row(cps, failure, kind, id),
     )
+}
+
+fn section(
+    title: &'static str,
+    failure: RwSignal<Option<String>>,
+    body: impl IntoView + 'static,
+) -> impl IntoView {
+    view! {
+        column(class = "tool-group") {
+            text(class = "legend") {{title}}
+            {body}
+            {move || failure.get().map(|error| view! { text(class = "tool-error") {{error}} })}
+        }
+    }
 }
 
 pub fn panel(cps: Cps) -> impl IntoView {
     view! {
+        {alert(move || cps.library.error.get())}
         {operators(cps)}
         {radios(cps)}
         {codeplugs(cps)}
@@ -66,6 +83,7 @@ pub fn panel(cps: Cps) -> impl IntoView {
 }
 
 fn operators(cps: Cps) -> impl IntoView {
+    let failure = RwSignal::new(None::<String>);
     let name = RwSignal::new_local(String::new());
     let callsign = RwSignal::new_local(String::new());
     let dmr = RwSignal::new_local(String::new());
@@ -88,7 +106,7 @@ fn operators(cps: Cps) -> impl IntoView {
                 AnyView::new(view! {
                     row(class = "cps__item") {
                         text(class = "tool-ink") {{label}}
-                        {remove(cps, Kind::User, user.id)}
+                        {remove(cps, failure, Kind::User, user.id)}
                     }
                 })
             })
@@ -98,7 +116,7 @@ fn operators(cps: Cps) -> impl IntoView {
         let dmr_id = match parse_dmr_id(&dmr.get_untracked()) {
             Ok(id) => id,
             Err(error) => {
-                cps.failure.set(Some(error));
+                failure.set(Some(error));
                 return;
             }
         };
@@ -110,7 +128,8 @@ fn operators(cps: Cps) -> impl IntoView {
             note: None,
         };
         let api = cps.store.api();
-        cps.act(
+        cps.act_into(
+            failure,
             async move { api.post::<_, CreatedRowId>("/api/cps/users", &body).await },
             move |_| {
                 name.set(String::new());
@@ -120,21 +139,20 @@ fn operators(cps: Cps) -> impl IntoView {
             },
         );
     };
-    view! {
-        column(class = "tool-group") {
-            text(class = "legend") {"Operators"}
-            {rows}
-            row(class = "tool-bar") {
-                box(class = "tool-text narrow") { Input(class = "native-input", value = name, label = "Operator name", placeholder = "Name") }
-                box(class = "tool-text narrow") { Input(class = "native-input", value = callsign, label = "Callsign", placeholder = "Callsign") }
-                box(class = "tool-text narrow") { Input(class = "native-input", value = dmr, label = "DMR ID", placeholder = "DMR ID") }
-                {button("btn small", || "Add".to_owned(), move || name.with(|name| name.trim().is_empty()) || cps.pending.get(), add)}
-            }
+    let form = view! {
+        {rows}
+        row(class = "tool-bar") {
+            {text_field(name, "Operator name", "Name", "tool-text narrow")}
+            {text_field(callsign, "Callsign", "Callsign", "tool-text narrow")}
+            {text_field(dmr, "DMR ID", "DMR ID", "tool-text narrow")}
+            {button("btn small", || "Add".to_owned(), move || name.with(|name| name.trim().is_empty()) || cps.pending.get(), add)}
         }
-    }
+    };
+    section("Operators", failure, form)
 }
 
 fn radios(cps: Cps) -> impl IntoView {
+    let failure = RwSignal::new(None::<String>);
     let name = RwSignal::new_local(String::new());
     let model = RwSignal::new(String::new());
     let model_id = move || {
@@ -163,7 +181,7 @@ fn radios(cps: Cps) -> impl IntoView {
                             text(class = "tool-ink") {{device.name.clone()}}
                             text(class = "tool-faint") {{device.model_id.clone()}}
                         }
-                        {remove(cps, Kind::Device, device.id)}
+                        {remove(cps, failure, Kind::Device, device.id)}
                     }
                 })
             })
@@ -188,7 +206,8 @@ fn radios(cps: Cps) -> impl IntoView {
             ..CpsDeviceRequest::default()
         };
         let api = cps.store.api();
-        cps.act(
+        cps.act_into(
+            failure,
             async move { api.post::<_, CreatedRowId>("/api/cps/devices", &body).await },
             move |_| {
                 name.set(String::new());
@@ -196,20 +215,19 @@ fn radios(cps: Cps) -> impl IntoView {
             },
         );
     };
-    view! {
-        column(class = "tool-group") {
-            text(class = "legend") {"Radios"}
-            {rows}
-            row(class = "tool-bar") {
-                box(class = "tool-text narrow") { Input(class = "native-input", value = name, label = "Radio name", placeholder = "Name") }
-                box(class = "cps__pick") {{models}}
-                {button("btn small", || "Add".to_owned(), move || name.with(|name| name.trim().is_empty()) || model_id().is_empty() || cps.pending.get(), add)}
-            }
+    let form = view! {
+        {rows}
+        row(class = "tool-bar") {
+            {text_field(name, "Radio name", "Name", "tool-text narrow")}
+            box(class = "cps__pick") {{models}}
+            {button("btn small", || "Add".to_owned(), move || name.with(|name| name.trim().is_empty()) || model_id().is_empty() || cps.pending.get(), add)}
         }
-    }
+    };
+    section("Radios", failure, form)
 }
 
 fn codeplugs(cps: Cps) -> impl IntoView {
+    let failure = RwSignal::new(None::<String>);
     let rows = move || {
         let infos = cps.library.data.with(|data| {
             data.as_ref()
@@ -223,15 +241,10 @@ fn codeplugs(cps: Cps) -> impl IntoView {
         }
         infos
             .into_iter()
-            .map(|info| codeplug_row(cps, info))
+            .map(|info| codeplug_row(cps, failure, info))
             .collect()
     };
-    view! {
-        column(class = "tool-group") {
-            text(class = "legend") {"Codeplugs"}
-            {rows}
-        }
-    }
+    section("Codeplugs", failure, rows)
 }
 
 #[must_use]
@@ -242,7 +255,7 @@ pub fn codeplug_summary(info: &CpsCodeplugInfo) -> String {
     )
 }
 
-fn codeplug_row(cps: Cps, info: CpsCodeplugInfo) -> AnyView {
+fn codeplug_row(cps: Cps, failure: RwSignal<Option<String>>, info: CpsCodeplugInfo) -> AnyView {
     let id = info.id;
     let summary = codeplug_summary(&info);
     AnyView::new(view! {
@@ -258,7 +271,7 @@ fn codeplug_row(cps: Cps, info: CpsCodeplugInfo) -> AnyView {
                 text(class = "tool-ink") {{info.name.clone()}}
                 text(class = "tool-faint") {{summary}}
             }
-            {remove(cps, Kind::Codeplug, id)}
+            {remove(cps, failure, Kind::Codeplug, id)}
         }
     })
 }

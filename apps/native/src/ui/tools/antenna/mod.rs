@@ -14,10 +14,20 @@ use self::model::{
 use crate::{
     store::Store,
     ui::{
+        faces::channel::settings::NumberLimit,
         tools::kit::{Query, alert, chip, format_hz, labelled, number, run_tool},
         widgets::{pick, segments},
     },
 };
+
+const FREQUENCY: NumberLimit = NumberLimit::new(0.01, 300_000.0, 0.005);
+const ELEMENT_FACTOR: NumberLimit = NumberLimit::new(0.5, 1.0, 0.01);
+const COAX_FACTOR: NumberLimit = NumberLimit::new(0.4, 1.0, 0.01);
+const APEX: NumberLimit = NumberLimit::new(60.0, 180.0, 5.0);
+const RADIALS: NumberLimit = NumberLimit::new(1.0, 32.0, 1.0);
+const SLOPE: NumberLimit = NumberLimit::new(0.0, 60.0, 5.0);
+const DIRECTORS: NumberLimit = NumberLimit::new(0.0, 20.0, 1.0);
+const SPACING: NumberLimit = NumberLimit::new(0.1, 0.4, 0.01);
 
 #[derive(Clone, Copy)]
 struct Choices {
@@ -121,10 +131,10 @@ fn controls(
     let kind = choices.kind;
     view! {
         row(class = "tool-row") {
-            {labelled("Frequency", number("Frequency", frequency_mhz, 0.01, 300_000.0, "MHz"))}
+            {labelled("Frequency", number("Frequency", frequency_mhz, FREQUENCY, "MHz"))}
             {labelled("Design", pick(designs, Signal::derive(move || Some(kind.get())), move |picked| choices.pick(picked)))}
-            {labelled("Element factor", number("Element velocity factor", velocity, 0.5, 1.0, ""))}
-            {move || uses_feedline(&default_design(kind.get())).then(|| AnyView::new(labelled("Coax factor", number("Feedline velocity factor", feedline, 0.4, 1.0, ""))))}
+            {labelled("Element factor", number("Element velocity factor", velocity, ELEMENT_FACTOR, ""))}
+            {move || uses_feedline(&default_design(kind.get())).then(|| AnyView::new(labelled("Coax factor", number("Feedline velocity factor", feedline, COAX_FACTOR, ""))))}
             {move || design_settings(choices)}
             {labelled("Units", segments(vec![(Unit::Metres, "m"), (Unit::Feet, "ft")], unit.into(), move |picked| unit.set(picked)))}
         }
@@ -135,26 +145,31 @@ fn design_settings(choices: Choices) -> Vec<AnyView> {
     match choices.kind.get() {
         "inverted_v" => vec![AnyView::new(labelled(
             "Apex angle",
-            number("Apex angle", choices.apex, 60.0, 180.0, "\u{b0}"),
+            number("Apex angle", choices.apex, APEX, "\u{b0}"),
         ))],
         "ground_plane" => vec![
             AnyView::new(labelled(
                 "Radials",
-                number("Radial count", choices.radials, 1.0, 32.0, ""),
+                number("Radial count", choices.radials, RADIALS, ""),
             )),
             AnyView::new(labelled(
                 "Radial slope",
-                number("Radial slope", choices.slope, 0.0, 60.0, "\u{b0}"),
+                number("Radial slope", choices.slope, SLOPE, "\u{b0}"),
             )),
         ],
         "yagi" => vec![
             AnyView::new(labelled(
                 "Directors",
-                number("Director count", choices.directors, 0.0, 20.0, ""),
+                number("Director count", choices.directors, DIRECTORS, ""),
             )),
             AnyView::new(labelled(
                 "Spacing",
-                number("Element spacing", choices.spacing, 0.1, 0.4, "\u{3bb}"),
+                number(
+                    "Element spacing in wavelengths",
+                    choices.spacing,
+                    SPACING,
+                    "\u{3bb}",
+                ),
             )),
         ],
         _ => Vec::new(),
@@ -294,5 +309,29 @@ fn notes(report: Memo<Option<AntennaReport>>) -> impl IntoView {
             })
             .collect();
         view! { column(class = "tool-notes") {{items}} }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::kit_channel::{number_text, step_value};
+
+    #[test]
+    fn the_frequency_steps_by_five_kilohertz_and_shows_no_float_noise() {
+        assert_eq!(step_value(145.5, 0.005, 1.0, FREQUENCY), 145.505);
+        assert_eq!(number_text(Some(145.5), FREQUENCY.step), "145.5");
+        assert_eq!(step_value(0.01, 0.005, -1.0, FREQUENCY), 0.01);
+    }
+
+    #[test]
+    fn counts_and_angles_step_in_whole_units_inside_their_limits() {
+        assert_eq!(step_value(32.0, 1.0, 1.0, RADIALS), 32.0);
+        assert_eq!(step_value(120.0, 5.0, 1.0, APEX), 125.0);
+        assert_eq!(number_text(Some(2.0), DIRECTORS.step), "2");
+        assert_eq!(step_value(0.4, 0.01, 1.0, SPACING), 0.4);
+        assert_eq!(step_value(0.95, 0.01, -1.0, ELEMENT_FACTOR), 0.94);
+        assert_eq!(step_value(0.4, 0.01, -1.0, COAX_FACTOR), 0.4);
+        assert_eq!(step_value(45.0, 50.0, 1.0, SLOPE), 60.0);
     }
 }

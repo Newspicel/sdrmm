@@ -84,24 +84,30 @@ async fn queued_edits_preserve_settings_and_rack_and_undo_in_order() {
     let task = tokio::spawn(worker.run());
     let mut graph = detail.snapshot.graph.clone();
     graph.nodes[0].position.x = 123.0;
-    let first = session.save(graph.clone());
+    let first = session.save(GraphPatch::between(&detail.snapshot.graph, &graph));
+    let moved = graph.clone();
     graph.nodes.push(node("scope2"));
-    let second = session.save(graph.clone());
+    let second = session.save(GraphPatch::between(&moved, &graph));
     let undo = session.step(true);
     let redo = session.step(false);
     let (first, second, undo, redo) = tokio::join!(first, second, undo, redo);
-    let first = first.expect("first save");
     let second = second.expect("second save");
+    let first = first.expect("first save");
+    assert!(first.info.revision > detail.info.revision);
     let undo = undo.expect("undo");
     let redo = redo.expect("redo");
-    assert!(second.info.revision > first.info.revision);
+    assert!(second.info.revision > detail.info.revision);
     assert_eq!(second.snapshot.graph, graph);
-    assert_eq!(undo.snapshot, first.snapshot);
     assert_eq!(redo.snapshot, second.snapshot);
+    assert_ne!(undo.snapshot.graph, second.snapshot.graph);
     assert_eq!(redo.snapshot.settings, detail.snapshot.settings);
     assert_eq!(redo.snapshot.rack, detail.snapshot.rack);
+    let before = graph.clone();
     graph.nodes.retain(|node| node.id != "scope");
-    let removed = session.save(graph).await.expect("remove racked node");
+    let removed = session
+        .save(GraphPatch::between(&before, &graph))
+        .await
+        .expect("remove racked node");
     assert!(removed.snapshot.rack.slots.is_empty());
     assert_eq!(removed.snapshot.settings, detail.snapshot.settings);
     drop(session);
@@ -142,9 +148,76 @@ async fn an_external_edit_survives_a_save_from_an_older_copy() {
         .expect("external edit");
     let mut graph = detail.snapshot.graph.clone();
     graph.nodes[0].position.x = 321.0;
-    let merged = session.save(graph.clone()).await.expect("merged save");
+    let merged = session
+        .save(GraphPatch::between(&detail.snapshot.graph, &graph))
+        .await
+        .expect("merged save");
     assert_eq!(merged.snapshot.graph, graph);
     assert_eq!(merged.snapshot.settings, external.settings);
+    drop(session);
+    task.await.expect("writer shutdown");
+}
+
+#[tokio::test]
+async fn a_peer_graph_edit_survives_my_edit_and_reaches_me_on_refresh() {
+    let server = Server::new().await;
+    let detail = server.workspace().await;
+    let (session, worker) = Session::new(server.api.clone(), detail.clone());
+    let task = tokio::spawn(worker.run());
+    let mut theirs = detail.snapshot.clone();
+    theirs.graph.nodes.push(node("peer"));
+    server
+        .api
+        .save_workspace(detail.info.id, detail.info.revision, theirs)
+        .await
+        .expect("peer edit");
+    let refreshed = session.refresh().await.expect("refresh");
+    assert!(refreshed.snapshot.graph.node("peer").is_some());
+    let mut mine = detail.snapshot.graph.clone();
+    mine.nodes.push(node("mine"));
+    let saved = session
+        .save(GraphPatch::between(&detail.snapshot.graph, &mine))
+        .await
+        .expect("my edit");
+    let ids: Vec<&str> = saved
+        .snapshot
+        .graph
+        .nodes
+        .iter()
+        .map(|node| node.id.as_str())
+        .collect();
+    assert_eq!(ids, ["scope", "peer", "mine"]);
+    drop(session);
+    task.await.expect("writer shutdown");
+}
+
+#[tokio::test]
+async fn a_burst_of_graph_edits_is_saved_as_one_revision() {
+    let server = Server::new().await;
+    let detail = server.workspace().await;
+    let (session, worker) = Session::new(server.api.clone(), detail.clone());
+    let mut before = detail.snapshot.graph.clone();
+    let mut pending = Vec::new();
+    for at in 0..3 {
+        let mut after = before.clone();
+        after.nodes.push(node(&format!("n{at}")));
+        pending.push(session.save(GraphPatch::between(&before, &after)));
+        before = after;
+    }
+    let task = tokio::spawn(worker.run());
+    let results = futures::future::join_all(pending).await;
+    let folded = results
+        .iter()
+        .filter(|result| result.as_ref().is_err_and(|error| error.is::<Folded>()))
+        .count();
+    assert_eq!(folded, 0);
+    let last = results
+        .into_iter()
+        .last()
+        .expect("three replies")
+        .expect("saved");
+    assert_eq!(last.snapshot.graph, before);
+    assert_eq!(last.info.revision, detail.info.revision + 1);
     drop(session);
     task.await.expect("writer shutdown");
 }
@@ -155,9 +228,13 @@ async fn decoder_controls_change_the_virtual_radio_through_the_native_client() {
     let detail = server.workspace().await;
     let id = detail.info.id;
     let graph = crate::starter::graph(&server.api.devices().await.expect("virtual devices"));
+    let detail_graph = detail.snapshot.graph.clone();
     let (session, worker) = Session::new(server.api.clone(), detail);
     let task = tokio::spawn(worker.run());
-    session.save(graph).await.expect("save starter patch");
+    session
+        .save(GraphPatch::between(&detail_graph, &graph))
+        .await
+        .expect("save starter patch");
     server.api.activate_workspace(id).await.expect("activate");
     let report = server.api.apply_workspace(id).await.expect("apply");
     assert!(report.refused.is_empty(), "{:?}", report.refused);

@@ -470,13 +470,6 @@ pub struct Counts {
     pub unplaced: Vec<String>,
 }
 
-impl Counts {
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.bearings + self.echoes + self.tracks + self.unplaced.len() == 0
-    }
-}
-
 #[must_use]
 pub fn counts(picture: Option<&Picture>) -> Counts {
     let Some(picture) = picture else {
@@ -976,8 +969,8 @@ mod tests {
         let drawn = picture(&radar_sources(), &Held::default(), &book, 0, None).expect("a picture");
         assert_eq!(drawn.unplaced, ["Roof radar"]);
         assert!(drawn.sites.is_empty());
-        assert!(!counts(Some(&drawn)).is_empty());
-        assert!(counts(None).is_empty());
+        assert_eq!(counts(Some(&drawn)).unplaced, ["Roof radar"]);
+        assert_eq!(counts(None), Counts::default());
     }
 
     #[test]

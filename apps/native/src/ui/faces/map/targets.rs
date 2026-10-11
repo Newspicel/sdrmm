@@ -1,20 +1,37 @@
-use sdrmm_wire::{channel::ChannelParams, decode::DecoderEvent};
+use std::collections::HashMap;
 
+use sdrmm_wire::{
+    channel::ChannelParams,
+    decode::DecoderEvent,
+    lora::{LoraFrame, LoraPayload, MeshcoreContent, MeshtasticContent},
+};
+
+use super::detail::{course_of, heading_of, trimmed};
 use crate::ui::{
-    kit_maps::feed::{MAP_KINDS, Station},
+    kit_maps::{
+        feed::{MAP_KINDS, Station, event_position},
+        tracks::Trail,
+    },
     map::{
         Geo,
-        overlay::{Dot, Glyph, Label, Mark, Overlay},
+        geo::unwrap_trail,
+        overlay::{Dot, Glyph, Ink, Label, Line, Mark, Overlay},
     },
 };
 
 pub const TARGET_MAX_AGE_MS: i64 = 5 * 60_000;
+const TRACK_WIDTH_PX: f64 = 1.5;
+const TRACK_ALPHA: f32 = 0.7;
+const LABEL_PX: f64 = 12.0;
 
 #[must_use]
 pub const fn style(kind: &str) -> (&'static str, u32) {
     match kind.as_bytes() {
         b"adsb" => ("Aircraft", 0x21_b0_b0),
         b"ais" => ("Ships", 0xe0_a4_58),
+        b"radiosonde" => ("Sondes", 0xe0_6c_6c),
+        b"lora" => ("LoRa", 0x6c_c0_70),
+        b"remote_id" => ("Drones", 0xe0_d0_5c),
         _ => ("APRS", 0xb0_7d_e0),
     }
 }
@@ -27,11 +44,11 @@ const fn glyph(kind: &str) -> Glyph {
     }
 }
 
-const fn label_below(kind: &str) -> f64 {
+const fn label_offset_em(kind: &str) -> f64 {
     match kind.as_bytes() {
-        b"adsb" => 14.0,
-        b"ais" => 12.0,
-        _ => 8.0,
+        b"adsb" => 1.3,
+        b"ais" => 1.1,
+        _ => 0.7,
     }
 }
 
@@ -50,17 +67,23 @@ pub fn is_stale(last_seen: i64, now: i64, max_age_ms: i64) -> bool {
 
 #[must_use]
 pub fn position(station: &Station) -> Option<Geo> {
-    match &station.event {
-        DecoderEvent::Adsb(message) => Geo::checked(message.lat, message.lon),
-        DecoderEvent::Ais(message) => Geo::checked(message.lat, message.lon),
-        DecoderEvent::Aprs(packet) => Geo::checked(packet.lat, packet.lon),
-        _ => None,
-    }
+    event_position(&station.event)
 }
 
-fn trimmed(value: Option<&str>) -> Option<String> {
-    let text = value.unwrap_or("").trim();
-    (!text.is_empty()).then(|| text.to_owned())
+#[must_use]
+pub fn lora_name(frame: &LoraFrame) -> Option<String> {
+    match frame.decoded.as_ref()? {
+        LoraPayload::Meshtastic(packet) => match packet.content.as_ref()? {
+            MeshtasticContent::NodeInfo { long_name, .. }
+            | MeshtasticContent::MapReport { long_name, .. } => trimmed(Some(long_name)),
+            _ => None,
+        },
+        LoraPayload::Meshcore(packet) => match &packet.content {
+            MeshcoreContent::Advert { name, .. } => name.clone(),
+            _ => None,
+        },
+        LoraPayload::Lorawan(_) => None,
+    }
 }
 
 #[must_use]
@@ -73,16 +96,11 @@ pub fn label(station: &Station) -> String {
             .or_else(|| trimmed(message.call_sign.as_deref()))
             .unwrap_or_else(|| message.mmsi.to_string()),
         DecoderEvent::Aprs(packet) => packet.source.clone(),
+        DecoderEvent::Radiosonde(frame) => frame.serial.clone(),
+        DecoderEvent::Lora(frame) => lora_name(frame).unwrap_or_else(|| station.id.clone()),
+        DecoderEvent::RemoteId(frame) => frame.station(),
         _ => station.id.clone(),
     }
-}
-
-fn heading_of(deg: Option<u16>) -> Option<f64> {
-    deg.filter(|deg| *deg != 511).map(f64::from)
-}
-
-fn course_of(deg: Option<f64>) -> Option<f64> {
-    deg.filter(|deg| *deg != 360.0)
 }
 
 fn bearing(deg: Option<f64>) -> Option<f64> {
@@ -98,105 +116,45 @@ pub fn heading(station: &Station) -> Option<f64> {
             bearing(heading_of(message.heading_deg)).or_else(|| bearing(course_of(message.cog_deg)))
         }
         DecoderEvent::Aprs(packet) => bearing(packet.course_deg),
+        DecoderEvent::Radiosonde(frame) => bearing(frame.heading_deg),
+        DecoderEvent::RemoteId(frame) => bearing(
+            frame
+                .location()
+                .and_then(|location| location.track_deg)
+                .map(f64::from),
+        ),
         _ => None,
-    }
-}
-
-fn hemisphere(deg: f64, positive: &str, negative: &str) -> String {
-    format!(
-        "{:.4}° {}",
-        deg.abs(),
-        if deg < 0.0 { negative } else { positive }
-    )
-}
-
-#[must_use]
-pub fn format_position(at: Geo) -> String {
-    format!(
-        "{} {}",
-        hemisphere(at.lat, "N", "S"),
-        hemisphere(at.lon, "E", "W")
-    )
-}
-
-fn scalar(value: Option<f64>, digits: usize, unit: &str) -> Option<String> {
-    value
-        .filter(|value| value.is_finite())
-        .map(|value| format!("{value:.digits$}{unit}"))
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Detail {
-    pub kind: &'static str,
-    pub id: String,
-    pub label: String,
-    pub freq_hz: f64,
-    pub last_seen: i64,
-    pub rows: Vec<(&'static str, String)>,
-}
-
-fn kept(entries: Vec<(&'static str, Option<String>)>) -> Vec<(&'static str, String)> {
-    entries
-        .into_iter()
-        .filter_map(|(name, value)| value.map(|value| (name, value)))
-        .collect()
-}
-
-fn rows(station: &Station) -> Vec<(&'static str, String)> {
-    let fix = position(station).map(format_position);
-    match &station.event {
-        DecoderEvent::Adsb(d) => kept(vec![
-            ("ICAO", Some(d.icao.to_uppercase())),
-            ("Position", fix),
-            ("Altitude", scalar(d.altitude_ft.map(f64::from), 0, " ft")),
-            ("Speed", scalar(d.ground_speed_kt, 0, " kt")),
-            ("Track", scalar(d.track_deg, 0, "°")),
-            ("V/S", scalar(d.vertical_rate_fpm.map(f64::from), 0, " fpm")),
-            ("Squawk", trimmed(d.squawk.as_deref())),
-            (
-                "State",
-                (d.on_ground == Some(true)).then(|| "on ground".to_owned()),
-            ),
-        ]),
-        DecoderEvent::Ais(d) => kept(vec![
-            ("MMSI", Some(d.mmsi.to_string())),
-            ("Position", fix),
-            ("SOG", scalar(d.sog_kt, 1, " kt")),
-            ("COG", scalar(course_of(d.cog_deg), 0, "°")),
-            ("Heading", scalar(heading_of(d.heading_deg), 0, "°")),
-            ("Call sign", trimmed(d.call_sign.as_deref())),
-            ("Destination", trimmed(d.destination.as_deref())),
-        ]),
-        DecoderEvent::Aprs(d) => kept(vec![
-            ("Source", Some(d.source.clone())),
-            ("Position", fix),
-            ("Speed", scalar(d.speed_kt, 0, " kt")),
-            ("Course", scalar(d.course_deg, 0, "°")),
-            ("Altitude", scalar(d.altitude_ft.map(f64::from), 0, " ft")),
-            ("Message", trimmed(d.mic_e_message.as_deref())),
-            ("Comment", trimmed(d.comment.as_deref())),
-        ]),
-        _ => Vec::new(),
-    }
-}
-
-#[must_use]
-pub fn detail(station: &Station) -> Detail {
-    let mut rows = rows(station);
-    rows.push(("Frames", station.frames.to_string()));
-    Detail {
-        kind: station.kind,
-        id: station.id.clone(),
-        label: label(station),
-        freq_hz: station.freq_hz,
-        last_seen: station.last_seen,
-        rows,
     }
 }
 
 #[must_use]
 pub fn pick_key(kind: &str, id: &str) -> String {
     format!("{kind}/{id}")
+}
+
+#[must_use]
+pub fn track_lines(
+    stations: &[&Station],
+    trails: Option<&HashMap<String, Trail>>,
+    now: i64,
+) -> Vec<Line> {
+    let Some(trails) = trails else {
+        return Vec::new();
+    };
+    stations
+        .iter()
+        .filter(|station| !is_stale(station.last_seen, now, TARGET_MAX_AGE_MS))
+        .filter_map(|station| {
+            let trail = trails.get(&station.id)?;
+            (trail.points.len() >= 2).then(|| Line {
+                points: unwrap_trail(&trail.points),
+                colour: style(station.kind).1,
+                alpha: TRACK_ALPHA,
+                width: TRACK_WIDTH_PX,
+                dash: None,
+            })
+        })
+        .collect()
 }
 
 #[must_use]
@@ -232,8 +190,9 @@ pub fn overlay(stations: &[&Station], selected: Option<&str>, now: i64) -> (Over
             key,
             at,
             text: label(station),
-            colour,
-            below_px: label_below(station.kind),
+            ink: Ink::Ground,
+            bold: true,
+            below_px: label_offset_em(station.kind) * LABEL_PX,
             min_zoom: 0.0,
         });
     }
@@ -539,45 +498,60 @@ mod tests {
     }
 
     #[test]
-    fn a_detail_lists_only_what_the_target_reported() {
-        let target = Station {
-            frames: 12,
-            ..adsb(AdsbMessage {
-                lat: Some(-33.8688),
-                lon: Some(151.2093),
-                altitude_ft: Some(37_000),
-                track_deg: Some(89.4),
-                ..AdsbMessage::default()
-            })
+    fn sondes_lora_nodes_and_drones_are_mapped_with_their_own_names() {
+        use sdrmm_wire::{
+            decode::DecoderEvent, remote_id::RemoteIdMessage, weather::RadiosondeFrame,
         };
-        let shown = detail(&target);
-        let rows: Vec<(&str, &str)> = shown
-            .rows
-            .iter()
-            .map(|(name, value)| (*name, value.as_str()))
-            .collect();
+
+        use crate::ui::kit_maps::merge::tests::{drone, location, meshtastic, placed};
+
         assert_eq!(
-            rows,
-            [
-                ("ICAO", "3C6444"),
-                ("Position", "33.8688° S 151.2093° E"),
-                ("Altitude", "37000 ft"),
-                ("Track", "89°"),
-                ("Frames", "12"),
-            ]
+            map_kinds_of(&[
+                "remote_id".to_owned(),
+                "lora".to_owned(),
+                "radiosonde".to_owned()
+            ]),
+            ["radiosonde", "lora", "remote_id"]
         );
-        let ship = detail(&Station {
-            id: "211234560".to_owned(),
-            ..ais(AisMessage {
-                name: Some("NORDIC".to_owned()),
-                ..AisMessage::default()
-            })
-        });
-        assert_eq!(
-            (ship.kind, ship.id.as_str(), ship.label.as_str()),
-            ("ais", "211234560", "NORDIC")
-        );
-        assert_eq!(ship.freq_hz, 1_090_000_000.0);
-        assert_eq!(ship.last_seen, NOW);
+        let sonde: RadiosondeFrame = serde_json::from_value(serde_json::json!({
+            "sonde": "rs41", "serial": "T1234567", "lat": 52.1, "lon": 13.2,
+            "heading_deg": 450.0, "errors_corrected": 0
+        }))
+        .expect("a sonde");
+        let sonde = station(DecoderEvent::Radiosonde(sonde));
+        assert_eq!(label(&sonde), "T1234567");
+        assert_eq!(heading(&sonde), Some(90.0));
+        assert_eq!(position(&sonde), Some(Geo::new(52.1, 13.2)));
+        let node = station(DecoderEvent::Lora(meshtastic(Some(placed(47.5, 8.25)))));
+        assert_eq!(label(&node), "target");
+        assert_eq!(heading(&node), None);
+        assert_eq!(position(&node), Some(Geo::new(47.5, 8.25)));
+        let quad = station(DecoderEvent::RemoteId(drone(
+            None,
+            vec![RemoteIdMessage::Location(location(47.0, 8.0))],
+        )));
+        assert_eq!(label(&quad), "D2:11:22:33:44:55");
+        assert_eq!(heading(&quad), Some(90.0));
+        assert_eq!(style("remote_id"), ("Drones", 0xe0_d0_5c));
+    }
+
+    #[test]
+    fn tracks_are_drawn_only_for_fresh_targets_with_a_path() {
+        let mut trails = HashMap::new();
+        let mut trail = Trail::default();
+        trail.extend(Geo::new(50.0, 8.0), 0);
+        trail.extend(Geo::new(50.1, 8.0), 1);
+        trails.insert("target".to_owned(), trail);
+        let fresh = adsb(AdsbMessage::default());
+        let lines = track_lines(&[&fresh], Some(&trails), NOW);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].colour, 0x21_b0_b0);
+        assert_eq!((lines[0].width, lines[0].alpha), (1.5, 0.7));
+        let stale = Station {
+            last_seen: NOW - TARGET_MAX_AGE_MS - 1,
+            ..fresh.clone()
+        };
+        assert!(track_lines(&[&stale], Some(&trails), NOW).is_empty());
+        assert!(track_lines(&[&fresh], None, NOW).is_empty());
     }
 }

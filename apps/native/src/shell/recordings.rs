@@ -1,8 +1,8 @@
 use sdrmm_wire::{
     patch::{NodeBody, PatchGraph, PatchNode, Position, RecordingNode},
     rest::{
-        AudioRecordingInfo, MAX_RECORDING_NAME_LEN, MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS,
-        RecordingAnnotation, RecordingInfo,
+        AudioRecordingInfo, MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN,
+        MAX_RECORDING_TAGS, RecordingAnnotation, RecordingInfo,
     },
     units,
     workspace::MAX_NAME_LEN,
@@ -11,7 +11,34 @@ use sdrmm_wire::{
 pub const META_SUFFIX: &str = ".sigmf-meta";
 pub const DATA_SUFFIX: &str = ".sigmf-data";
 
-pub const DOWNLOAD_FORMATS: [(&str, &str); 2] = [(".sigmf", "sigmf"), (".wav", "wav")];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DownloadFormat {
+    pub label: &'static str,
+    pub format: &'static str,
+    pub hint: &'static str,
+}
+
+pub const DOWNLOAD_FORMATS: [DownloadFormat; 2] = [
+    DownloadFormat {
+        label: ".sigmf",
+        format: "sigmf",
+        hint: "SigMF archive: metadata and samples, exactly as recorded",
+    },
+    DownloadFormat {
+        label: ".wav",
+        format: "wav",
+        hint: "I/Q as a float WAV for HDSDR, SDR# or Audacity: keeps the samples, but only the center frequency and start time of the metadata",
+    },
+];
+
+#[must_use]
+pub fn formats_for(recording: &RecordingInfo) -> &'static [DownloadFormat] {
+    if recording.lanes > 1 {
+        &DOWNLOAD_FORMATS[..1]
+    } else {
+        &DOWNLOAD_FORMATS
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UploadProblem {
@@ -105,8 +132,13 @@ pub fn annotation(name: &str, tags: &str, note: &str) -> RecordingAnnotation {
     RecordingAnnotation {
         name: (!name.is_empty()).then(|| name.chars().take(MAX_RECORDING_NAME_LEN).collect()),
         tags: parse_tags(tags),
-        note: (!note.is_empty()).then(|| note.to_owned()),
+        note: (!note.is_empty()).then(|| note.chars().take(MAX_RECORDING_NOTE_LEN).collect()),
     }
+}
+
+#[must_use]
+pub fn capped(text: &str, max: usize) -> Option<String> {
+    (text.chars().count() > max).then(|| text.chars().take(max).collect())
 }
 
 #[must_use]
@@ -158,13 +190,17 @@ pub fn format_recorded_at(created_at: &str) -> Option<String> {
 
 #[must_use]
 pub fn describe_recording(recording: &RecordingInfo) -> String {
-    [
-        format_mhz(recording.center_hz),
-        units::sample_rate(recording.sample_rate),
-        format_duration(recording.duration_s),
-        units::bytes(recording.bytes as f64),
-    ]
-    .join(" \u{b7} ")
+    let lanes = (recording.lanes > 1).then(|| format!("{} lanes", recording.lanes));
+    lanes
+        .into_iter()
+        .chain([
+            format_mhz(recording.center_hz),
+            units::sample_rate(recording.sample_rate),
+            format_duration(recording.duration_s),
+            units::bytes(recording.bytes as f64),
+        ])
+        .collect::<Vec<_>>()
+        .join(" \u{b7} ")
 }
 
 #[must_use]
@@ -414,5 +450,35 @@ mod tests {
             edges: Vec::new(),
         };
         assert_eq!(open_position(&graph).x, 420.0);
+    }
+
+    #[test]
+    fn a_multi_lane_recording_offers_only_sigmf_and_says_its_lanes() {
+        let single: Vec<_> = formats_for(&recording()).iter().map(|f| f.format).collect();
+        assert_eq!(single, ["sigmf", "wav"]);
+        let array = RecordingInfo {
+            lanes: 4,
+            ..recording()
+        };
+        let multi: Vec<_> = formats_for(&array).iter().map(|f| f.format).collect();
+        assert_eq!(multi, ["sigmf"]);
+        assert!(describe_recording(&array).starts_with("4 lanes \u{b7} 100.0000 MHz"));
+        assert!(!describe_recording(&recording()).contains("lanes"));
+    }
+
+    #[test]
+    fn caps_names_and_notes_at_the_wire_limits() {
+        let long = "n".repeat(MAX_RECORDING_NAME_LEN + 9);
+        assert_eq!(
+            capped(&long, MAX_RECORDING_NAME_LEN).map(|name| name.chars().count()),
+            Some(MAX_RECORDING_NAME_LEN)
+        );
+        assert_eq!(capped("short", MAX_RECORDING_NAME_LEN), None);
+        let note = "x".repeat(MAX_RECORDING_NOTE_LEN + 1);
+        let saved = annotation("", "", &note);
+        assert_eq!(
+            saved.note.map(|note| note.chars().count()),
+            Some(MAX_RECORDING_NOTE_LEN)
+        );
     }
 }

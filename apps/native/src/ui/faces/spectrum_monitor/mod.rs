@@ -11,6 +11,7 @@ use crate::{
     store::Store,
     ui::{
         faces::channel::settings::NumberLimit,
+        kit_audio::titled,
         kit_channel::{
             self, CHEVRON_ICON, NumberSpec, Popover, icon, number_field, setting_row, toggle_row,
         },
@@ -112,8 +113,8 @@ pub fn face(store: Store, node: String) -> impl IntoView {
         column(class = "sm-face kc-grid") {
             {setting_row("Protocols", None, protocol_picker(groups, choice, pick_choice))}
             {setting_row(
-                "Min confidence",
-                Some("Ignore signals below this identification confidence; 0 accepts all detections"),
+                "Min",
+                Some("Minimum confidence. Signals identified below it are ignored; 0 accepts all"),
                 number_field(
                     Signal::derive(move || Some(f64::from((settings.get().min_confidence * 100.0).round()))),
                     NumberSpec::new("Minimum confidence").limit(NumberLimit::new(0.0, 100.0, 5.0)).unit("%"),
@@ -121,7 +122,7 @@ pub fn face(store: Store, node: String) -> impl IntoView {
                 ),
             )}
             {toggle_row(
-                "Record audio",
+                "Clips",
                 Some("Attach temporary audio clips to transmission events"),
                 Signal::derive(move || settings.get().record_audio),
                 record,
@@ -154,7 +155,7 @@ fn protocol_picker(
     };
     view! {
         box(class = "kc-pop") {
-            control(
+            {titled("Protocols to decode", AnyView::new(view! { control(
                 class = "sm-trigger",
                 class:on = move || popover.open(),
                 tabindex = Focus::Sequential,
@@ -168,7 +169,7 @@ fn protocol_picker(
                 text(class = "sm-trigger__text") {{move || choice_summary(&groups.get(), &choice.get())}}
                 {icon(CHEVRON_ICON, "kc-glyph kc-glyph--sm")}
                 row(class = "sm-lights") {{lights}}
-            }
+            } }))}
             {move || popover.open().then(|| AnyView::new(panel(groups, choice, on_change.clone())))}
         }
     }
@@ -265,19 +266,22 @@ fn family(
             let lit = move || !choice.get().disabled.contains(&kind);
             let toggle = toggle.clone();
             let flip = protocol.kind.clone();
-            view! {
-                control(
-                    class = "sm-key",
-                    class:on = lit.clone(),
-                    tabindex = Focus::Sequential,
-                    a11y:role = Role::Button,
-                    a11y:label = protocol.name.clone(),
-                    on:click:stop = move |_| toggle(vec![flip.clone()], !lit())
-                ) {
-                    box(class = "sm-dot") {}
-                    {protocol.label}
-                }
-            }
+            titled(
+                protocol.name.clone(),
+                AnyView::new(view! {
+                    control(
+                        class = "sm-key",
+                        class:on = lit.clone(),
+                        tabindex = Focus::Sequential,
+                        a11y:role = Role::Button,
+                        a11y:label = protocol.name.clone(),
+                        on:click:stop = move |_| toggle(vec![flip.clone()], !lit())
+                    ) {
+                        box(class = "sm-dot") {}
+                        {protocol.label}
+                    }
+                }),
+            )
         })
         .collect::<Vec<_>>();
     AnyView::new(view! {

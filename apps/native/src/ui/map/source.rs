@@ -7,11 +7,15 @@ use std::{
 use anyhow::{Context, bail};
 use serde::Deserialize;
 
+use zgui_image::ImageBytes;
+
 use super::{
+    custom::{self, StyleSource},
     geo::TileId,
     mvt,
     paint::{self, Painted},
     pmtiles::{self, Entry, Found, Header},
+    style::{self, Palette},
 };
 
 pub const ONLINE_TILES: &str = "https://tiles.openfreemap.org/planet";
@@ -19,6 +23,7 @@ pub const OFFLINE_PATH: &str = "/api/basemap.pmtiles";
 pub const TIMEOUT: Duration = Duration::from_secs(4);
 const TILE_TIMEOUT: Duration = Duration::from_secs(20);
 const ONLINE_MAX_ZOOM: u8 = 14;
+const RASTER_MAX_ZOOM: u8 = 19;
 const LEAVES_KEPT: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +45,7 @@ pub struct Archive {
 pub enum Basemap {
     Online { template: String, max_zoom: u8 },
     Offline(Arc<Archive>),
+    Raster { template: String },
     Blank,
 }
 
@@ -47,7 +53,7 @@ impl Basemap {
     #[must_use]
     pub const fn kind(&self) -> Kind {
         match self {
-            Self::Online { .. } => Kind::Online,
+            Self::Online { .. } | Self::Raster { .. } => Kind::Online,
             Self::Offline(_) => Kind::Offline,
             Self::Blank => Kind::Blank,
         }
@@ -58,14 +64,28 @@ impl Basemap {
         match self {
             Self::Online { max_zoom, .. } => *max_zoom,
             Self::Offline(archive) => archive.header.max_zoom,
+            Self::Raster { .. } => RASTER_MAX_ZOOM,
             Self::Blank => 0,
         }
     }
 
     #[must_use]
+    pub const fn zoom_bump(&self) -> u8 {
+        match self {
+            Self::Raster { .. } => 1,
+            _ => 0,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_vector(&self) -> bool {
+        matches!(self, Self::Online { .. } | Self::Offline(_))
+    }
+
+    #[must_use]
     pub fn key(&self) -> &str {
         match self {
-            Self::Online { template, .. } => template,
+            Self::Online { template, .. } | Self::Raster { template } => template,
             Self::Offline(archive) => &archive.url,
             Self::Blank => "",
         }
@@ -76,7 +96,7 @@ impl Basemap {
         match self {
             Self::Online { .. } => "OpenFreeMap © OpenMapTiles © OpenStreetMap",
             Self::Offline(_) => "© OpenStreetMap",
-            Self::Blank => "",
+            Self::Raster { .. } | Self::Blank => "",
         }
     }
 }
@@ -153,16 +173,48 @@ impl Net {
     }
 
     pub async fn online(&self) -> Option<Basemap> {
-        let bytes = self.get(ONLINE_TILES, TIMEOUT).await.ok()?;
-        let described: TileJson = serde_json::from_slice(&bytes).ok()?;
-        let template = described.tiles.into_iter().next()?;
-        Some(Basemap::Online {
+        self.tile_json(ONLINE_TILES).await.ok()
+    }
+
+    async fn tile_json(&self, url: &str) -> anyhow::Result<Basemap> {
+        let bytes = self.get(url, TIMEOUT).await?;
+        let described: TileJson =
+            serde_json::from_slice(&bytes).context("the tile description is not TileJSON")?;
+        let template = described
+            .tiles
+            .into_iter()
+            .next()
+            .context("the tile description lists no tiles")?;
+        Ok(Basemap::Online {
             template,
             max_zoom: described
                 .maxzoom
                 .unwrap_or(ONLINE_MAX_ZOOM)
                 .min(ONLINE_MAX_ZOOM),
         })
+    }
+
+    pub async fn custom(&self, url: &str) -> anyhow::Result<Basemap> {
+        if !style::is_web_url(url) {
+            bail!("the custom map URL is not http(s)");
+        }
+        if style::is_tile_template(url) {
+            return Ok(Basemap::Raster {
+                template: url.to_owned(),
+            });
+        }
+        let bytes = self.get(url, TIMEOUT).await?;
+        let described: serde_json::Value =
+            serde_json::from_slice(&bytes).context("the custom style is not JSON")?;
+        match custom::style_source(&described) {
+            Some(StyleSource::Vector { template, max_zoom }) => Ok(Basemap::Online {
+                template,
+                max_zoom: max_zoom.min(ONLINE_MAX_ZOOM),
+            }),
+            Some(StyleSource::TileJson(url)) => self.tile_json(&url).await,
+            Some(StyleSource::Raster(template)) => Ok(Basemap::Raster { template }),
+            None => bail!("the custom style has no vector or raster tiles"),
+        }
     }
 
     pub async fn offline(&self, url: String) -> Option<Arc<Archive>> {
@@ -212,14 +264,25 @@ impl Net {
         choose(online, offline)
     }
 
-    pub async fn tile(&self, basemap: &Basemap, id: TileId) -> anyhow::Result<Painted> {
+    pub async fn tile(
+        &self,
+        basemap: &Basemap,
+        id: TileId,
+        palette: &Palette,
+    ) -> anyhow::Result<Painted> {
         let bytes = match basemap {
             Basemap::Online { template, .. } => {
-                let url = template
-                    .replace("{z}", &id.z.to_string())
-                    .replace("{x}", &id.x.to_string())
-                    .replace("{y}", &id.y.to_string());
-                self.get(&url, TILE_TIMEOUT).await?
+                self.get(&custom::tile_url(template, id), TILE_TIMEOUT)
+                    .await?
+            }
+            Basemap::Raster { template } => {
+                let bytes = self
+                    .get(&custom::tile_url(template, id), TILE_TIMEOUT)
+                    .await?;
+                return Ok(Painted {
+                    picture: Some(ImageBytes::new(bytes)),
+                    ..Painted::default()
+                });
             }
             Basemap::Offline(archive) => match self.archived(archive, id).await? {
                 Some(bytes) => archive.header.tiles.inflate(&bytes)?,
@@ -232,7 +295,7 @@ impl Net {
         } else {
             bytes
         };
-        Ok(paint::paint(&mvt::decode(&bytes)?, id))
+        Ok(paint::paint(&mvt::decode(&bytes)?, id, palette))
     }
 
     async fn archived(&self, archive: &Archive, id: TileId) -> anyhow::Result<Option<Vec<u8>>> {

@@ -1,6 +1,6 @@
 use super::view::{above, at_least};
 use super::{
-    colormap::Colormap,
+    palette::Palette,
     traces::{DbWindow, trace_unit},
     view::{SpectrumView, span_to_offset},
 };
@@ -16,6 +16,7 @@ pub struct TracePoints {
     pub xs: Vec<f64>,
     pub low: Vec<f32>,
     pub high: Vec<f32>,
+    pub line: Vec<f32>,
 }
 
 impl TracePoints {
@@ -28,12 +29,14 @@ impl TracePoints {
         self.xs.clear();
         self.low.clear();
         self.high.clear();
+        self.line.clear();
     }
 
-    fn push(&mut self, x: f64, low: f32, high: f32) {
+    fn push(&mut self, x: f64, low: f32, high: f32, line: f32) {
         self.xs.push(x);
         self.low.push(low);
         self.high.push(high);
+        self.line.push(line);
     }
 }
 
@@ -65,7 +68,13 @@ pub fn readout_at(
     })
 }
 
-pub fn trace_points(db: &[f32], view: SpectrumView, width: f64, points: &mut TracePoints) {
+pub fn trace_points(
+    db: &[f32],
+    view: SpectrumView,
+    width: f64,
+    signal_db: f64,
+    points: &mut TracePoints,
+) {
     points.clear();
     let n = db.len();
     if n < 2 || width < 1.0 {
@@ -79,7 +88,7 @@ pub fn trace_points(db: &[f32], view: SpectrumView, width: f64, points: &mut Tra
     if last - first < width {
         bin_points(db, first, last, width, points);
     } else {
-        pixel_points(db, first, last, width, points);
+        pixel_points(db, first, last, width, signal_db as f32, points);
     }
 }
 
@@ -88,11 +97,23 @@ fn bin_points(db: &[f32], first: f64, last: f64, width: f64, points: &mut TraceP
     let high = (last.ceil() as usize).min(db.len() - 1);
     for (offset, value) in db[low..=high].iter().enumerate() {
         let at = (low + offset) as f64;
-        points.push((at - first) / (last - first) * width, *value, *value);
+        points.push(
+            (at - first) / (last - first) * width,
+            *value,
+            *value,
+            *value,
+        );
     }
 }
 
-fn pixel_points(db: &[f32], first: f64, last: f64, width: f64, points: &mut TracePoints) {
+fn pixel_points(
+    db: &[f32],
+    first: f64,
+    last: f64,
+    width: f64,
+    signal_db: f32,
+    points: &mut TracePoints,
+) {
     let n = db.len();
     let columns = width.ceil() as usize;
     for x in 0..columns {
@@ -103,22 +124,36 @@ fn pixel_points(db: &[f32], first: f64, last: f64, width: f64, points: &mut Trac
             .saturating_sub(1)
             .max(low_bin)
             .min(n - 1);
-        let (low, high) = db[low_bin.min(n - 1)..=high_bin]
-            .iter()
-            .fold((f32::INFINITY, f32::NEG_INFINITY), |(low, high), value| {
-                (low.min(*value), high.max(*value))
-            });
-        points.push(x as f64 + 0.5, low, high);
+        let span = &db[low_bin.min(n - 1)..=high_bin];
+        let (low, high, power) = span.iter().fold(
+            (f32::INFINITY, f32::NEG_INFINITY, 0.0f64),
+            |(low, high, power), value| {
+                (
+                    low.min(*value),
+                    high.max(*value),
+                    power + 10f64.powf(f64::from(*value) / 10.0),
+                )
+            },
+        );
+        let line = if high >= signal_db {
+            high
+        } else {
+            (10.0 * (power / span.len() as f64).log10()) as f32
+        };
+        points.push(x as f64 + 0.5, low, high, line);
     }
 }
 
-pub fn columns_of(points: &TracePoints, columns: usize, high: &mut Vec<f32>, low: &mut Vec<f32>) {
+pub fn columns_of(points: &TracePoints, columns: usize, rows: [&mut Vec<f32>; 3]) {
+    let [high, low, line] = rows;
     high.clear();
     low.clear();
+    line.clear();
     let count = points.count();
     if count == 0 {
         high.resize(columns, f32::NAN);
         low.resize(columns, f32::NAN);
+        line.resize(columns, f32::NAN);
         return;
     }
     let mut segment = 0;
@@ -127,24 +162,24 @@ pub fn columns_of(points: &TracePoints, columns: usize, high: &mut Vec<f32>, low
         while segment + 1 < count - 1 && points.xs[segment + 1] < x {
             segment += 1;
         }
-        let (h, l) = if count == 1 || x <= points.xs[0] {
-            (points.high[0], points.low[0])
-        } else if x >= points.xs[count - 1] {
-            (points.high[count - 1], points.low[count - 1])
-        } else {
-            let (x0, x1) = (points.xs[segment], points.xs[segment + 1]);
-            let t = if x1 > x0 {
-                ((x - x0) / (x1 - x0)) as f32
+        let at = |values: &[f32]| {
+            if count == 1 || x <= points.xs[0] {
+                values[0]
+            } else if x >= points.xs[count - 1] {
+                values[count - 1]
             } else {
-                0.0
-            };
-            (
-                lerp(points.high[segment], points.high[segment + 1], t),
-                lerp(points.low[segment], points.low[segment + 1], t),
-            )
+                let (x0, x1) = (points.xs[segment], points.xs[segment + 1]);
+                let t = if x1 > x0 {
+                    ((x - x0) / (x1 - x0)) as f32
+                } else {
+                    0.0
+                };
+                lerp(values[segment], values[segment + 1], t)
+            }
         };
-        high.push(h);
-        low.push(l);
+        high.push(at(&points.high));
+        low.push(at(&points.low));
+        line.push(at(&points.line));
     }
 }
 
@@ -281,25 +316,25 @@ impl DensityGrid {
 pub struct DensityLayer {
     pub grid: DensityGrid,
     lut: Vec<u8>,
-    colormap: Colormap,
+    palette: Palette,
     pub revision: u64,
 }
 
 impl DensityLayer {
     #[must_use]
-    pub fn new(colormap: Colormap) -> Self {
+    pub fn new(palette: Palette) -> Self {
         Self {
             grid: DensityGrid::default(),
-            lut: colormap.lut(),
-            colormap,
+            lut: palette.lut(),
+            palette,
             revision: 0,
         }
     }
 
-    pub fn set_colormap(&mut self, colormap: Colormap) {
-        if colormap != self.colormap {
-            self.colormap = colormap;
-            self.lut = colormap.lut();
+    pub fn set_palette(&mut self, palette: Palette) {
+        if palette != self.palette {
+            self.palette = palette;
+            self.lut = palette.lut();
             self.revision += 1;
         }
     }
@@ -361,18 +396,45 @@ mod tests {
     #[test]
     fn a_pixel_keeps_the_peak_and_floor_of_its_bins() {
         let mut points = TracePoints::default();
-        trace_points(&[-90.0, -40.0, -80.0, -85.0], FULL_VIEW, 1.5, &mut points);
+        trace_points(
+            &[-90.0, -40.0, -80.0, -85.0],
+            FULL_VIEW,
+            1.5,
+            -60.0,
+            &mut points,
+        );
         assert_eq!(points.count(), 2);
         assert_eq!((points.high[0], points.low[0]), (-40.0, -90.0));
         assert_eq!((points.high[1], points.low[1]), (-80.0, -85.0));
+        assert_eq!(points.line[0], -40.0);
+        let mean = 10.0 * ((1e-8f64 + 10f64.powf(-8.5)) / 2.0).log10();
+        assert!((f64::from(points.line[1]) - mean).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_pixel_below_the_signal_line_reads_its_power_mean() {
+        let mut points = TracePoints::default();
+        trace_points(&[-90.0, -60.0, -60.0], FULL_VIEW, 1.0, -50.0, &mut points);
+        let mean = 10.0 * ((1e-9f64 + 1e-6) / 2.0).log10();
+        assert!((f64::from(points.line[0]) - mean).abs() < 1e-3);
+        assert_eq!(points.high[0], -60.0);
+        trace_points(
+            &[-90.0, -60.0, -60.0],
+            FULL_VIEW,
+            1.0,
+            f64::NEG_INFINITY,
+            &mut points,
+        );
+        assert_eq!(points.line[0], -60.0);
     }
 
     #[test]
     fn a_zoomed_trace_runs_through_bin_centres() {
         let mut points = TracePoints::default();
-        trace_points(&[-90.0, -60.0, -80.0], FULL_VIEW, 100.0, &mut points);
+        trace_points(&[-90.0, -60.0, -80.0], FULL_VIEW, 100.0, -95.0, &mut points);
         assert_eq!(points.xs, [0.0, 50.0, 100.0]);
         assert_eq!(points.high, [-90.0, -60.0, -80.0]);
+        assert_eq!(points.line, points.high);
         let half = SpectrumView {
             start: 0.5,
             end: 1.0,
@@ -381,12 +443,13 @@ mod tests {
             &[-90.0, -60.0, -80.0, -70.0, -50.0],
             half,
             100.0,
+            -95.0,
             &mut points,
         );
         assert_eq!(points.xs[0], 0.0);
         assert_eq!(points.high[0], -80.0);
         assert_eq!(points.xs[points.count() - 1], 100.0);
-        trace_points(&[-90.0], FULL_VIEW, 100.0, &mut points);
+        trace_points(&[-90.0], FULL_VIEW, 100.0, -95.0, &mut points);
         assert_eq!(points.count(), 0);
     }
 
@@ -396,13 +459,16 @@ mod tests {
             xs: vec![0.0, 4.0],
             low: vec![-80.0, -40.0],
             high: vec![-80.0, -40.0],
+            line: vec![-90.0, -50.0],
         };
-        let (mut high, mut low) = (Vec::new(), Vec::new());
-        columns_of(&points, 5, &mut high, &mut low);
+        let (mut high, mut low, mut line) = (Vec::new(), Vec::new(), Vec::new());
+        columns_of(&points, 5, [&mut high, &mut low, &mut line]);
         assert_eq!(high, [-75.0, -65.0, -55.0, -45.0, -40.0]);
         assert_eq!(low, high);
-        columns_of(&TracePoints::default(), 2, &mut high, &mut low);
+        assert_eq!(line, [-85.0, -75.0, -65.0, -55.0, -50.0]);
+        columns_of(&TracePoints::default(), 2, [&mut high, &mut low, &mut line]);
         assert!(high.iter().all(|value| value.is_nan()));
+        assert!(line.iter().all(|value| value.is_nan()));
     }
 
     #[test]
@@ -491,7 +557,7 @@ mod tests {
     #[test]
     fn the_image_is_transparent_where_empty_and_brightens_with_density() {
         let mut grid = DensityGrid::new(2, 1);
-        let lut = Colormap::Gray.lut();
+        let lut = super::super::colormap::Colormap::Gray.lut();
         let mut out = Vec::new();
         grid.to_image(&lut, &mut out);
         assert_eq!((out[3], out[7]), (0, 0));

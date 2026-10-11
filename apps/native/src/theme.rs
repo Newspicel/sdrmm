@@ -357,6 +357,7 @@ pub const SHEET: &str = css!(
 }
 
 .check.on { background-color: var(--accent); border-color: var(--accent); color: var(--bg); }
+.check__mark { width: 10px; height: 10px; margin: 1px; pointer-events: none; }
 
 .btn {
     padding: 3px 11px;

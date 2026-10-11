@@ -7,18 +7,18 @@ use sdrmm_wire::{
     processor::ProcessorReading,
     ws::{ClientCommand, SurfaceFit},
 };
-use zgui::{prelude::*, vocab::SharedString};
+use zgui::prelude::*;
 
 use crate::{
     arrays::{Heard, processor_of},
     bus::Source,
+    head::{self, NodeHead},
     store::Store,
-    ui::kit_raster::edit_body,
+    ui::{kit_audio::titled, kit_raster::edit_body},
 };
 
 pub const NO_ARRAY: &str = "no array";
 pub const STALE: &str = "stale";
-pub const NO_ARRAY_HINT: &str = "Wire an array in";
 const STALE_FLOOR: Duration = Duration::from_secs(2);
 const TICK: Duration = Duration::from_secs(1);
 
@@ -147,11 +147,6 @@ impl Chip {
     }
 }
 
-#[must_use]
-pub fn gate_chip(gate: Option<ProcessorGate>) -> Option<Chip> {
-    gate.map(|gate| Chip::warn(gate.label(), "Waiting on the array"))
-}
-
 #[derive(Clone)]
 pub struct Processor {
     pub store: Store,
@@ -254,6 +249,13 @@ impl Processor {
             subtitle(array.get().as_deref(), gate.get(), stale.get(), lanes.get())
         })
     }
+
+    pub fn show_head(&self, period_ms: Signal<u32>) {
+        let said = self.subtitle(period_ms);
+        head::show(self.store, self.node.clone(), move || {
+            NodeHead::said(said.get())
+        });
+    }
 }
 
 pub fn settings<T>(store: Store, node: String, read: fn(&NodeBody) -> Option<&T>) -> Memo<Option<T>>
@@ -307,13 +309,8 @@ pub fn surface(
     });
 }
 
-pub fn head(subtitle: Signal<String>) -> impl IntoView {
-    view! {
-        row(class = "kit-head") {
-            spacer() {}
-            text(class = "kit-legend") {{move || subtitle.get()}}
-        }
-    }
+pub fn head(store: Store, node: String, subtitle: Signal<String>) {
+    head::show(store, node, move || NodeHead::said(subtitle.get()));
 }
 
 pub fn error(health: Memo<Option<ProcessorStatus>>) -> impl IntoView {
@@ -330,48 +327,64 @@ pub fn hint(text: &'static str) -> impl IntoView {
 }
 
 fn stat(label: String, value: Option<String>, title: String, danger: bool) -> AnyView {
-    AnyView::new(view! {
-        row(
-            class = "pf__stat",
-            class:danger = danger,
-            a11y:description = SharedString::from(title)
-        ) {
-            text(class = "pf__stat_label") {{label}}
-            {value.map(|value| view! { text(class = "pf__stat_value") {{value}} })}
-        }
-    })
+    titled(
+        title,
+        AnyView::new(view! {
+            row(class = "pf__stat", class:danger = danger) {
+                text(class = "pf__stat_label") {{label}}
+                {value.map(|value| view! { text(class = "pf__stat_value") {{value}} })}
+            }
+        }),
+    )
+}
+
+fn shown_stats(health: Option<&ProcessorStatus>, chips: Vec<Chip>) -> Vec<AnyView> {
+    let mut shown: Vec<AnyView> = chips
+        .into_iter()
+        .map(|chip| stat(chip.label, None, chip.title, chip.danger))
+        .collect();
+    shown.extend(faults(health).into_iter().map(|fault| {
+        stat(
+            fault.label.to_owned(),
+            Some(count(fault.count)),
+            fault.title.to_owned(),
+            true,
+        )
+    }));
+    shown
 }
 
 pub fn footer(
     health: Memo<Option<ProcessorStatus>>,
     chips: impl Fn() -> Vec<Chip> + 'static,
 ) -> impl IntoView {
+    footer_with(health, chips, || None)
+}
+
+pub fn footer_with(
+    health: Memo<Option<ProcessorStatus>>,
+    chips: impl Fn() -> Vec<Chip> + 'static,
+    actions: impl Fn() -> Option<AnyView> + 'static,
+) -> impl IntoView {
     move || {
-        let mut shown: Vec<AnyView> = chips()
-            .into_iter()
-            .map(|chip| stat(chip.label, None, chip.title, chip.danger))
-            .collect();
-        shown.extend(health.with(|health| {
-            faults(health.as_ref())
-                .into_iter()
-                .map(|fault| {
-                    stat(
-                        fault.label.to_owned(),
-                        Some(count(fault.count)),
-                        fault.title.to_owned(),
-                        true,
-                    )
-                })
-                .collect::<Vec<_>>()
-        }));
-        (!shown.is_empty()).then(|| view! { row(class = "pf__stats") {{shown}} })
+        let shown = health.with(|health| shown_stats(health.as_ref(), chips()));
+        let actions = actions();
+        (!shown.is_empty() || actions.is_some()).then(|| {
+            view! {
+                row(class = "pf__stats") {
+                    row(class = "pf__chips") {{shown}}
+                    {actions}
+                }
+            }
+        })
     }
 }
 
 pub(crate) const SHEET: &str = css!(
     r#"
 .pf__hint { align-self: center; padding: 8px 0; }
-.pf__stats { flex-wrap: wrap; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.pf__stats { align-items: center; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.pf__chips { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; gap: 6px; }
 .pf__stat {
     align-items: baseline;
     gap: 4px;
@@ -446,13 +459,5 @@ mod tests {
         assert_eq!(count(12_345), "12.3K");
         assert_eq!(count(2_500_000), "2.5M");
         assert_eq!(count(3_000_000_000), "3B");
-    }
-
-    #[test]
-    fn a_gate_becomes_a_warning_chip() {
-        assert_eq!(gate_chip(None), None);
-        let chip = gate_chip(Some(ProcessorGate::Sync)).expect("a chip");
-        assert_eq!(chip.label, "Syncing");
-        assert!(!chip.danger);
     }
 }

@@ -3,10 +3,101 @@ use std::net::Ipv6Addr;
 use sdrmm_wire::{
     phone::{PHONE_NOT_PAIRED, PHONE_OFFLINE, Phone},
     position::{
-        DEFAULT_NMEA_BAUD, DEFAULT_NMEA_UPDATE_INTERVAL_MS, MAX_NMEA_BAUD, MIN_NMEA_BAUD,
-        NmeaDeviceInfo, PositionSource,
+        DEFAULT_NMEA_BAUD, DEFAULT_NMEA_UPDATE_INTERVAL_MS, HeadingSource, MAX_NMEA_BAUD,
+        MIN_NMEA_BAUD, NmeaDeviceInfo, PositionFix, PositionSource,
     },
 };
+
+pub const BAUDS: [u32; 5] = [4_800, 9_600, 38_400, 57_600, 115_200];
+
+#[must_use]
+pub const fn tab_hint(tab: GpsTab) -> &'static str {
+    match tab {
+        GpsTab::Receiver => "A GPS receiver on a serial or USB port, read as NMEA",
+        GpsTab::Network => "A gpsd daemon on this machine or another one",
+        GpsTab::Fixed => "A place typed in once, for a station that never moves",
+        GpsTab::Phone => "A paired phone's position and heading",
+    }
+}
+
+const fn heading_source_label(source: HeadingSource) -> &'static str {
+    match source {
+        HeadingSource::Compass => "compass",
+        HeadingSource::Course => "GPS course",
+        HeadingSource::Fused => "fused",
+        HeadingSource::Gnss => "GNSS",
+        HeadingSource::Sensor => "sensor",
+    }
+}
+
+#[must_use]
+pub fn heading_label(fix: &PositionFix) -> String {
+    let Some(heading) = fix.attitude.heading_deg else {
+        return String::from("-");
+    };
+    let degrees = (heading.round() as i64).rem_euclid(360);
+    let source = fix
+        .attitude
+        .heading_source
+        .map_or_else(String::new, |source| {
+            format!(" {}", heading_source_label(source))
+        });
+    let accuracy = fix
+        .attitude
+        .heading_accuracy_deg
+        .map_or_else(String::new, |accuracy| {
+            format!(" \u{b1}{accuracy:.0}\u{b0}")
+        });
+    format!("{degrees:03}\u{b0}{source}{accuracy}")
+}
+
+fn angle(value: Option<f64>) -> String {
+    value.map_or_else(|| String::from("-"), |value| format!("{value:.0}\u{b0}"))
+}
+
+#[must_use]
+pub fn tilt_label(fix: &PositionFix) -> Option<String> {
+    let attitude = fix.attitude;
+    (attitude.pitch_deg.is_some() || attitude.roll_deg.is_some()).then(|| {
+        format!(
+            "{} / {}",
+            angle(attitude.pitch_deg),
+            angle(attitude.roll_deg)
+        )
+    })
+}
+
+#[must_use]
+pub fn age_label(ms: i64) -> String {
+    let seconds = ms.max(0) / 1_000;
+    if seconds < 60 {
+        return format!("{seconds} s");
+    }
+    let minutes = seconds / 60;
+    if minutes < 60 {
+        return format!("{minutes} min");
+    }
+    let hours = minutes / 60;
+    if hours < 48 {
+        format!("{hours} h")
+    } else {
+        format!("{} d", hours / 24)
+    }
+}
+
+#[must_use]
+pub fn fix_age_label(time: &str, now_ms: i64) -> String {
+    time.parse::<jiff::Timestamp>().map_or_else(
+        |_| String::from("-"),
+        |at| age_label(now_ms - at.as_millisecond()),
+    )
+}
+
+#[must_use]
+pub fn shown_as_standing(source: Option<&PositionSource>, error: &str) -> bool {
+    matches!(source, Some(PositionSource::Phone { .. }))
+        && (error == PHONE_OFFLINE || error == PHONE_NOT_PAIRED)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GpsTab {
@@ -322,5 +413,63 @@ mod tests {
         assert_eq!(valid_baud("300"), None);
         assert_eq!(valid_baud("9600.5"), None);
         assert_eq!(valid_baud("fast"), None);
+    }
+
+    fn fix(attitude: serde_json::Value) -> PositionFix {
+        let mut held = serde_json::json!({
+            "latitude": 48.0, "longitude": 11.0, "time": "2026-09-23T12:00:00Z"
+        });
+        if let (Some(held), Some(attitude)) = (held.as_object_mut(), attitude.as_object()) {
+            held.extend(attitude.clone());
+        }
+        serde_json::from_value(held).expect("a fix")
+    }
+
+    #[test]
+    fn heading_reads_degrees_source_and_accuracy() {
+        assert_eq!(heading_label(&fix(serde_json::json!({}))), "-");
+        let full = fix(serde_json::json!({
+            "heading_deg": 7.4, "heading_source": "compass", "heading_accuracy_deg": 12.2
+        }));
+        assert_eq!(heading_label(&full), "007\u{b0} compass \u{b1}12\u{b0}");
+        assert_eq!(
+            heading_label(&fix(serde_json::json!({ "heading_deg": -10.0 }))),
+            "350\u{b0}"
+        );
+    }
+
+    #[test]
+    fn tilt_shows_only_when_the_phone_reports_it() {
+        assert_eq!(tilt_label(&fix(serde_json::json!({}))), None);
+        assert_eq!(
+            tilt_label(&fix(serde_json::json!({ "pitch_deg": 4.6 }))).as_deref(),
+            Some("5\u{b0} / -")
+        );
+    }
+
+    #[test]
+    fn a_fix_ages_in_seconds_minutes_hours_then_days() {
+        let at = "2026-09-23T12:00:00Z"
+            .parse::<jiff::Timestamp>()
+            .map(|at| at.as_millisecond())
+            .unwrap_or_default();
+        assert_eq!(fix_age_label("2026-09-23T12:00:00Z", at + 42_000), "42 s");
+        assert_eq!(fix_age_label("2026-09-23T12:00:00Z", at + 300_000), "5 min");
+        assert_eq!(age_label(3 * 3_600_000), "3 h");
+        assert_eq!(age_label(72 * 3_600_000), "3 d");
+        assert_eq!(age_label(-5), "0 s");
+        assert_eq!(fix_age_label("garbage", at), "-");
+    }
+
+    #[test]
+    fn offline_and_unpaired_phones_are_said_once_in_the_header() {
+        let phone = PositionSource::Phone {
+            phone: String::from("p"),
+        };
+        assert!(shown_as_standing(Some(&phone), PHONE_OFFLINE));
+        assert!(shown_as_standing(Some(&phone), PHONE_NOT_PAIRED));
+        assert!(!shown_as_standing(Some(&phone), "timeout"));
+        assert!(!shown_as_standing(None, PHONE_OFFLINE));
+        assert!(GpsTab::Phone != GpsTab::Fixed && !tab_hint(GpsTab::Phone).is_empty());
     }
 }

@@ -1,53 +1,36 @@
 use sdrmm_wire::channel::{
     AeroChannel, AisChannel, AprsMode, AtvColor, AtvModulation, AtvStandard, ChannelParams,
     DabMode, DabTransmissionMode, DatvCodeRate, DatvRollOff, DatvStandard, DectBand, DectSides,
-    DmrSlots, DrmMode, DvbtBandwidth, DvbtStandard, IlsComponent, IridiumSpan, NfmScramblerMode,
-    NfmToneMode, NxdnBandwidth, PocsagBaud, PskBaud, RadioClockStandard, RttyStopBits,
-    SelcallSystem, Sideband,
+    DectSpan, DmrSlots, DrmMode, DvbtBandwidth, DvbtStandard, GnssParams, IlsComponent,
+    IridiumSpan, NfmScramblerMode, NfmToneMode, NxdnBandwidth, PocsagBaud, PskBaud,
+    RadioClockStandard, RttyStopBits, SelcallSystem, Sideband, SstvModulation,
 };
 use zgui::prelude::*;
 
 use super::{
     controls::{
-        Ctx, bandwidth, listed, number, presets, segmented, select, service_picker, toggle,
+        CHANNEL_BANDWIDTH, Ctx, bandwidth, listed, number, presets, segmented, select,
+        service_picker, titled, toggle,
     },
+    more_modes,
     settings::{NumberLimit, scaled_limit},
     tables::{
         AERO_CHANNELS, AIS_CHANNELS, APRS_MODES, ATV_COLORS, ATV_MODULATIONS, ATV_STANDARDS,
-        CTCSS_DEFAULT_HZ, DAB_MODES, DAB_TRANSMISSION_MODES, DATV_CODE_RATES, DATV_ROLL_OFFS,
-        DATV_STANDARDS, DCS_DEFAULT_CODE, DECT_BANDS, DECT_SIDES, DEEMPHASIS_US, DMR_SLOTS,
-        DRM_MODES, DRM_PLUS_BANDWIDTHS_HZ, DRM30_BANDWIDTHS_HZ, DVBT_BANDWIDTHS, DVBT_STANDARDS,
+        CTCSS_DEFAULT_HZ, DAB_MODES, DATV_CODE_RATES, DATV_ROLL_OFFS, DATV_STANDARDS,
+        DCS_DEFAULT_CODE, DECT_BANDS, DECT_SIDES, DECT_SPANS, DEEMPHASIS_US, DMR_SLOTS, DRM_MODES,
+        DRM_PLUS_BANDWIDTHS_HZ, DRM30_BANDWIDTHS_HZ, DVBT_BANDWIDTHS, DVBT_STANDARDS,
         ILS_COMPONENTS, INVERSION_DEFAULT_HZ, IRIDIUM_SPANS, NFM_SCRAMBLER_MODES, NFM_TONE_MODES,
         NXDN_WIDTHS, POCSAG_BAUDS, PSK_BAUDS, RADIO_CLOCK_STANDARDS, RTTY_BAUDS, RTTY_SHIFTS_HZ,
-        RTTY_STOP_BITS, SELCALL_SYSTEMS, SIDEBANDS, ctcss_options, dcs_options, drm_bandwidth_for,
-        sstv_modes, tone_key,
+        RTTY_STOP_BITS, SELCALL_SYSTEMS, SIDEBANDS, SSTV_MODULATIONS, ctcss_options,
+        dab_transmission_modes, dcs_options, drm_bandwidth_for, sstv_modes, tone_key,
     },
 };
 use crate::ui::kit_channel::{NumberSpec, setting_row, text_field};
 
-const INVERT: Option<&str> = Some("Flip the signal's polarity; try it when nothing decodes");
-const NARROW: &[f64] = &[12_500.0, 25_000.0];
+pub const INVERT: Option<&str> = Some("Flip the signal's polarity; try it when nothing decodes");
+pub const NARROW: &[f64] = &[12_500.0, 25_000.0];
 
-macro_rules! get {
-    ($variant:ident, $p:ident => $e:expr) => {
-        |params: &ChannelParams| match params {
-            ChannelParams::$variant($p) => Some($e),
-            _ => None,
-        }
-    };
-}
-
-macro_rules! set {
-    ($variant:ident, $p:ident, $v:ident => $e:expr) => {
-        |params: &mut ChannelParams, $v| {
-            if let ChannelParams::$variant($p) = params {
-                $e;
-            }
-        }
-    };
-}
-
-fn rows(rows: Vec<AnyView>) -> AnyView {
+pub fn rows(rows: Vec<AnyView>) -> AnyView {
     AnyView::new(view! { column(class = "kc-grid") {{rows}} })
 }
 
@@ -57,23 +40,41 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
         "selcall" => rows(vec![segmented(
             ctx,
             "Tone plan",
-            None,
+            Some("Selective calling tone plan"),
             SELCALL_SYSTEMS,
             ctx.read(get!(Selcall, p => p.system), SelcallSystem::Ccir1),
             set!(Selcall, p, v => p.system = v),
         )]),
-        "am" => rows(vec![bandwidth(
-            ctx,
-            "Bandwidth",
-            &[5_000.0, 8_000.0, 10_000.0],
-            ctx.read(get!(Am, p => p.bandwidth_hz), 10_000.0),
-            set!(Am, p, v => p.bandwidth_hz = v),
-        )]),
+        "am" => rows(vec![
+            bandwidth(
+                ctx,
+                "Bandwidth",
+                CHANNEL_BANDWIDTH,
+                &[5_000.0, 8_000.0, 10_000.0],
+                ctx.read(get!(Am, p => p.bandwidth_hz), 10_000.0),
+                set!(Am, p, v => p.bandwidth_hz = v),
+            ),
+            toggle(
+                ctx,
+                "Sync",
+                Some("Lock to the carrier; clearer under fading"),
+                ctx.read(get!(Am, p => p.sync), false),
+                set!(Am, p, v => p.sync = v),
+            ),
+        ]),
         "ssb" => ssb(ctx),
         "wfm" => wfm(ctx),
         "pocsag" => pocsag(ctx),
         "flex" => pager_flex(ctx),
         "ermes" => pager_ermes(ctx),
+        "eot" => rows(vec![bandwidth(
+            ctx,
+            "Bandwidth",
+            CHANNEL_BANDWIDTH,
+            NARROW,
+            ctx.read(get!(Eot, p => p.bandwidth_hz), 12_500.0),
+            set!(Eot, p, v => p.bandwidth_hz = v),
+        )]),
         "adsb" => rows(vec![toggle(
             ctx,
             "CRC fix",
@@ -84,23 +85,23 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
         "ais" => rows(vec![segmented(
             ctx,
             "Channel",
-            None,
+            Some("AIS channel"),
             AIS_CHANNELS,
             ctx.read(get!(Ais, p => p.ais_channel), AisChannel::A),
             set!(Ais, p, v => p.ais_channel = v),
         )]),
-        "inmarsat_aero" => rows(vec![segmented(
+        "inmarsat_aero" => rows(vec![titled(
             ctx,
             "Channel",
-            Some("P: forward channel to aircraft. R/T: bursts from aircraft. C: voice circuit"),
+            Some("Aero channel"),
             AERO_CHANNELS,
             ctx.read(get!(InmarsatAero, p => p.channel), AeroChannel::P),
             set!(InmarsatAero, p, v => p.channel = v),
         )]),
-        "iridium" => rows(vec![segmented(
+        "iridium" => rows(vec![titled(
             ctx,
             "Span",
-            Some("Wider spans run the radio faster and decode the middle 80%"),
+            Some("Iridium span"),
             IRIDIUM_SPANS,
             ctx.read(get!(Iridium, p => p.span), IridiumSpan::Channel),
             set!(Iridium, p, v => p.span = v),
@@ -125,6 +126,7 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
         "acars" => rows(vec![bandwidth(
             ctx,
             "Bandwidth",
+            CHANNEL_BANDWIDTH,
             &[8_000.0, 12_500.0, 25_000.0],
             ctx.read(get!(Acars, p => p.bandwidth_hz), 12_500.0),
             set!(Acars, p, v => p.bandwidth_hz = v),
@@ -139,7 +141,7 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
             segmented(
                 ctx,
                 "Slot",
-                None,
+                Some("Slot"),
                 DMR_SLOTS,
                 ctx.read(get!(Dmr, p => p.slots), DmrSlots::Both),
                 set!(Dmr, p, v => p.slots = v),
@@ -147,7 +149,7 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
             toggle(
                 ctx,
                 "Ignore data CRC",
-                None,
+                Some("Ignore data CRC"),
                 ctx.read(get!(Dmr, p => p.ignore_crc), false),
                 set!(Dmr, p, v => p.ignore_crc = v),
             ),
@@ -155,7 +157,7 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
         "nxdn" => rows(vec![segmented(
             ctx,
             "Width",
-            None,
+            Some("Width"),
             NXDN_WIDTHS,
             ctx.read(get!(Nxdn, p => p.bandwidth), NxdnBandwidth::Narrow),
             set!(Nxdn, p, v => p.bandwidth = v),
@@ -163,7 +165,7 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
         "freedv" => rows(vec![segmented(
             ctx,
             "Sideband",
-            None,
+            Some("FreeDV sideband"),
             SIDEBANDS,
             ctx.read(get!(Freedv, p => p.sideband), Sideband::Usb),
             set!(Freedv, p, v => p.sideband = v),
@@ -173,21 +175,29 @@ pub fn mode_view(ctx: Ctx, kind: &str) -> AnyView {
             segmented(
                 ctx,
                 "Band",
-                None,
+                Some("DECT band"),
                 DECT_BANDS,
                 ctx.read(get!(Dect, p => p.band), DectBand::Eu),
                 set!(Dect, p, v => p.band = v),
             ),
+            titled(
+                ctx,
+                "Span",
+                Some("DECT span"),
+                DECT_SPANS,
+                ctx.read(get!(Dect, p => p.span), DectSpan::Carrier),
+                set!(Dect, p, v => p.span = v),
+            ),
             segmented(
                 ctx,
                 "Side",
-                None,
+                Some("DECT side"),
                 DECT_SIDES,
                 ctx.read(get!(Dect, p => p.sides), DectSides::Both),
                 set!(Dect, p, v => p.sides = v),
             ),
         ]),
-        _ => AnyView::new(()),
+        _ => more_modes::mode_view(ctx, kind),
     }
 }
 
@@ -210,7 +220,7 @@ fn nfm(ctx: Ctx) -> AnyView {
         NfmToneMode::Ctcss => Some(select(
             ctx,
             "CTCSS",
-            None,
+            Some("CTCSS tone"),
             ctcss_options(),
             ctcss,
             set!(Nfm, p, v => p.ctcss_hz = Some(f64::from(v) / 10.0)),
@@ -218,7 +228,7 @@ fn nfm(ctx: Ctx) -> AnyView {
         NfmToneMode::Dcs => Some(select(
             ctx,
             "DCS",
-            None,
+            Some("DCS code"),
             dcs_options(),
             dcs,
             set!(Nfm, p, v => p.dcs_code = Some(v)),
@@ -230,7 +240,7 @@ fn nfm(ctx: Ctx) -> AnyView {
             number(
                 ctx,
                 "Carrier",
-                None,
+                Some("Inversion carrier"),
                 NumberSpec::new("Inversion carrier")
                     .limit(ctx.limit("inversion_hz"))
                     .unit("Hz"),
@@ -243,6 +253,7 @@ fn nfm(ctx: Ctx) -> AnyView {
         bandwidth(
             ctx,
             "Bandwidth",
+            CHANNEL_BANDWIDTH,
             NARROW,
             ctx.read(get!(Nfm, p => p.bandwidth_hz), 12_500.0),
             set!(Nfm, p, v => p.bandwidth_hz = v),
@@ -250,7 +261,7 @@ fn nfm(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "Tone",
-            None,
+            Some("Tone squelch"),
             listed(NFM_TONE_MODES),
             tone,
             set!(Nfm, p, v => {
@@ -263,7 +274,7 @@ fn nfm(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "Scrambler",
-            None,
+            Some("Voice scrambler"),
             listed(NFM_SCRAMBLER_MODES),
             scrambler,
             set!(Nfm, p, v => {
@@ -287,7 +298,7 @@ fn ssb(ctx: Ctx) -> AnyView {
         segmented(
             ctx,
             "Sideband",
-            None,
+            Some("Sideband"),
             SIDEBANDS,
             ctx.read(get!(Ssb, p => p.sideband), Sideband::Usb),
             set!(Ssb, p, v => p.sideband = v),
@@ -295,7 +306,7 @@ fn ssb(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Bandwidth",
-            None,
+            Some("SSB bandwidth"),
             NumberSpec::new("SSB bandwidth")
                 .limit(ctx.limit("bandwidth_hz"))
                 .unit("Hz"),
@@ -310,7 +321,7 @@ fn wfm(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "De-emphasis",
-            None,
+            Some("De-emphasis"),
             listed(DEEMPHASIS_US),
             ctx.read(get!(Wfm, p => p.deemphasis_us.round() as u32), 50),
             set!(Wfm, p, v => p.deemphasis_us = v as f32),
@@ -330,7 +341,7 @@ fn pocsag(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "Baud",
-            None,
+            Some("POCSAG baud"),
             listed(POCSAG_BAUDS),
             ctx.read(get!(Pocsag, p => p.baud), PocsagBaud::Auto),
             set!(Pocsag, p, v => p.baud = v),
@@ -338,6 +349,7 @@ fn pocsag(ctx: Ctx) -> AnyView {
         bandwidth(
             ctx,
             "Bandwidth",
+            CHANNEL_BANDWIDTH,
             NARROW,
             ctx.read(get!(Pocsag, p => p.bandwidth_hz), 12_500.0),
             set!(Pocsag, p, v => p.bandwidth_hz = v),
@@ -357,6 +369,7 @@ fn pager_flex(ctx: Ctx) -> AnyView {
         bandwidth(
             ctx,
             "Bandwidth",
+            CHANNEL_BANDWIDTH,
             NARROW,
             ctx.read(get!(Flex, p => p.bandwidth_hz), 12_500.0),
             set!(Flex, p, v => p.bandwidth_hz = v),
@@ -376,6 +389,7 @@ fn pager_ermes(ctx: Ctx) -> AnyView {
         bandwidth(
             ctx,
             "Bandwidth",
+            CHANNEL_BANDWIDTH,
             NARROW,
             ctx.read(get!(Ermes, p => p.bandwidth_hz), 12_500.0),
             set!(Ermes, p, v => p.bandwidth_hz = v),
@@ -395,7 +409,7 @@ fn aprs(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "Mode",
-            None,
+            Some("APRS mode"),
             listed(APRS_MODES),
             ctx.read(get!(Aprs, p => p.mode), AprsMode::Afsk1200),
             set!(Aprs, p, v => p.mode = v),
@@ -403,6 +417,7 @@ fn aprs(ctx: Ctx) -> AnyView {
         bandwidth(
             ctx,
             "Bandwidth",
+            CHANNEL_BANDWIDTH,
             NARROW,
             ctx.read(get!(Aprs, p => p.bandwidth_hz), 12_500.0),
             set!(Aprs, p, v => p.bandwidth_hz = v),
@@ -415,6 +430,7 @@ fn rtty(ctx: Ctx) -> AnyView {
         presets(
             ctx,
             "Baud",
+            Some("RTTY baud"),
             NumberSpec::new("RTTY baud").limit(ctx.limit("baud")),
             RTTY_BAUDS,
             ctx.read(get!(Rtty, p => p.baud), 45.45),
@@ -423,6 +439,7 @@ fn rtty(ctx: Ctx) -> AnyView {
         presets(
             ctx,
             "Shift",
+            Some("RTTY shift"),
             NumberSpec::new("RTTY shift")
                 .limit(ctx.limit("shift_hz"))
                 .unit("Hz"),
@@ -433,7 +450,7 @@ fn rtty(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "Stop bits",
-            None,
+            Some("RTTY stop bits"),
             listed(RTTY_STOP_BITS),
             ctx.read(get!(Rtty, p => p.stop_bits), RttyStopBits::OneAndHalf),
             set!(Rtty, p, v => p.stop_bits = v),
@@ -460,7 +477,7 @@ fn morse(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Bandwidth",
-            None,
+            Some("CW filter bandwidth"),
             NumberSpec::new("CW filter bandwidth")
                 .limit(ctx.limit("bandwidth_hz"))
                 .unit("Hz"),
@@ -470,7 +487,7 @@ fn morse(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Speed",
-            Some("Empty tracks the speed by itself"),
+            Some("Morse speed, empty to auto-track"),
             NumberSpec::new("Morse speed")
                 .limit(ctx.limit("wpm"))
                 .unit("WPM")
@@ -486,7 +503,7 @@ fn cw_skimmer(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Passband",
-            None,
+            Some("CW skimmer passband"),
             NumberSpec::new("CW skimmer passband")
                 .limit(ctx.limit("bandwidth_hz"))
                 .unit("Hz"),
@@ -509,7 +526,7 @@ fn cw_skimmer(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Signals",
-            Some("Most CW signals decoded at once"),
+            Some("Maximum simultaneous CW signals"),
             NumberSpec::new("Maximum signals").limit(ctx.limit("max_signals")),
             ctx.read(
                 get!(CwSkimmer, p => Some(f64::from(p.max_signals))),
@@ -520,7 +537,7 @@ fn cw_skimmer(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Speed",
-            Some("Empty tracks each signal's speed"),
+            Some("Morse speed, empty to track each signal"),
             NumberSpec::new("Morse speed")
                 .limit(ctx.limit("wpm"))
                 .unit("WPM")
@@ -601,7 +618,7 @@ fn wsjt(ctx: Ctx, wspr: bool) -> AnyView {
         number(
             ctx,
             "Candidates",
-            Some("Most synchronized signals tried per decode pass"),
+            Some("Maximum synchronized signals tried per decode pass"),
             NumberSpec::new("Candidates").limit(ctx.limit("max_candidates")),
             read_candidates,
             |params: &mut ChannelParams, v: Option<f64>| {
@@ -621,7 +638,7 @@ fn psk(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "Mode",
-            None,
+            Some("PSK symbol rate"),
             listed(PSK_BAUDS),
             ctx.read(get!(Psk, p => p.baud), PskBaud::Psk31),
             set!(Psk, p, v => p.baud = v),
@@ -641,7 +658,7 @@ fn radio_clock(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "Service",
-            None,
+            Some("Radio clock service"),
             listed(RADIO_CLOCK_STANDARDS),
             ctx.read(get!(RadioClock, p => p.standard), RadioClockStandard::Dcf77),
             set!(RadioClock, p, v => p.standard = v),
@@ -686,7 +703,10 @@ fn gnss(ctx: Ctx) -> AnyView {
             NumberSpec::new("Acquire above")
                 .limit(ctx.limit("threshold"))
                 .unit("× floor"),
-            ctx.read(get!(Gnss, p => Some(f64::from(p.threshold))), Some(2.5)),
+            ctx.read(
+                get!(Gnss, p => Some(f64::from(p.threshold))),
+                Some(f64::from(GnssParams::default().threshold)),
+            ),
             set!(Gnss, p, v => if let Some(v) = v { p.threshold = v as f32 }),
         ),
     ])
@@ -700,7 +720,7 @@ fn vor(ctx: Ctx) -> AnyView {
     rows(vec![
         setting_row(
             "Station",
-            None,
+            Some("VOR station identifier"),
             text_field(
                 station,
                 "VOR station identifier",
@@ -719,7 +739,7 @@ fn vor(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Station latitude",
-            None,
+            Some("VOR station latitude"),
             NumberSpec::new("VOR station latitude")
                 .limit(ctx.limit("station_lat"))
                 .unit("°")
@@ -730,7 +750,7 @@ fn vor(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Station longitude",
-            None,
+            Some("VOR station longitude"),
             NumberSpec::new("VOR station longitude")
                 .limit(ctx.limit("station_lon"))
                 .unit("°")
@@ -751,7 +771,7 @@ fn vor(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Report every",
-            None,
+            Some("VOR report interval"),
             NumberSpec::new("VOR report interval")
                 .limit(ctx.limit("report_ms"))
                 .unit("ms"),
@@ -766,7 +786,7 @@ fn ils(ctx: Ctx) -> AnyView {
         segmented(
             ctx,
             "Component",
-            None,
+            Some("ILS component"),
             ILS_COMPONENTS,
             ctx.read(get!(Ils, p => p.component), IlsComponent::Localizer),
             set!(Ils, p, v => p.component = v),
@@ -774,7 +794,7 @@ fn ils(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Report every",
-            None,
+            Some("ILS report interval"),
             NumberSpec::new("ILS report interval")
                 .limit(ctx.limit("report_ms"))
                 .unit("ms"),
@@ -789,7 +809,7 @@ fn atv(ctx: Ctx) -> AnyView {
         segmented(
             ctx,
             "Modulation",
-            None,
+            Some("Modulation"),
             ATV_MODULATIONS,
             ctx.read(get!(Atv, p => p.modulation), AtvModulation::Am),
             set!(Atv, p, v => p.modulation = v),
@@ -805,6 +825,7 @@ fn atv(ctx: Ctx) -> AnyView {
         bandwidth(
             ctx,
             "Bandwidth",
+            CHANNEL_BANDWIDTH,
             &[500_000.0, 1_000_000.0, 1_500_000.0, 1_600_000.0],
             ctx.read(get!(Atv, p => p.bandwidth_hz), 1_500_000.0),
             set!(Atv, p, v => p.bandwidth_hz = v),
@@ -812,7 +833,7 @@ fn atv(ctx: Ctx) -> AnyView {
         select(
             ctx,
             "Colour",
-            None,
+            Some("Composite colour system"),
             listed(ATV_COLORS),
             ctx.read(get!(Atv, p => p.color), AtvColor::Monochrome),
             set!(Atv, p, v => p.color = v),
@@ -850,6 +871,14 @@ fn atv(ctx: Ctx) -> AnyView {
 
 fn sstv(ctx: Ctx) -> AnyView {
     rows(vec![
+        segmented(
+            ctx,
+            "Modulation",
+            Some("Modulation"),
+            SSTV_MODULATIONS,
+            ctx.read(get!(Sstv, p => p.modulation), SstvModulation::Usb),
+            set!(Sstv, p, v => p.modulation = v),
+        ),
         select(
             ctx,
             "Mode",
@@ -868,7 +897,7 @@ fn sstv(ctx: Ctx) -> AnyView {
         toggle(
             ctx,
             "Keep unfinished pictures",
-            None,
+            Some("Keep unfinished pictures"),
             ctx.read(get!(Sstv, p => p.keep_partial), true),
             set!(Sstv, p, v => p.keep_partial = v),
         ),
@@ -876,23 +905,32 @@ fn sstv(ctx: Ctx) -> AnyView {
 }
 
 fn dab(ctx: Ctx) -> AnyView {
+    let mode = ctx.read(get!(Dab, p => p.transmission_mode), DabTransmissionMode::I);
+    let detected = Memo::new(move |_| {
+        ctx.broadcast
+            .get()
+            .and_then(|status| status.transmission_mode)
+    });
+    let transmission = move || {
+        select(
+            ctx,
+            "Transmission",
+            Some("DAB transmission mode"),
+            dab_transmission_modes(detected.get()),
+            mode,
+            set!(Dab, p, v => p.transmission_mode = v),
+        )
+    };
     rows(vec![
         segmented(
             ctx,
             "Generation",
-            None,
+            Some("DAB generation"),
             DAB_MODES,
             ctx.read(get!(Dab, p => p.mode), DabMode::Auto),
             set!(Dab, p, v => p.mode = v),
         ),
-        segmented(
-            ctx,
-            "Transmission",
-            None,
-            DAB_TRANSMISSION_MODES,
-            ctx.read(get!(Dab, p => p.transmission_mode), DabTransmissionMode::I),
-            set!(Dab, p, v => p.transmission_mode = v),
-        ),
+        AnyView::new(transmission),
         service_picker(
             ctx,
             f64::from(u32::MAX),
@@ -902,44 +940,83 @@ fn dab(ctx: Ctx) -> AnyView {
     ])
 }
 
+fn superframe_rows(ctx: Ctx) -> AnyView {
+    rows(vec![
+        number(
+            ctx,
+            "Ref code",
+            Some("Superframe reference scrambling code n_Ref, 0 by default"),
+            NumberSpec::new("Superframe reference code").limit(ctx.limit("superframe_reference")),
+            ctx.read(
+                get!(Datv, p => Some(f64::from(p.superframe_reference))),
+                Some(0.0),
+            ),
+            set!(Datv, p, v => if let Some(v) = v { p.superframe_reference = v as u32 }),
+        ),
+        number(
+            ctx,
+            "Data code",
+            Some("Superframe payload scrambling code n_Pay, 0 by default"),
+            NumberSpec::new("Superframe payload code").limit(ctx.limit("superframe_payload")),
+            ctx.read(
+                get!(Datv, p => Some(f64::from(p.superframe_payload))),
+                Some(0.0),
+            ),
+            set!(Datv, p, v => if let Some(v) = v { p.superframe_payload = v as u32 }),
+        ),
+        toggle(
+            ctx,
+            "Code search",
+            Some("Find unknown scrambling codes from the signal; needs a clean carrier"),
+            ctx.read(get!(Datv, p => p.superframe_search), false),
+            set!(Datv, p, v => p.superframe_search = v),
+        ),
+    ])
+}
+
+fn dvb_s2(ctx: Ctx) -> AnyView {
+    let superframes = ctx.read(get!(Datv, p => p.superframes), false);
+    let codes = move || superframes.get().then(|| superframe_rows(ctx));
+    rows(vec![
+        select(
+            ctx,
+            "Roll-off",
+            Some("Match the transmitter's filter shape; DVB-S2 signals it in the base band header"),
+            listed(DATV_ROLL_OFFS),
+            ctx.read(get!(Datv, p => p.roll_off), DatvRollOff::Pct35),
+            set!(Datv, p, v => p.roll_off = v),
+        ),
+        toggle(
+            ctx,
+            "Superframes",
+            Some("Receive DVB-S2X Annex E superframes, formats 0 to 7"),
+            superframes,
+            set!(Datv, p, v => p.superframes = v),
+        ),
+        AnyView::new(codes),
+        number(
+            ctx,
+            "Input stream",
+            Some("Choose an input stream identifier on a multistream carrier"),
+            NumberSpec::new("DVB-S2 input stream")
+                .limit(NumberLimit::new(0.0, 255.0, 1.0))
+                .optional("Auto"),
+            ctx.read(get!(Datv, p => p.input_stream.map(f64::from)), None),
+            set!(Datv, p, v => p.input_stream = v.map(|v| v as u8)),
+        ),
+    ])
+}
+
 fn datv(ctx: Ctx) -> AnyView {
     let standard = ctx.read(get!(Datv, p => p.standard), DatvStandard::DvbS);
     let by_standard = move || {
         if standard.get() == DatvStandard::DvbS2 {
-            return AnyView::new(view! {
-                column(class = "kc-grid") {
-                    {select(
-                        ctx,
-                        "Roll-off",
-                        Some("Match the transmitter's filter shape; DVB-S2 signals it in the base band header"),
-                        listed(DATV_ROLL_OFFS),
-                        ctx.read(get!(Datv, p => p.roll_off), DatvRollOff::Pct35),
-                        set!(Datv, p, v => p.roll_off = v),
-                    )}
-                    {toggle(
-                        ctx,
-                        "Superframes",
-                        Some("Receive Annex E format 0 or 1 with the default scrambling codes"),
-                        ctx.read(get!(Datv, p => p.superframes), false),
-                        set!(Datv, p, v => p.superframes = v),
-                    )}
-                    {number(
-                        ctx,
-                        "Input stream",
-                        Some("Choose an input stream on a multistream carrier"),
-                        NumberSpec::new("DVB-S2 input stream")
-                            .limit(NumberLimit::new(0.0, 255.0, 1.0))
-                            .optional("Auto"),
-                        ctx.read(get!(Datv, p => p.input_stream.map(f64::from)), None),
-                        set!(Datv, p, v => p.input_stream = v.map(|v| v as u8)),
-                    )}
-                }
-            });
+            return dvb_s2(ctx);
         }
         select(
             ctx,
             "Code rate",
-            None,
+            Some("DVB-S code rate"),
             listed(DATV_CODE_RATES),
             ctx.read(get!(Datv, p => p.code_rate), DatvCodeRate::Auto),
             set!(Datv, p, v => p.code_rate = v),
@@ -949,7 +1026,7 @@ fn datv(ctx: Ctx) -> AnyView {
         segmented(
             ctx,
             "Standard",
-            None,
+            Some("DATV standard"),
             DATV_STANDARDS,
             standard,
             set!(Datv, p, v => p.standard = v),
@@ -957,7 +1034,7 @@ fn datv(ctx: Ctx) -> AnyView {
         number(
             ctx,
             "Symbol rate",
-            None,
+            Some("DATV symbol rate"),
             NumberSpec::new("DATV symbol rate")
                 .limit(ctx.limit("symbol_rate"))
                 .unit("Bd"),
@@ -992,7 +1069,7 @@ fn dvbt(ctx: Ctx) -> AnyView {
         toggle(
             ctx,
             "Low priority stream",
-            Some("Decode the low priority stream of a hierarchical multiplex"),
+            Some("Decode the low priority transport stream of a hierarchical DVB-T multiplex"),
             ctx.read(get!(Dvbt, p => p.low_priority), false),
             set!(Dvbt, p, v => p.low_priority = v),
         )
@@ -1001,16 +1078,16 @@ fn dvbt(ctx: Ctx) -> AnyView {
         segmented(
             ctx,
             "Standard",
-            None,
+            Some("Terrestrial standard"),
             DVBT_STANDARDS,
             standard,
             set!(Dvbt, p, v => p.standard = v),
         ),
-        segmented(
+        select(
             ctx,
             "Bandwidth",
-            None,
-            DVBT_BANDWIDTHS,
+            Some("DVB-T bandwidth"),
+            listed(DVBT_BANDWIDTHS),
             ctx.read(get!(Dvbt, p => p.bandwidth), DvbtBandwidth::Mhz8),
             set!(Dvbt, p, v => p.bandwidth = v),
         ),
@@ -1035,6 +1112,7 @@ fn drm(ctx: Ctx) -> AnyView {
         bandwidth(
             ctx,
             "Bandwidth",
+            CHANNEL_BANDWIDTH,
             options,
             ctx.read(get!(Drm, p => p.bandwidth_hz), 100_000.0),
             set!(Drm, p, v => p.bandwidth_hz = v),
@@ -1044,7 +1122,7 @@ fn drm(ctx: Ctx) -> AnyView {
         segmented(
             ctx,
             "Mode",
-            None,
+            Some("DRM mode"),
             DRM_MODES,
             mode,
             set!(Drm, p, v => {
@@ -1053,6 +1131,12 @@ fn drm(ctx: Ctx) -> AnyView {
             }),
         ),
         AnyView::new(width),
+        service_picker(
+            ctx,
+            3.0,
+            ctx.read(get!(Drm, p => p.service.map(u32::from)), None),
+            set!(Drm, p, v => p.service = v.and_then(|v| u8::try_from(v).ok())),
+        ),
     ])
 }
 
@@ -1061,6 +1145,7 @@ fn ident(ctx: Ctx) -> AnyView {
         bandwidth(
             ctx,
             "Search width",
+            Some("Search bandwidth"),
             &[12_500.0, 50_000.0, 100_000.0, 192_000.0],
             ctx.read(get!(Ident, p => p.bandwidth_hz), 192_000.0),
             set!(Ident, p, v => p.bandwidth_hz = v),

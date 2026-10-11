@@ -5,11 +5,14 @@ use sdrmm_wire::{
 use zgui::prelude::*;
 
 use crate::{
-    shell::templates::{supports, templates_hint},
+    shell::templates::{apply_title, supports, template_size, templates_hint},
     store::Store,
     ui::{
-        kit_shell::{Row, gated_button, glyph, hint, list, list_row, row_action},
-        library::{active_set, load},
+        kit_shell::{glyph, hint, list, row_action},
+        library::{
+            active_set, load,
+            rows::{Badge, LibRow, Pending, act, lib_row},
+        },
     },
 };
 
@@ -18,6 +21,7 @@ pub fn panel(store: Store) -> impl IntoView {
     let active = active_set(store);
     let applied = RwSignal::new(None::<TemplateInfo>);
     let explained = RwSignal::new(None::<String>);
+    let applying = Pending::new();
     let listed = move || {
         templates
             .get()
@@ -41,7 +45,9 @@ pub fn panel(store: Store) -> impl IntoView {
     let rows = move || {
         listed()
             .into_iter()
-            .map(|template| AnyView::new(template_row(store, template, applied, explained)))
+            .map(|template| {
+                AnyView::new(template_row(store, template, applied, explained, applying))
+            })
             .collect::<Vec<_>>()
     };
     let failed = move || {
@@ -57,48 +63,68 @@ pub fn panel(store: Store) -> impl IntoView {
     }
 }
 
+async fn apply(
+    store: Store,
+    device_set: u32,
+    template: TemplateInfo,
+    applied: RwSignal<Option<TemplateInfo>>,
+) {
+    let body = ApplyTemplateRequest { device_set };
+    let path = format!("/api/templates/{}/apply", template.id);
+    match store
+        .api()
+        .post::<_, serde::de::IgnoredAny>(&path, &body)
+        .await
+    {
+        Ok(_) => {
+            applied.set(Some(template));
+            store.apply().await;
+        }
+        Err(error) => store.fail("Cannot apply the template", &error),
+    }
+    store.refresh_state();
+}
+
+fn apply_button(
+    store: Store,
+    template: TemplateInfo,
+    applied: RwSignal<Option<TemplateInfo>>,
+    applying: Pending,
+) -> impl IntoView {
+    let active = active_set(store);
+    move || {
+        let set = active.get();
+        let fits = supports(&template, set.as_ref());
+        let enabled = Signal::derive_local(move || fits && !applying.busy());
+        let chosen = template.clone();
+        let device_set = set.as_ref().map(|set| set.id);
+        act(
+            "Apply",
+            "sm",
+            enabled,
+            apply_title(&template, set.as_ref()),
+            move || {
+                if let Some(device_set) = device_set {
+                    applying.run(apply(store, device_set, chosen.clone(), applied));
+                }
+            },
+        )
+    }
+}
+
 fn template_row(
     store: Store,
     template: TemplateInfo,
     applied: RwSignal<Option<TemplateInfo>>,
     explained: RwSignal<Option<String>>,
+    applying: Pending,
 ) -> impl IntoView {
-    let active = active_set(store);
-    let fits = {
-        let template = template.clone();
-        Signal::derive_local(move || supports(&template, active.get().as_ref()))
-    };
     let badge = format!(
-        "{} \u{b7} {} \u{b7} {} ch",
+        "{} \u{b7} {} \u{b7} {}",
         units::hertz(template.center_hz),
         units::sample_rate(template.sample_rate),
-        template.channels.len()
+        template_size(&template)
     );
-    let chosen = template.clone();
-    let apply = move || {
-        let Some(set) = active.get_untracked() else {
-            return;
-        };
-        let template = chosen.clone();
-        zgui::task::spawn_local(async move {
-            let body = ApplyTemplateRequest { device_set: set.id };
-            let result = store
-                .api()
-                .post::<_, serde::de::IgnoredAny>(
-                    &format!("/api/templates/{}/apply", template.id),
-                    &body,
-                )
-                .await;
-            match result {
-                Ok(_) => {
-                    applied.set(Some(template));
-                    store.apply().await;
-                }
-                Err(error) => store.fail("Cannot apply the template", &error),
-            }
-            store.refresh_state();
-        });
-    };
     let id = template.id.clone();
     let open_id = template.id.clone();
     let explainer = template.explainer.clone();
@@ -107,20 +133,21 @@ fn template_row(
             .then(|| AnyView::new(view! { text(class = "sk-text") {{explainer.clone()}} }))
     };
     let actions = view! {
-        {row_action(glyph::INFO, "About this template", false, move || {
+        {row_action(glyph::INFO, format!("About {}", template.name), false, move || {
             explained.update(|open| {
                 *open = if open.as_deref() == Some(id.as_str()) { None } else { Some(id.clone()) };
             });
         })}
-        {gated_button("Apply", "sm", fits, apply)}
+        {apply_button(store, template.clone(), applied, applying)}
     };
-    list_row(
-        Row {
-            primary: format!("{}  {badge}", template.name),
+    lib_row(
+        LibRow {
+            primary: template.name.clone(),
+            badge: Badge::Legend(badge),
             secondary: Some(template.description.clone()),
+            ..LibRow::default()
         },
         None,
-        Signal::stored_local(true),
         AnyView::new(actions),
         AnyView::new(below),
     )

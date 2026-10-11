@@ -178,14 +178,6 @@ pub fn with_azimuth(steer: SteerSource, azimuth_deg: f64) -> SteerSource {
 }
 
 #[must_use]
-pub fn steer_value(steer: SteerSource) -> String {
-    match steer {
-        SteerSource::Wired => "DF".to_owned(),
-        SteerSource::Fixed { azimuth_deg, .. } => null_label(azimuth_deg),
-    }
-}
-
-#[must_use]
 pub fn steer_title(wired: bool) -> String {
     if wired {
         "Beam direction".to_owned()
@@ -254,22 +246,6 @@ pub fn without_null(nulls: &[f64], deg: f64) -> Vec<f64> {
 #[must_use]
 pub fn null_label(deg: f64) -> String {
     format!("{:03}°", deg.round() as i64)
-}
-
-#[must_use]
-pub fn nulls_value(params: &BeamformerParams) -> String {
-    let fixed = params
-        .nulls_deg
-        .iter()
-        .map(|deg| null_label(*deg))
-        .collect::<Vec<_>>()
-        .join(" ");
-    match (fixed.is_empty(), params.auto_nulls) {
-        (true, false) => "none".to_owned(),
-        (true, true) => "auto".to_owned(),
-        (false, false) => fixed,
-        (false, true) => format!("{fixed} +auto"),
-    }
 }
 
 #[must_use]
@@ -443,17 +419,6 @@ pub fn toggled_reference(params: &BeamformerParams, lane: u32, lanes: usize) -> 
     current
 }
 
-#[must_use]
-pub fn refs_value(refs: &[u32]) -> String {
-    if refs.is_empty() {
-        return "none".to_owned();
-    }
-    refs.iter()
-        .map(|lane| (lane + 1).to_string())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 pub fn set_main(params: &mut BeamformerParams, main: u32) {
     params.main_lane = main;
     params.reference_lanes.retain(|lane| *lane != main);
@@ -598,12 +563,6 @@ mod tests {
     #[test]
     fn nulls_read_as_three_digit_azimuths() {
         assert_eq!(null_label(7.4), "007°");
-        let mut params = BeamformerParams::default();
-        assert_eq!(nulls_value(&params), "none");
-        params.auto_nulls = true;
-        assert_eq!(nulls_value(&params), "auto");
-        params.nulls_deg = vec![45.0, 270.0];
-        assert_eq!(nulls_value(&params), "045° 270° +auto");
     }
 
     #[test]
@@ -618,8 +577,6 @@ mod tests {
         };
         found.steer_deg = Some(90.0);
         assert_eq!(steer_label(&found, fixed), "90° fixed");
-        assert_eq!(steer_value(fixed), "090°");
-        assert_eq!(steer_value(SteerSource::Wired), "DF");
         assert_eq!(steer_title(false), "Beam direction. Wire a DF to steer");
     }
 
@@ -745,8 +702,6 @@ mod tests {
             ..base
         };
         assert_eq!(toggled_reference(&one, 1, 4), vec![1]);
-        assert_eq!(refs_value(&[1, 3]), "2 4");
-        assert_eq!(refs_value(&[]), "none");
     }
 
     #[test]

@@ -1,13 +1,18 @@
 use std::{sync::Arc, time::Duration};
 
 use sdrmm_wire::{
-    rest::{DecoderLogEntry, DecoderLogResponse, DeletedCount},
+    patch::NodeBody,
+    rest::{
+        DecoderLogEntry, DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse,
+        DeletedCount, LogGroupKey,
+    },
     ws::{ServerEvent, StateScope},
 };
 use zgui::{prelude::*, reactive::RenderEffect, view::TimeoutHandle};
 
 use crate::{
     decoders::{
+        groups::{GroupRow, GroupSort, group_rows, groups_path},
         log::{
             ColumnWidths, LIVE_ROW_CAP, LogFilter, LogRow, build_rows, collect_live, query_string,
         },
@@ -27,6 +32,23 @@ pub struct Page {
     pub dropped: u64,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Totals {
+    pub shown: usize,
+    pub total: u64,
+    pub lost: u64,
+    pub dropped: u64,
+    pub loaded: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GroupPage {
+    pub by: Option<LogGroupKey>,
+    pub rows: Arc<Vec<GroupRow>>,
+    pub total: u64,
+    pub dropped: u64,
+}
+
 #[derive(Clone, Copy)]
 pub struct Log {
     pub store: Store,
@@ -41,6 +63,12 @@ pub struct Log {
     pub opened: RwSignal<Option<String>>,
     pub widths: RwSignal<ColumnWidths>,
     pub rows: RwSignal<Arc<Vec<LogRow>>>,
+    pub group: Memo<Option<LogGroupKey>>,
+    pub groups: RwSignal<Option<GroupPage>>,
+    pub group_sort: RwSignal<GroupSort>,
+    pub opened_group: RwSignal<Option<String>>,
+    pub clearing: RwSignal<bool>,
+    group_local: RwSignal<Option<LogGroupKey>>,
     revision: RwSignal<u64>,
     asked: StoredValue<u64>,
     clock: StoredValue<Option<Timers>, LocalStorage>,
@@ -50,6 +78,19 @@ pub struct Log {
 
 impl Log {
     pub fn new(store: Store, sink: String) -> Self {
+        let group_local = RwSignal::new(None);
+        let group = {
+            let sink = sink.clone();
+            Memo::new(move |_| {
+                let persisted = store.graph.with(|graph| {
+                    graph.node(&sink).and_then(|node| match &node.body {
+                        NodeBody::DecoderLog(log) => Some(log.group),
+                        _ => None,
+                    })
+                });
+                persisted.unwrap_or_else(|| group_local.get())
+            })
+        };
         let log = Self {
             store,
             sink: StoredValue::new(sink),
@@ -63,6 +104,12 @@ impl Log {
             opened: RwSignal::new(None),
             widths: RwSignal::new(load_widths()),
             rows: RwSignal::new(Arc::new(Vec::new())),
+            group,
+            groups: RwSignal::new(None),
+            group_sort: RwSignal::new(GroupSort::Last),
+            opened_group: RwSignal::new(None),
+            clearing: RwSignal::new(false),
+            group_local,
             revision: RwSignal::new(0),
             asked: StoredValue::new(0),
             clock: StoredValue::new_local(Timers::current()),
@@ -77,7 +124,10 @@ impl Log {
         let fetch = RenderEffect::new(move |_| {
             let query = self.filter.get().query(&self.sink.get_value());
             self.revision.track();
-            self.fetch(query_string(&query));
+            match self.group.get() {
+                Some(by) => self.fetch_groups(by, &query),
+                None => self.fetch(query_string(&query)),
+            }
         });
         let debounce = RenderEffect::new(move |_| {
             let typed = self.search.get();
@@ -131,6 +181,83 @@ impl Log {
         self.filter.update(|filter| filter.q = q);
     }
 
+    pub fn set_group(self, group: Option<LogGroupKey>) {
+        self.cleared.set(None);
+        self.opened_group.set(None);
+        let sink = self.sink.get_value();
+        let persisted = self.store.graph.with_untracked(|graph| {
+            graph
+                .node(&sink)
+                .is_some_and(|node| matches!(node.body, NodeBody::DecoderLog(_)))
+        });
+        if !persisted {
+            self.group_local.set(group);
+            return;
+        }
+        self.store.edit_graph(move |graph| {
+            if let Some(found) = graph.nodes.iter_mut().find(|found| found.id == sink)
+                && let NodeBody::DecoderLog(log) = &mut found.body
+            {
+                log.group = group;
+            }
+        });
+    }
+
+    pub fn totals(self) -> Totals {
+        let lost = self.store.decoded.with(|decoded| decoded.lost);
+        match self.group.get() {
+            Some(_) => self.groups.with(|page| Totals {
+                shown: page.as_ref().map_or(0, |page| page.rows.len()),
+                total: page.as_ref().map_or(0, |page| page.total),
+                lost,
+                dropped: page.as_ref().map_or(0, |page| page.dropped),
+                loaded: page.is_some(),
+            }),
+            None => Totals {
+                shown: self.rows.with(|rows| rows.len()),
+                total: self
+                    .page
+                    .with(|page| page.as_ref().map_or(0, |page| page.total)),
+                lost,
+                dropped: self
+                    .page
+                    .with(|page| page.as_ref().map_or(0, |page| page.dropped)),
+                loaded: self.page.with(Option::is_some),
+            },
+        }
+    }
+
+    fn fetch_groups(self, by: LogGroupKey, query: &DecoderLogQuery) {
+        let asked = self.asked.get_value() + 1;
+        self.asked.set_value(asked);
+        let store = self.store;
+        let path = groups_path(by, query);
+        zgui::task::spawn_local(async move {
+            let answer = store.api().get::<DecoderLogGroupsResponse>(&path).await;
+            if self.asked.get_value() != asked {
+                return;
+            }
+            match answer {
+                Ok(response) => {
+                    self.unavailable.set(None);
+                    self.groups.set(Some(GroupPage {
+                        by: Some(by),
+                        rows: Arc::new(group_rows(&response.groups, by)),
+                        total: response.total,
+                        dropped: response.dropped,
+                    }));
+                }
+                Err(error) => self.unavailable.set(Some(error.to_string())),
+            }
+        });
+    }
+
+    pub fn toggle_group(self, key: &str) {
+        let next =
+            (self.opened_group.get_untracked().as_deref() != Some(key)).then(|| key.to_owned());
+        self.opened_group.set(next);
+    }
+
     pub fn set_limit(self, limit: u32) {
         self.cleared.set(None);
         self.filter.update(|filter| filter.limit = limit);
@@ -175,7 +302,10 @@ impl Log {
     }
 
     fn clear(self) {
-        self.armed.set(false);
+        if self.clearing.get_untracked() {
+            return;
+        }
+        self.clearing.set(true);
         let sink = self.sink.get_value();
         let filter = self.filter.get_untracked();
         let path = format!("/api/decoderlog?{}", query_string(&filter.query(&sink)));
@@ -196,6 +326,8 @@ impl Log {
                 }
                 Err(error) => self.rejected.set(Some(error.to_string())),
             }
+            self.armed.set(false);
+            self.clearing.set(false);
             self.revision.update(|n| *n += 1);
         });
     }

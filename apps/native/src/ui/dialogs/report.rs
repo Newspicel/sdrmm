@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
 use sdrmm_wire::{about::AboutResponse, diagnostics::DiagnosticsReport};
 use zgui::prelude::*;
+use zgui_ui::prelude::*;
 
 use crate::{
     shell::report::{
@@ -9,15 +8,16 @@ use crate::{
     },
     store::Store,
     ui::{
-        dialogs::frame,
+        dialogs::{Loaded, frame, legend, load, title},
         files::open_link,
-        kit_shell::{Entry, button, entry, gated_button},
+        kit_channel::tip,
+        kit_shell::{button, gated_button, typing},
         shell::Shell,
         widgets::check,
     },
 };
 
-type Loaded<T> = RwSignal<Option<Result<Arc<T>, String>>>;
+const SHAPE_HINT: &str = "Node and edge counts per kind. No names, positions or frequencies.";
 
 fn client() -> String {
     format!(
@@ -28,23 +28,9 @@ fn client() -> String {
     )
 }
 
-fn load<T: serde::de::DeserializeOwned + Send + Sync + 'static>(
-    store: Store,
-    path: &'static str,
-) -> Loaded<T> {
-    let into: Loaded<T> = RwSignal::new(None);
-    zgui::task::spawn_local(async move {
-        let result = store.api().get::<T>(path).await;
-        into.set(Some(
-            result.map(Arc::new).map_err(|error| error.to_string()),
-        ));
-    });
-    into
-}
-
 pub fn dialog(store: Store, shell: Shell, seed: Option<String>) -> impl IntoView {
-    let about: Loaded<AboutResponse> = load(store, "/api/about");
-    let diagnostics: Loaded<DiagnosticsReport> = load(store, "/api/diagnostics");
+    let about: Loaded<AboutResponse> = load(store, String::from("/api/about"));
+    let diagnostics: Loaded<DiagnosticsReport> = load(store, String::from("/api/diagnostics"));
     let typed = RwSignal::new_local(String::new());
     let include = RwSignal::new(false);
     let clipboard = use_clipboard();
@@ -85,7 +71,7 @@ pub fn dialog(store: Store, shell: Shell, seed: Option<String>) -> impl IntoView
         })
     };
     let placeholder = seed.clone();
-    let title = move || {
+    let headline = move || {
         let typed = typed.get();
         issue_title(if typed.is_empty() {
             seed.as_deref().unwrap_or_default()
@@ -105,7 +91,7 @@ pub fn dialog(store: Store, shell: Shell, seed: Option<String>) -> impl IntoView
         clipboard.set_text(ClipboardKind::Standard, text.clone());
         open_link(
             store,
-            &bug_issue_url(&repository(), &title(), &version(), &text),
+            &bug_issue_url(&repository(), &headline(), &version(), &text),
         );
         shell.close();
     };
@@ -114,9 +100,10 @@ pub fn dialog(store: Store, shell: Shell, seed: Option<String>) -> impl IntoView
         shell.close();
     };
     let has_repository = Signal::derive_local(move || !repository().is_empty());
-    let summary_hint: &'static str = match placeholder {
-        Some(_) => "Summary",
-        None => "What went wrong, in one line",
+    let summary_hint = placeholder.unwrap_or_else(|| String::from("What went wrong, in one line"));
+    let shown = move || match diagnostics.get() {
+        None => String::from("Collecting"),
+        Some(_) => bundle(),
     };
     let aside = move || {
         let version = version();
@@ -129,17 +116,20 @@ pub fn dialog(store: Store, shell: Shell, seed: Option<String>) -> impl IntoView
     let failed = move || matches!(diagnostics.get(), Some(Err(_)));
     frame(
         "wide",
-        "Report a problem",
-        view! { text(class = "legend") {{aside}} },
+        title("Report a problem"),
+        move || legend(aside()),
         view! {
-            {entry(Entry::new(typed, summary_hint), || {}, || {})}
+            row(class = "sk-toolbar") {
+                text(class = "sk-text") {"Summary"}
+                {summary(typed, summary_hint)}
+            }
             row(class = "sk-toolbar") {
                 {check(include.into(), move |on| include.set(on))}
-                text(class = "sk-text") {"Include the workspace shape"}
+                {tip(SHAPE_HINT, AnyView::new(view! { text(class = "sk-text") {"Include the workspace shape"} }))}
             }
             text(class = "sk-text") {"This is everything the report carries. Tokens, home paths and addresses are stripped: read it before you publish it."}
             {move || failed().then(|| view! { text(class = "sk-text bad") {"The server did not answer, so only this window's log is below."} })}
-            text(class = "sk-pre") {{bundle}}
+            text(class = "sk-pre") {{shown}}
         },
         view! {
             {gated_button("Request a feature instead", "quiet", has_repository, feature)}
@@ -149,4 +139,18 @@ pub fn dialog(store: Store, shell: Shell, seed: Option<String>) -> impl IntoView
             {gated_button("Open a GitHub issue", "primary", has_repository, issue)}
         },
     )
+}
+
+fn summary(typed: RwSignal<String, LocalStorage>, placeholder: String) -> impl IntoView {
+    view! {
+        box(class = "sk-entry") {
+            Input(
+                class = "sk-field",
+                value = typed,
+                label = "Summary",
+                placeholder = placeholder,
+                on:key_down = typing
+            )
+        }
+    }
 }

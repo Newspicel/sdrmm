@@ -1,18 +1,22 @@
 use zgui::prelude::*;
 
-use crate::shell::{
-    auto_off::AutoOff, hotkeys::DEFAULT_STEP_HZ, prefs::PrefsFile, theme_choice::ThemeChoice,
+use crate::{
+    shell::{
+        auto_off::AutoOff, hotkeys::DEFAULT_STEP_HZ, prefs::PrefsFile, theme_choice::ThemeChoice,
+    },
+    ui::hotkeys::DialFocus,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Menu {
     Workspaces,
     Library,
+    People,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Dialog {
-    Shortcuts,
+    Help,
     About,
     Report(Option<String>),
 }
@@ -26,6 +30,8 @@ pub enum LibraryTab {
     Bands,
     Occupancy,
     Recordings,
+    Phones,
+    Remote,
 }
 
 type Proceed = Box<dyn FnOnce()>;
@@ -38,6 +44,7 @@ pub struct Shell {
     pub step_hz: RwSignal<f64>,
     pub theme: RwSignal<ThemeChoice>,
     pub asking_auto_off: RwSignal<bool>,
+    pub dial_focus: RwSignal<Option<DialFocus>>,
     auto_off: StoredValue<AutoOff<Proceed>, LocalStorage>,
     prefs: StoredValue<PrefsFile, LocalStorage>,
 }
@@ -52,6 +59,7 @@ impl Shell {
             step_hz: RwSignal::new(DEFAULT_STEP_HZ),
             theme: RwSignal::new(ThemeChoice::parse(&stored.theme)),
             asking_auto_off: RwSignal::new(false),
+            dial_focus: RwSignal::new(None),
             auto_off: StoredValue::new_local(AutoOff::new(stored.auto_off_explained)),
             prefs: StoredValue::new_local(prefs),
         }
@@ -79,6 +87,16 @@ impl Shell {
 
     pub fn close(self) {
         self.dialog.set(None);
+    }
+
+    #[must_use]
+    pub fn recall(self) -> crate::shell::prefs::Prefs {
+        self.prefs.with_value(PrefsFile::load)
+    }
+
+    #[must_use]
+    pub fn prefs(self) -> crate::shell::prefs::Prefs {
+        self.prefs.with_value(PrefsFile::load)
     }
 
     pub fn remember(self, change: impl FnOnce(&mut crate::shell::prefs::Prefs)) {

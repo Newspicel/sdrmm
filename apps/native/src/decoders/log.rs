@@ -16,6 +16,7 @@ const KIND_LABELS: &[(&str, &str)] = &[
     ("pocsag", "POCSAG"),
     ("flex", "FLEX"),
     ("ermes", "ERMES"),
+    ("eot", "End-of-Train"),
     ("rds", "RDS"),
     ("rtty", "RTTY"),
     ("morse", "Morse"),
@@ -48,6 +49,15 @@ const KIND_LABELS: &[(&str, &str)] = &[
     ("df", "Bearing"),
     ("df_fix", "Fix"),
     ("radar", "Radar"),
+    ("apt", "NOAA APT"),
+    ("lrpt", "Meteor LRPT"),
+    ("wefax", "WEFAX"),
+    ("radiosonde", "Radiosonde"),
+    ("lora", "LoRa"),
+    ("remote_id", "Remote ID"),
+    ("ble", "BLE"),
+    ("wifi_occupancy", "Wi-Fi load"),
+    ("ism_survey", "2.4 GHz"),
 ];
 
 #[must_use]
@@ -90,6 +100,14 @@ impl LogFilter {
             limit: Some(self.limit),
             q: (!q.is_empty()).then(|| q.to_owned()),
             ..DecoderLogQuery::default()
+        }
+    }
+
+    #[must_use]
+    pub fn export_query(&self, sink: &str) -> DecoderLogQuery {
+        DecoderLogQuery {
+            limit: None,
+            ..self.query(sink)
         }
     }
 
@@ -341,6 +359,61 @@ pub const fn column_key(column: Column) -> &'static str {
 #[must_use]
 pub fn export_path(format: &str, query: &DecoderLogQuery) -> String {
     format!("/api/decoderlog/export/{format}?{}", query_string(query))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Download {
+    pub format: &'static str,
+    pub label: &'static str,
+    pub hint: &'static str,
+}
+
+pub const DOWNLOADS: [Download; 2] = [
+    Download {
+        format: "csv",
+        label: "CSV",
+        hint: "One row per decoded frame",
+    },
+    Download {
+        format: "json",
+        label: "JSON",
+        hint: "Every field of every row",
+    },
+];
+
+#[must_use]
+pub fn export_name(format: &str, now: jiff::Timestamp) -> String {
+    format!("decoderlog-{}.{format}", now.strftime("%Y%m%dT%H%M%SZ"))
+}
+
+pub const DETAIL_SLOTS: usize = 12;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slot {
+    Row(usize),
+    Detail(usize),
+    Spacer,
+}
+
+fn opened_within(rows: usize, opened: Option<usize>) -> Option<usize> {
+    opened.filter(|index| *index < rows)
+}
+
+#[must_use]
+pub fn slot_count(rows: usize, opened: Option<usize>) -> usize {
+    rows + opened_within(rows, opened).map_or(0, |_| DETAIL_SLOTS)
+}
+
+#[must_use]
+pub fn slot_at(index: usize, rows: usize, opened: Option<usize>) -> Slot {
+    match opened_within(rows, opened) {
+        Some(open) if index > open => match index - open - 1 {
+            0 => Slot::Detail(open),
+            after if after < DETAIL_SLOTS => Slot::Spacer,
+            _ => Slot::Row(index - DETAIL_SLOTS),
+        },
+        _ => Slot::Row(index),
+    }
 }
 
 #[must_use]
