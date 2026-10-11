@@ -63,6 +63,9 @@ open.workspace = true
 qrcodegen.workspace = true
 url.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+fontique.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 sdrmm-device.workspace = true

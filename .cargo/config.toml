@@ -8,6 +8,3 @@ rustflags = ["-C", "target-feature=+crt-static"]
 [target.armv7-unknown-linux-musleabihf]
 linker = "rust-lld"
 rustflags = ["-C", "linker-flavor=ld.lld", "-C", "target-cpu=cortex-a9"]
-
-[env]
-RUST_FONTCONFIG_DLOPEN = "1"

@@ -7687,6 +7687,7 @@ dependencies = [
  "cpal",
  "dirs",
  "flate2",
+ "fontique",
  "futures",
  "jiff",
  "num-complex",
