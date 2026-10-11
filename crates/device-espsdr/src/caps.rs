@@ -4,7 +4,7 @@ use sdrmm_wire::{
     Duplex, ExtraSetting, ExtraValue, GainKind, GainStage, GainUnit, GainValue, Range, StreamScope,
 };
 
-use crate::proto::{Bits, Features, Identity, Limits, MIN_SAMPLES};
+use crate::proto::{Bits, Features, Limits, MIN_SAMPLES};
 
 pub(crate) const BITS: &str = "bits";
 pub(crate) const BURST: &str = "burst";
@@ -14,9 +14,16 @@ const DEFAULT_CENTER_MHZ: u32 = 2437;
 const DEFAULT_MANUAL_GAIN: u32 = 40;
 const DEFAULT_BURST: u32 = 4096;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Delivery {
+    Burst { max_samples: u32 },
+    Stream,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Profile {
-    pub(crate) identity: Identity,
+    pub(crate) chip: String,
+    pub(crate) delivery: Delivery,
     pub(crate) features: Features,
     pub(crate) limits: Limits,
     pub(crate) range_mhz: (u32, u32),
@@ -29,6 +36,13 @@ impl Profile {
 
     fn has_agc(&self) -> bool {
         self.features.has("HWAGC")
+    }
+
+    pub(crate) const fn max_burst(&self) -> Option<u32> {
+        match self.delivery {
+            Delivery::Burst { max_samples } => Some(max_samples),
+            Delivery::Stream => None,
+        }
     }
 
     pub(crate) fn capabilities(&self) -> Capabilities {
@@ -103,16 +117,18 @@ impl Profile {
                 self.limits.bits[0].width().to_string(),
             ));
         }
-        extras.push(ExtraSetting::range(
-            BURST,
-            "Burst",
-            Range {
-                min: f64::from(MIN_SAMPLES),
-                max: f64::from(self.identity.max_samples),
-                step: Some(1.0),
-            },
-            "samples",
-        ));
+        if let Some(max) = self.max_burst() {
+            extras.push(ExtraSetting::range(
+                BURST,
+                "Burst",
+                Range {
+                    min: f64::from(MIN_SAMPLES),
+                    max: f64::from(max),
+                    step: Some(1.0),
+                },
+                "samples",
+            ));
+        }
         extras
     }
 
@@ -125,7 +141,9 @@ impl Profile {
             agc: self.has_agc(),
             gain: DEFAULT_MANUAL_GAIN.min(self.limits.gain_max),
             bits: self.limits.bits[0],
-            burst: DEFAULT_BURST.clamp(MIN_SAMPLES, self.identity.max_samples),
+            burst: self
+                .max_burst()
+                .map_or(0, |max| DEFAULT_BURST.clamp(MIN_SAMPLES, max)),
         }
     }
 
@@ -154,10 +172,14 @@ impl Profile {
         let mut settings = DeviceSettings {
             center_hz: Some(f64::from(remote.center_mhz) * MHZ),
             sample_rate: Some(f64::from(remote.rate)),
-            extra: vec![ExtraValue {
-                name: BURST.to_string(),
-                value: remote.burst.into(),
-            }],
+            extra: self
+                .max_burst()
+                .map(|_| ExtraValue {
+                    name: BURST.to_string(),
+                    value: remote.burst.into(),
+                })
+                .into_iter()
+                .collect(),
             ..DeviceSettings::default()
         };
         if self.limits.bits.len() > 1 {
@@ -305,10 +327,11 @@ impl Profile {
                     .ok_or_else(bad)?;
             }
             BURST => {
+                let max = self.max_burst().ok_or_else(|| {
+                    DeviceError::Unsupported("burst: this firmware streams".to_string())
+                })?;
                 let samples = value.value.as_f64().ok_or_else(bad)?.round();
-                if samples < f64::from(MIN_SAMPLES)
-                    || samples > f64::from(self.identity.max_samples)
-                {
+                if samples < f64::from(MIN_SAMPLES) || samples > f64::from(max) {
                     return Err(bad());
                 }
                 next.burst = samples as u32;
@@ -350,7 +373,8 @@ pub(crate) mod tests {
 
     pub(crate) fn esp32() -> Profile {
         Profile {
-            identity: Identity::parse("ESP32SDR 6 burst 16380").expect("valid"),
+            chip: "ESP32".to_string(),
+            delivery: Delivery::Burst { max_samples: 16380 },
             features: Features::parse(
                 "CAPS SPEC SPECN SPECCAPS UARTBAUD RXLIMITS SERIALLEASE TUNEEXT RX40 RX16 LPFANA GAIN HWAGC IQ8",
             )

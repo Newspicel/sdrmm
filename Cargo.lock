@@ -5960,6 +5960,7 @@ dependencies = [
  "rustls-platform-verifier",
  "sdrmm-usb-stream",
  "sdrmm-wire",
+ "socket2",
  "thiserror 2.0.21",
  "tracing",
  "windows-sys 0.61.2",
@@ -5976,7 +5977,6 @@ dependencies = [
  "sdrmm-usb-stream",
  "sdrmm-wire",
  "serde_json",
- "socket2",
  "tracing",
 ]
 

@@ -13,7 +13,7 @@ Packaged builds include every driver here except CR-8:
 | [KrakenSDR, KerberosSDR](#krakensdr) | USB | Nothing |
 | [HackRF](#hackrf) | USB | Nothing |
 | [Airspy R2, Mini, HF+, HF+ Discovery](#airspy) | USB | Nothing |
-| [ESP32 with ESP-SDR](#esp-sdr) | USB serial | [ESP-SDR firmware](https://github.com/ESPARGOS/esp-sdr) |
+| [ESP32 with ESP-SDR](#esp-sdr) | USB serial, Ethernet (S31) | [ESP-SDR firmware](https://github.com/ESPARGOS/esp-sdr) |
 | [AntSDR](#antsdr) | Ethernet or USB | Nothing |
 | [ADALM-Pluto, other AD936x boards](#plutosdr-and-other-ad936x-boards) | USB or Ethernet | Nothing |
 | [SDRplay RSP1, RSP1A, RSP1B, RSP2, RSPduo, RSPdx, RSPdx-R2](#sdrplay) | USB | SDRplay API 3.15+ |
@@ -229,6 +229,10 @@ gap.
 SDR-- finds the firmware at 2 MBd, 1 MBd or 921.6 kBd. A CP2102 bridge cannot reach 1 MBd, so build
 the firmware with `CONFIG_ESP_SDR_UART_BAUD=921600` for those boards. On Linux, add the server's
 user to `dialout`.
+
+**Ethernet:** an ESP32-S31 board with the `esp32s31-stream` firmware streams without gaps: 2150 to
+2800 MHz, 4 to 40 MS/s, 8 bits. Add it under **Network** as ESP-SDR with the IP its serial log
+prints. It needs a Gigabit link for 40 MS/s.
 
 ## AntSDR
 

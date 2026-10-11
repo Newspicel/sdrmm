@@ -1,23 +1,20 @@
 use std::{
     io,
-    net::{IpAddr, SocketAddr, UdpSocket},
+    net::UdpSocket,
     sync::Mutex,
     time::{Duration, Instant},
 };
 
 use sdrmm_device::{
     Block, BlockGap, BlockPool, DeviceError, Next, StreamFailure, lock,
-    net::{Connection, Endpoint, Read},
+    net::{Connection, Endpoint, Read, udp_receiver},
 };
 use sdrmm_iqlink::{CONTROL_PORT, DATAGRAM_BYTES, HEADER_BYTES, Header, Reply, Start};
-use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::iio::Stopper;
 
 const PROBE_TIMEOUT: Duration = Duration::from_millis(300);
 const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
-const RECV_SLICE: Duration = Duration::from_millis(20);
-const RECEIVE_BUFFERS: [usize; 4] = [8 << 20, 4 << 20, 2 << 20, 1 << 20];
 
 pub(crate) struct Request<'a> {
     pub(crate) device: &'a str,
@@ -48,7 +45,7 @@ fn connect(
         return Ok(None);
     };
     let local = tcp.local_addr().map_err(io_error)?.ip();
-    let socket = receiver(local)?;
+    let socket = udp_receiver(local)?;
     let port = socket.local_addr().map_err(io_error)?.port();
     let control = Connection::new(tcp);
     let start = Start {
@@ -89,29 +86,6 @@ struct Shape {
 
 fn io_error(e: io::Error) -> DeviceError {
     DeviceError::Io(e.to_string())
-}
-
-fn receiver(local: IpAddr) -> Result<UdpSocket, DeviceError> {
-    let domain = if local.is_ipv4() {
-        Domain::IPV4
-    } else {
-        Domain::IPV6
-    };
-    let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP)).map_err(io_error)?;
-    if !RECEIVE_BUFFERS
-        .iter()
-        .any(|size| socket.set_recv_buffer_size(*size).is_ok())
-    {
-        tracing::warn!("iqlink keeps the system's small receive buffer; expect drops");
-    }
-    socket
-        .bind(&SocketAddr::new(local, 0).into())
-        .map_err(io_error)?;
-    let socket: UdpSocket = socket.into();
-    socket
-        .set_read_timeout(Some(RECV_SLICE))
-        .map_err(io_error)?;
-    Ok(socket)
 }
 
 fn read_line(control: &Connection, timeout: Duration) -> Result<String, DeviceError> {
@@ -371,7 +345,7 @@ impl Drop for IqlinkStream {
 mod tests {
     use std::{
         io::{BufRead, BufReader, Write},
-        net::TcpListener,
+        net::{SocketAddr, TcpListener},
         thread,
     };
 

@@ -16,7 +16,7 @@ workspace = true
 usb = ["dep:sdrmm-usb-stream"]
 # `std::net` sockets seen as a capture transport: the endpoint parser and the connection wrapper
 # every network backend shares, with rustls for `https://` servers.
-net = ["dep:rustls", "dep:rustls-platform-verifier"]
+net = ["dep:rustls", "dep:rustls-platform-verifier", "dep:socket2"]
 # The loopback server the network backends are tested against. Off outside their own test builds,
 # so nothing ships a listener it does not use.
 test-util = ["net"]
@@ -30,6 +30,7 @@ nusb.workspace = true
 rtrb.workspace = true
 rustls = { workspace = true, optional = true }
 rustls-platform-verifier = { workspace = true, optional = true }
+socket2 = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
 

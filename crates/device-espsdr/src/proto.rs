@@ -70,6 +70,10 @@ impl Features {
         Ok(Self(rest.split_whitespace().map(str::to_string).collect()))
     }
 
+    pub(crate) fn of(names: &[&str]) -> Self {
+        Self(names.iter().map(|name| (*name).to_string()).collect())
+    }
+
     pub(crate) fn has(&self, name: &str) -> bool {
         self.0.iter().any(|feature| feature == name)
     }

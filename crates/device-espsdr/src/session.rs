@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use sdrmm_device::DeviceError;
 
 use crate::{
-    caps::{Profile, Remote},
+    caps::{Delivery, Profile, Remote},
     link::{Link, Port, Stop, Wait},
     proto::{
         Bits, DataHeader, Features, Identity, Limits, crc32, legacy_range, parse_gain_max,
@@ -55,7 +55,7 @@ impl Session {
             payload: Vec::new(),
         };
         let profile = session.query()?;
-        session.payload = vec![0; Bits::Ten.payload_bytes(profile.identity.max_samples)];
+        session.payload = vec![0; Bits::Ten.payload_bytes(profile.max_burst().unwrap_or(0))];
         Ok((session, profile))
     }
 
@@ -81,7 +81,10 @@ impl Session {
             legacy_range()
         };
         Ok(Profile {
-            identity,
+            chip: identity.chip(),
+            delivery: Delivery::Burst {
+                max_samples: identity.max_samples,
+            },
             features,
             limits,
             range_mhz,
@@ -268,7 +271,7 @@ pub(crate) mod tests {
         let link = FakeLink::new(firmware(921_600));
         let (session, profile) = connect(&link).expect("connects");
         assert_eq!(session.baud(), 921_600);
-        assert_eq!(profile.identity.max_samples, 16380);
+        assert_eq!(profile.max_burst(), Some(16380));
         assert_eq!(profile.range_mhz, (100, 6000));
         assert_eq!(profile.limits.gain_max, 72);
         let sent = link.sent();

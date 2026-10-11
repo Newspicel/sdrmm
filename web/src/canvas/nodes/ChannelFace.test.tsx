@@ -23,7 +23,7 @@ function channel(rejected: number): ChannelInfo {
     settings: {
       frequency_hz: 2_426_000_000,
       params: { type: "ble", settings: { link: "channel" } },
-    } as ChannelInfo["settings"],
+    },
   };
 }
 

@@ -1,17 +1,22 @@
 use std::sync::Arc;
 
 use sdrmm_device::{
-    Capture, CaptureConfig, DeviceDriver, DeviceError, RxSink, SdrDevice, lock, single_rx_sink,
+    Capture, CaptureConfig, DeviceDriver, DeviceError, RxSink, SdrDevice, lock,
+    net::{Adopted, Endpoint},
+    single_rx_sink,
 };
 use sdrmm_wire::{Capabilities, DeviceInfo, DeviceSettings};
 
+pub use crate::ethernet::EspSdrNetDevice;
 use crate::{
+    ethernet::HTTP_PORT,
     link::{Link, Stop, SystemLink},
     radio::{Converter, EspRadio},
     session::Session,
 };
 
 mod caps;
+mod ethernet;
 #[cfg(test)]
 mod hardware;
 mod link;
@@ -30,12 +35,33 @@ const BRIDGES: [(u16, u16); 4] = [
 ];
 
 #[derive(Debug, Default)]
-pub struct EspSdrDriver;
+pub struct EspSdrDriver {
+    adopted: Adopted,
+}
 
 impl EspSdrDriver {
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+}
+
+fn is_serial(key: &str) -> bool {
+    let windows = key
+        .get(..3)
+        .is_some_and(|head| head.eq_ignore_ascii_case("COM"))
+        && key.len() > 3
+        && key[3..].bytes().all(|b| b.is_ascii_digit());
+    key.starts_with('/') || key.starts_with('\\') || windows
+}
+
+fn net_info(endpoint: &Endpoint) -> DeviceInfo {
+    DeviceInfo {
+        driver: DRIVER_ID.to_string(),
+        key: endpoint.to_string(),
+        label: format!("ESP-SDR {endpoint}"),
+        serial: None,
+        profile: None,
     }
 }
 
@@ -102,19 +128,34 @@ impl DeviceDriver for EspSdrDriver {
             .iter()
             .filter(|info| may_be_esp(info))
             .map(|info| device_info(&info.port_name))
+            .chain(self.adopted.list().iter().map(net_info))
             .collect()
     }
 
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        if !is_serial(&info.key) {
+            let endpoint = Endpoint::parse(&info.key, HTTP_PORT)?;
+            return Ok(Box::new(EspSdrNetDevice::open(endpoint)?));
+        }
         let link = SystemLink::open(&info.key, OPEN_BAUD)?;
         Ok(Box::new(EspSdrDevice::open(&info.key, Box::new(link))?))
     }
 
     fn resolve(&self, key: &str) -> Option<DeviceInfo> {
-        system_ports()
-            .iter()
-            .any(|info| info.port_name == key)
-            .then(|| device_info(key))
+        if is_serial(key) {
+            return system_ports()
+                .iter()
+                .any(|info| info.port_name == key)
+                .then(|| device_info(key));
+        }
+        let endpoint = Endpoint::parse(key, HTTP_PORT)
+            .inspect_err(|e| tracing::warn!("espsdr endpoint: {e}"))
+            .ok()?;
+        if !self.adopted.adopt(endpoint.clone()) {
+            tracing::warn!(%endpoint, "too many espsdr endpoints; refusing to adopt another");
+            return None;
+        }
+        Some(net_info(&endpoint))
     }
 }
 
@@ -130,7 +171,7 @@ impl EspSdrDevice {
         let (session, profile) = Session::connect(link, Stop::default())?;
         tracing::info!(
             port,
-            chip = profile.identity.chip(),
+            chip = profile.chip,
             baud = session.baud(),
             "opened ESP-SDR"
         );
@@ -168,7 +209,7 @@ impl SdrDevice for EspSdrDevice {
     fn rx_start(&mut self, sinks: Vec<RxSink>) -> Result<(), DeviceError> {
         self.capture.start(
             self.radio.clone(),
-            Converter::new(self.radio.0.profile.identity.max_samples),
+            Converter::new(self.radio.0.profile.max_burst().unwrap_or(0)),
             single_rx_sink(sinks)?,
             CaptureConfig::new("sdrmm-espsdr-rx", DRIVER_ID)
                 .with_sample_rate(self.settings.sample_rate),
@@ -226,6 +267,22 @@ mod tests {
             .collect();
         assert_eq!(found, ["ESP-SDR usbserial-0001", "ESP-SDR usbmodem1101"]);
         assert_eq!(device_info("COM4").id(), "espsdr:COM4");
+    }
+
+    #[test]
+    fn a_typed_address_is_an_ethernet_radio_and_a_port_is_not() {
+        for port in ["/dev/cu.usbserial-0001", "COM4", "com12", r"\\.\COM10"] {
+            assert!(is_serial(port), "{port}");
+        }
+        for address in ["192.168.1.5", "esp-sdr.local:80", "[::1]:80", "COMPUTER"] {
+            assert!(!is_serial(address), "{address}");
+        }
+        let driver = EspSdrDriver::new();
+        let info = driver.resolve("ESP-SDR.local").expect("addressable");
+        assert_eq!(info.id(), "espsdr:esp-sdr.local:80");
+        assert_eq!(info.label, "ESP-SDR esp-sdr.local:80");
+        assert!(driver.probe().contains(&info));
+        assert!(driver.resolve("esp-sdr.local:no-port").is_none());
     }
 
     #[test]
