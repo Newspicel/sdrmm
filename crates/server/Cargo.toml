@@ -58,6 +58,7 @@ tokio-postgres-rustls.workspace = true
 rustls-platform-verifier.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
 tokio-serial.workspace = true
+serialport.workspace = true
 
 rmcp.workspace = true
 schemars.workspace = true
@@ -102,6 +103,5 @@ sdrmm-device-siggen.workspace = true
 sdrmm-channels = { workspace = true, features = ["synth"] }
 sdrmm-dsp = { workspace = true, features = ["test-scene"] }
 tokio-tungstenite.workspace = true
-serialport.workspace = true
 num-complex.workspace = true
 tempfile.workspace = true

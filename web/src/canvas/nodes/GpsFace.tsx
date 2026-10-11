@@ -23,7 +23,7 @@ import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { GpsChoices } from "./GpsChoices";
-import { nmeaSuggestion, validGpsdAddress } from "./gpsSource";
+import { nmeaSuggestion, validHostPort } from "./gpsSource";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 
 type Source<T extends PositionSource["type"]> = Extract<PositionSource, { type: T }>;
@@ -182,7 +182,7 @@ function SourceChips({ source, onChange }: { source: PositionSource; onChange: C
           title="Host and port of the gpsd daemon"
           value={source.address}
           onCommit={(address) => {
-            if (validGpsdAddress(address)) {
+            if (validHostPort(address)) {
               onChange({ type: "gpsd", address });
             }
           }}

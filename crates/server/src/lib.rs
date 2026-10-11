@@ -60,6 +60,7 @@ mod recorders;
 mod reference;
 mod remote;
 mod rest;
+mod rotators;
 mod satellites;
 mod store;
 mod surfaces;
@@ -109,6 +110,7 @@ pub(crate) struct AppState {
     pub(crate) gps: Arc<gps::GpsHub>,
     pub(crate) presence: Arc<presence::Presence>,
     pub(crate) satellites: Arc<satellites::SatelliteHub>,
+    pub(crate) rotators: Arc<rotators::RotatorHub>,
     pub(crate) reference: Arc<reference::Reference>,
     pub(crate) cps: Arc<cps::CpsHub>,
     pub(crate) fusion: df_fusion::SharedFusion,
@@ -154,6 +156,7 @@ impl AppState {
             gps: Arc::new(gps::GpsHub::default()),
             presence: Arc::default(),
             satellites: Arc::new(satellites::SatelliteHub::default()),
+            rotators: Arc::default(),
             reference: Arc::default(),
             cps: Arc::new(cps::CpsHub::default()),
             fusion: Arc::new(df_fusion::FusionHub::default()),
@@ -305,6 +308,7 @@ fn start_runtime(state: &AppState, health: health::Reporter) -> Background {
     placement::spawn_settling(state);
     state.gps.reconcile(state);
     state.satellites.reconcile(state);
+    state.rotators.reconcile(state);
     array::start_pump(state);
     radar::start(state);
     df_fusion::start(state);

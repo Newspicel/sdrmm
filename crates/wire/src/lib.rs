@@ -38,6 +38,7 @@ pub mod radar;
 pub mod remote;
 pub mod remote_id;
 pub mod rest;
+pub mod rotator;
 pub mod sarsat;
 pub mod satellite;
 pub mod scan;
@@ -193,11 +194,11 @@ pub use patch::{
     NodeBody, NodeCategory, NodeTypeInfo, POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge,
     PatchError, PatchGraph, PatchNode, PolarimeterNode, PortBacking, PortCondition, PortDirection,
     PortRef, PortRepeat, PortSpec, PortType, Position, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT,
-    RADAR_TX_PORT, REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_SHARED_CLOCK,
-    REFUSAL_STEER, REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, RackCell, RackLayout, RackSlot,
-    RecorderNode, RecordingNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalGenNode,
-    SignalMapNode, Size, SpatialSpectrumNode, StitchNode, TriangulationNode, port_stream,
-    siggen_key, stream_port,
+    RADAR_TX_PORT, REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_ROTATOR,
+    REFUSAL_SHARED_CLOCK, REFUSAL_STEER, REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, RackCell,
+    RackLayout, RackSlot, RecorderNode, RecordingNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode,
+    SignalGenNode, SignalMapNode, Size, SpatialSpectrumNode, StitchNode, TriangulationNode,
+    port_stream, siggen_key, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;
@@ -264,15 +265,22 @@ pub use rest::{
     RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo,
     TemplatesResponse, VoiceCall, VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
 };
+pub use rotator::{
+    DEFAULT_GS232_BAUD, DEFAULT_ROTATOR_TOLERANCE_DEG, DEFAULT_ROTCTLD_ADDRESS, FLIP_ELEVATION_DEG,
+    LEVEL_ELEVATION_DEG, MAX_ROTATOR_AZIMUTH_DEG, MAX_ROTATOR_TOLERANCE_DEG,
+    MIN_ROTATOR_AZIMUTH_DEG, MIN_ROTATOR_TOLERANCE_DEG, RotatorAxes, RotatorLink, RotatorMode,
+    RotatorNode, RotatorStatus,
+};
 pub use sarsat::{
     MAX_SARSAT_BANDWIDTH_HZ, MIN_SARSAT_BANDWIDTH_HZ, SARSAT_BANDWIDTH_HZ, SarsatBeacon,
     SarsatMessage, SarsatParams, SarsatProtocol,
 };
 pub use satellite::{
     CatalogSatellite, MAX_CATALOG_RESULTS, MAX_SATELLITE_HZ, MAX_SATELLITE_QUERY_LEN, MAX_TLE_LEN,
-    MAX_TRANSMITTER_ID_LEN, SATELLITE_CATALOG_SOURCE, SATELLITE_CATALOG_URL, SatelliteCatalogQuery,
-    SatelliteCatalogResponse, SatelliteGround, SatelliteLook, SatelliteNode, SatellitePass,
-    SatelliteStatus, TRANSMITTER_SOURCE, TRANSMITTER_URL, Transmitter, TransmittersResponse,
+    MAX_TRANSMITTER_ID_LEN, PassPoint, SATELLITE_CATALOG_SOURCE, SATELLITE_CATALOG_URL,
+    SatelliteCatalogQuery, SatelliteCatalogResponse, SatelliteGround, SatelliteLook, SatelliteNode,
+    SatellitePass, SatelliteStatus, SkyPoint, TRANSMITTER_SOURCE, TRANSMITTER_URL, Transmitter,
+    TransmittersResponse,
 };
 pub use scan::{
     MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanRequest,

@@ -391,5 +391,20 @@
   "presence": {
     "name_len": 32,
     "pointer_rate_hz": 30
+  },
+  "rotator": {
+    "tolerance_deg": {
+      "min": 0.5,
+      "max": 20.0
+    },
+    "tolerance_seed_deg": 2.0,
+    "azimuth_deg": {
+      "min": 360.0,
+      "max": 540.0
+    },
+    "level_elevation_deg": 90.0,
+    "flip_elevation_deg": 180.0,
+    "gs232_baud": 9600,
+    "rotctld_address": "127.0.0.1:4533"
   }
 }

@@ -7,6 +7,7 @@ export const REFUSAL = labels.refusal;
 export const STEER_PORT = "steer";
 export const RADAR_TRUTH_PORT = "adsb";
 export const EVENTS_PORT = "events";
+export const CONTROL_PORT = "control";
 
 const LANE_SOURCES: ReadonlySet<PatchNode["kind"]> = new Set(["device", "recording"]);
 const BEARING_SOURCES: ReadonlySet<PatchNode["kind"]> = new Set(["df", "hunt", "event_filter"]);
@@ -103,6 +104,9 @@ export function arrayRefusal(
   }
   if (target?.kind === "passive_radar" && input.name === RADAR_TRUTH_PORT) {
     return carriesAdsb(source) ? null : REFUSAL.adsb;
+  }
+  if (target?.kind === "rotator" && input.name === CONTROL_PORT) {
+    return source?.kind === "satellite" ? null : REFUSAL.rotator;
   }
   if (target?.kind === "triangulation" && input.name === EVENTS_PORT) {
     return source !== undefined && BEARING_SOURCES.has(source.kind) ? null : REFUSAL.triangulation;

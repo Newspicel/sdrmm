@@ -805,7 +805,7 @@
           "port_type": "control",
           "direction": "out",
           "multi": true,
-          "note": "every decoder listening to this satellite; each is tuned and Doppler corrected"
+          "note": "decoders to tune and Doppler correct, rotators to point"
         },
         {
           "name": "events",
@@ -820,6 +820,40 @@
         "kind": "satellite",
         "data": {
           "tuning_locked": false
+        }
+      }
+    },
+    {
+      "kind": "rotator",
+      "name": "Rotator",
+      "category": "output",
+      "summary": "Points an antenna at a satellite",
+      "ports": [
+        {
+          "name": "control",
+          "port_type": "control",
+          "direction": "in",
+          "multi": false,
+          "note": "The satellite to follow"
+        }
+      ],
+      "needs_channel_type": false,
+      "default_body": {
+        "kind": "rotator",
+        "data": {
+          "tolerance_deg": 2.0,
+          "axes": "azimuth_elevation",
+          "azimuth_max_deg": 360.0,
+          "flip": false,
+          "mode": "track",
+          "manual": {
+            "azimuth_deg": 0.0,
+            "elevation_deg": 0.0
+          },
+          "park": {
+            "azimuth_deg": 0.0,
+            "elevation_deg": 0.0
+          }
         }
       }
     },

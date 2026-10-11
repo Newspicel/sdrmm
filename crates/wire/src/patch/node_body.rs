@@ -91,6 +91,7 @@ macro_rules! define_node_body {
             Scanner(ScannerNode),
             Hunt(HuntNode),
             Satellite(SatelliteNode),
+            Rotator(RotatorNode),
             $(
                 #[serde(rename = $type_id)]
                 $variant($node),
@@ -131,6 +132,7 @@ macro_rules! define_node_body {
                     Self::Scanner(_) => "scanner",
                     Self::Hunt(_) => "hunt",
                     Self::Satellite(_) => "satellite",
+                    Self::Rotator(_) => "rotator",
                     $(Self::$variant(_) => $type_id,)*
                     Self::Triangulation(_) => "triangulation",
                 }
@@ -168,6 +170,7 @@ macro_rules! define_node_body {
                     | Self::TimeMachine(_)
                     | Self::NetworkExport(_)
                     | Self::EventOutput(_)
+                    | Self::Rotator(_)
                     | Self::Export => NodeCategory::Output,
                 }
             }
@@ -234,6 +237,7 @@ macro_rules! define_node_body {
                     "scanner" => Self::Scanner(ScannerNode::default()),
                     "hunt" => Self::Hunt(HuntNode::default()),
                     "satellite" => Self::Satellite(SatelliteNode::default()),
+                    "rotator" => Self::Rotator(RotatorNode::default()),
                     $($type_id => Self::$variant($node::default()),)*
                     "triangulation" => Self::Triangulation(TriangulationNode::default()),
                     _ => return None,

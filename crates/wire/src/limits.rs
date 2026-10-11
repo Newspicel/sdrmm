@@ -89,7 +89,35 @@ pub struct Limits {
     pub polarimeter: PolarimeterLimits,
     pub hunt: HuntLimits,
     pub presence: PresenceLimits,
+    pub rotator: RotatorLimits,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct RotatorLimits {
+    pub tolerance_deg: Bounds<f64>,
+    pub tolerance_seed_deg: f64,
+    pub azimuth_deg: Bounds<f64>,
+    pub level_elevation_deg: f64,
+    pub flip_elevation_deg: f64,
+    pub gs232_baud: u32,
+    pub rotctld_address: &'static str,
+}
+
+pub const ROTATOR_LIMITS: RotatorLimits = RotatorLimits {
+    tolerance_deg: Bounds::new(
+        crate::rotator::MIN_ROTATOR_TOLERANCE_DEG,
+        crate::rotator::MAX_ROTATOR_TOLERANCE_DEG,
+    ),
+    tolerance_seed_deg: crate::rotator::DEFAULT_ROTATOR_TOLERANCE_DEG,
+    azimuth_deg: Bounds::new(
+        crate::rotator::MIN_ROTATOR_AZIMUTH_DEG,
+        crate::rotator::MAX_ROTATOR_AZIMUTH_DEG,
+    ),
+    level_elevation_deg: crate::rotator::LEVEL_ELEVATION_DEG,
+    flip_elevation_deg: crate::rotator::FLIP_ELEVATION_DEG,
+    gs232_baud: crate::rotator::DEFAULT_GS232_BAUD,
+    rotctld_address: crate::rotator::DEFAULT_ROTCTLD_ADDRESS,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct PresenceLimits {
@@ -395,6 +423,7 @@ pub const LIMITS: Limits = Limits {
     polarimeter: POLARIMETER_LIMITS,
     hunt: HUNT_LIMITS,
     presence: PRESENCE_LIMITS,
+    rotator: ROTATOR_LIMITS,
 };
 
 pub fn generated() -> Result<String, serde_json::Error> {

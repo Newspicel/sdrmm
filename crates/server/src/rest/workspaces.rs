@@ -755,6 +755,7 @@ pub(crate) async fn reconcile_graph(state: AppState) -> Result<(), AppError> {
     tokio::task::spawn_blocking(move || {
         state.gps.reconcile(&state);
         state.satellites.reconcile(&state);
+        state.rotators.reconcile(&state);
     })
     .await?;
     Ok(())

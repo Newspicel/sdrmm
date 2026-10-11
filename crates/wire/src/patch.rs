@@ -14,6 +14,7 @@ use crate::{
     hunt::HuntSweepParams,
     network::{MAX_NETWORK_ADDRESS_LEN, NetworkExportNode},
     propagation::PropagationNode,
+    rotator::RotatorNode,
     satellite::SatelliteNode,
     timemachine::TimeMachineNode,
     workspace::MAX_NAME_LEN,
@@ -28,8 +29,8 @@ use crate::array::MAX_ARRAY_LANES;
 use crate::processor::processors;
 use catalog::ports_for;
 pub use wiring::{
-    REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_SHARED_CLOCK, REFUSAL_STEER,
-    REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, REFUSALS,
+    REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_ROTATOR, REFUSAL_SHARED_CLOCK,
+    REFUSAL_STEER, REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, REFUSALS,
 };
 
 pub const MAX_NODES: usize = 128;
@@ -978,6 +979,9 @@ impl PatchGraph {
                 NodeBody::Satellite(satellite) if !satellite.valid() => {
                     return Err(PatchError::NodeSettings(node.id.clone()));
                 }
+                NodeBody::Rotator(rotator) if !rotator.valid() => {
+                    return Err(PatchError::NodeSettings(node.id.clone()));
+                }
                 NodeBody::Array(array) if !array.valid() => {
                     return Err(PatchError::NodeSettings(node.id.clone()));
                 }
@@ -1192,7 +1196,7 @@ fn validate_gps_source(source: &PositionSource) -> Result<(), PatchError> {
     }
 }
 
-fn valid_host_port(address: &str) -> bool {
+pub(crate) fn valid_host_port(address: &str) -> bool {
     let Some((host, port)) = address.rsplit_once(':') else {
         return false;
     };

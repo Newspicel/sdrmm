@@ -12,7 +12,8 @@ use std::{
 use sdrmm_engine::{Doppler, Engine};
 use sdrmm_orbit::{OrbitError, Satellite, Tle};
 use sdrmm_wire::{
-    LatLon, NodeBody, PatchGraph, SatelliteNode, SatellitePass, SatelliteStatus, ServerEvent,
+    LatLon, NodeBody, PassPoint, PatchGraph, SatelliteNode, SatellitePass, SatelliteStatus,
+    ServerEvent,
 };
 
 use crate::{AppState, gps::GpsHub, workspace};
@@ -79,6 +80,10 @@ impl SatelliteHub {
                 status: Box::new(status.clone()),
             })
             .collect()
+    }
+
+    pub(crate) fn status(&self, node: &str) -> Option<SatelliteStatus> {
+        locked(&self.statuses).get(node).cloned()
     }
 
     pub(crate) fn reconcile(&self, state: &AppState) {
@@ -182,6 +187,7 @@ struct Orbit {
     tle: String,
     satellite: Result<Satellite, String>,
     pass: Option<SatellitePass>,
+    sky: Vec<PassPoint>,
     passed_at: Option<Instant>,
     track: GroundTrack,
 }
@@ -324,15 +330,25 @@ impl Tracker {
                 .is_some_and(|pass| pass.los.is_some_and(|los| (los as f64) < now))
         {
             orbit.passed_at = Some(Instant::now());
-            orbit.pass = satellite
+            let found = satellite
                 .next_pass(&observer, now, PASS_HORIZON_S, HORIZON_DEG)
                 .ok()
+                .flatten();
+            orbit.pass = found.map(track::pass);
+            orbit.sky = found
+                .map(|pass| track::sky(satellite, &observer, &pass))
+                .transpose()
+                .unwrap_or_else(|error| {
+                    tracing::debug!(%error, "could not trace a pass across the sky");
+                    None
+                })
                 .flatten()
-                .map(track::pass);
+                .unwrap_or_default();
         }
         status.look = Some(steering.look);
         status.visible = steering.look.elevation_deg >= HORIZON_DEG;
         status.next_pass = orbit.pass;
+        status.pass_track.clone_from(&orbit.sky);
         status.uplink_hz = steering.uplink_hz;
         status.doppler_hz = steering.doppler.map(|doppler| doppler.shift_hz);
         status.doppler_rate_hz_s = steering.doppler.map(|doppler| doppler.rate_hz_s);
@@ -396,6 +412,7 @@ fn orbit_of<'a>(
                 tle: tle.clone(),
                 satellite,
                 pass: None,
+                sky: Vec::new(),
                 passed_at: None,
                 track: GroundTrack::default(),
             },
@@ -404,7 +421,7 @@ fn orbit_of<'a>(
     satellites.get_mut(&wiring.node)
 }
 
-fn unix_now() -> f64 {
+pub(crate) fn unix_now() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0.0, |elapsed| elapsed.as_secs_f64())

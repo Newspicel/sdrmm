@@ -24131,6 +24131,24 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/RotatorNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "rotator"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
                 "$ref": "#/components/schemas/DfNode"
               },
               "kind": {
@@ -24769,6 +24787,28 @@
               "number",
               "null"
             ],
+            "format": "double"
+          }
+        }
+      },
+      "PassPoint": {
+        "type": "object",
+        "required": [
+          "at",
+          "azimuth_deg",
+          "elevation_deg"
+        ],
+        "properties": {
+          "at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "azimuth_deg": {
+            "type": "number",
+            "format": "double"
+          },
+          "elevation_deg": {
+            "type": "number",
             "format": "double"
           }
         }
@@ -28782,6 +28822,149 @@
           }
         }
       },
+      "RotatorAxes": {
+        "type": "string",
+        "enum": [
+          "azimuth_elevation",
+          "azimuth"
+        ]
+      },
+      "RotatorLink": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "device",
+              "baud",
+              "type"
+            ],
+            "properties": {
+              "baud": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "device": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "gs232"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "address",
+              "type"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "rotctld"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "RotatorMode": {
+        "type": "string",
+        "enum": [
+          "track",
+          "manual",
+          "park",
+          "stop"
+        ]
+      },
+      "RotatorNode": {
+        "type": "object",
+        "properties": {
+          "axes": {
+            "$ref": "#/components/schemas/RotatorAxes"
+          },
+          "azimuth_max_deg": {
+            "type": "number",
+            "format": "double"
+          },
+          "flip": {
+            "type": "boolean"
+          },
+          "link": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RotatorLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manual": {
+            "$ref": "#/components/schemas/SkyPoint"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RotatorMode"
+          },
+          "park": {
+            "$ref": "#/components/schemas/SkyPoint"
+          },
+          "tolerance_deg": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "RotatorStatus": {
+        "type": "object",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "awaiting_pass": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flipped": {
+            "type": "boolean"
+          },
+          "node": {
+            "type": "string"
+          },
+          "position": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SkyPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SkyPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "RttyParams": {
         "type": "object",
         "properties": {
@@ -29156,6 +29339,12 @@
           },
           "node": {
             "type": "string"
+          },
+          "pass_track": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PassPoint"
+            }
           },
           "tle_age_days": {
             "type": [
@@ -30296,6 +30485,32 @@
               "data": {
                 "type": "object",
                 "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "$ref": "#/components/schemas/RotatorStatus"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "RotatorUpdate"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
                   "node"
                 ],
                 "properties": {
@@ -30736,6 +30951,23 @@
           "w": {
             "type": "number",
             "format": "float"
+          }
+        }
+      },
+      "SkyPoint": {
+        "type": "object",
+        "required": [
+          "azimuth_deg",
+          "elevation_deg"
+        ],
+        "properties": {
+          "azimuth_deg": {
+            "type": "number",
+            "format": "double"
+          },
+          "elevation_deg": {
+            "type": "number",
+            "format": "double"
           }
         }
       },

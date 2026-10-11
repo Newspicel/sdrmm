@@ -163,6 +163,9 @@ pub enum ServerEvent {
     SatelliteUpdate {
         status: Box<crate::satellite::SatelliteStatus>,
     },
+    RotatorUpdate {
+        status: Box<crate::rotator::RotatorStatus>,
+    },
     PositionChanged {
         node: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

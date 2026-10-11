@@ -389,13 +389,12 @@ export function deviceNodeOf(
 
 export function controlledNodeOf(graph: PatchGraph, node: string): string | null {
   const driven = (graph.edges ?? []).find(
-    (edge) => edge.from.node === node && edge.from.port === "control",
+    (edge) =>
+      edge.from.node === node &&
+      edge.from.port === "control" &&
+      graph.nodes.find((candidate) => candidate.id === edge.to.node)?.kind === "channel",
   );
-  if (driven === undefined) {
-    return null;
-  }
-  const target = graph.nodes.find((candidate) => candidate.id === driven.to.node);
-  return target?.kind === "channel" ? target.id : null;
+  return driven?.to.node ?? null;
 }
 
 const TUNING_CONTROLLERS: Readonly<Partial<Record<PatchNode["kind"], string>>> = {

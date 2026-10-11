@@ -31,6 +31,7 @@ import { usePipelineHealth } from "./pipeline";
 import { usePositionStore } from "./position";
 import { authorKey, savedName, usePresenceStore } from "./presence";
 import { useProcessorStore } from "./processors";
+import { useRotatorStore } from "./rotator";
 import { useSatelliteStore } from "./satellite";
 import { useScannerStore } from "./scanner";
 import { spectrumHub } from "./spectrum";
@@ -125,6 +126,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", useBroadcastStore.getState().observe);
     s.on("event", usePositionStore.getState().observe);
     s.on("event", useSatelliteStore.getState().observe);
+    s.on("event", useRotatorStore.getState().observe);
     s.on("event", useLevelStore.getState().observe);
     s.on("event", useProcessorStore.getState().observe);
     s.on("event", useArrayStore.getState().observe);

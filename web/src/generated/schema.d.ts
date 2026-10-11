@@ -6504,6 +6504,10 @@ export interface components {
             /** @enum {string} */
             kind: "satellite";
         } | {
+            data: components["schemas"]["RotatorNode"];
+            /** @enum {string} */
+            kind: "rotator";
+        } | {
             data: components["schemas"]["DfNode"];
             /** @enum {string} */
             kind: "df";
@@ -6781,6 +6785,14 @@ export interface components {
             tracker: components["schemas"]["TrackerParams"];
             /** @default hann */
             window: components["schemas"]["DopplerWindow"];
+        };
+        PassPoint: {
+            /** Format: int64 */
+            at: number;
+            /** Format: double */
+            azimuth_deg: number;
+            /** Format: double */
+            elevation_deg: number;
         };
         PatchApplyReport: {
             absent?: string[];
@@ -7850,6 +7862,41 @@ export interface components {
         RenamePhoneRequest: {
             name: string;
         };
+        /** @enum {string} */
+        RotatorAxes: "azimuth_elevation" | "azimuth";
+        RotatorLink: {
+            /** Format: int32 */
+            baud: number;
+            device: string;
+            /** @enum {string} */
+            type: "gs232";
+        } | {
+            address: string;
+            /** @enum {string} */
+            type: "rotctld";
+        };
+        /** @enum {string} */
+        RotatorMode: "track" | "manual" | "park" | "stop";
+        RotatorNode: {
+            axes?: components["schemas"]["RotatorAxes"];
+            /** Format: double */
+            azimuth_max_deg?: number;
+            flip?: boolean;
+            link?: components["schemas"]["RotatorLink"] | null;
+            manual?: components["schemas"]["SkyPoint"];
+            mode?: components["schemas"]["RotatorMode"];
+            park?: components["schemas"]["SkyPoint"];
+            /** Format: double */
+            tolerance_deg?: number;
+        };
+        RotatorStatus: {
+            awaiting_pass?: boolean;
+            error?: string | null;
+            flipped?: boolean;
+            node: string;
+            position?: components["schemas"]["SkyPoint"] | null;
+            target?: components["schemas"]["SkyPoint"] | null;
+        };
         RttyParams: {
             /** Format: double */
             baud?: number;
@@ -7947,6 +7994,7 @@ export interface components {
             name?: string | null;
             next_pass?: components["schemas"]["SatellitePass"] | null;
             node: string;
+            pass_track?: components["schemas"]["PassPoint"][];
             /** Format: double */
             tle_age_days?: number | null;
             /** Format: double */
@@ -8259,6 +8307,12 @@ export interface components {
             type: "SatelliteUpdate";
         } | {
             data: {
+                status: components["schemas"]["RotatorStatus"];
+            };
+            /** @enum {string} */
+            type: "RotatorUpdate";
+        } | {
+            data: {
                 error?: string | null;
                 fix?: components["schemas"]["PositionFix"] | null;
                 node: string;
@@ -8382,6 +8436,12 @@ export interface components {
             h: number;
             /** Format: float */
             w: number;
+        };
+        SkyPoint: {
+            /** Format: double */
+            azimuth_deg: number;
+            /** Format: double */
+            elevation_deg: number;
         };
         SondeForecast: {
             burst: components["schemas"]["LatLon"];

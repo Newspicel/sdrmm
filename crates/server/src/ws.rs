@@ -698,6 +698,9 @@ async fn greet(state: &AppState, out: &Outbox, identity: &Identity) {
     for satellite in state.satellites.snapshot() {
         let _ = out.send(text_event(&satellite)).await;
     }
+    for rotator in state.rotators.snapshot() {
+        let _ = out.send(text_event(&rotator)).await;
+    }
     let backlog = state.tracks.backlog();
     if !backlog.is_empty() {
         let _ = out

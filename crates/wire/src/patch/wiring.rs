@@ -1,6 +1,6 @@
 use super::{
-    ARRAY_LANE_PORT, ARRAY_PORT, EVENTS_PORT, NodeBody, POSITION_PORT, PatchEdge, PatchGraph,
-    PortSpec, RADAR_TRUTH_PORT, STEER_PORT, port_stream,
+    ARRAY_LANE_PORT, ARRAY_PORT, CONTROL_PORT, EVENTS_PORT, NodeBody, POSITION_PORT, PatchEdge,
+    PatchGraph, PortSpec, RADAR_TRUTH_PORT, STEER_PORT, port_stream,
 };
 use crate::array::MAX_ARRAY_LANES;
 
@@ -11,8 +11,9 @@ pub const REFUSAL_STEER: &str = "steer takes a direction finder";
 pub const REFUSAL_ADSB: &str = "adsb takes ADS-B events";
 pub const REFUSAL_TRIANGULATION: &str = "triangulation takes bearings";
 pub const REFUSAL_SHARED_CLOCK: &str = "this radio's lanes share no clock";
+pub const REFUSAL_ROTATOR: &str = "a rotator follows a satellite";
 
-pub const REFUSALS: [(&str, &str); 7] = [
+pub const REFUSALS: [(&str, &str); 8] = [
     ("array_lane", REFUSAL_ARRAY_LANE),
     ("lane_taken", REFUSAL_LANE_TAKEN),
     ("unnamed_array", REFUSAL_UNNAMED_ARRAY),
@@ -20,6 +21,7 @@ pub const REFUSALS: [(&str, &str); 7] = [
     ("adsb", REFUSAL_ADSB),
     ("triangulation", REFUSAL_TRIANGULATION),
     ("shared_clock", REFUSAL_SHARED_CLOCK),
+    ("rotator", REFUSAL_ROTATOR),
 ];
 
 const ADSB_CHANNEL_TYPE: &str = "adsb";
@@ -107,6 +109,9 @@ impl PatchGraph {
                 NodeBody::Df(_) | NodeBody::Hunt(_) | NodeBody::EventFilter(_)
             ))
             .then(|| REFUSAL_TRIANGULATION.to_owned()),
+            (NodeBody::Rotator(_), CONTROL_PORT) => {
+                (!matches!(source, NodeBody::Satellite(_))).then(|| REFUSAL_ROTATOR.to_owned())
+            }
             _ => None,
         }
     }

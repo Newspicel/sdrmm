@@ -218,9 +218,13 @@ describe("binding", () => {
         node("lost", { kind: "scanner" }),
         node("orphan", { kind: "channel", data: { channel_type: "am" } }),
         node("stranded", { kind: "scanner" }),
+        node("sat", { kind: "satellite", data: {} }),
+        node("dish", { kind: "rotator", data: {} }),
       ],
       edges: [
         ...(graph().edges ?? []),
+        { from: { node: "sat", port: "control" }, to: { node: "dish", port: "control" } },
+        { from: { node: "sat", port: "control" }, to: { node: "nfm", port: "control" } },
         { from: { node: "scan", port: "control" }, to: { node: "nfm", port: "control" } },
         { from: { node: "stranded", port: "control" }, to: { node: "orphan", port: "control" } },
       ],
@@ -234,6 +238,7 @@ describe("binding", () => {
     expect(controlledNodeOf(g, "scan")).toBe("nfm");
     expect(controlledNodeOf(g, "stranded")).toBe("orphan");
     expect(controlledNodeOf(g, "lost")).toBeNull();
+    expect(controlledNodeOf(g, "sat")).toBe("nfm");
     expect(controlledNodeOf(g, "nfm")).toBeNull();
   });
 

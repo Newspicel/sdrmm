@@ -64,6 +64,38 @@ pub struct SatellitePass {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct SkyPoint {
+    pub azimuth_deg: f64,
+    pub elevation_deg: f64,
+}
+
+impl SkyPoint {
+    #[must_use]
+    pub fn off_by(self, other: Self) -> f64 {
+        (self.azimuth_deg - other.azimuth_deg)
+            .abs()
+            .max((self.elevation_deg - other.elevation_deg).abs())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct PassPoint {
+    pub at: i64,
+    pub azimuth_deg: f64,
+    pub elevation_deg: f64,
+}
+
+impl PassPoint {
+    #[must_use]
+    pub const fn sky(self) -> SkyPoint {
+        SkyPoint {
+            azimuth_deg: self.azimuth_deg,
+            elevation_deg: self.elevation_deg,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SatelliteGround {
     pub at: LatLon,
     pub altitude_km: f64,
@@ -95,6 +127,8 @@ pub struct SatelliteStatus {
     pub uplink_hz: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_pass: Option<SatellitePass>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pass_track: Vec<PassPoint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub driving: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -149,6 +183,16 @@ pub struct TransmittersResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_miss_is_the_larger_axis_in_mount_degrees() {
+        let point = |azimuth_deg, elevation_deg| SkyPoint {
+            azimuth_deg,
+            elevation_deg,
+        };
+        assert!((point(359.0, 10.0).off_by(point(361.0, 10.0)) - 2.0).abs() < 1e-9);
+        assert!((point(90.0, 10.0).off_by(point(91.0, 40.0)) - 30.0).abs() < 1e-9);
+    }
 
     #[test]
     fn a_blank_node_is_valid_and_waits_for_elements() {

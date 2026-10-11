@@ -13,6 +13,25 @@ shift as it passes, so the decoder never has to chase the carrier.
 
 On auto tuning the radio follows the decoder, as it does for a scanner.
 
+## Point an antenna
+
+1. Add **Rotator** and pick its link: a Yaesu **GS-232** controller on a serial port, or Hamlib
+   **rotctld** (`127.0.0.1:4533` by default).
+2. Wire Satellite `control` to the Rotator's `control`.
+
+During a pass the rotator follows the satellite. Between passes it waits where the next one
+rises.
+
+| Setting | Does |
+|---|---|
+| Mode | **Track** the satellite, point by hand (**Manual**), **Park**, or **Stop** both axes |
+| Axes | Azimuth and elevation, or azimuth only |
+| Range | 360°, 450° or 540° of azimuth. Past 360° a pass crosses north without unwinding |
+| Flip | Elevation reaches 180°. Passes over the top, or across the azimuth stop, are followed with the antenna flipped instead of swinging round |
+| Step | Moves smaller than this wait, to spare the motors |
+
+Each pass is planned before it rises, so the rotator never has to unwind halfway through.
+
 ## On the map
 
 Wire Satellite `events` to **Map**. It shows the point below the satellite, the footprint where it

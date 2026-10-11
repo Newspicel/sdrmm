@@ -1,12 +1,14 @@
 use sdrmm_engine::Doppler;
 use sdrmm_orbit::{Observer, OrbitError, Pass, Satellite, Subpoint, downlink_hz, uplink_hz};
 use sdrmm_wire::{
-    LatLon, PositionFix, SatelliteGround, SatelliteLook, SatelliteNode, SatellitePass,
+    LatLon, PassPoint, PositionFix, SatelliteGround, SatelliteLook, SatelliteNode, SatellitePass,
 };
 
 const TRACK_POINTS: f64 = 180.0;
 const TRACK_BEHIND_ORBITS: f64 = 0.5;
 const TRACK_AHEAD_ORBITS: f64 = 1.0;
+const SKY_POINTS: f64 = 120.0;
+const SKY_MIN_STEP_S: f64 = 5.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Steering {
@@ -78,12 +80,40 @@ fn latlon(subpoint: Subpoint) -> LatLon {
 }
 
 pub(super) fn pass(pass: Pass) -> SatellitePass {
-    let second = |unix: f64| unix.round() as i64;
     SatellitePass {
         aos: pass.aos_unix.map(second),
         los: pass.los_unix.map(second),
         max_elevation_deg: pass.max_elevation_deg,
         max_at: second(pass.max_unix),
+    }
+}
+
+fn second(unix: f64) -> i64 {
+    unix.round() as i64
+}
+
+pub(super) fn sky(
+    satellite: &Satellite,
+    observer: &Observer,
+    pass: &Pass,
+) -> Result<Option<Vec<PassPoint>>, OrbitError> {
+    let (Some(aos), Some(los)) = (pass.aos_unix, pass.los_unix) else {
+        return Ok(None);
+    };
+    let step = ((los - aos) / SKY_POINTS).max(SKY_MIN_STEP_S);
+    let mut points = Vec::new();
+    let mut at = aos;
+    loop {
+        let look = satellite.look(observer, at)?;
+        points.push(PassPoint {
+            at: second(at),
+            azimuth_deg: look.azimuth_deg,
+            elevation_deg: look.elevation_deg.max(0.0),
+        });
+        if at >= los {
+            return Ok(Some(points));
+        }
+        at = (at + step).min(los);
     }
 }
 
@@ -151,6 +181,29 @@ mod tests {
             "{middle:?} {here:?}"
         );
         assert!((2_000.0..2_500.0).contains(&here.footprint_km), "{here:?}");
+    }
+
+    #[test]
+    fn a_pass_is_traced_from_rise_to_set() {
+        let iss = iss();
+        let epoch = unix_seconds(iss.tle.epoch_jd);
+        let found = iss
+            .next_pass(&BERLIN, epoch, 86_400.0, 0.0)
+            .expect("propagates")
+            .expect("passes");
+        let traced = sky(&iss, &BERLIN, &found)
+            .expect("propagates")
+            .expect("rises and sets");
+        let (first, last) = (traced[0], traced[traced.len() - 1]);
+        assert_eq!(first.at, second(found.aos_unix.expect("rises")));
+        assert_eq!(last.at, second(found.los_unix.expect("sets")));
+        assert!(traced.len() > 2 && traced.len() <= SKY_POINTS as usize + 1);
+        assert!(traced.iter().all(|point| point.elevation_deg >= 0.0));
+        let peak = traced
+            .iter()
+            .map(|point| point.elevation_deg)
+            .fold(0.0, f64::max);
+        assert!((peak - found.max_elevation_deg).abs() < 3.0, "{peak}");
     }
 
     #[test]

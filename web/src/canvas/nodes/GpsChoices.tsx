@@ -13,7 +13,7 @@ import {
   gpsTabs,
   nmeaDetail,
   nmeaSource,
-  validGpsdAddress,
+  validHostPort,
 } from "./gpsSource";
 
 const SEARCH_FROM = 4;
@@ -163,7 +163,7 @@ function SerialPathForm({ onChoose }: { onChoose: Choose }) {
 
 function GpsdForm({ onChoose }: { onChoose: Choose }) {
   const [address, setAddress] = useState("127.0.0.1:2947");
-  const valid = validGpsdAddress(address.trim());
+  const valid = validHostPort(address.trim());
   return (
     <Form
       className="flex items-center gap-2"

@@ -21,6 +21,7 @@ import { PolarimeterFace } from "./PolarimeterFace";
 import { PropagationFace } from "./PropagationFace";
 import { RadarFace } from "./RadarFace";
 import { RecordingFace } from "./RecordingFace";
+import { RotatorFace } from "./RotatorFace";
 import { SatelliteFace } from "./SatelliteFace";
 import { ScopeFace } from "./ScopeFace";
 import { SignalGenFace } from "./SignalGenFace";
@@ -85,6 +86,7 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
   scanner: mount(ScannerFace),
   hunt: mount(HuntFace),
   satellite: mount(SatelliteFace),
+  rotator: mount(RotatorFace),
   triangulation: mount(TriangulationFace),
   array: mount(ArrayFace),
   df: mount(DfFace),
@@ -125,6 +127,7 @@ export const FACES: Record<NodeKind, Face> = {
   scanner: ScannerFace,
   hunt: HuntFace,
   satellite: SatelliteFace,
+  rotator: RotatorFace,
   triangulation: TriangulationFace,
   array: ArrayFace,
   df: DfFace,

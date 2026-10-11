@@ -98,6 +98,7 @@ const FIXED_CATALOG: &[(&str, &str, &str)] = &[
         "Satellite",
         "Predicts passes and follows Doppler",
     ),
+    ("rotator", "Rotator", "Points an antenna at a satellite"),
 ];
 
 const TRIANGULATION_CATALOG: (&str, &str, &str) = (
@@ -203,11 +204,13 @@ fn fixed_ports(kind: &str) -> Vec<PortSpec> {
         ],
         "satellite" => vec![
             PortSpec::new(Position, In, false, Always),
-            PortSpec::new(Control, Out, true, Always).noted(
-                "every decoder listening to this satellite; each is tuned and Doppler corrected",
-            ),
+            PortSpec::new(Control, Out, true, Always)
+                .noted("decoders to tune and Doppler correct, rotators to point"),
             PortSpec::new(Events, Out, true, Always).noted("Position and ground track for a Map"),
         ],
+        "rotator" => {
+            vec![PortSpec::new(Control, In, false, Always).noted("The satellite to follow")]
+        }
         "speaker" => vec![PortSpec::new(Audio, In, true, Always)],
         "video" => vec![PortSpec::new(Video, In, true, Always)],
         "map" => vec![

@@ -125,6 +125,20 @@ describe("array wiring rules", () => {
     ).toBeNull();
   });
 
+  it("a rotator follows a satellite", () => {
+    const patch = graph([
+      placed("scan", "scanner"),
+      placed("sat", "satellite"),
+      placed("rot", "rotator"),
+    ]);
+    expect(
+      refusal(patch, { node: "scan", port: "control" }, { node: "rot", port: "control" }),
+    ).toBe("a rotator follows a satellite");
+    expect(
+      refusal(patch, { node: "sat", port: "control" }, { node: "rot", port: "control" }),
+    ).toBeNull();
+  });
+
   it("rule 5: adsb takes ADS-B events", () => {
     const patch = graph([
       placed("df", "df"),

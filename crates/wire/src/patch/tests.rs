@@ -1987,6 +1987,39 @@ fn a_satellite_with_nonsense_settings_is_refused() {
     assert!(matches!(graph.validate(), Err(PatchError::NodeSettings(_))));
 }
 
+#[test]
+fn a_rotator_follows_a_satellite_and_nothing_else() {
+    let mut graph = PatchGraph {
+        nodes: vec![
+            node("sat", NodeBody::Satellite(crate::SatelliteNode::default())),
+            node("scan", NodeBody::Scanner(ScannerNode::default())),
+            node("rot", NodeBody::Rotator(crate::RotatorNode::default())),
+        ],
+        edges: vec![edge(("sat", "control"), ("rot", "control"))],
+    };
+    assert_eq!(graph.validate(), Ok(()));
+    graph.edges = vec![edge(("scan", "control"), ("rot", "control"))];
+    assert!(matches!(
+        graph.validate(),
+        Err(PatchError::Wire { reason, .. }) if reason == crate::REFUSAL_ROTATOR
+    ));
+}
+
+#[test]
+fn a_rotator_with_nonsense_settings_is_refused() {
+    let graph = PatchGraph {
+        nodes: vec![node(
+            "rot",
+            NodeBody::Rotator(crate::RotatorNode {
+                tolerance_deg: 90.0,
+                ..crate::RotatorNode::default()
+            }),
+        )],
+        edges: Vec::new(),
+    };
+    assert!(matches!(graph.validate(), Err(PatchError::NodeSettings(_))));
+}
+
 fn audio_fx(id: &str) -> PatchNode {
     node(id, NodeBody::AudioFx(crate::AudioFxNode::default()))
 }

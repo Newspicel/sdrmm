@@ -21,7 +21,7 @@ export function gpsTabs(): Options<GpsTab> {
   ];
 }
 
-export function validGpsdAddress(address: string): boolean {
+export function validHostPort(address: string): boolean {
   const separator = address.lastIndexOf(":");
   if (separator <= 0) {
     return false;

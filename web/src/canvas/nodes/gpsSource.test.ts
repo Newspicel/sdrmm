@@ -5,7 +5,7 @@ import {
   nmeaDetail,
   nmeaSource,
   nmeaSuggestion,
-  validGpsdAddress,
+  validHostPort,
 } from "./gpsSource";
 
 describe("gpsTabs", () => {
@@ -18,11 +18,11 @@ describe("gpsTabs", () => {
   });
 });
 
-describe("validGpsdAddress", () => {
+describe("validHostPort", () => {
   it("accepts host and bracketed IPv6 endpoints", () => {
-    expect(validGpsdAddress("127.0.0.1:2947")).toBe(true);
-    expect(validGpsdAddress("gps.local:2947")).toBe(true);
-    expect(validGpsdAddress("[::1]:2947")).toBe(true);
+    expect(validHostPort("127.0.0.1:2947")).toBe(true);
+    expect(validHostPort("gps.local:2947")).toBe(true);
+    expect(validHostPort("[::1]:2947")).toBe(true);
   });
 
   it("rejects missing hosts, ports, and malformed endpoints", () => {
@@ -35,7 +35,7 @@ describe("validGpsdAddress", () => {
       "[::::]:2947",
       "[1:2:3:4:5:6:7:8:9]:2947",
     ]) {
-      expect(validGpsdAddress(address), address).toBe(false);
+      expect(validHostPort(address), address).toBe(false);
     }
   });
 });
