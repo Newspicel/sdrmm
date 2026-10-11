@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::LatLon;
+
 pub const MAX_TLE_LEN: usize = 256;
 pub const MAX_TRANSMITTER_ID_LEN: usize = 64;
 pub const MAX_SATELLITE_HZ: f64 = 300e9;
@@ -61,6 +63,13 @@ pub struct SatellitePass {
     pub max_at: i64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct SatelliteGround {
+    pub at: LatLon,
+    pub altitude_km: f64,
+    pub footprint_km: f64,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SatelliteStatus {
     pub node: String,
@@ -70,6 +79,10 @@ pub struct SatelliteStatus {
     pub catalog: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tle_age_days: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground: Option<SatelliteGround>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ground_track: Vec<LatLon>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub look: Option<SatelliteLook>,
     #[serde(default)]
@@ -108,6 +121,8 @@ pub struct CatalogSatellite {
 pub struct SatelliteCatalogResponse {
     pub satellites: Vec<CatalogSatellite>,
     pub source: String,
+    #[serde(default)]
+    pub fetched: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -121,14 +136,14 @@ pub struct Transmitter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uplink_hz: Option<f64>,
     pub alive: bool,
-    #[serde(default)]
-    pub fetched: i64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct TransmittersResponse {
     pub transmitters: Vec<Transmitter>,
     pub source: String,
+    #[serde(default)]
+    pub fetched: i64,
 }
 
 #[cfg(test)]
@@ -142,8 +157,6 @@ mod tests {
 
     #[test]
     fn nonsense_settings_are_refused() {
-    #[serde(default)]
-    pub fetched: i64,
         let bad = [
             SatelliteNode {
                 tle: Some(" ".to_owned()),

@@ -1,7 +1,7 @@
 use crate::{State, time::sidereal_angle};
 
-const WGS84_A_KM: f64 = 6_378.137;
-const WGS84_F: f64 = 1.0 / 298.257_223_563;
+pub(crate) const WGS84_A_KM: f64 = 6_378.137;
+pub(crate) const WGS84_F: f64 = 1.0 / 298.257_223_563;
 const EARTH_ROTATION_RAD_S: f64 = 7.292_115_146_706_979e-5;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -33,7 +33,7 @@ impl Observer {
         let up = cos_lat * cos_lon * rho[0] + cos_lat * sin_lon * rho[1] + sin_lat * rho[2];
         Look {
             azimuth_deg: east.atan2(-south).to_degrees().rem_euclid(360.0),
-            elevation_deg: (up / range).asin().to_degrees(),
+            elevation_deg: (up / range).clamp(-1.0, 1.0).asin().to_degrees(),
             range_km: range,
             range_rate_km_s: (0..3).map(|i| rho[i] * velocity[i]).sum::<f64>() / range,
         }
@@ -53,7 +53,7 @@ impl Observer {
     }
 }
 
-fn earth_fixed(state: &State, sidereal: f64) -> ([f64; 3], [f64; 3]) {
+pub(crate) fn earth_fixed(state: &State, sidereal: f64) -> ([f64; 3], [f64; 3]) {
     let (sin, cos) = sidereal.sin_cos();
     let rotate = |v: [f64; 3]| [cos * v[0] + sin * v[1], -sin * v[0] + cos * v[1], v[2]];
     let position = rotate(state.position_km);

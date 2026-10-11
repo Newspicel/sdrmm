@@ -308,6 +308,7 @@ function detailRows(station: Target): (readonly [string, string])[] {
         ["Temp", scalar(d.temperature_c, 1, " °C")],
         ["Humidity", scalar(d.humidity_pct, 0, "%")],
         ["Pressure", scalar(d.pressure_hpa, 1, " hPa")],
+        ...forecastRows(d.forecast),
       ]);
     }
     case "lora": {
@@ -322,6 +323,20 @@ function detailRows(station: Target): (readonly [string, string])[] {
     case "remote_id":
       return remoteIdRows(station, event.data, fix);
   }
+}
+
+function forecastRows(
+  forecast: StationOf<"radiosonde">["event"]["data"]["forecast"],
+): (readonly [string, string | null])[] {
+  if (forecast == null) {
+    return [];
+  }
+  const burst = `${forecast.burst_altitude_m.toFixed(0)} m${forecast.burst_seen ? "" : " est."}`;
+  return [
+    ["Burst", burst],
+    ["Landing", formatPosition(forecast.landing.lat, forecast.landing.lon)],
+    ["Lands in", `${Math.max(0, Math.round(forecast.landing_in_s / 60))} min`],
+  ];
 }
 
 function remoteIdRows(

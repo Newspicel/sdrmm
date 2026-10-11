@@ -123,10 +123,14 @@ sonde sends it, temperature, humidity and pressure. Wire it to **Map** for the f
 **Decoder log** or **Readout** for the readings. RS41 temperature and humidity appear once its
 calibration data has arrived, about a minute after first lock.
 
+On **Map** a climbing or falling sonde gets a dashed forecast path, a ring at the burst point and a
+landing mark. The forecast uses the winds the sonde measured on the way up. **Burst** is the altitude
+assumed while it still climbs; **Ground** is the altitude it lands at.
+
 ## Map
 
-Wire ADS-B, AIS, APRS, Radiosonde, LoRa or Drone Remote ID `events` to **Map**. Each target draws its track. The
-gear at the bottom left picks the style, hides tracks, or takes a custom URL: an XYZ template
+Wire ADS-B, AIS, APRS, Radiosonde, LoRa, Drone Remote ID or Satellite `events` to **Map**. Each target draws its track. The
+gear at the bottom left picks the style, hides tracks, switches to a globe, or takes a custom URL: an XYZ template
 (`https://…/{z}/{x}/{y}.png`) or a MapLibre style URL, with any API key in the URL. The choice is
 kept in this browser.
 

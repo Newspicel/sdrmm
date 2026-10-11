@@ -1,3 +1,4 @@
+import { SONDE_BURST_M } from "../lib/limits";
 import type { BroadcastStatus, ChannelParams, ParamLimit } from "../lib/types";
 import { type ChannelTypeId, limitOf, type NumberLimit, scaledLimit } from "./channelSettings";
 import type { Options } from "./controls";
@@ -1323,23 +1324,37 @@ function WefaxChips({ params, onParams }: Mode<"wefax">) {
   );
 }
 
-function RadiosondeChips({ params, onParams }: Mode<"radiosonde">) {
+function RadiosondeChips({ params, limits, onParams }: Mode<"radiosonde">) {
   const settings = params.settings;
+  const set = (next: typeof settings) => onParams({ type: "radiosonde", settings: next });
   const sonde = settings.sonde ?? SONDE_AUTO;
   return (
-    <ChoiceChip
-      label="Sonde"
-      title="Sonde type"
-      value={sonde}
-      options={SONDE_TYPES}
-      quiet={sonde === SONDE_AUTO}
-      onChange={(next) =>
-        onParams({
-          type: "radiosonde",
-          settings: { ...settings, sonde: next === SONDE_AUTO ? null : next },
-        })
-      }
-    />
+    <>
+      <ChoiceChip
+        label="Sonde"
+        title="Sonde type"
+        value={sonde}
+        options={SONDE_TYPES}
+        quiet={sonde === SONDE_AUTO}
+        onChange={(next) => set({ ...settings, sonde: next === SONDE_AUTO ? null : next })}
+      />
+      <NumberChip
+        label="Burst"
+        title="Burst altitude assumed while a sonde climbs"
+        value={settings.burst_m ?? SONDE_BURST_M}
+        {...limitOf(limits, "burst_m")}
+        unit="m"
+        onCommit={(burst_m) => set({ ...settings, burst_m })}
+      />
+      <NumberChip
+        label="Ground"
+        title="Ground altitude where sondes land"
+        value={settings.ground_m ?? 0}
+        {...limitOf(limits, "ground_m")}
+        unit="m"
+        onCommit={(ground_m) => set({ ...settings, ground_m })}
+      />
+    </>
   );
 }
 

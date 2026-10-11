@@ -6,9 +6,14 @@ export const MAP_VIEW_KEY = "sdrmm.mapView";
 export interface MapView {
   basemap: BasemapChoice;
   tracks: boolean;
+  globe: boolean;
 }
 
-export const DEFAULT_MAP_VIEW: MapView = { basemap: DEFAULT_BASEMAP, tracks: true };
+export const DEFAULT_MAP_VIEW: MapView = {
+  basemap: DEFAULT_BASEMAP,
+  tracks: true,
+  globe: false,
+};
 
 export const useMapView = create<MapView>(() => readMapView());
 
@@ -29,10 +34,11 @@ export function parseMapView(stored: string | null): MapView {
     if (typeof value !== "object" || value === null) {
       return DEFAULT_MAP_VIEW;
     }
-    const { basemap, tracks } = value as Record<string, unknown>;
+    const { basemap, tracks, globe } = value as Record<string, unknown>;
     return {
       basemap: parseBasemap(basemap),
       tracks: typeof tracks === "boolean" ? tracks : DEFAULT_MAP_VIEW.tracks,
+      globe: typeof globe === "boolean" ? globe : DEFAULT_MAP_VIEW.globe,
     };
   } catch {
     return DEFAULT_MAP_VIEW;

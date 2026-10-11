@@ -4597,7 +4597,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Element sets matching a name or catalog number, or the amateur group when `q` is empty. Cached for two hours",
+            "description": "Element sets matching a name or catalog number, or the amateur and weather groups when `q` is empty. Both groups are downloaded twice a day and kept on disk",
             "content": {
               "application/json": {
                 "schema": {
@@ -4645,7 +4645,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Known transmitters of the satellite, live ones first. Cached for two hours",
+            "description": "Known transmitters of the satellite, live ones first. Downloaded daily and kept on disk",
             "content": {
               "application/json": {
                 "schema": {
@@ -10191,6 +10191,41 @@
           "failed"
         ]
       },
+      "Callsign": {
+        "type": "object",
+        "required": [
+          "call",
+          "country",
+          "prefix",
+          "continent",
+          "cq_zone",
+          "itu_zone"
+        ],
+        "properties": {
+          "call": {
+            "type": "string"
+          },
+          "continent": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "cq_zone": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "itu_zone": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "prefix": {
+            "type": "string"
+          }
+        }
+      },
       "Capabilities": {
         "type": "object",
         "required": [
@@ -14121,6 +14156,16 @@
           "at": {
             "type": "string"
           },
+          "callsign": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Callsign"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "channel": {
             "type": "integer",
             "format": "int32",
@@ -15126,6 +15171,16 @@
         "properties": {
           "at": {
             "type": "string"
+          },
+          "callsign": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Callsign"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "channel": {
             "type": "integer",
@@ -27613,6 +27668,16 @@
             "format": "int32",
             "minimum": 0
           },
+          "forecast": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SondeForecast"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "frame": {
             "type": [
               "integer",
@@ -27695,6 +27760,21 @@
       "RadiosondeParams": {
         "type": "object",
         "properties": {
+          "burst_m": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "ground_m": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
           "sonde": {
             "oneOf": [
               {
@@ -28714,6 +28794,10 @@
           "source"
         ],
         "properties": {
+          "fetched": {
+            "type": "integer",
+            "format": "int64"
+          },
           "satellites": {
             "type": "array",
             "items": {
@@ -28722,6 +28806,27 @@
           },
           "source": {
             "type": "string"
+          }
+        }
+      },
+      "SatelliteGround": {
+        "type": "object",
+        "required": [
+          "at",
+          "altitude_km",
+          "footprint_km"
+        ],
+        "properties": {
+          "altitude_km": {
+            "type": "number",
+            "format": "double"
+          },
+          "at": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "footprint_km": {
+            "type": "number",
+            "format": "double"
           }
         }
       },
@@ -28854,6 +28959,22 @@
               "string",
               "null"
             ]
+          },
+          "ground": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SatelliteGround"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ground_track": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LatLon"
+            }
           },
           "look": {
             "oneOf": [
@@ -30463,6 +30584,41 @@
           "w": {
             "type": "number",
             "format": "float"
+          }
+        }
+      },
+      "SondeForecast": {
+        "type": "object",
+        "required": [
+          "burst",
+          "burst_altitude_m",
+          "burst_seen",
+          "landing",
+          "landing_in_s"
+        ],
+        "properties": {
+          "burst": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "burst_altitude_m": {
+            "type": "number",
+            "format": "double"
+          },
+          "burst_seen": {
+            "type": "boolean"
+          },
+          "landing": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "landing_in_s": {
+            "type": "number",
+            "format": "double"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LatLon"
+            }
           }
         }
       },
@@ -32296,6 +32452,10 @@
           "source"
         ],
         "properties": {
+          "fetched": {
+            "type": "integer",
+            "format": "int64"
+          },
           "source": {
             "type": "string"
           },

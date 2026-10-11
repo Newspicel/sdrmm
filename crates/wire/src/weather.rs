@@ -169,6 +169,23 @@ impl SondeType {
 pub struct RadiosondeParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sonde: Option<SondeType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub burst_m: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground_m: Option<i32>,
+}
+
+pub const DEFAULT_SONDE_BURST_M: u32 = 26_000;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct SondeForecast {
+    pub burst: crate::LatLon,
+    pub burst_altitude_m: f64,
+    pub burst_seen: bool,
+    pub landing: crate::LatLon,
+    pub landing_in_s: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<crate::LatLon>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -293,6 +310,8 @@ pub struct RadiosondeFrame {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battery_v: Option<f32>,
     pub errors_corrected: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forecast: Option<SondeForecast>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]

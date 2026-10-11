@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, Input } from "../../components/BaseControls";
-import { BTN, BTN_QUIET, FIELD } from "../../components/controls";
+import { BTN, BTN_QUIET, FIELD, ICON_BTN } from "../../components/controls";
 import { dialId, FrequencyDial } from "../../components/FrequencyDial";
 import { ChipField, Chips, SettingChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatMhz } from "../../components/format";
+import { Icon } from "../../components/Icon";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import { TuneTo } from "../../components/TuneTo";
 import { TuningLock } from "../../components/TuningLock";
@@ -86,8 +88,10 @@ function SatelliteNodeFace({ node }: { node: PatchNodeOf<"satellite"> }) {
         {status?.error != null && <FaceFault message={status.error} />}
       </FaceBody>
       <FaceFooter>
-        <ElementsAge status={status} />
-        <RefreshElements catalog={status?.catalog ?? null} onFresh={(tle) => edit({ tle })} />
+        <FaceStats>
+          <ElementsAge status={status} />
+          <RefreshElements catalog={status?.catalog ?? null} onFresh={(tle) => edit({ tle })} />
+        </FaceStats>
         <Button
           type="button"
           className={BTN_QUIET}
@@ -111,6 +115,7 @@ function useDebounced(value: string): string {
 
 function SatellitePicker({ onPick }: { onPick: (tle: string) => void }) {
   const [draft, setDraft] = useState("");
+  const now = useSecondsNow();
   const pasted = pastedElements(draft);
   const search = useDebounced(pasted === null ? draft.trim() : "");
   const results = useQuery({ ...satellitesQuery(search), enabled: pasted === null });
@@ -139,7 +144,7 @@ function SatellitePicker({ onPick }: { onPick: (tle: string) => void }) {
           title={
             results.data === undefined
               ? undefined
-              : `From ${sourceLabel(results.data.source, results.data.fetched ?? 0, Math.floor(Date.now() / 1_000))}`
+              : `From ${sourceLabel(results.data.source, results.data.fetched ?? 0, now)}`
           }
         >
           {found.slice(0, SHOWN_RESULTS).map((satellite) => (
@@ -180,10 +185,7 @@ function Downlink({
 }) {
   const active = useFaceActive();
   return (
-    <div
-      className="@container flex min-w-0 items-center gap-1 border-b border-line p-2"
-      title="Downlink before Doppler"
-    >
+    <div className="@container flex min-w-0 items-center gap-1 p-2" title="Downlink before Doppler">
       {hz === null ? (
         <span className="text-xs text-ink-dim">No downlink</span>
       ) : (
@@ -229,18 +231,19 @@ function SignalChip({
   onEdit: (next: Partial<SatelliteNode>) => void;
 }) {
   const listed = useQuery(transmittersQuery(catalog));
+  const now = useSecondsNow();
   const transmitters = shownSignals(listed.data?.transmitters ?? [], data.transmitter);
   if (transmitters.length === 0) {
     return null;
   }
   const picked = transmitters.find((transmitter) => transmitter.id === data.transmitter);
   return (
-    <Chips className="p-2">
+    <Chips className="px-2 pb-2">
       <SettingChip
         label="Signal"
         value={picked === undefined ? "own" : transmitterLabel(picked)}
         quiet={picked === undefined}
-        title={`What this satellite sends, from ${sourceLabel(listed.data?.source ?? "SatNOGS DB", listed.data?.fetched ?? 0, Math.floor(Date.now() / 1_000))}`}
+        title={`What this satellite sends, from ${sourceLabel(listed.data?.source ?? "SatNOGS DB", listed.data?.fetched ?? 0, now)}`}
       >
         {() => (
           <ChipField label="Signal">
@@ -291,11 +294,15 @@ function TrackReadout({ status }: { status: SatelliteStatus | null }) {
     return null;
   }
   return (
-    <Readouts>
+    <Readouts columns={2}>
       {look != null && (
-        <Readout label="Look" tone={status.visible ? "ok" : undefined}>
-          {look.azimuth_deg.toFixed(0)}° {compass(look.azimuth_deg)},{" "}
-          {look.elevation_deg.toFixed(1)}° up
+        <Readout label="Azimuth">
+          {look.azimuth_deg.toFixed(0)}° {compass(look.azimuth_deg)}
+        </Readout>
+      )}
+      {look != null && (
+        <Readout label="Elevation" tone={status.visible ? "ok" : undefined}>
+          {look.elevation_deg.toFixed(1)}°
         </Readout>
       )}
       {look != null && <Readout label="Range">{look.range_km.toFixed(0)} km</Readout>}
@@ -313,7 +320,11 @@ function TrackReadout({ status }: { status: SatelliteStatus | null }) {
           {formatMhz(status.uplink_hz)}
         </Readout>
       )}
-      {look != null && <Readout label="Next pass">{passLine(status.next_pass, now)}</Readout>}
+      {look != null && (
+        <Readout label="Next pass" wide>
+          {passLine(status.next_pass, now)}
+        </Readout>
+      )}
     </Readouts>
   );
 }
@@ -324,15 +335,13 @@ function ElementsAge({ status }: { status: SatelliteStatus | null }) {
     return null;
   }
   return (
-    <FaceStats>
-      <Stat
-        label="Elements"
-        title="Age of the orbital elements. Older ones drift; refresh them"
-        tone={days > STALE_ELEMENTS_DAYS ? "warn" : undefined}
-      >
-        {days.toFixed(1)} d
-      </Stat>
-    </FaceStats>
+    <Stat
+      label="Elements"
+      title="Age of the orbital elements. Older ones drift; refresh them"
+      tone={days > STALE_ELEMENTS_DAYS ? "warn" : undefined}
+    >
+      {days.toFixed(1)} d
+    </Stat>
   );
 }
 
@@ -350,8 +359,9 @@ function RefreshElements({
   return (
     <Button
       type="button"
-      className={BTN}
+      className={`${ICON_BTN} -ml-2`}
       disabled={fresh.isFetching}
+      aria-label="Refresh elements"
       title={fresh.isError ? fresh.error.message : "Fetch the newest elements"}
       onClick={() =>
         void fresh.refetch().then((result) => {
@@ -362,7 +372,7 @@ function RefreshElements({
         })
       }
     >
-      Refresh elements
+      <Icon glyph={RefreshCw} />
     </Button>
   );
 }

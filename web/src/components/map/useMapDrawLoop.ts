@@ -20,7 +20,9 @@ import {
 } from "../../lib/map/layers";
 import { POSITION_ROUTE_SOURCE, POSITION_SOURCE } from "../../lib/map/position";
 import { type PropagationOverlay, updatePropagationSources } from "../../lib/map/propagation";
+import { drawSatellites } from "../../lib/map/satellites";
 import { SIGNAL_SOURCE } from "../../lib/map/signal";
+import { FORECAST_SOURCE, forecastCollection } from "../../lib/map/sondeForecast";
 import {
   framePositionOnce,
   frameSignalOnce,
@@ -31,8 +33,9 @@ import {
 } from "../../lib/map/sources";
 import { highlight } from "../../lib/map/targets";
 import { type PositionSample, usePositionStore } from "../../lib/position";
+import { useSatelliteStore } from "../../lib/satellite";
 import { trailsOf } from "../../lib/trails";
-import type { SurveyCell } from "../../lib/types";
+import type { SatelliteStatus, SurveyCell } from "../../lib/types";
 import {
   type Counts,
   type MapCore,
@@ -54,6 +57,7 @@ interface Drawn {
   tracks: Partial<Record<MapKind, readonly Target[]>>;
   tracksOn: boolean | null;
   position: string;
+  satellites: Readonly<Record<string, SatelliteStatus>> | null;
   signal: readonly SurveyCell[] | null;
   propagation: PropagationOverlay | null;
   df: DfOverlay | null;
@@ -74,6 +78,7 @@ function freshDrawn(generation: number, counts: Counts, trails: FixTrails): Draw
     tracks: {},
     tracksOn: null,
     position: "",
+    satellites: null,
     signal: null,
     propagation: null,
     df: null,
@@ -149,6 +154,12 @@ function drawTargets(core: MapCore, inputs: MapInputs, drawn: Drawn, sinks: MapS
       continue;
     }
     drawn.targets[kind] = rows;
+    if (kind === "radiosonde") {
+      setSourceData(
+        core.map.getSource<GeoJSONSource>(FORECAST_SOURCE),
+        forecastCollection(stations.radiosonde ?? [], now),
+      );
+    }
     const collection = targetCollection(rows, now);
     setSourceData(core.map.getSource<GeoJSONSource>(sourceId(kind)), collection);
     next[kind] = collection.features.length;
@@ -158,6 +169,19 @@ function drawTargets(core: MapCore, inputs: MapInputs, drawn: Drawn, sinks: MapS
     drawn.counts = next;
     sinks.setCounts(next);
   }
+}
+
+function drawSatelliteLayer(core: MapCore, inputs: MapInputs, drawn: Drawn, sinks: MapSinks): void {
+  const byNode = useSatelliteStore.getState().byNode;
+  if (inputs.satellites.length === 0 || byNode === drawn.satellites) {
+    return;
+  }
+  drawn.satellites = byNode;
+  const statuses = inputs.satellites.flatMap((node) => {
+    const status = byNode[node];
+    return status === undefined ? [] : [status];
+  });
+  sinks.setSatelliteCount(drawSatellites(core.map, statuses));
 }
 
 function drawTracks(core: MapCore, inputs: MapInputs, drawn: Drawn): void {
@@ -214,6 +238,7 @@ function drawFrame(
   drawPositions(core, inputs, drawn, sinks);
   drawOverlays(core, inputs, drawn, painter);
   drawTargets(core, inputs, drawn, sinks);
+  drawSatelliteLayer(core, inputs, drawn, sinks);
   drawTracks(core, inputs, drawn);
   followSelection(core, inputs, sinks);
 }

@@ -10,9 +10,9 @@ use std::{
 };
 
 use sdrmm_engine::{Doppler, Engine};
-use sdrmm_orbit::{Satellite, Tle};
+use sdrmm_orbit::{OrbitError, Satellite, Tle};
 use sdrmm_wire::{
-    NodeBody, PatchGraph, SatelliteNode, SatellitePass, SatelliteStatus, ServerEvent,
+    LatLon, NodeBody, PatchGraph, SatelliteNode, SatellitePass, SatelliteStatus, ServerEvent,
 };
 
 use crate::{AppState, gps::GpsHub, workspace};
@@ -183,6 +183,13 @@ struct Orbit {
     satellite: Result<Satellite, String>,
     pass: Option<SatellitePass>,
     passed_at: Option<Instant>,
+    track: GroundTrack,
+}
+
+#[derive(Default)]
+struct GroundTrack {
+    points: Vec<LatLon>,
+    at: Option<Instant>,
 }
 
 struct Tracker {
@@ -291,6 +298,10 @@ impl Tracker {
         status.name = satellite.tle.name.clone();
         status.catalog = Some(satellite.tle.catalog.clone());
         status.tle_age_days = Some(satellite.age_days(now));
+        if let Err(error) = place(&mut orbit.track, satellite, &mut status, now) {
+            status.error = Some(error.to_string());
+            return status;
+        }
         let Some(source) = &wiring.position else {
             status.error = Some("wire a position".to_owned());
             return status;
@@ -352,6 +363,21 @@ impl Tracker {
     }
 }
 
+fn place(
+    cached: &mut GroundTrack,
+    satellite: &Satellite,
+    status: &mut SatelliteStatus,
+    now: f64,
+) -> Result<(), OrbitError> {
+    status.ground = Some(track::ground(satellite, now)?);
+    if cached.at.is_none_or(|at| at.elapsed() >= PASS_EVERY) {
+        cached.at = Some(Instant::now());
+        cached.points = track::ground_track(satellite, now)?;
+    }
+    status.ground_track.clone_from(&cached.points);
+    Ok(())
+}
+
 fn orbit_of<'a>(
     satellites: &'a mut HashMap<String, Orbit>,
     wiring: &Wiring,
@@ -371,6 +397,7 @@ fn orbit_of<'a>(
                 satellite,
                 pass: None,
                 passed_at: None,
+                track: GroundTrack::default(),
             },
         );
     }

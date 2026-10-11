@@ -23,7 +23,9 @@ export function MapSettings() {
   const view = useMapView();
   const { basemap } = view;
   const changed =
-    basemap.preset !== DEFAULT_BASEMAP.preset || view.tracks !== DEFAULT_MAP_VIEW.tracks;
+    basemap.preset !== DEFAULT_BASEMAP.preset ||
+    view.tracks !== DEFAULT_MAP_VIEW.tracks ||
+    view.globe !== DEFAULT_MAP_VIEW.globe;
   return (
     <PlotSettings title="Map settings" changed={changed}>
       <SettingsSection name="Style">
@@ -66,6 +68,12 @@ export function MapSettings() {
             checked={view.tracks}
             onChange={(tracks) => setMapView({ tracks })}
           />
+        }
+      />
+      <SettingsSection
+        name="Globe"
+        aside={
+          <Switch label="Globe" checked={view.globe} onChange={(globe) => setMapView({ globe })} />
         }
       />
     </PlotSettings>

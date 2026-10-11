@@ -21,12 +21,14 @@ export interface MapInputs {
   kinds: readonly MapKind[];
   references: readonly (readonly [number, number])[];
   positionNodes: readonly string[];
+  satellites: readonly string[];
   signalSamples: readonly SurveyCell[] | null;
   propagation: PropagationOverlay | null;
   df: DfOverlay | null;
   heat: FusionGridFrame | null;
   heatEnabled: boolean;
   tracks: boolean;
+  globe: boolean;
 }
 
 export interface FrameFlag {
@@ -47,6 +49,7 @@ export interface MapCore {
 export interface MapSinks {
   setCounts: (counts: Counts) => void;
   setPositionCount: (count: number) => void;
+  setSatelliteCount: (count: number) => void;
   setDetail: (update: (previous: TargetDetail | null) => TargetDetail | null) => void;
   setHeadings: (ok: boolean) => void;
 }

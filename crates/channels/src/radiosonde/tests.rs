@@ -32,7 +32,10 @@ const BOTH: Accept = Accept {
 fn channel(sonde: Option<SondeType>) -> RadiosondeChannel {
     RadiosondeChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::Radiosonde(RadiosondeParams { sonde })),
+        settings(ChannelParams::Radiosonde(RadiosondeParams {
+            sonde,
+            ..RadiosondeParams::default()
+        })),
     )
     .expect("builds")
 }

@@ -806,6 +806,13 @@
           "direction": "out",
           "multi": true,
           "note": "every decoder listening to this satellite; each is tuned and Doppler corrected"
+        },
+        {
+          "name": "events",
+          "port_type": "events",
+          "direction": "out",
+          "multi": true,
+          "note": "Position and ground track for a Map"
         }
       ],
       "needs_channel_type": false,

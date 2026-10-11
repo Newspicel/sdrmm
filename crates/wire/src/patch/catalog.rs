@@ -206,6 +206,7 @@ fn fixed_ports(kind: &str) -> Vec<PortSpec> {
             PortSpec::new(Control, Out, true, Always).noted(
                 "every decoder listening to this satellite; each is tuned and Doppler corrected",
             ),
+            PortSpec::new(Events, Out, true, Always).noted("Position and ground track for a Map"),
         ],
         "speaker" => vec![PortSpec::new(Audio, In, true, Always)],
         "video" => vec![PortSpec::new(Video, In, true, Always)],

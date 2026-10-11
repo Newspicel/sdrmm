@@ -20,7 +20,9 @@ import { type MapKind, mapKindsOf } from "../../lib/map/layers";
 import { installPositionLayers } from "../../lib/map/position";
 import { installPropagationLayers, type PropagationLayer } from "../../lib/map/propagation";
 import { installReferenceLayer } from "../../lib/map/reference";
+import { installSatelliteLayers } from "../../lib/map/satellites";
 import { installSignalLayers } from "../../lib/map/signal";
+import { installForecastLayers } from "../../lib/map/sondeForecast";
 import { highlight, hitTarget, installTargetLayers, type Selection } from "../../lib/map/targets";
 import { type MapCore, type MapInputs, type MapSinks, readyCore } from "./mapState";
 
@@ -53,9 +55,16 @@ function themeColor(element: Element, token: string, fallback: string): string {
   return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
+function applyProjection(map: MapLibreMap, globe: boolean): void {
+  map.setProjection({ type: globe ? "globe" : "mercator" });
+}
+
 function installAll(core: MapCore, inputs: MapInputs, sinks: MapSinks): void {
   const { map, accent, edge } = core;
+  applyProjection(map, inputs.globe);
   installReferenceLayer(map, accent, edge, inputs.references);
+  installSatelliteLayers(map, edge, core.ground, inputs.satellites.length > 0);
+  installForecastLayers(map, edge, inputs.kinds.includes("radiosonde"));
   sinks.setHeadings(installTargetLayers(map, edge, core.ground, inputs.kinds));
   installSignalLayers(map, edge, inputs.signalSamples !== null);
   installPropagationLayers(map, edge, accent, inputs.propagation?.layer ?? null);
@@ -226,6 +235,8 @@ export interface LayerKeys {
   kinds: readonly MapKind[];
   references: readonly (readonly [number, number])[];
   positionNodes: readonly string[];
+  satellitesOn: boolean;
+  globe: boolean;
   signalEnabled: boolean;
   propagationLayer: PropagationLayer | null;
   dfEnabled: boolean;
@@ -244,6 +255,7 @@ export function useLayerSync(
       return;
     }
     const wired = mapKindsOf(kindsKey.split(" "));
+    installForecastLayers(core.map, core.edge, wired.includes("radiosonde"));
     sinks.setHeadings(installTargetLayers(core.map, core.edge, core.ground, wired));
     core.generation += 1;
     if (core.selected !== null && !wired.includes(core.selected.kind)) {
@@ -272,6 +284,27 @@ export function useLayerSync(
   }, [coreRef, positionsOn]);
 
   useLayerToggles(coreRef, keys);
+  useSatelliteToggle(coreRef, keys.satellitesOn, keys.globe);
+}
+
+function useSatelliteToggle(
+  coreRef: RefObject<MapCore | null>,
+  satellitesOn: boolean,
+  globe: boolean,
+): void {
+  useEffect(() => {
+    const core = readyCore(coreRef.current);
+    if (core !== null) {
+      installSatelliteLayers(core.map, core.edge, core.ground, satellitesOn);
+      core.generation += 1;
+    }
+  }, [coreRef, satellitesOn]);
+  useEffect(() => {
+    const core = readyCore(coreRef.current);
+    if (core !== null) {
+      applyProjection(core.map, globe);
+    }
+  }, [coreRef, globe]);
 }
 
 function useLayerToggles(coreRef: RefObject<MapCore | null>, keys: LayerKeys): void {

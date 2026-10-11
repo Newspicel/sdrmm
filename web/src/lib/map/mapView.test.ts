@@ -14,6 +14,7 @@ describe("parseMapView", () => {
     expect(parseMapView(stored)).toEqual({
       basemap: { preset: DEFAULT_BASEMAP.preset, custom: "https://x" },
       tracks: DEFAULT_MAP_VIEW.tracks,
+      globe: false,
     });
   });
 });
@@ -27,9 +28,11 @@ describe("setMapView", () => {
   it("persists what it changes", () => {
     setMapView({ tracks: false });
     setMapView({ basemap: { preset: "fiord", custom: "" } });
+    setMapView({ globe: true });
     expect(useMapView.getState()).toEqual({
       basemap: { preset: "fiord", custom: "" },
       tracks: false,
+      globe: true,
     });
     expect(parseMapView(localStorage.getItem(MAP_VIEW_KEY))).toEqual(useMapView.getState());
   });

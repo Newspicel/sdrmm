@@ -1,6 +1,12 @@
 use sdrmm_engine::Doppler;
-use sdrmm_orbit::{Observer, OrbitError, Pass, Satellite, downlink_hz, uplink_hz};
-use sdrmm_wire::{PositionFix, SatelliteLook, SatelliteNode, SatellitePass};
+use sdrmm_orbit::{Observer, OrbitError, Pass, Satellite, Subpoint, downlink_hz, uplink_hz};
+use sdrmm_wire::{
+    LatLon, PositionFix, SatelliteGround, SatelliteLook, SatelliteNode, SatellitePass,
+};
+
+const TRACK_POINTS: f64 = 180.0;
+const TRACK_BEHIND_ORBITS: f64 = 0.5;
+const TRACK_AHEAD_ORBITS: f64 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Steering {
@@ -45,6 +51,30 @@ pub(super) fn steer(
             .uplink_hz
             .map(|wanted| uplink_hz(wanted, here.range_rate_km_s)),
     })
+}
+
+pub(super) fn ground(satellite: &Satellite, now: f64) -> Result<SatelliteGround, OrbitError> {
+    let subpoint = satellite.subpoint(now)?;
+    Ok(SatelliteGround {
+        at: latlon(subpoint),
+        altitude_km: subpoint.altitude_km,
+        footprint_km: subpoint.footprint_km(),
+    })
+}
+
+pub(super) fn ground_track(satellite: &Satellite, now: f64) -> Result<Vec<LatLon>, OrbitError> {
+    let period = satellite.period_s();
+    let from = now - TRACK_BEHIND_ORBITS * period;
+    let to = now + TRACK_AHEAD_ORBITS * period;
+    let track = satellite.ground_track(from, to, (to - from) / TRACK_POINTS)?;
+    Ok(track.into_iter().map(latlon).collect())
+}
+
+fn latlon(subpoint: Subpoint) -> LatLon {
+    LatLon {
+        lat: subpoint.latitude_deg,
+        lon: subpoint.longitude_deg,
+    }
 }
 
 pub(super) fn pass(pass: Pass) -> SatellitePass {
@@ -106,6 +136,21 @@ mod tests {
             uplink < 145_990_000.0,
             "an approaching satellite is sent low: {uplink}"
         );
+    }
+
+    #[test]
+    fn the_ground_track_spans_one_and_a_half_orbits_around_now() {
+        let iss = iss();
+        let now = unix_seconds(iss.tle.epoch_jd);
+        let track = ground_track(&iss, now).expect("propagates");
+        let here = ground(&iss, now).expect("propagates");
+        assert_eq!(track.len(), TRACK_POINTS as usize + 1);
+        let middle = track[TRACK_POINTS as usize / 3];
+        assert!(
+            (middle.lat - here.at.lat).abs() < 1e-6 && (middle.lon - here.at.lon).abs() < 1e-6,
+            "{middle:?} {here:?}"
+        );
+        assert!((2_000.0..2_500.0).contains(&here.footprint_km), "{here:?}");
     }
 
     #[test]

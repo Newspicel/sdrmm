@@ -3,6 +3,7 @@ import type { BasemapKind } from "../../lib/map/basemap";
 import { type OverlayCounts, TRACK_COLOR } from "../../lib/map/df";
 import { HEAT_OPACITY } from "../../lib/map/heat";
 import { KIND_STYLE, type MapKind } from "../../lib/map/layers";
+import { SATELLITE_COLOR } from "../../lib/map/satellites";
 import { SIGNAL_GRADIENT } from "../../lib/map/signal";
 import { SIGNAL_MAX_DBFS, SIGNAL_MIN_DBFS } from "../../lib/signalSurvey";
 import { colormapGradient } from "../plotFrame";
@@ -48,6 +49,7 @@ export function MapLegend({
   kinds,
   counts,
   positionCount,
+  satelliteCount,
   signalCells,
   overlay,
   heat,
@@ -58,6 +60,7 @@ export function MapLegend({
   kinds: readonly MapKind[];
   counts: Counts;
   positionCount: number | null;
+  satelliteCount: number | null;
   signalCells: number | null;
   overlay: OverlayCounts;
   heat: boolean;
@@ -68,6 +71,7 @@ export function MapLegend({
   const hasRows =
     kinds.length > 0 ||
     positionCount !== null ||
+    satelliteCount !== null ||
     signalCells !== null ||
     heat ||
     overlay.bearings + overlay.echoes + overlay.tracks + overlay.unplaced.length > 0;
@@ -83,6 +87,13 @@ export function MapLegend({
               value={counts[kind]}
             />
           ))}
+          {satelliteCount !== null && (
+            <Row
+              swatch={<Dot color={SATELLITE_COLOR} />}
+              label="Satellites"
+              value={satelliteCount}
+            />
+          )}
           {positionCount !== null && (
             <Row swatch={<Dot className="bg-accent" />} label="GPS trail" value={positionCount} />
           )}

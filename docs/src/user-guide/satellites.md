@@ -13,16 +13,24 @@ shift as it passes, so the decoder never has to chase the carrier.
 
 On auto tuning the radio follows the decoder, as it does for a scanner.
 
+## On the map
+
+Wire Satellite `events` to **Map**. It shows the point below the satellite, the footprint where it
+is above the horizon, and the ground track half an orbit back and one ahead. The footprint is
+brighter while the satellite is above your horizon. **Globe** in the map settings suits wide
+footprints.
+
 ## Readouts
 
 | Readout | Shows |
 |---|---|
-| Look | Azimuth and elevation |
+| Azimuth | Compass bearing |
+| Elevation | Angle above the horizon; green while visible |
 | Range | Distance to the satellite |
 | Doppler | The shift being corrected, and how fast it changes |
 | Send on | The Doppler-corrected uplink, if the transmitter has one |
 | Next pass | Time until rise, or until set during a pass, with peak elevation |
-| Elements | Age of the orbit data. Warns after 7 days; press **Refresh elements**. |
+| Elements | Age of the orbit data. Warns after 7 days; press the refresh button. |
 
 Orbits come from CelesTrak and transmitters from SatNOGS DB. Both are cached for two hours.
 

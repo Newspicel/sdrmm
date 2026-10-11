@@ -185,6 +185,7 @@ describe("MapLegend", () => {
         kinds: [],
         counts: ZERO_COUNTS,
         positionCount: null,
+        satelliteCount: null,
         signalCells: null,
         overlay: quiet,
         heat: false,

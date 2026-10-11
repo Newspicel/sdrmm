@@ -2912,6 +2912,16 @@ export interface components {
         };
         /** @enum {string} */
         BroadcastSystem: "dab" | "dab_plus" | "dvb_s" | "dvb_s2" | "dvb_t" | "dvb_t2" | "drm30" | "drm_plus";
+        Callsign: {
+            call: string;
+            continent: string;
+            country: string;
+            /** Format: int32 */
+            cq_zone: number;
+            /** Format: int32 */
+            itu_zone: number;
+            prefix: string;
+        };
         /** @enum {string} */
         CalPhase: "none" | "waiting" | "measuring" | "solved" | "warm" | "stale" | "failed";
         Capabilities: {
@@ -3980,6 +3990,7 @@ export interface components {
         DcArtifact: "operator" | "managed" | "none";
         DecodedRecord: {
             at: string;
+            callsign?: components["schemas"]["Callsign"] | null;
             /** Format: int32 */
             channel: number;
             /** Format: int32 */
@@ -4203,6 +4214,7 @@ export interface components {
         DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
         DecoderLogEntry: {
             at: string;
+            callsign?: components["schemas"]["Callsign"] | null;
             /** Format: int32 */
             channel: number;
             /** Format: int32 */
@@ -7554,6 +7566,7 @@ export interface components {
             climb_ms?: number | null;
             /** Format: int32 */
             errors_corrected: number;
+            forecast?: components["schemas"]["SondeForecast"] | null;
             /** Format: int32 */
             frame?: number | null;
             /** Format: double */
@@ -7577,6 +7590,10 @@ export interface components {
             time?: string | null;
         };
         RadiosondeParams: {
+            /** Format: int32 */
+            burst_m?: number | null;
+            /** Format: int32 */
+            ground_m?: number | null;
             sonde?: components["schemas"]["SondeType"] | null;
         };
         Range: {
@@ -7840,8 +7857,17 @@ export interface components {
             text: string;
         };
         SatelliteCatalogResponse: {
+            /** Format: int64 */
+            fetched?: number;
             satellites: components["schemas"]["CatalogSatellite"][];
             source: string;
+        };
+        SatelliteGround: {
+            /** Format: double */
+            altitude_km: number;
+            at: components["schemas"]["LatLon"];
+            /** Format: double */
+            footprint_km: number;
         };
         SatelliteLook: {
             /** Format: double */
@@ -7880,6 +7906,8 @@ export interface components {
             doppler_rate_hz_s?: number | null;
             driving?: string[];
             error?: string | null;
+            ground?: components["schemas"]["SatelliteGround"] | null;
+            ground_track?: components["schemas"]["LatLon"][];
             look?: components["schemas"]["SatelliteLook"] | null;
             name?: string | null;
             next_pass?: components["schemas"]["SatellitePass"] | null;
@@ -8319,6 +8347,16 @@ export interface components {
             h: number;
             /** Format: float */
             w: number;
+        };
+        SondeForecast: {
+            burst: components["schemas"]["LatLon"];
+            /** Format: double */
+            burst_altitude_m: number;
+            burst_seen: boolean;
+            landing: components["schemas"]["LatLon"];
+            /** Format: double */
+            landing_in_s: number;
+            path?: components["schemas"]["LatLon"][];
         };
         /** @enum {string} */
         SondeType: "rs41" | "dfm" | "m10" | "m20" | "imet4";
@@ -8859,6 +8897,8 @@ export interface components {
             uplink_hz?: number | null;
         };
         TransmittersResponse: {
+            /** Format: int64 */
+            fetched?: number;
             source: string;
             transmitters: components["schemas"]["Transmitter"][];
         };
@@ -13140,7 +13180,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Element sets matching a name or catalog number, or the amateur group when `q` is empty. Cached for two hours */
+            /** @description Element sets matching a name or catalog number, or the amateur and weather groups when `q` is empty. Both groups are downloaded twice a day and kept on disk */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -13181,7 +13221,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Known transmitters of the satellite, live ones first. Cached for two hours */
+            /** @description Known transmitters of the satellite, live ones first. Downloaded daily and kept on disk */
             200: {
                 headers: {
                     [name: string]: unknown;

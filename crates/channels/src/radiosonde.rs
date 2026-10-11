@@ -1,6 +1,7 @@
 mod demod;
 pub(crate) mod dfm;
 pub(crate) mod fields;
+mod forecast;
 pub(crate) mod imet;
 pub(crate) mod m10;
 pub(crate) mod m20;
@@ -14,12 +15,14 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, RadiosondeParams, SondeType,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    RadiosondeParams, SondeType,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
 use demod::{CHUNK, FrontEnd};
 use dfm::Dfm;
+use forecast::Flights;
 use imet::Imet;
 use meteomodem::{Accept, Meteomodem};
 use rs41::Rs41;
@@ -81,6 +84,7 @@ pub struct RadiosondeChannel {
     dfm: Dfm,
     meteomodem: Meteomodem,
     imet: Imet,
+    flights: Flights,
 }
 
 impl ChannelRx for RadiosondeChannel {
@@ -98,6 +102,7 @@ impl ChannelRx for RadiosondeChannel {
             dfm: Dfm::new(),
             meteomodem: Meteomodem::new(accept(&params)),
             imet: Imet::new(),
+            flights: Flights::default(),
         })
     }
 
@@ -109,6 +114,7 @@ impl ChannelRx for RadiosondeChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         let meteomodem = runs(&self.params, SondeType::M10) || runs(&self.params, SondeType::M20);
+        let start = out.events.len();
         for chunk in iq.chunks(CHUNK) {
             let audio = self.front.demodulate(chunk);
             if runs(&self.params, SondeType::Rs41) {
@@ -122,6 +128,11 @@ impl ChannelRx for RadiosondeChannel {
             }
             if runs(&self.params, SondeType::Imet4) {
                 self.imet.push(audio, &mut out.events);
+            }
+        }
+        for event in &mut out.events[start..] {
+            if let DecoderEvent::Radiosonde(frame) = event {
+                self.flights.observe(frame, &self.params);
             }
         }
     }

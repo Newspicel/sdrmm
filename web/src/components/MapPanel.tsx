@@ -29,6 +29,7 @@ export function MapPanel({
   kinds,
   references = [],
   positionNodes = [],
+  satellites = [],
   signalSamples,
   propagation,
   df,
@@ -40,6 +41,7 @@ export function MapPanel({
   kinds: readonly MapKind[];
   references?: readonly (readonly [number, number])[];
   positionNodes?: readonly string[];
+  satellites?: readonly string[];
   signalSamples?: readonly SurveyCell[];
   propagation?: PropagationOverlay;
   df?: DfOverlay;
@@ -54,32 +56,37 @@ export function MapPanel({
     kinds,
     references,
     positionNodes,
+    satellites,
     signalSamples: signalSamples ?? null,
     propagation: propagation ?? null,
     df: df ?? null,
     heat: heat ?? null,
     heatEnabled: heat !== undefined,
     tracks: view.tracks,
+    globe: view.globe,
   });
   useLayoutEffect(() => {
     inputsRef.current = {
       kinds,
       references,
       positionNodes,
+      satellites,
       signalSamples: signalSamples ?? null,
       propagation: propagation ?? null,
       df: df ?? null,
       heat: heat ?? null,
       heatEnabled: heat !== undefined,
       tracks: view.tracks,
+      globe: view.globe,
     };
   });
   const [counts, setCounts] = useState<Counts>(ZERO_COUNTS);
   const [positionCount, setPositionCount] = useState(0);
+  const [satelliteCount, setSatelliteCount] = useState(0);
   const [detail, setDetail] = useState<TargetDetail | null>(null);
   const [headings, setHeadings] = useState(true);
   const sinks = useMemo<MapSinks>(
-    () => ({ setCounts, setPositionCount, setDetail, setHeadings }),
+    () => ({ setCounts, setPositionCount, setSatelliteCount, setDetail, setHeadings }),
     [],
   );
   const { coreRef, basemap } = useMapInstance(containerRef, inputsRef, sinks, view.basemap, (hit) =>
@@ -99,6 +106,8 @@ export function MapPanel({
       kinds,
       references,
       positionNodes,
+      satellitesOn: satellites.length > 0,
+      globe: view.globe,
       signalEnabled: signalSamples !== undefined,
       propagationLayer: propagation?.layer ?? null,
       dfEnabled: df !== undefined,
@@ -116,6 +125,7 @@ export function MapPanel({
         kinds={kinds}
         counts={counts}
         positionCount={positionNodes.length > 0 ? positionCount : null}
+        satelliteCount={satellites.length > 0 ? satelliteCount : null}
         signalCells={signalSamples === undefined ? null : signalSamples.length}
         overlay={overlayCounts(df)}
         heat={heat != null}

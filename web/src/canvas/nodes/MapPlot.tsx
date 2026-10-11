@@ -35,10 +35,12 @@ function HeatFeed({ node, onFrame }: { node: string; onFrame: (held: HeldHeat) =
 export function MapPlot({
   kinds,
   positionNodes,
+  satellites,
   sources,
 }: {
   kinds: readonly MapKind[];
   positionNodes: readonly string[];
+  satellites: readonly string[];
   sources: OverlaySources;
 }) {
   const rayNodes = [...sources.finders, ...sources.hunts];
@@ -66,6 +68,7 @@ export function MapPlot({
       <MapPanel
         kinds={kinds}
         positionNodes={positionNodes}
+        satellites={satellites}
         df={df}
         heat={crossing === null ? undefined : held?.node === crossing ? held.frame : null}
         heatRefused={heatRefused}

@@ -1,4 +1,5 @@
 mod doppler;
+mod ground;
 mod observer;
 mod pass;
 mod satellite;
@@ -7,6 +8,7 @@ mod time;
 mod tle;
 
 pub use doppler::{SPEED_OF_LIGHT_KM_S, downlink_hz, uplink_hz};
+pub use ground::Subpoint;
 pub use observer::{Look, Observer};
 pub use pass::Pass;
 pub use satellite::Satellite;

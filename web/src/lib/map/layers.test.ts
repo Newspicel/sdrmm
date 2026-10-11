@@ -353,6 +353,27 @@ describe("targetDetail", () => {
     ]);
   });
 
+  it("adds the forecast burst, landing and time to land", () => {
+    const detail = targetDetail(
+      sonde({
+        forecast: {
+          burst: { lat: 48.2, lon: 11.4 },
+          burst_altitude_m: 26_000,
+          burst_seen: false,
+          landing: { lat: 48.1, lon: 11.9 },
+          landing_in_s: 5_430,
+        },
+      }),
+    );
+    expect(detail.rows).toEqual([
+      ["Serial", "S1234567"],
+      ["Burst", "26000 m est."],
+      ["Landing", "48.1000° N 11.9000° E"],
+      ["Lands in", "91 min"],
+      ["Frames", "1"],
+    ]);
+  });
+
   it("carries the identity and provenance the panel header shows", () => {
     const detail = targetDetail(ais({ name: "NORDIC" }, { id: "211234560" }));
     expect(detail).toMatchObject({

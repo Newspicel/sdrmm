@@ -1,4 +1,4 @@
-use crate::{Look, Observer, OrbitError, Propagator, Tle, time::julian_date};
+use crate::{Look, Observer, OrbitError, Propagator, State, Tle, time::julian_date};
 
 #[derive(Clone, Debug)]
 pub struct Satellite {
@@ -14,10 +14,12 @@ impl Satellite {
 
     pub fn look(&self, observer: &Observer, unix_seconds: f64) -> Result<Look, OrbitError> {
         let jd = julian_date(unix_seconds);
-        let state = self
-            .propagator
-            .propagate(self.propagator.minutes_since_epoch(jd))?;
-        Ok(observer.look(&state, jd))
+        Ok(observer.look(&self.state_at(jd)?, jd))
+    }
+
+    pub(crate) fn state_at(&self, julian_date: f64) -> Result<State, OrbitError> {
+        self.propagator
+            .propagate(self.propagator.minutes_since_epoch(julian_date))
     }
 
     #[must_use]

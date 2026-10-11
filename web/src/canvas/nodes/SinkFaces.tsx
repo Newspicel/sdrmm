@@ -31,6 +31,7 @@ import { SAMPLE_RATE as AUDIO_RATE_HZ } from "../../lib/audio/worklet";
 import { overlaySourcesOf } from "../../lib/dfOverlay";
 import { mapKindsOf } from "../../lib/map/layers";
 import { positionSourcesOf } from "../../lib/position";
+import { satelliteSourcesOf } from "../../lib/satellite";
 import type {
   LogGroupKey,
   PatchNode,
@@ -244,6 +245,7 @@ export function MapFace({ node }: { node: PatchNode }) {
         <MapPlot
           kinds={kinds}
           positionNodes={positionSourcesOf(workspace.graph, node.id)}
+          satellites={satelliteSourcesOf(workspace.graph, node.id)}
           sources={overlaySourcesOf(workspace.graph, node.id)}
         />
       </FaceBody>

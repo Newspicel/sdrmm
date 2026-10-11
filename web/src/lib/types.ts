@@ -173,6 +173,7 @@ export type HuntStatus = components["schemas"]["HuntStatus"];
 export type BroadcastStatus = components["schemas"]["BroadcastStatus"];
 export type SatelliteNode = components["schemas"]["SatelliteNode"];
 export type SatelliteStatus = components["schemas"]["SatelliteStatus"];
+export type SondeForecast = components["schemas"]["SondeForecast"];
 export type SatellitePass = components["schemas"]["SatellitePass"];
 export type CatalogSatellite = components["schemas"]["CatalogSatellite"];
 export type SatelliteCatalogResponse = components["schemas"]["SatelliteCatalogResponse"];

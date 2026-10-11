@@ -121,6 +121,10 @@ pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
             navaid_report_limit(),
         ],
         "ils" => vec![navaid_report_limit()],
+        "radiosonde" => vec![
+            limit("burst_m", 5_000.0, 45_000.0, 500.0),
+            limit("ground_m", -500.0, 6_000.0, 10.0),
+        ],
         "wifi_occupancy" | "ism_survey" => vec![limit(
             "margin_db",
             f64::from(crate::airtime::MIN_AIRTIME_MARGIN_DB),

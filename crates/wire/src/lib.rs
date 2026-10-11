@@ -266,8 +266,8 @@ pub use rest::{
 pub use satellite::{
     CatalogSatellite, MAX_CATALOG_RESULTS, MAX_SATELLITE_HZ, MAX_SATELLITE_QUERY_LEN, MAX_TLE_LEN,
     MAX_TRANSMITTER_ID_LEN, SATELLITE_CATALOG_SOURCE, SATELLITE_CATALOG_URL, SatelliteCatalogQuery,
-    SatelliteCatalogResponse, SatelliteLook, SatelliteNode, SatellitePass, SatelliteStatus,
-    TRANSMITTER_SOURCE, TRANSMITTER_URL, Transmitter, TransmittersResponse,
+    SatelliteCatalogResponse, SatelliteGround, SatelliteLook, SatelliteNode, SatellitePass,
+    SatelliteStatus, TRANSMITTER_SOURCE, TRANSMITTER_URL, Transmitter, TransmittersResponse,
 };
 pub use scan::{
     MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanRequest,
@@ -299,8 +299,9 @@ pub use tools::{
     YagiParams,
 };
 pub use weather::{
-    AprsWeather, AptImage, AptParams, AvhrrChannel, LrptImage, LrptMode, LrptParams,
-    RadiosondeFrame, RadiosondeParams, SondeType, WefaxIoc, WefaxLpm, WefaxParams, WefaxPicture,
+    AprsWeather, AptImage, AptParams, AvhrrChannel, DEFAULT_SONDE_BURST_M, LrptImage, LrptMode,
+    LrptParams, RadiosondeFrame, RadiosondeParams, SondeForecast, SondeType, WefaxIoc, WefaxLpm,
+    WefaxParams, WefaxPicture,
 };
 pub use workspace::{
     CreateWorkspaceRequest, DroppedNode, MAX_NAME_LEN, MAX_REGION_ID_LEN, PatchApplyReport,
@@ -926,8 +927,8 @@ mod contract_tests {
         let ev = ServerEvent::Decoded(Box::new(decode::DecodedRecord {
             origin: None,
             sinks: Vec::new(),
-            device_set: 1,
             callsign: None,
+            device_set: 1,
             channel: 4,
             at: "2026-08-09T12:00:00Z".to_owned(),
             freq_hz: 162_025_000.0,
