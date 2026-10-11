@@ -55,6 +55,7 @@ mod radiosonde;
 mod rds;
 mod remote_id;
 mod rtty;
+mod sarsat;
 mod selcall;
 mod sid;
 pub mod spatial_spectrum;
@@ -129,6 +130,7 @@ pub use radio_clock::RadioClockChannel;
 pub use radiosonde::RadiosondeChannel;
 pub use remote_id::RemoteIdChannel;
 pub use rtty::RttyChannel;
+pub use sarsat::SarsatChannel;
 use sdrmm_dsp::{Decimator, FirC};
 use sdrmm_wire::{
     BroadcastStatus, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, PositionFix,
@@ -185,6 +187,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Flex(p) => flex::occupied_band(p),
         ChannelParams::Ermes(p) => ermes::occupied_band(p),
         ChannelParams::Eot(p) => eot::occupied_band(p),
+        ChannelParams::Sarsat(p) => sarsat::occupied_band(p),
         ChannelParams::Adsb(_) => adsb::occupied_band(),
         ChannelParams::Ais(p) => ais::occupied_band(p),
         ChannelParams::Aprs(p) => aprs::occupied_band(p),
@@ -276,6 +279,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Flex(p) => flex::channel_filter(p),
         ChannelParams::Ermes(p) => ermes::channel_filter(p),
         ChannelParams::Eot(p) => eot::channel_filter(p),
+        ChannelParams::Sarsat(p) => sarsat::channel_filter(p),
         ChannelParams::Adsb(_) => Ok(adsb::channel_filter()),
         ChannelParams::Ais(p) => ais::channel_filter(p),
         ChannelParams::Aprs(p) => aprs::channel_filter(p),
@@ -510,6 +514,11 @@ const REGISTRY: &[Registration] = &[
     Registration {
         descriptor: EotChannel::descriptor,
         create: boxed::<EotChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: SarsatChannel::descriptor,
+        create: boxed::<SarsatChannel>,
         create_tx: None,
     },
     Registration {
@@ -892,6 +901,7 @@ mod tests {
             "flex" => ChannelParams::Flex(FlexParams::default()),
             "ermes" => ChannelParams::Ermes(ErmesParams::default()),
             "eot" => ChannelParams::Eot(EotParams::default()),
+            "sarsat" => ChannelParams::Sarsat(sdrmm_wire::SarsatParams::default()),
             "adsb" => ChannelParams::Adsb(AdsbParams::default()),
             "ais" => ChannelParams::Ais(AisParams::default()),
             "aprs" => ChannelParams::Aprs(AprsParams::default()),
@@ -992,7 +1002,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 59);
+        assert_eq!(all.len(), 60);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -1006,6 +1016,7 @@ mod tests {
                 "flex",
                 "ermes",
                 "eot",
+                "sarsat",
                 "adsb",
                 "ais",
                 "aprs",
@@ -1067,6 +1078,7 @@ mod tests {
                 "wfm" => (200_000.0, 240_000.0),
                 "pocsag" => (12_500.0, 24_000.0),
                 "flex" | "ermes" | "eot" => (12_500.0, 48_000.0),
+                "sarsat" => (20_000.0, 24_000.0),
                 "adsb" => (2_000_000.0, 2_400_000.0),
                 "ais" => (25_000.0, 48_000.0),
                 "aprs" => (12_500.0, 48_000.0),

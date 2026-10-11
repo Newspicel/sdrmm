@@ -423,6 +423,30 @@ describe("eventSummary", () => {
     expect(eventStation(ermes)).toBe("45678");
   });
 
+  it("renders a 406 MHz beacon like the server summary", () => {
+    const beacon: DecoderEvent = {
+      kind: "sarsat",
+      data: {
+        hex_id: "ADCD00800440401",
+        message: "56E6804002202009655250",
+        long: true,
+        self_test: true,
+        country: 366,
+        protocol: "serial_user",
+        beacon: "epirb",
+        identity: "S/N 1",
+        lat: 43.5333,
+        lon: -1.5,
+        errors_corrected: 0,
+        pdf2_ok: false,
+      },
+    };
+    expect(eventSummary(beacon)).toBe(
+      "EPIRB ADCD00800440401 · S/N 1 · 43.5333, -1.5000 · self-test · PDF-2 failed",
+    );
+    expect(eventStation(beacon)).toBe("ADCD00800440401");
+  });
+
   it("renders End-of-Train telemetry and head-end commands", () => {
     const rear: DecoderEvent = {
       kind: "eot",

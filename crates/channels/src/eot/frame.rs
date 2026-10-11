@@ -12,8 +12,8 @@ pub(crate) const HEAD_BLOCK_BITS: usize = 64;
 pub(crate) const REAR_BITS: usize = REAR.bits();
 
 const REAR_KEY: u64 = 0x2_B770;
-const REAR_GENERATOR: u64 = 0x7_9A0F;
-const HEAD_GENERATOR: u64 = 0x3_9B5C_2CFB;
+const REAR_GENERATOR: u128 = 0x7_9A0F;
+const HEAD_GENERATOR: u128 = 0x3_9B5C_2CFB;
 const REAR_CORRECTABLE: u32 = 2;
 const HEAD_CORRECTABLE: u32 = 3;
 const STATUS_REQUEST: u8 = 0x55;
@@ -24,6 +24,16 @@ static REAR_CODE: LazyLock<SyndromeDecoder> =
     LazyLock::new(|| SyndromeDecoder::new(REAR_GENERATOR, 63, REAR_CORRECTABLE));
 static HEAD_CODE: LazyLock<SyndromeDecoder> =
     LazyLock::new(|| SyndromeDecoder::new(HEAD_GENERATOR, 63, HEAD_CORRECTABLE));
+
+fn decode(code: &SyndromeDecoder, word: u64) -> Option<(u64, u32)> {
+    let (fixed, errors) = code.decode(u128::from(word))?;
+    Some((u64::try_from(fixed).ok()?, errors))
+}
+
+#[cfg(any(test, feature = "synth"))]
+fn encode(code: &SyndromeDecoder, data: u64) -> u64 {
+    code.encode(u128::from(data)) as u64
+}
 
 pub(crate) fn prepare() {
     LazyLock::force(&REAR_CODE);
@@ -115,7 +125,7 @@ pub(crate) struct Decoded {
 }
 
 pub(crate) fn rear(word: u64) -> Option<Decoded> {
-    let (fixed, errors) = REAR_CODE.decode(word ^ REAR_KEY)?;
+    let (fixed, errors) = decode(&REAR_CODE, word ^ REAR_KEY)?;
     let data = fixed >> REAR.parity_bits;
     Some(Decoded {
         unit_address: REAR_ADDRESS.get(data),
@@ -167,15 +177,11 @@ pub(crate) fn head(summed: u64, copies: &[u64; HEAD_COPIES]) -> Option<Decoded> 
     let voted = a & b | a & c | b & c;
     let (fixed, errors) = [summed, voted, a, b, c]
         .into_iter()
-        .filter_map(|word| HEAD_CODE.decode(word))
+        .filter_map(|word| decode(&HEAD_CODE, word))
         .min_by_key(|&(_, errors)| errors)?;
     let agreeing = copies
         .iter()
-        .filter(|&&copy| {
-            HEAD_CODE
-                .decode(copy)
-                .is_some_and(|(word, _)| word == fixed)
-        })
+        .filter(|&&copy| decode(&HEAD_CODE, copy).is_some_and(|(word, _)| word == fixed))
         .count();
     let data = fixed >> HEAD.parity_bits;
     let code = COMMAND.get(data) as u8;
@@ -216,12 +222,15 @@ pub(crate) fn rear_codeword(unit_address: u32, status: &EotStatus) -> u64 {
         | MOTION.put(u32::from(status.motion))
         | MARKER_BATTERY.put(u32::from(status.marker_battery_low))
         | MARKER_LIGHT.put(u32::from(status.marker_light));
-    REAR_CODE.encode(data) ^ REAR_KEY
+    encode(&REAR_CODE, data) ^ REAR_KEY
 }
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) fn head_codeword(unit_address: u32, code: u8) -> u64 {
-    HEAD_CODE.encode(HEAD_ADDRESS.put(unit_address) | COMMAND.put(u32::from(code)))
+    encode(
+        &HEAD_CODE,
+        HEAD_ADDRESS.put(unit_address) | COMMAND.put(u32::from(code)),
+    )
 }
 
 #[cfg(any(test, feature = "synth"))]

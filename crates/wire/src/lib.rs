@@ -36,6 +36,7 @@ pub mod radar;
 pub mod remote;
 pub mod remote_id;
 pub mod rest;
+pub mod sarsat;
 pub mod satellite;
 pub mod scan;
 pub mod state;
@@ -260,6 +261,10 @@ pub use rest::{
     RecordingAnnotation, RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload,
     RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo,
     TemplatesResponse, VoiceCall, VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
+};
+pub use sarsat::{
+    MAX_SARSAT_BANDWIDTH_HZ, MIN_SARSAT_BANDWIDTH_HZ, SARSAT_BANDWIDTH_HZ, SarsatBeacon,
+    SarsatMessage, SarsatParams, SarsatProtocol,
 };
 pub use satellite::{
     CatalogSatellite, MAX_CATALOG_RESULTS, MAX_SATELLITE_HZ, MAX_SATELLITE_QUERY_LEN, MAX_TLE_LEN,

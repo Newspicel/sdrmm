@@ -46,6 +46,7 @@ export function trailPosition(event: DecoderEvent): LonLat | null {
     case "ais":
     case "aprs":
     case "radiosonde":
+    case "sarsat":
       return geoPosition(event.data.lat, event.data.lon);
     case "lora": {
       const position = loraPosition(event.data);

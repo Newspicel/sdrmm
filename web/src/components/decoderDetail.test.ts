@@ -152,6 +152,19 @@ describe("eventDetail", () => {
           errors_corrected: 1,
         },
       },
+      sarsat: {
+        kind: "sarsat",
+        data: {
+          hex_id: "ADCD00800440401",
+          message: "56E6804002202009655250",
+          long: false,
+          self_test: false,
+          country: 366,
+          protocol: "serial_user",
+          beacon: "epirb",
+          errors_corrected: 0,
+        },
+      },
       adsb: { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } },
       ais: { kind: "ais", data: { mmsi: 1, msg_type: 1, ais_channel: "A", nmea: "!AIVDM" } },
       aprs: { kind: "aprs", data: { source: "A", destination: "B", info: "", tnc2: "A>B:" } },
@@ -551,6 +564,35 @@ describe("eventDetail", () => {
       Drift: "-0.2 Hz",
     });
     expect(detail.body).toBe("K1ABC FN42 37");
+  });
+
+  it("reads a located 406 MHz beacon and flags a failed second field", () => {
+    const located = fieldsOf({
+      kind: "sarsat",
+      data: {
+        hex_id: "2DC43C4802FFBFF",
+        message: "8E3E0425A8318074FE44B735CD7B46",
+        long: true,
+        self_test: true,
+        country: 366,
+        protocol: "standard_location",
+        beacon: "epirb",
+        identity: "MMSI 366123456",
+        lat: 37.8199,
+        lon: -122.4783,
+        homing: true,
+        errors_corrected: 2,
+        pdf2_ok: false,
+      },
+    });
+    expect(located.Beacon).toBe("EPIRB");
+    expect(located.ID).toBe("MMSI 366123456");
+    expect(located.Protocol).toBe("Standard location");
+    expect(located.Position).toBe("37.81990, -122.47830");
+    expect(located["121.5 MHz"]).toBe("yes");
+    expect(located["Self-test"]).toBe("yes");
+    expect(located.BCH).toBe("PDF-2 failed");
+    expect(located.Repaired).toBe("2");
   });
 
   it("reads an EOT rear unit and a HOT command", () => {

@@ -11141,6 +11141,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/SarsatParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "sarsat"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/AdsbParams"
               },
               "type": {
@@ -14262,6 +14280,24 @@
                 "type": "string",
                 "enum": [
                   "eot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/SarsatMessage"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "sarsat"
                 ]
               }
             }
@@ -28706,6 +28742,122 @@
             "type": "string"
           }
         }
+      },
+      "SarsatBeacon": {
+        "type": "string",
+        "enum": [
+          "epirb",
+          "elt",
+          "plb",
+          "ship_security",
+          "test",
+          "other"
+        ]
+      },
+      "SarsatMessage": {
+        "type": "object",
+        "required": [
+          "hex_id",
+          "message",
+          "long",
+          "self_test",
+          "country",
+          "protocol",
+          "beacon",
+          "errors_corrected"
+        ],
+        "properties": {
+          "beacon": {
+            "$ref": "#/components/schemas/SarsatBeacon"
+          },
+          "country": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "errors_corrected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "hex_id": {
+            "type": "string"
+          },
+          "homing": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "identity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "lon": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "long": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "pdf2_ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/SarsatProtocol"
+          },
+          "self_test": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SarsatParams": {
+        "type": "object",
+        "properties": {
+          "bandwidth_hz": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SarsatProtocol": {
+        "type": "string",
+        "enum": [
+          "maritime_user",
+          "radio_call_sign_user",
+          "aviation_user",
+          "serial_user",
+          "national_user",
+          "test_user",
+          "orbitography",
+          "second_generation",
+          "standard_location",
+          "ship_security",
+          "national_location",
+          "rls_location",
+          "elt_dt_location",
+          "standard_test",
+          "national_test",
+          "spare"
+        ]
       },
       "SatelliteCatalogResponse": {
         "type": "object",

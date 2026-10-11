@@ -18,9 +18,9 @@ use sdrmm_wire::{
     LoraParams, LrptMode, LrptParams, Modulation, MorseParams, NavtexParams, NfmParams,
     NfmToneMode, NoiseFigureParams, PerParams, PipelineStage, PocsagBaud, PocsagParams, PskBaud,
     PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
-    RemoteIdTransport, RttyParams, SelcallParams, SelcallSystem, ServerEvent, SidParams, SondeType,
-    SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams,
-    WsjtParams, WsprParams, YsfParams,
+    RemoteIdTransport, RttyParams, SarsatParams, SelcallParams, SelcallSystem, ServerEvent,
+    SidParams, SondeType, SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm,
+    WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -322,6 +322,41 @@ async fn eot_telemetry_survives_the_ddc_and_reaches_the_decoded_stream() {
     };
     assert_eq!(message.unit_address, 31_337);
     assert_eq!(message.report, EotReport::Rear(status));
+}
+
+#[tokio::test]
+async fn a_406_beacon_survives_the_ddc_and_reaches_the_decoded_stream() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let offset_hz = -31_000.0;
+    let message = synth::sarsat::epirb_location(synth::sarsat::EpirbFix {
+        country: 257,
+        mmsi_tail: 987_654,
+        lat: 69.6492,
+        lon: 18.9553,
+    });
+    let mut iq = synth::sarsat::transmission(&message, false, NARROW_DEVICE_RATE);
+    synth::shift(&mut iq, offset_hz + 2_400.0, NARROW_DEVICE_RATE);
+    let device = plant(dir.path(), "sarsat", iq, NARROW_DEVICE_RATE);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ + offset_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Sarsat(SarsatParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Sarsat(_)),
+    )
+    .await;
+    let DecoderEvent::Sarsat(beacon) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(beacon.identity.as_deref(), Some("MMSI 257987654"));
+    assert_eq!(beacon.pdf2_ok, Some(true));
+    let (lat, lon) = beacon.position().expect("located");
+    assert!((lat - 69.6492).abs() < 0.001 && (lon - 18.9553).abs() < 0.001);
 }
 
 #[tokio::test]

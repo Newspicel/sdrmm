@@ -1,21 +1,21 @@
 #[derive(Clone, Debug)]
 pub struct SyndromeDecoder {
-    generator: u64,
+    generator: u128,
     parity_bits: u32,
-    corrections: Vec<(u64, u64)>,
+    corrections: Vec<(u128, u128)>,
 }
 
 impl SyndromeDecoder {
     #[must_use]
-    pub fn new(generator: u64, n: u32, correctable: u32) -> Self {
-        let parity_bits = 63 - generator.leading_zeros();
+    pub fn new(generator: u128, n: u32, correctable: u32) -> Self {
+        let parity_bits = 127 - generator.leading_zeros();
         assert!(
             parity_bits > 0 && generator & 1 == 1,
             "generator must have degree > 0 and a constant term"
         );
         assert!(
-            n > parity_bits && n <= 64,
-            "block length must exceed the parity and fit 64 bits"
+            n > parity_bits && n <= 128,
+            "block length must exceed the parity and fit 128 bits"
         );
         let mut decoder = Self {
             generator,
@@ -39,9 +39,9 @@ impl SyndromeDecoder {
     }
 
     #[must_use]
-    pub fn remainder(&self, word: u64) -> u64 {
+    pub fn remainder(&self, word: u128) -> u128 {
         let mut rem = word;
-        for bit in (self.parity_bits..64).rev() {
+        for bit in (self.parity_bits..128).rev() {
             if rem >> bit & 1 == 1 {
                 rem ^= self.generator << (bit - self.parity_bits);
             }
@@ -50,13 +50,13 @@ impl SyndromeDecoder {
     }
 
     #[must_use]
-    pub fn encode(&self, info: u64) -> u64 {
+    pub fn encode(&self, info: u128) -> u128 {
         let shifted = info << self.parity_bits;
         shifted | self.remainder(shifted)
     }
 
     #[must_use]
-    pub fn decode(&self, word: u64) -> Option<(u64, u32)> {
+    pub fn decode(&self, word: u128) -> Option<(u128, u32)> {
         let syndrome = self.remainder(word);
         let at = self
             .corrections
@@ -68,12 +68,12 @@ impl SyndromeDecoder {
 }
 
 fn push_patterns(
-    singles: &[u64],
+    singles: &[u128],
     start: usize,
     remaining: u32,
-    syndrome: u64,
-    pattern: u64,
-    out: &mut Vec<(u64, u64)>,
+    syndrome: u128,
+    pattern: u128,
+    out: &mut Vec<(u128, u128)>,
 ) {
     if remaining == 0 {
         return;
@@ -90,17 +90,18 @@ fn push_patterns(
 mod tests {
     use super::*;
 
-    const BCH_63_45_RECIPROCAL: u64 = 0b111_1001_1010_0000_1111;
-    const BCH_63_30_RECIPROCAL: u64 = 0b11_1001_1011_0101_1100_0010_1100_1111_1011;
+    const BCH_63_45_RECIPROCAL: u128 = 0b111_1001_1010_0000_1111;
+    const BCH_63_30_RECIPROCAL: u128 = 0b11_1001_1011_0101_1100_0010_1100_1111_1011;
+    const BCH_127_106: u128 = 0b10_0110_1101_1001_1110_0011;
 
-    fn spread(seed: u64, count: u32) -> u64 {
+    fn spread(seed: u64, count: u32, n: u64) -> u128 {
         let mut state = seed | 1;
-        let mut pattern = 0u64;
+        let mut pattern = 0u128;
         while pattern.count_ones() < count {
             state ^= state << 13;
             state ^= state >> 7;
             state ^= state << 17;
-            pattern |= 1 << (state % 63);
+            pattern |= 1 << (state % n);
         }
         pattern
     }
@@ -128,13 +129,24 @@ mod tests {
         let clean = code.encode(0x2AAA_5555);
         for seed in 1..200 {
             for errors in 0..=3 {
-                let word = clean ^ spread(seed * 7 + u64::from(errors), errors);
+                let word = clean ^ spread(seed * 7 + u64::from(errors), errors, 63);
                 assert_eq!(code.decode(word), Some((clean, errors)));
             }
         }
         let strict = SyndromeDecoder::new(BCH_63_45_RECIPROCAL, 63, 1);
         let clean = strict.encode(0x00F0_F0F0_F0F0);
         assert_eq!(strict.decode(clean ^ 0b101), None);
+    }
+
+    #[test]
+    fn a_shortened_code_wider_than_64_bits_corrects_its_full_length() {
+        let code = SyndromeDecoder::new(BCH_127_106, 82, 3);
+        let clean = code.encode(0x0ABC_DEF0_1234_5678);
+        assert_eq!(code.remainder(clean), 0);
+        for seed in 1..100 {
+            let word = clean ^ spread(seed, 3, 82);
+            assert_eq!(code.decode(word), Some((clean, 3)));
+        }
     }
 
     fn binomial(n: u64, k: u32) -> u64 {

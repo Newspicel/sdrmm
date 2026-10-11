@@ -119,6 +119,8 @@ export function ModeChips({
       return <PagerChips params={params} {...mode} />;
     case "eot":
       return <EotChips params={params} {...mode} />;
+    case "sarsat":
+      return <SarsatChips params={params} {...mode} />;
     case "adsb":
       return <AdsbChips params={params} {...mode} />;
     case "ais":
@@ -428,6 +430,19 @@ function EotChips({ params, onParams }: Mode<"eot">) {
       optionsHz={[12_500, 25_000]}
       onCommit={(bandwidth_hz) =>
         onParams({ type: "eot", settings: { ...settings, bandwidth_hz } })
+      }
+    />
+  );
+}
+
+function SarsatChips({ params, onParams }: Mode<"sarsat">) {
+  const { settings } = params;
+  return (
+    <BandwidthChip
+      valueHz={settings.bandwidth_hz ?? 20_000}
+      optionsHz={[10_000, 20_000]}
+      onCommit={(bandwidth_hz) =>
+        onParams({ type: "sarsat", settings: { ...settings, bandwidth_hz } })
       }
     />
   );

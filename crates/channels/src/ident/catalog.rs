@@ -163,6 +163,7 @@ const EOT_CHANNELS: &[Range] = &[
     spot_khz(450_262.5, 6.25),
     spot_khz(477_700.0, 6.25),
 ];
+const SARSAT_BAND: &[Range] = &[mhz(406.0, 406.1)];
 const ISM: &[Range] = &[
     mhz(314.5, 315.5),
     mhz(433.05, 434.79),
@@ -528,6 +529,18 @@ const SIGNATURES: &[Signature] = &[
             &[Modulation::Fm, Modulation::Fsk2],
             range(6_000.0, 20_000.0),
             "1200 baud tones inside an FM channel on a railroad telemetry frequency",
+        )
+    },
+    Signature {
+        symbol_rate_hz: Some(range(380.0, 840.0)),
+        burst_ms: Some(range(400.0, 560.0)),
+        frequencies: SARSAT_BAND,
+        ..signature(
+            "406 MHz distress beacon",
+            Some("sarsat"),
+            &[Modulation::Psk2, Modulation::Carrier, Modulation::Unknown],
+            range(500.0, 6_000.0),
+            "half-second phase keyed bursts in the 406 MHz distress band",
         )
     },
     Signature {

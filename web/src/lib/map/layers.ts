@@ -11,6 +11,7 @@ import {
   UA_STATUS_LABELS,
   UA_TYPE_LABELS,
 } from "../remoteId";
+import { SARSAT_BEACON_LABELS, SARSAT_PROTOCOL_LABELS, sarsatChecks } from "../sarsat";
 import { geoPosition, type Trail, trailLine } from "../trails";
 import type { ChannelParams, DecoderKind } from "../types";
 
@@ -21,6 +22,7 @@ export const MAP_KINDS = [
   "radiosonde",
   "lora",
   "remote_id",
+  "sarsat",
 ] as const satisfies readonly DecoderKind[];
 
 export type MapKind = (typeof MAP_KINDS)[number];
@@ -33,6 +35,7 @@ export const KIND_STYLE: Record<MapKind, { title: string; color: string }> = {
   radiosonde: { title: "Sondes", color: "#e06c6c" },
   lora: { title: "LoRa", color: "#6cc070" },
   remote_id: { title: "Drones", color: "#e0d05c" },
+  sarsat: { title: "Beacons", color: "#ff5f8a" },
 };
 
 export const TARGET_MAX_AGE_MS = 5 * 60_000;
@@ -219,6 +222,8 @@ export function targetLabel(station: Target): string {
       return loraName(event.data) ?? station.id;
     case "remote_id":
       return event.data.uas_id ?? event.data.address;
+    case "sarsat":
+      return event.data.identity ?? event.data.hex_id;
   }
 }
 
@@ -237,6 +242,8 @@ export function targetHeading(station: Target): number | null {
       return null;
     case "remote_id":
       return bearing(remoteIdLocation(event.data)?.track_deg);
+    case "sarsat":
+      return null;
   }
 }
 
@@ -321,6 +328,19 @@ function detailRows(station: Target): (readonly [string, string])[] {
     }
     case "remote_id":
       return remoteIdRows(station, event.data, fix);
+    case "sarsat": {
+      const d = event.data;
+      return kept([
+        ["Hex ID", d.hex_id],
+        ["Beacon", SARSAT_BEACON_LABELS[d.beacon]],
+        ["ID", trimmed(d.identity)],
+        ["Position", fix],
+        ["Country", String(d.country)],
+        ["Protocol", SARSAT_PROTOCOL_LABELS[d.protocol]],
+        ["Self-test", d.self_test ? "yes" : null],
+        ["BCH", sarsatChecks(d)],
+      ]);
+    }
   }
 }
 

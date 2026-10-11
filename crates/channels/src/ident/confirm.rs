@@ -24,6 +24,7 @@ fn decoded(type_id: &str, event: &DecoderEvent) -> bool {
         | ("flex", DecoderEvent::Flex(_))
         | ("ermes", DecoderEvent::Ermes(_))
         | ("eot", DecoderEvent::Eot(_))
+        | ("sarsat", DecoderEvent::Sarsat(_))
         | ("ais", DecoderEvent::Ais(_))
         | ("acars", DecoderEvent::Acars(_))
         | ("aprs", DecoderEvent::Aprs(_))
@@ -45,6 +46,7 @@ fn confirmable(type_id: &str) -> bool {
             | "flex"
             | "ermes"
             | "eot"
+            | "sarsat"
             | "ais"
             | "acars"
             | "aprs"

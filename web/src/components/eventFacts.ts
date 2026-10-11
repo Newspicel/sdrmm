@@ -3,6 +3,7 @@ import { bleStation, bleSummary } from "../lib/ble";
 import { loraPosition, loraStation, loraSummary } from "../lib/lora";
 import { noiseFigureSummary, perSummary, sidSummary } from "../lib/measurement";
 import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
+import { sarsatName } from "../lib/sarsat";
 import type { DecoderEvent, HotCommand } from "../lib/types";
 import {
   callMode,
@@ -123,6 +124,16 @@ function eotSummary(m: EventData<"eot">): string {
   ]);
 }
 
+function sarsatSummary(m: EventData<"sarsat">): string {
+  return join([
+    sarsatName(m),
+    m.identity ?? null,
+    m.lat == null || m.lon == null ? null : `${m.lat.toFixed(4)}, ${m.lon.toFixed(4)}`,
+    m.self_test ? "self-test" : null,
+    m.pdf2_ok === false ? "PDF-2 failed" : null,
+  ]);
+}
+
 function dvSummary(f: EventData<"dv">): string {
   return join([
     dvMode(f),
@@ -178,6 +189,8 @@ export function eventSummary(event: DecoderEvent): string {
     }
     case "eot":
       return eotSummary(event.data);
+    case "sarsat":
+      return sarsatSummary(event.data);
     case "adsb": {
       const a = event.data;
       return join([
@@ -438,6 +451,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return String(event.data.local_address);
     case "eot":
       return String(event.data.unit_address);
+    case "sarsat":
+      return event.data.hex_id;
     case "rds":
       return event.data.pi ?? null;
     case "navtex":

@@ -12,7 +12,7 @@ covers the modes that need more than a frequency.
 | Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
 | Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | | |
 | Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium), [Drone Remote ID](#drone-remote-id) | VOR, ILS localizer / glideslope |
-| Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC | |
+| Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC, [406 MHz beacons](#406-mhz-beacons) | |
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
 | Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager, [End-of-Train](#end-of-train) | |
 | Pictures and video | [SSTV](#sstv) | ATV | |
@@ -75,6 +75,16 @@ The End-of-Train channel reads railroad telemetry. Tune 457.9375 MHz for the rea
 pressure, motion, marker light, battery and arming. Tune 452.9375 MHz for the locomotive: status
 requests and emergency brake commands. Australia uses 477.7 MHz, New Zealand 450.2625 MHz. Only
 frames whose BCH check passes are logged; **Rejected** counts the ones that failed.
+
+## 406 MHz beacons
+
+The 406 MHz beacon channel reads first-generation COSPAS-SARSAT EPIRBs, ELTs and PLBs. Each sends
+a half-second burst every 50 seconds. The default channel spans 20 kHz: centre it on 406.034 MHz to
+cover 406.025 to 406.040 MHz. It logs the 15-hex ID, country, protocol, beacon identity and, for
+location protocols, the encoded position, which the Map plots under **Beacons**. Self-test bursts
+are marked. A frame whose first BCH field fails counts under **Rejected**; a long frame whose
+second field fails is logged as **PDF-2 failed** with the coarse position only. Second-generation
+beacons are not decoded.
 
 ## SSTV
 
