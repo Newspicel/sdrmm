@@ -44,7 +44,11 @@ fn seed(store: Store, node: String) {
             Ok(state) => store
                 .arrays
                 .update(|book| Arc::make_mut(book).seed_fusion(&node, state)),
-            Err(error) => store.fail("Cannot load the bearings", &error),
+            Err(error) => store.flag_refusal(
+                &node,
+                format!("Cannot load the bearings: {error}"),
+                crate::ui::faces::channel::alert::RefusalSource::Action,
+            ),
         }
     });
 }
