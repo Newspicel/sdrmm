@@ -36,11 +36,8 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - Targeted protocol fuzzing
 
 ## 2. Hardware
-- RX-888 / Mk2 native driver
-- Rotator control: GS-232, rotctld
 - Rig control: Hamlib CAT client, rigctld-compatible server
-- TinySA import
-- Saved antenna profiles: store NanoVNA sweeps against a named antenna
+- Make NanoVNA better: better ui, test more, saved antennas, etc.
 
 ### Codeplugs
 - AnyTone D890UV: the general-settings block, GPS, both APRS flavours, roaming, encryption keys,
@@ -48,28 +45,18 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
   talkaround, call confirm, ranging, scrambler, TX colour code) are not read
 - AnyTone: transmit shift direction bits are inferred, not measured. Needs a radio read with a
   shifted channel
-- AnyTone GD32 family (D868/D878/D578): same serial protocol, needs its memory map
 - Radtel RT-4D: settings blocks, keys and message templates are read but not modelled
 
-## 3. Receive DSP
-- Multi-site: TDOA and one triangulation across several servers
+## 3. Decoders
 
-## 4. Decoders
-
-### Voice, trunking & cellular
 - TETRA, Tetrapol
 - GSM downlink analysis, OsmocomBB-style monitoring
-
-### ISM & IoT
 - ISM remotes and sensors (OOK/FSK)
-
-### Other
 - STANAG modem identification
 
-## 5. Recording & measurement
+## 4. Recording & measurement
 - Recording scheduler and unattended satellite-pass automation
 - Radio astronomy, star tracker, sky map
 
-## 6. Automation & API
+## 5. Automation & API
 - WASM plugin SDK
-- Offline bundles for TLE snapshots and callsign prefixes
