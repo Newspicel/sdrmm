@@ -17,6 +17,7 @@ import {
   buildRows,
   COLUMN_STEP,
   type ColumnWidths,
+  callsignTitle,
   collectLive,
   DEFAULT_LOG_FILTER,
   droppedNotice,
@@ -371,8 +372,14 @@ function LogRows({ row, open, onToggle }: { row: LogRow; open: boolean; onToggle
         <td className={`${TABLE_CELL} truncate text-right tabular-nums text-ink`}>
           {formatMhz(row.freqHz)}
         </td>
-        <td className={`${TABLE_CELL} truncate text-ink`} title={row.station ?? undefined}>
+        <td
+          className={`${TABLE_CELL} truncate text-ink`}
+          title={row.callsign === null ? (row.station ?? undefined) : callsignTitle(row.callsign)}
+        >
           {row.station ?? "-"}
+          {row.callsign !== null && (
+            <span className="ml-1 text-ink-dim">{row.callsign.country}</span>
+          )}
         </td>
         <td className={`${TABLE_CELL} truncate text-ink`} title={row.summary}>
           {row.summary}

@@ -582,6 +582,7 @@ fn bearing_record(ds: u32, channel: u32, freq_hz: f64, bearing: DfBearing) -> De
         freq_hz,
         event: DecoderEvent::Df(bearing),
         sinks: Vec::new(),
+        callsign: None,
     }
 }
 

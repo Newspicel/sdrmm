@@ -139,6 +139,7 @@ fn reconcile(
                     freq_hz: output.frequency_hz,
                     event: output.event,
                     sinks: Vec::new(),
+                    callsign: None,
                 });
             },
         );
@@ -163,6 +164,7 @@ fn reconcile(
                     at: format!("{:.9}", jiff::Timestamp::now()),
                     freq_hz: 0.0,
                     sinks: Vec::new(),
+                    callsign: None,
                     event: DecoderEvent::Transmission(Transmission {
                         id: 0,
                         state: TransmissionState::Problem,

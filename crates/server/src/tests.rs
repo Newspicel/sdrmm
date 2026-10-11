@@ -556,6 +556,7 @@ fn adsb_record(at: &str, device_set: u32, icao: &str, callsign: &str) -> Decoded
     DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         device_set,
         channel: 0,
         at: at.to_string(),
@@ -574,6 +575,7 @@ fn awkward_record(at: &str) -> DecodedRecord {
     DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         device_set: 1,
         channel: 2,
         at: at.to_string(),

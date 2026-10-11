@@ -2029,6 +2029,8 @@ pub struct DecodedRecord {
     pub event: DecoderEvent,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sinks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callsign: Option<crate::Callsign>,
 }
 
 #[cfg(test)]
@@ -2318,6 +2320,7 @@ mod tests {
             freq_hz: 433_920_000.0,
             event: DecoderEvent::Df(bearing()),
             sinks: Vec::new(),
+            callsign: None,
         };
         let json = serde_json::to_value(&record).expect("record json");
         assert_eq!(json["channel"], u64::from(u32::MAX));
@@ -2472,6 +2475,7 @@ mod tests {
         let rec = DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: 1,
             channel: 2,
             at: "2026-08-09T12:00:00Z".to_owned(),

@@ -39,6 +39,7 @@ fn heard(at: &str, freq_hz: f64, event: DecoderEvent) -> Routed {
     Routed::unattributed(DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         device_set: 0,
         channel: 0,
         at: at.to_owned(),

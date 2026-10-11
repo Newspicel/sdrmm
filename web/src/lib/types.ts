@@ -89,6 +89,7 @@ export type SstvMode = components["schemas"]["SstvMode"];
 export type SstvPicture = components["schemas"]["SstvPicture"];
 export type RecordingFormat = components["schemas"]["RecordingFormat"];
 export type DecodedRecord = components["schemas"]["DecodedRecord"];
+export type Callsign = components["schemas"]["Callsign"];
 export type DecoderEvent = components["schemas"]["DecoderEvent"];
 export type DecoderLogEntry = components["schemas"]["DecoderLogEntry"];
 export type DecoderLogResponse = components["schemas"]["DecoderLogResponse"];

@@ -5,6 +5,7 @@ import {
   passLine,
   pastedElements,
   shownSignals,
+  sourceLabel,
   transmitterLabel,
 } from "./satellite";
 
@@ -66,5 +67,10 @@ describe("satellite face", () => {
     ];
     expect(shownSignals(signals, null).map((signal) => signal.id)).toEqual(["live"]);
     expect(shownSignals(signals, "dead").map((signal) => signal.id)).toEqual(["live", "dead"]);
+  });
+
+  it("names the source and how old its download is", () => {
+    expect(sourceLabel("CelesTrak", 1_000, 1_000 + 3 * 3_600)).toBe("CelesTrak, 3 h old");
+    expect(sourceLabel("SatNOGS DB", 0, 1_000)).toBe("SatNOGS DB");
   });
 });

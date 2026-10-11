@@ -88,6 +88,7 @@ fn call_record() -> DecodedRecord {
     DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         event: DecoderEvent::Call(call()),
         ..decoded()
     }
@@ -97,6 +98,7 @@ fn decoded() -> DecodedRecord {
     DecodedRecord {
         origin: None,
         sinks: vec!["matched".to_owned()],
+        callsign: None,
         device_set: 1,
         channel: 2,
         at: "2026-08-15T10:00:02Z".to_owned(),
@@ -446,6 +448,7 @@ fn a_record_that_reached_no_output_posts_nowhere() {
     let unrouted = DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         ..decoded()
     };
 

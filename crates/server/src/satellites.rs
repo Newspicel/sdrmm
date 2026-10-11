@@ -17,7 +17,7 @@ use sdrmm_wire::{
 
 use crate::{AppState, gps::GpsHub, workspace};
 
-mod catalog;
+pub(crate) mod catalog;
 mod track;
 
 pub(crate) use catalog::Catalog;

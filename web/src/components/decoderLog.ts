@@ -1,6 +1,7 @@
 import { decoderLogExportUrl } from "../lib/api";
 import type { DecodedState } from "../lib/decoded";
 import type {
+  Callsign,
   DecodedRecord,
   DecoderEvent,
   DecoderKind,
@@ -85,6 +86,7 @@ export interface LogRow {
   at: string;
   kind: string;
   station: string | null;
+  callsign: Callsign | null;
   summary: string;
   freqHz: number;
   deviceSet: number;
@@ -262,6 +264,7 @@ export function storedRow(entry: DecoderLogEntry): LogRow {
     at: entry.at,
     kind: entry.kind,
     station: entry.station ?? null,
+    callsign: entry.callsign ?? null,
     summary: entry.summary,
     freqHz: entry.freq_hz,
     deviceSet: entry.device_set,
@@ -277,6 +280,7 @@ export function liveRow(record: DecodedRecord): LogRow {
     at: record.at,
     kind: record.event.kind,
     station: eventStation(record.event),
+    callsign: record.callsign ?? null,
     summary: eventSummary(record.event),
     freqHz: record.freq_hz,
     deviceSet: record.device_set,
@@ -286,6 +290,10 @@ export function liveRow(record: DecodedRecord): LogRow {
   };
   row.key = `live:${signature(row)}`;
   return row;
+}
+
+export function callsignTitle(callsign: Callsign): string {
+  return `${callsign.country}, ${callsign.continent}, CQ ${callsign.cq_zone}, ITU ${callsign.itu_zone}`;
 }
 
 export function droppedNotice(lost: number, dropped: number): string | null {

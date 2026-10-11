@@ -779,6 +779,7 @@ async fn adsb_truth_pairs_and_lifts_the_fix_to_its_altitude() {
             freq_hz: 1_090_000_000.0,
             event: DecoderEvent::Adsb(message),
             sinks: vec![RADAR.to_owned()],
+            callsign: None,
         };
         bench
             .state

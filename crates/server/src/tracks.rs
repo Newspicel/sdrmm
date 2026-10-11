@@ -115,6 +115,7 @@ mod tests {
         DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: 0,
             channel: 0,
             at: at.to_string(),
@@ -182,6 +183,7 @@ mod tests {
         tracks.observe(&DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: 0,
             channel: 0,
             at: "2026-08-10T00:00:00.000000000Z".to_string(),

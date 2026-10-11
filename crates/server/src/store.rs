@@ -1910,6 +1910,7 @@ fn read_log_entries(
             station: row.station,
             summary: row.summary,
             event: serde_json::from_str(&row.event)?,
+            callsign: None,
         });
     }
     Ok(entries)

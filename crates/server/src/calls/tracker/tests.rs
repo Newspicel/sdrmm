@@ -21,6 +21,7 @@ fn record(kind: DvFrameKind, slot: u8) -> DecodedRecord {
     DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         device_set: 1,
         channel: 2,
         at: "2026-08-14T10:00:00Z".to_owned(),

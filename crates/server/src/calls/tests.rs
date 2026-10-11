@@ -68,6 +68,7 @@ async fn a_binding_that_arrives_without_a_state_event_still_records() {
         engine.publish_decoded(DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: 1,
             channel: 2,
             at: "2026-08-14T10:00:00Z".to_owned(),

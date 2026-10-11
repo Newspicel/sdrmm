@@ -162,6 +162,7 @@ fn fix_record(sighting: &Sighting, estimate: DfEstimate) -> DecodedRecord {
         freq_hz: sighting.bearing.freq_hz.unwrap_or(0.0),
         event: DecoderEvent::DfFix(estimate),
         sinks: Vec::new(),
+        callsign: None,
     }
 }
 

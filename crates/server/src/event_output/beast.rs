@@ -331,6 +331,7 @@ mod tests {
         let mut record = DecodedRecord {
             origin: None,
             sinks: vec!["elsewhere".to_owned()],
+            callsign: None,
             device_set: 1,
             channel: 2,
             at: "2026-09-22T00:00:00Z".to_owned(),

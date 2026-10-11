@@ -3,6 +3,7 @@ import type { DecodedState } from "../lib/decoded";
 import type { DecodedRecord, DecoderEvent, DecoderLogEntry, LoraFrame } from "../lib/types";
 import {
   buildRows,
+  callsignTitle,
   clampColumnWidth,
   collectLive,
   DECODER_KINDS,
@@ -212,6 +213,21 @@ describe("row projection", () => {
       freqHz: 1_090_000_000,
       live: false,
     });
+  });
+
+  it("carries the resolved country of a callsign", () => {
+    const germany = {
+      call: "DL1ABC",
+      country: "Fed. Rep. of Germany",
+      prefix: "DL",
+      continent: "EU",
+      cq_zone: 14,
+      itu_zone: 28,
+    };
+    expect(storedRow(entry({ callsign: germany })).callsign).toEqual(germany);
+    expect(liveRow(record({ callsign: germany })).callsign).toEqual(germany);
+    expect(liveRow(record()).callsign).toBeNull();
+    expect(callsignTitle(germany)).toBe("Fed. Rep. of Germany, EU, CQ 14, ITU 28");
   });
 
   it("derives station and summary for a live row", () => {

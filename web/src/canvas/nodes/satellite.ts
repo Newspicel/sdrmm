@@ -1,3 +1,4 @@
+import { ageLabel } from "../../lib/phones";
 import type { SatellitePass, Transmitter } from "../../lib/types";
 
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
@@ -26,6 +27,10 @@ export function formatSpan(seconds: number): string {
     return `${hours} h ${String(minutes).padStart(2, "0")} min`;
   }
   return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
+export function sourceLabel(source: string, fetchedS: number, nowS: number): string {
+  return fetchedS > 0 ? `${source}, ${ageLabel((nowS - fetchedS) * 1_000)} old` : source;
 }
 
 export function passLine(pass: SatellitePass | null | undefined, nowS: number): string {

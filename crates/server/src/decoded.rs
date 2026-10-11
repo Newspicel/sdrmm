@@ -1,12 +1,13 @@
 use std::sync::{Arc, Weak};
 
 use sdrmm_engine::Engine;
-use sdrmm_wire::{ServerEvent, StateScope, StateSnapshot};
+use sdrmm_wire::{DecodedRecord, ServerEvent, StateScope, StateSnapshot};
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::{
     Store,
     events::{Routed, Routes},
+    reference::Reference,
 };
 
 pub(crate) const FEED_CAP: usize = 4096;
@@ -23,7 +24,12 @@ pub(crate) fn feed() -> Feed {
     broadcast::channel(FEED_CAP).0
 }
 
-pub(crate) async fn run(engine: Weak<Engine>, store: Arc<Store>, feed: Feed) {
+pub(crate) async fn run(
+    engine: Weak<Engine>,
+    store: Arc<Store>,
+    feed: Feed,
+    reference: Arc<Reference>,
+) {
     let Some(strong) = engine.upgrade() else {
         return;
     };
@@ -49,6 +55,7 @@ pub(crate) async fn run(engine: Weak<Engine>, store: Arc<Store>, feed: Feed) {
             },
             record = records.recv() => match record {
                 Ok(record) => {
+                    let record = with_callsign(record, &reference);
                     let _ = feed.send(Decoded::Record(Box::new(routes.route(record))));
                 }
                 Err(RecvError::Lagged(count)) => {
@@ -59,6 +66,16 @@ pub(crate) async fn run(engine: Weak<Engine>, store: Arc<Store>, feed: Feed) {
             },
         }
     }
+}
+
+fn with_callsign(mut record: DecodedRecord, reference: &Reference) -> DecodedRecord {
+    if record.callsign.is_none() {
+        record.callsign = record
+            .event
+            .amateur_callsign()
+            .and_then(|call| reference.callsign(call));
+    }
+    record
 }
 
 pub(crate) fn resolve_routes(
@@ -103,7 +120,7 @@ mod tests {
     use sdrmm_wire::{
         AdsbMessage, ChannelNode, ChannelParams, ChannelSettings, DecodedRecord, DecoderEvent,
         DeviceRef, EventFilterNode, FilterMode, NodeBody, PatchEdge, PatchNode, PortRef, Position,
-        WorkspaceSnapshot,
+        WorkspaceSnapshot, WsprSpot,
     };
     use tokio::time::{Duration, timeout};
 
@@ -230,7 +247,12 @@ mod tests {
         let (engine, store, set, channel) = bench();
         let feed = feed();
         let mut out = feed.subscribe();
-        let router = tokio::spawn(run(Arc::downgrade(&engine), store.clone(), feed));
+        let router = tokio::spawn(run(
+            Arc::downgrade(&engine),
+            store.clone(),
+            feed,
+            Arc::default(),
+        ));
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let record = |callsign: &str| DecodedRecord {
@@ -241,6 +263,7 @@ mod tests {
             freq_hz: 1_090_000_000.0,
             event: adsb("3C6444", callsign),
             sinks: Vec::new(),
+            callsign: None,
         };
         engine.publish_decoded(record("DLH123"));
         let routed = next(&mut out).await;
@@ -268,5 +291,44 @@ mod tests {
         assert!(unbound.record.sinks.is_empty());
 
         router.abort();
+    }
+
+    #[tokio::test]
+    async fn amateur_callsigns_leave_with_their_country() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("cty.dat"),
+            "Fed. Rep. of Germany:     14:  28:  EU:   51.00:   -10.00:    -1.0:  DL:\n    \
+             DL,=VER20260915;\n",
+        )
+        .expect("write");
+        let reference = Reference::cached_in(dir.path()).await;
+        let record = |event: DecoderEvent| DecodedRecord {
+            origin: None,
+            device_set: 0,
+            channel: 0,
+            at: "2026-09-21T10:00:00Z".to_owned(),
+            freq_hz: 14_097_100.0,
+            event,
+            sinks: Vec::new(),
+            callsign: None,
+        };
+        let spot = DecoderEvent::Wspr(WsprSpot {
+            text: "DL1ABC JO62 37".to_owned(),
+            callsign: "DL1ABC".to_owned(),
+            grid: None,
+            power_dbm: 37,
+            snr_db: -20.0,
+            audio_hz: 1_500.0,
+            time_offset_s: 0.0,
+            drift_hz: 0.0,
+        });
+        let resolved = with_callsign(record(spot), &reference).callsign;
+        assert_eq!(
+            resolved.map(|found| found.country).as_deref(),
+            Some("Fed. Rep. of Germany")
+        );
+        let plane = with_callsign(record(adsb("3C6444", "DLH123")), &reference);
+        assert_eq!(plane.callsign, None);
     }
 }

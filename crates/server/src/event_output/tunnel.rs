@@ -202,6 +202,7 @@ mod tests {
         let elsewhere = DecodedRecord {
             origin: None,
             sinks: vec!["other".to_owned()],
+            callsign: None,
             device_set: 1,
             channel: 2,
             at: "2026-09-16T00:00:00Z".to_owned(),
@@ -213,6 +214,7 @@ mod tests {
         let reached = DecodedRecord {
             origin: None,
             sinks: vec!["out".to_owned()],
+            callsign: None,
             ..elsewhere
         };
         outputs.push(std::slice::from_ref(&binding), &reached);

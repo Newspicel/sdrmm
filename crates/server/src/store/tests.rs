@@ -467,6 +467,7 @@ fn record(at: &str, device_set: u32, event: DecoderEvent) -> DecodedRecord {
     DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         device_set,
         channel: 0,
         at: at.to_string(),
@@ -492,6 +493,7 @@ fn reaching(workspace: i64, sinks: &[&str], record: DecodedRecord) -> Routed {
         record: DecodedRecord {
             origin: None,
             sinks: sinks.iter().map(|sink| (*sink).to_owned()).collect(),
+            callsign: None,
             ..record
         },
         source: Some("decoder".to_owned()),
@@ -698,6 +700,7 @@ fn decoder_log_sources_filter_names_channels_not_device_sets() {
     let on = |device_set: u32, channel: u32, icao: &str| DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         channel,
         ..record(&now, device_set, adsb(icao, "FLIGHT"))
     };
@@ -769,6 +772,7 @@ fn decoder_log_scope_prefers_the_node_over_the_reused_channel_id() {
     let on = |channel: u32, icao: &str| DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         channel,
         ..record(&now, 0, adsb(icao, "FLIGHT"))
     };
@@ -814,6 +818,7 @@ fn decoder_log_scope_fallback_stops_at_the_start_of_this_run() {
     let on = |at: &str, icao: &str| DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         channel: 1,
         ..record(at, 0, adsb(icao, "FLIGHT"))
     };
@@ -853,6 +858,7 @@ fn decoder_log_scope_does_not_cross_workspaces_sharing_a_node_id() {
     let on = |icao: &str| DecodedRecord {
         origin: None,
         sinks: Vec::new(),
+        callsign: None,
         channel: 1,
         ..record(&now, 0, adsb(icao, "FLIGHT"))
     };

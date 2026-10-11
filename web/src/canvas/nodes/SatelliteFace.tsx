@@ -31,6 +31,7 @@ import {
   SATELLITE_RANGE,
   STALE_ELEMENTS_DAYS,
   shownSignals,
+  sourceLabel,
   transmitterLabel,
 } from "./satellite";
 
@@ -133,7 +134,14 @@ function SatellitePicker({ onPick }: { onPick: (tle: string) => void }) {
           {results.error.message}
         </p>
       ) : (
-        <ul className="flex flex-col">
+        <ul
+          className="flex flex-col"
+          title={
+            results.data === undefined
+              ? undefined
+              : `From ${sourceLabel(results.data.source, results.data.fetched ?? 0, Math.floor(Date.now() / 1_000))}`
+          }
+        >
           {found.slice(0, SHOWN_RESULTS).map((satellite) => (
             <li key={satellite.catalog}>
               <Button
@@ -232,7 +240,7 @@ function SignalChip({
         label="Signal"
         value={picked === undefined ? "own" : transmitterLabel(picked)}
         quiet={picked === undefined}
-        title={`What this satellite sends, from ${listed.data?.source ?? "SatNOGS DB"}`}
+        title={`What this satellite sends, from ${sourceLabel(listed.data?.source ?? "SatNOGS DB", listed.data?.fetched ?? 0, Math.floor(Date.now() / 1_000))}`}
       >
         {() => (
           <ChipField label="Signal">

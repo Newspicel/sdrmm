@@ -6,6 +6,8 @@ pub mod array;
 pub mod audio;
 pub mod bandplan;
 pub mod ble;
+pub mod callsign;
+pub use callsign::Callsign;
 pub mod channel;
 pub mod cps;
 pub mod decode;
@@ -925,6 +927,7 @@ mod contract_tests {
             origin: None,
             sinks: Vec::new(),
             device_set: 1,
+            callsign: None,
             channel: 4,
             at: "2026-08-09T12:00:00Z".to_owned(),
             freq_hz: 162_025_000.0,

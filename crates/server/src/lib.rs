@@ -57,6 +57,7 @@ mod radar;
 mod rebind;
 mod reconcile;
 mod recorders;
+mod reference;
 mod remote;
 mod rest;
 mod satellites;
@@ -108,6 +109,7 @@ pub(crate) struct AppState {
     pub(crate) gps: Arc<gps::GpsHub>,
     pub(crate) presence: Arc<presence::Presence>,
     pub(crate) satellites: Arc<satellites::SatelliteHub>,
+    pub(crate) reference: Arc<reference::Reference>,
     pub(crate) cps: Arc<cps::CpsHub>,
     pub(crate) fusion: df_fusion::SharedFusion,
     pub(crate) shell: Option<Arc<dyn NativeShell>>,
@@ -152,6 +154,7 @@ impl AppState {
             gps: Arc::new(gps::GpsHub::default()),
             presence: Arc::default(),
             satellites: Arc::new(satellites::SatelliteHub::default()),
+            reference: Arc::default(),
             cps: Arc::new(cps::CpsHub::default()),
             fusion: Arc::new(df_fusion::FusionHub::default()),
             shell: None,
@@ -351,7 +354,10 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
         let engine = Arc::downgrade(&state.engine);
         let store = state.store.clone();
         let feed = state.decoded.clone();
-        spawn_task("sdrmm-decoded", move || decoded::run(engine, store, feed))
+        let reference = state.reference.clone();
+        spawn_task("sdrmm-decoded", move || {
+            decoded::run(engine, store, feed, reference)
+        })
     };
     let rebind = {
         let state = state.clone();
@@ -499,6 +505,7 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
             .engine
             .denoise_models()
             .set_dir(dir.join("denoise-models"));
+        state.reference.attach(dir.join("reference"));
     }
     let served = config
         .tls
@@ -514,7 +521,11 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
         config.tls.as_ref(),
         served.as_ref(),
     ));
-    let background = start_runtime(&state, health);
+    let mut background = start_runtime(&state, health);
+    let reference = state.reference.clone();
+    background
+        .tasks
+        .push(spawn_task("sdrmm-reference", move || reference.run()));
     let app = app(&state, auth::ListenerRole::Main, served.is_some());
     state.remote.attach(app.clone());
     let scheme = if served.is_some() { "https" } else { "http" };

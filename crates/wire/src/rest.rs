@@ -402,6 +402,8 @@ pub struct DecoderLogEntry {
     pub station: Option<String>,
     pub summary: String,
     pub event: DecoderEvent,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callsign: Option<crate::Callsign>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

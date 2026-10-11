@@ -1,33 +1,23 @@
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, time::SystemTime};
 
-use reqwest::Client;
 use sdrmm_orbit::Tle;
 use sdrmm_wire::{
     CatalogSatellite, MAX_CATALOG_RESULTS, MAX_SATELLITE_QUERY_LEN, MAX_TRANSMITTER_ID_LEN,
     SATELLITE_CATALOG_SOURCE, SATELLITE_CATALOG_URL, SatelliteCatalogResponse, TRANSMITTER_SOURCE,
-    TRANSMITTER_URL, Transmitter, TransmittersResponse,
+    Transmitter, TransmittersResponse,
 };
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
-const FRESH_FOR: Duration = Duration::from_secs(2 * 3_600);
+use crate::reference::{Reference, Satellites, Snapshot, Transmitters, fetch};
+
+const FRESH_FOR: std::time::Duration = std::time::Duration::from_secs(2 * 3_600);
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CACHED: usize = 64;
-const AMATEUR_GROUP: &str = "amateur";
-const USER_AGENT: &str = concat!(
-    "SDR--/",
-    env!("CARGO_PKG_VERSION"),
-    " (+satellite tracking)"
-);
 
 #[derive(Default)]
 pub(crate) struct Catalog {
-    searches: Mutex<HashMap<String, (Instant, SatelliteCatalogResponse)>>,
-    transmitters: Mutex<HashMap<String, (Instant, TransmittersResponse)>>,
+    searches: Mutex<HashMap<String, Snapshot<Satellites>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,55 +36,153 @@ struct SatnogsTransmitter {
     downlink_low: Option<f64>,
     #[serde(default)]
     uplink_low: Option<f64>,
+    #[serde(default)]
+    norad_cat_id: Option<u64>,
 }
 
 impl Catalog {
-    pub(crate) async fn search(&self, query: &str) -> Result<SatelliteCatalogResponse, String> {
+    pub(crate) async fn search(
+        &self,
+        reference: &Reference,
+        query: &str,
+    ) -> Result<SatelliteCatalogResponse, String> {
         let query = checked_query(query)?;
-        if let Some(fresh) = cached(&self.searches, &query).await {
+        let listed = reference.satellites().await;
+        if let Ok(listed) = &listed {
+            let found = matching(&listed.value, &query);
+            if !found.is_empty() || query.is_empty() {
+                return Ok(satellite_response(found, listed));
+            }
+        }
+        if query.is_empty() {
+            return listed.map(|listed| satellite_response(Vec::new(), &listed));
+        }
+        self.search_live(query).await
+    }
+
+    async fn search_live(&self, query: String) -> Result<SatelliteCatalogResponse, String> {
+        if let Some(fresh) = self.cached(&query).await {
             return Ok(fresh);
         }
-        let params: [(&str, &str); 2] = match query.as_str() {
-            "" => [("GROUP", AMATEUR_GROUP), ("FORMAT", "TLE")],
-            digits if digits.bytes().all(|b| b.is_ascii_digit()) => {
-                [("CATNR", digits), ("FORMAT", "TLE")]
-            }
-            name => [("NAME", name), ("FORMAT", "TLE")],
+        let params: [(&str, &str); 2] = if query.bytes().all(|b| b.is_ascii_digit()) {
+            [("CATNR", query.as_str()), ("FORMAT", "TLE")]
+        } else {
+            [("NAME", query.as_str()), ("FORMAT", "TLE")]
         };
-        let body = fetch(SATELLITE_CATALOG_URL, &params).await?;
-        let response = SatelliteCatalogResponse {
-            satellites: element_sets(&String::from_utf8_lossy(&body)),
-            source: SATELLITE_CATALOG_SOURCE.to_owned(),
+        let body = fetch(SATELLITE_CATALOG_URL, &params, MAX_BODY_BYTES).await?;
+        let found: Snapshot<Satellites> = Snapshot {
+            value: element_sets(&String::from_utf8_lossy(&body))
+                .into_iter()
+                .take(MAX_CATALOG_RESULTS)
+                .collect(),
+            fetched: SystemTime::now(),
         };
-        remember(&self.searches, query, response.clone()).await;
+        let response = satellite_response(found.value.clone(), &found);
+        self.remember(query, found).await;
         Ok(response)
     }
 
-    pub(crate) async fn transmitters(&self, catalog: &str) -> Result<TransmittersResponse, String> {
+    async fn cached(&self, query: &str) -> Option<SatelliteCatalogResponse> {
+        self.searches
+            .lock()
+            .await
+            .get(query)
+            .filter(|found| fresh(found))
+            .map(|found| satellite_response(found.value.clone(), found))
+    }
+
+    async fn remember(&self, query: String, found: Snapshot<Satellites>) {
+        let mut searches = self.searches.lock().await;
+        searches.retain(|_, found| fresh(found));
+        if searches.len() >= MAX_CACHED {
+            searches.clear();
+        }
+        searches.insert(query, found);
+    }
+
+    pub(crate) async fn transmitters(
+        &self,
+        reference: &Reference,
+        catalog: &str,
+    ) -> Result<TransmittersResponse, String> {
         if catalog.is_empty() || catalog.len() > 9 || !catalog.bytes().all(|b| b.is_ascii_digit()) {
             return Err("a catalog number is digits only".to_owned());
         }
-        let key = catalog.trim_start_matches('0').to_owned();
-        if let Some(fresh) = cached(&self.transmitters, &key).await {
-            return Ok(fresh);
-        }
-        let body = fetch(
-            TRANSMITTER_URL,
-            &[
-                ("satellite__norad_cat_id", key.as_str()),
-                ("format", "json"),
-            ],
-        )
-        .await?;
-        let listed: Vec<SatnogsTransmitter> = serde_json::from_slice(&body)
-            .map_err(|error| format!("could not read the transmitter list: {error}"))?;
-        let response = TransmittersResponse {
-            transmitters: transmitters(listed),
+        let listed = reference.transmitters().await?;
+        Ok(TransmittersResponse {
+            transmitters: listed
+                .value
+                .get(catalog.trim_start_matches('0'))
+                .cloned()
+                .unwrap_or_default(),
             source: TRANSMITTER_SOURCE.to_owned(),
-        };
-        remember(&self.transmitters, key, response.clone()).await;
-        Ok(response)
+            fetched: listed.fetched_unix(),
+        })
     }
+}
+
+fn fresh(found: &Snapshot<Satellites>) -> bool {
+    found.fetched.elapsed().is_ok_and(|age| age < FRESH_FOR)
+}
+
+fn satellite_response(
+    satellites: Satellites,
+    snapshot: &Snapshot<Satellites>,
+) -> SatelliteCatalogResponse {
+    SatelliteCatalogResponse {
+        satellites,
+        source: SATELLITE_CATALOG_SOURCE.to_owned(),
+        fetched: snapshot.fetched_unix(),
+    }
+}
+
+fn matching(listed: &[CatalogSatellite], query: &str) -> Satellites {
+    let catalog = query.trim_start_matches('0');
+    let numeric = !query.is_empty() && query.bytes().all(|b| b.is_ascii_digit());
+    listed
+        .iter()
+        .filter(|satellite| {
+            if numeric {
+                satellite.catalog.trim_start_matches('0') == catalog
+            } else {
+                satellite.name.to_uppercase().contains(query)
+            }
+        })
+        .take(MAX_CATALOG_RESULTS)
+        .cloned()
+        .collect()
+}
+
+pub(crate) fn parse_satellites(body: &[u8]) -> Result<Satellites, String> {
+    let text = std::str::from_utf8(body).map_err(|_| "element sets that are not text")?;
+    let sets = element_sets(text);
+    if sets.is_empty() {
+        return Err("no element sets".to_owned());
+    }
+    Ok(sets)
+}
+
+pub(crate) fn parse_transmitters(body: &[u8]) -> Result<Transmitters, String> {
+    let listed: Vec<SatnogsTransmitter> = serde_json::from_slice(body)
+        .map_err(|error| format!("a broken transmitter list: {error}"))?;
+    let mut by_satellite: HashMap<String, Vec<SatnogsTransmitter>> = HashMap::new();
+    for entry in listed {
+        if let Some(catalog) = entry.norad_cat_id {
+            by_satellite
+                .entry(catalog.to_string())
+                .or_default()
+                .push(entry);
+        }
+    }
+    let index: Transmitters = by_satellite
+        .into_iter()
+        .map(|(catalog, listed)| (catalog, transmitters(listed)))
+        .filter(|(_, kept)| !kept.is_empty())
+        .collect();
+    if index.is_empty() {
+        return Err("an empty transmitter list".to_owned());
+    }
+    Ok(index)
 }
 
 fn checked_query(query: &str) -> Result<String, String> {
@@ -111,51 +199,6 @@ fn checked_query(query: &str) -> Result<String, String> {
         return Err("a search holds letters, digits and - ( ) / . _ + only".to_owned());
     }
     Ok(query.to_uppercase())
-}
-
-async fn cached<T: Clone>(cache: &Mutex<HashMap<String, (Instant, T)>>, key: &str) -> Option<T> {
-    cache
-        .lock()
-        .await
-        .get(key)
-        .filter(|(at, _)| at.elapsed() < FRESH_FOR)
-        .map(|(_, value)| value.clone())
-}
-
-async fn remember<T>(cache: &Mutex<HashMap<String, (Instant, T)>>, key: String, value: T) {
-    let mut cache = cache.lock().await;
-    cache.retain(|_, (at, _)| at.elapsed() < FRESH_FOR);
-    if cache.len() >= MAX_CACHED {
-        cache.clear();
-    }
-    cache.insert(key, (Instant::now(), value));
-}
-
-async fn fetch(url: &str, params: &[(&str, &str)]) -> Result<Vec<u8>, String> {
-    let client = Client::builder()
-        .timeout(REQUEST_TIMEOUT)
-        .user_agent(USER_AGENT)
-        .build()
-        .map_err(|error| format!("could not build the HTTP client: {error}"))?;
-    let address = reqwest::Url::parse_with_params(url, params)
-        .map_err(|error| format!("could not build a request to {url}: {error}"))?;
-    let response = client
-        .get(address)
-        .send()
-        .await
-        .map_err(|error| format!("could not reach {url}: {error}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("{url} answered {status}"));
-    }
-    let body = response
-        .bytes()
-        .await
-        .map_err(|error| format!("could not read {url}: {error}"))?;
-    if body.len() > MAX_BODY_BYTES {
-        return Err(format!("{url} sent more than {MAX_BODY_BYTES} bytes"));
-    }
-    Ok(body.to_vec())
 }
 
 fn element_sets(text: &str) -> Vec<CatalogSatellite> {
@@ -177,7 +220,6 @@ fn element_sets(text: &str) -> Vec<CatalogSatellite> {
                 tle: text,
             })
         })
-        .take(MAX_CATALOG_RESULTS)
         .collect()
 }
 
@@ -220,6 +262,38 @@ BROKEN
         assert_eq!(sets[0].name, "ISS (ZARYA)");
         assert_eq!(sets[0].catalog, "25544");
         assert!(Tle::parse(&sets[0].tle).is_ok());
+    }
+
+    #[test]
+    fn the_cached_list_is_searched_by_name_or_number() {
+        let listed = element_sets(FEED);
+        assert_eq!(matching(&listed, "ZARYA").len(), 1);
+        assert_eq!(matching(&listed, "025544").len(), 1);
+        assert_eq!(matching(&listed, "").len(), 1);
+        assert!(matching(&listed, "NOAA").is_empty());
+        assert!(matching(&listed, "2554").is_empty());
+    }
+
+    #[test]
+    fn a_download_without_element_sets_is_refused() {
+        assert!(parse_satellites(FEED.as_bytes()).is_ok());
+        assert!(parse_satellites(b"No GP data found").is_err());
+    }
+
+    #[test]
+    fn transmitters_are_indexed_by_catalog_number() {
+        let index = parse_transmitters(
+            br#"[
+                {"uuid":"a","description":"Beacon","alive":true,"status":"active","downlink_low":145800000,"norad_cat_id":25544},
+                {"uuid":"b","description":"Other","alive":true,"status":"active","downlink_low":437800000,"norad_cat_id":7530},
+                {"uuid":"c","description":"Orphan","alive":true,"status":"active","downlink_low":437800000}
+            ]"#,
+        )
+        .expect("parses");
+        assert_eq!(index.len(), 2);
+        assert_eq!(index["25544"][0].id, "a");
+        assert!(parse_transmitters(b"[]").is_err());
+        assert!(parse_transmitters(b"<html>").is_err());
     }
 
     #[test]

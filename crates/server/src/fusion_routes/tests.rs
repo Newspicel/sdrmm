@@ -123,6 +123,7 @@ fn record(origin: &str, bearing: DfBearing) -> DecodedRecord {
         freq_hz: 433.92e6,
         event: DecoderEvent::Df(bearing),
         sinks: Vec::new(),
+        callsign: None,
     }
 }
 

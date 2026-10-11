@@ -412,6 +412,7 @@ impl Tracker {
         engine.publish_decoded(DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: key.device_set,
             channel: key.channel,
             at: call.ended_at.clone(),

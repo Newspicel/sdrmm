@@ -180,6 +180,7 @@ mod tests {
         DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: 0,
             channel: 0,
             at: jiff::Timestamp::now().to_string(),
@@ -303,6 +304,7 @@ mod tests {
         let mut batch = vec![routes.route(DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: set,
             channel,
             ..record("3C6444")
@@ -318,6 +320,7 @@ mod tests {
         let mut orphan = vec![routes.route(DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: set,
             channel: channel + 99,
             ..record("4CA2D4")
@@ -361,6 +364,7 @@ mod tests {
                     DecodedRecord {
                         origin: None,
                         sinks: Vec::new(),
+                        callsign: None,
                         at: "2020-01-01T00:00:00Z".to_owned(),
                         ..record("3C6444")
                     },

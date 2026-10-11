@@ -413,6 +413,7 @@ mod tests {
             freq_hz: 14_080_000.0,
             event,
             sinks: Vec::new(),
+            callsign: None,
         }
     }
 
@@ -649,6 +650,7 @@ mod monitor_tests {
                 errors_corrected: 0,
             }),
             sinks: Vec::new(),
+            callsign: None,
         };
         let routed = routes.route(record.clone());
         assert_eq!(routed.source.as_deref(), Some("monitor"));

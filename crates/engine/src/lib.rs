@@ -1075,6 +1075,7 @@ impl Engine {
         let record = DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: raw.device_set,
             channel: raw.channel,
             at: format!("{:.9}", jiff::Timestamp::now()),

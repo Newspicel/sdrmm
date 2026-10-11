@@ -1263,6 +1263,7 @@ mod tests {
         DecodedRecord {
             origin: None,
             sinks: Vec::new(),
+            callsign: None,
             device_set: carrier.0,
             channel: carrier.1,
             at: "2026-08-14T10:00:00Z".to_owned(),

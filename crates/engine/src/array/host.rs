@@ -590,6 +590,7 @@ fn publish(node: &str, sinks: &HostSinks, packet: &mut Packet) {
                 freq_hz: packet.freq_hz,
                 event: packet.event.clone(),
                 sinks: Vec::new(),
+                callsign: None,
             };
             if sinks.decoded.send(record).is_err() {
                 tracing::debug!(node, "array event had no listener");

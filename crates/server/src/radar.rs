@@ -411,6 +411,7 @@ fn publish(
             freq_hz: update.axes.carrier_hz,
             event: DecoderEvent::Radar(event),
             sinks: Vec::new(),
+            callsign: None,
         });
     }
 }

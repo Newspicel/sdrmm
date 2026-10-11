@@ -18,8 +18,9 @@ pub(super) async fn list_decoder_log(
     Query(filter): Query<DecoderLogQuery>,
 ) -> Result<Json<DecoderLogResponse>, AppError> {
     let store = state.store.clone();
-    let (entries, total) =
+    let (mut entries, total) =
         tokio::task::spawn_blocking(move || store.query_decoder_log(&filter)).await??;
+    resolve_callsigns(&state, &mut entries);
     Ok(Json(DecoderLogResponse {
         entries,
         total,
@@ -99,7 +100,9 @@ pub(super) async fn export_decoder_log(
     Query(filter): Query<DecoderLogQuery>,
 ) -> Result<Response, AppError> {
     let store = state.store.clone();
-    let entries = tokio::task::spawn_blocking(move || store.export_decoder_log(&filter)).await??;
+    let mut entries =
+        tokio::task::spawn_blocking(move || store.export_decoder_log(&filter)).await??;
+    resolve_callsigns(&state, &mut entries);
     let (content_type, body) = match format {
         ExportFormat::Csv => ("text/csv; charset=utf-8", csv_export(&entries)),
         ExportFormat::Json => ("application/json", serde_json::to_string(&entries)),
@@ -122,6 +125,15 @@ pub(super) async fn export_decoder_log(
         body,
     )
         .into_response())
+}
+
+fn resolve_callsigns(state: &AppState, entries: &mut [DecoderLogEntry]) {
+    for entry in entries {
+        entry.callsign = entry
+            .event
+            .amateur_callsign()
+            .and_then(|call| state.reference.callsign(call));
+    }
 }
 
 pub(super) fn csv_export(entries: &[DecoderLogEntry]) -> Result<String, serde_json::Error> {

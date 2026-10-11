@@ -121,6 +121,8 @@ pub struct Transmitter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uplink_hz: Option<f64>,
     pub alive: bool,
+    #[serde(default)]
+    pub fetched: i64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -140,6 +142,8 @@ mod tests {
 
     #[test]
     fn nonsense_settings_are_refused() {
+    #[serde(default)]
+    pub fetched: i64,
         let bad = [
             SatelliteNode {
                 tle: Some(" ".to_owned()),

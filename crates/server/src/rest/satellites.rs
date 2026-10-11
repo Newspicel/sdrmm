@@ -5,7 +5,8 @@ use super::*;
     params(SatelliteCatalogQuery),
     responses(
         (status = 200, description = "Element sets matching a name or catalog number, or the \
-                                      amateur group when `q` is empty. Cached for two hours",
+                                      amateur and weather groups when `q` is empty. Both groups \
+                                      are downloaded twice a day and kept on disk",
                                       body = SatelliteCatalogResponse),
         (status = 400, description = "A search with characters no satellite name has", body = ApiError),
         (status = 503, description = "The element set source could not be reached", body = ApiError),
@@ -24,7 +25,7 @@ pub(super) async fn search_satellites(
     state
         .satellites
         .catalog
-        .search(&query)
+        .search(&state.reference, &query)
         .await
         .map(Json)
         .map_err(AppError::unavailable)
@@ -35,7 +36,7 @@ pub(super) async fn search_satellites(
     params(("catalog" = String, Path, description = "NORAD catalog number")),
     responses(
         (status = 200, description = "Known transmitters of the satellite, live ones first. \
-                                      Cached for two hours", body = TransmittersResponse),
+                                      Downloaded daily and kept on disk", body = TransmittersResponse),
         (status = 400, description = "A catalog number that is not digits", body = ApiError),
         (status = 503, description = "The transmitter database could not be reached", body = ApiError),
     ),
@@ -50,7 +51,7 @@ pub(super) async fn satellite_transmitters(
     state
         .satellites
         .catalog
-        .transmitters(&catalog)
+        .transmitters(&state.reference, &catalog)
         .await
         .map(Json)
         .map_err(AppError::unavailable)
