@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use sdrmm_wire::patch::{PatchEdge, PatchGraph, PatchNode, PortDirection, PortType};
+use sdrmm_wire::patch::{PatchEdge, PatchGraph, PatchNode, PortDirection, PortType, Position};
 use zgui_flow::prelude::{ChangeSet, Edge, EdgeChange, Graph, Node, NodeChange, Point, Size};
 
 use super::graph;
@@ -83,6 +83,14 @@ pub fn wires(graph: &PatchGraph, places: &HashMap<String, Vec<Place>>) -> Vec<Wi
         .iter()
         .map(|edge| wire(edge, carried(places, edge)))
         .collect()
+}
+
+#[must_use]
+pub fn moved_by_peer(mut drawn: Drawn, peer: Option<&Position>) -> Drawn {
+    if let Some(at) = peer {
+        drawn.position = Point::new(f64::from(at.x), f64::from(at.y));
+    }
+    drawn
 }
 
 fn flow_node(drawn: &Drawn) -> Node<()> {
@@ -187,7 +195,7 @@ pub fn diff(
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::patch::{NodeBody, PortRef, Position, Size as NodeSize};
+    use sdrmm_wire::patch::{NodeBody, PortRef, Size as NodeSize};
 
     use super::*;
 
@@ -248,6 +256,14 @@ mod tests {
             edge.source_handle.as_ref().map(|id| id.as_str()),
             Some("iq")
         );
+    }
+
+    #[test]
+    fn a_node_a_peer_drags_follows_the_peer() {
+        let still = drawn(&patch("scope", NodeBody::Scope, 0.0));
+        assert_eq!(moved_by_peer(still.clone(), None), still);
+        let held = moved_by_peer(still, Some(&Position { x: 300.0, y: 40.0 }));
+        assert_eq!(held.position, Point::new(300.0, 40.0));
     }
 
     #[test]

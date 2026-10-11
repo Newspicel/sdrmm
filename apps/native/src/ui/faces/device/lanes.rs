@@ -1,4 +1,3 @@
-
 use sdrmm_wire::{
     device::{
         AgcReach, AgcSetting, Capabilities, Coherence, DeviceSettings, StreamSettings, Tuning,

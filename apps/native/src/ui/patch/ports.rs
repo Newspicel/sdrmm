@@ -2,7 +2,7 @@ use sdrmm_wire::patch::{PortDirection, PortType};
 use zgui::prelude::*;
 use zgui_flow::prelude::{HandleKind, HandleProps, Side};
 
-use crate::ui::{kit_channel::tip_text, node::Place};
+use crate::ui::{kit_shell::hover, node::Place};
 
 const SHEET: &str = css!(
     r#"
@@ -18,7 +18,6 @@ const SHEET: &str = css!(
     font-family: var(--mono);
     font-size: 10px;
     color: var(--ink-faint);
-    pointer-events: none;
     white-space: nowrap;
 }
 .port--in .port__label { right: 9px; }
@@ -80,15 +79,15 @@ fn port(place: Place) -> impl IntoView {
     };
     let id = place.name.clone();
     let title = port_title(&place);
-    let handle = AnyView::new(view! {
-        Handle(kind = kind, side = side, id = id, class = place.port_type.as_str()) {
-            {glyph(place.port_type)}
-        }
-    });
+    let label = AnyView::new(view! { text(class = "port__name") {{place.label.clone()}} });
     view! {
         box(class = class, style:top = Some(format!("{:.0}px", place.y))) {
-            {tip_text(move || title.clone(), handle)}
-            text(class = "port__label") {{place.label.clone()}}
+            Handle(kind = kind, side = side, id = id, class = place.port_type.as_str()) {
+                {glyph(place.port_type)}
+            }
+            box(class = "port__label") {
+                {hover(title, label)}
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-use sdrmm_wire::patch::{ChannelNode, NodeBody, NodeCategory, PatchNode, Position};
+use sdrmm_wire::patch::{ChannelNode, NodeBody, NodeCategory, PatchGraph, PatchNode, Position};
 use zgui::prelude::*;
 use zgui_ui::prelude::*;
 
@@ -111,7 +111,8 @@ fn add(store: Store, canvas: Canvas, kind: &str) {
     let taken = crate::ui::patch::graph::node_ids(&store.graph.get_untracked());
     let id = crate::ui::patch::graph::new_node_id(body.kind(), &taken);
     let added = id.clone();
-    store.edit_graph(move |graph| {
+    let runs_alone = matches!(body, NodeBody::SignalGen(_));
+    let add = move |graph: &mut PatchGraph| {
         graph.nodes.push(PatchNode {
             id: added,
             body,
@@ -119,7 +120,12 @@ fn add(store: Store, canvas: Canvas, kind: &str) {
             size: None,
             label: None,
         });
-    });
+    };
+    if runs_alone {
+        store.edit_graph(add);
+    } else {
+        store.edit_graph_quiet(add);
+    }
     store.selected.set(Some(id));
 }
 

@@ -27,9 +27,6 @@ use crate::{
     workspace::Session,
 };
 
-pub const SPECTRUM_BINS: u16 = 512;
-pub const SPECTRUM_FPS: u16 = 20;
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Pane {
     Patch,

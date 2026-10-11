@@ -5,7 +5,7 @@ use zgui::{
     prelude::*,
 };
 
-use crate::format::{self, DIAL_DIGITS};
+use crate::format;
 
 static NEXT_MENU: AtomicU32 = AtomicU32::new(1);
 
@@ -46,82 +46,6 @@ pub fn track(
 }
 
 pub type Point<T, S> = zgui::geom::Point<T, S>;
-
-pub fn dial(hz: Signal<f64>, on_change: impl Fn(f64) + Clone + 'static) -> impl IntoView {
-    let picked = RwSignal::new(3usize);
-    let wheel = {
-        let on_change = on_change.clone();
-        move |ev: &mut EventCx<'_, events::Wheel>| {
-            let steps = match ev.delta {
-                ScrollDelta::Lines { y, .. } => -y,
-                ScrollDelta::Pixels(size) => -size.height.0 / 40.0,
-                _ => 0.0,
-            };
-            let steps = if steps > 0.0 {
-                1
-            } else if steps < 0.0 {
-                -1
-            } else {
-                0
-            };
-            if steps != 0 {
-                on_change(format::nudge(
-                    hz.get_untracked(),
-                    picked.get_untracked(),
-                    steps,
-                ));
-            }
-            ev.prevent_default();
-        }
-    };
-    let keys = {
-        let on_change = on_change.clone();
-        move |ev: &mut EventCx<'_, events::KeyDown>| {
-            let at = picked.get_untracked();
-            let value = hz.get_untracked();
-            match &ev.key {
-                Key::Named(NamedKey::ArrowUp) => on_change(format::nudge(value, at, 1)),
-                Key::Named(NamedKey::ArrowDown) => on_change(format::nudge(value, at, -1)),
-                Key::Named(NamedKey::ArrowLeft) => picked.set(at.saturating_sub(1)),
-                Key::Named(NamedKey::ArrowRight) => picked.set((at + 1).min(DIAL_DIGITS - 1)),
-                _ => return,
-            }
-            ev.prevent_default();
-            ev.stop_propagation();
-        }
-    };
-
-    let mut digits: Vec<AnyView> = Vec::with_capacity(DIAL_DIGITS + 1);
-    for index in 0..DIAL_DIGITS {
-        digits.push(AnyView::new(view! {
-            control(
-                class = "digit",
-                class:on = move || picked.get() == index,
-                class:dim = move || leading_zero(hz.get(), index),
-                on:pointer_down:stop = move |_| picked.set(index)
-            ) {
-                {move || digit_text(hz.get(), index)}
-            }
-        }));
-        if index == 3 {
-            digits.push(AnyView::new(view! { box(class = "digit dot") {"."} }));
-        }
-    }
-
-    view! {
-        row(
-            class = "dial",
-            tabindex = Focus::Sequential,
-            a11y:role = Role::Group,
-            a11y:label = "Frequency",
-            on:wheel = wheel,
-            on:key_down = keys
-        ) {
-            {digits}
-            text(class = "dial__unit") {"MHz"}
-        }
-    }
-}
 
 fn digit_text(hz: f64, index: usize) -> String {
     format::dial_digits(hz)
@@ -384,30 +308,6 @@ pub fn check(on: Signal<bool>, on_change: impl Fn(bool) + 'static) -> impl IntoV
             on:click:stop = move |_| on_change(!on.get_untracked())
         ) {
             {zgui::elements::vector().class("check__mark").document(CHECK_MARK)}
-        }
-    }
-}
-
-pub fn meter(level_db: Signal<f32>) -> impl IntoView {
-    view! { row(class = "field__body") {{level_bar(level_db)}} }
-}
-
-pub fn level_bar(level_db: Signal<f32>) -> impl IntoView {
-    let fraction = move || ((level_db.get() + 90.0) / 90.0).clamp(0.0, 1.0) * 100.0;
-    let read = move || {
-        let value = level_db.get();
-        if value <= -119.0 {
-            String::from("--")
-        } else {
-            format::decibels(value)
-        }
-    };
-    view! {
-        row(class = "bar") {
-            box(class = "meter") {
-                box(class = "meter__fill", style:width = move || Some(format!("{}%", fraction())))
-            }
-            text(class = "meter__read") {{read}}
         }
     }
 }

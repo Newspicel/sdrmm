@@ -530,7 +530,7 @@ fn footer(
         let view = shown.get();
         view.live
             .is_none()
-            .then(|| view.binding)
+            .then_some(view.binding)
             .and_then(|binding| binding.action().map(|label| (label, binding.hint())))
     });
     move || {

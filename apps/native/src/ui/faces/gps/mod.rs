@@ -22,7 +22,7 @@ use crate::{
     position::{grid_locator, positions},
     store::Store,
     ui::{
-        kit_audio::{self, fault, titled},
+        kit_audio::{self, fault, titled, titled_block},
         kit_sources::{
             NumberSpec, Tone, button, footer, install, number_field, popover_slot, readout,
             text_field,
@@ -195,7 +195,7 @@ fn phone_settings(
     });
     let picker = move || {
         let change = change.clone();
-        titled(
+        titled_block(
             "Paired phone giving the position",
             AnyView::new(row_field(
                 "Phone",
@@ -270,7 +270,7 @@ fn gpsd_settings(
         Some(PositionSource::Gpsd { address }) => address,
         _ => String::new(),
     });
-    titled(
+    titled_block(
         "Host and port of the gpsd daemon",
         AnyView::new(row_field(
             "GPSD address",
@@ -309,11 +309,11 @@ fn fixed_settings(
     let on_lon = change.clone();
     view! {
         column(class = "kit-radio") {
-            {titled("Latitude", AnyView::new(row_field("Latitude", number_field("Latitude", lat, latitude, Signal::stored(false), move |value| {
+            {titled_block("Latitude", AnyView::new(row_field("Latitude", number_field("Latitude", lat, latitude, Signal::stored(false), move |value| {
                 let (_, lon, altitude_m) = place.get_untracked();
                 change(PositionSource::Fixed { lat: value, lon, altitude_m });
             }))))}
-            {titled("Longitude", AnyView::new(row_field("Longitude", number_field("Longitude", lon, longitude, Signal::stored(false), move |value| {
+            {titled_block("Longitude", AnyView::new(row_field("Longitude", number_field("Longitude", lon, longitude, Signal::stored(false), move |value| {
                 let (lat, _, altitude_m) = place.get_untracked();
                 on_lon(PositionSource::Fixed { lat, lon: value, altitude_m });
             }))))}
@@ -389,11 +389,11 @@ fn nmea_settings(
         .collect();
     view! {
         column(class = "kit-radio") {
-            {titled("Serial port of the receiver", AnyView::new(row_field("Serial device", text_field("Serial device", device, "", Signal::stored(false), |text| !text.trim().is_empty(), move |text| {
+            {titled_block("Serial port of the receiver", AnyView::new(row_field("Serial device", text_field("Serial device", device, "", Signal::stored(false), |text| !text.trim().is_empty(), move |text| {
                 on_device(with(&|next| text.trim().clone_into(&mut next.0)));
             }))))}
             {detected}
-            {titled("Serial baud rate", AnyView::new(row_field("Baud", view! {
+            {titled_block("Serial baud rate", AnyView::new(row_field("Baud", view! {
                 row(class = "kit-dial-row") {
                     {text_field("Baud", baud, "", Signal::stored(false), |text| valid_baud(&text).is_some(), move |text| {
                         if let Some(value) = valid_baud(&text) {
@@ -403,7 +403,7 @@ fn nmea_settings(
                     {baud_suggestions(move |value| on_suggest(with(&|next| next.1 = value)))}
                 }
             })))}
-            {titled("Update rate", AnyView::new(row_field("Update rate", pick(rates, interval, move |ms| on_rate(with(&|next| next.2 = ms))))))}
+            {titled_block("Update rate", AnyView::new(row_field("Update rate", pick(rates, interval, move |ms| on_rate(with(&|next| next.2 = ms))))))}
         }
     }
 }

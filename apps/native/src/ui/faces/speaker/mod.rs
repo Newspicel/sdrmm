@@ -183,11 +183,10 @@ fn lane(store: Store, audio: Audio, input: Input) -> impl IntoView {
                 {gain_meter(format!("{name} volume"), volume, peak, set_volume)}
                 text(class = "sp-volume") {{move || format!("{:.0}%", volume.get() * 100.0)}}
                 {play_toggle(wanted, toggle)}
-                {titled("Mute", AnyView::new(view! {
-                    row(class = "mute") {
-                        {check(muted, mute)}
-                    }
-                }))}
+                row(class = "mute") {
+                    {check(muted, mute)}
+                    text {"Mute"}
+                }
             }
             {gram(audio, route)}
             {kit_audio::alert(move || entry.get().error)}

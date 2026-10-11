@@ -63,16 +63,17 @@ fn readout(level: Signal<Option<ChannelLevel>>, open: Signal<bool>) -> impl Into
 
 pub fn signal_row(level: Signal<Option<ChannelLevel>>) -> AnyView {
     let open = Signal::stored(true);
-    tip(
+    let name = tip(
         SIGNAL_TIP,
-        AnyView::new(view! {
-            row(class = "kc-signal", a11y:role = Role::Meter, a11y:label = "Signal level") {
-                text(class = "kc-name") {"Signal"}
-                box(class = "kc-meter__bar") {{fill(level, open)}}
-                {readout(level, open)}
-            }
-        }),
-    )
+        AnyView::new(view! { text(class = "kc-name kc-name--tip") {"Signal"} }),
+    );
+    AnyView::new(view! {
+        row(class = "kc-signal", a11y:role = Role::Meter, a11y:label = "Signal level") {
+            {name}
+            box(class = "kc-meter__bar") {{fill(level, open)}}
+            {readout(level, open)}
+        }
+    })
 }
 
 fn db_at(rail: NodeRef, at: Point<CssPx, Css>) -> Option<f32> {
@@ -179,8 +180,8 @@ pub fn squelch_row(
     });
     AnyView::new(view! {
         row(class = "kc-signal") {
-            text(class = "kc-name") {"Squelch"}
-            {tip_text(meter_tip, bar)}
+            {tip_text(meter_tip, AnyView::new(view! { text(class = "kc-name kc-name--tip") {"Squelch"} }))}
+            {bar}
             {readout(level, open)}
             {auto_button}
         }

@@ -4,10 +4,13 @@ use sdrmm_wire::{patch::PatchNode, workspace::MAX_NAME_LEN};
 use zgui_ui::prelude::*;
 
 use crate::{
-    head::Tone,
+    head::{NodeHead, Tone},
     shell::rack_grid,
     store::Store,
-    ui::{kit_shell::svg, node},
+    ui::{
+        kit_shell::{hover, svg},
+        node,
+    },
 };
 
 const MAXIMIZE: &str =
@@ -111,7 +114,7 @@ fn rename(store: Store, id: &str, typed: &str) {
         return;
     }
     let id = id.to_owned();
-    store.edit_graph(move |graph| {
+    store.edit_graph_quiet(move |graph| {
         if let Some(found) = graph.nodes.iter_mut().find(|found| found.id == id) {
             found.label = label;
         }
@@ -180,7 +183,7 @@ fn name(store: Store, id: String) -> impl IntoView {
             let start = start.clone();
             let keyed = start.clone();
             let title = title.clone();
-            AnyView::new(view! {
+            hover("Double-click to rename", view! {
                 control(
                     class = "node__title",
                     tabindex = Focus::Sequential,
@@ -209,15 +212,24 @@ fn head_view(store: Store, id: String) -> impl IntoView {
         text(class = "node__badge", hidden = move || head.with(|head| head.badge.is_none())) {
             {move || head.get().badge.unwrap_or_default()}
         }
+        {move || subtitle_view(head)}
+    }
+}
+
+fn subtitle_view(head: Memo<NodeHead>) -> Option<AnyView> {
+    let shown = head.get();
+    let said = shown.subtitle?;
+    let text = AnyView::new(view! {
         text(
             class = "node__subtitle",
-            class:warn = move || head.get().tone == Tone::Warn,
-            class:danger = move || head.get().tone == Tone::Danger,
-            hidden = move || head.with(|head| head.subtitle.is_none())
-        ) {
-            {move || head.get().subtitle.unwrap_or_default()}
-        }
-    }
+            class:warn = shown.tone == Tone::Warn,
+            class:danger = shown.tone == Tone::Danger
+        ) {{said}}
+    });
+    Some(match shown.title {
+        Some(title) => hover(title, text),
+        None => text,
+    })
 }
 
 pub fn header(store: Store, id: String, remove: impl Fn() + 'static) -> impl IntoView {

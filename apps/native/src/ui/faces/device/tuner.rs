@@ -45,12 +45,9 @@ impl Tuned {
         }
     }
 
-    fn read_node<T: Default>(
-        &self,
-        read: impl Fn(&DeviceNode) -> T + Send + Sync + 'static,
-    ) -> Signal<T>
+    fn read_node<T>(&self, read: impl Fn(&DeviceNode) -> T + Send + Sync + 'static) -> Signal<T>
     where
-        T: Send + Sync + Clone + 'static,
+        T: Default + Send + Sync + Clone + 'static,
     {
         let (store, node) = (self.store, self.node.clone());
         Signal::derive(move || {
@@ -393,6 +390,8 @@ fn dial_row(tuned: &Tuned, merged: bool, tools: AnyView) -> impl IntoView {
     let radio = tuned.radio;
     let store = tuned.store;
     let node = tuned.node.clone();
+    let dial = NodeRef::new();
+    crate::ui::hotkeys::focus_dial_of(node.clone(), dial);
     let reach = reach_of(radio);
     let holds = tuned.holds();
     let streams = tuned.locked_streams();
@@ -418,7 +417,9 @@ fn dial_row(tuned: &Tuned, merged: bool, tools: AnyView) -> impl IntoView {
     let tuned = tuned.clone();
     view! {
         row(class = "kit-dial-row") {
-            {frequency_dial(spec, move |hz| if merged { tuned.tune_all(hz) } else { tuned.tune_radio(0, hz) })}
+            box(node_ref = dial) {
+                {frequency_dial(spec, move |hz| if merged { tuned.tune_all(hz) } else { tuned.tune_radio(0, hz) })}
+            }
             spacer() {}
             {tools}
         }

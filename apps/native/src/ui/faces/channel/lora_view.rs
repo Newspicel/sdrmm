@@ -162,10 +162,8 @@ fn keys_editor(ctx: Ctx, held: Signal<Vec<LoraKey>>) -> impl IntoView {
             .map(|(index, kind)| saved_key_row(ctx, held, index, kind))
             .collect::<Vec<_>>()
     };
-    let draft_row = move || {
-        let kind = draft.with(|draft| draft.as_ref().map(kind_of))?;
-        Some(draft_key_row(ctx, draft, kind))
-    };
+    let draft_kind = Memo::new(move |_| draft.with(|draft| draft.as_ref().map(kind_of)));
+    let draft_row = move || Some(draft_key_row(ctx, draft, draft_kind.get()?));
     let adds = KEY_KINDS
         .iter()
         .map(|(kind, label, title)| {

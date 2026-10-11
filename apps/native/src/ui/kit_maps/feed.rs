@@ -15,7 +15,7 @@ use sdrmm_wire::{
 use zgui::prelude::*;
 use zgui::reactive::ArcRwSignal;
 
-use super::{merge, millis_of, now_ms, tracks::Trail};
+use super::{millis_of, now_ms, tracks::Trail};
 use crate::{store::Store, ui::map::Geo};
 
 pub const POSITION_HISTORY: usize = 5_000;
@@ -65,53 +65,16 @@ pub struct Station {
 
 #[must_use]
 pub fn station_id(event: &DecoderEvent) -> Option<String> {
-    match event {
-        DecoderEvent::Adsb(message) => Some(message.icao.clone()),
-        DecoderEvent::Ais(message) => Some(message.mmsi.to_string()),
-        DecoderEvent::Aprs(packet) => Some(packet.source.clone()),
-        DecoderEvent::Radiosonde(frame) => Some(frame.serial.clone()),
-        DecoderEvent::Lora(frame) => frame.station(),
-        DecoderEvent::RemoteId(frame) => Some(frame.station()),
-        _ => None,
+    if !MAP_KINDS.contains(&event.kind()) {
+        return None;
     }
+    crate::decoded::station_id(event)
 }
 
 #[must_use]
 pub fn event_position(event: &DecoderEvent) -> Option<Geo> {
     let (lat, lon) = event.position()?;
     Geo::checked(Some(lat), Some(lon))
-}
-
-#[must_use]
-pub fn merge_forward(previous: &DecoderEvent, next: &DecoderEvent) -> DecoderEvent {
-    match (previous, next) {
-        (DecoderEvent::Lora(held), DecoderEvent::Lora(fresh)) => {
-            return DecoderEvent::Lora(merge::lora(held, fresh));
-        }
-        (DecoderEvent::RemoteId(held), DecoderEvent::RemoteId(fresh)) => {
-            return DecoderEvent::RemoteId(merge::remote_id(held, fresh));
-        }
-        _ => {}
-    }
-    let (Ok(mut held), Ok(fresh)) = (serde_json::to_value(previous), serde_json::to_value(next))
-    else {
-        return next.clone();
-    };
-    if previous.kind() != next.kind() {
-        return next.clone();
-    }
-    if let (Some(held_data), Some(fresh_data)) = (
-        held.get_mut("data")
-            .and_then(serde_json::Value::as_object_mut),
-        fresh.get("data").and_then(serde_json::Value::as_object),
-    ) {
-        for (key, value) in fresh_data {
-            if !value.is_null() {
-                held_data.insert(key.clone(), value.clone());
-            }
-        }
-    }
-    serde_json::from_value(held).unwrap_or_else(|_| next.clone())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -238,7 +201,7 @@ impl Held {
             id: id.clone(),
             event: previous.map_or_else(
                 || record.event.clone(),
-                |held| merge_forward(&held.event, &record.event),
+                |held| crate::decoded::merge_forward(&held.event, &record.event),
             ),
             last_seen,
             freq_hz: record.freq_hz,

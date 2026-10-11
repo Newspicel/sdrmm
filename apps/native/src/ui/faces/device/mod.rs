@@ -192,7 +192,9 @@ pub fn heard_head(heard: Hearing) -> NodeHead {
         HeardTone::Warn => HeadTone::Warn,
         HeardTone::Danger => HeadTone::Danger,
     };
-    NodeHead::said(format!("{}/{}", heard.heard, heard.total)).toned(tone)
+    NodeHead::said(format!("{}/{}", heard.heard, heard.total))
+        .toned(tone)
+        .titled(heard_tip(heard))
 }
 
 #[must_use]
@@ -240,10 +242,9 @@ fn opened(store: Store, node: String, set: Signal<Option<DeviceSet>>, busy: Busy
             .read(|set| set.device.label.clone())
             .unwrap_or_default()
     });
-    let heard = Signal::derive(move || radio.read(hearing).map(heard_tip).unwrap_or_default());
     view! {
         column(class = "face") {
-            {crate::ui::kit_sources::tip(move || heard.get(), AnyView::new(view! { text(class = "kit-head__title") {{move || label.get()}} }))}
+            text(class = "kit-head__title") {{move || label.get()}}
             {tuner(tuned)}
             {radio_settings(radio, extras)}
             {fault(radio)}

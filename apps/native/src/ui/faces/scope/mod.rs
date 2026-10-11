@@ -36,7 +36,7 @@ use zgui::{prelude::*, reactive::RenderEffect, surface::SurfaceElementExt};
 use crate::{
     bus::{Frame, Source},
     store::Store,
-    ui::{kit_raster::Pulse, shell::Shell},
+    ui::shell::Shell,
 };
 
 pub use chosen::chosen_palette;
@@ -391,7 +391,6 @@ impl ScopeCx {
 }
 
 fn layout(cx: ScopeCx) -> impl IntoView {
-    let trace_pulse = Pulse::default();
     let live = cx.live.get_value();
     let trace = TraceSurface::new(
         Rc::clone(&live),
@@ -405,7 +404,6 @@ fn layout(cx: ScopeCx) -> impl IntoView {
             overlays: cx.modes.into(),
             hover: cx.hover,
         },
-        trace_pulse,
     );
     let trace_height = move || Some(format!("{:.3}%", cx.fraction.get() * 100.0));
     view! {
@@ -419,7 +417,7 @@ fn layout(cx: ScopeCx) -> impl IntoView {
         ) {
             {ruler::ruler(cx)}
             box(node_ref = cx.trace_box, class = "scope__trace", style:height = trace_height) {
-                {zgui::elements::surface().class("scope__gpu").style_property("background-color", move || trace_pulse.backdrop()).renderer(trace).into_view()}
+                {zgui::elements::surface().class("scope__gpu").renderer(trace).into_view()}
                 {overlay::trace_labels(cx)}
             }
             {pointer::divider(cx)}

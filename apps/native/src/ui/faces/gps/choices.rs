@@ -11,7 +11,7 @@ use super::source::{
 use crate::{
     store::Store,
     ui::{
-        kit_audio::titled,
+        kit_audio::{titled, titled_block, titled_fill},
         kit_sources::{NumberSpec, Tone, button, draft_field, number_field},
     },
 };
@@ -77,7 +77,7 @@ fn tabs(tab: RwSignal<GpsTab>) -> impl IntoView {
     let items: Vec<AnyView> = gps_tabs()
         .into_iter()
         .map(|(value, label)| {
-            titled(
+            titled_fill(
                 tab_hint(value),
                 AnyView::new(view! {
                     control(
@@ -223,7 +223,7 @@ fn path_form(choose: Choose) -> impl IntoView {
         }
     };
     let empty = Signal::derive(move || path.with(|path| path.trim().is_empty()));
-    titled(
+    titled_block(
         "The serial port of a receiver that is not listed above",
         AnyView::new(view! {
             row(class = "kit-pop__row") {
@@ -245,7 +245,7 @@ fn gpsd_form(choose: Choose) -> impl IntoView {
         }
     };
     let blocked = Signal::derive(move || !valid_gpsd_address(address.get().trim()));
-    titled(
+    titled_block(
         "Host and port of a gpsd daemon, on this machine or another one",
         AnyView::new(view! {
             row(class = "kit-pop__row") {

@@ -125,10 +125,27 @@ pub fn build(devices: &[DeviceInfo], descriptors: &[ChannelDescriptor]) -> Built
     built
 }
 
+const STILL_TRIES: u32 = 240;
+const STILL_FRAMES: u32 = 5;
+
 pub fn fit(screen: &mut Screen) {
     let at = screen.nth(".zf-controls__button", 2);
     screen.click(at);
-    screen.run_for(Duration::from_millis(300));
+    hold_still(screen);
+}
+
+pub fn hold_still(screen: &mut Screen) {
+    let mut last = None;
+    let mut still = 0;
+    for _ in 0..STILL_TRIES {
+        screen.run_for(Duration::from_millis(16));
+        let now = screen.css_box(".zf-node");
+        still = if now == last { still + 1 } else { 0 };
+        if still >= STILL_FRAMES {
+            return;
+        }
+        last = now;
+    }
 }
 
 pub fn faces(screen: &mut Screen, ids: &[String]) {

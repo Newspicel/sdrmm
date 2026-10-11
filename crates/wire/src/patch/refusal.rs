@@ -185,6 +185,14 @@ mod tests {
     }
 
     #[test]
+    fn one_channel_can_feed_a_second_speaker() {
+        let mut graph = graph();
+        graph.nodes.push(node("speaker2", NodeBody::Speaker));
+        graph.edges.push(wire(("ch", "audio"), ("speaker", "audio")));
+        assert_eq!(refused(&graph, ("ch", "audio"), ("speaker2", "audio")), None);
+    }
+
+    #[test]
     fn an_unrelated_broken_node_never_blocks_a_new_wire() {
         let mut graph = graph();
         graph.edges.push(wire(("dev2", "iq"), ("ghost", "iq")));

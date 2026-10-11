@@ -10,8 +10,6 @@ use zgui::{
     surface::{SurfaceElementExt, SurfaceRenderCx, SurfaceRenderer, wgpu},
 };
 
-use crate::ui::kit_raster::Pulse;
-
 use super::{
     clock::RowClock,
     colormap::colormap_wgsl,
@@ -322,7 +320,6 @@ struct Resources {
 pub struct WaterfallSurface {
     feed: Rc<RefCell<WaterfallFeed>>,
     failure: RwSignal<Option<String>>,
-    pulse: Pulse,
     ring: Ring,
     held: Option<Resources>,
     drawn: Option<(u32, u32)>,
@@ -334,7 +331,6 @@ impl WaterfallSurface {
         Self {
             feed,
             failure,
-            pulse: Pulse::default(),
             ring: Ring::default(),
             held: None,
             drawn: None,
@@ -343,25 +339,15 @@ impl WaterfallSurface {
     }
 }
 
-impl WaterfallSurface {
-    #[must_use]
-    pub fn pulsing(mut self, pulse: Pulse) -> Self {
-        self.pulse = pulse;
-        self
-    }
-}
-
 pub fn waterfall_view(
     class: &'static str,
     feed: Rc<RefCell<WaterfallFeed>>,
     failure: RwSignal<Option<String>>,
 ) -> AnyView {
-    let pulse = Pulse::default();
     AnyView::new(
         zgui::elements::surface()
             .class(class)
-            .style_property("background-color", move || pulse.backdrop())
-            .renderer(WaterfallSurface::new(feed, failure).pulsing(pulse))
+            .renderer(WaterfallSurface::new(feed, failure))
             .into_view(),
     )
 }
@@ -777,7 +763,6 @@ impl SurfaceRenderer for WaterfallSurface {
             .write_buffer(&held.params, 0, &params_bytes(values, palette));
         draw(cx, &held.pipeline, &held.binding);
         self.drawn = Some(size);
-        self.pulse.beat();
     }
 }
 

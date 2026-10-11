@@ -17,7 +17,7 @@ use crate::{
     head::{self, NodeHead},
     store::Store,
     ui::{
-        kit_audio::{self, Stat, Tone, titled},
+        kit_audio::{self, Stat, Tone, titled, titled_block},
         kit_channel::{self, tuning_lock},
         kit_maps::{
             SHEET,
@@ -172,7 +172,7 @@ fn picker(store: Store, node: String) -> impl IntoView {
             }
         }
     };
-    let search = titled(
+    let search = titled_block(
         "A name, a NORAD number, or pasted element lines",
         AnyView::new(view! {
             Input(
@@ -239,7 +239,7 @@ fn downlink(store: Store, node: String, settings: Memo<SatelliteNode>) -> impl I
     };
     let hold = Signal::derive(move || held.get().then(|| text::HELD_BY_SIGNAL.to_owned()));
     let lock = move |on: bool| edit(store, &node, move |held| held.tuning_locked = on);
-    titled(
+    titled_block(
         "Downlink before Doppler",
         AnyView::new(view! {
             row(class = "satellite__downlink kit-dial-row") {
@@ -393,7 +393,10 @@ fn signals(
                 });
             },
         );
-        Some(titled(title, AnyView::new(row_field("Signal", choice))))
+        Some(titled_block(
+            title,
+            AnyView::new(row_field("Signal", choice)),
+        ))
     }
 }
 
@@ -423,7 +426,7 @@ fn readout(status: Signal<Option<SatelliteStatus>, LocalStorage>) -> impl IntoVi
             let rate = status
                 .doppler_rate_hz_s
                 .map_or_else(String::new, |rate| format!(", {}/s", text::doppler(rate)));
-            rows.push(titled(
+            rows.push(titled_block(
                 "Added to every wired decoder",
                 AnyView::new(row_field(
                     "Doppler",
@@ -432,7 +435,7 @@ fn readout(status: Signal<Option<SatelliteStatus>, LocalStorage>) -> impl IntoVi
             ));
         }
         if let Some(uplink) = status.uplink_hz {
-            rows.push(titled(
+            rows.push(titled_block(
                 "The uplink corrected so the satellite hears it on frequency",
                 AnyView::new(row_field("Send on", mhz(uplink))),
             ));

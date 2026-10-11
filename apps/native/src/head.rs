@@ -12,22 +12,12 @@ pub enum Tone {
     Danger,
 }
 
-impl Tone {
-    #[must_use]
-    pub const fn class(self) -> &'static str {
-        match self {
-            Self::Plain => "",
-            Self::Warn => "warn",
-            Self::Danger => "danger",
-        }
-    }
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NodeHead {
     pub subtitle: Option<String>,
     pub tone: Tone,
     pub badge: Option<String>,
+    pub title: Option<String>,
 }
 
 impl NodeHead {
@@ -42,6 +32,14 @@ impl NodeHead {
     #[must_use]
     pub fn toned(self, tone: Tone) -> Self {
         Self { tone, ..self }
+    }
+
+    #[must_use]
+    pub fn titled(self, title: impl Into<String>) -> Self {
+        Self {
+            title: Some(title.into()),
+            ..self
+        }
     }
 
     #[must_use]
@@ -109,6 +107,6 @@ mod tests {
         let head = NodeHead::said("2 lanes").badged("FM");
         assert_eq!(head.badge.as_deref(), Some("FM"));
         assert_eq!(head.subtitle.as_deref(), Some("2 lanes"));
-        assert_eq!(Tone::Danger.class(), "danger");
+        assert_eq!(head.clone().titled("3 of 5").title.as_deref(), Some("3 of 5"));
     }
 }

@@ -1,21 +1,20 @@
 use std::collections::HashMap;
 
-use sdrmm_wire::{
-    channel::ChannelParams,
-    decode::DecoderEvent,
-    lora::{LoraFrame, LoraPayload, MeshcoreContent, MeshtasticContent},
-};
+use sdrmm_wire::{channel::ChannelParams, decode::DecoderEvent};
 
 use super::detail::{course_of, heading_of, trimmed};
-use crate::ui::{
-    kit_maps::{
-        feed::{MAP_KINDS, Station, event_position},
-        tracks::Trail,
-    },
-    map::{
-        Geo,
-        geo::unwrap_trail,
-        overlay::{Dot, Glyph, Ink, Label, Line, Mark, Overlay},
+use crate::{
+    decoders::views::lora_name,
+    ui::{
+        kit_maps::{
+            feed::{MAP_KINDS, Station, event_position},
+            tracks::Trail,
+        },
+        map::{
+            Geo,
+            geo::unwrap_trail,
+            overlay::{Dot, Glyph, Ink, Label, Line, Mark, Overlay},
+        },
     },
 };
 
@@ -68,22 +67,6 @@ pub fn is_stale(last_seen: i64, now: i64, max_age_ms: i64) -> bool {
 #[must_use]
 pub fn position(station: &Station) -> Option<Geo> {
     event_position(&station.event)
-}
-
-#[must_use]
-pub fn lora_name(frame: &LoraFrame) -> Option<String> {
-    match frame.decoded.as_ref()? {
-        LoraPayload::Meshtastic(packet) => match packet.content.as_ref()? {
-            MeshtasticContent::NodeInfo { long_name, .. }
-            | MeshtasticContent::MapReport { long_name, .. } => trimmed(Some(long_name)),
-            _ => None,
-        },
-        LoraPayload::Meshcore(packet) => match &packet.content {
-            MeshcoreContent::Advert { name, .. } => name.clone(),
-            _ => None,
-        },
-        LoraPayload::Lorawan(_) => None,
-    }
 }
 
 #[must_use]
@@ -503,7 +486,7 @@ mod tests {
             decode::DecoderEvent, remote_id::RemoteIdMessage, weather::RadiosondeFrame,
         };
 
-        use crate::ui::kit_maps::merge::tests::{drone, location, meshtastic, placed};
+        use crate::ui::kit_maps::fixtures::{drone, location, meshtastic, placed};
 
         assert_eq!(
             map_kinds_of(&[

@@ -74,7 +74,7 @@ pub fn time_ticks(
         return Vec::new();
     };
     let span_ms = time_at(0) - time_at(deepest);
-    if !(span_ms > 0.0) {
+    if span_ms <= 0.0 {
         return Vec::new();
     }
     let row_px = height / rows.saturating_sub(1).max(1) as f64;

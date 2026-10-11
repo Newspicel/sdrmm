@@ -249,13 +249,6 @@ impl Processor {
             subtitle(array.get().as_deref(), gate.get(), stale.get(), lanes.get())
         })
     }
-
-    pub fn show_head(&self, period_ms: Signal<u32>) {
-        let said = self.subtitle(period_ms);
-        head::show(self.store, self.node.clone(), move || {
-            NodeHead::said(said.get())
-        });
-    }
 }
 
 pub fn settings<T>(store: Store, node: String, read: fn(&NodeBody) -> Option<&T>) -> Memo<Option<T>>

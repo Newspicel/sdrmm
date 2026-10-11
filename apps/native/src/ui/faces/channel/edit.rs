@@ -149,7 +149,7 @@ impl Store {
 
     pub fn edit_node(self, node: &str, edit: impl FnOnce(&mut NodeBody) + 'static) {
         let id = node.to_owned();
-        self.edit_graph(move |graph| {
+        self.edit_graph_quiet(move |graph| {
             if let Some(found) = graph.nodes.iter_mut().find(|found| found.id == id) {
                 edit(&mut found.body);
             }

@@ -31,6 +31,9 @@ const SHEET: &str = css!(
 .stat.warn, .stat.warn .stat__value { color: oklch(0.8 0.14 85); }
 .stat.danger, .stat.danger .stat__value { color: var(--danger); }
 .rec-foot { gap: 8px; }
+.zui-tooltip__trigger.tip-block { display: flex; flex-direction: column; align-items: stretch; align-self: stretch; min-width: 0; }
+.zui-tooltip__trigger.tip-fill { display: flex; flex-direction: row; flex: 1 1 0; min-width: 0; }
+.zui-tooltip__trigger.tip-fill > * { flex: 1 1 auto; min-width: 0; }
 .readout { flex-direction: column; gap: 3px; }
 .readout__row { flex-direction: row; gap: 8px; align-items: baseline; min-width: 0; }
 .readout__label { flex: 0 0 76px; color: var(--ink-faint); font-size: 10px; text-transform: uppercase; }
@@ -229,14 +232,26 @@ pub fn fault(message: String, detail: Option<String>) -> AnyView {
     }
 }
 
-pub fn titled(title: impl Into<String>, child: AnyView) -> AnyView {
-    let title = Signal::stored(title.into());
+fn tipped(class: &'static str, title: String, child: AnyView) -> AnyView {
+    let title = Signal::stored(title);
     AnyView::new(view! {
         Tooltip(delay = TIP_DELAY) {
-            TooltipTrigger {{child}}
+            TooltipTrigger(class = class) {{child}}
             TooltipContent {{move || title.get()}}
         }
     })
+}
+
+pub fn titled(title: impl Into<String>, child: AnyView) -> AnyView {
+    tipped("", title.into(), child)
+}
+
+pub fn titled_block(title: impl Into<String>, child: AnyView) -> AnyView {
+    tipped("tip-block", title.into(), child)
+}
+
+pub fn titled_fill(title: impl Into<String>, child: AnyView) -> AnyView {
+    tipped("tip-fill", title.into(), child)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -1,5 +1,6 @@
 pub mod feed;
-pub mod merge;
+#[cfg(test)]
+pub mod fixtures;
 pub mod tracks;
 pub mod trail;
 pub mod wiring;

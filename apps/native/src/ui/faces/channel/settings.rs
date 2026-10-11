@@ -193,11 +193,6 @@ pub fn channel_decoder_kind(descriptor: Option<&ChannelDescriptor>) -> Option<&s
     descriptor.and_then(|descriptor| descriptor.decoder_kind.as_deref())
 }
 
-#[must_use]
-pub fn channel_has_video(descriptor: Option<&ChannelDescriptor>) -> bool {
-    descriptor.is_some_and(|descriptor| descriptor.has_video)
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RadioWindow {
     pub low_hz: f64,

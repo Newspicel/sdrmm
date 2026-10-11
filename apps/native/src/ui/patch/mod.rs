@@ -217,7 +217,12 @@ fn sync(store: Store, canvas: Canvas, graph: &PatchGraph) {
         .iter()
         .map(|node| (node.id.clone(), places_of(store, node)))
         .collect();
-    let drawn: Vec<sync::Drawn> = graph.nodes.iter().map(sync::drawn).collect();
+    let dragged = store.presence.with(|room| room.dragged_by_others());
+    let drawn: Vec<sync::Drawn> = graph
+        .nodes
+        .iter()
+        .map(|node| sync::moved_by_peer(sync::drawn(node), dragged.get(&node.id)))
+        .collect();
     let wires = sync::wires(graph, &places);
     let changes = canvas.with_graph(|shown| sync::diff(&drawn, &wires, shown, &held(canvas)));
     if !changes.is_empty() {
@@ -327,15 +332,15 @@ fn select_pasted(canvas: Canvas, gestures: Gestures) {
 }
 
 fn observe_changes(canvas: Canvas, gestures: Gestures, changes: &[NodeChange<()>]) {
-    match canvas.view().interaction().get_untracked() {
-        Interaction::Resizing => gestures.resized.update_value(|held| {
-            held.extend(changes.iter().filter_map(|change| match change {
-                NodeChange::Size { id, .. } => Some(id.to_string()),
-                _ => None,
-            }));
-        }),
-        _ => {}
+    if canvas.view().interaction().get_untracked() != Interaction::Resizing {
+        return;
     }
+    gestures.resized.update_value(|held| {
+        held.extend(changes.iter().filter_map(|change| match change {
+            NodeChange::Size { id, .. } => Some(id.to_string()),
+            _ => None,
+        }));
+    });
 }
 
 fn finish_resizes(store: Store, canvas: Canvas, gestures: Gestures) -> RenderEffect<()> {
@@ -565,7 +570,14 @@ pub fn pane(store: Store, canvas: Canvas) -> impl IntoView {
         }
     };
     view! {
-        box(class = "patch", on:key_down = keys) {
+        box(
+            class = "patch",
+            on:key_down = keys,
+            on:pointer_move = move |ev: &mut EventCx<'_, events::PointerMove>| {
+                crate::ui::presence::pointer_moved(store, canvas.view(), ev.position);
+            },
+            on:pointer_leave = move |_| crate::ui::presence::pointer_left(store)
+        ) {
             Flow(
                 handle = canvas,
                 events = events(store, canvas, open, gestures),
@@ -576,6 +588,7 @@ pub fn pane(store: Store, canvas: Canvas) -> impl IntoView {
                 Controls(show_lock = false)
                 MiniMap()
             }
+            {crate::ui::presence::layer(store, canvas.view())}
             {menu::view(store, canvas, open)}
         }
     }

@@ -223,7 +223,7 @@ const FIORD: Palette = Palette {
     wood: 0x4a_57_70,
     park: 0x4c_58_72,
     landuse: 0x49_55_71,
-    building: 0x3e_4a_64,
+    building: 0x003e_4a64,
     minor: 0x56_63_7e,
     secondary: 0x5d_6a_86,
     primary: 0x67_74_8f,

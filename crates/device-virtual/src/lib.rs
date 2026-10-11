@@ -570,6 +570,7 @@ const SERIES_LIMIT_RAD: f64 = 0.3;
 const LFO_HZ: f64 = 0.08;
 const DRIFT_SPAN: f64 = 0.35;
 const NOISE_AMP: f64 = 0.012;
+const BAND_PEAK: f64 = 0.5;
 
 #[derive(Clone, Copy)]
 struct Phasor {
@@ -784,7 +785,25 @@ impl Generator {
         }
     }
 
+    fn worst_peak(&self) -> f64 {
+        let tones: f64 = self.tones.iter().map(|tone| tone.amp).sum();
+        let carriers: f64 = self
+            .carriers
+            .iter()
+            .map(|carrier| match carrier.kind {
+                ModKind::Fm { .. } => carrier.amp,
+                ModKind::Am { depth } => carrier.amp * (1.0 + depth),
+            })
+            .sum();
+        tones + self.drift_amp + carriers + NOISE_AMP
+    }
+
+    fn headroom(&self) -> f64 {
+        (BAND_PEAK / self.worst_peak()).min(1.0)
+    }
+
     fn fill(&mut self, block: &mut [Complex<f32>], sample_rate: f64) {
+        let headroom = self.headroom();
         let lfo_step =
             Phasor::at(std::f64::consts::TAU * LFO_HZ * DRIFT_STEP_SAMPLES as f64 / sample_rate);
         for carrier in &mut self.carriers {
@@ -813,7 +832,7 @@ impl Generator {
             }
             sum.re += NOISE_AMP * self.noise.next_bipolar();
             sum.im += NOISE_AMP * self.noise.next_bipolar();
-            *slot = Complex::new(sum.re as f32, sum.im as f32);
+            *slot = Complex::new((sum.re * headroom) as f32, (sum.im * headroom) as f32);
             self.sample += 1;
             if self.sample.is_multiple_of(RENORMALIZE_SAMPLES) {
                 self.renormalize();
@@ -905,6 +924,19 @@ mod tests {
     fn shared_spectrum() -> &'static [f64] {
         static SPECTRUM: OnceLock<Vec<f64>> = OnceLock::new();
         SPECTRUM.get_or_init(|| power_spectrum(SPECTRUM_LEN, SPECTRUM_FS))
+    }
+
+    #[test]
+    fn the_test_band_never_reaches_full_scale() {
+        let mut generator = Generator::new();
+        let mut block = vec![Complex::new(0.0f32, 0.0f32); 1 << 18];
+        generator.fill(&mut block, DEFAULT_SAMPLE_RATE_HZ);
+        let peak = block
+            .iter()
+            .map(|sample| sample.re.abs().max(sample.im.abs()))
+            .fold(0.0f32, f32::max);
+        assert!(peak < 0.55, "peak {peak}");
+        assert!(peak > 0.2, "peak {peak}");
     }
 
     #[test]

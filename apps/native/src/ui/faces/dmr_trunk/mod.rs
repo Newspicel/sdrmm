@@ -19,7 +19,7 @@ use crate::{
     store::Store,
     ui::{
         faces::channel::settings::NumberLimit,
-        kit_audio::{self, Line, fault, lines, titled},
+        kit_audio::{self, Line, fault, lines, titled_block},
         kit_channel::{
             self, NumberSpec, button, format_hz, number_field, setting_row, text_field, tip,
             toggle_row,
@@ -152,7 +152,7 @@ fn setup(
         Memo::new(move |_| awaiting_control_channel(on_iq.get(), settings.get().control_hz));
     let control_row = move || {
         let set_control = set_control.clone();
-        titled(
+        titled_block(
             control_hint(awaiting.get()),
             setting_row(
                 "Control",
@@ -168,7 +168,7 @@ fn setup(
     };
     view! {
         column(class = "dt-section kc-grid") {
-            {titled("Trunking protocol", setting_row("Protocol", None, pick(options, protocol, pick_protocol)))}
+            {titled_block("Trunking protocol", setting_row("Protocol", None, pick(options, protocol, pick_protocol)))}
             {control_row}
             {search(store, node, settings, status)}
         }
@@ -180,7 +180,7 @@ fn faults(
     status: Memo<Option<TrunkSystemStatus>>,
     on_iq: Memo<bool>,
 ) -> impl IntoView {
-    let shown = move || {
+    move || {
         let mut shown = Vec::new();
         let status = status.get();
         if control_channel_stalled(
@@ -204,8 +204,7 @@ fn faults(
             ));
         }
         (!shown.is_empty()).then(|| view! { column(class = "dt-faults") {{shown}} })
-    };
-    shown
+    }
 }
 
 fn activity(status: Memo<Option<TrunkSystemStatus>>) -> impl IntoView {
@@ -405,7 +404,7 @@ fn search(
     let range = move || {
         let node = node.clone();
         enabled.get().then(|| {
-            titled(
+            titled_block(
                 format!(
                     "Narrow the search to start-end in MHz / step in kHz. {}",
                     summary()
@@ -429,7 +428,7 @@ fn search(
         })
     };
     view! {
-        {titled("Find the rest of the site's channels", toggle_row("Search", None, enabled, toggle))}
+        {titled_block("Find the rest of the site's channels", toggle_row("Search", None, enabled, toggle))}
         {range}
     }
 }

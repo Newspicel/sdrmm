@@ -151,7 +151,7 @@ fn run(
         }
         (Action::ResetSize, Target::Node(id)) => {
             let id = id.clone();
-            store.edit_graph(move |graph| {
+            store.edit_graph_quiet(move |graph| {
                 if let Some(node) = graph.nodes.iter_mut().find(|node| node.id == id) {
                     node.size = None;
                 }

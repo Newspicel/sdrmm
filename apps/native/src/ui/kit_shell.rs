@@ -69,7 +69,7 @@ const SHEET: &str = css!(
 .sk-iconbtn.sm { width: 20px; height: 20px; }
 .sk-iconbtn.danger:hover { color: var(--danger); }
 
-.sk-field {
+.sk-field.sk-field {
     height: 26px;
     min-width: 0;
     width: 100%;
@@ -81,7 +81,7 @@ const SHEET: &str = css!(
     border: 1px solid var(--line);
     border-radius: 5px;
 }
-.sk-field:focus-visible { border-color: var(--accent); outline: 1px solid var(--accent); }
+.sk-field.sk-field:focus-visible { border-color: var(--accent); outline: 1px solid var(--accent); }
 .sk-entry { flex: 1 1 auto; min-width: 0; }
 .sk-entry.narrow { flex: 0 0 72px; }
 
@@ -113,7 +113,8 @@ const SHEET: &str = css!(
 .sk-dialog.narrow { width: 380px; }
 .sk-dialog.wide { width: 760px; }
 .sk-dialog__head { align-items: baseline; gap: 12px; flex: 0 0 auto; }
-.sk-dialog__title { font-size: 14px; font-weight: 600; color: var(--ink); }
+.sk-dialog__title { flex: 0 0 auto; white-space: nowrap; font-size: 14px; font-weight: 600; color: var(--ink); }
+.sk-dialog__aside { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sk-dialog__body { flex-direction: column; gap: 10px; margin-top: 12px; min-height: 0; flex: 1 1 auto; overflow: auto; }
 .sk-dialog__foot {
     align-items: center;
@@ -452,50 +453,6 @@ pub fn list(title: Option<&'static str>, rows: impl IntoView + 'static) -> AnyVi
             column(class = "sk-list") {{rows}}
         }
     })
-}
-
-pub struct Row {
-    pub primary: String,
-    pub secondary: Option<String>,
-}
-
-pub fn list_row(
-    row: Row,
-    on_pick: Option<Box<dyn Fn()>>,
-    enabled: Signal<bool, LocalStorage>,
-    actions: AnyView,
-    below: AnyView,
-) -> impl IntoView {
-    let Row { primary, secondary } = row;
-    let main = view! {
-        column(class = "sk-row__main") {
-            text(class = "sk-row__primary") {{primary}}
-            {secondary.map(|secondary| AnyView::new(view! { text(class = "sk-row__secondary") {{secondary}} }))}
-        }
-    };
-    let face = match on_pick {
-        Some(pick) => AnyView::new(view! {
-            control(
-                class = "sk-row__main sk-row__pick",
-                tabindex = Focus::Sequential,
-                a11y:role = Role::Button,
-                state:disabled = move || !enabled.get(),
-                on:click:stop = move |_| if enabled.get_untracked() { pick() }
-            ) {
-                {main}
-            }
-        }),
-        None => AnyView::new(main),
-    };
-    view! {
-        column(class = "sk-row") {
-            row(class = "sk-row__line") {
-                {face}
-                row(class = "sk-row__actions") {{actions}}
-            }
-            {below}
-        }
-    }
 }
 
 pub fn hint(text: impl Into<String>) -> AnyView {

@@ -144,7 +144,6 @@ const SHEET: &str = css!(
 .kc-stat__value { color: var(--ink); }
 .kc-stat.ok .kc-stat__value { color: var(--ok); }
 .kc-stat.warn .kc-stat__label, .kc-stat.warn .kc-stat__value { color: oklch(0.8 0.14 75); }
-.kc-seg { flex-direction: row; flex-wrap: wrap; gap: 2px; }
 .kc-keys { width: 400px; }
 .kc-key-row { align-items: center; gap: 6px; }
 .kc-key-kind { width: 64px; }
@@ -389,7 +388,7 @@ where
             let value = *value;
             let item = AnyView::new(view! {
                 control(
-                    class = "kc-btn kc-btn--sm",
+                    class = "seg__item",
                     class:on = move || chosen.get() == value,
                     tabindex = Focus::Sequential,
                     a11y:role = Role::Button,
@@ -405,7 +404,7 @@ where
             }
         })
         .collect::<Vec<_>>();
-    view! { row(class = "kc-seg") {{items}} }
+    view! { row(class = "seg") {{items}} }
 }
 
 pub fn setting_row(

@@ -38,7 +38,7 @@ const CLEAR_ARM: Duration = Duration::from_secs(3);
 const SHEET: &str = css!(
     r#"
 .rec-note { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec-note-field { height: auto; min-height: 56px; }
+.sk-field.sk-field.rec-note-field { height: auto; min-height: 56px; }
 .rec-form { padding: 0 0 0 8px; border-left: 2px solid var(--accent-dim); }
 "#
 );

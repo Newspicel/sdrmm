@@ -11,7 +11,7 @@ use super::{
 };
 use crate::ui::{
     faces::channel::settings::NumberLimit,
-    kit_audio::{Line, lines, titled},
+    kit_audio::{Line, lines, titled, titled_block},
     kit_channel::{NumberSpec, button, number_field, setting_row},
 };
 
@@ -185,7 +185,7 @@ pub fn sweep_params(
                     edit(Box::new(move |held| (param.write)(held, next)));
                 }
             });
-            titled(param.title, setting_row(param.label, None, field))
+            titled_block(param.title, setting_row(param.label, None, field))
         })
         .collect();
     view! { column(class = "kc-grid") {{rows}} }

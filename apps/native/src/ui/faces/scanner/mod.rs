@@ -23,7 +23,7 @@ use crate::{
     store::Store,
     ui::{
         faces::channel::{binding::controlled_node_of, settings::NumberLimit},
-        kit_audio::{self, Stat, titled},
+        kit_audio::{self, Stat, titled, titled_block},
         kit_channel::{
             self, CLOSE_ICON, NumberSpec, button, group, icon, number_field, readout_row,
             setting_row, toggle_row,
@@ -43,6 +43,8 @@ const SHEET: &str = css!(
 .sc-list { flex-direction: column; max-height: 192px; overflow: auto; }
 .sc-entry { align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink); }
 .sc-entry__name { flex: 1 1 auto; min-width: 0; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-range { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); white-space: nowrap; }
+.sc-range.kc-danger { color: var(--danger); }
 .sc-count { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
 "#
 );
@@ -282,7 +284,7 @@ fn band_row(store: Store, node: String, settings: Memo<ScanSettings>, plan: Plan
             }
         })
     };
-    titled(
+    titled_block(
         "Fill the scan from the band plan",
         setting_row("Band", None, picker),
     )
@@ -348,7 +350,7 @@ fn range_head(settings: Memo<ScanSettings>, count: Memo<usize>, index: usize) ->
     AnyView::new(move || {
         titled(
             title(),
-            AnyView::new(view! { text(class = "kc-name", class:kc-danger = reversed) {{label}} }),
+            AnyView::new(view! { text(class = "sc-range", class:kc-danger = reversed) {{label}} }),
         )
     })
 }
@@ -451,7 +453,7 @@ fn freq_list(
                         step: Some(0.0125),
                     })
                     .unit("MHz")
-                    .optional("MHz"),
+                    .optional("446.0"),
                 move |added| {
                     if let Some(mhz) = added.filter(|mhz| *mhz > 0.0) {
                         on_change(with_hz(&values.get_untracked(), (mhz * 1e6).round()));
@@ -627,7 +629,7 @@ fn sweep_group(
         .collect();
     let hint = Memo::new(move |_| mode_hint(settings.get().mode));
     let find = move || {
-        titled(
+        titled_block(
             hint.get(),
             setting_row("Find", None, pick(modes.clone(), mode, pick_mode.clone())),
         )

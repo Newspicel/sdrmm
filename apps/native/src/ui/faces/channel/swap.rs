@@ -87,7 +87,7 @@ pub fn swap_decoder(store: Store, node: &str, type_id: &str) -> bool {
     };
     store.retype_channel_settings(node, settings);
     let id = node.to_owned();
-    store.edit_graph(move |graph| *graph = retype_channel(graph, &id, &descriptor));
+    store.edit_graph_quiet(move |graph| *graph = retype_channel(graph, &id, &descriptor));
     true
 }
 

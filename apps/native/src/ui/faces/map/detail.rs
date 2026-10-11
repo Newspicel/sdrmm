@@ -1,14 +1,16 @@
 use sdrmm_wire::{
     decode::DecoderEvent,
-    lora::{LoraFrame, LoraPayload},
-    remote_id::{RemoteIdFrame, RemoteIdMessage, UaStatus, UaType},
+    remote_id::{RemoteIdFrame, UaStatus},
     weather::RadiosondeFrame,
 };
 
 use super::targets::{label, position};
-use crate::ui::{
-    kit_maps::feed::Station,
-    map::{Geo, geo::great_circle_km},
+use crate::{
+    decoders::views::{lora_protocol, operator_of, pilot_of, ua_type_label, ua_type_of},
+    ui::{
+        kit_maps::feed::Station,
+        map::{Geo, geo::great_circle_km},
+    },
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -67,28 +69,6 @@ fn kept(entries: Vec<(&'static str, Option<String>)>) -> Vec<(&'static str, Stri
 }
 
 #[must_use]
-pub const fn ua_type_label(kind: UaType) -> &'static str {
-    match kind {
-        UaType::None => "-",
-        UaType::Aeroplane => "Aeroplane",
-        UaType::Rotorcraft => "Multirotor",
-        UaType::Gyroplane => "Gyroplane",
-        UaType::HybridLift => "VTOL",
-        UaType::Ornithopter => "Ornithopter",
-        UaType::Glider => "Glider",
-        UaType::Kite => "Kite",
-        UaType::FreeBalloon => "Balloon",
-        UaType::CaptiveBalloon => "Captive balloon",
-        UaType::Airship => "Airship",
-        UaType::Parachute => "Parachute",
-        UaType::Rocket => "Rocket",
-        UaType::TetheredAircraft => "Tethered",
-        UaType::GroundObstacle => "Obstacle",
-        UaType::Other => "Other",
-    }
-}
-
-#[must_use]
 pub const fn ua_status_label(status: UaStatus) -> &'static str {
     match status {
         UaStatus::Undeclared => "-",
@@ -100,38 +80,6 @@ pub const fn ua_status_label(status: UaStatus) -> &'static str {
     }
 }
 
-#[must_use]
-pub fn lora_protocol(frame: &LoraFrame) -> &'static str {
-    match &frame.decoded {
-        None => "LoRa",
-        Some(LoraPayload::Lorawan(_)) => "LoRaWAN",
-        Some(LoraPayload::Meshtastic(_)) => "Meshtastic",
-        Some(LoraPayload::Meshcore(_)) => "MeshCore",
-    }
-}
-
-#[must_use]
-pub fn pilot_of(frame: &RemoteIdFrame) -> Option<Geo> {
-    let system = frame.system()?;
-    Geo::checked(system.operator_lat, system.operator_lon)
-}
-
-fn ua_type_of(frame: &RemoteIdFrame) -> Option<UaType> {
-    frame.messages.iter().find_map(|message| match message {
-        RemoteIdMessage::BasicId { ua_type, .. } => Some(*ua_type),
-        _ => None,
-    })
-}
-
-fn operator_of(frame: &RemoteIdFrame) -> Option<String> {
-    frame.messages.iter().find_map(|message| match message {
-        RemoteIdMessage::OperatorId { operator_id, .. } if !operator_id.is_empty() => {
-            Some(operator_id.clone())
-        }
-        _ => None,
-    })
-}
-
 fn remote_id_rows(
     station: &Station,
     frame: &RemoteIdFrame,
@@ -139,7 +87,7 @@ fn remote_id_rows(
 ) -> Vec<(&'static str, Option<String>)> {
     let location = frame.location();
     let drone = position(station);
-    let pilot = pilot_of(frame);
+    let pilot = pilot_of(frame).and_then(|(lat, lon)| Geo::checked(Some(lat), Some(lon)));
     let metres = |value: Option<f32>| scalar(value.map(f64::from), 0, " m");
     vec![
         ("ID", Some(station.id.clone())),
@@ -255,10 +203,13 @@ pub fn detail(station: &Station) -> Detail {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::decode::{AdsbMessage, AisMessage};
+    use sdrmm_wire::{
+        decode::{AdsbMessage, AisMessage},
+        remote_id::{RemoteIdMessage, UaType},
+    };
 
     use super::*;
-    use crate::ui::kit_maps::merge::tests::{drone, location, pilot};
+    use crate::ui::kit_maps::fixtures::{drone, location, pilot};
 
     fn station(event: DecoderEvent) -> Station {
         Station {

@@ -20,7 +20,7 @@ use crate::{
     binding,
     store::Store,
     ui::{
-        kit_audio::{self, Stat, Tone, edit_body, fault, readout, titled},
+        kit_audio::{self, Stat, Tone, edit_body, fault, readout, titled, titled_block},
         kit_channel::{self, button},
         widgets::{check, row_field},
     },
@@ -50,7 +50,7 @@ fn hunt_of(store: Store, node: &str) -> Option<sdrmm_wire::patch::HuntNode> {
     store
         .graph
         .with(|graph| match graph.node(node).map(|found| &found.body) {
-            Some(NodeBody::Hunt(hunt)) => Some(hunt.clone()),
+            Some(NodeBody::Hunt(hunt)) => Some(*hunt),
             _ => None,
         })
 }
@@ -89,7 +89,7 @@ pub fn face(store: Store, node: String) -> impl IntoView {
             }
             {body(hunt, act.clone())}
             {kit_audio::alert(move || hunt.status.get().and_then(|status| status.error))}
-            {titled("Geiger clicks", AnyView::new(row_field("Clicks", check(clicks, {
+            {titled_block("Geiger clicks", AnyView::new(row_field("Clicks", check(clicks, {
                 let node = node.clone();
                 move |on| set_clicks(store, &node, on)
             }))))}

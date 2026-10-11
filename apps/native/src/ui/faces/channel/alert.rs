@@ -48,7 +48,7 @@ impl Refusals {
         list.drain(..extra);
     }
 
-    pub fn from_report(&mut self, report: &PatchApplyReport, at_ms: i64) {
+    pub fn absorb_report(&mut self, report: &PatchApplyReport, at_ms: i64) {
         for list in self.by_node.values_mut() {
             list.retain(|held| held.source != RefusalSource::Apply);
         }
@@ -116,7 +116,7 @@ impl Store {
     pub fn refusals_from_report(self, report: &PatchApplyReport) {
         let at = now_ms();
         self.refusals
-            .update(|held| Arc::make_mut(held).from_report(report, at));
+            .update(|held| Arc::make_mut(held).absorb_report(report, at));
     }
 
     pub fn dismiss_refusals(self, node: &str) {
@@ -237,9 +237,9 @@ mod tests {
     #[test]
     fn an_apply_report_replaces_the_last_apply_and_names_absent_radios() {
         let mut refusals = Refusals::default();
-        refusals.from_report(&report(&[("ch", "too wide")], &[]), 10);
+        refusals.absorb_report(&report(&[("ch", "too wide")], &[]), 10);
         refusals.flag("ch", refusal(RefusalSource::Action, 5));
-        refusals.from_report(&report(&[], &["dev"]), 20);
+        refusals.absorb_report(&report(&[], &["dev"]), 20);
         assert_eq!(
             refusals.visible("ch", 30).map(|shown| shown.source),
             Some(RefusalSource::Action)

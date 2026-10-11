@@ -16,7 +16,7 @@ use crate::{
         faces::channel::settings::{
             NumberLimit, audio_chain_active, with_notch_added, with_notch_at, with_notch_removed,
         },
-        kit_audio::{self, edit_body},
+        kit_audio,
         kit_channel::{
             self, CLOSE_ICON, NumberSpec, button, format_hz, icon, number_field, setting_row,
             slider_field, tip, titled_segments,
@@ -91,8 +91,7 @@ struct Chain {
 impl Chain {
     fn edit(self, change: impl FnOnce(&mut AudioProcessing) + 'static) {
         let change: Edit = Box::new(change);
-        let node = self.node.get_value();
-        edit_body(self.store, &node, move |body| {
+        self.store.edit_node(&self.node.get_value(), move |body| {
             if let NodeBody::AudioFx(fx) = body {
                 change(&mut fx.settings);
             }

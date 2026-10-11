@@ -69,7 +69,7 @@ pub fn category_class(category: NodeCategory) -> &'static str {
 #[must_use]
 pub fn port_label(name: &str, siblings: &[String]) -> String {
     let numbered = format!("{name}2");
-    if siblings.iter().any(|sibling| *sibling == numbered) {
+    if siblings.contains(&numbered) {
         format!("{name}1")
     } else {
         name.to_owned()

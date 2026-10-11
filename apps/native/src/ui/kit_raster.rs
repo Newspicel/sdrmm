@@ -194,47 +194,20 @@ struct Gpu {
     picture: Option<(wgpu::Texture, wgpu::BindGroup)>,
 }
 
-#[derive(Clone, Copy)]
-pub struct Pulse(RwSignal<bool>);
-
-impl Default for Pulse {
-    fn default() -> Self {
-        Self(RwSignal::new(false))
-    }
-}
-
-impl Pulse {
-    pub fn beat(self) {
-        self.0.try_update(|on| *on = !*on);
-    }
-
-    #[must_use]
-    pub fn backdrop(self) -> Option<String> {
-        Some(backdrop(self.0.get()).to_owned())
-    }
-}
-
-#[must_use]
-pub fn backdrop(on: bool) -> &'static str {
-    if on { "#000001" } else { "#000000" }
-}
-
 pub struct RasterSurface<S: Scene> {
     scene: Rc<RefCell<S>>,
     raster: Raster,
     gpu: Option<Gpu>,
     drawn: Option<(u64, u32, u32)>,
-    pulse: Pulse,
 }
 
 impl<S: Scene> RasterSurface<S> {
-    pub fn new(scene: Rc<RefCell<S>>, pulse: Pulse) -> Self {
+    pub fn new(scene: Rc<RefCell<S>>) -> Self {
         Self {
             scene,
             raster: Raster::default(),
             gpu: None,
             drawn: None,
-            pulse,
         }
     }
 
@@ -300,8 +273,7 @@ impl<S: Scene> SurfaceRenderer for RasterSurface<S> {
             self.gpu = Some(build(cx.device, format));
             self.drawn = None;
         }
-        let repainted = self.repaint(cx);
-        if repainted {
+        if self.repaint(cx) {
             self.upload(cx);
         }
         let Some((_, binding)) = self.gpu.as_ref().and_then(|gpu| gpu.picture.as_ref()) else {
@@ -341,9 +313,6 @@ impl<S: Scene> SurfaceRenderer for RasterSurface<S> {
             }
         }
         cx.queue.submit([encoder.finish()]);
-        if repainted {
-            self.pulse.beat();
-        }
     }
 }
 
@@ -459,11 +428,9 @@ fn fragment(in: Varying) -> @location(0) vec4<f32> {
 "#;
 
 pub fn raster_view<S: Scene>(class: &'static str, scene: Rc<RefCell<S>>) -> impl IntoView {
-    let pulse = Pulse::default();
     zgui::elements::surface()
         .class(class)
-        .style_property("background-color", move || pulse.backdrop())
-        .renderer(RasterSurface::new(scene, pulse))
+        .renderer(RasterSurface::new(scene))
         .into_view()
 }
 

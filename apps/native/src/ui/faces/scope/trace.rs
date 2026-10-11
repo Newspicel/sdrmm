@@ -5,8 +5,6 @@ use zgui::{
     surface::{SurfaceRenderCx, SurfaceRenderer, wgpu},
 };
 
-use crate::ui::kit_raster::Pulse;
-
 use super::{
     gpu::{
         VERTEX_WGSL, draw, linear_sampler, pipeline, sampler_entry, texture, texture_entry,
@@ -305,7 +303,6 @@ type Drawn = (
 pub struct TraceSurface {
     live: Rc<RefCell<Live>>,
     inputs: Inputs,
-    pulse: Pulse,
     held: Option<Resources>,
     points: TracePoints,
     high: Vec<f32>,
@@ -318,11 +315,10 @@ pub struct TraceSurface {
 }
 
 impl TraceSurface {
-    pub fn new(live: Rc<RefCell<Live>>, inputs: Inputs, pulse: Pulse) -> Self {
+    pub fn new(live: Rc<RefCell<Live>>, inputs: Inputs) -> Self {
         Self {
             live,
             inputs,
-            pulse,
             held: None,
             points: TracePoints::default(),
             high: Vec::new(),
@@ -545,7 +541,6 @@ impl SurfaceRenderer for TraceSurface {
         );
         cx.queue.write_buffer(&held.params, 0, &plot_bytes(&frame));
         draw(cx, &held.pipeline, &held.binding);
-        self.pulse.beat();
     }
 }
 

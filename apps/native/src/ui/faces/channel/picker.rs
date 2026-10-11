@@ -8,7 +8,7 @@ use crate::{
     ui::kit_channel::{button, format_hz},
 };
 
-pub const FAMILIES: [(DecoderFamily, &str); 9] = [
+pub const FAMILIES: [(DecoderFamily, &str); 10] = [
     (DecoderFamily::AnalogVoice, "Analog voice"),
     (DecoderFamily::DigitalVoice, "Digital voice"),
     (DecoderFamily::Aviation, "Aviation"),
@@ -17,6 +17,7 @@ pub const FAMILIES: [(DecoderFamily, &str); 9] = [
     (DecoderFamily::Paging, "Paging and telemetry"),
     (DecoderFamily::Video, "Pictures and video"),
     (DecoderFamily::Broadcast, "Broadcast digital"),
+    (DecoderFamily::Weather, "Weather and satellites"),
     (DecoderFamily::Utility, "Utility"),
 ];
 
@@ -301,6 +302,21 @@ pub fn replace_decoder(
 mod tests {
     use super::*;
 
+    const fn family_rank(family: DecoderFamily) -> usize {
+        match family {
+            DecoderFamily::AnalogVoice => 0,
+            DecoderFamily::DigitalVoice => 1,
+            DecoderFamily::Aviation => 2,
+            DecoderFamily::Marine => 3,
+            DecoderFamily::Amateur => 4,
+            DecoderFamily::Paging => 5,
+            DecoderFamily::Video => 6,
+            DecoderFamily::Broadcast => 7,
+            DecoderFamily::Weather => 8,
+            DecoderFamily::Utility => 9,
+        }
+    }
+
     fn descriptor(type_id: &str, name: &str, family: DecoderFamily) -> ChannelDescriptor {
         ChannelDescriptor {
             type_id: type_id.into(),
@@ -317,6 +333,16 @@ mod tests {
             descriptor("dmr", "DMR", DecoderFamily::DigitalVoice),
             descriptor("adsb", "ADS-B", DecoderFamily::Aviation),
         ]
+    }
+
+    #[test]
+    fn every_family_has_a_group_in_web_order() {
+        for (at, (family, _)) in FAMILIES.iter().enumerate() {
+            assert_eq!(family_rank(*family), at);
+        }
+        assert_eq!(FAMILIES[8].1, "Weather and satellites");
+        let weather = vec![descriptor("apt", "APT", DecoderFamily::Weather)];
+        assert_eq!(decoder_groups(&weather)[0].title, "Weather and satellites");
     }
 
     #[test]
