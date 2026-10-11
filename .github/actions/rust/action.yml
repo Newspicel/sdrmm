@@ -25,7 +25,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends clang libclang-dev nasm python3 make cmake libxkbcommon-dev
+        sudo apt-get install -y --no-install-recommends clang libclang-dev nasm python3 make cmake libxkbcommon-dev libasound2-dev
     - if: runner.os == 'Linux' && inputs.tauri == 'true'
       shell: bash
       run: |
