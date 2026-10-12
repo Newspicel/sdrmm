@@ -43,13 +43,9 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
   shifted channel
 - Radtel RT-4D: settings blocks, keys and message templates are read but not modelled
 
-## 3. Decoders
-
-- GSM downlink analysis, OsmocomBB-style monitoring
-
-## 4. Recording & measurement
+## 3. Recording & measurement
 - Recording scheduler and unattended satellite-pass automation
 - Radio astronomy, star tracker, sky map
 
-## 5. Automation & API
+## 4. Automation & API
 - WASM plugin SDK
