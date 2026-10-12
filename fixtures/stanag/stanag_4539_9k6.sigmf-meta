@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 9600.0,
+    "core:recorder": "SDR--",
+    "core:hw": "sigidwiki.com audio sample, CC BY-SA",
+    "core:description": "STANAG 4539 at 9600 bps, USB audio"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Source: https://www.sigidwiki.com/images/e/e9/S4539-S9600.wav (CC BY-SA); source SHA-256 31d45e2b14b47d019fa22e44492b2bf35d994e258f0c709ba1aebeaeeac58d7e; USB audio 6..10 s resampled to 9600 Hz, zero quadrature",
+      "core:sample_count": 38400,
+      "core:sample_start": 0
+    }
+  ]
+}

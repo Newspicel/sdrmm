@@ -217,7 +217,7 @@ export function NodeShell({
     <div
       ref={portalContainer}
       style={surface === "canvas" ? canvasSize(node.kind, minimum.h, width) : undefined}
-      className={`relative flex h-full min-h-0 flex-col ${surface === "canvas" && width === undefined && fitWidth(node.kind) !== null ? "w-max" : "w-full"} rounded-[4px] border bg-linear-to-b from-panel-3 to-panel shadow-node ${
+      className={`relative flex h-full min-h-0 flex-col ${surface === "canvas" && width === undefined && fitWidth(node.kind) !== null ? "w-max" : "w-full"} rounded-control border bg-linear-to-b from-panel-3 to-panel shadow-node ${
         selected ? "border-accent" : "border-line"
       }`}
     >
@@ -228,11 +228,11 @@ export function NodeShell({
             minHeight={minimum.h}
             autoScale={false}
             lineClassName="!border-accent/40"
-            handleClassName="!size-2 !rounded-[2px] !border-accent !bg-panel"
+            handleClassName="!size-2 !rounded-inset !border-accent !bg-panel"
           />
         )}
         <header
-          className={`flex h-6.5 shrink-0 items-center gap-2 rounded-t-[3px] border-b border-line pr-1 pl-2 ${CATEGORY_BAR[category]} ${
+          className={`flex h-6.5 shrink-0 items-center gap-2 rounded-t-control border-b border-line pr-1 pl-2 ${CATEGORY_BAR[category]} ${
             surface === "canvas" ? "node-drag cursor-grab active:cursor-grabbing" : ""
           }`}
         >
@@ -242,12 +242,10 @@ export function NodeShell({
           />
           <NodeName node={node} title={title} />
           {badge !== undefined && (
-            <span className="shrink-0 font-mono text-[10.5px] text-ink-faint">{badge}</span>
+            <span className="shrink-0 font-mono text-2xs text-ink-faint">{badge}</span>
           )}
           {subtitle !== undefined && (
-            <span className="ml-auto truncate font-mono text-[10.5px] text-ink-faint">
-              {subtitle}
-            </span>
+            <span className="ml-auto truncate font-mono text-2xs text-ink-faint">{subtitle}</span>
           )}
           <span
             className={`nodrag flex cursor-auto items-center gap-0.5 ${subtitle === undefined ? "ml-auto" : ""}`}
@@ -295,7 +293,7 @@ export function NodeShell({
         <FaceAlert node={node.id} />
 
         <div
-          className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-[3px] nodrag nopan"
+          className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-control nodrag nopan"
           onPointerDownCapture={surface === "canvas" ? () => workspace.select(node.id) : undefined}
         >
           <Active value={active}>
@@ -418,7 +416,7 @@ function PortHandle({
         <span
           aria-hidden
           style={{ top: offset }}
-          className={`pointer-events-none absolute z-10 -translate-y-1/2 rounded-[3px] bg-bg/85 px-1 font-mono text-[10px] whitespace-nowrap select-none text-ink-faint ${
+          className={`pointer-events-none absolute z-10 -translate-y-1/2 rounded-control bg-bg/85 px-1 font-mono text-3xs whitespace-nowrap select-none text-ink-faint ${
             out ? "left-full ml-2.5" : "right-full mr-2.5"
           }`}
         >

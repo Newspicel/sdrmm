@@ -24,7 +24,7 @@ export function Stat({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 font-mono text-[11px] whitespace-nowrap ${
+      className={`inline-flex items-center gap-1 font-mono text-2xs whitespace-nowrap ${
         children === undefined && tone !== undefined ? TONE[tone] : "text-ink-faint"
       }`}
       title={title}

@@ -42,7 +42,7 @@ export function AnalyzerReadout({ marker }: { marker: MarkerRow }) {
   return (
     <section
       aria-label="Marker reading"
-      className="flex flex-wrap items-end gap-x-8 gap-y-3 rounded-[3px] border border-line bg-panel-2/60 px-4 py-3"
+      className="flex flex-wrap items-end gap-x-8 gap-y-3 rounded-control border border-line bg-panel-2/60 px-4 py-3"
     >
       <Big label={marker.id === "best" ? "Lowest SWR at" : `Marker ${marker.label}`}>
         {formatHz(row.frequencyHz)}
@@ -109,7 +109,7 @@ export function MarkerTable({
     <Panel title="Markers" hint="Click the chart to place a marker. Arrow keys move it.">
       <table className="w-full font-mono text-xs tabular-nums">
         <thead>
-          <tr className="text-left text-[10.5px] text-ink-faint">
+          <tr className="text-left text-2xs text-ink-faint">
             <th className="w-6 py-1 font-normal" />
             <th className="py-1 font-normal">Frequency</th>
             <th className="py-1 text-right font-normal">SWR</th>
@@ -168,7 +168,7 @@ export function BandTable({
       ) : (
         <table className="w-full font-mono text-xs tabular-nums">
           <thead>
-            <tr className="text-left text-[10.5px] text-ink-faint">
+            <tr className="text-left text-2xs text-ink-faint">
               <th className="py-1 font-normal">Band</th>
               <th className="py-1 text-right font-normal">Best</th>
               <th className="py-1 text-right font-normal">At</th>
@@ -221,7 +221,7 @@ export function MatchPanel({ row }: { row: PointReadout }) {
           ))}
         </ul>
       )}
-      <p className="pt-1 font-mono text-[10.5px] text-ink-faint">
+      <p className="pt-1 font-mono text-2xs text-ink-faint">
         {formatImpedance(row.impedance)} → {REFERENCE_OHMS} Ω at {formatHz(row.frequencyHz)}
       </p>
     </Panel>

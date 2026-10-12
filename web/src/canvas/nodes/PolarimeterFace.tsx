@@ -137,7 +137,7 @@ function PolarGlyph({ reading }: { reading: PolarimeterReading | null }) {
       width={GLYPH_PX}
       height={GLYPH_PX}
       viewBox={`0 0 ${GLYPH_PX} ${GLYPH_PX}`}
-      className="my-2 shrink-0 rounded-[3px] bg-well"
+      className="my-2 shrink-0 rounded-control bg-well"
     >
       <path
         d={`M4 ${centre}H${GLYPH_PX - 4}M${centre} 4V${GLYPH_PX - 4}`}
@@ -147,11 +147,11 @@ function PolarGlyph({ reading }: { reading: PolarimeterReading | null }) {
         x={GLYPH_PX - 4}
         y={centre - 3}
         textAnchor="end"
-        className="fill-ink-faint font-mono text-[8px]"
+        className="fill-ink-faint font-mono text-plot"
       >
         H
       </text>
-      <text x={centre + 3} y={10} className="fill-ink-faint font-mono text-[8px]">
+      <text x={centre + 3} y={10} className="fill-ink-faint font-mono text-plot">
         V
       </text>
       {reading !== null && (
@@ -192,7 +192,7 @@ function PolarChips({
   };
   return (
     <>
-      <Chips className="p-2">
+      <Chips>
         <ChoiceChip
           label="H"
           title="Lane of the horizontal antenna"

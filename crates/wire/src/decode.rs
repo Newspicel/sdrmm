@@ -533,6 +533,7 @@ pub enum DvMode {
     M17,
     #[serde(rename = "freedv")]
     FreeDv,
+    Tetra,
 }
 
 impl DvMode {
@@ -547,6 +548,7 @@ impl DvMode {
             Self::Dpmr => "dPMR",
             Self::M17 => "M17",
             Self::FreeDv => "FreeDV",
+            Self::Tetra => "TETRA",
         }
     }
 
@@ -561,6 +563,7 @@ impl DvMode {
             Self::Dpmr => "dpmr",
             Self::M17 => "m17",
             Self::FreeDv => "freedv",
+            Self::Tetra => "tetra",
         }
     }
 
@@ -575,6 +578,7 @@ impl DvMode {
             Self::Dpmr,
             Self::M17,
             Self::FreeDv,
+            Self::Tetra,
         ]
         .into_iter()
         .find(|mode| mode.type_id() == type_id)
@@ -1427,6 +1431,7 @@ pub enum DecoderEvent {
     Ermes(ErmesMessage),
     Eot(EotMessage),
     Sarsat(crate::sarsat::SarsatMessage),
+    Tetrapol(crate::tetrapol::TetrapolMessage),
     Adsb(AdsbMessage),
     Ais(AisMessage),
     Aprs(AprsPacket),
@@ -1471,9 +1476,11 @@ pub enum DecoderEvent {
     Ble(crate::ble::BleAdvert),
     WifiOccupancy(crate::airtime::WifiOccupancyReport),
     IsmSurvey(crate::airtime::IsmSurveyReport),
+    Ism(crate::ism::IsmMessage),
     NoiseFigure(crate::measurement::NoiseFigureReport),
     Per(crate::measurement::PerReport),
     Sid(crate::measurement::SidReport),
+    Stanag(crate::stanag::StanagReport),
 }
 
 fn dect_summary(f: &DectFrame) -> String {
@@ -1696,6 +1703,7 @@ impl DecoderEvent {
             Self::Ermes(_) => "ermes",
             Self::Eot(_) => "eot",
             Self::Sarsat(_) => "sarsat",
+            Self::Tetrapol(_) => "tetrapol",
             Self::Adsb(_) => "adsb",
             Self::Ais(_) => "ais",
             Self::Aprs(_) => "aprs",
@@ -1741,9 +1749,11 @@ impl DecoderEvent {
             Self::Ble(_) => "ble",
             Self::WifiOccupancy(_) => "wifi_occupancy",
             Self::IsmSurvey(_) => "ism_survey",
+            Self::Ism(_) => "ism",
             Self::NoiseFigure(_) => "noise_figure",
             Self::Per(_) => "per",
             Self::Sid(_) => "sid",
+            Self::Stanag(_) => "stanag",
         }
     }
 
@@ -1774,6 +1784,7 @@ impl DecoderEvent {
             }
             Self::Eot(m) => m.summary(),
             Self::Sarsat(m) => m.summary(),
+            Self::Tetrapol(m) => m.summary(),
             Self::Adsb(a) => {
                 let mut parts = vec![a.icao.clone()];
                 if let Some(cs) = &a.callsign {
@@ -1933,9 +1944,11 @@ impl DecoderEvent {
             Self::Ble(a) => a.summary(),
             Self::WifiOccupancy(r) => r.summary(),
             Self::IsmSurvey(r) => r.summary(),
+            Self::Ism(m) => m.summary(),
             Self::NoiseFigure(r) => r.summary(),
             Self::Per(r) => r.summary(),
             Self::Sid(r) => r.summary(),
+            Self::Stanag(r) => r.summary(),
         }
     }
 
@@ -1973,6 +1986,7 @@ impl DecoderEvent {
             Self::Ermes(p) => Some(p.local_address.to_string()),
             Self::Eot(m) => Some(m.unit_address.to_string()),
             Self::Sarsat(m) => Some(m.hex_id.clone()),
+            Self::Tetrapol(m) => m.station(),
             Self::Adsb(a) => Some(a.icao.clone()),
             Self::Ais(m) => Some(m.mmsi.to_string()),
             Self::Aprs(p) => Some(p.source.clone()),
@@ -2018,11 +2032,13 @@ impl DecoderEvent {
             Self::Lora(f) => f.station(),
             Self::RemoteId(f) => Some(f.station()),
             Self::Ble(a) => a.station(),
+            Self::Ism(m) => Some(m.station()),
             Self::WifiOccupancy(_)
             | Self::IsmSurvey(_)
             | Self::NoiseFigure(_)
             | Self::Per(_)
-            | Self::Sid(_) => None,
+            | Self::Sid(_)
+            | Self::Stanag(_) => None,
         }
     }
 }
@@ -2184,6 +2200,15 @@ mod tests {
                 errors_corrected: 0,
                 pdf2_ok: None,
             }),
+            DecoderEvent::Tetrapol(crate::tetrapol::TetrapolMessage {
+                channel: crate::tetrapol::TetrapolLogicalChannel::Traffic,
+                frame: None,
+                scrambling: 0,
+                address: None,
+                payload: crate::tetrapol::TetrapolPayload::GroupIdle { cause: 0 },
+                data: String::new(),
+                rejected: 0,
+            }),
             DecoderEvent::Adsb(AdsbMessage::default()),
             DecoderEvent::Ais(AisMessage::default()),
             DecoderEvent::Aprs(AprsPacket::default()),
@@ -2290,6 +2315,7 @@ mod tests {
             DecoderEvent::Hfdl(link()),
             DecoderEvent::Iridium(link()),
             DecoderEvent::Radar(radar_event()),
+            DecoderEvent::Ism(crate::ism::IsmMessage::default()),
         ] {
             let json = serde_json::to_value(&ev).unwrap();
             assert_eq!(json["kind"], ev.kind());

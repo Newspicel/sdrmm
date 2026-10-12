@@ -179,7 +179,7 @@ function RoseMarkTick({ mark, centre, outer }: { mark: RoseMark; centre: number;
       <text
         x={text.x}
         y={text.y}
-        className="fill-ink-dim font-mono text-[9px]"
+        className="fill-ink-dim font-mono text-plot"
         textAnchor="middle"
         dominantBaseline="middle"
       >

@@ -164,6 +164,7 @@ const EOT_CHANNELS: &[Range] = &[
     spot_khz(477_700.0, 6.25),
 ];
 const SARSAT_BAND: &[Range] = &[mhz(406.0, 406.1)];
+const TETRAPOL_BANDS: &[Range] = &[mhz(70.0, 87.5), mhz(380.0, 400.0), mhz(410.0, 430.0)];
 const ISM: &[Range] = &[
     mhz(314.5, 315.5),
     mhz(433.05, 434.79),
@@ -544,11 +545,23 @@ const SIGNATURES: &[Signature] = &[
         )
     },
     Signature {
+        symbol_rate_hz: Some(range(7_600.0, 8_400.0)),
+        deviation_hz: Some(range(1_400.0, 2_600.0)),
+        frequencies: TETRAPOL_BANDS,
+        ..signature(
+            "Tetrapol",
+            Some("tetrapol"),
+            &[Modulation::Fsk2],
+            range(8_000.0, 14_000.0),
+            "8 kbaud GMSK in a 12.5 kHz channel on a Tetrapol band",
+        )
+    },
+    Signature {
         symbol_rate_hz: Some(range(300.0, 30_000.0)),
         frequencies: ISM,
         ..signature(
             "ISM remote (OOK)",
-            None,
+            Some("ism"),
             &[Modulation::Ook],
             range(2_000.0, 160_000.0),
             "a keyed carrier at remote-control speed",
@@ -560,7 +573,7 @@ const SIGNATURES: &[Signature] = &[
         frequencies: ISM,
         ..signature(
             "ISM telemetry (2-FSK)",
-            None,
+            Some("ism"),
             &[Modulation::Fsk2],
             range(15_000.0, 160_000.0),
             "a wide two-level shift, sensor-radio speed",
@@ -1166,5 +1179,17 @@ mod tests {
             Some(1_090_000_000.0),
         );
         assert_eq!(names(&found).first(), Some(&"ADS-B / Mode S"));
+    }
+
+    #[test]
+    fn a_keyed_remote_on_433_mhz_offers_the_ism_decoder() {
+        let found = candidates(
+            Modulation::Ook,
+            &band(20_000.0),
+            &keyed(2_500.0, 0.0),
+            Some(433_920_000.0),
+        );
+        let remote = found.iter().find(|m| m.name == "ISM remote (OOK)");
+        assert_eq!(remote.and_then(|m| m.type_id.as_deref()), Some("ism"));
     }
 }

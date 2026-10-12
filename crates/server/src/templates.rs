@@ -5,12 +5,12 @@ mod array;
 use sdrmm_wire::{
     AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink, BleParams,
     ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
-    EotParams, ErmesParams, FlexParams, GnssParams, IsmSurveyParams, LrptParams, M17Params,
-    MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge, PatchGraph,
-    PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
+    EotParams, ErmesParams, FlexParams, GnssParams, IsmParams, IsmSurveyParams, LrptParams,
+    M17Params, MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge,
+    PatchGraph, PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
     RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SarsatParams, SidParams, Squelch,
-    SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams,
-    WsprParams, YsfParams,
+    SsbParams, SstvParams, StanagParams, TemplateInfo, TetraParams, WefaxParams, WfmParams,
+    WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -401,6 +401,20 @@ static TEMPLATES: &[Entry] = &[
         )],
     },
     Entry {
+        id: "ism-433",
+        name: "433 MHz sensors",
+        description: "Weather stations, thermometers, remotes and door sensors.",
+        explainer: "Decodes OOK and FSK sensors the way rtl_433 does. Tick unknown to also \
+                    log repeated codes no decoder knows.",
+        center_hz: 433_920_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[Channel::at(
+            433_920_000.0,
+            || ChannelParams::Ism(IsmParams::default()),
+            LOG_READ,
+        )],
+    },
+    Entry {
         id: "ism-survey",
         name: "2.4 GHz survey",
         description: "Who uses 2.4 GHz: Wi-Fi, Bluetooth, Zigbee, ovens.",
@@ -609,6 +623,21 @@ static TEMPLATES: &[Entry] = &[
         ],
     },
     Entry {
+        id: "tetra-cell",
+        name: "TETRA cell",
+        description: "Cell identity, calls and short messages of a TETRA carrier.",
+        explainer: "Tune to a TETRA downlink. The log names the network, location area and \
+                    carrier, then each call setup, talker and SDS. Voice is not decoded, and \
+                    air-encrypted cells only show their identity. 392.5 MHz is only an example.",
+        center_hz: 392_500_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[Channel::at(
+            392_500_000.0,
+            || ChannelParams::Tetra(TetraParams::default()),
+            LOG,
+        )],
+    },
+    Entry {
         id: "dab-check",
         name: "DAB ensemble check",
         description: "Confirm a DAB block is on air and measure its lock.",
@@ -711,6 +740,28 @@ static TEMPLATES: &[Entry] = &[
             ),
             Channel::at(
                 14_230_000.0,
+                || ChannelParams::Ssb(SsbParams::default()),
+                LISTEN,
+            ),
+        ],
+    },
+    Entry {
+        id: "hf-modems",
+        name: "HF data modems",
+        description: "Names STANAG, MIL-STD-188-110 and 2G ALE signals.",
+        explainer: "Put the channel on the USB dial of a data signal. The identifier names \
+                    the modem, its carrier and, for MIL-STD-188-110A, the rate from its \
+                    preamble.",
+        center_hz: 8_500_000.0,
+        sample_rate: 250_000.0,
+        channels: &[
+            Channel::at(
+                8_500_000.0,
+                || ChannelParams::Stanag(StanagParams::default()),
+                LOG_READ,
+            ),
+            Channel::at(
+                8_500_000.0,
                 || ChannelParams::Ssb(SsbParams::default()),
                 LISTEN,
             ),

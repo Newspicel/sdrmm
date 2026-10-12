@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "rtl_433_tests",
+    "core:description": "VN1TXC_02.cu8"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 433920000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/acurite/Acurite_5-n-1/VN1TXC_02.cu8; source SHA-256 c70950b03e04095cbf78133d5a3c4cacf2d999553ed385ca9e1334d5c663fb16; samples 18295..35795 at 250000 Hz",
+      "core:sample_count": 17500,
+      "core:sample_start": 0
+    }
+  ]
+}

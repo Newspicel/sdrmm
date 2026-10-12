@@ -463,6 +463,57 @@ describe("eventSummary", () => {
     expect(eventStation(beacon)).toBe("ADCD00800440401");
   });
 
+  it("renders Tetrapol signalling like the server summary", () => {
+    const activation: DecoderEvent = {
+      kind: "tetrapol",
+      data: {
+        channel: "paging",
+        frame: 98,
+        scrambling: 70,
+        address: { kind: "all_stations", id: 0x7fff },
+        payload: {
+          message: "group_activation",
+          group: 393,
+          call_type: "internal",
+          coverage: 200,
+          key: { kind: 4, index: 10 },
+          channel: 2890,
+          downlink_scrambling: 89,
+          uplink_scrambling: 125,
+        },
+        data: "551189c80b4a7d594a",
+        rejected: 0,
+      },
+    };
+    expect(eventSummary(activation)).toBe(
+      "PCH · all · group 393 active on channel 2890, encrypted",
+    );
+    expect(eventStation(activation)).toBe("group 393");
+    const info: DecoderEvent = {
+      kind: "tetrapol",
+      data: {
+        channel: "broadcast",
+        frame: 0,
+        scrambling: 70,
+        payload: {
+          message: "system_info",
+          cell: { bn: 28, rsw: 2, bs: 7 },
+          country: 1,
+          network: 2,
+          uplink_scrambling: 71,
+          mode: 0,
+          ciphered: false,
+          home_only: false,
+          superframe: 2118,
+        },
+        data: "90",
+        rejected: 0,
+      },
+    };
+    expect(eventSummary(info)).toBe("BCH · cell 28.2.7 · country 1 · network 2");
+    expect(eventStation(info)).toBe("28.2.7");
+  });
+
   it("renders End-of-Train telemetry and head-end commands", () => {
     const rear: DecoderEvent = {
       kind: "eot",

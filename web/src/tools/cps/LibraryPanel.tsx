@@ -205,13 +205,13 @@ function CodeplugRow({
 }) {
   return (
     <div
-      className={`${ROW} rounded-[3px] px-1 transition-colors duration-100 ${
+      className={`${ROW} rounded-control px-1 transition-colors duration-100 ${
         selected ? "bg-panel-2" : ""
       }`}
     >
       <Button type="button" className="min-w-0 flex-1 text-left" onClick={onSelect}>
         <span className="block truncate text-ink">{info.name}</span>
-        <span className="block truncate font-mono text-[10px] text-ink-faint">
+        <span className="block truncate font-mono text-3xs text-ink-faint">
           {info.model_id} · {info.counts.channels} ch · {info.counts.contacts} contacts ·{" "}
           {info.counts.zones} zones
         </span>

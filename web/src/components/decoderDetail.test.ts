@@ -152,6 +152,22 @@ describe("eventDetail", () => {
           errors_corrected: 1,
         },
       },
+      ism: {
+        kind: "ism",
+        data: {
+          model: "Acurite-Tower",
+          id: "12053",
+          channel: "C",
+          temperature_c: 21,
+          humidity_pct: 73,
+          modulation: "ook",
+          coding: "pwm",
+          integrity: "checksum",
+          bits: 56,
+          raw: "2f1544ca12d4a6",
+          snr_db: 21.5,
+        },
+      },
       sarsat: {
         kind: "sarsat",
         data: {
@@ -163,6 +179,16 @@ describe("eventDetail", () => {
           protocol: "serial_user",
           beacon: "epirb",
           errors_corrected: 0,
+        },
+      },
+      tetrapol: {
+        kind: "tetrapol",
+        data: {
+          channel: "traffic",
+          scrambling: 118,
+          payload: { message: "voice", seconds: 3.5 },
+          data: "",
+          rejected: 0,
         },
       },
       adsb: { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } },
@@ -473,6 +499,16 @@ describe("eventDetail", () => {
           ],
         },
       },
+      stanag: {
+        kind: "stanag",
+        data: {
+          modem: "stanag_4285",
+          confidence: 0.8,
+          audio_hz: 1_800,
+          frequency_hz: 8_501_800,
+          bandwidth_hz: 2_900,
+        },
+      },
     };
     for (const kind of DECODER_KINDS) {
       expect(() => eventDetail(sample[kind]), kind).not.toThrow();
@@ -645,6 +681,34 @@ describe("eventDetail", () => {
     expect(located["Self-test"]).toBe("yes");
     expect(located.BCH).toBe("PDF-2 failed");
     expect(located.Repaired).toBe("2");
+  });
+
+  it("reads a Tetrapol group call", () => {
+    const call = fieldsOf({
+      kind: "tetrapol",
+      data: {
+        channel: "paging",
+        frame: 98,
+        scrambling: 70,
+        address: { kind: "terminal", id: 0x1a2 },
+        payload: {
+          message: "group_paging",
+          group: 171,
+          call_type: "broadcast",
+          coverage: 3,
+          key: { kind: 15, index: 0 },
+        },
+        data: "5b",
+        rejected: 2,
+      },
+    });
+    expect(call.Channel).toBe("PCH");
+    expect(call.Address).toBe("TTI 01A2");
+    expect(call.Group).toBe("171");
+    expect(call.Call).toBe("Broadcast");
+    expect(call.Encrypted).toBe("no");
+    expect(call.Rejected).toBe("2");
+    expect(call["Traffic channel"]).toBeUndefined();
   });
 
   it("reads an EOT rear unit and a HOT command", () => {
@@ -846,6 +910,23 @@ describe("eventDetail", () => {
       Repaired: "2 bits",
     });
     expect(detail.body).toBe("A1B2C3");
+  });
+
+  it("names a TETRA cell by its country, network and location area", () => {
+    const fields = fieldsOf({
+      kind: "dv",
+      data: {
+        mode: "tetra",
+        kind: "control",
+        errors_corrected: 0,
+        system_id: 250,
+        network_id: 13,
+        site_id: 1052,
+        color_code: 44,
+      },
+    });
+    expect(fields).toMatchObject({ MCC: "250", MNC: "13", "Location area": "1052" });
+    expect(fields).not.toHaveProperty("System ID");
   });
 
   it("says which side of a trunked site a burst came from and whether it checked out", () => {

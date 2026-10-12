@@ -275,7 +275,7 @@ export function AccessSettings({
           onCommit={(next) => onAccess({ enabled, port: next })}
         />
       </div>
-      <div className="flex items-center justify-between gap-2 font-mono text-[10.5px]">
+      <div className="flex items-center justify-between gap-2 font-mono text-2xs">
         <Status line={listenerLine(data.access)} />
         <Status line={discoveryLine(data.access)} />
       </div>
@@ -298,7 +298,7 @@ export function OfferCard({
 }) {
   if (view.kind !== "live") {
     return (
-      <div className="flex items-center gap-2 rounded-[3px] border border-line p-2">
+      <div className="flex items-center gap-2 rounded-control border border-line p-2">
         <span role="alert" className="flex-1 text-xs text-danger">
           {view.kind === "burned" ? "Too many tries" : "Expired"}
         </span>
@@ -311,7 +311,7 @@ export function OfferCard({
   return (
     <section
       aria-label="Pairing"
-      className="flex flex-col items-center gap-1.5 rounded-[3px] border border-line p-2"
+      className="flex flex-col items-center gap-1.5 rounded-control border border-line p-2"
     >
       {view.uri !== null && <QrCode value={view.uri} label="Pairing QR code" />}
       <span className="flex items-baseline gap-2">

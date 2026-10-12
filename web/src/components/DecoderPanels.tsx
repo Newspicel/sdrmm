@@ -126,7 +126,7 @@ function RdsView({ scope = {} }: { scope?: DecoderScope }) {
 
       <div>
         <div className="legend">RadioText</div>
-        <div className="overflow-x-auto whitespace-nowrap rounded border border-line bg-panel px-2 py-1.5 font-mono text-sm text-ink">
+        <div className="overflow-x-auto whitespace-nowrap rounded-control border border-line bg-panel px-2 py-1.5 font-mono text-sm text-ink">
           {rds.radiotext?.trim() || <span className="text-ink-dim">-</span>}
         </div>
       </div>
@@ -156,7 +156,7 @@ function RdsView({ scope = {} }: { scope?: DecoderScope }) {
 function Flag({ label, on }: { label: string; on: boolean }) {
   return (
     <span
-      className={`rounded border px-1.5 py-0.5 font-mono text-xs ${
+      className={`rounded-control border px-1.5 py-0.5 font-mono text-xs ${
         on ? "border-accent text-accent" : "border-line text-ink-dim opacity-50"
       }`}
     >
@@ -242,7 +242,7 @@ function TargetTable({
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline gap-2">
         <span className="legend">{title}</span>
-        <span className="font-mono text-[10px] tabular-nums text-ink-dim">{rows.length}</span>
+        <span className="font-mono text-3xs tabular-nums text-ink-dim">{rows.length}</span>
       </div>
       {rows.length === 0 ? (
         <span className={EMPTY}>No {title.toLowerCase()} heard.</span>
@@ -366,7 +366,7 @@ function TextView({ kind, scope = {} }: { kind: "rtty" | "morse" | "psk"; scope?
         ref={paneRef}
         tabIndex={0}
         aria-label={`${kind} transcript`}
-        className="max-h-72 min-h-32 flex-1 overflow-auto whitespace-pre-wrap break-words rounded border border-line bg-panel px-2 py-1.5 font-mono text-xs text-ink"
+        className="max-h-72 min-h-32 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-control border border-line bg-panel px-2 py-1.5 font-mono text-xs text-ink"
         onScroll={(e) => {
           stick.current = isAtBottom(e.currentTarget);
         }}
@@ -854,7 +854,7 @@ function BleView({ scope = {} }: { scope?: DecoderScope }) {
 
 function LoadBar({ share }: { share: number }) {
   return (
-    <div className="h-2 w-24 overflow-hidden rounded bg-line">
+    <div className="h-2 w-24 overflow-hidden rounded-control bg-line">
       <div className="h-full bg-accent" style={{ width: `${Math.min(100, share * 100)}%` }} />
     </div>
   );
@@ -1313,7 +1313,7 @@ function PicturesView({ source, scope = {} }: { source: PictureSource; scope?: D
             <img
               src={capturedImageUrl(open.image.url)}
               alt={`${open.mode} picture received at ${formatClock(open.at)}`}
-              className="w-full self-start rounded border border-line bg-black object-contain"
+              className="w-full self-start rounded-control border border-line bg-black object-contain"
               style={{ maxHeight: "50vh" }}
             />
           )}
@@ -1348,7 +1348,7 @@ function PicturesView({ source, scope = {} }: { source: PictureSource; scope?: D
                   <img
                     src={capturedImageUrl(image.image.url)}
                     alt=""
-                    className="h-12 w-16 rounded-xs bg-black object-contain"
+                    className="h-12 w-16 rounded-inset bg-black object-contain"
                   />
                 )}
               </Button>
@@ -1561,7 +1561,9 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   flex: null,
   ermes: null,
   eot: null,
+  ism: null,
   sarsat: null,
+  tetrapol: null,
   navtex: null,
   acars: null,
   dv: null,
@@ -1597,6 +1599,7 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   noise_figure: (scope) => <NoiseFigureView scope={scope} />,
   per: (scope) => <PerView scope={scope} />,
   sid: (scope) => <SidView scope={scope} />,
+  stanag: null,
 };
 
 function isDecoderKind(kind: string): kind is DecoderKind {

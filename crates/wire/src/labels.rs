@@ -7,6 +7,7 @@ use crate::{
     patch::REFUSALS,
     phone::PHONE_TEXTS,
     radar::RadarProblem,
+    stanag::{StanagInterleave, StanagModem},
     ws::SurfaceRefusal,
 };
 
@@ -32,6 +33,18 @@ pub fn generated() -> Result<Value, serde_json::Error> {
             BroadcastSystem::ALL
                 .iter()
                 .map(|system| (system, system.label())),
+        )?,
+    );
+    labels.insert(
+        "stanag_modem".to_owned(),
+        keyed(StanagModem::ALL.iter().map(|modem| (modem, modem.label())))?,
+    );
+    labels.insert(
+        "stanag_interleave".to_owned(),
+        keyed(
+            StanagInterleave::ALL
+                .iter()
+                .map(|interleave| (interleave, interleave.label())),
         )?,
     );
     labels.insert("failure".to_owned(), named(ARRAY_FAILURE_LABELS));

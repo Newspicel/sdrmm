@@ -8,6 +8,10 @@ export const DMR_SLOTS: Options<NonNullable<ChannelParamsOf<"dmr">["slots"]>> = 
   { value: "one", label: "TS1" },
   { value: "two", label: "TS2" },
 ];
+export const TETRAPOL_BANDS: Options<NonNullable<ChannelParamsOf<"tetrapol">["band"]>> = [
+  { value: "uhf", label: "UHF" },
+  { value: "vhf", label: "VHF", title: "70 to 87 MHz systems" },
+];
 export const NXDN_WIDTHS: Options<NonNullable<ChannelParamsOf<"nxdn">["bandwidth"]>> = [
   { value: "narrow", label: "6.25" },
   { value: "wide", label: "12.5" },
@@ -106,13 +110,13 @@ export const APRS_MODES: Options<NonNullable<ChannelParamsOf<"aprs">["mode"]>> =
   { value: "g3ruh9600", label: "G3RUH 9600" },
 ];
 export const NFM_TONE_MODES: Options<NonNullable<ChannelParamsOf<"nfm">["tone_mode"]>> = [
-  { value: "off", label: "Off" },
+  { value: "off", label: "off" },
   { value: "detect", label: "Detect" },
   { value: "ctcss", label: "CTCSS" },
   { value: "dcs", label: "DCS" },
 ];
 export const NFM_SCRAMBLER_MODES: Options<NonNullable<ChannelParamsOf<"nfm">["scrambler_mode"]>> = [
-  { value: "off", label: "Off" },
+  { value: "off", label: "off" },
   { value: "inversion", label: "Inversion" },
   { value: "auto", label: "Auto" },
 ];

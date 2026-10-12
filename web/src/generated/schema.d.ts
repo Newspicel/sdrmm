@@ -1981,6 +1981,18 @@ export interface components {
             feed: components["schemas"]["AntennaPoint"];
             segments: components["schemas"]["AntennaSegment"][];
         };
+        /** @enum {string} */
+        AntennaGround: "free_space" | "perfect" | "poor" | "average" | "good" | "seawater";
+        /** @enum {string} */
+        AntennaMaterial: "lossless" | "copper" | "aluminium" | "stainless_steel";
+        AntennaModel: {
+            ground?: components["schemas"]["AntennaGround"];
+            /** Format: double */
+            height_m?: number;
+            material?: components["schemas"]["AntennaMaterial"];
+            /** Format: double */
+            wire_diameter_mm?: number;
+        };
         AntennaPart: {
             /** Format: int32 */
             count: number;
@@ -1991,6 +2003,11 @@ export interface components {
             /** Format: double */
             position_m?: number | null;
         };
+        AntennaPatternCut: {
+            gain_dbi: number[];
+            /** Format: double */
+            step_deg: number;
+        };
         AntennaPoint: {
             /** Format: double */
             x_m: number;
@@ -1999,6 +2016,8 @@ export interface components {
             /** Format: double */
             z_m: number;
         };
+        /** @enum {string} */
+        AntennaPolarization: "horizontal" | "vertical" | "mixed";
         AntennaReport: {
             balanced: boolean;
             design: components["schemas"]["AntennaDesign"];
@@ -2009,6 +2028,7 @@ export interface components {
             geometry: components["schemas"]["AntennaGeometry"];
             notes: string[];
             parts: components["schemas"]["AntennaPart"][];
+            simulation: components["schemas"]["AntennaSimulationOutcome"];
             /** Format: double */
             velocity_factor: number;
             /** Format: double */
@@ -2020,6 +2040,9 @@ export interface components {
             feedline_velocity_factor?: number;
             /** Format: double */
             frequency_hz: number;
+            model?: components["schemas"]["AntennaModel"];
+            sweep?: components["schemas"]["AntennaSweepRequest"] | null;
+            trim?: boolean;
             /** Format: double */
             velocity_factor?: number;
         };
@@ -2031,6 +2054,66 @@ export interface components {
         };
         /** @enum {string} */
         AntennaSegmentRole: "driven" | "parasitic" | "radial" | "matching" | "feedline" | "structure";
+        AntennaSimulation: {
+            azimuth: components["schemas"]["AntennaPatternCut"];
+            /** Format: double */
+            beamwidth_azimuth_deg?: number | null;
+            /** Format: double */
+            beamwidth_elevation_deg?: number | null;
+            /** Format: double */
+            bearing_deg: number;
+            /** Format: double */
+            efficiency: number;
+            elevation: components["schemas"]["AntennaPatternCut"];
+            /** Format: int32 */
+            feed_segment: number;
+            /** Format: int32 */
+            feed_wire: number;
+            /** Format: double */
+            front_to_back_db: number;
+            /** Format: double */
+            gain_dbi: number;
+            impedance: components["schemas"]["NanoVnaComplex"];
+            /** Format: double */
+            loading_coil_h?: number | null;
+            polarization: components["schemas"]["AntennaPolarization"];
+            /** Format: double */
+            resonant_velocity_factor?: number | null;
+            sweep: components["schemas"]["AntennaSweepPoint"][];
+            /** Format: double */
+            takeoff_deg: number;
+            /** Format: double */
+            wire_radius_m: number;
+            wires: components["schemas"]["AntennaWire"][];
+        };
+        AntennaSimulationOutcome: (components["schemas"]["AntennaSimulation"] & {
+            /** @enum {string} */
+            status: "solved";
+        }) | {
+            reason: string;
+            /** @enum {string} */
+            status: "unavailable";
+        };
+        AntennaSweepPoint: {
+            /** Format: double */
+            frequency_hz: number;
+            impedance: components["schemas"]["NanoVnaComplex"];
+        };
+        AntennaSweepRequest: {
+            /** Format: int32 */
+            points: number;
+            /** Format: double */
+            start_hz: number;
+            /** Format: double */
+            stop_hz: number;
+        };
+        AntennaWire: {
+            current: number[];
+            from: components["schemas"]["AntennaPoint"];
+            /** Format: int32 */
+            segments: number;
+            to: components["schemas"]["AntennaPoint"];
+        };
         /** @enum {string} */
         AoaState: "off" | "ready" | "phase_unknown" | "one_lane";
         ApiError: {
@@ -3361,6 +3444,14 @@ export interface components {
             /** @enum {string} */
             type: "m17";
         } | {
+            settings: components["schemas"]["TetraParams"];
+            /** @enum {string} */
+            type: "tetra";
+        } | {
+            settings: components["schemas"]["TetrapolParams"];
+            /** @enum {string} */
+            type: "tetrapol";
+        } | {
             settings: components["schemas"]["WsjtParams"];
             /** @enum {string} */
             type: "ft8";
@@ -3469,6 +3560,10 @@ export interface components {
             /** @enum {string} */
             type: "ism_survey";
         } | {
+            settings: components["schemas"]["IsmParams"];
+            /** @enum {string} */
+            type: "ism";
+        } | {
             settings: components["schemas"]["NoiseFigureParams"];
             /** @enum {string} */
             type: "noise_figure";
@@ -3480,6 +3575,10 @@ export interface components {
             settings: components["schemas"]["SidParams"];
             /** @enum {string} */
             type: "sid";
+        } | {
+            settings: components["schemas"]["StanagParams"];
+            /** @enum {string} */
+            type: "stanag";
         };
         ChannelSettings: {
             blanker?: components["schemas"]["NoiseBlankerSettings"];
@@ -4118,6 +4217,10 @@ export interface components {
             /** @enum {string} */
             kind: "sarsat";
         } | {
+            data: components["schemas"]["TetrapolMessage"];
+            /** @enum {string} */
+            kind: "tetrapol";
+        } | {
             data: components["schemas"]["AdsbMessage"];
             /** @enum {string} */
             kind: "adsb";
@@ -4294,6 +4397,10 @@ export interface components {
             /** @enum {string} */
             kind: "ism_survey";
         } | {
+            data: components["schemas"]["IsmMessage"];
+            /** @enum {string} */
+            kind: "ism";
+        } | {
             data: components["schemas"]["NoiseFigureReport"];
             /** @enum {string} */
             kind: "noise_figure";
@@ -4305,6 +4412,10 @@ export interface components {
             data: components["schemas"]["SidReport"];
             /** @enum {string} */
             kind: "sid";
+        } | {
+            data: components["schemas"]["StanagReport"];
+            /** @enum {string} */
+            kind: "stanag";
         };
         /** @enum {string} */
         DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
@@ -5024,7 +5135,7 @@ export interface components {
         /** @enum {string} */
         DvFrameKind: "header" | "voice" | "terminator" | "control" | "data";
         /** @enum {string} */
-        DvMode: "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv";
+        DvMode: "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv" | "tetra";
         DvSlotActivity: {
             activity: string;
             /** Format: int32 */
@@ -5755,6 +5866,10 @@ export interface components {
         /** @enum {string} */
         IridiumSpan: "channel" | "mhz1" | "mhz2_5" | "mhz5" | "mhz10";
         /** @enum {string} */
+        IsmCoding: "pwm" | "ppm" | "pcm" | "manchester";
+        /** @enum {string} */
+        IsmIntegrity: "crc" | "checksum" | "repeats";
+        /** @enum {string} */
         IsmKind: "wifi" | "bluetooth" | "ieee802154" | "microwave_oven" | "narrowband" | "wideband" | "continuous";
         IsmKindLoad: {
             /** Format: float */
@@ -5767,6 +5882,55 @@ export interface components {
             mean_us: number;
             /** Format: float */
             peak_dbfs: number;
+        };
+        IsmMessage: {
+            alarm?: boolean | null;
+            battery_ok?: boolean | null;
+            /** Format: int32 */
+            bits: number;
+            channel?: string | null;
+            coding: components["schemas"]["IsmCoding"];
+            /** Format: int32 */
+            command?: number | null;
+            contact_open?: boolean | null;
+            /** Format: int32 */
+            humidity_pct?: number | null;
+            id: string;
+            integrity: components["schemas"]["IsmIntegrity"];
+            /** Format: float */
+            light_lux?: number | null;
+            /** Format: int32 */
+            long_us?: number | null;
+            model: string;
+            modulation: components["schemas"]["IsmModulation"];
+            /** Format: float */
+            pressure_kpa?: number | null;
+            /** Format: float */
+            rain_mm?: number | null;
+            raw: string;
+            /** Format: int32 */
+            short_us?: number | null;
+            /** Format: float */
+            snr_db: number;
+            tamper?: boolean | null;
+            /** Format: float */
+            temperature_2_c?: number | null;
+            /** Format: float */
+            temperature_c?: number | null;
+            tristate?: string | null;
+            /** Format: float */
+            uv_index?: number | null;
+            /** Format: float */
+            wind_avg_m_s?: number | null;
+            /** Format: float */
+            wind_dir_deg?: number | null;
+            /** Format: float */
+            wind_max_m_s?: number | null;
+        };
+        /** @enum {string} */
+        IsmModulation: "ook" | "fsk";
+        IsmParams: {
+            unknown?: boolean;
         };
         IsmSurveyParams: {
             /** Format: float */
@@ -8850,6 +9014,32 @@ export interface components {
             /** Format: int32 */
             width: number;
         };
+        /** @enum {string} */
+        StanagInterleave: "zero" | "short" | "long";
+        /** @enum {string} */
+        StanagModem: "stanag_4285" | "stanag_4529" | "mil_std_188_110a" | "stanag_4539" | "thirty_nine_tone" | "sixteen_tone" | "ale_2g";
+        StanagParams: {
+            /** Format: int32 */
+            window_s?: number;
+        };
+        StanagRate: {
+            /** Format: int32 */
+            bps: number;
+            interleave: components["schemas"]["StanagInterleave"];
+            voice?: boolean;
+        };
+        StanagReport: {
+            /** Format: float */
+            audio_hz: number;
+            /** Format: float */
+            bandwidth_hz: number;
+            /** Format: float */
+            confidence: number;
+            /** Format: double */
+            frequency_hz?: number | null;
+            modem?: components["schemas"]["StanagModem"] | null;
+            rate?: components["schemas"]["StanagRate"] | null;
+        };
         StateScope: {
             /** @enum {string} */
             scope: "all";
@@ -9106,6 +9296,119 @@ export interface components {
         };
         TemplatesResponse: {
             templates: components["schemas"]["TemplateInfo"][];
+        };
+        TetraParams: Record<string, never>;
+        TetrapolAddress: {
+            /** Format: int32 */
+            id: number;
+            kind: components["schemas"]["TetrapolAddressKind"];
+        };
+        /** @enum {string} */
+        TetrapolAddressKind: "terminal" | "random" | "group" | "object" | "all_stations";
+        /** @enum {string} */
+        TetrapolBand: "uhf" | "vhf";
+        /** @enum {string} */
+        TetrapolCallType: "open_channel" | "internal" | "broadcast" | "external";
+        TetrapolCell: {
+            /** Format: int32 */
+            bn: number;
+            /** Format: int32 */
+            bs: number;
+            /** Format: int32 */
+            rsw: number;
+        };
+        TetrapolGroupCall: {
+            call_type: components["schemas"]["TetrapolCallType"];
+            /** Format: int32 */
+            channel?: number | null;
+            /** Format: int32 */
+            coverage: number;
+            /** Format: int32 */
+            downlink_scrambling?: number | null;
+            /** Format: int32 */
+            group: number;
+            key: components["schemas"]["TetrapolKey"];
+            /** Format: int32 */
+            uplink_scrambling?: number | null;
+        };
+        TetrapolKey: {
+            /** Format: int32 */
+            index: number;
+            /** Format: int32 */
+            kind: number;
+        };
+        /** @enum {string} */
+        TetrapolLogicalChannel: "broadcast" | "paging" | "signalling" | "traffic" | "unknown";
+        TetrapolMessage: {
+            address?: components["schemas"]["TetrapolAddress"] | null;
+            channel: components["schemas"]["TetrapolLogicalChannel"];
+            data: string;
+            /** Format: int32 */
+            frame?: number | null;
+            payload: components["schemas"]["TetrapolPayload"];
+            /** Format: int32 */
+            rejected: number;
+            /** Format: int32 */
+            scrambling: number;
+        };
+        TetrapolParams: {
+            band?: components["schemas"]["TetrapolBand"];
+            /** Format: int32 */
+            scrambling?: number | null;
+        };
+        TetrapolPayload: (components["schemas"]["TetrapolSystemInfo"] & {
+            /** @enum {string} */
+            message: "system_info";
+        }) | (components["schemas"]["TetrapolGroupCall"] & {
+            /** @enum {string} */
+            message: "group_activation";
+        }) | (components["schemas"]["TetrapolGroupCall"] & {
+            /** @enum {string} */
+            message: "group_paging";
+        }) | {
+            /** Format: int32 */
+            cause: number;
+            /** @enum {string} */
+            message: "group_idle";
+        } | {
+            /** Format: int32 */
+            cause: number;
+            /** @enum {string} */
+            message: "group_end";
+        } | {
+            /** @enum {string} */
+            message: "paging";
+            terminals: components["schemas"]["TetrapolAddress"][];
+        } | {
+            /** @enum {string} */
+            message: "voice";
+            /** Format: float */
+            seconds: number;
+        } | {
+            /** Format: int32 */
+            codop: number;
+            /** @enum {string} */
+            message: "other";
+            name: string;
+        };
+        TetrapolSystemInfo: {
+            cell: components["schemas"]["TetrapolCell"];
+            ciphered: boolean;
+            /** Format: int32 */
+            control_channel?: number | null;
+            /** Format: int32 */
+            country?: number | null;
+            home_only: boolean;
+            /** Format: int32 */
+            location_area?: number | null;
+            /** Format: int32 */
+            mode: number;
+            /** Format: int32 */
+            network?: number | null;
+            /** Format: int32 */
+            superframe?: number | null;
+            /** Format: int32 */
+            uplink_scrambling: number;
         };
         /** @enum {string} */
         TimeMachineAction: "arm" | "capture" | "stop" | "disarm";

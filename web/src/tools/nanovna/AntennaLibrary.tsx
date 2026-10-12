@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, FileUp, Plus, Save, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button, Form, Input } from "../../components/BaseControls";
+import { ConfirmButton } from "../../components/ConfirmButton";
 import { ALERT, BTN, BTN_PRIMARY, FIELD, ICON_BTN_SM, LABEL } from "../../components/controls";
 import { formatHz } from "../../components/format";
 import { Icon } from "../../components/Icon";
@@ -244,7 +245,7 @@ function AntennaGroup({
   });
   return (
     <li
-      className={`rounded-[3px] border ${selected ? "border-accent/60 bg-accent/5" : "border-line"}`}
+      className={`rounded-control border ${selected ? "border-accent/60 bg-accent/5" : "border-line"}`}
     >
       <div className="flex items-center gap-1 px-2 py-1.5">
         <Button
@@ -255,8 +256,13 @@ function AntennaGroup({
         >
           {antenna.name}
         </Button>
-        <span className="font-mono text-[10.5px] text-ink-faint">{measurements.length}</span>
-        <ConfirmDelete label={`Delete ${antenna.name}`} onConfirm={() => removeAntenna.mutate()} />
+        <span className="font-mono text-2xs text-ink-faint">{measurements.length}</span>
+        <ConfirmButton
+          label={`Delete ${antenna.name}`}
+          size="icon"
+          icon={Trash2}
+          onConfirm={() => removeAntenna.mutate()}
+        />
       </div>
       {measurements.length > 0 && (
         <ul className="border-t border-line/60">
@@ -347,7 +353,7 @@ function Files({
       </Button>
       {error !== null && <p className={ALERT}>{error}</p>}
       {files.length > 0 && (
-        <ul className="rounded-[3px] border border-line">
+        <ul className="rounded-control border border-line">
           {files.map((file) => (
             <EntryRow
               key={file.key}
@@ -399,7 +405,7 @@ function EntryRow({
         className="flex min-w-0 flex-1 flex-col text-left"
       >
         <span className="truncate text-xs text-ink">{label}</span>
-        <span className="truncate font-mono text-[10.5px] text-ink-faint">{detail}</span>
+        <span className="truncate font-mono text-2xs text-ink-faint">{detail}</span>
       </Button>
       <Button
         type="button"
@@ -422,29 +428,10 @@ function EntryRow({
           <Icon glyph={Save} size={12} />
         </Button>
       )}
-      {onDelete !== undefined && <ConfirmDelete label={`Delete ${label}`} onConfirm={onDelete} />}
+      {onDelete !== undefined && (
+        <ConfirmButton label={`Delete ${label}`} size="icon" icon={Trash2} onConfirm={onDelete} />
+      )}
     </li>
-  );
-}
-
-function ConfirmDelete({ label, onConfirm }: { label: string; onConfirm: () => void }) {
-  const [armed, setArmed] = useState(false);
-  return (
-    <Button
-      type="button"
-      className={`${ICON_BTN_SM} ${armed ? "text-danger" : ""}`}
-      aria-label={armed ? `Confirm: ${label}` : label}
-      title={armed ? "Click again to delete" : label}
-      onBlur={() => setArmed(false)}
-      onClick={() => {
-        if (armed) {
-          onConfirm();
-        }
-        setArmed(!armed);
-      }}
-    >
-      <Icon glyph={Trash2} size={12} />
-    </Button>
   );
 }
 

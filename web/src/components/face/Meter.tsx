@@ -2,6 +2,13 @@ import { Slider as Primitive } from "@base-ui/react/slider";
 import type { ReactNode } from "react";
 import { PortAnchor } from "../../canvas/nodes/NodeShell";
 import { formatPeak, HEADROOM, type MeterTone, meterUnit } from "../dbfs";
+import {
+  SLIDER_CONTROL,
+  SLIDER_FILL,
+  SLIDER_THUMB,
+  SLIDER_THUMB_IDLE,
+  SLIDER_TRACK,
+} from "../Slider";
 
 const TONE: Record<MeterTone, string> = {
   ok: "bg-ok",
@@ -13,11 +20,6 @@ const HEADROOM_TINT =
   `linear-gradient(to right, transparent ${HEADROOM.warn * 100}%, ` +
   `color-mix(in oklab, var(--color-warn) 22%, transparent) ${HEADROOM.warn * 100}% ${HEADROOM.hot * 100}%, ` +
   `color-mix(in oklab, var(--color-danger) 26%, transparent) ${HEADROOM.hot * 100}%)`;
-
-const THUMB =
-  "h-4 w-1 cursor-grab rounded-[2px] shadow-[0_0_0_1.5px_var(--color-panel)] " +
-  "data-dragging:cursor-grabbing has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent " +
-  "has-[:focus-visible]:outline-offset-2";
 
 const THUMB_AUTO =
   "bg-panel shadow-[inset_0_0_0_1.5px_var(--color-ink-dim),0_0_0_1.5px_var(--color-panel)] " +
@@ -82,21 +84,18 @@ export function MeterSlider({
         }
       }}
     >
-      <Primitive.Control
-        className="flex h-7 w-full cursor-pointer touch-none items-center data-dragging:cursor-grabbing data-disabled:cursor-not-allowed data-disabled:opacity-50 pointer-coarse:h-10"
-        title={title}
-      >
+      <Primitive.Control className={SLIDER_CONTROL} title={title}>
         <Primitive.Track
-          className="relative h-2 w-full rounded-[2px] bg-well shadow-[inset_0_0_0_1px_var(--color-line),inset_0_1px_2px_oklch(0_0_0/0.2)]"
+          className={SLIDER_TRACK}
           style={fill?.tint === undefined ? undefined : { backgroundImage: fill.tint }}
         >
           {fill === undefined ? (
-            <Primitive.Indicator className="rounded-[1px] bg-port-tx/60" />
+            <Primitive.Indicator className={SLIDER_FILL} />
           ) : (
             <>
               <span
                 aria-hidden
-                className={`absolute inset-y-px left-px rounded-[1px] ${fill.className}`}
+                className={`absolute inset-y-px left-px rounded-inset ${fill.className}`}
                 style={{ width: `max(0px, calc(${fill.level * 100}% - 2px))` }}
               />
               {fill.peak !== undefined && fill.peak > 0 && (
@@ -110,7 +109,7 @@ export function MeterSlider({
           )}
           <Primitive.Thumb
             aria-label={label}
-            className={`${THUMB} ${auto ? THUMB_AUTO : "bg-ink hover:bg-accent"}`}
+            className={`${SLIDER_THUMB} ${auto ? THUMB_AUTO : SLIDER_THUMB_IDLE}`}
           />
         </Primitive.Track>
       </Primitive.Control>
@@ -140,11 +139,11 @@ export function MeterBar({
       aria-valuemax={100}
       aria-valuenow={Math.round(unit * 100)}
       aria-valuetext={valueText}
-      className="relative block h-2 w-full rounded-[2px] bg-well shadow-[inset_0_0_0_1px_var(--color-line),inset_0_1px_2px_oklch(0_0_0/0.2)]"
+      className={`block ${SLIDER_TRACK}`}
     >
       <span
         aria-hidden
-        className={`absolute inset-y-px left-px rounded-[1px] ${fill}`}
+        className={`absolute inset-y-px left-px rounded-inset ${fill}`}
         style={{ width: `max(0px, calc(${unit * 100}% - 2px))` }}
       />
       {peak !== undefined && peak > 0 && (

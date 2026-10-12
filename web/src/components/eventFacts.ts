@@ -1,10 +1,13 @@
 import { ismSurveySummary, wifiOccupancySummary } from "../lib/airtime";
 import { bleStation, bleSummary } from "../lib/ble";
 import { gsmSummary } from "../lib/gsm";
+import { ismStation, ismSummary } from "../lib/ism";
 import { loraPosition, loraStation, loraSummary } from "../lib/lora";
 import { noiseFigureSummary, perSummary, sidSummary } from "../lib/measurement";
 import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
 import { sarsatName } from "../lib/sarsat";
+import { stanagSummary } from "../lib/stanag";
+import { tetrapolStation, tetrapolSummary } from "../lib/tetrapol";
 import type { DecoderEvent, HotCommand } from "../lib/types";
 import {
   callMode,
@@ -190,8 +193,12 @@ export function eventSummary(event: DecoderEvent): string {
     }
     case "eot":
       return eotSummary(event.data);
+    case "ism":
+      return ismSummary(event.data);
     case "sarsat":
       return sarsatSummary(event.data);
+    case "tetrapol":
+      return tetrapolSummary(event.data);
     case "adsb": {
       const a = event.data;
       return join([
@@ -408,6 +415,8 @@ export function eventSummary(event: DecoderEvent): string {
       return perSummary(event.data);
     case "sid":
       return sidSummary(event.data);
+    case "stanag":
+      return stanagSummary(event.data);
   }
 }
 
@@ -454,8 +463,12 @@ export function eventStation(event: DecoderEvent): string | null {
       return String(event.data.local_address);
     case "eot":
       return String(event.data.unit_address);
+    case "ism":
+      return ismStation(event.data);
     case "sarsat":
       return event.data.hex_id;
+    case "tetrapol":
+      return tetrapolStation(event.data);
     case "rds":
       return event.data.pi ?? null;
     case "navtex":
@@ -525,6 +538,7 @@ export function eventStation(event: DecoderEvent): string | null {
     case "noise_figure":
     case "per":
     case "sid":
+    case "stanag":
       return null;
     case "sstv":
       return SSTV_MODE_LABELS[event.data.mode];

@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { bleStation } from "./ble";
+import { ismStation } from "./ism";
 import { loraStation, withLoraPosition } from "./lora";
 import { remoteIdStation, withRemoteIdState } from "./remoteId";
+import { tetrapolStation } from "./tetrapol";
 import { clearTrails, dropTrail, recordTrail } from "./trails";
 import type {
   DecodedRecord,
@@ -276,8 +278,12 @@ function stationId(event: DecoderEvent): string | null {
       return String(event.data.local_address);
     case "eot":
       return String(event.data.unit_address);
+    case "ism":
+      return ismStation(event.data);
     case "sarsat":
       return event.data.hex_id;
+    case "tetrapol":
+      return tetrapolStation(event.data);
     case "rds":
       return event.data.pi ?? null;
     case "transmission":
@@ -317,6 +323,7 @@ function stationId(event: DecoderEvent): string | null {
     case "noise_figure":
     case "per":
     case "sid":
+    case "stanag":
       return null;
     case "ble":
       return bleStation(event.data);

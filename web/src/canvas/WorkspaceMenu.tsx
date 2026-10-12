@@ -151,7 +151,7 @@ function WorkspaceRow({
 
   if (mode === "confirm") {
     return (
-      <div className="flex h-7 items-center gap-1 rounded-[3px] border border-danger bg-danger/10 px-2">
+      <div className="flex h-7 items-center gap-1 rounded-control border border-danger bg-danger/10 px-2">
         <span className="min-w-0 flex-1 truncate text-xs text-danger">
           Delete {workspace.name}?
         </span>
@@ -175,7 +175,7 @@ function WorkspaceRow({
 
   if (mode === "switch") {
     return (
-      <div className="flex h-7 items-center gap-1 rounded-[3px] border border-accent bg-accent/10 px-2">
+      <div className="flex h-7 items-center gap-1 rounded-control border border-accent bg-accent/10 px-2">
         <span className="min-w-0 flex-1 truncate text-xs">
           Switch {others === 1 ? "1 other" : `${others} others`} too?
         </span>
@@ -218,7 +218,7 @@ function WorkspaceRow({
       </Button>
       <span
         aria-hidden
-        className="w-4 text-right font-mono text-[10px] text-ink-faint tabular-nums"
+        className="w-4 text-right font-mono text-3xs text-ink-faint tabular-nums"
         title={`${workspace.nodes} nodes`}
       >
         {workspace.nodes}

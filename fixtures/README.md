@@ -43,7 +43,7 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 
 ## Committed fixtures
 
-These thirty-eight pairs are not regenerated: twenty-four are recordings, two are frozen synthetic waveforms,
+These forty pairs are not regenerated: twenty-six are recordings, two are frozen synthetic waveforms,
 and twelve are reference waveforms from generators that are independent of the Rust modulators.
 They retain cases that the current generators do not reproduce.
 
@@ -83,6 +83,20 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
 | `radio_clock_wwvb_offair_2k` | 2 k | `radio_clock` / WWVB @ 0 Hz | 2021-03-14 05:35 UTC |
 | `flex_p2000_offair_48k` | 48 k | `flex` @ 0 Hz | P2000 page to capcode 2029574, `A2 DP2 Leidschendam-Voorburg ...` |
+| `tetra_scbs_offair_50k` | 50 k | `tetra` @ −1.4 kHz | MCC 250, MNC 13, colour code 44, LA 1052, carrier 2716 (467.9125 MHz) |
+| `tetra_weak_offair_144k` | 144 k | `tetra` @ −0.9 kHz | the same cell at about 10 dB SNR |
+| `tetra_call_offair_48k` | 48 k | `tetra` @ +0.3 kHz | MCC 228, MNC 8889, D-SETUP 100701 to group 100601, D-TX GRANTED to 100702 |
+| `tetrapol_control_48k` | 48 k | `tetrapol` @ 0 Hz | scrambling 70, system info for cell 28.2.7 at BCH frame 0, group 393 active on channel 2890, PCH paging CGI 125 and 399 |
+| `tetrapol_traffic_48k` | 48 k | `tetrapol` @ 0 Hz | group idle (cause 0x12) under scrambling 115, then voice under 118 |
+| `stanag/stanag_4285_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4285 |
+| `stanag/stanag_4529_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4529 |
+| `stanag/stanag_110a_600s_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 600 bps short |
+| `stanag/stanag_110a_2400l_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 2400 bps long |
+| `stanag/stanag_110a_150l_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 150 bps long |
+| `stanag/stanag_4539_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4539 |
+| `stanag/stanag_39tone_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 39-tone |
+| `stanag/stanag_16tone_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 16-tone |
+| `stanag/stanag_ale_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 2G ALE |
 | `dvbt/qpsk_2k_reference` | 9.142857 M | `dvbt` @ 0 Hz | 2K QPSK, rate 1/2, guard 1/8, 1750 Hz offset; PID 0x123 packets, TPS cell 0x5a |
 | `dab/mode_ii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | Mode II frame: ensemble `0x4a2c`, service `0xc201`, no failed FIB CRCs |
 | `dab/mode_iii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | the same ensemble in Mode III |
@@ -212,6 +226,13 @@ ACARS block from `HL8217`. The audio carrier at 1066 Hz was mixed to 0 Hz and lo
 1.2 kHz; the capture frequency is nominal. `ci16_le`, like the `dvbt` pairs.
 `inmarsat_aero::tests::decodes_the_recorded_600_bps_channel` reads it directly.
 
+### TETRA: `tetra_scbs_offair_50k`, `tetra_weak_offair_144k`, `tetra_call_offair_48k`
+
+The first two are GopherTrunk's Apache-2.0 test captures of a 467.9125 MHz control channel,
+unchanged. Its own test asserts the same MCC and MNC. The third is seconds 22 to 29 of sigidwiki's
+`TETRA_IQ.zip` (CC BY-SA) as recorded, with an inverted spectrum. `tetra::tests` reads all three
+directly and resamples them to 72 kHz.
+
 ### Iridium: `iridium_prbs15_250k`
 
 A burst from gr-iridium's reference modulator (`test-data/prbs15-2M-20dB.sigmf-data`, GPL-3.0
@@ -252,6 +273,12 @@ about 6% of the time it spans: beacon timestamps advance 1.02 s where the sample
 so long frames break at the gaps. The excerpt is one beacon inside an unbroken stretch.
 `remote_id::tests::air` reads them directly.
 
+### ISM sensors: `ism/`
+
+Twenty bursts from `rtl_433_tests`, which states no license, trimmed to the shortest stretch that
+still decodes. `ism/README.md` lists each source and the expected readings, which match rtl_433.
+`ism::tests` reads them directly.
+
 ### Public receivers: `dsc_offair_8k`, `radio_clock_*_offair_2k`, `flex_p2000_offair_48k`
 
 Excerpts of `cargo xtask net-capture` recordings from public KiwiSDRs and a public SpyServer, made
@@ -274,6 +301,12 @@ Signed 16-bit mono audio was converted to normalized `cf32_le` with zero quadrat
 annotation records the source SHA-256, pinned upstream commit, and LGPL-2.1 license.
 `dv::freedv::tests::decodes_the_upstream_receive_recording` reads it directly.
 
+### Tetrapol: `tetrapol_control_48k`, `tetrapol_traffic_48k`
+
+Excerpts of sigidwiki's `Tetrapol_2_channels.zip` (`Tetrapol.wav`, 48 kHz IQ, states no license),
+which holds a control channel near +5.8 kHz and a traffic channel near -6.6 kHz. Each is shifted to
+0 Hz; the annotations hold the source SHA-256 and sample range. `tetrapol::tests` reads both.
+
 ### Meteor LRPT: `lrpt/meteor_m2_qpsk72_symbols.bin`
 
 Not IQ: 196,864 hard QPSK symbol bits, packed MSB first, from this receiver's demodulator on a
@@ -286,3 +319,10 @@ MCU row of APIDs 64, 65 and 68. The source IQ is sigidwiki's LRPT sample
 Not IQ: PyEOT's `demo3eot.wav`, unmodified, 2.6 s of FM-discriminator audio from 457.9375 MHz
 with three rear-unit packets. GPL-3.0, see `eot/README.md`. The test FM-modulates it at ±3 kHz.
 `eot::tests::decodes_three_rear_units_from_an_off_air_recording` reads it.
+
+### HF modems: `stanag/`
+
+Four-second slices of sigidwiki audio samples (CC BY-SA), so these pairs are test data under that
+license. The USB audio was resampled to 9.6 kHz `ci16_le` with zero quadrature; each annotation
+names the source URL, slice and SHA-256. `stanag::tests::air::names_recorded_modems` reads them.
+`names_the_sigidwiki_library` runs 49 full samples when `STANAG_SIGID_DIR` points at them.

@@ -77,6 +77,20 @@
     "triangulation": "triangulation takes bearings",
     "unnamed_array": "an Array"
   },
+  "stanag_interleave": {
+    "long": "long",
+    "short": "short",
+    "zero": "zero"
+  },
+  "stanag_modem": {
+    "ale_2g": "2G ALE",
+    "mil_std_188_110a": "MIL-STD-188-110A",
+    "sixteen_tone": "16-tone",
+    "stanag_4285": "STANAG 4285",
+    "stanag_4529": "STANAG 4529",
+    "stanag_4539": "STANAG 4539",
+    "thirty_nine_tone": "39-tone"
+  },
   "surface_refusal": {
     "fit_not_positive": "Fit must be positive",
     "no_stream_ids": "Too many streams",

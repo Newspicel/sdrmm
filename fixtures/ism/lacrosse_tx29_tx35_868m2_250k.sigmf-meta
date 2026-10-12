@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "rtl_433_tests",
+    "core:description": "tx35dth-it_868.2M_250k.cu8"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868200000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/lacrosse/tx29-it_tx35dth-it/tx35dth-it_868.2M_250k.cu8; source SHA-256 60c146c333a50a8cb62f0cdf8438881dc44b0abf418209ecaaa90dd60d2ccd37; samples 28273..58273 at 250000 Hz",
+      "core:sample_count": 30000,
+      "core:sample_start": 0
+    }
+  ]
+}

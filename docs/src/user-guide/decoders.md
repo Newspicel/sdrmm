@@ -10,7 +10,7 @@ covers the modes that need more than a frequency.
 | Group | Tested on air | Fixture only | Experimental |
 |---|---|---|---|
 | Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
-| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | | |
+| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17, [TETRA](#tetra) | [Tetrapol](#tetrapol) | |
 | Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium), [Drone Remote ID](#drone-remote-id) | VOR, ILS localizer / glideslope |
 | Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC, [406 MHz beacons](#406-mhz-beacons) | |
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
@@ -18,7 +18,7 @@ covers the modes that need more than a frequency.
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -55,6 +55,16 @@ Following runs on the server with no browser open. Voice channels must fit insid
 window; a grant outside it is reported. To save call audio, see
 [Record each call](recording.md#record-each-call).
 
+## Tetrapol
+
+The Tetrapol channel reads 12.5 kHz Tetrapol PMR downlinks. Tune the carrier; the scrambling code
+is found on its own, or set **Scrambling** to pin it. Pick **VHF** for 70 to 87 MHz systems.
+
+On a control channel it logs cell system info, group activations with the traffic channel and
+its scrambling codes, group paging and the paging channel. On a traffic channel it logs group
+idle and end messages and the length of each voice burst; voice audio is not decoded. Frames
+that fail their checks count under **Rejected**. Uplinks are not decoded.
+
 ## Inmarsat and Iridium
 
 Inmarsat Classic Aero reads one **Channel**: P to aircraft, R/T bursts from aircraft, or C voice
@@ -75,6 +85,26 @@ The End-of-Train channel reads railroad telemetry. Tune 457.9375 MHz for the rea
 pressure, motion, marker light, battery and arming. Tune 452.9375 MHz for the locomotive: status
 requests and emergency brake commands. Australia uses 477.7 MHz, New Zealand 450.2625 MHz. Only
 frames whose BCH check passes are logged; **Rejected** counts the ones that failed.
+
+## ISM sensors
+
+The ISM sensors channel reads OOK and FSK weather stations, thermometers, tyre sensors, remotes and
+door sensors on 315, 345, 433.92, 868 and 915 MHz. It splits each burst into pulses, slices them
+like [rtl_433](https://github.com/merbanan/rtl_433) and tries every decoder below. The channel is
+240 kHz wide, so sensors a little off centre still decode. A repeat of the same message within 2 s
+is logged once.
+
+| Family | Models |
+|---|---|
+| Acurite | Tower, 5n1, 606TX, 609TXC |
+| LaCrosse | TX141 / TX141TH, TX29IT, TX35DTH-IT |
+| Fine Offset, Ambient Weather | WH2, WH5, WHx080, WH24, WH65B, WH31E, WH31B, WH40, F007TH |
+| Oregon Scientific | THGR122N, THGR228N, THGR968, THN132N, WGR800, THGR810 |
+| Bresser | 5in1, 6in1 |
+| Others | Nexus, Prologue, Rubicson, Alecto V1, ThermoPro TP12, Schrader TPMS, Honeywell / 2GIG, Kerui, PT2262 remotes |
+
+**Unknown** logs a code no decoder knows when the same row repeats, with its coding and pulse
+widths. A burst whose checksum fails in every decoder counts under **Rejected**.
 
 ## 406 MHz beacons
 
@@ -243,6 +273,21 @@ silence. Records show LAPDm frames, RR, MM, CC, SS and SMS message names, identi
 algorithm from a Ciphering Mode Command. Ciphered traffic, hopping channels and other carriers are
 not decoded. Blocks that fail CRC count as rejected.
 
+## TETRA
+
+The TETRA channel reads one 25 kHz downlink carrier. It needs no settings.
+
+| Logged | From |
+|---|---|
+| Cell | MCC, MNC, colour code, location area, carrier and duplex frequencies |
+| Calls | D-SETUP, D-CONNECT, D-TX GRANTED, D-RELEASE with group, caller and talker |
+| Traffic | A voice record when a timeslot turns to traffic |
+| SDS | Status codes, text, LIP positions on the map, other data as hex |
+| Mobility | Location update and group attach messages |
+
+Voice is not decoded. Air-encrypted cells report only their identity. Control blocks that fail
+their CRC are counted as rejected.
+
 ## LoRa
 
 The LoRa channel reads LoRa packets and decodes LoRaWAN, Meshtastic and MeshCore inside them.
@@ -343,6 +388,19 @@ and **Wi-Fi occupancy** templates set them up. The signal generator sends BLE be
 Tested on recordings: a USRP X310 at 100 MS/s beside a DJI Mini 4 Pro (RFUAV) and a 40 MS/s
 Bluetooth capture with OmniSIG labels, where the survey counted 138 Bluetooth bursts against 137
 labelled.
+
+## HF modems
+
+The **STANAG modem identifier** names HF data modems from USB audio: STANAG 4285, STANAG 4529,
+MIL-STD-188-110A serial, STANAG 4539 (110B Appendix C), 39-tone, 16-tone and 2G ALE. Put the
+channel on the USB dial. Each report gives the modem, its carrier and the frequency; for 110A the
+rate and interleave come from the preamble. A modem that stops is reported gone.
+
+**Window** is how much signal each verdict uses, 2 to 12 s; longer finds weaker signals. A
+busy channel that matches no modem counts as rejected. The **HF data modems** template sets it
+up.
+
+Tested on 49 sigidwiki recordings, including all 14 MIL-STD-188-110A rates.
 
 ## Measurements
 

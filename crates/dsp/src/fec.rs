@@ -171,6 +171,25 @@ pub fn lfsr_digest8(poly: u8, key: u8, data: &[u8]) -> u8 {
 }
 
 #[must_use]
+pub fn lfsr_digest16(poly: u16, key: u16, data: &[u8]) -> u16 {
+    let mut key = key;
+    let mut sum = 0u16;
+    for &byte in data {
+        for bit in (0..8).rev() {
+            if byte >> bit & 1 == 1 {
+                sum ^= key;
+            }
+            key = if key & 1 == 0 {
+                key >> 1
+            } else {
+                (key >> 1) ^ poly
+            };
+        }
+    }
+    sum
+}
+
+#[must_use]
 pub fn lfsr_digest8_reflect(poly: u8, key: u8, data: &[u8]) -> u8 {
     let mut key = key;
     let mut sum = 0u8;
@@ -808,6 +827,14 @@ mod tests {
             lfsr_digest8(0x98, 0x3E, &[0x45, 0x93, 0x24, 0x41, 0x30]),
             0x0B
         );
+    }
+
+    #[test]
+    fn a_sixteen_bit_lfsr_digest_starts_from_its_key_and_rolls_right() {
+        assert_eq!(lfsr_digest16(0x8810, 0x5412, &[]), 0x0000);
+        assert_eq!(lfsr_digest16(0x8810, 0x5412, &[0x80]), 0x5412);
+        assert_eq!(lfsr_digest16(0x8810, 0x5412, &[0x40]), 0x2A09);
+        assert_eq!(lfsr_digest16(0x8810, 0x5412, &[0x20]), 0x9D14);
     }
 
     #[test]

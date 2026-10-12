@@ -27,7 +27,7 @@ export function PlotAxis({
                 y={y + TICK_PX + LABEL_GAP_PX}
                 textAnchor="middle"
                 dominantBaseline="hanging"
-                className="stroke-none font-mono text-[9px]"
+                className="stroke-none font-mono text-plot"
               >
                 {tick.label}
               </text>
@@ -51,7 +51,7 @@ export function PlotAxis({
               y={plot.y + tick.px}
               textAnchor={left ? "end" : "start"}
               dominantBaseline="middle"
-              className="stroke-none font-mono text-[9px]"
+              className="stroke-none font-mono text-plot"
             >
               {tick.label}
             </text>
@@ -74,12 +74,12 @@ export function ColourScale({
 }) {
   return (
     <span
-      className="flex items-center gap-1 font-mono text-[9px] tabular-nums text-ink-faint"
+      className="flex items-center gap-1 font-mono text-plot tabular-nums text-ink-faint"
       title="Colour scale"
     >
       <span>{min.toFixed(0)}</span>
       <span
-        className="h-1.5 w-16 rounded-[1px]"
+        className="h-1.5 w-16 rounded-inset"
         style={{ background: colormapGradient(colormap, "to right") }}
       />
       <span>{max.toFixed(0)}</span>

@@ -60,7 +60,7 @@ function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
   return (
     <NodeShell node={node} title="Time machine" category="output">
       <FaceBody>
-        <Chips className="p-2">
+        <Chips>
           <NumberChip
             label="History"
             title="Seconds of history"

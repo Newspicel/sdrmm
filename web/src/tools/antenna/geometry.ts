@@ -1,4 +1,9 @@
-import type { AntennaGeometry, AntennaPoint, AntennaSegmentRole } from "../../lib/types";
+import type {
+  AntennaGeometry,
+  AntennaPoint,
+  AntennaSegmentRole,
+  AntennaWire,
+} from "../../lib/types";
 import { formatLength, type LengthUnit } from "./antenna";
 
 export type Axis = "x" | "y" | "z";
@@ -190,4 +195,29 @@ export function rolesIn(geometry: AntennaGeometry): AntennaSegmentRole[] {
     "feedline",
   ];
   return order.filter((role) => geometry.segments.some((segment) => segment.role === role));
+}
+
+export interface CurrentPiece {
+  from: AntennaPoint;
+  to: AntennaPoint;
+  level: number;
+}
+
+export function currentPieces(wires: readonly AntennaWire[]): CurrentPiece[] {
+  return wires.flatMap((wire) => {
+    const halves = wire.current.length;
+    return wire.current.map((level, index) => ({
+      from: along(wire.from, wire.to, index / halves),
+      to: along(wire.from, wire.to, (index + 1) / halves),
+      level,
+    }));
+  });
+}
+
+function along(from: AntennaPoint, to: AntennaPoint, fraction: number): AntennaPoint {
+  return {
+    x_m: from.x_m + (to.x_m - from.x_m) * fraction,
+    y_m: from.y_m + (to.y_m - from.y_m) * fraction,
+    z_m: from.z_m + (to.z_m - from.z_m) * fraction,
+  };
 }

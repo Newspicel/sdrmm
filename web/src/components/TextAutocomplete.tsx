@@ -81,7 +81,7 @@ export function TextAutocomplete({
                 <Primitive.Item
                   value={suggestion}
                   className={(state) =>
-                    "flex cursor-default flex-col items-start rounded-[3px] px-2 py-1 text-xs " +
+                    "flex cursor-default flex-col items-start rounded-control px-2 py-1 text-xs " +
                     "leading-tight " +
                     (suggestion.value === value
                       ? "bg-accent/15 text-accent"

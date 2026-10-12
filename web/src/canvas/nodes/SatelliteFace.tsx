@@ -234,7 +234,7 @@ function SignalChip({
   }
   const picked = transmitters.find((transmitter) => transmitter.id === data.transmitter);
   return (
-    <Chips className="px-2 pb-2">
+    <Chips inset="below">
       <SettingChip
         label="Signal"
         value={picked === undefined ? "own" : transmitterLabel(picked)}

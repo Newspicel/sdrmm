@@ -5,7 +5,7 @@ import { useWorkspaceContext } from "../context";
 import { MAX_NAME_LEN, patchNode } from "../graph";
 import { nodeLabel } from "../nodeName";
 
-const TEXT = "min-w-0 truncate text-[12.5px] font-semibold tracking-[0.01em] text-ink";
+const TEXT = "min-w-0 truncate text-xs font-semibold tracking-[0.01em] text-ink";
 
 export function NodeName({ node, title }: { node: PatchNode; title: string }) {
   const workspace = useWorkspaceContext();
@@ -51,7 +51,7 @@ export function NodeName({ node, title }: { node: PatchNode; title: string }) {
   return (
     <Input
       autoFocus
-      className={`${TEXT} nodrag nopan w-36 rounded-[2px] bg-panel px-1 outline outline-accent`}
+      className={`${TEXT} nodrag nopan w-36 rounded-inset bg-panel px-1 outline outline-accent`}
       aria-label="Node name"
       maxLength={MAX_NAME_LEN}
       value={draft}

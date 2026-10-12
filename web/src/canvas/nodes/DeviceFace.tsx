@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Radar } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN_PRIMARY, BTN_QUIET, BTN_SM, ICON_BTN } from "../../components/controls";
+import { BTN_PRIMARY, BTN_QUIET_DANGER, BTN_SM, ICON_BTN } from "../../components/controls";
 import { deviceId } from "../../components/devices";
 import { inTuningRange, isTunable, tuningRange } from "../../components/dial";
 import { dialId, FrequencyDial } from "../../components/FrequencyDial";
@@ -207,7 +207,7 @@ function LaneDial({
       className="flex h-7 items-center gap-2"
       title={hold === null ? undefined : `Tuned by ${hold.label}`}
     >
-      <span className="w-14 shrink-0 truncate font-mono text-[11px] text-port-iq">{dial.port}</span>
+      <span className="w-14 shrink-0 truncate font-mono text-2xs text-port-iq">{dial.port}</span>
       <div className="@container w-52 min-w-0">
         <FrequencyDial
           id={dialId(node, dial.stream)}
@@ -427,7 +427,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
         <FaceFooter>
           <Button
             type="button"
-            className={BTN_QUIET}
+            className={BTN_QUIET_DANGER}
             title="Free this node so you can pick a different radio"
             onClick={() => forget.mutate()}
             disabled={forget.isPending}
@@ -514,7 +514,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
         )}
         <Button
           type="button"
-          className={BTN_QUIET}
+          className={BTN_QUIET_DANGER}
           title="Close this radio and free the node: the device is released and the wires stay drawn"
           onClick={() => forget.mutate()}
           disabled={forget.isPending}

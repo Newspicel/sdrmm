@@ -14,12 +14,12 @@ export function ReportView({ report }: { report: ConversionReport | null }) {
   }
   const groups = groupIssues(report);
   return (
-    <section className="flex flex-col gap-2 rounded-[3px] border border-line bg-panel-2 p-3">
+    <section className="flex flex-col gap-2 rounded-control border border-line bg-panel-2 p-3">
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <h4 className={LABEL}>Fit for {report.target_model}</h4>
         <span className="font-mono text-xs text-ink">{reportSummary(report)}</span>
       </header>
-      <p className="font-mono text-[11px] text-ink-dim">{countsLine(report)}</p>
+      <p className="font-mono text-2xs text-ink-dim">{countsLine(report)}</p>
       {groups.map((group) => (
         <div key={group.severity} className="flex flex-col gap-0.5">
           <h5 className={`${LABEL} ${TONE[group.severity]}`}>

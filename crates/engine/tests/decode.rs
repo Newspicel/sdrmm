@@ -19,8 +19,9 @@ use sdrmm_wire::{
     NfmToneMode, NoiseFigureParams, PerParams, PipelineStage, PocsagBaud, PocsagParams, PskBaud,
     PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
     RemoteIdTransport, RttyParams, SarsatParams, SelcallParams, SelcallSystem, ServerEvent,
-    SidParams, SondeType, SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm,
-    WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+    SidParams, SondeType, StanagModem, StanagParams, SymbolPlane, TetraParams, TetrapolParams,
+    TetrapolPayload, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams,
+    WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -360,6 +361,39 @@ async fn a_406_beacon_survives_the_ddc_and_reaches_the_decoded_stream() {
 }
 
 #[tokio::test]
+async fn a_tetrapol_control_channel_survives_the_ddc_and_reaches_the_decoded_stream() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let offset_hz = 37_500.0;
+    let mut iq = synth::tetrapol::control_channel(NARROW_DEVICE_RATE, 2);
+    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    let device = plant(dir.path(), "tetrapol", iq, NARROW_DEVICE_RATE);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ + offset_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Tetrapol(TetrapolParams::default()),
+            blanker: Default::default(),
+        },
+        |event| {
+            matches!(
+                event,
+                DecoderEvent::Tetrapol(message)
+                    if matches!(message.payload, TetrapolPayload::SystemInfo(_))
+            )
+        },
+    )
+    .await;
+    let DecoderEvent::Tetrapol(message) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(message.scrambling, 70);
+    assert_eq!(message.station().as_deref(), Some("28.2.7"));
+}
+
+#[tokio::test]
 async fn aprs_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
@@ -656,6 +690,43 @@ async fn freedv_recording_survives_the_virtual_device_and_acquires_sync() {
         unreachable!("filtered above")
     };
     assert_eq!(frame.opcode.as_deref(), Some("1600"));
+}
+
+#[tokio::test]
+async fn a_recorded_stanag_4285_signal_is_named_through_the_engine() {
+    const FIXTURE: &[u8] = include_bytes!("../../../fixtures/stanag/stanag_4285_9k6.sigmf-data");
+    let iq = FIXTURE
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|sample| {
+            Complex::new(
+                f32::from(i16::from_le_bytes([sample[0], sample[1]])) / 32_768.0,
+                f32::from(i16::from_le_bytes([sample[2], sample[3]])) / 32_768.0,
+            )
+        })
+        .collect();
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let device = plant(dir.path(), "stanag_4285", iq, 9_600.0);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Stanag(StanagParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Stanag(_)),
+    )
+    .await;
+    let DecoderEvent::Stanag(report) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(report.modem, Some(StanagModem::Stanag4285));
+    let carrier_hz = report.frequency_hz.unwrap() - CENTER_HZ;
+    assert!((carrier_hz - 1_800.0).abs() < 50.0, "{report:?}");
 }
 
 #[tokio::test]
@@ -1137,6 +1208,45 @@ async fn ysf_callsigns_survive_a_recorded_virtual_device() {
     assert_eq!(frame.destination_call.as_deref(), Some("ALL"));
     assert_eq!(frame.source_call.as_deref(), Some("DL1ABC"));
     assert_eq!(frame.via.as_deref(), Some("DB0XYZ → DB0ABC"));
+}
+
+#[tokio::test]
+async fn a_tetra_group_call_survives_the_ddc() {
+    const TETRA_DEVICE_RATE: f64 = 288_000.0;
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let offset_hz = 50_000.0;
+    let downlink = synth::tetra::sample(synth::tetra::Cell::default());
+    let mut iq = synth::resample(
+        &downlink.modulate(),
+        synth::tetra::SAMPLE_RATE_HZ,
+        TETRA_DEVICE_RATE,
+    );
+    synth::shift(&mut iq, offset_hz, TETRA_DEVICE_RATE);
+    let device = plant(dir.path(), "tetra", iq, TETRA_DEVICE_RATE);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ + offset_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Tetra(TetraParams::default()),
+            blanker: Default::default(),
+        },
+        |event| {
+            matches!(event, DecoderEvent::Dv(frame) if frame.mode == DvMode::Tetra
+                && frame.kind == DvFrameKind::Header)
+        },
+    )
+    .await;
+
+    let DecoderEvent::Dv(frame) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(frame.opcode.as_deref(), Some("D-SETUP"));
+    assert_eq!(frame.destination, Some(synth::tetra::GROUP));
+    assert_eq!(frame.source, Some(synth::tetra::CALLER));
+    assert_eq!(frame.system_id, Some(synth::tetra::Cell::default().mcc));
 }
 
 #[tokio::test]
