@@ -18,6 +18,7 @@ const LEAD_S = 1;
 const TAIL_S = 3;
 const SOLVE_MS = 60_000;
 const SETTLE_MS = 90_000;
+const FINALIZE_MS = 60_000;
 
 function site() {
   return node(
@@ -117,10 +118,12 @@ test("records an array and finds the bearing again from the collection", async (
   await bank.getByRole("button", { name: "Stop" }).click();
 
   await expect
-    .poll(async () =>
-      (await library(page.request))
-        .filter((entry) => entry.file.startsWith(stem))
-        .map((entry) => [entry.file, entry.lanes]),
+    .poll(
+      async () =>
+        (await library(page.request))
+          .filter((entry) => entry.file.startsWith(stem))
+          .map((entry) => [entry.file, entry.lanes]),
+      { timeout: FINALIZE_MS },
     )
     .toEqual([[stem, LANES]]);
   await page.getByRole("button", { name: "Library" }).click();

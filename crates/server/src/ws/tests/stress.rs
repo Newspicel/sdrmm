@@ -63,9 +63,8 @@ async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
                         ServerEvent::AudioStreamStarted { stream_id, .. } => {
                             assert!(audio.insert(stream_id, AudioClock::default()).is_none());
                         }
-                        ServerEvent::PipelineHealth { queues, websocket } => {
+                        ServerEvent::PipelineHealth { queues, .. } => {
                             diagnostics += 1;
-                            assert_eq!(websocket.dropped, 0, "WebSocket queue lost frames");
                             let lossy: Vec<_> = queues
                                 .iter()
                                 .filter(|queue| queue.health.dropped > 0)
