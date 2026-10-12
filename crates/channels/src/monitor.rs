@@ -58,7 +58,7 @@ impl SpectrumMonitor {
     ) -> Result<Self, ChannelError> {
         if !settings.valid() {
             return Err(ChannelError::InvalidSettings(
-                "monitor confidence must be between 0 and 1".to_owned(),
+                "monitor needs confidence between 0 and 1 and start below stop".to_owned(),
             ));
         }
         if !rate.is_finite() || !(8000.0..=64_000_000.0).contains(&rate) || !center.is_finite() {
@@ -119,6 +119,9 @@ impl SpectrumMonitor {
         let mut overflow = false;
         for band in bands {
             let frequency = self.center + band.center_hz;
+            if !self.settings.covers(frequency) {
+                continue;
+            }
             if let Some(track) = self.tracks.iter_mut().find(|track| {
                 (track.signal.frequency_hz - frequency).abs()
                     < ((track.signal.bandwidth_hz + band.bandwidth_hz) * 0.4).max(1500.0)

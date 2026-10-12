@@ -93,6 +93,7 @@ and never tunes the radio.
 **Protocols** picks what it decodes. Everything is on by default. Pick a preset such as
 **Analog voice**, or toggle single protocols. Off protocols are skipped, not logged.
 **Unidentified signals** also logs transmissions no protocol matches.
+**Start** and **Stop** limit it to part of the window. Leave them empty to watch all of it.
 
 Decoded messages arrive as they happen. Each transmission also gives one event when it ends, with
 frequency, bandwidth, confidence, the decoder used, and optional audio. Long transmissions report

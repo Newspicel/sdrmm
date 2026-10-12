@@ -8966,6 +8966,10 @@ export interface components {
             min_confidence?: number;
             record_audio?: boolean;
             report_unidentified?: boolean;
+            /** Format: double */
+            start_hz?: number | null;
+            /** Format: double */
+            stop_hz?: number | null;
         };
         /**
          * @description How a channel gates what it decodes: not at all, above a level the operator set, or a margin

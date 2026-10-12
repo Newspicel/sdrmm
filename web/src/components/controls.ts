@@ -65,8 +65,9 @@ export const FIELD =
 
 export const CONTROL_W = "w-full max-w-52";
 
-export const LABEL =
-  "inline-flex items-center gap-2 whitespace-nowrap font-mono text-2xs text-ink-faint";
+export const WRAPPED_LABEL = "inline-flex items-center gap-2 font-mono text-2xs text-ink-faint";
+
+export const LABEL = `${WRAPPED_LABEL} whitespace-nowrap`;
 
 export const CHIP =
   "inline-flex h-7 items-center gap-1.5 rounded-control border border-line bg-well px-2 " +

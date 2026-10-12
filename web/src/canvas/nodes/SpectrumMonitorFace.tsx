@@ -1,4 +1,4 @@
-import { Chips, NumberChip, ToggleChip } from "../../components/face/Chips";
+import { Chips, NumberChip, OptionalNumberChip, ToggleChip } from "../../components/face/Chips";
 import type { PatchNode, SpectrumMonitorNode } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -7,6 +7,9 @@ import { ProtocolChip } from "./ProtocolPicker";
 import { protocolGroups } from "./protocols";
 
 const DEFAULT_CONFIDENCE = 0.7;
+
+const toMhz = (hz: number | null | undefined) => (hz == null ? null : hz / 1e6);
+const toHz = (mhz: number | null) => (mhz === null ? null : Math.round(mhz * 1e6));
 
 export function SpectrumMonitorFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
@@ -37,6 +40,26 @@ export function SpectrumMonitorFace({ node }: { node: PatchNode }) {
                 report_unidentified: choice.unidentified,
               })
             }
+          />
+          <OptionalNumberChip
+            label="Start"
+            title="Lowest frequency, empty for all"
+            placeholder="all"
+            value={toMhz(node.data.start_hz)}
+            unit="MHz"
+            min={0}
+            step={0.001}
+            onCommit={(mhz) => edit({ start_hz: toHz(mhz) })}
+          />
+          <OptionalNumberChip
+            label="Stop"
+            title="Highest frequency, empty for all"
+            placeholder="all"
+            value={toMhz(node.data.stop_hz)}
+            unit="MHz"
+            min={0}
+            step={0.001}
+            onCommit={(mhz) => edit({ stop_hz: toHz(mhz) })}
           />
           <NumberChip
             label="Min"

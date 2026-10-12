@@ -33016,6 +33016,20 @@
           },
           "report_unidentified": {
             "type": "boolean"
+          },
+          "start_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "stop_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
           }
         }
       },

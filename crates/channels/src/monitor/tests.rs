@@ -83,6 +83,22 @@ fn uncertain_noise_is_rejected_before_decoding_or_recording() {
 }
 
 #[test]
+fn reversed_range_is_rejected_before_capture() {
+    assert!(
+        SpectrumMonitor::new(
+            RATE,
+            CENTER,
+            SpectrumMonitorNode {
+                start_hz: Some(CENTER + 1.0),
+                stop_hz: Some(CENTER),
+                ..Default::default()
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn invalid_confidence_is_rejected_before_capture() {
     for min_confidence in [-0.1, 1.1, f32::NAN] {
         assert!(
@@ -99,8 +115,7 @@ fn invalid_confidence_is_rejected_before_capture() {
     }
 }
 
-#[test]
-fn concurrent_am_and_fm_outside_identifier_span_have_separate_audio_events() {
+fn am_and_fm() -> Vec<Complex<f32>> {
     let mut iq = noise(0.7, 42);
     let mut audio = synth::tone_audio(900.0, 0.6, RATE, iq.len());
     for (index, sample) in audio.iter_mut().enumerate() {
@@ -116,6 +131,12 @@ fn concurrent_am_and_fm_outside_identifier_span_have_separate_audio_events() {
     for ((sample, fm), am) in iq.iter_mut().zip(fm).zip(am) {
         *sample += fm + am;
     }
+    iq
+}
+
+#[test]
+fn concurrent_am_and_fm_outside_identifier_span_have_separate_audio_events() {
+    let iq = am_and_fm();
     let mut monitor = SpectrumMonitor::new(
         RATE,
         CENTER,
@@ -142,6 +163,29 @@ fn concurrent_am_and_fm_outside_identifier_span_have_separate_audio_events() {
         );
         assert!(found.audio.iter().any(|sample| sample.unsigned_abs() > 10));
     }
+}
+
+#[test]
+fn signals_outside_the_range_are_ignored() {
+    let iq = am_and_fm();
+    let mut monitor = SpectrumMonitor::new(
+        RATE,
+        CENTER,
+        SpectrumMonitorNode {
+            min_confidence: 0.0,
+            start_hz: Some(CENTER),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(run(&mut monitor, &noise(0.5, 43), iq.len() as u64));
+    assert!(!output.is_empty());
+    assert!(
+        output.iter().all(|out| out.frequency_hz > CENTER),
+        "{:?}",
+        transmissions(&output)
+    );
 }
 
 #[test]

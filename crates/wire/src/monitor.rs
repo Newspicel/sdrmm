@@ -14,6 +14,10 @@ pub struct SpectrumMonitorNode {
     pub disabled_protocols: Vec<String>,
     #[serde(default = "enabled")]
     pub report_unidentified: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_hz: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_hz: Option<f64>,
 }
 
 const fn default_min_confidence() -> f32 {
@@ -31,13 +35,28 @@ impl Default for SpectrumMonitorNode {
             min_confidence: default_min_confidence(),
             disabled_protocols: Vec::new(),
             report_unidentified: true,
+            start_hz: None,
+            stop_hz: None,
         }
     }
 }
 
 impl SpectrumMonitorNode {
     pub fn valid(&self) -> bool {
+        let finite = |edge: Option<f64>| edge.is_none_or(|hz| hz.is_finite() && hz >= 0.0);
         (0.0..=1.0).contains(&self.min_confidence)
+            && finite(self.start_hz)
+            && finite(self.stop_hz)
+            && self
+                .start_hz
+                .zip(self.stop_hz)
+                .is_none_or(|(start, stop)| start < stop)
+    }
+
+    #[must_use]
+    pub fn covers(&self, frequency_hz: f64) -> bool {
+        self.start_hz.is_none_or(|start| frequency_hz >= start)
+            && self.stop_hz.is_none_or(|stop| frequency_hz <= stop)
     }
 
     #[must_use]
@@ -131,6 +150,34 @@ mod tests {
         settings.disabled_protocols.push("dmr".to_owned());
         assert!(!settings.decodes("dmr"));
         assert!(settings.decodes("nfm"));
+    }
+
+    #[test]
+    fn range_limits_covered_frequencies() {
+        let mut settings = SpectrumMonitorNode::default();
+        assert!(settings.covers(1.0) && settings.covers(1e9));
+        settings.start_hz = Some(446e6);
+        assert!(!settings.covers(445.9e6));
+        assert!(settings.covers(1e9));
+        settings.stop_hz = Some(446.2e6);
+        assert!(settings.covers(446.1e6));
+        assert!(!settings.covers(446.3e6));
+    }
+
+    #[test]
+    fn range_must_be_ordered_and_finite() {
+        let range = |start_hz, stop_hz| SpectrumMonitorNode {
+            start_hz,
+            stop_hz,
+            ..Default::default()
+        };
+        assert!(range(Some(1e6), Some(2e6)).valid());
+        assert!(range(Some(1e6), None).valid());
+        assert!(range(None, Some(2e6)).valid());
+        assert!(!range(Some(2e6), Some(1e6)).valid());
+        assert!(!range(Some(1e6), Some(1e6)).valid());
+        assert!(!range(Some(f64::NAN), None).valid());
+        assert!(!range(None, Some(-1.0)).valid());
     }
 
     #[test]

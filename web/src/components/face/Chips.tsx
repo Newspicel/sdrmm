@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Button } from "../BaseControls";
-import { CHIP_READOUT, CHIP_SETTING, LABEL, listItem, type Options } from "../controls";
+import { CHIP_READOUT, CHIP_SETTING, listItem, type Options, WRAPPED_LABEL } from "../controls";
 import { NumberField, OptionalNumberField } from "../NumberField";
 import { Popover } from "../Popover";
 import { Tip } from "../Tip";
@@ -70,7 +70,7 @@ function ChipFace({
 export function ChipField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <span className={LABEL}>{label}</span>
+      <span className={WRAPPED_LABEL}>{label}</span>
       <span className="flex min-w-0 flex-wrap items-center gap-2">{children}</span>
     </div>
   );
