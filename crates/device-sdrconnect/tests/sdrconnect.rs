@@ -559,14 +559,14 @@ fn stopping_asks_the_server_for_no_more_iq_and_leaves_the_receiver_as_it_found_i
         )
         .then_some(())
     });
-    assert!(
+    eventually("a receiver SDR-- started to be stopped again", || {
         saw(
             &observed,
             CAPTURING,
-            r#""device_stream_enable","property":"","value":"false""#
-        ),
-        "a receiver SDR-- started is stopped again"
-    );
+            r#""device_stream_enable","property":"","value":"false""#,
+        )
+        .then_some(())
+    });
 }
 
 #[test]
