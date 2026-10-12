@@ -204,7 +204,7 @@ function DfChips({ settings, edit, shape }: { settings: DfParams; edit: Edit; sh
   const line = shape.geometry !== null && isLevelLine(shape.geometry, shape.lanes);
   const elevationRefused = elevationBlock(collinear, settings.algorithm, settings.smoothing);
   return (
-    <Chips className="p-2">
+    <Chips>
       <ChoiceChip
         label="Method"
         title="Method"

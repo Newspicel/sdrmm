@@ -208,6 +208,7 @@ export function ModeChips({
     case "p25":
     case "dpmr":
     case "m17":
+    case "tetra":
     case "dsc":
     case "inmarsat_stdc":
     case "vdl2":

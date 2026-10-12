@@ -6892,6 +6892,45 @@
           }
         }
       },
+      "AntennaGround": {
+        "type": "string",
+        "enum": [
+          "free_space",
+          "perfect",
+          "poor",
+          "average",
+          "good",
+          "seawater"
+        ]
+      },
+      "AntennaMaterial": {
+        "type": "string",
+        "enum": [
+          "lossless",
+          "copper",
+          "aluminium",
+          "stainless_steel"
+        ]
+      },
+      "AntennaModel": {
+        "type": "object",
+        "properties": {
+          "ground": {
+            "$ref": "#/components/schemas/AntennaGround"
+          },
+          "height_m": {
+            "type": "number",
+            "format": "double"
+          },
+          "material": {
+            "$ref": "#/components/schemas/AntennaMaterial"
+          },
+          "wire_diameter_mm": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "AntennaPart": {
         "type": "object",
         "required": [
@@ -6927,6 +6966,26 @@
           }
         }
       },
+      "AntennaPatternCut": {
+        "type": "object",
+        "required": [
+          "step_deg",
+          "gain_dbi"
+        ],
+        "properties": {
+          "gain_dbi": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "step_deg": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "AntennaPoint": {
         "type": "object",
         "required": [
@@ -6949,6 +7008,14 @@
           }
         }
       },
+      "AntennaPolarization": {
+        "type": "string",
+        "enum": [
+          "horizontal",
+          "vertical",
+          "mixed"
+        ]
+      },
       "AntennaReport": {
         "type": "object",
         "required": [
@@ -6959,7 +7026,8 @@
           "parts",
           "geometry",
           "balanced",
-          "notes"
+          "notes",
+          "simulation"
         ],
         "properties": {
           "balanced": {
@@ -6994,6 +7062,9 @@
               "$ref": "#/components/schemas/AntennaPart"
             }
           },
+          "simulation": {
+            "$ref": "#/components/schemas/AntennaSimulationOutcome"
+          },
           "velocity_factor": {
             "type": "number",
             "format": "double"
@@ -7021,6 +7092,22 @@
           "frequency_hz": {
             "type": "number",
             "format": "double"
+          },
+          "model": {
+            "$ref": "#/components/schemas/AntennaModel"
+          },
+          "sweep": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AntennaSweepRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trim": {
+            "type": "boolean"
           },
           "velocity_factor": {
             "type": "number",
@@ -7061,6 +7148,224 @@
           "feedline",
           "structure"
         ]
+      },
+      "AntennaSimulation": {
+        "type": "object",
+        "required": [
+          "impedance",
+          "gain_dbi",
+          "efficiency",
+          "takeoff_deg",
+          "bearing_deg",
+          "front_to_back_db",
+          "polarization",
+          "azimuth",
+          "elevation",
+          "sweep",
+          "wires",
+          "feed_wire",
+          "feed_segment",
+          "wire_radius_m"
+        ],
+        "properties": {
+          "azimuth": {
+            "$ref": "#/components/schemas/AntennaPatternCut"
+          },
+          "beamwidth_azimuth_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "beamwidth_elevation_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "bearing_deg": {
+            "type": "number",
+            "format": "double"
+          },
+          "efficiency": {
+            "type": "number",
+            "format": "double"
+          },
+          "elevation": {
+            "$ref": "#/components/schemas/AntennaPatternCut"
+          },
+          "feed_segment": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "feed_wire": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "front_to_back_db": {
+            "type": "number",
+            "format": "double"
+          },
+          "gain_dbi": {
+            "type": "number",
+            "format": "double"
+          },
+          "impedance": {
+            "$ref": "#/components/schemas/NanoVnaComplex"
+          },
+          "loading_coil_h": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "polarization": {
+            "$ref": "#/components/schemas/AntennaPolarization"
+          },
+          "resonant_velocity_factor": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "sweep": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AntennaSweepPoint"
+            }
+          },
+          "takeoff_deg": {
+            "type": "number",
+            "format": "double"
+          },
+          "wire_radius_m": {
+            "type": "number",
+            "format": "double"
+          },
+          "wires": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AntennaWire"
+            }
+          }
+        }
+      },
+      "AntennaSimulationOutcome": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AntennaSimulation"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "solved"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "status"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "AntennaSweepPoint": {
+        "type": "object",
+        "required": [
+          "frequency_hz",
+          "impedance"
+        ],
+        "properties": {
+          "frequency_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "impedance": {
+            "$ref": "#/components/schemas/NanoVnaComplex"
+          }
+        }
+      },
+      "AntennaSweepRequest": {
+        "type": "object",
+        "required": [
+          "start_hz",
+          "stop_hz",
+          "points"
+        ],
+        "properties": {
+          "points": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "start_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "stop_hz": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "AntennaWire": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "segments",
+          "current"
+        ],
+        "properties": {
+          "current": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "from": {
+            "$ref": "#/components/schemas/AntennaPoint"
+          },
+          "segments": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "to": {
+            "$ref": "#/components/schemas/AntennaPoint"
+          }
+        }
       },
       "AoaState": {
         "type": "string",
@@ -11908,6 +12213,24 @@
                 "type": "string",
                 "enum": [
                   "m17"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/TetraParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tetra"
                 ]
               }
             }
@@ -18241,7 +18564,8 @@
           "p25",
           "dpmr",
           "m17",
-          "freedv"
+          "freedv",
+          "tetra"
         ]
       },
       "DvSlotActivity": {
@@ -33169,6 +33493,9 @@
             }
           }
         }
+      },
+      "TetraParams": {
+        "type": "object"
       },
       "TimeMachineAction": {
         "type": "string",

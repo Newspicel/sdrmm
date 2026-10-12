@@ -37,6 +37,7 @@ pub mod sarsat;
 pub mod selcall;
 pub mod sid;
 pub mod sstv;
+pub mod tetra;
 pub mod vor;
 pub mod weak_signal;
 pub mod wefax;

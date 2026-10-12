@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Form, Input } from "../../components/BaseControls";
-import { BTN, BTN_QUIET, FIELD } from "../../components/controls";
+import { BTN, BTN_QUIET_DANGER, FIELD } from "../../components/controls";
 import { ChipField, Chips, ChoiceChip, NumberChip, SettingChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -92,7 +92,7 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
             {aimLabel(status?.target, axes)}
           </Readout>
         </Readouts>
-        <Chips className="p-2">
+        <Chips>
           {(mode === "manual" || mode === "park") && (
             <AimChips data={data} mode={mode} onEdit={edit} />
           )}
@@ -102,7 +102,7 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
         {status?.error != null && <FaceFault message={status.error} />}
       </FaceBody>
       <FaceFooter>
-        <Button type="button" className={BTN_QUIET} onClick={() => edit({ link: null })}>
+        <Button type="button" className={BTN_QUIET_DANGER} onClick={() => edit({ link: null })}>
           Forget link
         </Button>
       </FaceFooter>
@@ -232,7 +232,7 @@ function SerialChoices({ onPick }: { onPick: Pick }) {
             <span className="flex w-full min-w-0 flex-col gap-0.5">
               <span className="truncate">{device.path}</span>
               {detail !== "" && (
-                <span className="truncate font-mono text-[10px] text-ink-faint">{detail}</span>
+                <span className="truncate font-mono text-3xs text-ink-faint">{detail}</span>
               )}
             </span>
           </Button>

@@ -85,7 +85,7 @@ export function ChannelControls({
 }) {
   const audio = channelHasAudio(descriptor);
   return (
-    <Chips className="p-2">
+    <Chips>
       {audio && <MarginChip settings={settings} onEdit={onEdit} />}
       <ModeChips
         params={settings.params}

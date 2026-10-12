@@ -59,7 +59,7 @@ export function SpatialPlot({
   const rotated = frame === null ? null : rotateRows(frame, offsetDeg);
   return (
     <div ref={ref} className="relative min-h-40 flex-1 bg-plot-bg">
-      <div className={`absolute ${dim ? "opacity-40" : ""}`} style={GUTTERS}>
+      <div className={`absolute ${dim ? "opacity-50" : ""}`} style={GUTTERS}>
         {view === "map" ? (
           <GridCanvas
             frame={
@@ -74,8 +74,8 @@ export function SpatialPlot({
           <TrailCanvas frame={frame} offsetDeg={offsetDeg} />
         )}
       </div>
-      <span className="absolute right-1 bottom-0.5 font-mono text-[9px] text-ink-faint">MHz</span>
-      <span className="absolute top-0.5 left-1 font-mono text-[9px] text-ink-faint">
+      <span className="absolute right-1 bottom-0.5 font-mono text-plot text-ink-faint">MHz</span>
+      <span className="absolute top-0.5 left-1 font-mono text-plot text-ink-faint">
         {view === "map" ? "°" : "t"}
       </span>
       <SurfaceRefused text={refused} />
@@ -109,7 +109,7 @@ export function SpatialPlot({
           onPointerLeave={() => setHover(null)}
         >
           {hover !== null && rotated !== null && (
-            <span className="pointer-events-none absolute top-1 left-1 rounded-[2px] bg-bg/80 px-1 font-mono text-[10px] tabular-nums text-ink">
+            <span className="pointer-events-none absolute top-1 left-1 rounded-inset bg-bg/80 px-1 font-mono text-3xs tabular-nums text-ink">
               {hoverLabel(hover, plot, frame, rotated)}
             </span>
           )}

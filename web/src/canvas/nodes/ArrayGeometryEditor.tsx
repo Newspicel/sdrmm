@@ -261,7 +261,7 @@ function ArrayPreview({
       height={PREVIEW_PX}
       role="img"
       aria-label="Array layout"
-      className="shrink-0 rounded-[3px] border border-line bg-well"
+      className="shrink-0 rounded-control border border-line bg-well"
     >
       <path d={`M${centre} 1 L${centre - 3} 6 L${centre + 3} 6 Z`} className="fill-ink-faint">
         <title>Forward</title>
@@ -272,7 +272,7 @@ function ArrayPreview({
           <text
             x={north.x}
             y={north.y}
-            className="fill-accent stroke-none font-mono text-[8px]"
+            className="fill-accent stroke-none font-mono text-plot"
             textAnchor="middle"
             dominantBaseline="middle"
           >
@@ -291,7 +291,8 @@ function ArrayPreview({
           <text
             x={point.x}
             y={point.y}
-            className="fill-ink font-mono text-[6px]"
+            fontSize={6}
+            className="fill-ink font-mono"
             textAnchor="middle"
             dominantBaseline="central"
           >

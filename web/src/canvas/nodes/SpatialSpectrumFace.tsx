@@ -168,7 +168,7 @@ function SpatialChips({
   onColormap: (colormap: Colormap) => void;
 }) {
   return (
-    <Chips className="shrink-0 p-2">
+    <Chips className="shrink-0">
       <ChoiceChip
         label="Method"
         title="Method"

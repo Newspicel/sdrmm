@@ -382,7 +382,7 @@ export function illuminatorOf(kind: IlluminatorKind, previous: Illuminator): Ill
 }
 
 export const CLEANING_OPTIONS: Options<ReferenceCleaning["kind"]> = [
-  { value: "off", label: "Off" },
+  { value: "off", label: "off" },
   { value: "cma", label: "CMA", title: "Needs FM or Custom" },
   { value: "dab_remod", label: "DAB remod", title: "Needs DAB" },
 ];
@@ -435,7 +435,7 @@ export const CLUTTER_OPTIONS: Options<ClutterMethod> = [
   { value: "eca_sliding", label: "ECA-S" },
   { value: "nlms", label: "NLMS" },
   { value: "block_nlms", label: "Block NLMS" },
-  { value: "off", label: "Off" },
+  { value: "off", label: "off" },
 ];
 
 export const CFAR_OPTIONS: Options<CfarKind["kind"]> = [
@@ -469,10 +469,10 @@ export function pfaChoice(pfa: number): number {
 export const WINDOW_OPTIONS: Options<DopplerWindow> = [
   { value: "hann", label: "Hann" },
   { value: "blackman_harris", label: "Blackman-Harris" },
-  { value: "rectangular", label: "None" },
+  { value: "rectangular", label: "none" },
 ];
 
 export const GPU_OPTIONS: Options<GpuUse> = [
   { value: "auto", label: "Auto", title: "GPU when it is faster" },
-  { value: "off", label: "Off" },
+  { value: "off", label: "off" },
 ];

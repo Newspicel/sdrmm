@@ -190,7 +190,7 @@ function TriangulationChips({
 }) {
   const decay = settings.decay;
   return (
-    <Chips className="p-2">
+    <Chips>
       <ChoiceChip
         label="Fade"
         title={fadeTitle(fusion) ?? "How fast old bearings count less"}

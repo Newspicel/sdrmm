@@ -9,8 +9,8 @@ use sdrmm_wire::{
     M17Params, MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge,
     PatchGraph, PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
     RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SarsatParams, SidParams, Squelch,
-    SsbParams, SstvParams, TemplateInfo, WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams,
-    WsprParams, YsfParams,
+    SsbParams, SstvParams, TemplateInfo, TetraParams, WefaxParams, WfmParams, WifiOccupancyParams,
+    WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -621,6 +621,21 @@ static TEMPLATES: &[Entry] = &[
                 LISTEN_LOG,
             ),
         ],
+    },
+    Entry {
+        id: "tetra-cell",
+        name: "TETRA cell",
+        description: "Cell identity, calls and short messages of a TETRA carrier.",
+        explainer: "Tune to a TETRA downlink. The log names the network, location area and \
+                    carrier, then each call setup, talker and SDS. Voice is not decoded, and \
+                    air-encrypted cells only show their identity. 392.5 MHz is only an example.",
+        center_hz: 392_500_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[Channel::at(
+            392_500_000.0,
+            || ChannelParams::Tetra(TetraParams::default()),
+            LOG,
+        )],
     },
     Entry {
         id: "dab-check",

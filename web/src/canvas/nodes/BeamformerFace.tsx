@@ -136,7 +136,7 @@ function BeamPattern({ reading }: { reading: BeamformerReading | null }) {
     >
       <circle cx={centre} cy={centre} r={radius} className="fill-well stroke-line" />
       <circle cx={centre} cy={centre} r={radius / 2} className="fill-none stroke-line/60" />
-      <text x={centre} y={9} textAnchor="middle" className="fill-ink-faint font-mono text-[8px]">
+      <text x={centre} y={9} textAnchor="middle" className="fill-ink-faint font-mono text-plot">
         Fwd
       </text>
       {pattern.length > 0 && (
@@ -175,7 +175,7 @@ function WeightBars({ reading }: { reading: BeamformerReading | null }) {
     <div role="group" className="flex flex-col gap-0.5" aria-label="Lane weights">
       {weights.map((weight, lane) => (
         <div key={lane} className="flex items-center gap-1.5" title={weightTitle(lane, weight)}>
-          <span className="w-4 font-mono text-[10px] text-port-array">{lane + 1}</span>
+          <span className="w-4 font-mono text-3xs text-port-array">{lane + 1}</span>
           <MeterBar
             label={`Lane ${lane + 1} weight`}
             value={(percent[lane] ?? 0) / 100}

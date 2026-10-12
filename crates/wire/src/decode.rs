@@ -533,6 +533,7 @@ pub enum DvMode {
     M17,
     #[serde(rename = "freedv")]
     FreeDv,
+    Tetra,
 }
 
 impl DvMode {
@@ -547,6 +548,7 @@ impl DvMode {
             Self::Dpmr => "dPMR",
             Self::M17 => "M17",
             Self::FreeDv => "FreeDV",
+            Self::Tetra => "TETRA",
         }
     }
 
@@ -561,6 +563,7 @@ impl DvMode {
             Self::Dpmr => "dpmr",
             Self::M17 => "m17",
             Self::FreeDv => "freedv",
+            Self::Tetra => "tetra",
         }
     }
 
@@ -575,6 +578,7 @@ impl DvMode {
             Self::Dpmr,
             Self::M17,
             Self::FreeDv,
+            Self::Tetra,
         ]
         .into_iter()
         .find(|mode| mode.type_id() == type_id)

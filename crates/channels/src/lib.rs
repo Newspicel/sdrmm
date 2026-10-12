@@ -64,6 +64,7 @@ mod ssb;
 mod sstv;
 pub mod stitch;
 pub mod symbols;
+mod tetra;
 pub mod tone_squelch;
 mod tx;
 mod vdl2;
@@ -143,6 +144,7 @@ pub use sid::SidChannel;
 pub use ssb::{SsbChannel, SsbTx};
 pub use sstv::SstvChannel;
 pub use symbols::SymbolTap;
+pub use tetra::TetraChannel;
 pub use vdl2::Vdl2Channel;
 pub use vor::VorChannel;
 pub use weak_signal::{Ft4Channel, Ft8Channel, WsprChannel};
@@ -211,6 +213,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::P25(_) => dv::p25::occupied_band(),
         ChannelParams::Dpmr(_) => dv::dpmr::occupied_band(),
         ChannelParams::M17(_) => dv::m17::occupied_band(),
+        ChannelParams::Tetra(_) => tetra::occupied_band(),
         ChannelParams::Ft8(_) | ChannelParams::Ft4(_) | ChannelParams::Wspr(_) => {
             weak_signal::occupied_band(params)
         }
@@ -304,6 +307,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::P25(_) => Ok(dv::p25::channel_filter()),
         ChannelParams::Dpmr(_) => Ok(dv::dpmr::channel_filter()),
         ChannelParams::M17(_) => Ok(dv::m17::channel_filter()),
+        ChannelParams::Tetra(_) => Ok(tetra::channel_filter()),
         ChannelParams::Ft8(_) | ChannelParams::Ft4(_) | ChannelParams::Wspr(_) => {
             weak_signal::channel_filter(params)
         }
@@ -631,6 +635,11 @@ const REGISTRY: &[Registration] = &[
         create_tx: None,
     },
     Registration {
+        descriptor: TetraChannel::descriptor,
+        create: boxed::<TetraChannel>,
+        create_tx: None,
+    },
+    Registration {
         descriptor: FreeDvChannel::descriptor,
         create: boxed::<FreeDvChannel>,
         create_tx: None,
@@ -892,8 +901,8 @@ mod tests {
         GnssParams, HfdlParams, IdentParams, IlsParams, InmarsatAeroParams, InmarsatStdcParams,
         IridiumParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NxdnParams,
         P25Params, PocsagParams, PskParams, RadioClockParams, RadiosondeParams, RttyParams,
-        SelcallParams, SsbParams, SstvParams, Vdl2Params, VorParams, WefaxParams, WfmParams,
-        WsjtParams, WsprParams, YsfParams,
+        SelcallParams, SsbParams, SstvParams, TetraParams, Vdl2Params, VorParams, WefaxParams,
+        WfmParams, WsjtParams, WsprParams, YsfParams,
     };
 
     use super::*;
@@ -932,6 +941,7 @@ mod tests {
             "p25" => ChannelParams::P25(P25Params::default()),
             "dpmr" => ChannelParams::Dpmr(DpmrParams::default()),
             "m17" => ChannelParams::M17(M17Params::default()),
+            "tetra" => ChannelParams::Tetra(TetraParams::default()),
             "ft8" => ChannelParams::Ft8(WsjtParams::default()),
             "ft4" => ChannelParams::Ft4(WsjtParams::default()),
             "psk" => ChannelParams::Psk(PskParams::default()),
@@ -1048,6 +1058,7 @@ mod tests {
                 "p25",
                 "dpmr",
                 "m17",
+                "tetra",
                 "freedv",
                 "ft8",
                 "ft4",
@@ -1107,6 +1118,7 @@ mod tests {
                 "dmr" | "ysf" | "p25" => (12_500.0, 48_000.0),
                 "dstar" | "nxdn" | "dpmr" => (6_250.0, 48_000.0),
                 "m17" => (9_000.0, 48_000.0),
+                "tetra" => (25_000.0, 72_000.0),
                 "ft8" | "ft4" | "wspr" => (3_200.0, 12_000.0),
                 "psk" => (650.0, 8_000.0),
                 "freedv" => (1_400.0, 8_000.0),

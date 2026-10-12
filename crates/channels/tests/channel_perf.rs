@@ -417,3 +417,28 @@ fn ism_sensors_allocate_nothing_while_listening_to_noise() {
     assert_no_alloc("ism", || drive(rx.as_mut(), &iq, &mut outputs));
     assert!(outputs.events.is_empty());
 }
+
+#[test]
+fn tetra_allocates_nothing_while_it_follows_an_idle_cell() {
+    use sdrmm_channels::synth::tetra::{Cell, Downlink};
+    let settings = ChannelSettings::default_for("tetra").expect("settings");
+    let rate = sdrmm_channels::input_rate(&settings.params);
+    let mut rx =
+        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+    let mut downlink = Downlink::new(Cell::default());
+    for _ in 0..8 {
+        downlink.idle();
+    }
+    for _ in 0..6 {
+        downlink.sync();
+        for _ in 0..71 {
+            downlink.idle();
+        }
+    }
+    let iq = downlink.modulate();
+    let (warmup, rest) = iq.split_at(iq.len() / 2);
+    let mut outputs = ChannelOutputs::default();
+    drive(rx.as_mut(), warmup, &mut outputs);
+    assert_no_alloc("tetra", || drive(rx.as_mut(), rest, &mut outputs));
+    assert_eq!(rx.rejected(), 0);
+}

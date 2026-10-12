@@ -44,13 +44,13 @@ export function Swatch({
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`group flex flex-col gap-1 rounded-[3px] border p-1 text-left transition-colors duration-100 ${
+      className={`group flex flex-col gap-1 rounded-control border p-1 text-left transition-colors duration-100 ${
         on ? "border-accent-dim bg-accent/10" : "border-transparent hover:bg-panel-2"
       }`}
     >
-      <span className="h-3 w-full rounded-[2px]" style={{ background: fill }} />
+      <span className="h-3 w-full rounded-inset" style={{ background: fill }} />
       <span
-        className={`font-mono text-[10.5px] ${on ? "text-accent" : "text-ink-faint group-hover:text-ink"}`}
+        className={`font-mono text-2xs ${on ? "text-accent" : "text-ink-faint group-hover:text-ink"}`}
       >
         {name}
       </span>

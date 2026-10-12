@@ -59,7 +59,7 @@ export function RadarChips({
 }) {
   const cfar = settings.cfar;
   return (
-    <Chips className="shrink-0 p-2">
+    <Chips className="shrink-0">
       <ChoiceChip
         label="Colours"
         value={colormap}

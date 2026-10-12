@@ -112,7 +112,7 @@ function SettingChips({ active, patch }: { active: DeviceSet; patch: Patch }) {
   const agcModes = caps.agc?.kind === "modes";
   const lanes = rxStreamCount(caps);
   return (
-    <Chips>
+    <Chips inset="none">
       <RateChip caps={caps} sampleRate={settings.sample_rate ?? 0} patch={patch} />
 
       {hasFilter(caps) && (
@@ -863,7 +863,7 @@ function StageRow({
   const lead =
     typeof label === "string" ? (
       <span
-        className={`truncate ${lane !== undefined && label === lane ? "font-mono text-[11px] text-port-iq" : "legend"}`}
+        className={`truncate ${lane !== undefined && label === lane ? "font-mono text-2xs text-port-iq" : "legend"}`}
         title={
           heldBy === undefined
             ? unit === ""

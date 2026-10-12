@@ -45,7 +45,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 
 ## 3. Decoders
 
-- TETRA
 - Tetrapol
 - GSM downlink analysis, OsmocomBB-style monitoring
 - STANAG modem identification

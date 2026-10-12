@@ -79,7 +79,7 @@ function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
               : undefined
         }
       >
-        <Chips className="p-2">
+        <Chips>
           <ChoiceChip
             label="Mode"
             title="Keep passes only what matches; Drop removes what matches"

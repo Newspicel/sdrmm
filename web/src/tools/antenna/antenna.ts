@@ -2,6 +2,9 @@ import type { Options } from "../../components/controls";
 import type {
   AntennaDesign,
   AntennaDesignType,
+  AntennaGround,
+  AntennaMaterial,
+  AntennaModel,
   AntennaReport,
   AntennaRequest,
   ToolRequest,
@@ -19,6 +22,31 @@ export const DESIGN_OPTIONS: Options<AntennaDesignType> = [
   { value: "quad_loop", label: "Quad loop (full wave)" },
   { value: "end_fed_half_wave", label: "End-fed half wave" },
 ];
+
+export const GROUND_OPTIONS: Options<AntennaGround> = [
+  { value: "free_space", label: "Free space" },
+  { value: "average", label: "Average" },
+  { value: "poor", label: "Poor, dry" },
+  { value: "good", label: "Good, moist" },
+  { value: "seawater", label: "Seawater" },
+  { value: "perfect", label: "Perfect" },
+];
+
+export const MATERIAL_OPTIONS: Options<AntennaMaterial> = [
+  { value: "copper", label: "Copper" },
+  { value: "aluminium", label: "Aluminium" },
+  { value: "stainless_steel", label: "Stainless steel" },
+  { value: "lossless", label: "Lossless" },
+];
+
+export type ModelSettings = Required<AntennaModel>;
+
+export const DEFAULT_MODEL: ModelSettings = {
+  wire_diameter_mm: 2,
+  material: "copper",
+  ground: "average",
+  height_m: 10,
+};
 
 export function designLabel(type: AntennaDesignType): string {
   return DESIGN_OPTIONS.find((option) => option.value === type)?.label ?? type;

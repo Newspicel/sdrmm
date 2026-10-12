@@ -194,7 +194,7 @@ export function laneQualityPercent(quality: number): number {
 }
 
 export const CHECK_INTERVALS: Options<number> = [
-  { value: 0, label: "Off" },
+  { value: 0, label: "off" },
   { value: 10, label: "10 s" },
   { value: 60, label: "60 s" },
   { value: 300, label: "5 min" },

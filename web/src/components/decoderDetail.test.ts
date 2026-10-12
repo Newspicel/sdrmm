@@ -812,6 +812,23 @@ describe("eventDetail", () => {
     expect(detail.body).toBe("A1B2C3");
   });
 
+  it("names a TETRA cell by its country, network and location area", () => {
+    const fields = fieldsOf({
+      kind: "dv",
+      data: {
+        mode: "tetra",
+        kind: "control",
+        errors_corrected: 0,
+        system_id: 250,
+        network_id: 13,
+        site_id: 1052,
+        color_code: 44,
+      },
+    });
+    expect(fields).toMatchObject({ MCC: "250", MNC: "13", "Location area": "1052" });
+    expect(fields).not.toHaveProperty("System ID");
+  });
+
   it("says which side of a trunked site a burst came from and whether it checked out", () => {
     const detail = eventDetail({
       kind: "dv",

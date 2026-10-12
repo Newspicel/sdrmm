@@ -104,7 +104,7 @@ function PairingCode({ status, host }: { status: RemoteStatus; host: string }) {
         {status.user_code}
       </div>
       <img
-        className="size-40 rounded bg-white p-2"
+        className="size-40 rounded-control bg-white p-2"
         alt="Pairing QR code"
         src={`data:image/svg+xml;utf8,${encodeURIComponent(renderSVG(url, { border: 1 }))}`}
       />

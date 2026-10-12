@@ -39,7 +39,7 @@ function Outline({ node, peer, zoom }: { node: Node; peer: Peer; zoom: number })
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute top-0 left-0 rounded-[6px] border-2"
+      className="pointer-events-none absolute top-0 left-0 rounded-control border-2"
       style={{
         transform: `translate(${node.position.x - OUTLINE_GAP}px, ${node.position.y - OUTLINE_GAP}px)`,
         width: width + OUTLINE_GAP * 2,
@@ -48,7 +48,7 @@ function Outline({ node, peer, zoom }: { node: Node; peer: Peer; zoom: number })
       }}
     >
       <span
-        className="absolute bottom-full left-0 mb-0.5 origin-bottom-left rounded-[3px] px-1 text-[10px] whitespace-nowrap text-bg"
+        className="absolute bottom-full left-0 mb-0.5 origin-bottom-left rounded-control px-1 text-3xs whitespace-nowrap text-bg"
         style={{ background: color, transform: `scale(${1 / zoom})` }}
       >
         {peer.name}
@@ -73,7 +73,7 @@ function Cursor({ at, peer, zoom }: { at: Position; peer: Peer; zoom: number }) 
         />
       </svg>
       <span
-        className="absolute top-4 left-3 rounded-[3px] px-1 text-[10px] whitespace-nowrap text-bg"
+        className="absolute top-4 left-3 rounded-control px-1 text-3xs whitespace-nowrap text-bg"
         style={{ background: color }}
       >
         {peer.name}

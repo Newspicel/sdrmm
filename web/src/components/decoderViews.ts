@@ -756,6 +756,7 @@ const DV_MODE_LABELS: Record<DvFrame["mode"], string> = {
   dpmr: "dPMR",
   m17: "M17",
   freedv: "FreeDV",
+  tetra: "TETRA",
 };
 
 export function dvMode(frame: Pick<DvFrame, "mode">): string {

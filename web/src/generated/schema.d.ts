@@ -1981,6 +1981,18 @@ export interface components {
             feed: components["schemas"]["AntennaPoint"];
             segments: components["schemas"]["AntennaSegment"][];
         };
+        /** @enum {string} */
+        AntennaGround: "free_space" | "perfect" | "poor" | "average" | "good" | "seawater";
+        /** @enum {string} */
+        AntennaMaterial: "lossless" | "copper" | "aluminium" | "stainless_steel";
+        AntennaModel: {
+            ground?: components["schemas"]["AntennaGround"];
+            /** Format: double */
+            height_m?: number;
+            material?: components["schemas"]["AntennaMaterial"];
+            /** Format: double */
+            wire_diameter_mm?: number;
+        };
         AntennaPart: {
             /** Format: int32 */
             count: number;
@@ -1991,6 +2003,11 @@ export interface components {
             /** Format: double */
             position_m?: number | null;
         };
+        AntennaPatternCut: {
+            gain_dbi: number[];
+            /** Format: double */
+            step_deg: number;
+        };
         AntennaPoint: {
             /** Format: double */
             x_m: number;
@@ -1999,6 +2016,8 @@ export interface components {
             /** Format: double */
             z_m: number;
         };
+        /** @enum {string} */
+        AntennaPolarization: "horizontal" | "vertical" | "mixed";
         AntennaReport: {
             balanced: boolean;
             design: components["schemas"]["AntennaDesign"];
@@ -2009,6 +2028,7 @@ export interface components {
             geometry: components["schemas"]["AntennaGeometry"];
             notes: string[];
             parts: components["schemas"]["AntennaPart"][];
+            simulation: components["schemas"]["AntennaSimulationOutcome"];
             /** Format: double */
             velocity_factor: number;
             /** Format: double */
@@ -2020,6 +2040,9 @@ export interface components {
             feedline_velocity_factor?: number;
             /** Format: double */
             frequency_hz: number;
+            model?: components["schemas"]["AntennaModel"];
+            sweep?: components["schemas"]["AntennaSweepRequest"] | null;
+            trim?: boolean;
             /** Format: double */
             velocity_factor?: number;
         };
@@ -2031,6 +2054,66 @@ export interface components {
         };
         /** @enum {string} */
         AntennaSegmentRole: "driven" | "parasitic" | "radial" | "matching" | "feedline" | "structure";
+        AntennaSimulation: {
+            azimuth: components["schemas"]["AntennaPatternCut"];
+            /** Format: double */
+            beamwidth_azimuth_deg?: number | null;
+            /** Format: double */
+            beamwidth_elevation_deg?: number | null;
+            /** Format: double */
+            bearing_deg: number;
+            /** Format: double */
+            efficiency: number;
+            elevation: components["schemas"]["AntennaPatternCut"];
+            /** Format: int32 */
+            feed_segment: number;
+            /** Format: int32 */
+            feed_wire: number;
+            /** Format: double */
+            front_to_back_db: number;
+            /** Format: double */
+            gain_dbi: number;
+            impedance: components["schemas"]["NanoVnaComplex"];
+            /** Format: double */
+            loading_coil_h?: number | null;
+            polarization: components["schemas"]["AntennaPolarization"];
+            /** Format: double */
+            resonant_velocity_factor?: number | null;
+            sweep: components["schemas"]["AntennaSweepPoint"][];
+            /** Format: double */
+            takeoff_deg: number;
+            /** Format: double */
+            wire_radius_m: number;
+            wires: components["schemas"]["AntennaWire"][];
+        };
+        AntennaSimulationOutcome: (components["schemas"]["AntennaSimulation"] & {
+            /** @enum {string} */
+            status: "solved";
+        }) | {
+            reason: string;
+            /** @enum {string} */
+            status: "unavailable";
+        };
+        AntennaSweepPoint: {
+            /** Format: double */
+            frequency_hz: number;
+            impedance: components["schemas"]["NanoVnaComplex"];
+        };
+        AntennaSweepRequest: {
+            /** Format: int32 */
+            points: number;
+            /** Format: double */
+            start_hz: number;
+            /** Format: double */
+            stop_hz: number;
+        };
+        AntennaWire: {
+            current: number[];
+            from: components["schemas"]["AntennaPoint"];
+            /** Format: int32 */
+            segments: number;
+            to: components["schemas"]["AntennaPoint"];
+        };
         /** @enum {string} */
         AoaState: "off" | "ready" | "phase_unknown" | "one_lane";
         ApiError: {
@@ -3360,6 +3443,10 @@ export interface components {
             settings: components["schemas"]["M17Params"];
             /** @enum {string} */
             type: "m17";
+        } | {
+            settings: components["schemas"]["TetraParams"];
+            /** @enum {string} */
+            type: "tetra";
         } | {
             settings: components["schemas"]["WsjtParams"];
             /** @enum {string} */
@@ -5024,7 +5111,7 @@ export interface components {
         /** @enum {string} */
         DvFrameKind: "header" | "voice" | "terminator" | "control" | "data";
         /** @enum {string} */
-        DvMode: "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv";
+        DvMode: "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv" | "tetra";
         DvSlotActivity: {
             activity: string;
             /** Format: int32 */
@@ -9037,6 +9124,7 @@ export interface components {
         TemplatesResponse: {
             templates: components["schemas"]["TemplateInfo"][];
         };
+        TetraParams: Record<string, never>;
         /** @enum {string} */
         TimeMachineAction: "arm" | "capture" | "stop" | "disarm";
         TimeMachineNode: {
