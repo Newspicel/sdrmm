@@ -2029,6 +2029,8 @@ pub struct ChannelInfo {
     pub out_of_band: Option<BandMiss>,
     #[serde(default)]
     pub rejected: u32,
+    #[serde(default)]
+    pub skipped: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub audio_recordings: Vec<AudioRecordingStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

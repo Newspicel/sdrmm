@@ -94,7 +94,7 @@ export function PerformanceView({
           <Segmented label="Chart" value={chart} options={CHARTS} onChange={setChart} />
           <div className="flex items-center gap-3">
             {zoom !== null && (
-              <span className="flex items-center gap-2 font-mono text-[11px] text-ink-dim">
+              <span className="flex items-center gap-2 font-mono text-2xs text-ink-dim">
                 {formatHz(zoom.low)} to {formatHz(zoom.high)}
                 <Button type="button" className={BTN} onClick={() => setZoomed(null)}>
                   Reset zoom
@@ -189,7 +189,7 @@ function MatchingTable({
       </h4>
       <table className="w-full font-mono text-xs tabular-nums">
         <thead>
-          <tr className="text-left text-[10.5px] text-ink-faint">
+          <tr className="text-left text-2xs text-ink-faint">
             <th className="py-1 font-normal">Network</th>
             <th className="py-1 text-right font-normal">SWR</th>
             <th className="py-1 text-right font-normal">Under 2:1</th>
@@ -214,7 +214,7 @@ function MatchingTable({
               >
                 <td className="py-1 pl-1">
                   <span className="font-sans">{matching.label}</span>
-                  <span className="ml-2 text-[10.5px] text-ink-faint">{matching.detail}</span>
+                  <span className="ml-2 text-2xs text-ink-faint">{matching.detail}</span>
                 </td>
                 <td className={`py-1 text-right ${quality.tone}`}>
                   <span className="inline-flex items-center gap-1">

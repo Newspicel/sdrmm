@@ -3287,6 +3287,8 @@ export interface components {
             rejected?: number;
             settings: components["schemas"]["ChannelSettings"];
             /** Format: int32 */
+            skipped?: number;
+            /** Format: int32 */
             stream?: number;
         };
         /** @enum {string} */

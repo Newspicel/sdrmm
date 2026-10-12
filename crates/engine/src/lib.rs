@@ -392,6 +392,7 @@ struct ChannelMedia {
     encoder: Option<std::thread::JoinHandle<()>>,
     position: Option<PositionFix>,
     rejected_seen: u32,
+    skipped_seen: u32,
 }
 
 impl ChannelMedia {
@@ -416,11 +417,13 @@ impl ChannelMedia {
                 squelch_db: Arc::new(AtomicU32::new(f32::NAN.to_bits())),
                 shift_hz: Arc::new(AtomicU64::new(0.0_f64.to_bits())),
                 rejected: Arc::new(AtomicU32::new(0)),
+                skipped: Arc::new(AtomicU32::new(0)),
             },
             audio_tx,
             encoder: Some(encoder),
             position: None,
             rejected_seen: 0,
+            skipped_seen: 0,
         })
     }
 
@@ -703,6 +706,7 @@ impl DeviceSetState {
                 .map(|channel| ChannelInfo {
                     out_of_band: self.band_miss(channel),
                     rejected: self.rejected(channel.id),
+                    skipped: self.skipped(channel.id),
                     audio_recordings: self.audio_recording_statuses(channel.id),
                     baseband_recording: self
                         .baseband_recordings
@@ -817,11 +821,19 @@ impl DeviceSetState {
             .map_or(0, |media| media.sinks.rejected.load(Ordering::Relaxed))
     }
 
-    fn rejects_moved(&mut self) -> bool {
+    fn skipped(&self, channel: u32) -> u32 {
+        self.media
+            .get(&channel)
+            .map_or(0, |media| media.sinks.skipped.load(Ordering::Relaxed))
+    }
+
+    fn counters_moved(&mut self) -> bool {
         self.media.values_mut().fold(false, |moved, media| {
-            let now = media.sinks.rejected.load(Ordering::Relaxed);
-            let changed = now != media.rejected_seen;
-            media.rejected_seen = now;
+            let rejected = media.sinks.rejected.load(Ordering::Relaxed);
+            let skipped = media.sinks.skipped.load(Ordering::Relaxed);
+            let changed = rejected != media.rejected_seen || skipped != media.skipped_seen;
+            media.rejected_seen = rejected;
+            media.skipped_seen = skipped;
             moved || changed
         })
     }

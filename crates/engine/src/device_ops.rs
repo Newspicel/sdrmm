@@ -162,7 +162,7 @@ impl Engine {
                 s.loss = loss;
                 dirty = true;
             }
-            dirty |= s.rejects_moved();
+            dirty |= s.counters_moved();
             let clipping = s.take_clipping();
             if clipping != s.clipping {
                 s.clipping = clipping;

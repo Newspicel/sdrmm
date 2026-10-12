@@ -15,11 +15,12 @@ const GRAPH: PatchGraph = {
   edges: [{ from: { node: "radio", port: "iq" }, to: { node: "ble", port: "iq" } }],
 };
 
-function channel(rejected: number): ChannelInfo {
+function channel(rejected: number, skipped = 0): ChannelInfo {
   return {
     id: 3,
     stream: 0,
     rejected,
+    skipped,
     settings: {
       frequency_hz: 2_426_000_000,
       params: { type: "ble", settings: { link: "channel" } },
@@ -27,7 +28,7 @@ function channel(rejected: number): ChannelInfo {
   };
 }
 
-function face(rejected: number): string {
+function face(rejected: number, skipped = 0): string {
   const set: DeviceSet = {
     id: 1,
     device: { driver: "virtual", key: "band", label: "Test band" },
@@ -42,13 +43,13 @@ function face(rejected: number): string {
     },
     settings: {},
     status: "running",
-    channels: [channel(rejected)],
+    channels: [channel(rejected, skipped)],
     overruns: 0,
   };
   return renderFace(ChannelFace, BLE, {
     graph: GRAPH,
     devices: new Map([["radio", set]]),
-    channels: new Map([["ble", channel(rejected)]]),
+    channels: new Map([["ble", channel(rejected, skipped)]]),
     owners: new Map([["ble", "radio"]]),
   });
 }
@@ -60,7 +61,15 @@ describe("ChannelFace", () => {
     expect(html).toContain(">12</b>");
   });
 
+  it("shows windows the decoder had no time for", () => {
+    const html = face(0, 4);
+    expect(html).toContain('title="Skipped: windows the decoder had no time for"');
+    expect(html).toContain(">4</b>");
+  });
+
   it("says nothing while every packet reads", () => {
-    expect(face(0)).not.toContain("Rejected");
+    const html = face(0);
+    expect(html).not.toContain("Rejected");
+    expect(html).not.toContain("Skipped");
   });
 });

@@ -71,7 +71,7 @@ export function ResonanceView({
   }
   if (simulation === null) {
     return (
-      <div className="flex min-h-64 items-center justify-center rounded-[3px] border border-dashed border-line text-xs text-ink-faint">
+      <div className="flex min-h-64 items-center justify-center rounded-control border border-dashed border-line text-xs text-ink-faint">
         Sweeping {formatHz(wide.startHz)} to {formatHz(wide.stopHz)}…
       </div>
     );
@@ -136,7 +136,7 @@ function ResonanceTable({
       ) : (
         <table className="w-full font-mono text-xs tabular-nums">
           <thead>
-            <tr className="text-left text-[10.5px] text-ink-faint">
+            <tr className="text-left text-2xs text-ink-faint">
               <th className="w-6 py-1 font-normal" />
               <th className="py-1 font-normal">Frequency</th>
               <th className="py-1 text-right font-normal">R</th>

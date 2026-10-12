@@ -251,7 +251,7 @@ export function AntennaView({
 
 function CurrentScale() {
   return (
-    <span className="flex items-center gap-1.5 font-mono text-[10px] text-ink-dim">
+    <span className="flex items-center gap-1.5 font-mono text-3xs text-ink-dim">
       <svg viewBox="0 0 32 6" className="h-1.5 w-8" aria-hidden>
         <defs>
           <linearGradient id="antenna-current-scale">

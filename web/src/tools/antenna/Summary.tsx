@@ -33,7 +33,7 @@ export function Summary({
   return (
     <section
       aria-label="Simulated performance"
-      className="flex flex-wrap items-end gap-x-8 gap-y-3 rounded-[3px] border border-line bg-panel-2/60 px-4 py-3"
+      className="flex flex-wrap items-end gap-x-8 gap-y-3 rounded-control border border-line bg-panel-2/60 px-4 py-3"
     >
       <Big label={`Feedpoint at ${formatHz(frequencyHz)}`}>
         {formatImpedance(simulation.impedance)}

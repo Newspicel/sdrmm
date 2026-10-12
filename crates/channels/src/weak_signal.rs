@@ -126,6 +126,7 @@ struct WeakSignal {
     window_start: u64,
     epoch: u64,
     queued: usize,
+    skipped: u32,
     recent: Vec<Recent>,
     jobs: Producer<Job>,
     done: Consumer<Done>,
@@ -153,6 +154,7 @@ impl WeakSignal {
             window_start: 0,
             epoch: 0,
             queued: 0,
+            skipped: 0,
             recent: Vec::new(),
             jobs,
             done,
@@ -209,6 +211,7 @@ impl WeakSignal {
 
     fn submit(&mut self, slot: usize) {
         let Some(mut samples) = self.spare.pop() else {
+            self.skipped = self.skipped.saturating_add(1);
             return;
         };
         samples.clear();
@@ -223,7 +226,10 @@ impl WeakSignal {
         };
         match self.jobs.push(job) {
             Ok(()) => self.queued += 1,
-            Err(PushError::Full(job)) => self.spare.push(job.samples),
+            Err(PushError::Full(job)) => {
+                self.skipped = self.skipped.saturating_add(1);
+                self.spare.push(job.samples);
+            }
         }
     }
 
@@ -517,6 +523,10 @@ macro_rules! channel {
             fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
                 self.0.process(iq, out);
             }
+
+            fn skipped(&self) -> u32 {
+                self.0.skipped
+            }
         }
 
         impl $name {
@@ -635,6 +645,7 @@ mod tests {
             channel.settle(&mut out);
         }
         assert_eq!(channel.0.audio.capacity(), capacity);
+        assert_eq!(channel.skipped(), 0);
         let one_hop_late = (hop as f64 / INPUT_RATE_HZ) as f32;
         assert!(out.events.iter().any(|event| matches!(
             event,
@@ -642,6 +653,23 @@ mod tests {
                 if message.text.contains("W1AW")
                     && (message.time_offset_s - one_hop_late).abs() < 0.2
         )));
+    }
+
+    #[test]
+    fn windows_the_worker_cannot_take_are_counted_as_skipped() {
+        let hop = Mode::Ft8.hop_samples();
+        let mut iq = vec![Complex::new(0.0, 0.0); Mode::Ft8.slot_samples() + 20 * hop];
+        synth::add_noise(&mut iq, 7, 0.1);
+        let mut channel = Ft8Channel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(ChannelParams::Ft8(WsjtParams::default())),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        channel.process(&iq, &mut out);
+        assert!(channel.skipped() >= 21 - SPARE_SLOTS as u32);
     }
 
     #[test]

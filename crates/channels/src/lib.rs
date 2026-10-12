@@ -444,6 +444,10 @@ pub trait ChannelRx: Send {
     fn rejected(&self) -> u32 {
         0
     }
+
+    fn skipped(&self) -> u32 {
+        0
+    }
 }
 
 pub enum TxPayload {

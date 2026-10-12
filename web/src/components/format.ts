@@ -14,6 +14,8 @@ export const DROPS_HINT = "Samples lost between the radio and here";
 
 export const REJECTED_HINT = "Rejected: packets heard but failed their check";
 
+export const SKIPPED_HINT = "Skipped: windows the decoder had no time for";
+
 export function formatCount(count: number): string {
   return COUNT.format(count);
 }

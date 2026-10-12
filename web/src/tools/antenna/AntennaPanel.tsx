@@ -224,7 +224,7 @@ function Overview({
   const reason = unavailableReason(report);
   if (simulation === null) {
     return reason === null ? null : (
-      <p className="rounded-[3px] border border-warn/50 bg-warn/10 px-3 py-1.5 text-xs text-warn">
+      <p className="rounded-control border border-warn/50 bg-warn/10 px-3 py-1.5 text-xs text-warn">
         {reason}
       </p>
     );

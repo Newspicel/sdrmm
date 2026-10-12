@@ -11528,6 +11528,11 @@
           "settings": {
             "$ref": "#/components/schemas/ChannelSettings"
           },
+          "skipped": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
           "stream": {
             "type": "integer",
             "format": "int32",

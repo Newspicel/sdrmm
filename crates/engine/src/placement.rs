@@ -124,6 +124,7 @@ fn carried_info(decoder: &Placeable, stream: u32) -> ChannelInfo {
         settings: decoder.settings.clone(),
         out_of_band: None,
         rejected: 0,
+        skipped: 0,
         audio_recordings: Vec::new(),
         baseband_recording: None,
         network_export: None,

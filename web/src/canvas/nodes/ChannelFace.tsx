@@ -12,7 +12,13 @@ import { BTN_PRIMARY } from "../../components/controls";
 import { ANY_FREQUENCY, tuningRange } from "../../components/dial";
 import { dialId } from "../../components/FrequencyDial";
 import { FaceStats, Stat } from "../../components/face/Stats";
-import { DROPS_HINT, formatCount, formatHz, REJECTED_HINT } from "../../components/format";
+import {
+  DROPS_HINT,
+  formatCount,
+  formatHz,
+  REJECTED_HINT,
+  SKIPPED_HINT,
+} from "../../components/format";
 import { SignalRow } from "../../components/SignalRow";
 import { devicesQuery } from "../../lib/api";
 import { useBroadcast } from "../../lib/broadcast";
@@ -164,6 +170,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
             channel={live.id}
             broadcast={broadcast?.status}
             rejected={channel?.rejected ?? 0}
+            skipped={channel?.skipped ?? 0}
           />
         )}
         {action !== null && (
@@ -221,15 +228,17 @@ function ChannelHealth({
   channel,
   broadcast,
   rejected,
+  skipped,
 }: {
   deviceSet: number;
   channel: number;
   broadcast: BroadcastStatus | undefined;
   rejected: number;
+  skipped: number;
 }) {
   const health = usePipelineHealth((state) => state.health);
   const summary = channelQueueSummary(health, deviceSet, channel);
-  if (summary === null && broadcast === undefined && rejected === 0) {
+  if (summary === null && broadcast === undefined && rejected === 0 && skipped === 0) {
     return null;
   }
   return (
@@ -248,6 +257,11 @@ function ChannelHealth({
       {rejected > 0 && (
         <Stat label="Bad" title={REJECTED_HINT} tone="warn">
           {formatCount(rejected)}
+        </Stat>
+      )}
+      {skipped > 0 && (
+        <Stat label="Skipped" title={SKIPPED_HINT} tone="warn">
+          {formatCount(skipped)}
         </Stat>
       )}
     </FaceStats>
