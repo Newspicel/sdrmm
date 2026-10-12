@@ -43,7 +43,7 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 
 ## Committed fixtures
 
-These thirty-nine pairs are not regenerated: twenty-five are recordings, two are frozen synthetic waveforms,
+These forty pairs are not regenerated: twenty-six are recordings, two are frozen synthetic waveforms,
 and twelve are reference waveforms from generators that are independent of the Rust modulators.
 They retain cases that the current generators do not reproduce.
 
@@ -66,6 +66,7 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `inmarsat_stdc_egc_24k` | 24 k | `inmarsat_stdc` @ +216 Hz | NCS bulletin board for frame 5987 (LES 144), an LES 104 announcement, the signalling channel |
 | `inmarsat_aero_offair_48k` | 48 k | `inmarsat_aero` @ 0 Hz | 600 bps P channel, `HL8217` `[_d]` |
 | `iridium_prbs15_250k` | 250 k | `iridium` @ 0 Hz | one downlink burst whose payload holds the PRBS15 recurrence bit for bit |
+| `gsm_dcs1800_arfcn725_541k` | 541.667 k | `gsm` @ 0 Hz, 1847.8 MHz | cell 262-02-318-11225, BSIC 6-0: TMSI paging, SDCCH/8 TS1 SC1 assignment, paging response from TMSI `015C5703`, A5/1 ciphering command |
 | `lora_rn2483_sf7_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | two RN2483 frames, SF7 CR 4/8, payload `deadbeef`, CRC ok |
 | `lora_epfl_sf7_strong_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0000967`, 32 dB |
 | `lora_epfl_sf7_offgrid_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0000158`, 34 dB |
@@ -238,6 +239,13 @@ A burst from gr-iridium's reference modulator (`test-data/prbs15-2M-20dB.sigmf-d
 test data), as vendored by xng: downconverted to 250 kHz and trimmed to 32 ms. The signed 16-bit
 IQ was scaled to `cf32_le`; the annotation pins the source SHA-256.
 `iridium::tests::demodulates_the_gr_iridium_reference_burst` reads it directly.
+
+### GSM: `gsm_dcs1800_arfcn725_541k`
+
+0.72 s of the SRLabs airprobe capture `vf_call6_a725_d174_g5` (cf32 at 100/174 MS/s, as mirrored
+in `ptrkrysik/test_data` for gr-gsm), resampled to 541.667 kHz. A DCS 1800 cell on ARFCN 725 with
+its real 9.8 kHz offset. The annotation pins the source SHA-256.
+`gsm::tests::decodes_the_recorded_cell` reads it directly.
 
 ### LoRa: `lora_rn2483_sf7_250k`
 

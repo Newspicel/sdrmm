@@ -239,6 +239,45 @@ fn lora_allocates_nothing_while_every_spreading_factor_searches() {
     assert_no_alloc("lora", || drive(rx.as_mut(), &iq, &mut outputs));
 }
 
+#[test]
+fn gsm_allocates_nothing_while_it_tracks_a_quiet_cell() {
+    use sdrmm_channels::synth::gsm::{Downlink, INPUT_RATE_HZ, block};
+    let cell = Downlink {
+        bsic: 0o60,
+        first_frame: 51 * 16_900,
+        frames: 16 * 51,
+        system_information: vec![
+            block("49061b2bd962f220013ec8070a156009b90000e81f461b"),
+            block("31061c62f220013e6009b90000e81f732b2b2b2b2b2b2b"),
+        ],
+        blocks: Vec::new(),
+        seed: 3,
+    };
+    let iq = cell.modulate();
+    let settings = ChannelSettings {
+        frequency_hz: 1_847_800_000.0,
+        ..ChannelSettings::default_for("gsm").expect("settings")
+    };
+    let mut rx = sdrmm_channels::create(
+        ChannelCtx {
+            input_rate: INPUT_RATE_HZ,
+        },
+        &settings,
+    )
+    .expect("receiver");
+    let mut outputs = ChannelOutputs::default();
+    let (warmup, tracked) = iq.split_at(iq.len() / 2);
+    let mut decoded = 0;
+    for block in warmup.chunks(BLOCK) {
+        outputs.reset();
+        rx.process(block, &mut outputs);
+        decoded += outputs.events.len();
+    }
+    assert_eq!(decoded, 2);
+    assert_no_alloc("gsm", || drive(rx.as_mut(), tracked, &mut outputs));
+    assert_eq!(rx.rejected(), 0);
+}
+
 fn remote_id_settings(link: RemoteIdLink) -> ChannelSettings {
     ChannelSettings {
         params: ChannelParams::RemoteId(RemoteIdParams { link }),

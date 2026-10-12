@@ -3520,6 +3520,10 @@ export interface components {
             /** @enum {string} */
             type: "dect";
         } | {
+            settings: components["schemas"]["GsmParams"];
+            /** @enum {string} */
+            type: "gsm";
+        } | {
             settings: components["schemas"]["AptParams"];
             /** @enum {string} */
             type: "apt";
@@ -4352,6 +4356,10 @@ export interface components {
             data: components["schemas"]["DectFrame"];
             /** @enum {string} */
             kind: "dect";
+        } | {
+            data: components["schemas"]["GsmFrame"];
+            /** @enum {string} */
+            kind: "gsm";
         } | {
             data: components["schemas"]["AptImage"];
             /** @enum {string} */
@@ -5472,6 +5480,129 @@ export interface components {
             contacts?: string[];
             name: string;
         };
+        GsmAssignment: {
+            /** Format: int32 */
+            arfcn?: number | null;
+            channel: components["schemas"]["GsmChannelType"];
+            hopping?: components["schemas"]["GsmHopping"] | null;
+            /** Format: int32 */
+            request: number;
+            /** Format: int32 */
+            subchannel?: number | null;
+            /** Format: int32 */
+            timeslot: number;
+            /** Format: int32 */
+            timing_advance: number;
+            /** Format: int32 */
+            tsc: number;
+        };
+        /** @enum {string} */
+        GsmBand: "gsm450" | "gsm480" | "gsm850" | "gsm900" | "dcs1800" | "pcs1900";
+        /** @enum {string} */
+        GsmCcch: "separate" | "combined" | "two" | "three" | "four";
+        GsmCell: {
+            barred?: boolean;
+            ccch?: components["schemas"]["GsmCcch"] | null;
+            cell_channels?: number[];
+            /** Format: int32 */
+            cell_id?: number | null;
+            gprs?: boolean;
+            /** Format: int32 */
+            lac?: number | null;
+            mcc?: string | null;
+            mnc?: string | null;
+            /** Format: int32 */
+            ms_txpwr_max_cch?: number | null;
+            neighbours?: number[];
+            /** Format: int32 */
+            rxlev_access_min_dbm?: number | null;
+            system_information?: components["schemas"]["GsmSi"][];
+            /** Format: int32 */
+            t3212_min?: number | null;
+        };
+        /** @enum {string} */
+        GsmChannelType: "tch_f" | "tch_h" | "sdcch4" | "sdcch8" | "pdch";
+        GsmDedicated: {
+            /** Format: int32 */
+            cipher?: number | null;
+            frame: components["schemas"]["GsmLapdmFrame"];
+            identity?: components["schemas"]["GsmIdentity"] | null;
+            message?: string | null;
+            protocol?: components["schemas"]["GsmProtocol"] | null;
+            /** Format: int32 */
+            sapi: number;
+        };
+        GsmFrame: {
+            /** Format: int32 */
+            arfcn?: number | null;
+            band?: components["schemas"]["GsmBand"] | null;
+            /** Format: int32 */
+            bsic: number;
+            cgi?: string | null;
+            channel: components["schemas"]["GsmLogicalChannel"];
+            /** Format: int32 */
+            frame_number: number;
+            /** Format: float */
+            frequency_error_hz: number;
+            message: components["schemas"]["GsmMessage"];
+            raw: string;
+            /** Format: float */
+            snr_db: number;
+            /** Format: int32 */
+            subchannel?: number | null;
+            /** Format: int32 */
+            timeslot: number;
+        };
+        GsmHopping: {
+            /** Format: int32 */
+            hsn: number;
+            /** Format: int32 */
+            maio: number;
+        };
+        GsmIdentity: {
+            kind: components["schemas"]["GsmIdentityKind"];
+            value: string;
+        };
+        /** @enum {string} */
+        GsmIdentityKind: "imsi" | "imei" | "imeisv" | "tmsi";
+        /** @enum {string} */
+        GsmLapdmFrame: "i" | "rr" | "rnr" | "rej" | "sabm" | "dm" | "ui" | "disc" | "ua" | "frmr" | "unknown";
+        /** @enum {string} */
+        GsmLogicalChannel: "bcch" | "ccch" | "sdcch" | "sacch";
+        GsmMessage: {
+            cell: components["schemas"]["GsmCell"];
+            si: components["schemas"]["GsmSi"];
+            /** @enum {string} */
+            type: "system_information";
+        } | {
+            identities: components["schemas"]["GsmIdentity"][];
+            /** @enum {string} */
+            type: "paging";
+        } | {
+            assignments: components["schemas"]["GsmAssignment"][];
+            /** @enum {string} */
+            type: "immediate_assignment";
+        } | {
+            requests: number[];
+            /** @enum {string} */
+            type: "assignment_reject";
+        } | (components["schemas"]["GsmDedicated"] & {
+            /** @enum {string} */
+            type: "dedicated";
+        }) | {
+            /** Format: int32 */
+            message_type: number;
+            /** @enum {string} */
+            type: "other";
+        };
+        GsmParams: {
+            follow?: boolean;
+            paging?: boolean;
+        };
+        /** @enum {string} */
+        GsmProtocol: "rr" | "mm" | "cc" | "ss" | "sms" | "gmm" | "sm" | "other";
+        /** @enum {string} */
+        GsmSi: "si1" | "si2" | "si2bis" | "si2ter" | "si2quater" | "si3" | "si4" | "si5" | "si5bis" | "si5ter" | "si6" | "si7" | "si8" | "si9" | "si13";
         /** @enum {string} */
         Hand: "right" | "left" | "linear";
         /** @enum {string} */

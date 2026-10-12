@@ -6,6 +6,14 @@ import {
   BLE_PHY_LABELS,
   bleBeaconText,
 } from "../lib/ble";
+import {
+  bsicLabel,
+  ccchLabel,
+  GSM_BAND_LABELS,
+  GSM_CHANNEL_LABELS,
+  gsmSummary,
+  siLabel,
+} from "../lib/gsm";
 import { ISM_CODING_LABELS, ISM_INTEGRITY_LABELS, ISM_MODULATION_LABELS } from "../lib/ism";
 import {
   LORA_INTEGRITY_LABELS,
@@ -41,6 +49,7 @@ import type {
   DectFrame,
   DvFrame,
   EotBattery,
+  GsmFrame,
   IsmMessage,
   IsmSurveyReport,
   LoraFrame,
@@ -582,6 +591,7 @@ const DETAIL: {
   hfdl: dataLinkDetail,
   iridium: dataLinkDetail,
   dect: dectDetail,
+  gsm: gsmDetail,
   lora: loraDetail,
   remote_id: remoteIdDetail,
   ble: bleDetail,
@@ -862,6 +872,49 @@ export function dectCarriers(mask: number | null | undefined): string | undefine
     if ((mask >> (9 - carrier)) & 1) on.push(carrier);
   }
   return on.length === 0 ? undefined : on.join(", ");
+}
+
+function gsmCellFields(message: GsmFrame["message"]): [string, string | undefined][] {
+  if (message.type !== "system_information") return [];
+  const cell = message.cell;
+  return [
+    ["CCCH", ccchLabel(cell.ccch) ?? undefined],
+    ["Cell channels", (cell.cell_channels ?? []).join(", ")],
+    ["Neighbours", (cell.neighbours ?? []).join(", ")],
+    [
+      "RxLev access min",
+      cell.rxlev_access_min_dbm == null ? undefined : `${cell.rxlev_access_min_dbm} dBm`,
+    ],
+    ["Max power level", cell.ms_txpwr_max_cch == null ? undefined : String(cell.ms_txpwr_max_cch)],
+    ["Periodic update", cell.t3212_min == null ? undefined : `${cell.t3212_min} min`],
+    ["Barred", cell.barred ? "yes" : undefined],
+    ["GPRS", cell.gprs ? "yes" : undefined],
+    ["System information", (cell.system_information ?? []).map(siLabel).join(", ")],
+  ];
+}
+
+function gsmDetail(frame: GsmFrame): EventDetail {
+  return {
+    fields: fields([
+      ["Message", gsmSummary(frame)],
+      ["Cell", frame.cgi ?? undefined],
+      ["Band", frame.band ? GSM_BAND_LABELS[frame.band] : undefined],
+      ["ARFCN", frame.arfcn == null ? undefined : String(frame.arfcn)],
+      ["BSIC", bsicLabel(frame.bsic)],
+      ["Frame", String(frame.frame_number)],
+      ["Timeslot", String(frame.timeslot)],
+      [
+        "Channel",
+        frame.subchannel == null
+          ? GSM_CHANNEL_LABELS[frame.channel]
+          : `${GSM_CHANNEL_LABELS[frame.channel]} ${frame.subchannel}`,
+      ],
+      ...gsmCellFields(frame.message),
+      ["Offset", `${Math.round(frame.frequency_error_hz)} Hz`],
+      ["SNR", `${frame.snr_db.toFixed(1)} dB`],
+    ]),
+    body: frame.raw,
+  };
 }
 
 function tetrapolPayloadFields(

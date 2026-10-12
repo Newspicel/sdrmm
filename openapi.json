@@ -12567,6 +12567,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/GsmParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "gsm"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/AptParams"
               },
               "type": {
@@ -15698,6 +15716,24 @@
                 "type": "string",
                 "enum": [
                   "dect"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/GsmFrame"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "gsm"
                 ]
               }
             }
@@ -20028,6 +20064,566 @@
             "type": "string"
           }
         }
+      },
+      "GsmAssignment": {
+        "type": "object",
+        "required": [
+          "channel",
+          "timeslot",
+          "tsc",
+          "request",
+          "timing_advance"
+        ],
+        "properties": {
+          "arfcn": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "channel": {
+            "$ref": "#/components/schemas/GsmChannelType"
+          },
+          "hopping": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GsmHopping"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "subchannel": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "timeslot": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "timing_advance": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "tsc": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "GsmBand": {
+        "type": "string",
+        "enum": [
+          "gsm450",
+          "gsm480",
+          "gsm850",
+          "gsm900",
+          "dcs1800",
+          "pcs1900"
+        ]
+      },
+      "GsmCcch": {
+        "type": "string",
+        "enum": [
+          "separate",
+          "combined",
+          "two",
+          "three",
+          "four"
+        ]
+      },
+      "GsmCell": {
+        "type": "object",
+        "properties": {
+          "barred": {
+            "type": "boolean"
+          },
+          "ccch": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GsmCcch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cell_channels": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "cell_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "gprs": {
+            "type": "boolean"
+          },
+          "lac": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "mcc": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mnc": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ms_txpwr_max_cch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "neighbours": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "rxlev_access_min_dbm": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "system_information": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GsmSi"
+            }
+          },
+          "t3212_min": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "GsmChannelType": {
+        "type": "string",
+        "enum": [
+          "tch_f",
+          "tch_h",
+          "sdcch4",
+          "sdcch8",
+          "pdch"
+        ]
+      },
+      "GsmDedicated": {
+        "type": "object",
+        "required": [
+          "sapi",
+          "frame"
+        ],
+        "properties": {
+          "cipher": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "frame": {
+            "$ref": "#/components/schemas/GsmLapdmFrame"
+          },
+          "identity": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GsmIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "protocol": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GsmProtocol"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sapi": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "GsmFrame": {
+        "type": "object",
+        "required": [
+          "bsic",
+          "frame_number",
+          "timeslot",
+          "channel",
+          "message",
+          "snr_db",
+          "frequency_error_hz",
+          "raw"
+        ],
+        "properties": {
+          "arfcn": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "band": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GsmBand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bsic": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "cgi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel": {
+            "$ref": "#/components/schemas/GsmLogicalChannel"
+          },
+          "frame_number": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "frequency_error_hz": {
+            "type": "number",
+            "format": "float"
+          },
+          "message": {
+            "$ref": "#/components/schemas/GsmMessage"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "snr_db": {
+            "type": "number",
+            "format": "float"
+          },
+          "subchannel": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "timeslot": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "GsmHopping": {
+        "type": "object",
+        "required": [
+          "maio",
+          "hsn"
+        ],
+        "properties": {
+          "hsn": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "maio": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "GsmIdentity": {
+        "type": "object",
+        "required": [
+          "kind",
+          "value"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/GsmIdentityKind"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "GsmIdentityKind": {
+        "type": "string",
+        "enum": [
+          "imsi",
+          "imei",
+          "imeisv",
+          "tmsi"
+        ]
+      },
+      "GsmLapdmFrame": {
+        "type": "string",
+        "enum": [
+          "i",
+          "rr",
+          "rnr",
+          "rej",
+          "sabm",
+          "dm",
+          "ui",
+          "disc",
+          "ua",
+          "frmr",
+          "unknown"
+        ]
+      },
+      "GsmLogicalChannel": {
+        "type": "string",
+        "enum": [
+          "bcch",
+          "ccch",
+          "sdcch",
+          "sacch"
+        ]
+      },
+      "GsmMessage": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "si",
+              "cell",
+              "type"
+            ],
+            "properties": {
+              "cell": {
+                "$ref": "#/components/schemas/GsmCell"
+              },
+              "si": {
+                "$ref": "#/components/schemas/GsmSi"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "system_information"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "identities",
+              "type"
+            ],
+            "properties": {
+              "identities": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GsmIdentity"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "paging"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "assignments",
+              "type"
+            ],
+            "properties": {
+              "assignments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GsmAssignment"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "immediate_assignment"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "requests",
+              "type"
+            ],
+            "properties": {
+              "requests": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "assignment_reject"
+                ]
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GsmDedicated"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "dedicated"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "message_type",
+              "type"
+            ],
+            "properties": {
+              "message_type": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "other"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "GsmParams": {
+        "type": "object",
+        "properties": {
+          "follow": {
+            "type": "boolean"
+          },
+          "paging": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GsmProtocol": {
+        "type": "string",
+        "enum": [
+          "rr",
+          "mm",
+          "cc",
+          "ss",
+          "sms",
+          "gmm",
+          "sm",
+          "other"
+        ]
+      },
+      "GsmSi": {
+        "type": "string",
+        "enum": [
+          "si1",
+          "si2",
+          "si2bis",
+          "si2ter",
+          "si2quater",
+          "si3",
+          "si4",
+          "si5",
+          "si5bis",
+          "si5ter",
+          "si6",
+          "si7",
+          "si8",
+          "si9",
+          "si13"
+        ]
       },
       "Hand": {
         "type": "string",

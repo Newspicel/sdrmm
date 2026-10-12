@@ -1,5 +1,6 @@
 import { ismSurveySummary, wifiOccupancySummary } from "../lib/airtime";
 import { bleStation, bleSummary } from "../lib/ble";
+import { gsmSummary } from "../lib/gsm";
 import { ismStation, ismSummary } from "../lib/ism";
 import { loraPosition, loraStation, loraSummary } from "../lib/lora";
 import { noiseFigureSummary, perSummary, sidSummary } from "../lib/measurement";
@@ -370,6 +371,8 @@ export function eventSummary(event: DecoderEvent): string {
         message.text?.replaceAll("\n", " ").trim() ?? null,
       ]);
     }
+    case "gsm":
+      return gsmSummary(event.data);
     case "dect": {
       const frame = event.data;
       return join([
@@ -504,6 +507,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return event.data.station ?? null;
     case "dect":
       return event.data.identity?.rfpi ?? null;
+    case "gsm":
+      return event.data.cgi ?? null;
     case "radiosonde":
       return event.data.serial;
     case "lora":
