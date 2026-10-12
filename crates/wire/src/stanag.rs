@@ -98,7 +98,7 @@ impl StanagRate {
     #[must_use]
     pub fn label(&self) -> String {
         let kind = if self.voice { " voice" } else { "" };
-        format!("{} bps{kind} {}", self.bps, self.interleave.label())
+        format!("{} bit/s{kind} {}", self.bps, self.interleave.label())
     }
 }
 
@@ -156,7 +156,7 @@ mod tests {
         };
         assert_eq!(
             report.summary(),
-            "MIL-STD-188-110A · 1200 bps long · 1801 Hz"
+            "MIL-STD-188-110A · 1200 bit/s long · 1801 Hz"
         );
         let gone = StanagReport {
             modem: None,

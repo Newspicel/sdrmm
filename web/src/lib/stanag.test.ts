@@ -11,7 +11,7 @@ describe("stanagSummary", () => {
         bandwidth_hz: 2_700,
         rate: { bps: 1_200, interleave: "long", voice: false },
       }),
-    ).toBe("MIL-STD-188-110A · 1200 bps long · 1801 Hz");
+    ).toBe("MIL-STD-188-110A · 1200 bit/s long · 1801 Hz");
   });
 
   it("says when the modem is gone", () => {

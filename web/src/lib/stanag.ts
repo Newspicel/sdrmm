@@ -9,7 +9,7 @@ export function stanagModem(modem: StanagModem): string {
 }
 
 export function stanagRate(rate: StanagRate): string {
-  return `${rate.bps} bps${rate.voice ? " voice" : ""} ${INTERLEAVE_LABELS[rate.interleave]}`;
+  return `${rate.bps} bit/s${rate.voice ? " voice" : ""} ${INTERLEAVE_LABELS[rate.interleave]}`;
 }
 
 export function stanagSummary(report: StanagReport): string {
