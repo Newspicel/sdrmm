@@ -98,8 +98,8 @@ pub use channel::{
     NfmScramblerMode, NfmToneMode, NxdnBandwidth, NxdnParams, P25Params, ParamLimit, PocsagBaud,
     PocsagParams, PskBaud, PskParams, RETIRED_CHANNEL_TYPES, RadioClockParams, RadioClockStandard,
     RttyParams, RttyStopBits, SelcallParams, SelcallSystem, Sideband, Squelch, SsbParams, SstvMode,
-    SstvModulation, SstvParams, Vdl2Params, VorParams, WfmParams, WsjtParams, WsprParams,
-    YsfParams, home_frequency_hz, param_limits, retired_channel_type,
+    SstvModulation, SstvParams, TetraParams, Vdl2Params, VorParams, WfmParams, WsjtParams,
+    WsprParams, YsfParams, home_frequency_hz, param_limits, retired_channel_type,
 };
 pub use cps::{
     ALL_CALL_NUMBER, Admit, Bandwidth, CODEPLUG_VERSION, ChannelKind, ChannelMode, Codeplug,

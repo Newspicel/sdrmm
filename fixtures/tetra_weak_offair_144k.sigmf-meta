@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 144000.0,
+    "core:license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "core:description": "TETRA control channel off air at about 10 dB SNR with heavy ISI: the same cell as tetra_scbs_offair_50k"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 467912500.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:sample_start": 0,
+      "core:sample_count": 288000,
+      "core:comment": "GopherTrunk internal/scanner/ccdecoder/testdata/tetra_cc_sync_loss_2s_144k.cs16 (Apache-2.0), unchanged; the carrier sits at -0.9 kHz; SHA-256 61dd6b917a390c49552e6564679e588bc047dae3dd9ec89a3a1ea4201f5d9399"
+    }
+  ]
+}

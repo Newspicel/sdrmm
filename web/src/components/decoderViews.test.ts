@@ -466,6 +466,7 @@ describe("digital voice", () => {
     expect(dvNetwork({ mode: "p25", color_code: 0x293, slot: null })).toBe("NAC 293");
     expect(dvNetwork({ mode: "nxdn", color_code: 5, slot: null })).toBe("RAN 5");
     expect(dvNetwork({ mode: "m17", color_code: null, slot: null })).toBe("");
+    expect(dvNetwork({ mode: "tetra", color_code: 44, slot: 1 })).toBe("TS1 CC 44");
   });
 
   it("marks a talkgroup so a number is not read as a radio", () => {
@@ -522,6 +523,7 @@ describe("digital voice", () => {
   it("spells each mode as operators write it", () => {
     expect(dvMode({ mode: "dstar" })).toBe("D-STAR");
     expect(dvMode({ mode: "dpmr" })).toBe("dPMR");
+    expect(dvMode({ mode: "tetra" })).toBe("TETRA");
   });
 });
 

@@ -285,6 +285,12 @@ pub static SIGNALS: &[Signal] = &[
         render: ysf,
     },
     Signal {
+        id: "tetra",
+        label: "TETRA downlink",
+        rate_hz: synth::tetra::SAMPLE_RATE_HZ,
+        render: tetra,
+    },
+    Signal {
         id: "dect",
         label: "DECT",
         rate_hz: 2_304_000.0,
@@ -830,6 +836,10 @@ fn ysf() -> Vec<Complex<f32>> {
         &dv::ysf::Call::default(),
         AUDIO,
     )
+}
+
+fn tetra() -> Vec<Complex<f32>> {
+    synth::tetra::sample(synth::tetra::Cell::default()).modulate()
 }
 
 fn meshtastic() -> Vec<Complex<f32>> {

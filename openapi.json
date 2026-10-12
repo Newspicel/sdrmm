@@ -12225,6 +12225,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/TetraParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tetra"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/WsjtParams"
               },
               "type": {
@@ -18510,7 +18528,8 @@
           "p25",
           "dpmr",
           "m17",
-          "freedv"
+          "freedv",
+          "tetra"
         ]
       },
       "DvSlotActivity": {
@@ -33233,6 +33252,9 @@
             }
           }
         }
+      },
+      "TetraParams": {
+        "type": "object"
       },
       "TimeMachineAction": {
         "type": "string",

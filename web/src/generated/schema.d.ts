@@ -3444,6 +3444,10 @@ export interface components {
             /** @enum {string} */
             type: "m17";
         } | {
+            settings: components["schemas"]["TetraParams"];
+            /** @enum {string} */
+            type: "tetra";
+        } | {
             settings: components["schemas"]["WsjtParams"];
             /** @enum {string} */
             type: "ft8";
@@ -5099,7 +5103,7 @@ export interface components {
         /** @enum {string} */
         DvFrameKind: "header" | "voice" | "terminator" | "control" | "data";
         /** @enum {string} */
-        DvMode: "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv";
+        DvMode: "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv" | "tetra";
         DvSlotActivity: {
             activity: string;
             /** Format: int32 */
@@ -9059,6 +9063,7 @@ export interface components {
         TemplatesResponse: {
             templates: components["schemas"]["TemplateInfo"][];
         };
+        TetraParams: Record<string, never>;
         /** @enum {string} */
         TimeMachineAction: "arm" | "capture" | "stop" | "disarm";
         TimeMachineNode: {

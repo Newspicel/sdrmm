@@ -82,6 +82,9 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
 | `radio_clock_wwvb_offair_2k` | 2 k | `radio_clock` / WWVB @ 0 Hz | 2021-03-14 05:35 UTC |
 | `flex_p2000_offair_48k` | 48 k | `flex` @ 0 Hz | P2000 page to capcode 2029574, `A2 DP2 Leidschendam-Voorburg ...` |
+| `tetra_scbs_offair_50k` | 50 k | `tetra` @ −1.4 kHz | MCC 250, MNC 13, colour code 44, LA 1052, carrier 2716 (467.9125 MHz) |
+| `tetra_weak_offair_144k` | 144 k | `tetra` @ −0.9 kHz | the same cell at about 10 dB SNR |
+| `tetra_call_offair_48k` | 48 k | `tetra` @ +0.3 kHz | MCC 228, MNC 8889, D-SETUP 100701 to group 100601, D-TX GRANTED to 100702 |
 | `dvbt/qpsk_2k_reference` | 9.142857 M | `dvbt` @ 0 Hz | 2K QPSK, rate 1/2, guard 1/8, 1750 Hz offset; PID 0x123 packets, TPS cell 0x5a |
 | `dab/mode_ii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | Mode II frame: ensemble `0x4a2c`, service `0xc201`, no failed FIB CRCs |
 | `dab/mode_iii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | the same ensemble in Mode III |
@@ -210,6 +213,13 @@ directly.
 ACARS block from `HL8217`. The audio carrier at 1066 Hz was mixed to 0 Hz and low-passed at
 1.2 kHz; the capture frequency is nominal. `ci16_le`, like the `dvbt` pairs.
 `inmarsat_aero::tests::decodes_the_recorded_600_bps_channel` reads it directly.
+
+### TETRA: `tetra_scbs_offair_50k`, `tetra_weak_offair_144k`, `tetra_call_offair_48k`
+
+The first two are GopherTrunk's Apache-2.0 test captures of a 467.9125 MHz control channel,
+unchanged. Its own test asserts the same MCC and MNC. The third is seconds 22 to 29 of sigidwiki's
+`TETRA_IQ.zip` (CC BY-SA) as recorded, with an inverted spectrum. `tetra::tests` reads all three
+directly and resamples them to 72 kHz.
 
 ### Iridium: `iridium_prbs15_250k`
 
