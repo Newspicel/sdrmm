@@ -79,7 +79,7 @@ export function DmrTrunkFace({ node }: { node: PatchNode }) {
       }
     >
       <FaceBody>
-        <Chips className="p-2">
+        <Chips>
           <ChoiceChip
             label="Protocol"
             title="Trunking protocol"

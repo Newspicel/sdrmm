@@ -13,10 +13,26 @@ const TONE: Record<ChipTone, string> = {
   danger: "text-danger",
 };
 
-export function Chips({ children, className }: { children: ReactNode; className?: string }) {
+export type ChipsInset = "full" | "below" | "none";
+
+const INSET: Record<ChipsInset, string> = {
+  full: "p-2",
+  below: "px-2 pb-2",
+  none: "",
+};
+
+export function Chips({
+  children,
+  className,
+  inset = "full",
+}: {
+  children: ReactNode;
+  className?: string;
+  inset?: ChipsInset;
+}) {
   return (
     <div
-      className={`flex flex-wrap items-center gap-x-1 gap-y-[3px] contain-inline-size ${className ?? ""}`}
+      className={`flex flex-wrap items-center gap-x-1 gap-y-[3px] contain-inline-size ${INSET[inset]} ${className ?? ""}`}
     >
       {children}
     </div>

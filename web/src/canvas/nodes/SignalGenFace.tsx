@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
-import { BTN_PRIMARY, BTN_QUIET } from "../../components/controls";
+import { BTN_DANGER, BTN_PRIMARY } from "../../components/controls";
 import { inTuningRange, tuningRange } from "../../components/dial";
 import { dialId, FrequencyDial } from "../../components/FrequencyDial";
 import { FaceFault } from "../../components/face/Fault";
@@ -103,7 +103,7 @@ export function SignalGenFace({ node }: { node: PatchNode }) {
         <SourceHealth set={set} />
         <Button
           type="button"
-          className={BTN_QUIET}
+          className={BTN_DANGER}
           title="Stop generating and free the node: the wires stay drawn"
           onClick={() => stop.mutate()}
           disabled={stop.isPending}

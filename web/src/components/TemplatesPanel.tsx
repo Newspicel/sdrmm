@@ -39,7 +39,7 @@ export function TemplatesPanel({
     <Panel>
       {hint !== null && <PanelHint>{hint}</PanelHint>}
       {applied !== null && (
-        <div className="rounded-[3px] border border-accent-dim bg-accent/10 px-3 py-2">
+        <div className="rounded-control border border-accent-dim bg-accent/10 px-3 py-2">
           <div className="font-mono text-xs text-accent">{applied.name}</div>
           <p className="mt-1 text-xs text-ink-dim">{applied.explainer}</p>
         </div>

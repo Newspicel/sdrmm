@@ -105,7 +105,7 @@ export function ReportProblem({
             </p>
           )}
 
-          <pre className="mt-2 min-h-0 flex-1 overflow-auto rounded-[3px] bg-panel-2 p-2 font-mono text-[11px] whitespace-pre-wrap text-ink-dim">
+          <pre className="mt-2 min-h-0 flex-1 overflow-auto rounded-control bg-panel-2 p-2 font-mono text-2xs whitespace-pre-wrap text-ink-dim">
             {diagnostics.isPending ? "Collecting…" : bundle}
           </pre>
 

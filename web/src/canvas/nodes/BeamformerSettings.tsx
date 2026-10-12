@@ -52,7 +52,7 @@ export function BeamformerSettings({
 }: Props & { lanes: number; steerWired: boolean }) {
   const shown = visibleSettings(settings);
   return (
-    <Chips className="px-2 pb-2">
+    <Chips inset="below">
       <ChoiceChip
         label="Mode"
         value={settings.mode}

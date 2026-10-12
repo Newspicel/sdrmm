@@ -31,7 +31,7 @@ function ToastList({ onReport }: { onReport?: () => void }) {
       <Toast.Root
         key={toast.id}
         toast={toast}
-        className={`rounded-md border bg-panel-3 shadow-pop data-limited:hidden ${
+        className={`rounded-control border bg-panel-3 shadow-pop data-limited:hidden ${
           error ? "border-danger/60" : "border-line-strong"
         }`}
       >

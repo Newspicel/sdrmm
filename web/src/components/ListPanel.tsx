@@ -49,7 +49,7 @@ export function List({
           {aside}
         </header>
       )}
-      <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[3px] border border-line">
+      <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-control border border-line">
         {children}
       </ul>
     </section>

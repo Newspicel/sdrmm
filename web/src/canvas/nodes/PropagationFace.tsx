@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "../../components/BaseControls";
-import { BTN, BTN_DANGER, TABLE_CELL, TABLE_HEAD } from "../../components/controls";
+import { ConfirmButton } from "../../components/ConfirmButton";
+import { TABLE_CELL, TABLE_HEAD } from "../../components/controls";
 import { Chips, ChoiceChip, ToggleChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -127,7 +127,6 @@ function Propagation({
   const observe = usePropagationStore((store) => store.observe);
   const clear = usePropagationStore((store) => store.clear);
   const [layer, setLayer] = useState<PropagationLayer>("activity");
-  const [clearArmed, setClearArmed] = useState(false);
   const [tick, setTick] = useState(() => Date.now());
 
   const settings = node.data;
@@ -281,22 +280,11 @@ function Propagation({
         </div>
       </FaceBody>
       <FaceFooter>
-        <Button
-          type="button"
-          className={clearArmed ? BTN_DANGER : BTN}
+        <ConfirmButton
+          label="Clear"
           disabled={observations.length === 0}
-          onBlur={() => setClearArmed(false)}
-          onClick={() => {
-            if (!clearArmed) {
-              setClearArmed(true);
-              return;
-            }
-            clear(node.id);
-            setClearArmed(false);
-          }}
-        >
-          {clearArmed ? "Confirm clear" : "Clear"}
-        </Button>
+          onConfirm={() => clear(node.id)}
+        />
       </FaceFooter>
     </>
   );
@@ -316,7 +304,7 @@ function PropagationChips({
   onChange: (patch: Partial<PropagationSettings>) => void;
 }) {
   return (
-    <Chips className="shrink-0 border-t border-line p-2">
+    <Chips className="shrink-0 border-t border-line">
       <ChoiceChip
         label="Half-life"
         title="Decay half-life"
@@ -409,9 +397,7 @@ function PathTable({
     : [];
   const plain = compareForecast ? [] : cells.slice(0, 12);
   if (rows.length === 0 && plain.length === 0) {
-    return (
-      <p className="px-2 py-2 font-mono text-[10px] text-ink-faint">No reflection points yet.</p>
-    );
+    return <p className="px-2 py-2 font-mono text-3xs text-ink-faint">No reflection points yet.</p>;
   }
   return (
     <table className="w-full border-collapse">

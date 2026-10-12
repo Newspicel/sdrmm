@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN, BTN_DANGER } from "../../components/controls";
+import { BTN_DANGER, BTN_PRIMARY } from "../../components/controls";
 import { FaceFault } from "../../components/face/Fault";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatCount } from "../../components/format";
@@ -69,7 +69,7 @@ export function BeastOutputControls({
         )}
         <Button
           type="button"
-          className={target.enabled ? BTN_DANGER : BTN}
+          className={target.enabled ? BTN_DANGER : BTN_PRIMARY}
           disabled={!target.enabled && (!connected || target.address.trim() === "")}
           onClick={() => {
             setStatus(null);

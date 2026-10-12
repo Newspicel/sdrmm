@@ -58,7 +58,7 @@ export function BandsPanel({ target }: { target: TuneTarget | null }) {
                 lead={
                   <span
                     aria-hidden
-                    className={`size-2 shrink-0 rounded-[1px] ${serviceEdge(allocation.service)}`}
+                    className={`size-2 shrink-0 rounded-inset ${serviceEdge(allocation.service)}`}
                   />
                 }
                 primary={allocation.name}

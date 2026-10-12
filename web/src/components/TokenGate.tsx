@@ -39,7 +39,7 @@ export function TokenGate({ onToken, children }: { onToken: () => void; children
   return (
     <div className="flex min-h-full items-center justify-center bg-bg px-4 py-10">
       <Form
-        className="flex w-full max-w-sm flex-col gap-3 rounded border border-line bg-panel px-4 py-4"
+        className="flex w-full max-w-sm flex-col gap-3 rounded-control border border-line bg-panel px-4 py-4"
         onSubmit={(e) => {
           e.preventDefault();
           const token = entry.trim();

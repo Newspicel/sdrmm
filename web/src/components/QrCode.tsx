@@ -28,7 +28,7 @@ export function QrCode({
 }) {
   const qr = qrPath(value);
   return (
-    <div className="self-center rounded bg-white p-2">
+    <div className="self-center rounded-control bg-white p-2">
       <svg
         role="img"
         aria-label={label}

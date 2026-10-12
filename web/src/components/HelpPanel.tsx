@@ -23,7 +23,7 @@ import { DISCORD, docsPage, groupBindings, host, isApple, keyCaps } from "./help
 import { Icon } from "./Icon";
 
 const ROW =
-  "group flex h-7 w-full items-center gap-2 rounded-[3px] px-2 text-left text-xs text-ink " +
+  "group flex h-7 w-full items-center gap-2 rounded-control px-2 text-left text-xs text-ink " +
   "transition-colors duration-100 hover:bg-panel-2 aria-disabled:pointer-events-none aria-disabled:opacity-45";
 
 const GROUPS = groupBindings(BINDINGS);
@@ -192,7 +192,7 @@ function Keyboard() {
       <div className="mt-3 gap-x-8 lg:columns-2">
         {GROUPS.map(({ group, bindings }) => (
           <div key={group} className="mb-4 break-inside-avoid">
-            <h4 className="text-[11px] font-medium text-ink-dim">{group}</h4>
+            <h4 className="text-2xs font-medium text-ink-dim">{group}</h4>
             <dl className="mt-1.5 grid grid-cols-[6.5rem_1fr] items-center gap-x-3 gap-y-1.5">
               {bindings.map((binding) => (
                 <KeyRow key={binding.keys} binding={binding} apple={apple} />
@@ -213,12 +213,12 @@ function KeyRow({ binding, apple }: { binding: Binding; apple: boolean }) {
           part.cap ? (
             <kbd
               key={`${index}-${part.text}`}
-              className="inline-flex h-5 min-w-5 items-center justify-center rounded-[3px] border border-line border-b-2 border-b-line-strong bg-panel-3 px-1 font-mono text-[10.5px] leading-none text-ink"
+              className="inline-flex h-5 min-w-5 items-center justify-center rounded-control border border-line border-b-2 border-b-line-strong bg-panel-3 px-1 font-mono text-2xs leading-none text-ink"
             >
               {part.text}
             </kbd>
           ) : (
-            <span key={`${index}-${part.text}`} className="font-mono text-[10.5px] text-ink-faint">
+            <span key={`${index}-${part.text}`} className="font-mono text-2xs text-ink-faint">
               {part.text}
             </span>
           ),

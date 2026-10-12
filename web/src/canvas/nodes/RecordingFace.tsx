@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Input } from "../../components/BaseControls";
-import { BTN, BTN_PRIMARY, BTN_QUIET, FIELD } from "../../components/controls";
+import { BTN, BTN_PRIMARY, BTN_QUIET_DANGER, FIELD } from "../../components/controls";
 import { deviceId } from "../../components/devices";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -71,7 +71,7 @@ function Library({
           >
             <span className="flex w-full min-w-0 flex-col gap-0.5">
               <span className="truncate">{recordingTitle(recording)}</span>
-              <span className="truncate font-mono text-[10px] text-ink-dim tabular-nums">
+              <span className="truncate font-mono text-3xs text-ink-dim tabular-nums">
                 {describeRecording(recording)}
               </span>
             </span>
@@ -177,7 +177,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
         <FaceBody>
           <p className="p-3 font-mono text-sm text-ink">{known?.file ?? stem}</p>
           {known !== null && (
-            <p className="px-3 pb-3 font-mono text-[10px] text-ink-dim tabular-nums">
+            <p className="px-3 pb-3 font-mono text-3xs text-ink-dim tabular-nums">
               {describeRecording(known)}
             </p>
           )}
@@ -185,7 +185,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
         <FaceFooter>
           <Button
             type="button"
-            className={BTN_QUIET}
+            className={BTN_QUIET_DANGER}
             title="Free this node so you can pick another recording"
             onClick={() => forget.mutate()}
             disabled={forget.isPending}
@@ -229,7 +229,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
         )}
         <Button
           type="button"
-          className={BTN_QUIET}
+          className={BTN_QUIET_DANGER}
           title="Stop playing and free the node: the wires stay drawn"
           onClick={() => forget.mutate()}
           disabled={forget.isPending}

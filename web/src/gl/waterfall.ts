@@ -431,7 +431,7 @@ class Plot implements WaterfallView {
     ctx.font = `${10 * ratio}px ${TICK_FONT}`;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = token("plot-ink-dim");
+    ctx.fillStyle = token("waterfall-ink");
     ctx.globalAlpha = 0.8;
     for (const tick of ticks) {
       ctx.fillRect(w - 3 * ratio, tick.y, 3 * ratio, ratio);

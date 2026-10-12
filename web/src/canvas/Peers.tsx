@@ -31,12 +31,12 @@ export function Peers() {
             <Avatar key={`${person.hue}:${person.name}`} person={person} stacked />
           ))}
           {hidden > 0 && (
-            <span className="ml-1 font-mono text-[10px] text-ink-dim tabular-nums">+{hidden}</span>
+            <span className="ml-1 font-mono text-3xs text-ink-dim tabular-nums">+{hidden}</span>
           )}
         </span>
       }
       title={others.length === 0 ? "Only you" : `${others.length + 1} here`}
-      triggerClass="flex h-6 items-center rounded-full px-1 hover:bg-panel-3"
+      triggerClass="flex h-7 items-center rounded-full px-1 hover:bg-panel-3"
       align="end"
       width="w-60"
     >
@@ -49,7 +49,7 @@ function Avatar({ person, stacked = false }: { person: Person; stacked?: boolean
   return (
     <span
       aria-hidden
-      className={`flex size-[18px] shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-bg ring-2 ring-panel ${
+      className={`flex size-5 shrink-0 items-center justify-center rounded-full text-3xs font-semibold text-bg ring-2 ring-panel ${
         stacked ? "-ml-1.5 first:ml-0" : ""
       }`}
       style={{ background: peerColor(person) }}
@@ -65,11 +65,9 @@ function Row({ person, note }: { person: Person; note?: string }) {
       <Avatar person={person} />
       <span className="min-w-0 flex-1 truncate">{person.name}</span>
       {person.tabs > 1 && (
-        <span className="font-mono text-[10px] text-ink-faint tabular-nums">
-          {person.tabs} tabs
-        </span>
+        <span className="font-mono text-3xs text-ink-faint tabular-nums">{person.tabs} tabs</span>
       )}
-      {note !== undefined && <span className="text-[10px] text-ink-faint">{note}</span>}
+      {note !== undefined && <span className="text-3xs text-ink-faint">{note}</span>}
     </li>
   );
 }

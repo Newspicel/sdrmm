@@ -104,14 +104,14 @@ function RailEntry({
       type="button"
       aria-pressed={active}
       disabled={count === 0}
-      className={`flex h-7 items-center gap-2 rounded-[3px] px-2 text-left font-mono text-[11px] transition-colors duration-100 disabled:opacity-40 ${
+      className={`flex h-7 items-center gap-2 rounded-control px-2 text-left font-mono text-2xs transition-colors duration-100 disabled:opacity-45 ${
         active ? "bg-accent/15 text-accent" : "text-ink-dim hover:bg-panel-2 hover:text-ink"
       }`}
       onClick={onClick}
     >
       <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${SECTION_DOT[section]}`} />
       <span className="flex-1">{title}</span>
-      <span className="text-[10px] tabular-nums text-ink-faint">{count}</span>
+      <span className="text-3xs tabular-nums text-ink-faint">{count}</span>
     </Button>
   );
 }
@@ -136,7 +136,7 @@ export function PaletteList({
     <div className="flex flex-col gap-3" onKeyDown={moveFocus}>
       {groups.map((group) => (
         <section key={group.id} className="flex flex-col gap-1">
-          <span className="border-b border-line px-2 pb-1 font-mono text-[10.5px] text-ink-faint">
+          <span className="border-b border-line px-2 pb-1 font-mono text-2xs text-ink-faint">
             {group.title}
           </span>
           <div className={`grid gap-px ${columns === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
@@ -155,7 +155,7 @@ export function PaletteEntry({ item, onAdd }: { item: PaletteItem; onAdd: () => 
     type: "button",
     "data-palette-entry": "",
     className:
-      "group flex min-w-0 flex-col gap-px rounded-[3px] border border-transparent px-2 py-1 text-left outline-none transition-colors duration-100 hover:bg-panel-2 focus-visible:border-accent-dim focus-visible:bg-panel-2",
+      "group flex min-w-0 flex-col gap-px rounded-control border border-transparent px-2 py-1 text-left outline-none transition-colors duration-100 hover:bg-panel-2 focus-visible:border-accent-dim focus-visible:bg-panel-2",
     onClick: onAdd,
   } as const;
   const face = (
@@ -165,7 +165,7 @@ export function PaletteEntry({ item, onAdd }: { item: PaletteItem; onAdd: () => 
           {item.name}
         </span>
         {item.type !== undefined && (
-          <span aria-hidden className="shrink-0 font-mono text-[10px] tabular-nums text-ink-faint">
+          <span aria-hidden className="shrink-0 font-mono text-3xs tabular-nums text-ink-faint">
             {formatHz(item.type.bandwidth_hz)}
           </span>
         )}
@@ -173,7 +173,7 @@ export function PaletteEntry({ item, onAdd }: { item: PaletteItem; onAdd: () => 
       {item.summary !== "" && (
         <span
           aria-hidden
-          className="w-full truncate text-[11px] text-ink-faint group-hover:text-ink-dim"
+          className="w-full truncate text-2xs text-ink-faint group-hover:text-ink-dim"
         >
           {item.summary}
         </span>

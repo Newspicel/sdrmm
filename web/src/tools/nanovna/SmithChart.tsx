@@ -60,7 +60,7 @@ export function SmithChart({
           aria-label="S11 on a Smith chart"
           width={side}
           height={side}
-          className="block touch-none rounded-[3px] bg-plot-bg select-none"
+          className="block touch-none rounded-control bg-plot-bg select-none"
           onPointerDown={(event) => {
             const row = nearest(event);
             if (row !== null) {
@@ -99,7 +99,7 @@ export function SmithChart({
         </svg>
       )}
       {hover !== null && (
-        <div className="pointer-events-none absolute top-1 left-1 rounded-[3px] bg-panel-3/90 px-1.5 py-0.5 font-mono text-[11px] text-ink tabular-nums">
+        <div className="pointer-events-none absolute top-1 left-1 rounded-control bg-panel-3/90 px-1.5 py-0.5 font-mono text-2xs text-ink tabular-nums">
           {formatHz(hover.frequencyHz)} · {formatImpedance(hover.impedance)}
         </div>
       )}
@@ -166,7 +166,7 @@ function SmithGrid({ geometry, clip }: { geometry: Geometry; clip: string }) {
       <text
         x={center + swrRadius * 0.72 + 3}
         y={center - swrRadius * 0.72 - 3}
-        className="fill-plot-ink/60 font-mono text-[10px]"
+        className="fill-plot-ink/60 font-mono text-3xs"
       >
         2:1
       </text>
@@ -175,7 +175,7 @@ function SmithGrid({ geometry, clip }: { geometry: Geometry; clip: string }) {
           key={`label${r}`}
           x={center + ((r - 1) / (r + 1)) * radius + 2}
           y={center - 3}
-          className="fill-plot-ink-dim font-mono text-[9px]"
+          className="fill-plot-ink-dim font-mono text-plot"
         >
           {r * 50}
         </text>
@@ -207,7 +207,7 @@ function SmithMarker({
       <text
         x={point.x + 7}
         y={point.y - 6}
-        className={`font-mono text-[10px] font-bold ${active ? "fill-plot-ink" : "fill-plot-ink/60"}`}
+        className={`font-mono text-3xs font-bold ${active ? "fill-plot-ink" : "fill-plot-ink/60"}`}
       >
         {marker.label}
       </text>

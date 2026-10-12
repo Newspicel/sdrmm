@@ -24,7 +24,7 @@ export function SpectrumMonitorFace({ node }: { node: PatchNode }) {
   return (
     <NodeShell node={node} title="Spectrum monitor" category="tool">
       <FaceBody>
-        <Chips className="p-2">
+        <Chips>
           <ProtocolChip
             groups={protocolGroups(workspace.context.channelTypes)}
             choice={{
