@@ -49,6 +49,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     outputHashes = {
       # git rev 096c805278faa0a904de7d98066bf4cf395cb6c2
       "xng-acars-0.21.0" = "sha256-O/+eP1Eyx5PGrP7+YGJmOIRFFwF2t9HOWtag5z1lUWM=";
+      # git rev 8055dee7458094e814c251c5d8c3fac0aaefdc47
+      "cephal-0.1.0" = "sha256-JR7sPMI2TaHE9VpxH8mR/bcjMcsahyRV5PxmZisN26o=";
+      # git rev 8e98f35efe5017431018e0a5091f9415f61190be
+      "zgui-flow-0.1.0" = "sha256-KkYDt8kzZARqgjM5D8Z40uh1WryrL4YfR2x/NCEzB9E=";
     };
   };
 

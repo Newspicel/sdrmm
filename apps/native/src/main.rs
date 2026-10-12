@@ -1,0 +1,113 @@
+mod api;
+mod arrays;
+mod audio;
+mod binding;
+mod bus;
+mod decoded;
+mod decoders;
+mod head;
+mod host;
+mod position;
+mod presence;
+#[cfg(test)]
+mod screens;
+mod shell;
+mod socket;
+mod starter;
+mod store;
+mod theme;
+mod ui;
+mod workspace;
+
+use std::path::PathBuf;
+
+use clap::Parser;
+use zgui::prelude::*;
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "sdrmm-native",
+    about = "A native sdr-- front end drawn with zgui"
+)]
+struct Args {
+    #[arg(long, env = "SDRMM_NATIVE_SERVER")]
+    server: Option<String>,
+    #[arg(long)]
+    data_dir: Option<PathBuf>,
+}
+
+const WINDOW: (f32, f32) = (1440.0, 900.0);
+
+fn boot(
+    api: &api::Api,
+    runtime: &tokio::runtime::Handle,
+    websocket: &str,
+    token: &api::Token,
+) -> store::Store {
+    let store = store::Store::new(api.clone());
+    let (socket, incoming) = socket::connect(runtime, websocket.to_owned(), token.clone());
+    store.start(socket, incoming);
+    store
+}
+
+fn data_dir(cli: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    match cli {
+        Some(path) => Ok(path),
+        None => Ok(dirs::data_dir()
+            .ok_or_else(|| anyhow::anyhow!("no platform data directory; pass --data-dir"))?
+            .join("sdrmm-native")),
+    }
+}
+
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "warn,sdrmm_native=info".into()),
+        )
+        .init();
+
+    let args = Args::parse();
+    let tokio = zgui_tokio::install()?;
+    let data = data_dir(args.data_dir)?;
+    let prefs = shell::prefs::PrefsFile::new(data.join("native-prefs.json"));
+
+    let host = tokio.handle().block_on(async {
+        match args.server {
+            Some(base) => Ok(host::Host::remote(base)),
+            None => host::Host::embedded(data).await,
+        }
+    })?;
+    tracing::info!(base = %host.base, "sdr-- native ready");
+
+    let token = api::Token::default();
+    let held = prefs.load();
+    token.set(held.token);
+    let author = match held.author {
+        Some(author) if sdrmm_wire::valid_author(&author) => author,
+        _ => {
+            let made = shell::prefs::fresh_author();
+            let kept = made.clone();
+            if let Err(error) = prefs.update(move |prefs| prefs.author = Some(kept)) {
+                tracing::warn!(%error, "cannot keep the author key");
+            }
+            made
+        }
+    };
+    let api = api::Api::new(host.base.clone())?
+        .with_token(token.clone())
+        .with_author(author);
+    let websocket = host.websocket_url();
+    let runtime = tokio.handle().clone();
+
+    let outcome = app()
+        .with_application_id("dev.sdrmm.Native")
+        .with_title("sdr-- native")
+        .with_size(WINDOW.0, WINDOW.1)
+        .with_min_size(880.0, 560.0)
+        .with_stylesheet(theme::SHEET)
+        .run(move || ui::app(boot(&api, &runtime, &websocket, &token), prefs.clone()));
+
+    host.shutdown();
+    outcome.map_err(anyhow::Error::from)
+}

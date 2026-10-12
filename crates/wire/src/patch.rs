@@ -23,11 +23,16 @@ use crate::{
 #[macro_use]
 mod node_body;
 mod catalog;
+mod refusal;
 mod wiring;
 
 use crate::array::MAX_ARRAY_LANES;
 use crate::processor::processors;
 use catalog::ports_for;
+pub use refusal::{
+    REFUSAL_BEAM_TAKES_ONE, REFUSAL_DIRECTION, REFUSAL_LOOP, REFUSAL_NO_PORT, REFUSAL_ONE_NODE,
+    REFUSAL_ONE_WIRE, REFUSAL_SELF, REFUSAL_WIRED,
+};
 pub use wiring::{
     REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_ROTATOR, REFUSAL_SHARED_CLOCK,
     REFUSAL_STEER, REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, REFUSALS,

@@ -1,0 +1,397 @@
+use std::{
+    collections::{HashMap, HashSet, hash_map::RandomState},
+    hash::BuildHasher,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
+use sdrmm_wire::patch::{
+    DeviceNode, MAX_EDGES, MAX_NODES, NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef, Position,
+};
+
+pub const HEADER_PX: f32 = 26.0;
+pub const PORT_STEP_PX: f32 = 22.0;
+pub const PASTE_OFFSET_PX: f32 = 32.0;
+const FIT_MIN_W: f32 = 280.0;
+const DIAL_MIN_W: f32 = 420.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NodeSize {
+    pub w: f32,
+    pub h: Option<f32>,
+}
+
+const fn size(w: f32, h: Option<f32>) -> NodeSize {
+    NodeSize { w, h }
+}
+
+#[must_use]
+pub fn natural_size(kind: &str) -> NodeSize {
+    match kind {
+        "device" | "recording" | "signal_gen" | "event_output" => size(420.0, None),
+        "gps" | "time_machine" | "hunt" | "polarimeter" | "stitch" => size(360.0, None),
+        "channel" => size(440.0, None),
+        "event_filter" | "network_export" | "satellite" => size(380.0, None),
+        "audio_fx" | "scanner" | "df" | "triangulation" | "beamformer" => size(400.0, None),
+        "array" => size(460.0, None),
+        "scope" => size(520.0, Some(360.0)),
+        "baseband_scope" => size(420.0, Some(340.0)),
+        "speaker" | "spectrum_monitor" | "export" => size(320.0, None),
+        "map" => size(520.0, Some(380.0)),
+        "signal_map" => size(600.0, Some(440.0)),
+        "propagation" => size(640.0, Some(560.0)),
+        "readout" => size(560.0, Some(320.0)),
+        "decoder_log" => size(720.0, Some(380.0)),
+        "dmr_trunk" => size(480.0, Some(360.0)),
+        "video" => size(380.0, Some(320.0)),
+        "recorder" | "audio_recorder" | "baseband_recorder" => size(340.0, None),
+        "passive_radar" => size(560.0, Some(540.0)),
+        "spatial_spectrum" => size(560.0, Some(420.0)),
+        "correlator" => size(520.0, Some(460.0)),
+        _ => size(320.0, None),
+    }
+}
+
+#[must_use]
+pub fn is_resizable(kind: &str) -> bool {
+    natural_size(kind).h.is_some()
+}
+
+#[must_use]
+pub fn fit_width(kind: &str) -> Option<(f32, f32)> {
+    let natural = natural_size(kind);
+    if natural.h.is_some() {
+        return None;
+    }
+    let min = if matches!(kind, "device" | "signal_gen" | "recording" | "channel") {
+        DIAL_MIN_W
+    } else {
+        FIT_MIN_W
+    };
+    Some((min, min.max(natural.w)))
+}
+
+fn resize_floor(kind: &str) -> Option<(f32, f32)> {
+    Some(match kind {
+        "scope" | "baseband_scope" => (320.0, 200.0),
+        "map" => (300.0, 220.0),
+        "signal_map" => (400.0, 300.0),
+        "propagation" => (440.0, 380.0),
+        "readout" => (300.0, 160.0),
+        "decoder_log" => (360.0, 200.0),
+        "dmr_trunk" => (380.0, 240.0),
+        "video" => (240.0, 200.0),
+        "passive_radar" => (420.0, 380.0),
+        "spatial_spectrum" => (400.0, 300.0),
+        "correlator" => (380.0, 340.0),
+        _ => return None,
+    })
+}
+
+#[must_use]
+pub fn min_size(kind: &str, inputs: usize, outputs: usize) -> (f32, f32) {
+    let (w, h) = resize_floor(kind).unwrap_or((natural_size(kind).w, 0.0));
+    let deepest = inputs.max(outputs) as f32;
+    (
+        w,
+        h.max(HEADER_PX + PORT_STEP_PX / 2.0 + PORT_STEP_PX * deepest),
+    )
+}
+
+#[must_use]
+pub fn edge_key(edge: &PatchEdge) -> String {
+    format!(
+        "{}:{}->{}:{}",
+        edge.from.node, edge.from.port, edge.to.node, edge.to.port
+    )
+}
+
+static MINTED: AtomicU64 = AtomicU64::new(0);
+
+fn random_hex() -> String {
+    let salt = MINTED.fetch_add(1, Ordering::Relaxed);
+    let bits = RandomState::new().hash_one(salt);
+    format!("{:08x}", bits & 0xffff_ffff)
+}
+
+#[must_use]
+pub fn new_node_id(kind: &str, taken: &HashSet<String>) -> String {
+    loop {
+        let id = format!("{kind}:{}", random_hex());
+        if !taken.contains(&id) {
+            return id;
+        }
+    }
+}
+
+#[must_use]
+pub fn node_ids(graph: &PatchGraph) -> HashSet<String> {
+    graph.nodes.iter().map(|node| node.id.clone()).collect()
+}
+
+#[must_use]
+pub fn remove_nodes(graph: &PatchGraph, ids: &[String]) -> PatchGraph {
+    PatchGraph {
+        nodes: graph
+            .nodes
+            .iter()
+            .filter(|node| !ids.contains(&node.id))
+            .cloned()
+            .collect(),
+        edges: graph
+            .edges
+            .iter()
+            .filter(|edge| !ids.contains(&edge.from.node) && !ids.contains(&edge.to.node))
+            .cloned()
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn remove_edges(graph: &PatchGraph, keys: &[String]) -> PatchGraph {
+    PatchGraph {
+        nodes: graph.nodes.clone(),
+        edges: graph
+            .edges
+            .iter()
+            .filter(|edge| !keys.contains(&edge_key(edge)))
+            .cloned()
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn add_edge(graph: &PatchGraph, edge: PatchEdge) -> PatchGraph {
+    let mut next = graph.clone();
+    if !next.edges.contains(&edge) {
+        next.edges.push(edge);
+    }
+    next
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Clipboard {
+    pub nodes: Vec<PatchNode>,
+    pub edges: Vec<PatchEdge>,
+}
+
+#[must_use]
+pub fn copy_nodes(graph: &PatchGraph, ids: &[String]) -> Option<Clipboard> {
+    let nodes: Vec<PatchNode> = graph
+        .nodes
+        .iter()
+        .filter(|node| ids.contains(&node.id))
+        .cloned()
+        .collect();
+    if nodes.is_empty() {
+        return None;
+    }
+    let inside: HashSet<&str> = nodes.iter().map(|node| node.id.as_str()).collect();
+    let edges = graph
+        .edges
+        .iter()
+        .filter(|edge| {
+            inside.contains(edge.from.node.as_str()) && inside.contains(edge.to.node.as_str())
+        })
+        .cloned()
+        .collect();
+    Some(Clipboard { nodes, edges })
+}
+
+#[must_use]
+pub fn paste_refusal(graph: &PatchGraph, clipboard: &Clipboard) -> Option<String> {
+    if graph.nodes.len() + clipboard.nodes.len() > MAX_NODES {
+        return Some(format!("a patch holds {MAX_NODES} nodes"));
+    }
+    if graph.edges.len() + clipboard.edges.len() > MAX_EDGES {
+        return Some(format!("a patch holds {MAX_EDGES} wires"));
+    }
+    None
+}
+
+fn copy_of(node: &PatchNode, id: String, offset: Position) -> PatchNode {
+    let mut copy = node.clone();
+    copy.id = id;
+    copy.position = Position {
+        x: node.position.x + offset.x,
+        y: node.position.y + offset.y,
+    };
+    match &mut copy.body {
+        NodeBody::Device(device) => *device = DeviceNode::default(),
+        NodeBody::Recording(recording) => *recording = Default::default(),
+        _ => {}
+    }
+    copy
+}
+
+#[must_use]
+pub fn paste_nodes(
+    graph: &PatchGraph,
+    clipboard: &Clipboard,
+    offset: Position,
+) -> (PatchGraph, Vec<String>) {
+    let mut taken = node_ids(graph);
+    let minted: HashMap<String, String> = clipboard
+        .nodes
+        .iter()
+        .map(|node| {
+            let id = new_node_id(node.body.kind(), &taken);
+            taken.insert(id.clone());
+            (node.id.clone(), id)
+        })
+        .collect();
+    let rename = |id: &str| minted.get(id).cloned().unwrap_or_else(|| id.to_owned());
+    let mut next = graph.clone();
+    let mut ids = Vec::with_capacity(clipboard.nodes.len());
+    for node in &clipboard.nodes {
+        let id = rename(&node.id);
+        ids.push(id.clone());
+        next.nodes.push(copy_of(node, id, offset));
+    }
+    for edge in &clipboard.edges {
+        next.edges.push(PatchEdge {
+            from: PortRef {
+                node: rename(&edge.from.node),
+                port: edge.from.port.clone(),
+            },
+            to: PortRef {
+                node: rename(&edge.to.node),
+                port: edge.to.port.clone(),
+            },
+        });
+    }
+    (next, ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use sdrmm_wire::patch::DeviceRef;
+
+    use super::*;
+
+    fn node(id: &str, body: NodeBody) -> PatchNode {
+        PatchNode {
+            id: id.to_owned(),
+            body,
+            position: Position { x: 10.0, y: 20.0 },
+            size: None,
+            label: None,
+        }
+    }
+
+    fn edge(from: (&str, &str), to: (&str, &str)) -> PatchEdge {
+        PatchEdge {
+            from: PortRef {
+                node: from.0.to_owned(),
+                port: from.1.to_owned(),
+            },
+            to: PortRef {
+                node: to.0.to_owned(),
+                port: to.1.to_owned(),
+            },
+        }
+    }
+
+    fn radio(id: &str) -> PatchNode {
+        node(
+            id,
+            NodeBody::Device(DeviceNode {
+                device: Some(DeviceRef {
+                    backend: "virtual".to_owned(),
+                    serial: None,
+                    key: Some("siggen".to_owned()),
+                }),
+                locked_streams: Vec::new(),
+                split_tuning: false,
+            }),
+        )
+    }
+
+    fn graph() -> PatchGraph {
+        PatchGraph {
+            nodes: vec![
+                radio("dev"),
+                node("scope", NodeBody::Scope),
+                node("log", NodeBody::DecoderLog(Default::default())),
+            ],
+            edges: vec![edge(("dev", "iq"), ("scope", "iq"))],
+        }
+    }
+
+    #[test]
+    fn a_node_with_a_height_is_resizable_and_one_without_fits_its_width() {
+        assert!(is_resizable("scope"));
+        assert!(!is_resizable("channel"));
+        assert_eq!(fit_width("channel"), Some((420.0, 440.0)));
+        assert_eq!(fit_width("speaker"), Some((280.0, 320.0)));
+        assert_eq!(fit_width("scope"), None);
+    }
+
+    #[test]
+    fn a_node_never_shrinks_past_its_ports() {
+        let (_, h) = min_size("scope", 1, 12);
+        assert_eq!(h, HEADER_PX + PORT_STEP_PX / 2.0 + PORT_STEP_PX * 12.0);
+        assert_eq!(min_size("scope", 1, 1), (320.0, 200.0));
+    }
+
+    #[test]
+    fn copying_takes_the_wires_between_the_copied_nodes_only() {
+        let copied = copy_nodes(&graph(), &["scope".to_owned(), "log".to_owned()]).expect("a copy");
+        assert_eq!(copied.nodes.len(), 2);
+        assert!(copied.edges.is_empty());
+        let both = copy_nodes(&graph(), &["dev".to_owned(), "scope".to_owned()]).expect("a copy");
+        assert_eq!(both.edges.len(), 1);
+        assert!(copy_nodes(&graph(), &["nothing".to_owned()]).is_none());
+    }
+
+    #[test]
+    fn a_paste_mints_new_ids_moves_the_copies_and_rewires_them() {
+        let source = graph();
+        let copied = copy_nodes(&source, &["dev".to_owned(), "scope".to_owned()]).expect("a copy");
+        let (pasted, ids) = paste_nodes(&source, &copied, Position { x: 32.0, y: 32.0 });
+        assert_eq!(pasted.nodes.len(), 5);
+        assert_eq!(pasted.edges.len(), 2);
+        assert!(
+            ids.iter()
+                .all(|id| !source.nodes.iter().any(|node| node.id == *id))
+        );
+        assert!(ids[0].starts_with("device:"));
+        let new_edge = &pasted.edges[1];
+        assert_eq!(new_edge.from.node, ids[0]);
+        assert_eq!(new_edge.to.node, ids[1]);
+        let copy = pasted
+            .nodes
+            .iter()
+            .find(|node| node.id == ids[0])
+            .expect("the copy");
+        assert_eq!(copy.position.x, 42.0);
+        assert!(matches!(&copy.body, NodeBody::Device(device) if device.device.is_none()));
+    }
+
+    #[test]
+    fn a_paste_past_the_limits_is_refused() {
+        let mut full = graph();
+        while full.nodes.len() < MAX_NODES {
+            let id = format!("n{}", full.nodes.len());
+            full.nodes.push(node(&id, NodeBody::Scope));
+        }
+        let copied = copy_nodes(&full, &["scope".to_owned()]).expect("a copy");
+        assert!(paste_refusal(&full, &copied).is_some());
+        assert!(paste_refusal(&graph(), &copied).is_none());
+    }
+
+    #[test]
+    fn removing_a_node_takes_its_wires_with_it() {
+        let removed = remove_nodes(&graph(), &["dev".to_owned()]);
+        assert_eq!(removed.nodes.len(), 2);
+        assert!(removed.edges.is_empty());
+    }
+
+    #[test]
+    fn minted_ids_are_distinct() {
+        let mut taken = HashSet::new();
+        for _ in 0..200 {
+            let id = new_node_id("scope", &taken);
+            assert!(taken.insert(id));
+        }
+    }
+}

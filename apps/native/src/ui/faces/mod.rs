@@ -1,0 +1,115 @@
+use sdrmm_wire::{
+    patch::{NodeBody, PatchNode},
+    state::DeviceSet,
+};
+use zgui::prelude::*;
+
+use crate::store::Store;
+
+pub mod array;
+pub mod audio_fx;
+pub mod audio_recorder;
+pub mod baseband_recorder;
+pub mod baseband_scope;
+pub mod beamformer;
+pub mod channel;
+pub mod correlator;
+pub mod decoder_log;
+pub mod device;
+pub mod df;
+pub mod dmr_trunk;
+pub mod event_filter;
+pub mod event_output;
+pub mod export;
+pub mod gps;
+pub mod hunt;
+pub mod map;
+pub mod network_export;
+pub mod passive_radar;
+pub mod polarimeter;
+pub mod processor;
+pub mod propagation;
+pub mod readout;
+pub mod recorder;
+pub mod recording;
+pub mod satellite;
+pub mod scanner;
+pub mod scope;
+pub mod signal_gen;
+pub mod signal_map;
+pub mod spatial_spectrum;
+pub mod speaker;
+pub mod spectrum_monitor;
+pub mod stitch;
+pub mod time_machine;
+pub mod triangulation;
+pub mod video;
+
+pub fn face(store: Store, node: &PatchNode) -> AnyView {
+    match &node.body {
+        NodeBody::Device(_) => AnyView::new(device::face(store, node.id.clone())),
+        NodeBody::Channel(_) => AnyView::new(channel::face(store, node.id.clone())),
+        NodeBody::Scope => AnyView::new(scope::face(store, node.id.clone())),
+        NodeBody::Speaker => AnyView::new(speaker::face(store, node.id.clone())),
+        NodeBody::DecoderLog(_) => AnyView::new(decoder_log::face(store, node.id.clone())),
+        NodeBody::Array(_) => AnyView::new(array::face(store, node.id.clone())),
+        NodeBody::AudioFx(_) => AnyView::new(audio_fx::face(store, node.id.clone())),
+        NodeBody::AudioRecorder(_) => AnyView::new(audio_recorder::face(store, node.id.clone())),
+        NodeBody::BasebandRecorder(_) => {
+            AnyView::new(baseband_recorder::face(store, node.id.clone()))
+        }
+        NodeBody::BasebandScope => AnyView::new(baseband_scope::face(store, node.id.clone())),
+        NodeBody::Beamformer(_) => AnyView::new(beamformer::face(store, node.id.clone())),
+        NodeBody::Correlator(_) => AnyView::new(correlator::face(store, node.id.clone())),
+        NodeBody::Df(_) => AnyView::new(df::face(store, node.id.clone())),
+        NodeBody::DmrTrunk(_) => AnyView::new(dmr_trunk::face(store, node.id.clone())),
+        NodeBody::EventFilter(_) => AnyView::new(event_filter::face(store, node.id.clone())),
+        NodeBody::EventOutput(_) => AnyView::new(event_output::face(store, node.id.clone())),
+        NodeBody::Export => AnyView::new(export::face(store, node.id.clone())),
+        NodeBody::Gps(_) => AnyView::new(gps::face(store, node.id.clone())),
+        NodeBody::Hunt(_) => AnyView::new(hunt::face(store, node.id.clone())),
+        NodeBody::Map => AnyView::new(map::face(store, node.id.clone())),
+        NodeBody::NetworkExport(_) => AnyView::new(network_export::face(store, node.id.clone())),
+        NodeBody::PassiveRadar(_) => AnyView::new(passive_radar::face(store, node.id.clone())),
+        NodeBody::Polarimeter(_) => AnyView::new(polarimeter::face(store, node.id.clone())),
+        NodeBody::Propagation(_) => AnyView::new(propagation::face(store, node.id.clone())),
+        NodeBody::Readout => AnyView::new(readout::face(store, node.id.clone())),
+        NodeBody::Recorder(_) => AnyView::new(recorder::face(store, node.id.clone())),
+        NodeBody::Recording(_) => AnyView::new(recording::face(store, node.id.clone())),
+        NodeBody::Satellite(_) => AnyView::new(satellite::face(store, node.id.clone())),
+        NodeBody::Scanner(_) => AnyView::new(scanner::face(store, node.id.clone())),
+        NodeBody::SignalGen(_) => AnyView::new(signal_gen::face(store, node.id.clone())),
+        NodeBody::SignalMap(_) => AnyView::new(signal_map::face(store, node.id.clone())),
+        NodeBody::SpatialSpectrum(_) => {
+            AnyView::new(spatial_spectrum::face(store, node.id.clone()))
+        }
+        NodeBody::SpectrumMonitor(_) => {
+            AnyView::new(spectrum_monitor::face(store, node.id.clone()))
+        }
+        NodeBody::Stitch(_) => AnyView::new(stitch::face(store, node.id.clone())),
+        NodeBody::TimeMachine(_) => AnyView::new(time_machine::face(store, node.id.clone())),
+        NodeBody::Triangulation(_) => AnyView::new(triangulation::face(store, node.id.clone())),
+        NodeBody::Video => AnyView::new(video::face(store, node.id.clone())),
+    }
+}
+
+pub(crate) fn set_signal(store: Store, node: String) -> Signal<Option<DeviceSet>> {
+    Signal::derive(move || store.device_set_of(&node).and_then(|id| store.set_of(id)))
+}
+
+#[cfg(test)]
+mod tests {
+    use sdrmm_wire::device::DeviceInfo;
+
+    #[test]
+    fn a_radio_is_named_by_its_driver_and_key() {
+        let info = DeviceInfo {
+            driver: "virtual".to_owned(),
+            key: "siggen".to_owned(),
+            label: "Signal Generator (virtual)".to_owned(),
+            serial: None,
+            profile: None,
+        };
+        assert_eq!(super::device::devices::device_id(&info), "virtual:siggen");
+    }
+}

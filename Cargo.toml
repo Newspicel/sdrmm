@@ -37,6 +37,7 @@ members = [
     "apps/sdrmm",
     "apps/iqlinkd",
     "apps/desktop",
+    "apps/native",
     "xtask",
     "xtask/release",
 ]
@@ -77,6 +78,7 @@ default-members = [
     "crates/mobile-core",
     "apps/sdrmm",
     "apps/iqlinkd",
+    "apps/native",
     "xtask",
     "xtask/release",
 ]
@@ -127,6 +129,19 @@ sdrmm-tunnel = { path = "crates/tunnel" }
 sdrmm-engine = { path = "crates/engine", default-features = false }
 sdrmm-server = { path = "crates/server", default-features = false }
 xtask-release = { path = "xtask/release" }
+
+# Native UI
+zgui = { git = "https://github.com/zortax/zgui" }
+zgui-ui = { git = "https://github.com/zortax/zgui" }
+zgui-tokio = { git = "https://github.com/zortax/zgui" }
+zgui-image = { git = "https://github.com/zortax/zgui" }
+zgui-platform-headless = { git = "https://github.com/zortax/zgui" }
+zgui-render-wgpu = { git = "https://github.com/zortax/zgui" }
+zgui-render-vector-vello = { git = "https://github.com/zortax/zgui" }
+zgui-flow = { git = "https://github.com/zortax/zgui-flow", rev = "8e98f35efe5017431018e0a5091f9415f61190be", default-features = false }
+fontique = { version = "0.11.1", default-features = false, features = ["system", "fontconfig-dlopen"] }
+rfd = "0.17.2"
+open = "5.4.4"
 
 # Async runtime / web
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
@@ -196,6 +211,7 @@ wgpu = { version = "30", default-features = false, features = ["std", "parking_l
 
 # Audio (libopus via vendored build, )
 opus = "0.4"
+cpal = "0.18"
 blip25-vocoder = { version = "1.0", default-features = false, features = ["decode"] }
 codec2 = "0.3.1"
 symphonia-core = "0.6.1"
@@ -286,3 +302,56 @@ strip = "debuginfo"
 [profile.dev.package."*"]
 debug = false
 codegen-units = 16
+
+[patch."https://github.com/zortax/zgui"]
+cephal = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-a11y = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-anim = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-arena = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-atlas = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-bits = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-canvas = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-color = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-css = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-custom = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-dom = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-edit = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-elements = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-geom = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-image = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-input = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-interned = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-layout = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-paint = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-platform = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-platform-headless = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-platform-wayland = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-platform-winit = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-profile = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-reactive = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-render = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-render-vector-coverage = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-render-vector-vello = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-render-wgpu = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-runtime = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-scene = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-scroll = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-shader = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-shader-macro = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-style = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-svg = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-text = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-text-parley = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-text-style = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-tokio = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-ui = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-ui-icons = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-ui-primitives = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-ui-tokens = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-view = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-view-dom = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-view-macro = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-vocab = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-wgpu = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }
+zgui-wgsl = { git = "https://github.com/Newspicel/zgui", rev = "8055dee7458094e814c251c5d8c3fac0aaefdc47" }

@@ -152,6 +152,8 @@ fn symbols_roundtrip_carrying_both_the_cloud_and_its_reference() {
         .collect();
     assert_eq!(&floats[..count], reference.as_slice());
     assert_eq!(&floats[count..], symbols.as_slice());
+    let mut held = Vec::new();
+    assert_eq!(SymbolFrame::decode(&buf, &mut held), Ok(frame));
 }
 
 #[test]
@@ -201,6 +203,35 @@ fn iq_roundtrip() {
     let (chunks, _) = buf[28..].as_chunks::<4>();
     let out: Vec<f32> = chunks.iter().copied().map(f32::from_le_bytes).collect();
     assert_eq!(out, samples);
+    let mut held = Vec::new();
+    assert_eq!(IqFrame::decode(&buf, &mut held), Ok(frame));
+}
+
+#[test]
+fn float_frames_refuse_a_ragged_body() {
+    let samples = [0.5_f32, -0.5];
+    let iq = IqFrame {
+        stream_id: 1,
+        seq: 0,
+        timestamp: 0,
+        sample_rate: 1.0,
+        center_hz: 1.0,
+        samples: &samples,
+    }
+    .encode();
+    let mut held = Vec::new();
+    assert_eq!(
+        IqFrame::decode(&iq[..iq.len() - 1], &mut held),
+        Err(FrameError::Length)
+    );
+    assert_eq!(
+        IqFrame::decode(&iq[..iq.len() - 4], &mut held),
+        Err(FrameError::Shape)
+    );
+    assert_eq!(
+        SymbolFrame::decode(&iq, &mut held),
+        Err(FrameError::Kind(FrameKind::IqF32 as u8))
+    );
 }
 
 #[test]

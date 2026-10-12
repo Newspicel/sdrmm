@@ -222,6 +222,7 @@ fn cells_fit(cells: usize, rows: u16, cols: u16) -> bool {
     rows > 0 && cols > 0 && cells == usize::from(rows) * usize::from(cols)
 }
 
+mod floats;
 mod schema;
 pub use schema::typescript_frames;
 
