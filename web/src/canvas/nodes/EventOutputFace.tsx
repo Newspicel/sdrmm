@@ -41,7 +41,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   return (
     <NodeShell node={node} title="Event output" category="output">
       <FaceBody>
-        <Chips className="p-2">
+        <Chips>
           <ChoiceChip
             label="Service"
             title="Output service"

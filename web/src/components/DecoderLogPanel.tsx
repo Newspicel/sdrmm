@@ -9,8 +9,9 @@ import {
 } from "../lib/api";
 import { useDecodedStore } from "../lib/decoded";
 import type { LogGroupKey } from "../lib/types";
-import { Button, Input } from "./BaseControls";
-import { BTN, FIELD, TABLE_CELL, TABLE_HEAD } from "./controls";
+import { Input } from "./BaseControls";
+import { ConfirmButton } from "./ConfirmButton";
+import { FIELD, TABLE_CELL, TABLE_HEAD } from "./controls";
 import { DecoderLogGroups } from "./DecoderLogGroups";
 import { DownloadMenu } from "./DownloadMenu";
 import {
@@ -46,7 +47,6 @@ import { RowDetail } from "./LogRowDetail";
 import { groupOf, groupRows, VIEW_CHOICES, viewOf } from "./logGroups";
 
 const SEARCH_DEBOUNCE_MS = 250;
-const CLEAR_ARM_MS = 3000;
 
 const NO_FRAMES = {};
 
@@ -64,7 +64,6 @@ export function DecoderLogPanel({
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<LogFilter>(DEFAULT_LOG_FILTER);
   const [search, setSearch] = useState(DEFAULT_LOG_FILTER.q);
-  const [armed, setArmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cleared, setCleared] = useState<number | null>(null);
   const [widths, setWidths] = useState<ColumnWidths>(readColumnWidths);
@@ -80,14 +79,6 @@ export function DecoderLogPanel({
     );
     return () => window.clearTimeout(timer);
   }, [search, filter.q]);
-
-  useEffect(() => {
-    if (!armed) {
-      return;
-    }
-    const timer = window.setTimeout(() => setArmed(false), CLEAR_ARM_MS);
-    return () => window.clearTimeout(timer);
-  }, [armed]);
 
   const query = toQuery(filter, wires);
   const log = useQuery({ ...decoderLogQuery(query), enabled: group === null });
@@ -118,7 +109,6 @@ export function DecoderLogPanel({
     },
     onError: (e) => setError(e.message),
     onSettled: () => {
-      setArmed(false);
       void queryClient.invalidateQueries({ queryKey: DECODER_LOG_KEY });
     },
   });
@@ -163,7 +153,7 @@ export function DecoderLogPanel({
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto rounded border border-line">
+          <div className="min-h-0 flex-1 overflow-auto rounded-control border border-line">
             {group === null ? (
               <LogTable rows={rows} widths={widths} setWidths={setWidths} commit={commit} />
             ) : (
@@ -207,17 +197,12 @@ export function DecoderLogPanel({
           )}
         </FaceStats>
         <DownloadMenu choices={logDownloads(query)} />
-        <Button
-          type="button"
-          className={`${BTN} hover:border-danger hover:text-danger ${
-            armed ? "border-danger text-danger" : ""
-          }`}
+        <ConfirmButton
+          label="Clear"
+          title="Remove every stored row this node can see"
           disabled={clearMut.isPending}
-          title={armed ? "Removes every stored row this node can see" : undefined}
-          onClick={() => (armed ? clearMut.mutate() : setArmed(true))}
-        >
-          {armed ? "Confirm clear" : "Clear"}
-        </Button>
+          onConfirm={() => clearMut.mutate()}
+        />
       </FaceFooter>
     </>
   );

@@ -141,7 +141,7 @@ function CorrelatorChips({
   baseline: BaselinePick | null;
 }) {
   return (
-    <Chips className="shrink-0 p-2">
+    <Chips className="shrink-0">
       {baseline !== null && (
         <ChoiceChip
           label="Baseline"

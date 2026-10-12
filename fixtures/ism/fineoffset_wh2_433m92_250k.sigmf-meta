@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "rtl_433_tests",
+    "core:description": "gfile001.cu8"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 433920000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/fineoffset/fineoffset_wh2/01/gfile001.cu8; source SHA-256 b68fa16227ebb86e77f70f17409f9ce59d1542d787d002c9295afcb50ef71393; samples 28088..60588 at 250000 Hz",
+      "core:sample_count": 32500,
+      "core:sample_start": 0
+    }
+  ]
+}

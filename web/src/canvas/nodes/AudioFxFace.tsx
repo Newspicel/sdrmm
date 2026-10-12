@@ -36,7 +36,7 @@ function Face({ node }: { node: PatchNodeOf<"audio_fx"> }) {
       subtitle={audioChainActive(audio) ? "on" : undefined}
     >
       <FaceBody title={wired ? undefined : "Wire channel audio in"}>
-        <Chips className="p-2">
+        <Chips>
           <AudioControls audio={audio} onAudio={edit} />
         </Chips>
       </FaceBody>

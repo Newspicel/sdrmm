@@ -57,7 +57,7 @@ export function Library({ onOpenTool }: { onOpenTool: (id: string) => void }) {
   };
 
   return (
-    <Tabs.Root defaultValue="templates" className="flex flex-col overflow-hidden rounded-md">
+    <Tabs.Root defaultValue="templates" className="flex flex-col overflow-hidden rounded-control">
       <Tabs.List className={`${TAB_BAR} shrink-0 px-1`} aria-label="Library section">
         {TABS.map((entry) => (
           <Tabs.Tab key={entry.id} value={entry.id} className={(state) => tab(state.active)}>

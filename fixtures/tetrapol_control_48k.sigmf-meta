@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "sigidwiki Tetrapol.wav",
+    "core:description": "Tetrapol control channel off air: system info for cell 28.2.7, group activations and paging"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 5800.0,
+      "core:datetime": "2026-10-12T02:50:15.470206084Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "sigidwiki Tetrapol_2_channels.zip, Tetrapol.wav, no license stated; source SHA-256 21c2a8797beda0e023454ef57fd57ba94c9c0e4fa9532c4afb64567d2e0f2d68; samples 28800..172800 at 48000 Hz",
+      "core:sample_count": 144000,
+      "core:sample_start": 0
+    }
+  ]
+}

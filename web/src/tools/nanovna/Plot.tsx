@@ -149,7 +149,7 @@ export function Plot({
           aria-label={label}
           width={frame.width}
           height={frame.height}
-          className="block touch-none rounded-[3px] bg-plot-bg outline-none select-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="block touch-none rounded-control bg-plot-bg outline-none select-none focus-visible:ring-2 focus-visible:ring-accent/40"
           onPointerDown={begin}
           onPointerMove={move}
           onPointerUp={end}
@@ -254,7 +254,7 @@ function Bands({ frame, bands, clip }: { frame: Frame; bands: readonly PlotBand[
             <text
               x={Math.max(left, LEFT) + 4}
               y={TOP + 11}
-              className="fill-band-amateur text-[10px] font-medium"
+              className="fill-band-amateur text-3xs font-medium"
             >
               {band.label}
             </text>
@@ -267,7 +267,7 @@ function Bands({ frame, bands, clip }: { frame: Frame; bands: readonly PlotBand[
 
 function Grid({ frame, xTicks, yTicks }: { frame: Frame; xTicks: Tick[]; yTicks: Tick[] }) {
   return (
-    <g className="font-mono text-[10px] tabular-nums">
+    <g className="font-mono text-3xs tabular-nums">
       {yTicks.map((tick) => (
         <g key={`y${tick.value}`}>
           <line
@@ -327,7 +327,7 @@ function Guides({ frame, guides }: { frame: Frame; guides: readonly PlotGuide[] 
             x={frame.width - RIGHT - 4}
             y={frame.y(guide.value) - 4}
             textAnchor="end"
-            className="fill-plot-ink/60 font-mono text-[10px]"
+            className="fill-plot-ink/60 font-mono text-3xs"
           >
             {guide.label}
           </text>
@@ -357,7 +357,7 @@ function Markers({ frame, markers }: { frame: Frame; markers: readonly PlotMarke
               x={x}
               y={TOP - 6.5}
               textAnchor="middle"
-              className="fill-plot-bg font-mono text-[9px] font-bold"
+              className="fill-plot-bg font-mono text-plot font-bold"
             >
               {marker.label}
             </text>
@@ -372,12 +372,12 @@ function Tooltip({ reading, left, width }: { reading: Reading; left: number; wid
   const flip = left > width * 0.62;
   return (
     <div
-      className="pointer-events-none absolute top-6 z-10 min-w-36 rounded-[3px] border border-line-strong/70 bg-panel-3 px-2 py-1.5 shadow-pop"
+      className="pointer-events-none absolute top-6 z-10 min-w-36 rounded-control border border-line-strong/70 bg-panel-3 px-2 py-1.5 shadow-pop"
       style={flip ? { right: width - left + 12 } : { left: left + 12 }}
     >
-      <div className="mb-1 font-mono text-[11px] text-ink">{reading.title}</div>
+      <div className="mb-1 font-mono text-2xs text-ink">{reading.title}</div>
       {reading.rows.map((row) => (
-        <div key={row.key} className="flex items-center gap-2 font-mono text-[11px] tabular-nums">
+        <div key={row.key} className="flex items-center gap-2 font-mono text-2xs tabular-nums">
           <span className="h-0.5 w-3 shrink-0 rounded-full" style={{ background: row.color }} />
           <span className="text-ink-dim">{row.label}</span>
           <span className="ml-auto pl-3 text-ink">{row.value}</span>

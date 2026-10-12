@@ -12,7 +12,7 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "demo:record": "playwright test -c playwright.demo.config.ts",
-    "lint": "node scripts/check-base-ui.mjs && oxlint --type-aware",
+    "lint": "node scripts/check-base-ui.mjs && node scripts/check-design-tokens.mjs && oxlint --type-aware",
     "format": "biome check --write ."
   },
   "dependencies": {

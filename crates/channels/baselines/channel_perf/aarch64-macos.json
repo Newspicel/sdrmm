@@ -210,6 +210,13 @@
     "host": "aarch64-macos"
   },
   {
+    "bench": "tetra",
+    "msamples_per_s": 54.2454764694248,
+    "realtime_factor": 753.4093954086777,
+    "config": "noise including deferred decode slots, 72000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
     "bench": "freedv",
     "msamples_per_s": 17.583481829901277,
     "realtime_factor": 2197.9352287376596,
@@ -378,6 +385,13 @@
     "host": "aarch64-macos"
   },
   {
+    "bench": "ism",
+    "msamples_per_s": 361.47,
+    "realtime_factor": 1445.88,
+    "config": "noise including deferred decode slots, 250000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
     "bench": "wifi_occupancy",
     "msamples_per_s": 588.52,
     "realtime_factor": 29.426,
@@ -431,6 +445,13 @@
     "msamples_per_s": 1993.8866181589308,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
+    "host": "aarch64-macos"
+  },
+  {
+    "bench": "tetrapol",
+    "msamples_per_s": 110.09946002036604,
+    "realtime_factor": 2293.7387504242924,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
     "host": "aarch64-macos"
   }
 ]

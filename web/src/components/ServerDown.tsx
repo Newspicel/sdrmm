@@ -49,7 +49,7 @@ export function ServerDown({
     <div className="fixed inset-0 z-35 flex items-center justify-center bg-bg/90 px-4 py-10">
       <div
         role="alert"
-        className="flex w-full max-w-md flex-col gap-3 rounded border border-line bg-panel px-4 py-4"
+        className="flex w-full max-w-md flex-col gap-3 rounded-control border border-line bg-panel px-4 py-4"
       >
         <div className="flex items-center gap-2">
           <img src="/icon.svg" alt="" width={28} height={28} className="shrink-0" />

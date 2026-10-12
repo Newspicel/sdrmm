@@ -3,12 +3,16 @@ pub mod nanovna;
 pub mod nanovna_library;
 
 pub use antenna::{
-    ANTENNA_TOOL_ID, AntennaDesign, AntennaGeometry, AntennaPart, AntennaPoint, AntennaReport,
-    AntennaRequest, AntennaSegment, AntennaSegmentRole, GroundPlaneParams, InvertedVParams,
-    MAX_ANTENNA_FREQ_HZ, MAX_APEX_ANGLE_DEG, MAX_FEEDLINE_VELOCITY_FACTOR, MAX_RADIAL_SLOPE_DEG,
-    MAX_RADIALS, MAX_VELOCITY_FACTOR, MAX_YAGI_DIRECTORS, MAX_YAGI_SPACING_WL, MIN_ANTENNA_FREQ_HZ,
-    MIN_APEX_ANGLE_DEG, MIN_FEEDLINE_VELOCITY_FACTOR, MIN_VELOCITY_FACTOR, MIN_YAGI_SPACING_WL,
-    YagiParams,
+    ANTENNA_TOOL_ID, AntennaDesign, AntennaGeometry, AntennaGround, AntennaMaterial, AntennaModel,
+    AntennaPart, AntennaPatternCut, AntennaPoint, AntennaPolarization, AntennaReport,
+    AntennaRequest, AntennaSegment, AntennaSegmentRole, AntennaSimulation,
+    AntennaSimulationOutcome, AntennaSweepPoint, AntennaSweepRequest, AntennaWire,
+    GroundPlaneParams, InvertedVParams, MAX_ANTENNA_FREQ_HZ, MAX_ANTENNA_HEIGHT_M,
+    MAX_ANTENNA_SWEEP_POINTS, MAX_ANTENNA_SWEEP_RATIO, MAX_APEX_ANGLE_DEG,
+    MAX_FEEDLINE_VELOCITY_FACTOR, MAX_RADIAL_SLOPE_DEG, MAX_RADIALS, MAX_VELOCITY_FACTOR,
+    MAX_WIRE_DIAMETER_MM, MAX_YAGI_DIRECTORS, MAX_YAGI_SPACING_WL, MIN_ANTENNA_FREQ_HZ,
+    MIN_ANTENNA_SWEEP_POINTS, MIN_APEX_ANGLE_DEG, MIN_FEEDLINE_VELOCITY_FACTOR,
+    MIN_VELOCITY_FACTOR, MIN_WIRE_DIAMETER_MM, MIN_YAGI_SPACING_WL, YagiParams,
 };
 pub use nanovna::{
     MAX_NANOVNA_AVERAGES, MAX_NANOVNA_BANDWIDTH_HZ, MAX_NANOVNA_CAL_SLOT, MAX_NANOVNA_FREQ_HZ,

@@ -439,7 +439,7 @@ function ContextMenu({
     >
       {items}
       {node !== undefined && (
-        <span className="px-2 py-1 text-[10px] text-ink-faint">
+        <span className="px-2 py-1 text-3xs text-ink-faint">
           Backspace deletes the selection: a node or a wire.
         </span>
       )}

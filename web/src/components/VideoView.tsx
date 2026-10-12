@@ -105,7 +105,7 @@ export function VideoView({
   return (
     <div className="p-2">
       <div
-        className="w-full overflow-hidden rounded-xs bg-black"
+        className="w-full overflow-hidden rounded-inset bg-black"
         style={{ aspectRatio: geometry?.aspect ?? DISPLAY_ASPECT }}
       >
         <canvas

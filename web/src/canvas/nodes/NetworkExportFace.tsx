@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
-import { BTN, BTN_DANGER } from "../../components/controls";
+import { BTN_DANGER, BTN_PRIMARY } from "../../components/controls";
 import { Chips, ChoiceChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -98,7 +98,7 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
       category="output"
     >
       <FaceBody>
-        <Chips className="p-2">
+        <Chips>
           <ChoiceChip
             label="Transport"
             title="Transport"
@@ -151,13 +151,7 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
         ) : (
           <FaceEmpty
             hint={
-              control.kind === "busy"
-                ? "Another network sink already uses this input"
-                : control.kind === "ready"
-                  ? rtlTcp
-                    ? "rtl_433 input · CU8"
-                    : "Raw interleaved I/Q"
-                  : undefined
+              control.kind === "busy" ? "Another network sink already uses this input" : undefined
             }
           />
         )}
@@ -176,7 +170,8 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
         ) : (
           <Button
             type="button"
-            className={BTN}
+            className={BTN_PRIMARY}
+            title={rtlTcp ? "rtl_433 input, CU8" : "Raw interleaved I/Q"}
             disabled={control.kind !== "ready" || exportIq.isPending}
             onClick={() => exportIq.mutate("start")}
           >

@@ -2,6 +2,7 @@ use num_complex::Complex;
 use sdrmm_dsp::Ddc;
 use sdrmm_wire::{
     ChannelParams, ChannelSettings, DecoderEvent, ProtocolMatch, SelcallParams, SelcallSystem,
+    UNKNOWN_MODEL,
 };
 
 use super::detect::Band;
@@ -25,6 +26,7 @@ fn decoded(type_id: &str, event: &DecoderEvent) -> bool {
         | ("ermes", DecoderEvent::Ermes(_))
         | ("eot", DecoderEvent::Eot(_))
         | ("sarsat", DecoderEvent::Sarsat(_))
+        | ("tetrapol", DecoderEvent::Tetrapol(_))
         | ("ais", DecoderEvent::Ais(_))
         | ("acars", DecoderEvent::Acars(_))
         | ("aprs", DecoderEvent::Aprs(_))
@@ -35,6 +37,7 @@ fn decoded(type_id: &str, event: &DecoderEvent) -> bool {
         | ("hfdl", DecoderEvent::Hfdl(message))
         | ("inmarsat_stdc", DecoderEvent::InmarsatStdc(message))
         | ("inmarsat_aero", DecoderEvent::InmarsatAero(message)) => message.crc_ok,
+        ("ism", DecoderEvent::Ism(message)) => message.model != UNKNOWN_MODEL,
         _ => false,
     }
 }
@@ -47,6 +50,7 @@ fn confirmable(type_id: &str) -> bool {
             | "ermes"
             | "eot"
             | "sarsat"
+            | "tetrapol"
             | "ais"
             | "acars"
             | "aprs"
@@ -57,6 +61,7 @@ fn confirmable(type_id: &str) -> bool {
             | "hfdl"
             | "inmarsat_stdc"
             | "inmarsat_aero"
+            | "ism"
     )
 }
 

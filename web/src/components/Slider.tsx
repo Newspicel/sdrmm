@@ -1,6 +1,23 @@
 import { Slider as Primitive } from "@base-ui/react/slider";
 import type { ReactNode } from "react";
 
+export const SLIDER_CONTROL =
+  "flex h-7 w-full cursor-pointer touch-none items-center data-dragging:cursor-grabbing " +
+  "data-disabled:cursor-not-allowed data-disabled:opacity-45 pointer-coarse:h-10";
+
+export const SLIDER_TRACK =
+  "relative h-2 w-full rounded-inset bg-well " +
+  "shadow-[inset_0_0_0_1px_var(--color-line),inset_0_1px_2px_oklch(0_0_0/0.2)]";
+
+export const SLIDER_FILL = "rounded-inset bg-accent";
+
+export const SLIDER_THUMB =
+  "h-4 w-1 cursor-grab rounded-inset shadow-[0_0_0_1.5px_var(--color-panel)] " +
+  "data-dragging:cursor-grabbing has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent " +
+  "has-[:focus-visible]:outline-offset-2";
+
+export const SLIDER_THUMB_IDLE = "bg-ink hover:bg-accent";
+
 export function Slider({
   label,
   value,
@@ -26,7 +43,7 @@ export function Slider({
     <Primitive.Root
       data-hotkeys="off"
       thumbAlignment="edge"
-      className={`flex ${className ?? "w-24"} ${disabled ? "opacity-45" : ""}`}
+      className={`flex ${className ?? "w-24"}`}
       disabled={disabled}
       value={value}
       min={min}
@@ -43,13 +60,10 @@ export function Slider({
         }
       }}
     >
-      <Primitive.Control className="flex h-7 w-full cursor-pointer touch-none items-center data-disabled:cursor-default data-dragging:cursor-grabbing pointer-coarse:h-10">
-        <Primitive.Track className="h-1 w-full rounded-full bg-well shadow-[inset_0_0_0_1px_var(--color-line)]">
-          <Primitive.Indicator className="rounded-full bg-accent" />
-          <Primitive.Thumb
-            aria-label={label}
-            className="size-3.5 cursor-grab rounded-full border border-accent bg-ink shadow-raised data-dragging:cursor-grabbing has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent has-[:focus-visible]:outline-offset-2"
-          />
+      <Primitive.Control className={SLIDER_CONTROL}>
+        <Primitive.Track className={SLIDER_TRACK}>
+          <Primitive.Indicator className={SLIDER_FILL} />
+          <Primitive.Thumb aria-label={label} className={`${SLIDER_THUMB} ${SLIDER_THUMB_IDLE}`} />
         </Primitive.Track>
       </Primitive.Control>
     </Primitive.Root>

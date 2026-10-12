@@ -171,7 +171,7 @@ describe("array labels", () => {
     expect(laneQualityPercent(1.4)).toBe(100);
     expect(laneQualityPercent(-1)).toBe(0);
     expect(checkOptions(60).map((option) => option.label)).toEqual([
-      "Off",
+      "off",
       "10 s",
       "60 s",
       "5 min",

@@ -35,7 +35,7 @@ import { SliderField } from "./Slider";
 import { useDebouncedCommit } from "./useDebouncedCommit";
 
 const AGC_MODES: Options<AudioAgcMode> = [
-  { value: "off", label: "Off" },
+  { value: "off", label: "off" },
   { value: "slow", label: "Slow" },
   { value: "medium", label: "Med" },
   { value: "fast", label: "Fast" },

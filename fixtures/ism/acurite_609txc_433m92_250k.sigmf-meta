@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "rtl_433_tests",
+    "core:description": "acurite_th_609_lowbatt.cu8"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 433920000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/acurite/Acurite_609A1TX/acurite_th_609_lowbatt.cu8; source SHA-256 b65f977323979b11159d6d2fe9c81ea963467ee6f391f9d057eaae009d7aff22; samples 28648..61148 at 250000 Hz",
+      "core:sample_count": 32500,
+      "core:sample_start": 0
+    }
+  ]
+}

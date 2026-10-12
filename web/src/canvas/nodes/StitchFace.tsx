@@ -146,7 +146,7 @@ function StitchChips({
   edit: (next: Partial<StitchParams>) => void;
 }) {
   return (
-    <Chips className="p-2">
+    <Chips>
       <ChoiceChip
         label="Blend"
         title="Blend"

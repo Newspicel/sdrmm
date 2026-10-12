@@ -34,6 +34,7 @@ mod ils;
 mod inmarsat_aero;
 mod inmarsat_stdc;
 mod iridium;
+mod ism;
 mod ism_survey;
 mod lora;
 mod lrpt;
@@ -64,6 +65,8 @@ mod sstv;
 mod stanag;
 pub mod stitch;
 pub mod symbols;
+mod tetra;
+mod tetrapol;
 pub mod tone_squelch;
 mod tx;
 mod vdl2;
@@ -116,6 +119,7 @@ pub use ils::IlsChannel;
 pub use inmarsat_aero::InmarsatAeroChannel;
 pub use inmarsat_stdc::InmarsatStdcChannel;
 pub use iridium::IridiumChannel;
+pub use ism::IsmChannel;
 pub use ism_survey::IsmSurveyChannel;
 pub use lora::LoraChannel;
 pub use lrpt::LrptChannel;
@@ -143,6 +147,8 @@ pub use ssb::{SsbChannel, SsbTx};
 pub use sstv::SstvChannel;
 pub use stanag::StanagChannel;
 pub use symbols::SymbolTap;
+pub use tetra::TetraChannel;
+pub use tetrapol::TetrapolChannel;
 pub use vdl2::Vdl2Channel;
 pub use vor::VorChannel;
 pub use weak_signal::{Ft4Channel, Ft8Channel, WsprChannel};
@@ -190,6 +196,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Ermes(p) => ermes::occupied_band(p),
         ChannelParams::Eot(p) => eot::occupied_band(p),
         ChannelParams::Sarsat(p) => sarsat::occupied_band(p),
+        ChannelParams::Tetrapol(_) => tetrapol::occupied_band(),
         ChannelParams::Adsb(_) => adsb::occupied_band(),
         ChannelParams::Ais(p) => ais::occupied_band(p),
         ChannelParams::Aprs(p) => aprs::occupied_band(p),
@@ -211,6 +218,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::P25(_) => dv::p25::occupied_band(),
         ChannelParams::Dpmr(_) => dv::dpmr::occupied_band(),
         ChannelParams::M17(_) => dv::m17::occupied_band(),
+        ChannelParams::Tetra(_) => tetra::occupied_band(),
         ChannelParams::Ft8(_) | ChannelParams::Ft4(_) | ChannelParams::Wspr(_) => {
             weak_signal::occupied_band(params)
         }
@@ -237,6 +245,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Ble(p) => ble::occupied_band(p.link),
         ChannelParams::WifiOccupancy(p) => wifi::occupied_band(p),
         ChannelParams::IsmSurvey(p) => ism_survey::occupied_band(p),
+        ChannelParams::Ism(p) => ism::occupied_band(p),
         ChannelParams::NoiseFigure(_) => noise_figure::occupied_band(),
         ChannelParams::Per(p) => per::occupied_band(p),
         ChannelParams::Sid(_) => sid::occupied_band(),
@@ -283,6 +292,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Ermes(p) => ermes::channel_filter(p),
         ChannelParams::Eot(p) => eot::channel_filter(p),
         ChannelParams::Sarsat(p) => sarsat::channel_filter(p),
+        ChannelParams::Tetrapol(_) => Ok(tetrapol::channel_filter()),
         ChannelParams::Adsb(_) => Ok(adsb::channel_filter()),
         ChannelParams::Ais(p) => ais::channel_filter(p),
         ChannelParams::Aprs(p) => aprs::channel_filter(p),
@@ -304,6 +314,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::P25(_) => Ok(dv::p25::channel_filter()),
         ChannelParams::Dpmr(_) => Ok(dv::dpmr::channel_filter()),
         ChannelParams::M17(_) => Ok(dv::m17::channel_filter()),
+        ChannelParams::Tetra(_) => Ok(tetra::channel_filter()),
         ChannelParams::Ft8(_) | ChannelParams::Ft4(_) | ChannelParams::Wspr(_) => {
             weak_signal::channel_filter(params)
         }
@@ -330,6 +341,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Ble(p) => Ok(ble::channel_filter(p.link)),
         ChannelParams::WifiOccupancy(p) => Ok(wifi::channel_filter(p)),
         ChannelParams::IsmSurvey(p) => Ok(ism_survey::channel_filter(p)),
+        ChannelParams::Ism(p) => Ok(ism::channel_filter(p)),
         ChannelParams::NoiseFigure(_) => Ok(noise_figure::channel_filter()),
         ChannelParams::Per(p) => Ok(per::channel_filter(p)),
         ChannelParams::Sid(_) => Ok(sid::channel_filter()),
@@ -526,6 +538,11 @@ const REGISTRY: &[Registration] = &[
         create_tx: None,
     },
     Registration {
+        descriptor: TetrapolChannel::descriptor,
+        create: boxed::<TetrapolChannel>,
+        create_tx: None,
+    },
+    Registration {
         descriptor: AdsbChannel::descriptor,
         create: boxed::<AdsbChannel>,
         create_tx: None,
@@ -628,6 +645,11 @@ const REGISTRY: &[Registration] = &[
     Registration {
         descriptor: M17Channel::descriptor,
         create: boxed::<M17Channel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: TetraChannel::descriptor,
+        create: boxed::<TetraChannel>,
         create_tx: None,
     },
     Registration {
@@ -758,6 +780,11 @@ const REGISTRY: &[Registration] = &[
     Registration {
         descriptor: IsmSurveyChannel::descriptor,
         create: boxed::<IsmSurveyChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: IsmChannel::descriptor,
+        create: boxed::<IsmChannel>,
         create_tx: None,
     },
     Registration {
@@ -892,8 +919,8 @@ mod tests {
         GnssParams, HfdlParams, IdentParams, IlsParams, InmarsatAeroParams, InmarsatStdcParams,
         IridiumParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NxdnParams,
         P25Params, PocsagParams, PskParams, RadioClockParams, RadiosondeParams, RttyParams,
-        SelcallParams, SsbParams, SstvParams, Vdl2Params, VorParams, WefaxParams, WfmParams,
-        WsjtParams, WsprParams, YsfParams,
+        SelcallParams, SsbParams, SstvParams, TetraParams, Vdl2Params, VorParams, WefaxParams,
+        WfmParams, WsjtParams, WsprParams, YsfParams,
     };
 
     use super::*;
@@ -911,6 +938,7 @@ mod tests {
             "ermes" => ChannelParams::Ermes(ErmesParams::default()),
             "eot" => ChannelParams::Eot(EotParams::default()),
             "sarsat" => ChannelParams::Sarsat(sdrmm_wire::SarsatParams::default()),
+            "tetrapol" => ChannelParams::Tetrapol(sdrmm_wire::TetrapolParams::default()),
             "adsb" => ChannelParams::Adsb(AdsbParams::default()),
             "ais" => ChannelParams::Ais(AisParams::default()),
             "aprs" => ChannelParams::Aprs(AprsParams::default()),
@@ -932,6 +960,7 @@ mod tests {
             "p25" => ChannelParams::P25(P25Params::default()),
             "dpmr" => ChannelParams::Dpmr(DpmrParams::default()),
             "m17" => ChannelParams::M17(M17Params::default()),
+            "tetra" => ChannelParams::Tetra(TetraParams::default()),
             "ft8" => ChannelParams::Ft8(WsjtParams::default()),
             "ft4" => ChannelParams::Ft4(WsjtParams::default()),
             "psk" => ChannelParams::Psk(PskParams::default()),
@@ -960,6 +989,7 @@ mod tests {
                 ChannelParams::WifiOccupancy(sdrmm_wire::WifiOccupancyParams::default())
             }
             "ism_survey" => ChannelParams::IsmSurvey(sdrmm_wire::IsmSurveyParams::default()),
+            "ism" => ChannelParams::Ism(sdrmm_wire::IsmParams::default()),
             "noise_figure" => ChannelParams::NoiseFigure(sdrmm_wire::NoiseFigureParams::default()),
             "per" => ChannelParams::Per(sdrmm_wire::PerParams::default()),
             "sid" => ChannelParams::Sid(sdrmm_wire::SidParams::default()),
@@ -1027,6 +1057,7 @@ mod tests {
                 "ermes",
                 "eot",
                 "sarsat",
+                "tetrapol",
                 "adsb",
                 "ais",
                 "aprs",
@@ -1048,6 +1079,7 @@ mod tests {
                 "p25",
                 "dpmr",
                 "m17",
+                "tetra",
                 "freedv",
                 "ft8",
                 "ft4",
@@ -1074,6 +1106,7 @@ mod tests {
                 "ble",
                 "wifi_occupancy",
                 "ism_survey",
+                "ism",
                 "noise_figure",
                 "per",
                 "sid",
@@ -1090,6 +1123,7 @@ mod tests {
                 "pocsag" => (12_500.0, 24_000.0),
                 "flex" | "ermes" | "eot" => (12_500.0, 48_000.0),
                 "sarsat" => (20_000.0, 24_000.0),
+                "tetrapol" => (12_500.0, 48_000.0),
                 "adsb" => (2_000_000.0, 2_400_000.0),
                 "ais" => (25_000.0, 48_000.0),
                 "aprs" => (12_500.0, 48_000.0),
@@ -1107,6 +1141,7 @@ mod tests {
                 "dmr" | "ysf" | "p25" => (12_500.0, 48_000.0),
                 "dstar" | "nxdn" | "dpmr" => (6_250.0, 48_000.0),
                 "m17" => (9_000.0, 48_000.0),
+                "tetra" => (25_000.0, 72_000.0),
                 "ft8" | "ft4" | "wspr" => (3_200.0, 12_000.0),
                 "psk" => (650.0, 8_000.0),
                 "freedv" => (1_400.0, 8_000.0),
@@ -1129,6 +1164,7 @@ mod tests {
                 "lora" => (125_000.0, 250_000.0),
                 "remote_id" | "ble" => (2_000_000.0, 4_000_000.0),
                 "wifi_occupancy" | "ism_survey" => (17_000_000.0, 20_000_000.0),
+                "ism" => (240_000.0, 250_000.0),
                 "noise_figure" => (400_000.0, 500_000.0),
                 "per" => (28_800.0, 96_000.0),
                 "sid" => (42_000.0, 48_000.0),

@@ -267,6 +267,12 @@ pub static SIGNALS: &[Signal] = &[
         render: nxdn,
     },
     Signal {
+        id: "tetrapol",
+        label: "Tetrapol control channel",
+        rate_hz: AUDIO,
+        render: tetrapol,
+    },
+    Signal {
         id: "dstar",
         label: "D-STAR voice",
         rate_hz: AUDIO,
@@ -283,6 +289,12 @@ pub static SIGNALS: &[Signal] = &[
         label: "YSF voice",
         rate_hz: AUDIO,
         render: ysf,
+    },
+    Signal {
+        id: "tetra",
+        label: "TETRA downlink",
+        rate_hz: synth::tetra::SAMPLE_RATE_HZ,
+        render: tetra,
     },
     Signal {
         id: "dect",
@@ -816,6 +828,10 @@ fn nxdn() -> Vec<Complex<f32>> {
     dv::nxdn::transmission(&dv::nxdn::Shape::default(), 1, true, AUDIO)
 }
 
+fn tetrapol() -> Vec<Complex<f32>> {
+    synth::tetrapol::control_channel(AUDIO, 1)
+}
+
 fn dstar() -> Vec<Complex<f32>> {
     dv::dstar::transmission(&dv::dstar::Call::default(), AUDIO)
 }
@@ -830,6 +846,10 @@ fn ysf() -> Vec<Complex<f32>> {
         &dv::ysf::Call::default(),
         AUDIO,
     )
+}
+
+fn tetra() -> Vec<Complex<f32>> {
+    synth::tetra::sample(synth::tetra::Cell::default()).modulate()
 }
 
 fn meshtastic() -> Vec<Complex<f32>> {

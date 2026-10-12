@@ -120,7 +120,7 @@ export function WorkspaceBar({
           >
             {option.label}
             {option.value === "rack" && pinned > 0 && (
-              <span aria-hidden className="text-[10px] text-ink-faint tabular-nums">
+              <span aria-hidden className="text-3xs text-ink-faint tabular-nums">
                 {pinned}
               </span>
             )}

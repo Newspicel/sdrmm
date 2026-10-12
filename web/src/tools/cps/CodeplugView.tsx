@@ -26,7 +26,7 @@ export function CodeplugView({ codeplug }: { codeplug: Codeplug }) {
         options={SECTIONS.map((entry) => ({ ...entry }))}
         onChange={setSection}
       />
-      <div className="min-h-0 flex-1 overflow-auto rounded-[3px] border border-line">
+      <div className="min-h-0 flex-1 overflow-auto rounded-control border border-line">
         {section === "channels" && <Channels channels={parts.channels} />}
         {section === "zones" && (
           <Members

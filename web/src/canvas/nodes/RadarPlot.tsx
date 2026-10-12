@@ -60,12 +60,12 @@ export function RadarPlot({
     frame === null ? null : { cols: frame.ranges, rows: frame.dopplers, cells: frame.cells };
   return (
     <div ref={ref} className="relative min-h-48 flex-1 bg-plot-bg">
-      <div className={`absolute ${dim ? "opacity-40" : ""}`} style={GUTTERS}>
+      <div className={`absolute ${dim ? "opacity-50" : ""}`} style={GUTTERS}>
         <GridCanvas frame={grid} colormap={colormap} flipY />
       </div>
-      <span className="absolute top-0.5 left-1 font-mono text-[9px] text-ink-faint">Hz</span>
-      <span className="absolute top-0.5 right-1 font-mono text-[9px] text-ink-faint">m/s</span>
-      <span className="absolute right-1 bottom-0.5 font-mono text-[9px] text-ink-faint">km</span>
+      <span className="absolute top-0.5 left-1 font-mono text-plot text-ink-faint">Hz</span>
+      <span className="absolute top-0.5 right-1 font-mono text-plot text-ink-faint">m/s</span>
+      <span className="absolute right-1 bottom-0.5 font-mono text-plot text-ink-faint">km</span>
       <span className="absolute top-0.5 left-1/2 -translate-x-1/2">
         <ColourScale
           colormap={colormap}
@@ -97,7 +97,7 @@ export function RadarPlot({
           onPointerLeave={() => setHover(null)}
         >
           {hover !== null && (
-            <span className="pointer-events-none absolute top-1 left-1 rounded-[2px] bg-bg/80 px-1 font-mono text-[10px] tabular-nums text-ink">
+            <span className="pointer-events-none absolute top-1 left-1 rounded-inset bg-bg/80 px-1 font-mono text-3xs tabular-nums text-ink">
               {hoverLabel(hover, axes, plot, frame)}
             </span>
           )}
@@ -256,7 +256,7 @@ function TrackMark({
       <text
         x={head.x + TRACK_HALF + 2}
         y={head.y - TRACK_HALF}
-        className="fill-accent stroke-none font-mono text-[9px]"
+        className="fill-accent stroke-none font-mono text-plot"
       >
         T{track.id}
       </text>

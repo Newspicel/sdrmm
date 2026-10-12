@@ -928,6 +928,15 @@ test.describe("the workspace", () => {
     await tools.getByRole("group", { name: "Length units" }).getByText("ft").click();
     await expect(tools.getByRole("row", { name: /^Reflector\b/ })).toContainText(/ft/);
 
+    const sections = tools.getByRole("group", { name: "Antenna section" });
+    await sections.getByText("Performance").click();
+    await expect(tools.getByRole("region", { name: "Simulated performance" })).toContainText("dBi");
+    await expect(tools.getByRole("img", { name: /^Azimuth at/ })).toBeVisible();
+    await expect(
+      tools.getByRole("img", { name: "Standing wave ratio against frequency" }),
+    ).toBeVisible();
+    await sections.getByText("Design").click();
+
     await tools.getByRole("combobox", { name: "Antenna design" }).click();
     await page.getByRole("option", { name: "Inverted V" }).click();
     await expect(tools.getByRole("img", { name: /inverted v.*angle/i })).toBeVisible();
