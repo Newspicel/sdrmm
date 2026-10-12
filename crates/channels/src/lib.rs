@@ -1052,8 +1052,8 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 61);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
+        assert_eq!(ids.len(), all.len());
         assert_eq!(
             ids,
             HashSet::from([

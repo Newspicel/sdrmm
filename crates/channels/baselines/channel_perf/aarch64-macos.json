@@ -225,15 +225,15 @@
   },
   {
     "bench": "ft8",
-    "msamples_per_s": 1149.8585035230387,
-    "realtime_factor": 95821.54196025322,
+    "msamples_per_s": 4747.211013529551,
+    "realtime_factor": 395600.91779412923,
     "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
     "host": "aarch64-macos"
   },
   {
     "bench": "ft4",
-    "msamples_per_s": 2047.4088903043814,
-    "realtime_factor": 170617.40752536512,
+    "msamples_per_s": 4655.252676770289,
+    "realtime_factor": 387937.72306419077,
     "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
     "host": "aarch64-macos"
   },
@@ -246,8 +246,8 @@
   },
   {
     "bench": "wspr",
-    "msamples_per_s": 566.5666650272955,
-    "realtime_factor": 47213.88875227462,
+    "msamples_per_s": 4704.606266927598,
+    "realtime_factor": 392050.5222439665,
     "config": "noise including deferred decode slots, 12000 Hz, 2048 sample blocks",
     "host": "aarch64-macos"
   },

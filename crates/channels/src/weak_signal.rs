@@ -122,6 +122,7 @@ struct WeakSignal {
     audio_high_hz: f32,
     max_candidates: usize,
     audio: Vec<f32>,
+    read: usize,
     window_start: u64,
     epoch: u64,
     queued: usize,
@@ -147,7 +148,8 @@ impl WeakSignal {
             audio_low_hz: low,
             audio_high_hz: high,
             max_candidates: candidates,
-            audio: Vec::with_capacity(mode.slot_samples() + mode.hop_samples()),
+            audio: Vec::with_capacity(2 * mode.slot_samples()),
+            read: 0,
             window_start: 0,
             epoch: 0,
             queued: 0,
@@ -170,12 +172,14 @@ impl WeakSignal {
 
     fn reset(&mut self) {
         self.audio.clear();
+        self.read = 0;
         self.window_start = 0;
         self.epoch = self.epoch.wrapping_add(1);
         self.recent.clear();
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
+        self.compact(iq.len());
         self.audio.extend(iq.iter().map(|sample| {
             if sample.re.is_finite() {
                 sample.re.clamp(-1.0, 1.0)
@@ -186,9 +190,9 @@ impl WeakSignal {
 
         let slot = self.mode.slot_samples();
         let hop = self.mode.hop_samples();
-        while self.audio.len() >= slot {
+        while self.audio.len() - self.read >= slot {
             self.submit(slot);
-            self.audio.drain(..hop);
+            self.read += hop;
             self.window_start += hop as u64;
             let oldest = self.window_start.saturating_sub((2 * slot) as u64) as i64;
             self.recent.retain(|item| item.start_sample >= oldest);
@@ -196,12 +200,19 @@ impl WeakSignal {
         self.collect(out);
     }
 
+    fn compact(&mut self, incoming: usize) {
+        if self.audio.len() + incoming > self.audio.capacity() {
+            self.audio.drain(..self.read);
+            self.read = 0;
+        }
+    }
+
     fn submit(&mut self, slot: usize) {
         let Some(mut samples) = self.spare.pop() else {
             return;
         };
         samples.clear();
-        samples.extend_from_slice(&self.audio[..slot]);
+        samples.extend_from_slice(&self.audio[self.read..self.read + slot]);
         let job = Job {
             epoch: self.epoch,
             window_start: self.window_start,
@@ -603,6 +614,34 @@ mod tests {
         assert_eq!(spot.grid.as_deref(), Some("FN42"));
         assert_eq!(spot.power_dbm, 37);
         assert!((spot.audio_hz - 1_500.0).abs() < 3.0);
+    }
+
+    #[test]
+    fn windows_stay_aligned_after_the_audio_buffer_compacts() {
+        let hop = Mode::Ft8.hop_samples();
+        let mut iq = vec![Complex::new(0.0, 0.0); 9 * hop];
+        iq.extend(synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0));
+        let mut channel = Ft8Channel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(ChannelParams::Ft8(WsjtParams::default())),
+        )
+        .unwrap();
+        let capacity = channel.0.audio.capacity();
+        let mut out = ChannelOutputs::default();
+        for block in iq.chunks(hop) {
+            channel.process(block, &mut out);
+            channel.settle(&mut out);
+        }
+        assert_eq!(channel.0.audio.capacity(), capacity);
+        let one_hop_late = (hop as f64 / INPUT_RATE_HZ) as f32;
+        assert!(out.events.iter().any(|event| matches!(
+            event,
+            DecoderEvent::Ft8(message)
+                if message.text.contains("W1AW")
+                    && (message.time_offset_s - one_hop_late).abs() < 0.2
+        )));
     }
 
     #[test]
