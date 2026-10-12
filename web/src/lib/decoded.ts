@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { bleStation } from "./ble";
+import { ismStation } from "./ism";
 import { loraStation, withLoraPosition } from "./lora";
 import { remoteIdStation, withRemoteIdState } from "./remoteId";
 import { clearTrails, dropTrail, recordTrail } from "./trails";
@@ -276,6 +277,8 @@ function stationId(event: DecoderEvent): string | null {
       return String(event.data.local_address);
     case "eot":
       return String(event.data.unit_address);
+    case "ism":
+      return ismStation(event.data);
     case "sarsat":
       return event.data.hex_id;
     case "rds":

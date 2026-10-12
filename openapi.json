@@ -12711,6 +12711,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/IsmParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ism"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/NoiseFigureParams"
               },
               "type": {
@@ -15788,6 +15806,24 @@
                 "type": "string",
                 "enum": [
                   "ism_survey"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/IsmMessage"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ism"
                 ]
               }
             }
@@ -20743,6 +20779,23 @@
           "mhz10"
         ]
       },
+      "IsmCoding": {
+        "type": "string",
+        "enum": [
+          "pwm",
+          "ppm",
+          "pcm",
+          "manchester"
+        ]
+      },
+      "IsmIntegrity": {
+        "type": "string",
+        "enum": [
+          "crc",
+          "checksum",
+          "repeats"
+        ]
+      },
       "IsmKind": {
         "type": "string",
         "enum": [
@@ -20791,6 +20844,194 @@
           "peak_dbfs": {
             "type": "number",
             "format": "float"
+          }
+        }
+      },
+      "IsmMessage": {
+        "type": "object",
+        "required": [
+          "model",
+          "id",
+          "modulation",
+          "coding",
+          "integrity",
+          "bits",
+          "raw",
+          "snr_db"
+        ],
+        "properties": {
+          "alarm": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "battery_ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "bits": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "coding": {
+            "$ref": "#/components/schemas/IsmCoding"
+          },
+          "command": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "contact_open": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "humidity_pct": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/IsmIntegrity"
+          },
+          "light_lux": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "long_us": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "model": {
+            "type": "string"
+          },
+          "modulation": {
+            "$ref": "#/components/schemas/IsmModulation"
+          },
+          "pressure_kpa": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "rain_mm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "raw": {
+            "type": "string"
+          },
+          "short_us": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "snr_db": {
+            "type": "number",
+            "format": "float"
+          },
+          "tamper": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "temperature_2_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "temperature_c": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "tristate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uv_index": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "wind_avg_m_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "wind_dir_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "wind_max_m_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          }
+        }
+      },
+      "IsmModulation": {
+        "type": "string",
+        "enum": [
+          "ook",
+          "fsk"
+        ]
+      },
+      "IsmParams": {
+        "type": "object",
+        "properties": {
+          "unknown": {
+            "type": "boolean"
           }
         }
       },

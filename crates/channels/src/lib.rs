@@ -34,6 +34,7 @@ mod ils;
 mod inmarsat_aero;
 mod inmarsat_stdc;
 mod iridium;
+mod ism;
 mod ism_survey;
 mod lora;
 mod lrpt;
@@ -116,6 +117,7 @@ pub use ils::IlsChannel;
 pub use inmarsat_aero::InmarsatAeroChannel;
 pub use inmarsat_stdc::InmarsatStdcChannel;
 pub use iridium::IridiumChannel;
+pub use ism::IsmChannel;
 pub use ism_survey::IsmSurveyChannel;
 pub use lora::LoraChannel;
 pub use lrpt::LrptChannel;
@@ -238,6 +240,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Ble(p) => ble::occupied_band(p.link),
         ChannelParams::WifiOccupancy(p) => wifi::occupied_band(p),
         ChannelParams::IsmSurvey(p) => ism_survey::occupied_band(p),
+        ChannelParams::Ism(p) => ism::occupied_band(p),
         ChannelParams::NoiseFigure(_) => noise_figure::occupied_band(),
         ChannelParams::Per(p) => per::occupied_band(p),
         ChannelParams::Sid(_) => sid::occupied_band(),
@@ -331,6 +334,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Ble(p) => Ok(ble::channel_filter(p.link)),
         ChannelParams::WifiOccupancy(p) => Ok(wifi::channel_filter(p)),
         ChannelParams::IsmSurvey(p) => Ok(ism_survey::channel_filter(p)),
+        ChannelParams::Ism(p) => Ok(ism::channel_filter(p)),
         ChannelParams::NoiseFigure(_) => Ok(noise_figure::channel_filter()),
         ChannelParams::Per(p) => Ok(per::channel_filter(p)),
         ChannelParams::Sid(_) => Ok(sid::channel_filter()),
@@ -766,6 +770,11 @@ const REGISTRY: &[Registration] = &[
         create_tx: None,
     },
     Registration {
+        descriptor: IsmChannel::descriptor,
+        create: boxed::<IsmChannel>,
+        create_tx: None,
+    },
+    Registration {
         descriptor: NoiseFigureChannel::descriptor,
         create: boxed::<NoiseFigureChannel>,
         create_tx: None,
@@ -961,6 +970,7 @@ mod tests {
                 ChannelParams::WifiOccupancy(sdrmm_wire::WifiOccupancyParams::default())
             }
             "ism_survey" => ChannelParams::IsmSurvey(sdrmm_wire::IsmSurveyParams::default()),
+            "ism" => ChannelParams::Ism(sdrmm_wire::IsmParams::default()),
             "noise_figure" => ChannelParams::NoiseFigure(sdrmm_wire::NoiseFigureParams::default()),
             "per" => ChannelParams::Per(sdrmm_wire::PerParams::default()),
             "sid" => ChannelParams::Sid(sdrmm_wire::SidParams::default()),
@@ -1075,6 +1085,7 @@ mod tests {
                 "ble",
                 "wifi_occupancy",
                 "ism_survey",
+                "ism",
                 "noise_figure",
                 "per",
                 "sid",
@@ -1130,6 +1141,7 @@ mod tests {
                 "lora" => (125_000.0, 250_000.0),
                 "remote_id" | "ble" => (2_000_000.0, 4_000_000.0),
                 "wifi_occupancy" | "ism_survey" => (17_000_000.0, 20_000_000.0),
+                "ism" => (240_000.0, 250_000.0),
                 "noise_figure" => (400_000.0, 500_000.0),
                 "per" => (28_800.0, 96_000.0),
                 "sid" => (42_000.0, 48_000.0),

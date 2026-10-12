@@ -548,7 +548,7 @@ const SIGNATURES: &[Signature] = &[
         frequencies: ISM,
         ..signature(
             "ISM remote (OOK)",
-            None,
+            Some("ism"),
             &[Modulation::Ook],
             range(2_000.0, 160_000.0),
             "a keyed carrier at remote-control speed",
@@ -560,7 +560,7 @@ const SIGNATURES: &[Signature] = &[
         frequencies: ISM,
         ..signature(
             "ISM telemetry (2-FSK)",
-            None,
+            Some("ism"),
             &[Modulation::Fsk2],
             range(15_000.0, 160_000.0),
             "a wide two-level shift, sensor-radio speed",
@@ -1166,5 +1166,17 @@ mod tests {
             Some(1_090_000_000.0),
         );
         assert_eq!(names(&found).first(), Some(&"ADS-B / Mode S"));
+    }
+
+    #[test]
+    fn a_keyed_remote_on_433_mhz_offers_the_ism_decoder() {
+        let found = candidates(
+            Modulation::Ook,
+            &band(20_000.0),
+            &keyed(2_500.0, 0.0),
+            Some(433_920_000.0),
+        );
+        let remote = found.iter().find(|m| m.name == "ISM remote (OOK)");
+        assert_eq!(remote.and_then(|m| m.type_id.as_deref()), Some("ism"));
     }
 }

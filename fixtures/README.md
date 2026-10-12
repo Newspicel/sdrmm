@@ -254,6 +254,12 @@ about 6% of the time it spans: beacon timestamps advance 1.02 s where the sample
 so long frames break at the gaps. The excerpt is one beacon inside an unbroken stretch.
 `remote_id::tests::air` reads them directly.
 
+### ISM sensors: `ism/`
+
+Twenty bursts from `rtl_433_tests`, which states no license, trimmed to the shortest stretch that
+still decodes. `ism/README.md` lists each source and the expected readings, which match rtl_433.
+`ism::tests` reads them directly.
+
 ### Public receivers: `dsc_offair_8k`, `radio_clock_*_offair_2k`, `flex_p2000_offair_48k`
 
 Excerpts of `cargo xtask net-capture` recordings from public KiwiSDRs and a public SpyServer, made

@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "rtl_433_tests",
+    "core:description": "g001_868.3M_250k.cu8"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868300000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/bresser_5in1/01/g001_868.3M_250k.cu8; source SHA-256 87ef982264b782985188ca3f4d03ddb3ea466bd4c065cdc98e8f1e4e6c74431a; samples 36861..51861 at 250000 Hz",
+      "core:sample_count": 15000,
+      "core:sample_start": 0
+    }
+  ]
+}

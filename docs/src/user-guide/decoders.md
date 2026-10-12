@@ -18,7 +18,7 @@ covers the modes that need more than a frequency.
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -75,6 +75,26 @@ The End-of-Train channel reads railroad telemetry. Tune 457.9375 MHz for the rea
 pressure, motion, marker light, battery and arming. Tune 452.9375 MHz for the locomotive: status
 requests and emergency brake commands. Australia uses 477.7 MHz, New Zealand 450.2625 MHz. Only
 frames whose BCH check passes are logged; **Rejected** counts the ones that failed.
+
+## ISM sensors
+
+The ISM sensors channel reads OOK and FSK weather stations, thermometers, tyre sensors, remotes and
+door sensors on 315, 345, 433.92, 868 and 915 MHz. It splits each burst into pulses, slices them
+like [rtl_433](https://github.com/merbanan/rtl_433) and tries every decoder below. The channel is
+240 kHz wide, so sensors a little off centre still decode. A repeat of the same message within 2 s
+is logged once.
+
+| Family | Models |
+|---|---|
+| Acurite | Tower, 5n1, 606TX, 609TXC |
+| LaCrosse | TX141 / TX141TH, TX29IT, TX35DTH-IT |
+| Fine Offset, Ambient Weather | WH2, WH5, WHx080, WH24, WH65B, WH31E, WH31B, WH40, F007TH |
+| Oregon Scientific | THGR122N, THGR228N, THGR968, THN132N, WGR800, THGR810 |
+| Bresser | 5in1, 6in1 |
+| Others | Nexus, Prologue, Rubicson, Alecto V1, ThermoPro TP12, Schrader TPMS, Honeywell / 2GIG, Kerui, PT2262 remotes |
+
+**Unknown** logs a code no decoder knows when the same row repeats, with its coding and pulse
+widths. A burst whose checksum fails in every decoder counts under **Rejected**.
 
 ## 406 MHz beacons
 

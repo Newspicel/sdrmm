@@ -120,6 +120,8 @@ export function ModeChips({
       return <PagerChips params={params} {...mode} />;
     case "eot":
       return <EotChips params={params} {...mode} />;
+    case "ism":
+      return <IsmChips params={params} {...mode} />;
     case "sarsat":
       return <SarsatChips params={params} {...mode} />;
     case "adsb":
@@ -433,6 +435,17 @@ function EotChips({ params, onParams }: Mode<"eot">) {
       onCommit={(bandwidth_hz) =>
         onParams({ type: "eot", settings: { ...settings, bandwidth_hz } })
       }
+    />
+  );
+}
+
+function IsmChips({ params, onParams }: Mode<"ism">) {
+  return (
+    <ToggleChip
+      label="Unknown"
+      title="Also log repeated codes no decoder knows"
+      on={params.settings.unknown ?? true}
+      onChange={(unknown) => onParams({ type: "ism", settings: { ...params.settings, unknown } })}
     />
   );
 }

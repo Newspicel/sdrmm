@@ -5,9 +5,9 @@ mod array;
 use sdrmm_wire::{
     AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink, BleParams,
     ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
-    EotParams, ErmesParams, FlexParams, GnssParams, IsmSurveyParams, LrptParams, M17Params,
-    MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge, PatchGraph,
-    PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
+    EotParams, ErmesParams, FlexParams, GnssParams, IsmParams, IsmSurveyParams, LrptParams,
+    M17Params, MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge,
+    PatchGraph, PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
     RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SarsatParams, SidParams, Squelch,
     SsbParams, SstvParams, TemplateInfo, TetraParams, WefaxParams, WfmParams, WifiOccupancyParams,
     WsjtParams, WsprParams, YsfParams,
@@ -397,6 +397,20 @@ static TEMPLATES: &[Entry] = &[
                     link: BleLink::Band,
                 })
             },
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "ism-433",
+        name: "433 MHz sensors",
+        description: "Weather stations, thermometers, remotes and door sensors.",
+        explainer: "Decodes OOK and FSK sensors the way rtl_433 does. Tick unknown to also \
+                    log repeated codes no decoder knows.",
+        center_hz: 433_920_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[Channel::at(
+            433_920_000.0,
+            || ChannelParams::Ism(IsmParams::default()),
             LOG_READ,
         )],
     },

@@ -23,6 +23,7 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   flex: "FLEX",
   ermes: "ERMES",
   eot: "End-of-Train",
+  ism: "ISM sensor",
   sarsat: "406 MHz beacon",
   rds: "RDS",
   rtty: "RTTY",
