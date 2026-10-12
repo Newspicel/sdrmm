@@ -22,9 +22,9 @@ import {
   networkExportMutationOptions,
 } from "../../components/networkExport";
 import type { NetworkExportStatus, PatchNode, PatchNodeOf } from "../../lib/types";
-import { basebandSourceOf, iqSourceOf } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { basebandSourceOf, iqSourceOf } from "../lanes";
 import { deviceSetOf } from "../workspaceDevice";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 
@@ -50,14 +50,8 @@ export function NetworkExportFace({ node }: { node: PatchNode }) {
 function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }) {
   const workspace = useWorkspaceContext();
   const set = deviceSetOf(workspace, node.id);
-  const radio = iqSourceOf(workspace.graph, node.id, workspace.devices);
-  const channel = basebandSourceOf(
-    workspace.graph,
-    node.id,
-    workspace.devices,
-    workspace.channels,
-    workspace.owners,
-  );
+  const radio = iqSourceOf(workspace.resolved, node.id);
+  const channel = basebandSourceOf(workspace.resolved, workspace.deviceSets, node.id);
   const owner =
     channel === null
       ? set

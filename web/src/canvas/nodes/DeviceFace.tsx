@@ -20,7 +20,6 @@ import { createDeviceSet, devicesQuery, STATE_KEY, stateQuery } from "../../lib/
 import { toastError } from "../../lib/toasts";
 import type { DeviceInfo, DeviceRef, DeviceSet, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useRadioTune } from "../../lib/useRadioTune";
-import { claimedDevices, deviceRefOf, refMatches } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { patchNode, rxStreamCount, streamPort } from "../graph";
 import { releaseRadio } from "../remove";
@@ -30,7 +29,9 @@ import {
   allLocked,
   autoTuning,
   bondSaid,
+  claimedDevices,
   clippingSaid,
+  deviceRefOf,
   faultSaid,
   type Hearing,
   hearing,
@@ -39,6 +40,7 @@ import {
   lockStream,
   lossSaid,
   refLabel,
+  refMatches,
   refusalSaid,
   type TunerDial,
   tunerDials,
@@ -116,7 +118,7 @@ function HeldBadge({ hold }: { hold: LaneHold }) {
   return (
     <Button
       type="button"
-      className={`${BTN_SM} text-port-array`}
+      className={`${BTN_SM} text-hue-indigo`}
       title={`Tuned by ${hold.label}`}
       onClick={() => workspace.select(hold.array)}
     >
@@ -207,7 +209,7 @@ function LaneDial({
       className="flex h-7 items-center gap-2"
       title={hold === null ? undefined : `Tuned by ${hold.label}`}
     >
-      <span className="w-14 shrink-0 truncate font-mono text-2xs text-port-iq">{dial.port}</span>
+      <span className="w-14 shrink-0 truncate font-mono text-2xs text-hue-blue">{dial.port}</span>
       <div className="@container w-52 min-w-0">
         <FrequencyDial
           id={dialId(node, dial.stream)}
@@ -452,7 +454,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
     );
   }
 
-  const holds = laneHolds(workspace.graph, node.id);
+  const holds = laneHolds(workspace.graph, workspace.resolved, node.id);
   const heldBy = new Map([...holds].map(([stream, hold]) => [stream, hold.label]));
   const merged = lanesMerged(set);
   const dials = tunerDials(set);
@@ -509,7 +511,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
       </FaceBody>
       <FaceFooter>
         <DeviceHealth set={set} />
-        {offersMakeArray(workspace.graph, node.id, set) && (
+        {offersMakeArray(workspace.resolved, node.id, set) && (
           <MakeArrayButton node={node.id} set={set} />
         )}
         <Button

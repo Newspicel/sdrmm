@@ -21,7 +21,7 @@ fn new_call(encrypted: bool) -> NewCall {
     }
 }
 
-fn binding(gate: Gate) -> CallBinding {
+fn binding(gate: CallGate) -> CallBinding {
     CallBinding {
         node: "radio".to_owned(),
         device_set: 1,
@@ -34,14 +34,14 @@ fn binding(gate: Gate) -> CallBinding {
 fn a_plain_channel_binds_for_calls_with_no_trunk_system_present() {
     let engine = Engine::with_registry(DeviceRegistry::new(), None);
     let policy = CallPolicy {
-        channels: vec![binding(Gate::Squelch)],
+        channels: vec![binding(CallGate::Squelch)],
         ..CallPolicy::default()
     };
 
     let bindings = resolve_bindings(&engine, &policy);
 
     let bound = bindings.get(&(1, 2)).expect("the channel is bound");
-    assert_eq!(bound, &vec![binding(Gate::Squelch)]);
+    assert_eq!(bound, &vec![binding(CallGate::Squelch)]);
 }
 
 #[tokio::test(start_paused = true)]
@@ -54,7 +54,7 @@ async fn a_binding_that_arrives_without_a_state_event_still_records() {
 
     policy.send_if_modified(|current| {
         *current = Arc::new(CallPolicy {
-            channels: vec![binding(Gate::Frames)],
+            channels: vec![binding(CallGate::Frames)],
             ..CallPolicy::default()
         });
         false
@@ -66,7 +66,10 @@ async fn a_binding_that_arrives_without_a_state_event_still_records() {
         DvFrameKind::Terminator,
     ] {
         engine.publish_decoded(DecodedRecord {
-            origin: None,
+            origin: Some(sdrmm_wire::EventOrigin {
+                node: "radio".to_owned(),
+                transmission: 0,
+            }),
             sinks: Vec::new(),
             callsign: None,
             device_set: 1,
@@ -78,6 +81,7 @@ async fn a_binding_that_arrives_without_a_state_event_still_records() {
                 destination: Some(91),
                 ..DvFrame::new(DvMode::Dmr, kind)
             }),
+            view: None,
         });
     }
 

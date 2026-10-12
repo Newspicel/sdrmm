@@ -26,10 +26,12 @@ use tokio::sync::{broadcast, watch};
 mod outbox;
 mod phone;
 mod presence;
+mod sinks;
 mod surfaces;
 use outbox::Outbox;
 use phone::{PhoneLink, RateBudget, revoked};
 use presence::PeerLink;
+use sinks::Sinks;
 use surfaces::Surfaces;
 
 use crate::{
@@ -63,34 +65,6 @@ pub(crate) async fn handler(
         .on_upgrade(move |socket| handle_socket(socket, state, identity, fallback))
 }
 
-pub(crate) fn start_decoded_encoder(state: &AppState) {
-    let mut decoded_rx = state.decoded.subscribe();
-    let out = state.decoded_text.clone();
-    let tracks = state.tracks.clone();
-    let Ok(handle) = tokio::runtime::Handle::try_current() else {
-        tracing::warn!("no runtime in context: decoder frames will not reach clients");
-        return;
-    };
-    let _guard = handle.enter();
-    tokio::spawn(async move {
-        loop {
-            match decoded_rx.recv().await {
-                Ok(crate::decoded::Decoded::Record(routed)) => {
-                    tracks.observe(&routed.record);
-                    let _ = out.send(encode_event(&ServerEvent::Decoded(Box::new(routed.record))));
-                }
-                Ok(crate::decoded::Decoded::Lost(count)) => {
-                    let _ = out.send(encode_event(&ServerEvent::DecodedLost { count }));
-                }
-                Err(broadcast::error::RecvError::Lagged(count)) => {
-                    let _ = out.send(encode_event(&ServerEvent::DecodedLost { count }));
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            }
-        }
-    });
-}
-
 struct Session {
     engine: Arc<Engine>,
     state: AppState,
@@ -101,6 +75,7 @@ struct Session {
     iq: HashMap<(u32, u32), (u16, tokio::task::JoinHandle<()>)>,
     symbols: HashMap<(u32, u32), (u16, tokio::task::JoinHandle<()>)>,
     surfaces: Surfaces,
+    sinks: Sinks,
     next_spectrum_id: u16,
     next_media_id: u16,
     diagnostics: Option<tokio::task::JoinHandle<()>>,
@@ -128,6 +103,7 @@ impl Session {
             iq: HashMap::new(),
             symbols: HashMap::new(),
             surfaces: Surfaces::default(),
+            sinks: Sinks::default(),
             next_spectrum_id: SPECTRUM_ID_BASE,
             next_media_id: MEDIA_ID_BASE,
             diagnostics: None,
@@ -240,6 +216,8 @@ impl Session {
                 self.subscribe_surface(node, fit).await;
             }
             ClientCommand::UnsubscribeSurface { node } => self.unsubscribe_surface(&node).await,
+            ClientCommand::SubscribeSink { node } => self.subscribe_sink(node).await,
+            ClientCommand::UnsubscribeSink { node } => self.unsubscribe_sink(&node),
             ClientCommand::PublishPose { fix, error } => self.publish_pose(fix, error).await,
             ClientCommand::Present { author, name } => self.present(&author, &name).await,
             ClientCommand::Point(pointer) => self.point(pointer).await,
@@ -297,6 +275,7 @@ impl Session {
             task.abort();
         }
         self.surfaces.abort();
+        self.sinks.abort();
     }
 
     async fn subscribe_spectrum(&mut self, device_set: u32, fps: u16, bins: u16, stream: u32) {
@@ -374,11 +353,11 @@ impl Session {
     async fn subscribe_audio(&mut self, route: AudioRoute) {
         let subscribe = {
             let engine = self.engine.clone();
-            let store = self.state.store.clone();
+            let resolved = self.state.resolved.clone();
             let route = route.clone();
             tokio::task::spawn_blocking(move || {
                 if !route.fx.is_empty() {
-                    crate::audio_fx::sync(&engine, &store);
+                    crate::audio_fx::sync(&engine, &resolved);
                 }
                 engine.subscribe_route_audio(&route)
             })
@@ -612,11 +591,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
 
     let event_rx = engine.subscribe_events();
     let position_rx = state.gps.subscribe();
-    let decoded_rx = (!for_phone).then(|| state.decoded_text.subscribe());
     greet(&state, &out_tx, &identity).await;
 
     let events = spawn_events(event_rx, out_tx.clone(), for_phone);
-    let decoded = decoded_rx.map(|rx| spawn_decoded(rx, out_tx.clone()));
     let positions = spawn_positions(position_rx, out_tx.clone());
 
     let peer = state.presence.connect();
@@ -658,9 +635,6 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
     }
     session.abort_streams();
     events.abort();
-    if let Some(decoded) = decoded {
-        decoded.abort();
-    }
     positions.abort();
     drop(out_tx);
     if !writer_done
@@ -700,14 +674,6 @@ async fn greet(state: &AppState, out: &Outbox, identity: &Identity) {
     }
     for rotator in state.rotators.snapshot() {
         let _ = out.send(text_event(&rotator)).await;
-    }
-    let backlog = state.tracks.backlog();
-    if !backlog.is_empty() {
-        let _ = out
-            .send(text_event(&ServerEvent::DecodedBacklog {
-                records: backlog,
-            }))
-            .await;
     }
 }
 
@@ -763,30 +729,6 @@ fn spawn_events(
                         scope: StateScope::All,
                     };
                     if out_tx.send(text_event(&resync)).await.is_err() {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            }
-        }
-    })
-}
-
-fn spawn_decoded(
-    mut decoded_rx: broadcast::Receiver<Utf8Bytes>,
-    out_tx: Outbox,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            match decoded_rx.recv().await {
-                Ok(text) => {
-                    if out_tx.send_decoded(Message::Text(text)).await.is_err() {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Lagged(missed)) => {
-                    let lost = ServerEvent::DecodedLost { count: missed };
-                    if out_tx.send(text_event(&lost)).await.is_err() {
                         break;
                     }
                 }
@@ -1159,7 +1101,7 @@ fn text_event(ev: &ServerEvent) -> Message {
     Message::Text(encode_event(ev))
 }
 
-fn encode_event(ev: &ServerEvent) -> Utf8Bytes {
+pub(crate) fn encode_event(ev: &ServerEvent) -> Utf8Bytes {
     match serde_json::to_string(ev) {
         Ok(json) => json.into(),
         Err(_) => r#"{"type":"Error","data":{"message":"event serialization failed"}}"#.into(),

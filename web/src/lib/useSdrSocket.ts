@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { switchNotice, useSwitchStore } from "../canvas/switches";
+import { useActivityStore } from "./activity";
 import {
   AUDIO_RECORDINGS_KEY,
   BOOKMARKS_KEY,
@@ -18,22 +19,21 @@ import {
 } from "./api";
 import { useArrayStore } from "./arrays";
 import { audioEngine } from "./audio/useChannelAudio";
-import { useBearingStore } from "./bearings";
 import { useBroadcastStore } from "./broadcast";
-import { useDecodedStore } from "./decoded";
 import { recordEvent } from "./diagnostics";
 import { useFusionStore } from "./fusion";
 import { useHuntStore } from "./hunt";
 import { iqHub } from "./iq";
 import { useLevelStore } from "./levels";
-import { AGE_OUT_INTERVAL_MS, TARGET_MAX_AGE_MS } from "./map/layers";
 import { usePipelineHealth } from "./pipeline";
 import { usePositionStore } from "./position";
 import { authorKey, savedName, usePresenceStore } from "./presence";
 import { useProcessorStore } from "./processors";
+import { observeResolved } from "./resolved";
 import { useRotatorStore } from "./rotator";
 import { useSatelliteStore } from "./satellite";
 import { useScannerStore } from "./scanner";
+import { sinkHub } from "./sinks";
 import { spectrumHub } from "./spectrum";
 import { surfaceHub } from "./surface";
 import { useSurveyStore } from "./survey";
@@ -44,8 +44,6 @@ import type {
   CapturedImagesResponse,
   ServerEvent,
   StateScope,
-  VoiceCall,
-  VoiceCallsResponse,
   WorkspacesResponse,
 } from "./types";
 import { retryNodeState } from "./useNodeStateSync";
@@ -63,13 +61,12 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
         case "StateChanged":
           invalidateScope(queryClient, event.data.scope);
           break;
-        case "Decoded":
-          if (event.data.event.kind === "call") {
-            appendCall(queryClient, event.data.event.data);
-          }
-          break;
         case "ImageCaptured":
           appendImage(queryClient, event.data);
+          break;
+        case "PatchResolved":
+        case "NodeProblems":
+          observeResolved(queryClient, event);
           break;
         case "WorkspaceSwitched": {
           const switched = useSwitchStore.getState().observe(event);
@@ -120,7 +117,6 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
       up = now;
     });
     s.on("event", usePipelineHealth.getState().observe);
-    s.on("event", useDecodedStore.getState().observe);
     s.on("event", useScannerStore.getState().observe);
     s.on("event", useHuntStore.getState().observe);
     s.on("event", useBroadcastStore.getState().observe);
@@ -130,19 +126,16 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", useLevelStore.getState().observe);
     s.on("event", useProcessorStore.getState().observe);
     s.on("event", useArrayStore.getState().observe);
-    s.on("event", useBearingStore.getState().observe);
     s.on("event", useFusionStore.getState().observe);
     s.on("event", useSurveyStore.getState().observe);
     s.on("event", usePresenceStore.getState().observe);
-    const ageOut = setInterval(
-      () => useDecodedStore.getState().ageOut(TARGET_MAX_AGE_MS),
-      AGE_OUT_INTERVAL_MS,
-    );
+    s.on("event", useActivityStore.getState().observe);
     spectrumHub.attach(s);
     iqHub.attach(s);
     symbolHub.attach(s);
     videoHub.attach(s);
     surfaceHub.attach(s);
+    sinkHub.attach(s);
     audioEngine.attach(s);
     const followVisibility = () => {
       const visible = document.visibilityState === "visible";
@@ -156,13 +149,13 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     setSocket(s);
     s.connect();
     return () => {
-      clearInterval(ageOut);
       document.removeEventListener("visibilitychange", followVisibility);
       spectrumHub.detach();
       iqHub.detach();
       symbolHub.detach();
       videoHub.detach();
       surfaceHub.detach();
+      sinkHub.detach();
       audioEngine.detach();
       s.close();
     };
@@ -178,14 +171,6 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
 
   return { socket, retrySocket };
 }
-const MAX_CACHED_CALLS = 10_000;
-
-function appendCall(queryClient: QueryClient, call: VoiceCall) {
-  queryClient.setQueryData(CALLS_KEY, (previous: VoiceCallsResponse | undefined) => ({
-    calls: [call, ...(previous?.calls ?? [])].slice(0, MAX_CACHED_CALLS),
-  }));
-}
-
 const MAX_CACHED_IMAGES = 512;
 
 function appendImage(queryClient: QueryClient, image: CapturedImage) {

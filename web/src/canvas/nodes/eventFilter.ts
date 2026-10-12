@@ -1,10 +1,15 @@
+import { kindEntry, kindHas } from "../../lib/eventKinds";
+import { feedSources } from "../../lib/resolved";
 import type {
+  Capability,
   ChannelDescriptor,
-  EventFacet,
   EventFilterNode,
-  EventKindFacets,
+  EventKindEntry,
   FilterMode,
+  PatchGraph,
+  ResolvedPatch,
 } from "../../lib/types";
+import { nodeOf } from "../graph";
 
 export const MAX_FILTER_IDS = 256;
 export const MAX_FILTER_DURATION_MS = 600_000;
@@ -46,27 +51,22 @@ export function formatWords(words: readonly string[] | undefined): string {
   return (words ?? []).join(", ");
 }
 
-export function facetsOf(kind: string, facets: readonly EventKindFacets[]): readonly EventFacet[] {
-  return facets.find((entry) => entry.kind === kind)?.facets ?? [];
-}
-
 function everyKindHas(
   kinds: readonly string[],
-  facet: EventFacet,
-  facets: readonly EventKindFacets[],
+  cap: Capability,
+  entries: readonly EventKindEntry[],
 ): boolean {
-  return kinds.length > 0 && kinds.every((kind) => facetsOf(kind, facets).includes(facet));
+  return kinds.length > 0 && kinds.every((kind) => kindHas(kind, cap, entries));
 }
 
-export function stationLabel(kinds: readonly string[], facets: readonly EventKindFacets[]): string {
-  if (kinds.length > 0 && kinds.every((kind) => kind === "adsb")) {
-    return "Aircraft";
-  }
-  if (kinds.length > 0 && kinds.every((kind) => kind === "ais")) {
-    return "Vessels";
-  }
-  if (everyKindHas(kinds, "voice", facets)) {
+export function stationLabel(kinds: readonly string[], entries: readonly EventKindEntry[]): string {
+  if (everyKindHas(kinds, "voice", entries)) {
     return "Radios seen";
+  }
+  const nouns = new Set(kinds.map((kind) => kindEntry(kind, entries)?.noun));
+  const [noun] = nouns;
+  if (everyKindHas(kinds, "station", entries) && nouns.size === 1 && noun !== undefined) {
+    return noun;
   }
   return "Stations";
 }
@@ -91,6 +91,23 @@ export interface WiredSource {
   monitor?: boolean;
 }
 
+export function wiredSourcesOf(
+  graph: PatchGraph,
+  resolved: ResolvedPatch | null,
+  node: string,
+): WiredSource[] {
+  return feedSources(resolved, node, "events").map((id) => {
+    const found = nodeOf(graph, id);
+    if (found?.kind === "channel") {
+      return { channelType: found.data.channel_type, trunk: false };
+    }
+    if (found?.kind === "spectrum_monitor") {
+      return { trunk: false, monitor: true };
+    }
+    return { trunk: found?.kind === "dmr_trunk" };
+  });
+}
+
 export function kindsOffered(
   sources: readonly WiredSource[],
   descriptors: readonly ChannelDescriptor[],
@@ -100,20 +117,16 @@ export function kindsOffered(
     if (source.monitor) {
       kinds.add("transmission");
       for (const descriptor of descriptors) {
-        if (descriptor.decoder_kind != null) kinds.add(descriptor.decoder_kind);
+        for (const kind of descriptor.emits ?? []) kinds.add(kind);
       }
-      kinds.add("broadcast_data");
     }
     if (source.trunk) {
       kinds.add("dv");
       kinds.add("call");
     }
     const descriptor = descriptors.find((d) => d.type_id === source.channelType);
-    const kind = descriptor?.decoder_kind;
-    if (kind != null) {
-      kinds.add(kind);
-    }
-    if (descriptor?.has_audio === true || kind === "dv") {
+    for (const kind of descriptor?.emits ?? []) kinds.add(kind);
+    if (descriptor?.calls != null) {
       kinds.add("call");
     }
   }
@@ -175,12 +188,12 @@ export type PredicateKey =
 
 export function predicatesFor(
   kinds: readonly string[],
-  facets: readonly EventKindFacets[],
+  entries: readonly EventKindEntry[],
 ): PredicateKey[] {
-  const touches = (facet: EventFacet) =>
-    kinds.length === 0 || kinds.some((kind) => facetsOf(kind, facets).includes(facet));
+  const touches = (cap: Capability) =>
+    kinds.length === 0 || kinds.some((kind) => kindHas(kind, cap, entries));
   const shown: PredicateKey[] = ["stations", "contains"];
-  if (touches("position")) {
+  if (touches("geo")) {
     shown.push("has_position");
   }
   if (touches("voice")) {
@@ -201,12 +214,11 @@ export interface PredicateSection {
 
 export function sectionsFor(
   kinds: readonly string[],
-  facets: readonly EventKindFacets[],
+  entries: readonly EventKindEntry[],
 ): PredicateSection[] {
-  const shown = predicatesFor(kinds, facets);
+  const shown = predicatesFor(kinds, entries);
   const pick = (keys: PredicateKey[]) => keys.filter((key) => shown.includes(key));
-  const scope = (facet: EventFacet) =>
-    kinds.filter((kind) => facetsOf(kind, facets).includes(facet)).toSorted();
+  const scope = (cap: Capability) => kinds.filter((kind) => kindHas(kind, cap, entries)).toSorted();
   const sections: PredicateSection[] = [];
   const any = pick(["stations", "contains"]);
   if (any.length > 0) {
@@ -222,7 +234,7 @@ export function sectionsFor(
     sections.push({
       key: "position",
       title: "Position",
-      applies: scope("position"),
+      applies: scope("geo"),
       predicates: position,
     });
   }

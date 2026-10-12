@@ -7,6 +7,7 @@ import type {
   PatchNode,
   WorkspaceSnapshot,
 } from "../lib/types";
+import { wiredPatch } from "../test/resolved";
 import type { Workspace } from "./context";
 import { closeEngineObjects, dropNodes, releaseRadio } from "./remove";
 
@@ -37,12 +38,29 @@ const channelOnLane2: ChannelInfo = {
   settings: { frequency_hz: 100_000_000, params: { type: "nfm", settings: {} } as never },
 };
 
-const workspace = {
+function resolvedFor(stub: {
+  graph: PatchGraph;
+  devices: ReadonlyMap<string, DeviceSet>;
+  channels: ReadonlyMap<string, ChannelInfo>;
+  owners: ReadonlyMap<string, string>;
+}): Workspace {
+  const sets = [...stub.devices.values()].map((set) => ({
+    ...set,
+    channels: [...stub.channels.values()],
+  }));
+  return {
+    ...stub,
+    resolved: wiredPatch(stub.graph, stub),
+    deviceSets: sets,
+  } as unknown as Workspace;
+}
+
+const workspace = resolvedFor({
   graph,
   devices: new Map([["dev", { id: 4 } as DeviceSet]]),
   channels: new Map([["high", channelOnLane2]]),
   owners: new Map([["high", "dev"]]),
-} as unknown as Workspace;
+});
 
 const networkSettings = {
   transport: "udp" as const,
@@ -60,7 +78,7 @@ const networkGraph: PatchGraph = {
     { from: { node: "dev", port: "iq3" }, to: { node: "net-other", port: "iq" } },
   ],
 };
-const networkWorkspace = {
+const networkWorkspace = resolvedFor({
   ...workspace,
   graph: networkGraph,
   devices: new Map([
@@ -82,7 +100,7 @@ const networkWorkspace = {
       } as DeviceSet,
     ],
   ]),
-} as unknown as Workspace;
+});
 
 const basebandChannel: ChannelInfo = {
   ...channelOnLane2,
@@ -100,7 +118,7 @@ const basebandChannel: ChannelInfo = {
     overruns: 0,
   },
 };
-const basebandWorkspace = {
+const basebandWorkspace = resolvedFor({
   ...workspace,
   graph: {
     nodes: [
@@ -126,7 +144,7 @@ const basebandWorkspace = {
   ]),
   channels: new Map([["ch", basebandChannel]]),
   owners: new Map([["ch", "dev"]]),
-} as unknown as Workspace;
+});
 
 describe("closeEngineObjects", () => {
   beforeEach(() => {

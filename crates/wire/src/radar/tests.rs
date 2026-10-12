@@ -461,3 +461,98 @@ fn the_first_broken_rule_is_named() {
         assert_eq!(params.problem(), Some(text), "{params:?}");
     }
 }
+
+#[test]
+fn a_track_lists_range_motion_and_match() {
+    let track = RadarTrackEvent {
+        track_id: 7,
+        change: TrackChange::Update,
+        range_km: 12.345,
+        range_rate_mps: -150.0,
+        doppler_hz: 42.5,
+        snr_db: 17.25,
+        bearing_deg: None,
+        lat: Some(50.0),
+        lon: Some(8.5),
+        icao: Some("3C6444".to_owned()),
+    };
+    let view = track.present(EventKind::Radar);
+    assert_eq!(
+        view.labels(),
+        [
+            "Track",
+            "Change",
+            "Range",
+            "Range rate",
+            "Doppler",
+            "SNR",
+            "Position",
+            "ICAO"
+        ]
+    );
+    assert_eq!(view.field("Track"), text(Some("T7")).as_ref());
+    assert_eq!(
+        view.field("Range"),
+        number(Some(12.345_f32), Unit::Kilometres, 2).as_ref()
+    );
+    assert_eq!(
+        view.field("Position"),
+        position(Some(50.0), Some(8.5)).as_ref()
+    );
+}
+
+fn sites(ranges_km: Vec<f32>) -> RadarSites {
+    RadarSites {
+        geometry: Some(RadarGeometry {
+            receiver: RadarSite {
+                lat: 52.5,
+                lon: 13.4,
+                altitude_m: 40.0,
+            },
+            transmitter: RadarSite {
+                lat: 52.52,
+                lon: 13.41,
+                altitude_m: 360.0,
+            },
+            baseline_km: 2.3,
+            heading_deg: None,
+        }),
+        ranges_km,
+    }
+}
+
+#[test]
+fn radar_sites_pin_both_ends_and_ring_each_echo() {
+    let view = sites(vec![12.5, 0.0]).present(EventKind::RadarSites);
+
+    let pins: Vec<&str> = view
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Pin { label, .. } => Some(label.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pins, ["Receiver", "Illuminator"]);
+    let rings: Vec<(f32, f32)> = view
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Ellipse {
+                major_m, minor_m, ..
+            } => Some((*major_m, *minor_m)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rings.len(), 1, "a zero range draws no ring");
+    let (major, minor) = rings[0];
+    assert!(major > minor && major > 6_250.0, "{major} {minor}");
+    assert!(!view.gone);
+}
+
+#[test]
+fn radar_sites_without_geometry_leave_the_map() {
+    let view = RadarSites::default().present(EventKind::RadarSites);
+    assert!(view.gone);
+    assert_eq!(view.entity.as_deref(), Some(RADAR_SITES_ENTITY));
+}

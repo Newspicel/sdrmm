@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { IdentReport, IdentSignal } from "../lib/types";
-import { eventDetail } from "./decoderDetail";
-import { eventStation, eventSummary, kindLabel } from "./decoderLog";
 import {
   candidateScore,
   identMeasurements,
@@ -117,40 +115,5 @@ describe("candidateScore", () => {
   it("distinguishes a confirmed match from a resemblance", () => {
     expect(candidateScore({ score: 1, confirmed: true })).toBe("confirmed");
     expect(candidateScore({ score: 0.38, confirmed: false })).toBe("38%");
-  });
-});
-
-describe("the decoder log", () => {
-  it("labels the kind", () => {
-    expect(kindLabel("ident")).toBe("Signal ID");
-  });
-
-  it("summarises a report on one line, best candidate last", () => {
-    expect(eventSummary({ kind: "ident", data: report() })).toBe(
-      "4-FSK · 12.4 kHz · 4801 Bd · ±1938 Hz · DMR (confirmed)",
-    );
-    expect(eventSummary({ kind: "ident", data: quiet })).toBe("no signal");
-  });
-
-  it("counts the signals of a survey before describing the loudest", () => {
-    const survey: IdentReport = { snr_db: 30, signals: [signal(), signal({ modulation: "fm" })] };
-    expect(eventSummary({ kind: "ident", data: survey })).toMatch(/^2 signals · 4-FSK/);
-  });
-
-  it("names no station: which transmitter it is, is the open question", () => {
-    expect(eventStation({ kind: "ident", data: report() })).toBeNull();
-  });
-
-  it("expands to the measurements and the whole shortlist", () => {
-    const detail = eventDetail({ kind: "ident", data: report() });
-    expect(Object.fromEntries(detail.fields)).toMatchObject({
-      Signals: "1",
-      Frequency: "446.00634 MHz",
-      Modulation: "4-FSK",
-      Confidence: "86%",
-      "Frequency levels": "4",
-    });
-    expect(detail.body).toContain("DMR: confirmed");
-    expect(detail.body).toContain("P25 Phase 1: 38%");
   });
 });

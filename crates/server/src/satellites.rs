@@ -12,11 +12,16 @@ use std::{
 use sdrmm_engine::{Doppler, Engine};
 use sdrmm_orbit::{OrbitError, Satellite, Tle};
 use sdrmm_wire::{
-    LatLon, NodeBody, PassPoint, PatchGraph, SatelliteNode, SatellitePass, SatelliteStatus,
+    CONTROL_PORT, DecodedRecord, DecoderEvent, EventOrigin, LatLon, NO_CHANNEL, NodeBody, NodeKind,
+    POSITION_PORT, PassPoint, SatelliteFix, SatelliteNode, SatellitePass, SatelliteStatus,
     ServerEvent,
 };
 
-use crate::{AppState, gps::GpsHub, workspace};
+use crate::{
+    AppState,
+    gps::GpsHub,
+    resolved::{Resolved, ResolvedHub},
+};
 
 pub(crate) mod catalog;
 mod track;
@@ -26,7 +31,6 @@ pub(crate) use catalog::Catalog;
 const TICK: Duration = Duration::from_millis(250);
 const PUBLISH_EVERY: Duration = Duration::from_secs(1);
 const PASS_EVERY: Duration = Duration::from_secs(60);
-const BIND_EVERY: Duration = Duration::from_secs(2);
 const PASS_HORIZON_S: f64 = 2.0 * 86_400.0;
 const HORIZON_DEG: f64 = 0.0;
 
@@ -40,7 +44,6 @@ struct Wiring {
 
 #[derive(Clone, Default)]
 struct Plan {
-    graph: Arc<PatchGraph>,
     wirings: Vec<Wiring>,
 }
 
@@ -87,22 +90,10 @@ impl SatelliteHub {
     }
 
     pub(crate) fn reconcile(&self, state: &AppState) {
-        let graph = match state.store.active_workspace() {
-            Ok(active) => active
-                .map(|active| active.snapshot.graph)
-                .unwrap_or_default(),
-            Err(error) => {
-                tracing::warn!(%error, "could not reconcile satellites");
-                return;
-            }
-        };
-        let wirings = wirings(&graph);
+        let wirings = wirings(&state.resolved.current());
         let idle = wirings.is_empty();
         let tracked: HashSet<String> = wirings.iter().map(|wiring| wiring.node.clone()).collect();
-        *locked(&self.plan) = Plan {
-            graph: Arc::new(graph),
-            wirings,
-        };
+        *locked(&self.plan) = Plan { wirings };
         locked(&self.statuses).retain(|node, _| tracked.contains(node));
         if idle && locked(&self.worker).is_none() {
             return;
@@ -122,13 +113,12 @@ impl SatelliteHub {
         let tracker = Tracker {
             engine: Arc::downgrade(&state.engine),
             gps: state.gps.clone(),
+            resolved: state.resolved.clone(),
             plan: self.plan.clone(),
             statuses: self.statuses.clone(),
             stop: self.stop.clone(),
             satellites: HashMap::new(),
             steered: HashSet::new(),
-            bindings: HashMap::new(),
-            bound_at: None,
             published_at: None,
         };
         match std::thread::Builder::new()
@@ -156,26 +146,30 @@ impl Drop for SatelliteHub {
     }
 }
 
-fn wirings(graph: &PatchGraph) -> Vec<Wiring> {
-    graph
+fn wirings(resolved: &Resolved) -> Vec<Wiring> {
+    resolved
+        .graph
         .nodes
         .iter()
         .filter_map(|node| match &node.body {
             NodeBody::Satellite(settings) => Some(Wiring {
                 node: node.id.clone(),
                 settings: settings.clone(),
-                position: graph
-                    .sources_of(&node.id, "position")
-                    .next()
-                    .map(str::to_owned),
-                targets: graph
-                    .targets_of(&node.id, "control")
-                    .filter(|target| {
-                        graph
-                            .node(target)
-                            .is_some_and(|node| matches!(node.body, NodeBody::Channel(_)))
+                position: resolved
+                    .patch
+                    .first_feed(&node.id, POSITION_PORT)
+                    .map(|feed| feed.source.clone()),
+                targets: resolved
+                    .patch
+                    .reaches(&node.id, CONTROL_PORT)
+                    .iter()
+                    .filter(|reach| {
+                        resolved
+                            .patch
+                            .node(&reach.sink)
+                            .is_some_and(|sink| sink.kind == NodeKind::Channel)
                     })
-                    .map(str::to_owned)
+                    .map(|reach| reach.sink.clone())
                     .collect(),
             }),
             _ => None,
@@ -201,14 +195,31 @@ struct GroundTrack {
 struct Tracker {
     engine: Weak<Engine>,
     gps: Arc<GpsHub>,
+    resolved: Arc<ResolvedHub>,
     plan: Arc<Mutex<Plan>>,
     statuses: Arc<Mutex<HashMap<String, SatelliteStatus>>>,
     stop: Arc<AtomicBool>,
     satellites: HashMap<String, Orbit>,
     steered: HashSet<(u32, u32)>,
-    bindings: HashMap<String, (u32, u32)>,
-    bound_at: Option<Instant>,
     published_at: Option<Instant>,
+}
+
+fn fix_record(status: &SatelliteStatus) -> Option<DecodedRecord> {
+    let fix = SatelliteFix::of(status)?;
+    Some(DecodedRecord {
+        origin: Some(EventOrigin {
+            node: status.node.clone(),
+            transmission: 0,
+        }),
+        device_set: 0,
+        channel: NO_CHANNEL,
+        at: format!("{:.9}", jiff::Timestamp::now()),
+        freq_hz: status.uplink_hz.unwrap_or_default(),
+        event: DecoderEvent::Satellite(fix),
+        sinks: Vec::new(),
+        view: None,
+        callsign: None,
+    })
 }
 
 impl Tracker {
@@ -222,9 +233,6 @@ impl Tracker {
                 return;
             };
             let plan = locked(&self.plan).clone();
-            if rebind || self.bound_at.is_none_or(|at| at.elapsed() >= BIND_EVERY) {
-                self.bind(&engine, &plan.graph);
-            }
             self.tick(&engine, &plan.wirings, rebind);
             drop(engine);
             rebind = match wake.recv_timeout(TICK) {
@@ -233,19 +241,6 @@ impl Tracker {
                 Err(RecvTimeoutError::Disconnected) => return,
             };
         }
-    }
-
-    fn bind(&mut self, engine: &Engine, graph: &PatchGraph) {
-        self.bindings = workspace::bind(graph, &engine.snapshot())
-            .into_iter()
-            .flat_map(|binding| {
-                binding
-                    .channels
-                    .into_iter()
-                    .map(move |(node, channel)| (node, (binding.device_set, channel)))
-            })
-            .collect();
-        self.bound_at = Some(Instant::now());
     }
 
     fn tick(&mut self, engine: &Engine, wirings: &[Wiring], changed: bool) {
@@ -272,6 +267,9 @@ impl Tracker {
         if publish {
             self.published_at = Some(Instant::now());
             for status in statuses.into_values() {
+                if let Some(record) = fix_record(&status) {
+                    engine.publish_decoded(record);
+                }
                 engine.emit_event(ServerEvent::SatelliteUpdate {
                     status: Box::new(status),
                 });
@@ -360,10 +358,12 @@ impl Tracker {
             status.error = Some("set a downlink frequency".to_owned());
             return status;
         };
+        let resolved = self.resolved.current();
         for target in &wiring.targets {
-            let Some(&(ds, ch)) = self.bindings.get(target) else {
+            let Some(addr) = resolved.patch.channel(target) else {
                 continue;
             };
+            let (ds, ch) = (addr.device_set, addr.channel);
             let driven = engine
                 .tune_channel(ds, ch, downlink_hz)
                 .and_then(|_| engine.steer_channel(ds, ch, doppler));
@@ -429,7 +429,7 @@ pub(crate) fn unix_now() -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{ChannelNode, GpsNode, PatchEdge, PatchNode, PortRef, Position};
+    use sdrmm_wire::{ChannelNode, GpsNode, PatchEdge, PatchGraph, PatchNode, PortRef, Position};
 
     use super::*;
 
@@ -476,7 +476,12 @@ mod tests {
                 edge(("sat", "control"), ("voice", "control")),
             ],
         };
-        let found = wirings(&graph);
+        let found = wirings(&Resolved {
+            patch: sdrmm_wire::patch::resolve::compile(&graph, &Default::default())
+                .expect("compiles"),
+            graph: Arc::new(graph),
+            ..Resolved::default()
+        });
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].position.as_deref(), Some("gps"));
         assert_eq!(found[0].targets, vec!["voice".to_owned()]);

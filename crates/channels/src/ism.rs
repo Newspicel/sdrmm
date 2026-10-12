@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
     ISM_BANDWIDTH_HZ, ISM_SAMPLE_RATE_HZ, IsmIntegrity, IsmMessage, IsmParams,
 };
 
@@ -38,7 +38,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: ISM_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("ism".to_owned()),
+    emits: vec![EventKind::Ism],
     ..ChannelDescriptor::default()
 });
 

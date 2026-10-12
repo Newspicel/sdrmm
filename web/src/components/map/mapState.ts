@@ -1,31 +1,15 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { FusionGridFrame } from "../../lib/frame";
-import type { DfOverlay } from "../../lib/map/df";
-import { MAP_KINDS, type MapKind, type TargetDetail } from "../../lib/map/layers";
 import type { PropagationOverlay } from "../../lib/map/propagation";
-import type { Selection } from "../../lib/map/targets";
-import type { SurveyCell } from "../../lib/types";
-
-export type Counts = Record<MapKind, number>;
-
-export const ZERO_COUNTS: Counts = {
-  adsb: 0,
-  ais: 0,
-  aprs: 0,
-  radiosonde: 0,
-  lora: 0,
-  remote_id: 0,
-  sarsat: 0,
-};
+import type { Entity, PositionTrack, SurveyCell } from "../../lib/types";
+import type { HueColors } from "../../sinks/mapLayers";
 
 export interface MapInputs {
-  kinds: readonly MapKind[];
-  references: readonly (readonly [number, number])[];
+  entities: readonly Entity[] | null;
   positionNodes: readonly string[];
-  satellites: readonly string[];
+  positions: readonly PositionTrack[] | null;
   signalSamples: readonly SurveyCell[] | null;
   propagation: PropagationOverlay | null;
-  df: DfOverlay | null;
   heat: FusionGridFrame | null;
   heatEnabled: boolean;
   tracks: boolean;
@@ -43,20 +27,14 @@ export interface MapCore {
   edge: string;
   ground: string;
   accent: string;
+  hues: HueColors;
   framing: { targets: FrameFlag; position: FrameFlag; signal: FrameFlag };
-  selected: Selection | null;
+  selected: string | null;
 }
 
 export interface MapSinks {
-  setCounts: (counts: Counts) => void;
   setPositionCount: (count: number) => void;
-  setSatelliteCount: (count: number) => void;
-  setDetail: (update: (previous: TargetDetail | null) => TargetDetail | null) => void;
   setHeadings: (ok: boolean) => void;
-}
-
-export function sameCounts(a: Counts, b: Counts): boolean {
-  return MAP_KINDS.every((kind) => a[kind] === b[kind]);
 }
 
 export function readyCore(core: MapCore | null): MapCore | null {

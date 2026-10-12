@@ -114,6 +114,42 @@ async fn locating_a_region_validates_its_coordinate() {
 }
 
 #[tokio::test]
+async fn wiring_verdicts_say_which_inputs_take_a_dragged_wire() {
+    let app = test_router();
+    let request_body = serde_json::json!({
+        "graph": {
+            "nodes": [
+                { "id": "pager", "kind": "channel", "position": { "x": 0.0, "y": 0.0 },
+                  "data": { "channel_type": "pocsag" } },
+                { "id": "map", "kind": "map", "position": { "x": 0.0, "y": 0.0 } },
+                { "id": "log", "kind": "decoder_log", "position": { "x": 0.0, "y": 0.0 },
+                  "data": {} },
+            ],
+            "edges": [],
+        },
+        "from": { "node": "pager", "port": "events" },
+    });
+    let (status, body) = request(
+        app,
+        "POST",
+        "/api/patch/wiring",
+        Some(&request_body.to_string()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let verdicts: Vec<sdrmm_wire::patch::resolve::WireVerdict> =
+        serde_json::from_slice(&body).expect("json");
+    let refusal = |node: &str| {
+        verdicts
+            .iter()
+            .find(|verdict| verdict.to.node == node)
+            .map(|verdict| verdict.refusal.clone())
+    };
+    assert_eq!(refusal("map"), Some(Some("Map takes positions".to_owned())));
+    assert_eq!(refusal("log"), Some(None));
+}
+
+#[tokio::test]
 async fn the_patch_catalog_describes_the_node_palette() {
     let app = test_router();
     let (status, body) = request(app, "GET", "/api/patch/catalog", None).await;
@@ -123,9 +159,12 @@ async fn the_patch_catalog_describes_the_node_palette() {
     let device = catalog
         .nodes
         .iter()
-        .find(|n| n.kind == "device")
+        .find(|n| n.kind == sdrmm_wire::NodeKind::Device)
         .expect("a device in the palette");
     assert_eq!(device.category, sdrmm_wire::NodeCategory::Source);
+    assert_eq!(device.role, sdrmm_wire::Role::OpensRadio);
+    assert!(device.face.dial, "a radio face carries a dial");
+    assert_eq!(catalog.port_types.len(), sdrmm_wire::PortType::ALL.len());
     let port = |name: &str| {
         device
             .ports
@@ -133,8 +172,15 @@ async fn the_patch_catalog_describes_the_node_palette() {
             .find(|port| port.name == name)
             .unwrap_or_else(|| panic!("the device node has a {name} port"))
     };
-    assert!(port("iq").multi, "one radio feeds many nodes");
-    assert!(port("tx").note.is_some(), "the reserved port says why");
+    assert_eq!(
+        port("iq").multi,
+        sdrmm_wire::Multi::Many,
+        "one radio feeds many nodes"
+    );
+    assert!(
+        device.ports.iter().all(|port| port.name != "tx"),
+        "no radio offers a transmit input"
+    );
     assert!(
         device.ports.iter().all(|port| port.name != "control"),
         "a radio is driven through its decoders"
@@ -142,14 +188,18 @@ async fn the_patch_catalog_describes_the_node_palette() {
     let decoder = catalog
         .nodes
         .iter()
-        .find(|n| n.kind == "channel")
+        .find(|n| n.kind == sdrmm_wire::NodeKind::Channel)
         .expect("a decoder in the palette");
     let control = decoder
         .ports
         .iter()
         .find(|port| port.name == "control")
         .expect("the decoder node has a control port");
-    assert!(!control.multi, "one sweep owns a decoder");
+    assert_eq!(
+        control.multi,
+        sdrmm_wire::Multi::One,
+        "one sweep owns a decoder"
+    );
     assert!(control.note.is_some(), "the port says what drives it");
 }
 

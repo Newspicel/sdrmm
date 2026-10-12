@@ -6,10 +6,11 @@ use std::{
 
 use sdrmm_dsp::{decim::RealDecimator, fir::design_lowpass};
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload};
-use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, StateScope};
+use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, EventOrigin, StateScope};
 
 use super::{Calls, DECIMATION, MAX_CALL_SAMPLES, NewCall, RETENTION, wav};
-use crate::trunking::{CallBinding, Gate};
+use crate::trunking::CallBinding;
+use sdrmm_wire::CallGate;
 
 const ANTIALIAS_TAPS: usize = 96;
 const IDLE_TIMEOUT: Duration = Duration::from_millis(900);
@@ -215,10 +216,10 @@ impl Tracker {
     }
 
     pub(super) fn record(&mut self, record: &DecodedRecord) {
-        if record.origin.is_some() {
-            return;
-        }
         let DecoderEvent::Dv(frame) = &record.event else {
+            return;
+        };
+        let Some(origin) = &record.origin else {
             return;
         };
         let Some(bound) = self.bindings.get(&(record.device_set, record.channel)) else {
@@ -226,7 +227,7 @@ impl Tracker {
         };
         let keys: Vec<CallKey> = bound
             .iter()
-            .filter(|binding| binding.gate == Gate::Frames)
+            .filter(|binding| binding.gate == CallGate::Frames && binding.node == origin.node)
             .map(|binding| CallKey::of(binding, frame.slot))
             .collect();
         for key in keys {
@@ -275,10 +276,10 @@ impl Tracker {
         };
         let squelched: Vec<CallKey> = bound
             .iter()
-            .filter(|binding| binding.gate == Gate::Squelch)
+            .filter(|binding| binding.gate == CallGate::Squelch)
             .map(|binding| CallKey::of(binding, None))
             .collect();
-        let framed = bound.iter().any(|binding| binding.gate == Gate::Frames);
+        let framed = bound.iter().any(|binding| binding.gate == CallGate::Frames);
         for key in squelched {
             self.squelched_pcm(key, block);
         }
@@ -410,7 +411,10 @@ impl Tracker {
         let (new, audio) = call.into_new_call(key);
         let (call, evicted) = self.calls.push(new, audio, RETENTION);
         engine.publish_decoded(DecodedRecord {
-            origin: None,
+            origin: Some(EventOrigin {
+                node: call.node.clone(),
+                transmission: 0,
+            }),
             sinks: Vec::new(),
             callsign: None,
             device_set: key.device_set,
@@ -418,6 +422,7 @@ impl Tracker {
             at: call.ended_at.clone(),
             freq_hz: call.freq_hz,
             event: DecoderEvent::Call(call),
+            view: None,
         });
         if evicted {
             engine.emit_scope(StateScope::Calls);

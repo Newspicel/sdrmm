@@ -9,17 +9,17 @@ use rumqttc::{
 use sdrmm_engine::Engine;
 use sdrmm_recorder::{AUDIO_SUFFIX, audio_stem, save_unique};
 use sdrmm_wire::{
-    DecodedRecord, DecoderEvent, EventOutputTarget, NodeBody, ServerEvent, StateScope,
-    Transmission, VoiceCall, WebhookFormat,
+    DecodedRecord, DecoderEvent, EVENTS_PORT, EventOutputTarget, NodeBody, StateScope,
+    Transmission, VoiceCall, WebhookFormat, present::Presentation,
 };
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::{
     broadcast::{Receiver, error::RecvError},
-    mpsc,
+    mpsc, watch,
 };
 
-use crate::{NativeShell, Store, calls::Calls, decoded::Decoded};
+use crate::{NativeShell, calls::Calls, decoded::Decoded, resolved::Resolved};
 
 mod beast;
 mod csv;
@@ -112,16 +112,11 @@ impl OutputAudio {
 pub(crate) async fn run(
     decoded: Receiver<Decoded>,
     engine: std::sync::Weak<Engine>,
-    store: Arc<Store>,
+    mut patch: watch::Receiver<Arc<Resolved>>,
     calls: Arc<Calls>,
     shell: Option<Arc<dyn NativeShell>>,
 ) {
-    let Some(strong) = engine.upgrade() else {
-        return;
-    };
-    let mut events = strong.subscribe_events();
     let mut decoded = decoded;
-    drop(strong);
     let client = match Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
@@ -144,7 +139,7 @@ pub(crate) async fn run(
         delivery_rx,
         statuses.clone(),
     ));
-    let mut routing = load_routing(store.clone()).await;
+    let mut routing = routing_of(&patch.borrow_and_update());
     let mut tunnels = tunnel::Outputs::new(statuses.clone());
     let mut beasts = beast::Outputs::default();
     configure(&routing, &mut tunnels, &mut beasts, &statuses);
@@ -159,23 +154,12 @@ pub(crate) async fn run(
                     statuses.publish(&engine);
                 }
             },
-            event = events.recv() => match event {
-                Ok(ServerEvent::StateChanged {
-                    scope: StateScope::All
-                        | StateScope::Devices
-                        | StateScope::DeviceSet(_)
-                        | StateScope::Workspaces,
-                }) => {
-                    routing = load_routing(store.clone()).await;
-                    configure(&routing, &mut tunnels, &mut beasts, &statuses);
-                },
-                Ok(_) => {}
-                Err(RecvError::Lagged(count)) => {
-                    tracing::error!(count, "event output missed server events");
-                    routing = load_routing(store.clone()).await;
+            changed = patch.changed() => match changed {
+                Ok(()) => {
+                    routing = routing_of(&patch.borrow_and_update());
                     configure(&routing, &mut tunnels, &mut beasts, &statuses);
                 }
-                Err(RecvError::Closed) => break,
+                Err(_) => break,
             },
             record = decoded.recv(), if decoded_open => match record {
                 Ok(Decoded::Record(routed)) => {
@@ -315,26 +299,8 @@ fn transmission_stem(record: &DecodedRecord, transmission: &Transmission) -> Str
     audio_stem(started(at), mode, record.freq_hz)
 }
 
-async fn load_routing(store: Arc<Store>) -> Routing {
-    match tokio::task::spawn_blocking(move || resolve(&store)).await {
-        Ok(Ok(routing)) => routing,
-        Ok(Err(error)) => {
-            tracing::error!(%error, "could not resolve event outputs");
-            Routing::default()
-        }
-        Err(error) => {
-            tracing::error!(%error, "event output resolution panicked");
-            Routing::default()
-        }
-    }
-}
-
-fn resolve(store: &Store) -> Result<Routing, crate::StoreError> {
-    let Some(workspace) = store.active_workspace()? else {
-        return Ok(Routing::default());
-    };
-    let bindings = workspace
-        .snapshot
+fn routing_of(resolved: &Resolved) -> Routing {
+    let bindings = resolved
         .graph
         .nodes
         .iter()
@@ -342,12 +308,7 @@ fn resolve(store: &Store) -> Result<Routing, crate::StoreError> {
             let NodeBody::EventOutput(settings) = &node.body else {
                 return None;
             };
-            let connected = workspace
-                .snapshot
-                .graph
-                .edges
-                .iter()
-                .any(|edge| edge.to.node == node.id && edge.to.port == "events");
+            let connected = !resolved.patch.feeds(&node.id, EVENTS_PORT).is_empty();
             (settings.target.configured()
                 && (!matches!(settings.target, EventOutputTarget::Beast { .. }) || connected))
                 .then(|| Binding {
@@ -356,7 +317,7 @@ fn resolve(store: &Store) -> Result<Routing, crate::StoreError> {
                 })
         })
         .collect();
-    Ok(Routing { bindings })
+    Routing { bindings }
 }
 
 struct Senders {
@@ -926,16 +887,12 @@ fn escape_html(text: &str) -> String {
     escaped
 }
 
-fn format_decoded(record: &DecodedRecord) -> String {
-    let mut lines = vec![format!(
-        "{} decode",
-        record.event.kind().replace('_', " ").to_uppercase()
-    )];
-    let summary = record.event.summary();
-    if !summary.trim().is_empty() {
-        lines.push(summary);
+fn format_decoded(record: &DecodedRecord, view: &Presentation) -> String {
+    let mut lines = vec![format!("{} decode", record.event.kind().name())];
+    if !view.summary.trim().is_empty() {
+        lines.push(view.summary.clone());
     }
-    if let Some(station) = record.event.station() {
+    if let Some(station) = &view.entity {
         lines.push(format!("Station: {station}"));
     }
     lines.push(format!(
@@ -959,15 +916,19 @@ fn event_payload(output_node: &str, record: &DecodedRecord, text: &str) -> serde
     })
 }
 
-fn event_facts(record: &DecodedRecord, payload: &serde_json::Value) -> EventFacts {
+fn event_facts(
+    record: &DecodedRecord,
+    view: Presentation,
+    payload: &serde_json::Value,
+) -> EventFacts {
     EventFacts {
         at: record.at.clone(),
-        kind: record.event.kind(),
+        kind: record.event.kind().as_str(),
         device_set: record.device_set,
         channel: record.channel,
         freq_hz: record.freq_hz,
-        station: record.event.station(),
-        summary: record.event.summary(),
+        station: view.entity,
+        summary: view.summary,
         record: payload
             .get("record")
             .cloned()
@@ -984,7 +945,7 @@ fn call_message(
     let body = bounded_message(format_call(call));
     let payload = event_payload(output_node, record, &body);
     OutputMessage {
-        facts: event_facts(record, &payload),
+        facts: event_facts(record, record.event.present(), &payload),
         payload,
         html: Some(bounded_message(format_call_html(call))),
         body,
@@ -999,10 +960,11 @@ fn call_message(
 }
 
 fn decoded_message(output_node: &str, record: &DecodedRecord, sequence: u64) -> OutputMessage {
-    let body = bounded_message(format_decoded(record));
+    let view = record.event.present();
+    let body = bounded_message(format_decoded(record, &view));
     let payload = event_payload(output_node, record, &body);
     OutputMessage {
-        facts: event_facts(record, &payload),
+        facts: event_facts(record, view, &payload),
         payload,
         html: None,
         body,

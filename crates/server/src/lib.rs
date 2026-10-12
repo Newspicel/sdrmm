@@ -19,8 +19,8 @@ use tower_http::{
 pub const HOTPLUG_INTERVAL: Duration = Duration::from_secs(5);
 pub const LEVEL_INTERVAL: Duration = Duration::from_millis(100);
 
-const DECODED_TEXT_CAP: usize = 1024;
-
+mod activity;
+mod apply;
 mod array;
 mod assets;
 mod audio_fx;
@@ -53,21 +53,22 @@ mod packed;
 pub mod phones;
 mod placement;
 mod presence;
+mod problems;
 mod radar;
 mod rebind;
-mod reconcile;
 mod recorders;
 mod reference;
 mod remote;
+mod resolved;
 mod rest;
 mod rotators;
 mod satellites;
+mod sinks;
 mod store;
 mod surfaces;
 mod survey;
 mod templates;
 pub mod tls;
-mod tracks;
 mod trunking;
 mod workspace;
 mod ws;
@@ -97,9 +98,9 @@ pub(crate) struct AppState {
     pub recordings_gate: Arc<std::sync::Mutex<()>>,
     pub apply_gate: Arc<std::sync::Mutex<()>>,
     decoder_log_dropped: Arc<AtomicU64>,
-    pub decoded_text: tokio::sync::broadcast::Sender<axum::extract::ws::Utf8Bytes>,
     pub(crate) decoded: decoded::Feed,
-    pub(crate) tracks: Arc<tracks::Tracks>,
+    pub(crate) activity: Arc<activity::Activity>,
+    pub(crate) sinks: Arc<sinks::SinkHub>,
     pub(crate) calls: Arc<calls::Calls>,
     pub(crate) images: Arc<images::Images>,
     pub(crate) ionosonde: Arc<ionosonde::Ionosonde>,
@@ -108,6 +109,8 @@ pub(crate) struct AppState {
     pub(crate) unrestored: Arc<std::sync::Mutex<Vec<String>>>,
     pub(crate) restored: Arc<std::sync::Mutex<HashSet<(i64, String, u32)>>>,
     pub(crate) gps: Arc<gps::GpsHub>,
+    pub(crate) resolved: Arc<resolved::ResolvedHub>,
+    pub(crate) problems: Arc<problems::ProblemBoard>,
     pub(crate) presence: Arc<presence::Presence>,
     pub(crate) satellites: Arc<satellites::SatelliteHub>,
     pub(crate) rotators: Arc<rotators::RotatorHub>,
@@ -143,9 +146,9 @@ impl AppState {
             recordings_gate: Arc::new(std::sync::Mutex::new(())),
             apply_gate: Arc::new(std::sync::Mutex::new(())),
             decoder_log_dropped: Arc::new(AtomicU64::new(0)),
-            decoded_text: tokio::sync::broadcast::channel(DECODED_TEXT_CAP).0,
             decoded: decoded::feed(),
-            tracks: Arc::new(tracks::Tracks::default()),
+            activity: Arc::default(),
+            sinks: Arc::default(),
             calls: Arc::new(calls::Calls::default()),
             images: Arc::new(images::Images::default()),
             ionosonde: Arc::new(ionosonde::Ionosonde::default()),
@@ -154,6 +157,8 @@ impl AppState {
             unrestored: Arc::new(std::sync::Mutex::new(Vec::new())),
             restored: Arc::new(std::sync::Mutex::new(HashSet::new())),
             gps: Arc::new(gps::GpsHub::default()),
+            resolved: Arc::default(),
+            problems: Arc::default(),
             presence: Arc::default(),
             satellites: Arc::new(satellites::SatelliteHub::default()),
             rotators: Arc::default(),
@@ -303,17 +308,20 @@ fn app(state: &AppState, role: auth::ListenerRole, tls: bool) -> Router {
 
 fn start_runtime(state: &AppState, health: health::Reporter) -> Background {
     let background = start_background(state, health);
-    ws::start_decoded_encoder(state);
     workspace::spawn_autosave(state);
     placement::spawn_settling(state);
-    state.gps.reconcile(state);
-    state.satellites.reconcile(state);
-    state.rotators.reconcile(state);
+    resolved::follow(state, "positions", |state| state.gps.reconcile(state));
+    resolved::follow(state, "satellites", |state| {
+        state.satellites.reconcile(state)
+    });
+    resolved::follow(state, "rotators", |state| state.rotators.reconcile(state));
+    audio_fx::follow(state);
     array::start_pump(state);
     radar::start(state);
     df_fusion::start(state);
     fusion_routes::start(state);
-    survey::start(state);
+    sinks::start(state);
+    survey::follow(state);
     missions::watch::spawn(state);
     state.gps.spawn_watchdog(state);
     phones::spawn_flusher(state);
@@ -354,13 +362,26 @@ impl Drop for Background {
 
 fn start_background(state: &AppState, health: health::Reporter) -> Background {
     let (recording_tx, recording_rx) = tokio::sync::watch::channel(trunking::Recording::default());
+    let resolved = {
+        let state = state.clone();
+        spawn_task("sdrmm-resolved", move || resolved::run(state))
+    };
     let decoded = {
+        let router = decoded::Router {
+            engine: Arc::downgrade(&state.engine),
+            resolved: state.resolved.subscribe(),
+            feed: state.decoded.clone(),
+            reference: state.reference.clone(),
+            activity: state.activity.clone(),
+        };
+        spawn_task("sdrmm-decoded", move || decoded::run(router))
+    };
+    let activity = {
         let engine = Arc::downgrade(&state.engine);
-        let store = state.store.clone();
-        let feed = state.decoded.clone();
-        let reference = state.reference.clone();
-        spawn_task("sdrmm-decoded", move || {
-            decoded::run(engine, store, feed, reference)
+        let activity = state.activity.clone();
+        let resolved = state.resolved.subscribe();
+        spawn_task("sdrmm-activity", move || {
+            activity::run(engine, activity, resolved)
         })
     };
     let rebind = {
@@ -379,15 +400,19 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
     let patch = {
         let engine = Arc::downgrade(&state.engine);
         let store = state.store.clone();
+        let resolved = state.resolved.subscribe();
         spawn_task("sdrmm-trunking", move || {
-            trunking::watch_patch(engine, store, recording_tx)
+            trunking::watch_patch(engine, store, resolved, recording_tx)
         })
     };
     let monitor = {
-        let engine = Arc::downgrade(&state.engine);
-        let store = state.store.clone();
-        let calls = state.calls.clone();
-        spawn_task("sdrmm-monitors", move || monitor::run(engine, store, calls))
+        let watch = monitor::Watch {
+            engine: Arc::downgrade(&state.engine),
+            resolved: state.resolved.subscribe(),
+            problems: state.problems.clone(),
+            calls: state.calls.clone(),
+        };
+        spawn_task("sdrmm-monitors", move || monitor::run(watch))
     };
     let calls = {
         let engine = Arc::downgrade(&state.engine);
@@ -403,27 +428,20 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
     };
     let event_output = {
         let engine = Arc::downgrade(&state.engine);
-        let store = state.store.clone();
+        let patch = state.resolved.subscribe();
         let calls = state.calls.clone();
         let records = state.decoded.subscribe();
         let shell = state.shell.clone();
         spawn_task("sdrmm-event-output", move || {
-            event_output::run(records, engine, store, calls, shell)
+            event_output::run(records, engine, patch, calls, shell)
         })
-    };
-    let audio_fx = {
-        let engine = Arc::downgrade(&state.engine);
-        let hooks = Arc::new(recorders::Hooks {
-            store: state.store.clone(),
-            gate: state.recordings_gate.clone(),
-            gps: state.gps.clone(),
-        });
-        spawn_task("sdrmm-recorders", move || audio_fx::run(engine, hooks))
     };
     let health = spawn_task("sdrmm-health", move || health.run());
     Background {
         tasks: vec![
+            resolved,
             decoded,
+            activity,
             rebind,
             log,
             patch,
@@ -431,7 +449,6 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
             images,
             event_output,
             monitor,
-            audio_fx,
             health,
         ],
         remote: state.remote.clone(),

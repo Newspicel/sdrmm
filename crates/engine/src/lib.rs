@@ -3,8 +3,8 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        Arc, Mutex, MutexGuard, PoisonError,
+        atomic::{AtomicU32, AtomicU64, Ordering},
         mpsc,
     },
     thread::JoinHandle,
@@ -19,9 +19,10 @@ use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_recorder::{data_path, meta_path};
 use sdrmm_wire::{
     AudioRecordingStatus, AudioRoute, BandMiss, Capabilities, ChannelInfo, ChannelSettings,
-    DecodedRecord, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus, DeviceSettings, HeldLane,
-    NetworkExportSettings, NetworkExportStatus, PositionFix, RecordingStatus, ServerEvent,
-    SettingsRefused, StateScope, StateSnapshot, StreamScope, TrunkSystemStatus, VirtualLane,
+    DecodedRecord, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus, DeviceSettings,
+    EventOrigin, HeldLane, NetworkExportSettings, NetworkExportStatus, PositionFix,
+    RecordingStatus, ServerEvent, SettingsRefused, StateScope, StateSnapshot, StreamScope,
+    TrunkSystemStatus, VirtualLane,
 };
 use tokio::sync::broadcast;
 
@@ -85,7 +86,6 @@ use crate::{
     recording::RecordingShared,
     runtime::{
         CaptureRuntime, ChannelSinks, DecodedSink, DeviceRuntime, DspCommand, RawDecoded, RawImage,
-        RawPayload,
     },
     scanner::ScannerState,
     sinks::ChannelBasebandRecording,
@@ -973,7 +973,7 @@ pub struct Engine {
     decoded_tx_out: broadcast::Sender<DecodedRecord>,
     image_tx: broadcast::Sender<ImageCapture>,
     trunk_tx: mpsc::Sender<trunking::TrunkInput>,
-    trunk_active: AtomicBool,
+    trunk_nodes: Mutex<HashSet<String>>,
     trunk_status: Arc<Mutex<Vec<TrunkSystemStatus>>>,
     occupancy: Mutex<occupancy::Occupancy>,
     occupancy_sets: Mutex<HashSet<(u32, u32)>>,
@@ -1014,7 +1014,7 @@ impl Engine {
             decoded_tx_out,
             image_tx,
             trunk_tx,
-            trunk_active: AtomicBool::new(false),
+            trunk_nodes: Mutex::new(HashSet::new()),
             trunk_status: trunk_status.clone(),
             occupancy: Mutex::new(occupancy::Occupancy::new()),
             occupancy_sets: Mutex::new(HashSet::new()),
@@ -1031,8 +1031,7 @@ impl Engine {
     }
 
     pub fn configure_trunking(&self, systems: Vec<trunking::TrunkSystem>) {
-        self.trunk_active
-            .store(!systems.is_empty(), Ordering::Relaxed);
+        *self.trunk_nodes() = systems.iter().map(|system| system.node.clone()).collect();
         if self
             .trunk_tx
             .send(trunking::TrunkInput::Configure(systems))
@@ -1073,33 +1072,37 @@ impl Engine {
     }
 
     fn route_raw(&self, raw: RawDecoded) {
-        let event = match raw.payload {
-            RawPayload::Event(event) => event,
-            RawPayload::Broadcast(status) => {
-                self.emit(ServerEvent::BroadcastUpdate {
-                    device_set: raw.device_set,
-                    channel: raw.channel,
-                    status: Box::new(status),
-                });
-                return;
-            }
-        };
+        let trunked = self.trunked(raw.node.as_deref());
         let record = DecodedRecord {
-            origin: None,
+            origin: raw.node.map(|node| EventOrigin {
+                node: node.to_string(),
+                transmission: 0,
+            }),
             sinks: Vec::new(),
+            view: None,
             callsign: None,
             device_set: raw.device_set,
             channel: raw.channel,
             at: format!("{:.9}", jiff::Timestamp::now()),
             freq_hz: raw.freq_hz,
-            event,
+            event: raw.event,
         };
-        if self.trunk_active.load(Ordering::Relaxed) {
+        if trunked {
             let _ = self
                 .trunk_tx
                 .send(trunking::TrunkInput::Record(Box::new(record.clone())));
         }
         let _ = self.decoded_tx_out.send(record);
+    }
+
+    fn trunked(&self, node: Option<&str>) -> bool {
+        node.is_some_and(|node| self.trunk_nodes().contains(node))
+    }
+
+    fn trunk_nodes(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.trunk_nodes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     fn spawn_image_pump(self: &Arc<Self>, image_rx: mpsc::Receiver<RawImage>) {
@@ -1146,13 +1149,13 @@ impl Engine {
         self.decoded_dropped.load(Ordering::Relaxed)
     }
 
-    fn decoded_sink(&self, ds: u32, channel: u32) -> DecodedSink {
+    fn decoded_sink(&self, ds: u32, channel: u32, node: Option<&str>) -> DecodedSink {
         DecodedSink::new(
             self.decoded_tx.clone(),
             self.image_queue_tx.clone(),
             self.decoded_dropped.clone(),
-            ds,
-            channel,
+            node.map(Arc::from),
+            (ds, channel),
         )
     }
 

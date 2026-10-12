@@ -8,8 +8,8 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_modem::wifi::{Receiver as Wifi, channel::channel_at};
 use sdrmm_wire::{
-    BleLink, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, RemoteIdLink,
-    RemoteIdParams,
+    BleLink, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, EventKind,
+    RemoteIdLink, RemoteIdParams,
 };
 
 use self::tracker::Tracker;
@@ -26,7 +26,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: RemoteIdLink::default().bandwidth_hz(),
     input_rate_hz: RemoteIdLink::default().input_rate_hz(),
     has_audio: false,
-    decoder_kind: Some("remote_id".to_owned()),
+    emits: vec![EventKind::RemoteId],
     ..ChannelDescriptor::default()
 });
 

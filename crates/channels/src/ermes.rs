@@ -8,7 +8,7 @@ use sdrmm_modem::{
 };
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, ErmesMessage,
-    ErmesParams, PagerPayload,
+    ErmesParams, EventKind, PagerPayload,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -31,7 +31,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("ermes".to_owned()),
+    emits: vec![EventKind::Ermes],
     ..ChannelDescriptor::default()
 });
 

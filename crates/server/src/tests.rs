@@ -26,6 +26,7 @@ mod decoderlog;
 mod devices;
 mod diagnostics;
 mod fusion;
+mod guard;
 mod mcp_canvas;
 mod nanovna;
 mod openapi;
@@ -90,7 +91,7 @@ fn test_router_with_store() -> (Router, Arc<Store>) {
     (router, state.store.clone())
 }
 
-fn test_router_with_state() -> (Router, AppState) {
+pub(crate) fn test_router_with_state() -> (Router, AppState) {
     let store = Arc::new(Store::open(None).expect("in-memory store"));
     let state = state_over(store);
     let (router, background) = router_with_state(state.clone(), &ServerOptions::default());
@@ -505,12 +506,90 @@ async fn wait_for_recorded_frames(app: &Router, ds: u32, ch: u32, min: u64) {
     }
 }
 
+async fn draw_channel_node(app: &Router, ds: u32, id: &str, channel_type: &str) {
+    let radio = get_state(app)
+        .await
+        .device_sets
+        .into_iter()
+        .find(|set| set.id == ds)
+        .expect("the radio is open")
+        .device;
+    let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(app, workspace).await.snapshot;
+    if snapshot.graph.node(id).is_some() {
+        return;
+    }
+    let named = snapshot.graph.device_nodes().find_map(|node| {
+        let sdrmm_wire::NodeBody::Device(device) = &node.body else {
+            return None;
+        };
+        device
+            .device
+            .as_ref()
+            .is_some_and(|reference| reference.matches(&radio))
+            .then(|| node.id.clone())
+    });
+    let device = named.unwrap_or_else(|| {
+        snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+            id: "tap-device".to_string(),
+            body: sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
+                device: Some(sdrmm_wire::DeviceRef::from_info(&radio)),
+                ..sdrmm_wire::DeviceNode::default()
+            }),
+            position: sdrmm_wire::Position { x: 0.0, y: 600.0 },
+            size: None,
+            label: None,
+        });
+        "tap-device".to_string()
+    });
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: id.to_string(),
+        body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
+            channel_type: channel_type.to_string(),
+            tuning_locked: false,
+        }),
+        position: sdrmm_wire::Position { x: 400.0, y: 600.0 },
+        size: None,
+        label: None,
+    });
+    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: device,
+            port: "iq".to_string(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: id.to_string(),
+            port: "iq".to_string(),
+        },
+    });
+    put_workspace(app, &snapshot).await;
+}
+
+async fn tapped(app: &Router, ds: u32, body: &str) -> String {
+    let mut body: serde_json::Value = serde_json::from_str(body).expect("json");
+    let channel_type = body["settings"]["params"]["type"]
+        .as_str()
+        .expect("a channel type")
+        .to_string();
+    let node = format!("tap-{channel_type}");
+    draw_channel_node(app, ds, &node, &channel_type).await;
+    body["node"] = node.into();
+    body.to_string()
+}
+
 async fn create_nfm_channel(app: &Router, ds: u32) -> u32 {
     let (status, body) = request(
         app.clone(),
         "POST",
         &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#),
+        Some(
+            &tapped(
+                app,
+                ds,
+                r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#,
+            )
+            .await,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
@@ -569,6 +648,7 @@ fn adsb_record(at: &str, device_set: u32, icao: &str, callsign: &str) -> Decoded
             raw: "8D3C6444".to_string(),
             ..AdsbMessage::default()
         }),
+        view: None,
     }
 }
 
@@ -587,6 +667,7 @@ fn awkward_record(at: &str) -> DecodedRecord {
             tnc2: "DL1ABC-9>APRS:hello, \"world\"".to_string(),
             ..AprsPacket::default()
         }),
+        view: None,
     }
 }
 

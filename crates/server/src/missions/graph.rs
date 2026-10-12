@@ -1,72 +1,87 @@
 use sdrmm_wire::{
-    CONTROL_PORT, EVENTS_PORT, GpsNode, MissionProblem, NodeBody, POSITION_PORT, PatchGraph,
-    PatchNode, PortRef, PositionLink, PositionSource,
+    CONTROL_PORT, EVENTS_PORT, Feed, GpsNode, MissionProblem, NodeBody, NodeKind, POSITION_PORT,
+    PatchGraph, PortType, PositionLink, PositionSource,
 };
 
-use crate::phones::Phones;
+use crate::{phones::Phones, resolved::Resolved};
 
-pub(crate) fn source_of<'a>(graph: &'a PatchGraph, node: &str, port: &str) -> Option<&'a PortRef> {
-    graph
-        .edges
-        .iter()
-        .find(|edge| edge.to.node == node && edge.to.port == port)
-        .map(|edge| &edge.from)
+pub(crate) fn source_of<'a>(resolved: &'a Resolved, node: &str, port: &str) -> Option<&'a Feed> {
+    resolved.patch.first_feed(node, port)
 }
 
-pub(crate) fn event_targets(graph: &PatchGraph, node: &str, kind: &str) -> Vec<String> {
-    events(graph, node, Direction::Downstream)
-        .into_iter()
-        .filter(|target| target.body.kind() == kind)
-        .map(|target| target.id.clone())
-        .collect()
+pub(crate) fn event_targets(resolved: &Resolved, node: &str, kind: NodeKind) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for reach in resolved.patch.reaches(node, EVENTS_PORT) {
+        let wanted = resolved
+            .patch
+            .node(&reach.sink)
+            .is_some_and(|sink| sink.kind == kind);
+        if wanted && !found.contains(&reach.sink) {
+            found.push(reach.sink.clone());
+        }
+    }
+    found
 }
 
-pub(crate) fn event_sources(graph: &PatchGraph, node: &str) -> Vec<String> {
-    events(graph, node, Direction::Upstream)
-        .into_iter()
-        .map(|source| source.id.clone())
-        .collect()
+pub(crate) fn event_sources(resolved: &Resolved, node: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let Some(sink) = resolved.patch.node(node) else {
+        return found;
+    };
+    for feed in sink
+        .inputs()
+        .filter(|port| port.spec.port_type == PortType::Events)
+        .flat_map(|port| &port.feeds)
+    {
+        if !found.contains(&feed.source) {
+            found.push(feed.source.clone());
+        }
+    }
+    found
 }
 
 pub(crate) fn position_link(
-    graph: &PatchGraph,
+    resolved: &Resolved,
     phones: &Phones,
     node: &str,
 ) -> (Option<PositionLink>, Option<MissionProblem>) {
-    link(graph, phones, node, POSITION_PORT)
+    link(resolved, phones, node, POSITION_PORT)
 }
 
 pub(crate) fn link(
-    graph: &PatchGraph,
+    resolved: &Resolved,
     phones: &Phones,
     node: &str,
     port: &str,
 ) -> (Option<PositionLink>, Option<MissionProblem>) {
-    let Some(source) = source_of(graph, node, port) else {
+    let Some(source) = source_of(resolved, node, port) else {
         return (None, None);
     };
-    let phone = phone_of(graph, &source.node);
+    let phone = phone_of(&resolved.graph, &source.source);
     let problem = phone
         .as_deref()
         .and_then(|phone| phone_problem(phones, phone));
     (
         Some(PositionLink {
-            node: source.node.clone(),
+            node: source.source.clone(),
             phone,
         }),
         problem,
     )
 }
 
-pub(crate) fn controlled_channel(graph: &PatchGraph, hunt: &str) -> Option<String> {
-    graph
-        .targets_of(hunt, CONTROL_PORT)
-        .find(|target| {
-            graph
-                .node(target)
-                .is_some_and(|node| matches!(node.body, NodeBody::Channel(_)))
+pub(crate) fn controlled_channel(resolved: &Resolved, hunt: &str) -> Option<String> {
+    resolved
+        .patch
+        .reaches(hunt, CONTROL_PORT)
+        .iter()
+        .find(|reach| {
+            resolved
+                .patch
+                .node(&reach.sink)
+                .is_some_and(|node| node.kind == NodeKind::Channel)
         })
-        .map(str::to_owned)
+        .map(|reach| reach.sink.clone())
 }
 
 fn phone_of(graph: &PatchGraph, gps: &str) -> Option<String> {
@@ -87,43 +102,4 @@ fn phone_problem(phones: &Phones, phone: &str) -> Option<MissionProblem> {
     (!phones.online(phone)).then(|| MissionProblem::PhoneOffline {
         phone: phone.to_owned(),
     })
-}
-
-#[derive(Clone, Copy)]
-enum Direction {
-    Downstream,
-    Upstream,
-}
-
-fn events<'a>(graph: &'a PatchGraph, node: &str, direction: Direction) -> Vec<&'a PatchNode> {
-    let mut found: Vec<&PatchNode> = Vec::new();
-    let mut walked = vec![node.to_owned()];
-    let mut next = 0;
-    while let Some(from) = walked.get(next).cloned() {
-        next += 1;
-        for edge in graph
-            .edges
-            .iter()
-            .filter(|edge| edge.from.port == EVENTS_PORT && edge.to.port == EVENTS_PORT)
-        {
-            let (near, far) = match direction {
-                Direction::Downstream => (&edge.from.node, &edge.to.node),
-                Direction::Upstream => (&edge.to.node, &edge.from.node),
-            };
-            if *near != from {
-                continue;
-            }
-            let Some(reached) = graph.node(far) else {
-                continue;
-            };
-            if matches!(reached.body, NodeBody::EventFilter(_)) {
-                if !walked.contains(far) {
-                    walked.push(far.clone());
-                }
-            } else if !found.iter().any(|seen| seen.id == reached.id) {
-                found.push(reached);
-            }
-        }
-    }
-    found
 }

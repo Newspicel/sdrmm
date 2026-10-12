@@ -104,6 +104,11 @@ async fn templates_list_and_apply_over_http() {
     );
     assert_eq!(set.channels.len(), 1);
     assert_eq!(set.channels[0].settings.params.type_id(), "wfm");
+    assert_eq!(
+        set.channels[0].node.as_deref(),
+        Some("template:fm-radio:ch0"),
+        "the decoder opened for the template's node"
+    );
 
     let (status, _) = request(
         app.clone(),
@@ -222,15 +227,54 @@ async fn applying_a_template_merges_its_patch_into_the_active_workspace() {
         Some("virtual"),
         "the patch names the radio the template was applied to"
     );
-    assert_eq!(
-        detail
-            .snapshot
-            .graph
-            .channels_of("template:fm-radio:dev")
-            .count(),
-        1
-    );
+    let patch = sdrmm_wire::patch::resolve::compile(&detail.snapshot.graph, &Default::default())
+        .expect("compiles");
+    let decoders = patch
+        .reaches("template:fm-radio:dev", "iq")
+        .iter()
+        .filter(|reach| {
+            patch
+                .node(&reach.sink)
+                .is_some_and(|node| node.kind == sdrmm_wire::NodeKind::Channel)
+        })
+        .count();
+    assert_eq!(decoders, 1);
     detail.snapshot.validate().expect("a valid workspace");
+}
+
+#[tokio::test]
+async fn a_template_wires_its_decoders_to_the_radios_own_node() {
+    let app = test_router();
+    let workspace = put_active_workspace(&app, &virtual_snapshot("band", &[])).await;
+    apply(&app, workspace).await;
+    let ds = get_state(&app).await.device_sets[0].id;
+
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/templates/airband/apply",
+        Some(&format!(r#"{{"device_set":{ds}}}"#)),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let graph = workspace_detail(&app, workspace).await.snapshot.graph;
+    assert!(graph.node("template:airband:dev").is_none());
+    assert!(
+        graph
+            .edges
+            .iter()
+            .any(|edge| edge.from.node == "device" && edge.to.node == "template:airband:ch0")
+    );
+    let channels = &get_state(&app).await.device_sets[0].channels;
+    assert_eq!(channels.len(), 1);
+    assert_eq!(channels[0].node.as_deref(), Some("template:airband:ch0"));
+    assert_eq!(channels[0].settings.frequency_hz, 118_100_000.0);
 }
 
 #[tokio::test]
@@ -287,8 +331,11 @@ async fn the_df_drive_wires_every_kraken_lane_into_one_array() {
         })
         .count();
     assert_eq!(lanes, 5);
+    let patch = sdrmm_wire::patch::resolve::compile(graph, &Default::default()).expect("compiles");
     assert_eq!(
-        graph.array_of_processor("template:df-drive:df"),
+        patch
+            .first_feed("template:df-drive:df", "array")
+            .map(|feed| feed.source.as_str()),
         Some("template:df-drive:array")
     );
     detail.snapshot.validate().expect("a valid workspace");

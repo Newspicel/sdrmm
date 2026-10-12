@@ -84,6 +84,19 @@ pub enum TransmissionState {
     Problem,
 }
 
+impl TransmissionState {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Started => "started",
+            Self::Completed => "completed",
+            Self::Continued => "continued",
+            Self::Interrupted => "interrupted",
+            Self::Problem => "problem",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Transmission {
     pub id: u64,
@@ -109,13 +122,7 @@ pub struct Transmission {
 
 impl Transmission {
     pub fn summary(&self) -> String {
-        let state = match self.state {
-            TransmissionState::Started => "started",
-            TransmissionState::Completed => "completed",
-            TransmissionState::Continued => "continued",
-            TransmissionState::Interrupted => "interrupted",
-            TransmissionState::Problem => "problem",
-        };
+        let state = self.state.label();
         let decoder = self
             .decoder
             .as_deref()

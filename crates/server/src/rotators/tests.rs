@@ -4,8 +4,8 @@ use std::{
 };
 
 use sdrmm_wire::{
-    GpsNode, PassPoint, PatchEdge, PatchNode, PortRef, Position, SatelliteLook, SatelliteNode,
-    SatellitePass, SatelliteStatus, SkyPoint,
+    GpsNode, PassPoint, PatchEdge, PatchGraph, PatchNode, PortRef, Position, SatelliteLook,
+    SatelliteNode, SatellitePass, SatelliteStatus, SkyPoint,
 };
 
 use super::{
@@ -34,6 +34,14 @@ fn control(from: &str, to: &str) -> PatchEdge {
             node: to.to_owned(),
             port: "control".to_owned(),
         },
+    }
+}
+
+fn resolved(graph: PatchGraph) -> Resolved {
+    Resolved {
+        patch: sdrmm_wire::patch::resolve::compile(&graph, &Default::default()).expect("compiles"),
+        graph: std::sync::Arc::new(graph),
+        ..Resolved::default()
     }
 }
 
@@ -72,7 +80,7 @@ fn only_linked_rotators_run_and_each_follows_its_wired_satellite() {
         ],
         edges: vec![control("sat", "dish")],
     };
-    let found = wanted(&graph);
+    let found = wanted(&resolved(graph));
     assert_eq!(found.len(), 2);
     assert_eq!(found[0].node, "dish");
     assert_eq!(found[0].follow.satellite.as_deref(), Some("sat"));
@@ -147,17 +155,19 @@ fn a_new_axis_setup_reconnects_but_a_new_mode_does_not() {
         nodes: vec![node("dish", NodeBody::Rotator(settings))],
         edges: Vec::new(),
     };
-    let before = wanted(&graph(settings.clone()))[0].connection.clone();
-    let parked = wanted(&graph(RotatorNode {
-        mode: sdrmm_wire::RotatorMode::Park,
-        ..settings.clone()
-    }))[0]
+    let before = wanted(&resolved(graph(settings.clone())))[0]
         .connection
         .clone();
-    let turntable = wanted(&graph(RotatorNode {
+    let parked = wanted(&resolved(graph(RotatorNode {
+        mode: sdrmm_wire::RotatorMode::Park,
+        ..settings.clone()
+    })))[0]
+        .connection
+        .clone();
+    let turntable = wanted(&resolved(graph(RotatorNode {
         axes: RotatorAxes::Azimuth,
         ..settings
-    }))[0]
+    })))[0]
         .connection
         .clone();
     assert_eq!(before, parked);

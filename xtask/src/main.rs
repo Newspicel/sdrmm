@@ -190,10 +190,10 @@ fn codegen(root: &Path) -> Result<()> {
     )
     .context("write binary frame fixtures")?;
     std::fs::write(
-        root.join("web/src/generated/patch-catalog.json"),
+        root.join("web/src/generated/catalog-fixture.json"),
         serde_json::to_string_pretty(&sdrmm_wire::PatchCatalog::build())?,
     )
-    .context("write patch catalog")?;
+    .context("write catalog test fixture")?;
     std::fs::write(
         root.join("web/src/generated/labels.json"),
         serde_json::to_string_pretty(&sdrmm_wire::labels::generated()?)?,

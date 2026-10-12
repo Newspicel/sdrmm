@@ -3,8 +3,10 @@ import type {
   ChannelInfo,
   ChannelSettings,
   DeviceSet,
+  NodeProblem,
   PatchGraph,
   RackLayout,
+  ResolvedPatch,
   TrunkSystemStatus,
   WorkspaceSettings,
   WorkspaceSnapshot,
@@ -18,6 +20,8 @@ export interface Workspace {
   rack: RackLayout;
   settings: WorkspaceSettings;
   context: GraphContext;
+  resolved: ResolvedPatch | null;
+  problems: readonly NodeProblem[];
   deviceSets: readonly DeviceSet[];
   trunks: readonly TrunkSystemStatus[];
   devices: ReadonlyMap<string, DeviceSet>;

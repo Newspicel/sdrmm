@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeviceInfo, PatchGraph, PatchNode } from "../../lib/types";
+import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
 import {
   channelBinding,
   channelBindingAction,
@@ -7,7 +8,7 @@ import {
   channelBindingStatus,
   lockedChannels,
   radioIsAttached,
-  radioRefOf,
+  radioRefsOf,
 } from "./channelNode";
 
 function node(id: string, body: Partial<PatchNode> & Pick<PatchNode, "kind">): PatchNode {
@@ -24,12 +25,25 @@ const graph: PatchGraph = {
   edges: [{ from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } }],
 };
 
-describe("radioRefOf", () => {
-  it("names the radio the device node upstream is bound to", () => {
-    expect(radioRefOf(graph, "nfm")).toEqual({ backend: "rtlsdr", serial: "A" });
-    expect(radioRefOf(graph, "dev")).toEqual({ backend: "rtlsdr", serial: "A" });
-    expect(radioRefOf(graph, "blank")).toBeNull();
-    expect(radioRefOf(graph, "loose")).toBeNull();
+const iqFrom = (source: string) =>
+  resolvedPort(
+    { name: "iq", port_type: "iq", direction: "in" },
+    { feeds: [{ source, port: "iq" }] },
+  );
+
+describe("radioRefsOf", () => {
+  it("names the radios the resolved iq feeds come from", () => {
+    const resolved = resolvedPatch([
+      resolvedNodeOf("dev", "device", [], { runs: "unbound", reason: "Radio not open" }),
+      resolvedNodeOf("blank", "device"),
+      resolvedNodeOf("nfm", "channel", [iqFrom("dev")]),
+      resolvedNodeOf("empty", "channel", [iqFrom("blank")]),
+      resolvedNodeOf("loose", "channel", []),
+    ]);
+    expect(radioRefsOf(graph, resolved, "nfm")).toEqual([{ backend: "rtlsdr", serial: "A" }]);
+    expect(radioRefsOf(graph, resolved, "empty")).toEqual([]);
+    expect(radioRefsOf(graph, resolved, "loose")).toEqual([]);
+    expect(radioRefsOf(graph, null, "nfm")).toEqual([]);
   });
 });
 

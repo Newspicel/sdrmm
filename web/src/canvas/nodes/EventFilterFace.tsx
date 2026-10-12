@@ -1,8 +1,8 @@
-import { kindLabel } from "../../components/decoderLog";
 import { Chips, ChoiceChip, NumberChip, ToggleChip } from "../../components/face/Chips";
 import { TextChip } from "../../components/face/TextChip";
-import type { EventFilterNode, EventKindFacets, PatchNode, PatchNodeOf } from "../../lib/types";
-import { eventSourcesOf, wiredSourcesOf } from "../binding";
+import { isEventKind, kindLabel } from "../../lib/eventKinds";
+import { useFeeds } from "../../lib/resolved";
+import type { EventFilterNode, EventKindEntry, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import {
@@ -21,6 +21,7 @@ import {
   stationLabel,
   type TriState,
   toTriState,
+  wiredSourcesOf,
 } from "./eventFilter";
 import { FaceBody, NodeShell } from "./NodeShell";
 
@@ -42,15 +43,15 @@ export function EventFilterFace({ node }: { node: PatchNode }) {
 function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
   const workspace = useWorkspaceContext();
   const settings: EventFilterNode = node.data ?? {};
-  const sources = eventSourcesOf(workspace.graph, node.id);
+  const sources = useFeeds(node.id, "events");
+  const entries = workspace.context.catalog.event_kinds;
   const offered = kindsOffered(
-    wiredSourcesOf(workspace.graph, node.id),
+    wiredSourcesOf(workspace.graph, workspace.resolved, node.id),
     workspace.context.channelTypes,
-  );
-  const facets = workspace.context.facets;
+  ).filter((kind) => isEventKind(kind, entries));
   const kinds = settings.kinds ?? [];
   const narrowed = kinds.length > 0 ? kinds : offered;
-  const sections = sectionsFor(narrowed, facets);
+  const sections = sectionsFor(narrowed, entries);
 
   const edit = (next: Partial<EventFilterNode>) => {
     workspace.edit((snapshot) => ({
@@ -91,8 +92,8 @@ function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
             offered.map((kind) => (
               <ToggleChip
                 key={kind}
-                label={kindLabel(kind)}
-                title={`Match ${kindLabel(kind)} events`}
+                label={kindLabel(kind, entries)}
+                title={`Match ${kindLabel(kind, entries)} events`}
                 on={kinds.includes(kind)}
                 onChange={(on) =>
                   edit({
@@ -109,7 +110,7 @@ function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
                 applies={section.applies}
                 settings={settings}
                 kinds={narrowed}
-                facets={facets}
+                entries={entries}
                 edit={edit}
               />
             )),
@@ -129,14 +130,14 @@ function Predicate({
   applies,
   settings,
   kinds,
-  facets,
+  entries,
   edit,
 }: {
   which: PredicateKey;
   applies: readonly string[];
   settings: EventFilterNode;
   kinds: readonly string[];
-  facets: readonly EventKindFacets[];
+  entries: readonly EventKindEntry[];
   edit: (next: Partial<EventFilterNode>) => void;
 }) {
   const tri = (label: string, value: boolean | null | undefined, key: TriKey) => (
@@ -151,7 +152,7 @@ function Predicate({
   );
   switch (which) {
     case "stations": {
-      const label = stationLabel(kinds, facets);
+      const label = stationLabel(kinds, entries);
       return (
         <TextChip
           label={label}

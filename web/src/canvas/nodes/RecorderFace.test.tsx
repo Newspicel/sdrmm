@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DeviceSet, PatchGraph, RecordingStatus } from "../../lib/types";
 import { renderFace } from "../../test/faceHarness";
 import { deviceSet, placed } from "../../test/fixtures";
-import { RecorderFace } from "./SinkFaces";
+import { RecorderFace } from "./RecorderFaces";
 
 const RADIO = { driver: "ad936x", key: "192.168.1.10:30431", label: "AntSDR AD9361" };
 

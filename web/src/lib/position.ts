@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { omitNodes } from "./byNode";
-import type { PatchGraph, PositionFix, ServerEvent } from "./types";
+import type { PositionFix, ServerEvent } from "./types";
 
 const HISTORY_CAPACITY = 5_000;
 
@@ -77,10 +77,4 @@ export function gridLocator(latitude: number, longitude: number): string {
   const lonSub = Math.floor(((lon % 2) / 2) * 24);
   const latSub = Math.floor((lat % 1) * 24);
   return `${String.fromCharCode(65 + lonField)}${String.fromCharCode(65 + latField)}${lonSquare}${latSquare}${String.fromCharCode(97 + lonSub)}${String.fromCharCode(97 + latSub)}`;
-}
-
-export function positionSourcesOf(graph: PatchGraph, node: string): string[] {
-  return (graph.edges ?? [])
-    .filter((edge) => edge.to.node === node && edge.to.port === "position")
-    .map((edge) => edge.from.node);
 }

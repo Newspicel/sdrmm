@@ -3,6 +3,7 @@ import { agcTip } from "../../components/AgcAuto";
 import type { Capabilities, DeviceSet, PatchEdge, PatchGraph, PatchNode } from "../../lib/types";
 import { mergeSettings } from "../../lib/useDevicePatch";
 import { renderFace } from "../../test/faceHarness";
+import { wiredPatch } from "../../test/resolved";
 import { dialHold, heldLanes, laneHolds } from "./arrayNode";
 import { DeviceFace } from "./DeviceFace";
 import {
@@ -576,16 +577,18 @@ describe("arrays on a radio", () => {
 
   it("disables held lane dials and says which array tunes them", () => {
     const graph = patch(heldWires(5));
-    expect([...heldLanes(graph, "kraken")]).toEqual([
+    expect([...heldLanes(wiredPatch(graph), "kraken")]).toEqual([
       [0, "north"],
       [1, "north"],
       [2, "north"],
       [3, "north"],
       [4, "north"],
     ]);
-    const holds = laneHolds(graph, "kraken");
+    const holds = laneHolds(graph, wiredPatch(graph), "kraken");
     expect(dialHold(holds, 0, false)).toEqual({ array: "north", label: "North" });
-    expect(dialHold(laneHolds(patch(heldWires(1)), "kraken"), 1, true)).toBeNull();
+    expect(
+      dialHold(laneHolds(patch(heldWires(1)), wiredPatch(patch(heldWires(1))), "kraken"), 1, true),
+    ).toBeNull();
     const free = renderFace(DeviceFace, radio, {
       graph: patch([]),
       devices: new Map([["kraken", bank]]),

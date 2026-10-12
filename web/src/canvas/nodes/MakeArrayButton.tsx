@@ -1,20 +1,24 @@
 import { Button } from "../../components/BaseControls";
 import { BTN_QUIET } from "../../components/controls";
 import { pushToast } from "../../lib/toasts";
-import type { DeviceSet, PatchGraph } from "../../lib/types";
+import type { DeviceSet, ResolvedPatch } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { newNodeId, nodeIds, rxStreamCount } from "../graph";
 import { canMakeArray, MAKE_ARRAY_TITLE, makeArray } from "../makeArray";
 import { defaultBody } from "../newNode";
 import { heldLanes } from "./arrayNode";
 
-export function offersMakeArray(graph: PatchGraph, node: string, set: DeviceSet): boolean {
-  return rxStreamCount(set.capabilities) >= 2 && heldLanes(graph, node).size === 0;
+export function offersMakeArray(
+  resolved: ResolvedPatch | null,
+  node: string,
+  set: DeviceSet,
+): boolean {
+  return rxStreamCount(set.capabilities) >= 2 && heldLanes(resolved, node).size === 0;
 }
 
 export function MakeArrayButton({ node, set }: { node: string; set: DeviceSet }) {
   const workspace = useWorkspaceContext();
-  const check = canMakeArray(workspace.graph, node, set);
+  const check = canMakeArray(workspace.graph, workspace.resolved, node, set);
   const make = (): void => {
     const body = defaultBody(workspace.context.catalog, "array");
     if (body?.kind !== "array") {

@@ -7,14 +7,17 @@ import {
   type Node,
   type NodeChange,
   type OnBeforeDelete,
+  type OnConnectStart,
 } from "@xyflow/react";
 import { useCallback } from "react";
+import { wiringVerdicts } from "../lib/api";
 import { useRefusalStore } from "../lib/refusals";
 import { pushToast, toastError } from "../lib/toasts";
-import type { PatchEdge, PortRef } from "../lib/types";
+import type { PatchEdge, PatchGraph, PortRef } from "../lib/types";
+import { useWiringStore, wireRefusal } from "../lib/wiring";
 import type { FlowData } from "./Canvas";
 import type { Workspace } from "./context";
-import { addEdge, connectionRefusal, removeEdge } from "./graph";
+import { addEdge, type GraphContext, portOf, removeEdge } from "./graph";
 import { closeEngineObjects, dropNodes } from "./remove";
 
 export function useGraphChanges(
@@ -83,10 +86,44 @@ export function useGraphChanges(
   return { handleNodesChange, handleEdgesChange, onBeforeDelete };
 }
 
+export function refusalOf(
+  context: GraphContext,
+  graph: PatchGraph,
+  from: PortRef,
+  to: PortRef,
+): string | null {
+  return wireRefusal(useWiringStore.getState().verdicts, {
+    from,
+    to,
+    out: portOf(context, graph, from, "out"),
+    input: portOf(context, graph, to, "in"),
+  });
+}
+
+export async function askVerdicts(graph: PatchGraph, from: PortRef | null): Promise<void> {
+  useWiringStore.getState().start(from);
+  if (from === null) {
+    return;
+  }
+  const verdicts = await wiringVerdicts(graph, from);
+  useWiringStore.getState().settle(from, verdicts);
+}
+
 export function useConnections(workspace: Workspace) {
   const refusal = useCallback(
     (from: PortRef, to: PortRef): string | null =>
-      connectionRefusal(workspace.context, workspace.graph, from, to),
+      refusalOf(workspace.context, workspace.graph, from, to),
+    [workspace],
+  );
+
+  const onConnectStart: OnConnectStart = useCallback(
+    (_event, { nodeId, handleId, handleType }) => {
+      const from =
+        handleType === "source" && nodeId !== null && handleId !== null
+          ? { node: nodeId, port: handleId }
+          : null;
+      askVerdicts(workspace.graph, from).catch(toastError);
+    },
     [workspace],
   );
 
@@ -111,8 +148,8 @@ export function useConnections(workspace: Workspace) {
     [workspace],
   );
 
-  const onConnectEnd = useCallback(
-    (_event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+  const reportRefusal = useCallback(
+    (state: FinalConnectionState) => {
       if (state.isValid !== false || state.fromHandle == null || state.toHandle == null) {
         return;
       }
@@ -128,5 +165,13 @@ export function useConnections(workspace: Workspace) {
     [refusal],
   );
 
-  return { isValidConnection, onConnect, onConnectEnd };
+  const onConnectEnd = useCallback(
+    (_event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+      reportRefusal(state);
+      useWiringStore.getState().clear();
+    },
+    [reportRefusal],
+  );
+
+  return { isValidConnection, onConnect, onConnectStart, onConnectEnd };
 }

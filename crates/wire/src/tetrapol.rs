@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{
+        EventPayload, Field, Presentation, Unit, count, fields, flag, number, only_if, text,
+        text_of,
+    },
+};
+
 pub const TETRAPOL_BANDWIDTH_HZ: f64 = 12_500.0;
 pub const MAX_TETRAPOL_SCRAMBLING: u8 = 127;
 
@@ -79,6 +87,18 @@ pub enum TetrapolCallType {
     Internal,
     Broadcast,
     External,
+}
+
+impl TetrapolCallType {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::OpenChannel => "Open channel",
+            Self::Internal => "Internal",
+            Self::Broadcast => "Broadcast",
+            Self::External => "External",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -236,6 +256,94 @@ impl TetrapolMessage {
     }
 }
 
+impl EventPayload for TetrapolMessage {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            entity: self.station(),
+            fields: tetrapol_fields(self),
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+fn tetrapol_fields(m: &TetrapolMessage) -> Vec<Field> {
+    let name = match &m.payload {
+        TetrapolPayload::Other { name, .. } => Some(name.as_str()),
+        _ => None,
+    };
+    let mut shown = fields(&[
+        ("Channel", text_of(m.channel.label())),
+        ("Frame", count(m.frame)),
+        ("Scrambling", count(Some(m.scrambling))),
+        (
+            "Address",
+            m.address.and_then(|address| text_of(address.label())),
+        ),
+        ("Message", text(name)),
+    ]);
+    shown.extend(payload_fields(&m.payload));
+    shown.extend(fields(&[
+        (
+            "Rejected",
+            count(Some(m.rejected).filter(|rejected| *rejected > 0)),
+        ),
+        ("Data", text(Some(&m.data))),
+    ]));
+    shown
+}
+
+fn payload_fields(payload: &TetrapolPayload) -> Vec<Field> {
+    match payload {
+        TetrapolPayload::SystemInfo(info) => system_info_fields(info),
+        TetrapolPayload::GroupActivation(call) | TetrapolPayload::GroupPaging(call) => {
+            group_call_fields(call)
+        }
+        TetrapolPayload::GroupIdle { cause } | TetrapolPayload::GroupEnd { cause } => {
+            fields(&[("Cause", count(Some(*cause)))])
+        }
+        TetrapolPayload::Paging { terminals } => {
+            let terminals = terminals
+                .iter()
+                .map(|address| address.label())
+                .collect::<Vec<_>>()
+                .join(", ");
+            fields(&[("Terminals", text(Some(&terminals)))])
+        }
+        TetrapolPayload::Voice { seconds } => {
+            fields(&[("Voice", number(Some(*seconds), Unit::Seconds, 1))])
+        }
+        TetrapolPayload::Other { codop, .. } => {
+            fields(&[("Codop", text_of(format!("{codop:#04x}")))])
+        }
+    }
+}
+
+fn system_info_fields(info: &TetrapolSystemInfo) -> Vec<Field> {
+    fields(&[
+        ("Cell", text_of(info.cell.label())),
+        ("Country", count(info.country)),
+        ("Network", count(info.network)),
+        ("Location area", count(info.location_area)),
+        ("Uplink code", count(Some(info.uplink_scrambling))),
+        ("Ciphered", flag(Some(info.ciphered))),
+        ("Home only", only_if(info.home_only)),
+        ("Superframe", count(info.superframe)),
+        ("Control channel", count(info.control_channel)),
+    ])
+}
+
+fn group_call_fields(call: &TetrapolGroupCall) -> Vec<Field> {
+    fields(&[
+        ("Group", count(Some(call.group))),
+        ("Call", text_of(call.call_type.label())),
+        ("Coverage", count(Some(call.coverage))),
+        ("Traffic channel", count(call.channel)),
+        ("Downlink code", count(call.downlink_scrambling)),
+        ("Uplink code", count(call.uplink_scrambling)),
+        ("Encrypted", flag(Some(!call.key.clear()))),
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -274,6 +382,28 @@ mod tests {
         assert_eq!(json["address"]["kind"], "all_stations");
         let back: TetrapolMessage = serde_json::from_value(json).unwrap();
         assert_eq!(back, message);
+    }
+
+    #[test]
+    fn a_group_call_lists_its_group_and_key() {
+        let message: TetrapolMessage = serde_json::from_value(serde_json::json!({
+            "channel": "paging", "frame": 98, "scrambling": 70,
+            "address": { "kind": "terminal", "id": 418 },
+            "payload": {
+                "message": "group_paging", "group": 171, "call_type": "broadcast",
+                "coverage": 3, "key": { "kind": 15, "index": 0 },
+            },
+            "data": "5b", "rejected": 2,
+        }))
+        .unwrap();
+        let view = message.present(EventKind::Tetrapol);
+        assert_eq!(view.field("Channel"), text_of("PCH").as_ref());
+        assert_eq!(view.field("Address"), text_of("TTI 01A2").as_ref());
+        assert_eq!(view.field("Group"), count(Some(171)).as_ref());
+        assert_eq!(view.field("Call"), text_of("Broadcast").as_ref());
+        assert_eq!(view.field("Encrypted"), flag(Some(false)).as_ref());
+        assert_eq!(view.field("Rejected"), count(Some(2)).as_ref());
+        assert_eq!(view.field("Traffic channel"), None);
     }
 
     #[test]

@@ -1,5 +1,19 @@
-import { greatCircleKm, type PropagationCell } from "./propagation";
-import type { IonosondeStation } from "./types";
+import type { IonosondeStation, PropagationCell } from "./types";
+
+const EARTH_RADIUS_KM = 6371;
+
+export function greatCircleKm(
+  from: readonly [number, number],
+  to: readonly [number, number],
+): number {
+  const rad = Math.PI / 180;
+  const [lat1, lon1] = [from[0] * rad, from[1] * rad];
+  const [lat2, lon2] = [to[0] * rad, to[1] * rad];
+  const sinLat = Math.sin((lat2 - lat1) / 2);
+  const sinLon = Math.sin((lon2 - lon1) / 2);
+  const a = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
 
 export const FORECAST_RADIUS_KM = 3_000;
 
@@ -60,8 +74,8 @@ export function compareCells(
 ): CellComparison[] {
   const compared: CellComparison[] = [];
   for (const cell of cells) {
-    const measured = cell.measuredMuf3000Mhz;
-    if (measured === null) {
+    const measured = cell.measured_muf3000_mhz;
+    if (measured == null) {
       continue;
     }
     const forecast = forecastAt(stations, cell.latitude, cell.longitude, radiusKm);

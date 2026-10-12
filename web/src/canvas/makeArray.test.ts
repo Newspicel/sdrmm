@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { NodeBodyOf, PatchGraph } from "../lib/types";
 import { catalogBody } from "../test/catalog";
 import { capabilities, deviceSet } from "../test/fixtures";
-import { NODE_SIZE } from "./graph";
+import { wiredPatch } from "../test/resolved";
+import { nodeSize } from "./graph";
 import {
   arrayPlacement,
   canMakeArray,
@@ -42,14 +43,20 @@ describe("makeArray", () => {
   });
 
   it("offers Make array for a multi-lane radio with a shared clock", () => {
-    expect(canMakeArray(radio(), "kraken", KRAKEN)).toEqual({ ok: true, lanes: 5 });
+    expect(canMakeArray(radio(), null, "kraken", KRAKEN)).toEqual({ ok: true, lanes: 5 });
   });
 
   it("refuses a one-lane radio, a radio with no shared clock, and a radio already in an array", () => {
-    expect(canMakeArray(radio(), "kraken", undefined)).toEqual({ ok: false, reason: OPEN_FIRST });
-    expect(canMakeArray(radio(), "kraken", deviceSet())).toEqual({ ok: false, reason: ONE_LANE });
+    expect(canMakeArray(radio(), null, "kraken", undefined)).toEqual({
+      ok: false,
+      reason: OPEN_FIRST,
+    });
+    expect(canMakeArray(radio(), null, "kraken", deviceSet())).toEqual({
+      ok: false,
+      reason: ONE_LANE,
+    });
     const loose = deviceSet({ capabilities: capabilities({ rx_streams: 2 }) });
-    expect(canMakeArray(radio(), "kraken", loose)).toEqual({
+    expect(canMakeArray(radio(), null, "kraken", loose)).toEqual({
       ok: false,
       reason: NO_SHARED_CLOCK,
     });
@@ -58,12 +65,15 @@ describe("makeArray", () => {
       ...made,
       nodes: made.nodes.map((node) => (node.id === "array:1" ? { ...node, label: "North" } : node)),
     };
-    expect(canMakeArray(named, "kraken", KRAKEN)).toEqual({ ok: false, reason: "In North" });
+    expect(canMakeArray(named, wiredPatch(named), "kraken", KRAKEN)).toEqual({
+      ok: false,
+      reason: "In North",
+    });
   });
 
   it("places the array right of the radio", () => {
     expect(arrayPlacement(radio(), "kraken")).toEqual({
-      x: 100 + NODE_SIZE.device.w + 80,
+      x: 100 + nodeSize("device").w + 80,
       y: 40,
     });
   });

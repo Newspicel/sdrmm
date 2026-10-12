@@ -1,5 +1,5 @@
-import type { DeviceSet, PatchGraph } from "../lib/types";
-import { deviceNodeOf } from "./binding";
+import { radioOf } from "../lib/resolved";
+import type { DeviceSet, PatchGraph, ResolvedPatch } from "../lib/types";
 import { nodeOf, tuningLocked } from "./graph";
 
 export interface DeviceTarget {
@@ -21,8 +21,8 @@ export type TuneTarget = DeviceTarget | ChannelTarget;
 export function libraryTarget(
   graph: PatchGraph,
   devices: ReadonlyMap<string, DeviceSet>,
+  resolved: ResolvedPatch | null,
   selected: string | null,
-  owners: ReadonlyMap<string, string> = new Map(),
 ): TuneTarget | null {
   if (selected !== null) {
     const set = devices.get(selected);
@@ -30,7 +30,7 @@ export function libraryTarget(
       return { kind: "device", node: selected, set, locked: tuningLocked(graph, selected) };
     }
     if (nodeOf(graph, selected)?.kind === "channel") {
-      const owner = deviceNodeOf(graph, selected, owners, devices);
+      const owner = radioOf(resolved, selected);
       return {
         kind: "channel",
         node: selected,

@@ -1,59 +1,37 @@
 use std::{
     collections::HashSet,
-    sync::{Arc, Weak},
-    time::Duration,
+    sync::{Mutex, PoisonError},
 };
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{NodeBody, PatchGraph};
 
 use crate::{
+    AppState,
     recorders::{Hooks, Recorders},
-    store::Store,
+    resolved::{self, ResolvedHub},
 };
 
-const SYNC_INTERVAL: Duration = Duration::from_millis(250);
-
-pub(crate) async fn run(engine: Weak<Engine>, hooks: Arc<Hooks>) {
-    let mut recorders = Recorders::default();
-    loop {
-        let Some(strong) = engine.upgrade() else {
-            return;
-        };
-        let hooks = hooks.clone();
-        let ticked = tokio::task::spawn_blocking(move || {
-            if let Some(graph) = sync(&strong, &hooks.store) {
-                recorders.reconcile(&strong, graph.as_ref(), &hooks);
-            }
-            recorders
-        })
-        .await;
-        match ticked {
-            Ok(next) => recorders = next,
-            Err(error) => {
-                tracing::error!(%error, "audio FX sync failed");
-                return;
-            }
-        }
-        tokio::time::sleep(SYNC_INTERVAL).await;
-    }
+pub(crate) fn follow(state: &AppState) {
+    let hooks = Hooks {
+        store: state.store.clone(),
+        gate: state.recordings_gate.clone(),
+        gps: state.gps.clone(),
+        problems: state.problems.clone(),
+    };
+    let recorders = Mutex::new(Recorders::default());
+    resolved::follow(state, "audio FX and recorders", move |state| {
+        let current = state.resolved.current();
+        apply(&state.engine, &current.graph);
+        recorders
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .reconcile(&state.engine, &current, &hooks);
+    });
 }
 
-pub(crate) fn sync(engine: &Engine, store: &Store) -> Option<Option<PatchGraph>> {
-    match store.active_workspace() {
-        Ok(Some(workspace)) => {
-            apply(engine, &workspace.snapshot.graph);
-            Some(Some(workspace.snapshot.graph))
-        }
-        Ok(None) => {
-            engine.retain_audio_fx(&HashSet::new());
-            Some(None)
-        }
-        Err(error) => {
-            tracing::error!(%error, "could not load audio FX settings");
-            None
-        }
-    }
+pub(crate) fn sync(engine: &Engine, resolved: &ResolvedHub) {
+    apply(engine, &resolved.current().graph);
 }
 
 fn apply(engine: &Engine, graph: &PatchGraph) {
@@ -109,5 +87,47 @@ mod tests {
         );
         let known = engine.subscribe_route_pcm(&through("kept")).unwrap_err();
         assert!(known.is_not_found(), "{known}");
+    }
+
+    #[tokio::test]
+    async fn an_fx_node_saved_on_the_canvas_is_live_without_a_poll() {
+        let (_app, state) = crate::tests::test_router_with_state();
+        let workspace = state
+            .store
+            .active_workspace_id()
+            .expect("store")
+            .expect("seeded workspace");
+        let detail = state.store.workspace(workspace).expect("workspace");
+        let mut snapshot = detail.snapshot;
+        snapshot.graph.nodes.push(fx("kept"));
+        state
+            .store
+            .update_workspace(
+                workspace,
+                &sdrmm_wire::UpdateWorkspaceRequest {
+                    revision: detail.info.revision,
+                    name: None,
+                    snapshot: Some(snapshot),
+                },
+                None,
+            )
+            .expect("save");
+        state.resolve_now();
+        let through = AudioRoute {
+            fx: vec!["kept".to_owned()],
+            ..AudioRoute::channel(0, 0)
+        };
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let refused = state.engine.subscribe_route_pcm(&through).unwrap_err();
+            if refused.is_not_found() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the FX node never went live: {refused}"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
     }
 }

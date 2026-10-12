@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::decode::{Capability, EventKind, KindSet};
+
 pub const MAX_OUTPUT_URL_LEN: usize = 2_048;
 pub const MAX_MATRIX_ROOM_ID_LEN: usize = 255;
 pub const MAX_OUTPUT_SECRET_LEN: usize = 4_096;
@@ -157,6 +159,22 @@ impl Default for EventOutputTarget {
 }
 
 impl EventOutputTarget {
+    #[must_use]
+    pub fn accepts(&self) -> KindSet {
+        match self {
+            Self::Beast { .. } => KindSet::EMPTY.with(EventKind::Adsb),
+            Self::Tunnel { .. } => KindSet::EMPTY.with(EventKind::BroadcastData),
+            Self::Recordings => KindSet::with_cap(Capability::Clip),
+            Self::Desktop
+            | Self::Csv { .. }
+            | Self::Webhook { .. }
+            | Self::Matrix { .. }
+            | Self::Mqtt { .. }
+            | Self::Postgres { .. }
+            | Self::Influx { .. } => KindSet::with_cap(Capability::Log),
+        }
+    }
+
     #[must_use]
     pub fn configured(&self) -> bool {
         match self {

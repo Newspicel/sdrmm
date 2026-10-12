@@ -18,9 +18,10 @@ pub(super) async fn list_decoder_log(
     Query(filter): Query<DecoderLogQuery>,
 ) -> Result<Json<DecoderLogResponse>, AppError> {
     let store = state.store.clone();
+    let sink = filter.sink.clone();
     let (mut entries, total) =
         tokio::task::spawn_blocking(move || store.query_decoder_log(&filter)).await??;
-    resolve_callsigns(&state, &mut entries);
+    present(&state, sink.as_deref(), &mut entries);
     Ok(Json(DecoderLogResponse {
         entries,
         total,
@@ -100,9 +101,10 @@ pub(super) async fn export_decoder_log(
     Query(filter): Query<DecoderLogQuery>,
 ) -> Result<Response, AppError> {
     let store = state.store.clone();
+    let sink = filter.sink.clone();
     let mut entries =
         tokio::task::spawn_blocking(move || store.export_decoder_log(&filter)).await??;
-    resolve_callsigns(&state, &mut entries);
+    present(&state, sink.as_deref(), &mut entries);
     let (content_type, body) = match format {
         ExportFormat::Csv => ("text/csv; charset=utf-8", csv_export(&entries)),
         ExportFormat::Json => ("application/json", serde_json::to_string(&entries)),
@@ -127,12 +129,25 @@ pub(super) async fn export_decoder_log(
         .into_response())
 }
 
-fn resolve_callsigns(state: &AppState, entries: &mut [DecoderLogEntry]) {
+fn present(state: &AppState, sink: Option<&str>, entries: &mut [DecoderLogEntry]) {
+    let resolved = state.resolved.current();
+    let clips = sink.map(|sink| resolved.patch.feeds(sink, sdrmm_wire::AUDIO_PORT));
     for entry in entries {
-        entry.callsign = entry
-            .event
-            .amateur_callsign()
+        let source = entry.origin.as_ref().map(|origin| origin.node.as_str());
+        let wired = match (&clips, source) {
+            (None, _) => true,
+            (Some(feeds), Some(source)) => feeds.iter().any(|feed| feed.source == source),
+            (Some(_), None) => false,
+        };
+        if !wired {
+            entry.event.strip_clip();
+        }
+        let view = entry.event.present();
+        entry.callsign = view
+            .callsign
+            .as_deref()
             .and_then(|call| state.reference.callsign(call));
+        entry.view = Some(view);
     }
 }
 

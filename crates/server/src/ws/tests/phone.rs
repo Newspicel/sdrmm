@@ -72,6 +72,7 @@ fn bind_gps(state: &AppState, node: &str, phone: &str) {
         .create_workspace("field", &snapshot)
         .expect("workspace");
     state.store.activate_workspace(id).expect("activate");
+    state.resolve_now();
     state.gps.reconcile(state);
 }
 
@@ -173,6 +174,10 @@ async fn a_phone_socket_gets_only_phone_events() {
             device_set: 0,
             stream: 0,
         },
+        ServerEvent::PatchResolved(Box::default()),
+        ServerEvent::NodeProblems {
+            problems: Vec::new(),
+        },
     ];
     for event in dropped.iter().chain(&kept) {
         tx.send(event.clone()).expect("send");
@@ -189,9 +194,9 @@ async fn a_phone_socket_gets_only_phone_events() {
     let paired = pair_one(&state.phones);
     let mut ws = dial_phone(addr, &paired.token).await;
     hello(&mut ws).await;
-    let _ = state
-        .decoded_text
-        .send(r#"{"type":"DecodedLost","data":{"count":7}}"#.to_owned().into());
+    state
+        .engine
+        .emit_event(ServerEvent::DecodedLost { count: 7 });
     state.engine.emit_scope(StateScope::Devices);
     loop {
         match next_event(&mut ws).await {

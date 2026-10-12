@@ -19,15 +19,45 @@ fn radio(id: &str) -> PatchNode {
 }
 
 fn body(kind: &str) -> NodeBody {
-    NodeBody::default_for(kind).unwrap_or_else(|| panic!("no default body for {kind}"))
+    NodeKind::parse(kind)
+        .map(NodeBody::default_for)
+        .unwrap_or_else(|| panic!("no default body for {kind}"))
 }
 
 fn refusal(graph: &PatchGraph) -> Option<String> {
-    match graph.validate() {
-        Err(PatchError::Wire { reason, .. }) => Some(reason),
+    refusal_against(graph, &decoders())
+}
+
+fn refusal_against(graph: &PatchGraph, descriptors: &[ChannelDescriptor]) -> Option<String> {
+    match graph.validate_against(descriptors) {
+        Err(PatchError::Refused { refusal, .. }) => Some(refusal.text()),
         Err(other) => panic!("expected a wiring refusal, got {other}"),
         Ok(()) => None,
     }
+}
+
+fn decoders() -> Vec<ChannelDescriptor> {
+    let mut all = descriptors();
+    for (type_id, kind) in [("ais", EventKind::Ais), ("rtty", EventKind::Rtty)] {
+        all.push(ChannelDescriptor {
+            type_id: type_id.to_owned(),
+            emits: vec![kind],
+            ..ChannelDescriptor::default()
+        });
+    }
+    all
+}
+
+fn compiled(graph: &PatchGraph) -> ResolvedPatch {
+    resolve::compile(graph, &ResolveCtx::default()).expect("compiles")
+}
+
+fn sources(patch: &ResolvedPatch, node: &str, port: &str) -> Vec<(String, String)> {
+    patch
+        .feeds(node, port)
+        .iter()
+        .map(|feed| (feed.source.clone(), feed.port.clone()))
+        .collect()
 }
 
 fn graph(nodes: Vec<PatchNode>, edges: Vec<PatchEdge>) -> PatchGraph {
@@ -43,8 +73,10 @@ fn patch_array_output_only_connects_to_array_inputs() {
             edge(("arr", "array"), ("df", "array")),
         ],
     );
-    assert!(wired.validate().is_ok());
-    assert_eq!(wired.array_of_processor("df"), Some("arr"));
+    assert_eq!(
+        sources(&compiled(&wired), "df", "array"),
+        [("arr".to_owned(), "array".to_owned())]
+    );
 
     let into_scope = graph(
         vec![array("arr"), node("scope", NodeBody::Scope)],
@@ -87,12 +119,15 @@ fn one_device_lane_feeds_one_array_lane() {
     );
     assert_eq!(
         refusal(&twice).as_deref(),
-        Some("that lane is in North mast")
+        Some("That lane is in North mast")
     );
-    let Err(PatchError::Wire { from, to, .. }) = twice.validate() else {
+    let Err(PatchError::Refused { edge: wire, .. }) = twice.validate() else {
         panic!("a lane in two arrays must be refused");
     };
-    assert_eq!((from.node.as_str(), to.node.as_str()), ("dev", "south"));
+    assert_eq!(
+        (wire.from.node.as_str(), wire.to.node.as_str()),
+        ("dev", "south")
+    );
 
     let same_array = graph(
         vec![radio("dev"), array("arr")],
@@ -103,7 +138,7 @@ fn one_device_lane_feeds_one_array_lane() {
     );
     assert_eq!(
         refusal(&same_array).as_deref(),
-        Some("that lane is in an Array")
+        Some("That lane is in Array")
     );
 
     let fine = graph(
@@ -130,7 +165,7 @@ fn an_array_lane_takes_only_a_radio_lane() {
             vec![source, array("arr")],
             vec![edge(("gen", port), ("arr", "lane"))],
         );
-        assert_eq!(refusal(&wrong).as_deref(), Some(REFUSAL_ARRAY_LANE));
+        assert_eq!(refusal(&wrong).as_deref(), Some("Array takes a radio lane"));
     }
     let played = graph(
         vec![node("gen", body("recording")), array("arr")],
@@ -141,31 +176,6 @@ fn an_array_lane_takes_only_a_radio_lane() {
 
 #[test]
 fn a_recorded_collection_offers_one_iq_output_per_lane() {
-    let recording = body("recording");
-    let names = |caps: Option<&Capabilities>| -> Vec<String> {
-        recording
-            .ports_with(caps.map(PortBacking::Device))
-            .into_iter()
-            .map(|port| port.name)
-            .collect()
-    };
-    assert_eq!(names(None), ["iq"]);
-    assert_eq!(names(Some(&capabilities(Duplex::RxOnly, 1, 0))), ["iq"]);
-    assert_eq!(
-        names(Some(&capabilities(Duplex::RxOnly, 5, 0))),
-        ["iq", "iq2", "iq3", "iq4", "iq5"]
-    );
-    assert_eq!(
-        body("signal_gen")
-            .ports_with(Some(PortBacking::Device(&capabilities(
-                Duplex::RxOnly,
-                5,
-                0
-            ))))
-            .len(),
-        1
-    );
-
     let played = graph(
         vec![node("rec", body("recording")), array("arr")],
         (0..5)
@@ -177,8 +187,10 @@ fn a_recorded_collection_offers_one_iq_output_per_lane() {
             })
             .collect(),
     );
-    assert_eq!(played.validate(), Ok(()));
-    assert_eq!(played.array_lanes("arr")[4], Some(("rec", 4)));
+    assert_eq!(
+        sources(&compiled(&played), "arr", "lane5"),
+        [("rec".to_owned(), "iq5".to_owned())]
+    );
 }
 
 #[test]
@@ -190,77 +202,117 @@ fn array_lanes_report_an_unwired_middle_port() {
             edge(("dev", "iq"), ("arr", "lane")),
         ],
     );
-    assert!(wired.validate().is_ok());
+    let patch = compiled(&wired);
+    let lanes: Vec<(String, Vec<(String, String)>)> = patch
+        .node("arr")
+        .map(|arr| {
+            arr.inputs()
+                .filter(|port| port.spec.port_type == PortType::Iq)
+                .map(|port| {
+                    (
+                        port.spec.name.clone(),
+                        sources(&patch, "arr", &port.spec.name),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let fed = |name: &str, source: Option<&str>| {
+        (
+            name.to_owned(),
+            source
+                .map(|port| vec![("dev".to_owned(), port.to_owned())])
+                .unwrap_or_default(),
+        )
+    };
     assert_eq!(
-        wired.array_lanes("arr"),
-        vec![Some(("dev", 0)), None, Some(("dev", 2))]
+        lanes,
+        [
+            fed("lane", Some("iq")),
+            fed("lane2", None),
+            fed("lane3", Some("iq3")),
+            fed("lane4", None),
+        ]
     );
-    assert_eq!(wired.array_wired_lanes("arr"), 3);
-    assert_eq!(wired.array_of_lane("dev", 2), Some("arr"));
-    assert_eq!(wired.array_of_lane("dev", 1), None);
-    assert!(wired.array_lanes("dev").is_empty());
-    assert_eq!(wired.array_wired_lanes("nothing"), 0);
 }
 
 #[test]
 fn per_lane_ports_grow_with_the_wired_lanes() {
-    let array = NodeBody::Array(ArrayNode::default());
-    let lanes = |backing: Option<PortBacking<'_>>| -> Vec<String> {
-        array
-            .ports_with(backing)
-            .into_iter()
-            .filter(|port| port.port_type == PortType::Iq)
-            .map(|port| port.name)
-            .collect()
+    let lanes = |wired: u32| -> Vec<String> {
+        let patch = compiled(&graph(
+            vec![radio("dev"), array("arr")],
+            (0..wired)
+                .map(|lane| {
+                    edge(
+                        ("dev", stream_port("iq", lane).as_str()),
+                        ("arr", stream_port(ARRAY_LANE_PORT, lane).as_str()),
+                    )
+                })
+                .collect(),
+        ));
+        patch
+            .node("arr")
+            .map(|arr| {
+                arr.inputs()
+                    .filter(|port| port.spec.port_type == PortType::Iq)
+                    .map(|port| port.spec.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     };
-    assert_eq!(lanes(None), ["lane"]);
-    assert_eq!(lanes(Some(PortBacking::Lanes(0))), ["lane"]);
-    assert_eq!(
-        lanes(Some(PortBacking::Lanes(2))),
-        ["lane", "lane2", "lane3"]
-    );
-    let full = lanes(Some(PortBacking::Lanes(MAX_ARRAY_LANES)));
+    assert_eq!(lanes(0), ["lane"]);
+    assert_eq!(lanes(2), ["lane", "lane2", "lane3"]);
+    let full = lanes(MAX_ARRAY_LANES);
     assert_eq!(full.len(), MAX_ARRAY_LANES as usize);
     assert_eq!(full.last().map(String::as_str), Some("lane16"));
-    assert_eq!(
-        lanes(Some(PortBacking::Lanes(u32::MAX))).len(),
-        MAX_ARRAY_LANES as usize
-    );
 
     let catalog = PatchCatalog::build();
     let entry = catalog
         .nodes
         .iter()
-        .find(|entry| entry.kind == "array")
+        .find(|entry| entry.kind == NodeKind::Array)
         .expect("array in the palette");
     let lane = &entry.ports[0];
     assert_eq!(lane.name, ARRAY_LANE_PORT);
     assert_eq!(lane.repeat, PortRepeat::PerLane);
-    assert!(!lane.multi);
+    assert_eq!(lane.multi, Multi::One);
+    assert!(lane.exclusive && lane.coherent);
     let json = serde_json::to_value(lane).expect("port json");
     assert_eq!(json["repeat"], "per_lane");
 }
 
 #[test]
-fn steer_accepts_only_a_df() {
+fn steer_takes_only_a_live_bearing() {
     let steered = graph(
         vec![node("df", body("df")), node("bf", body("beamformer"))],
-        vec![edge(("df", "events"), ("bf", "steer"))],
+        vec![edge(("df", "bearing"), ("bf", "steer"))],
     );
-    assert!(steered.validate().is_ok());
-    assert_eq!(steered.steer_source("bf"), Some("df"));
+    assert_eq!(
+        sources(&compiled(&steered), "bf", "steer"),
+        [("df".to_owned(), "bearing".to_owned())]
+    );
 
-    for source in [channel("src", "adsb"), node("src", body("hunt"))] {
+    for source in [
+        channel("src", "adsb"),
+        node("src", body("hunt")),
+        node("src", body("df")),
+    ] {
         let wrong = graph(
             vec![source, node("bf", body("beamformer"))],
             vec![edge(("src", "events"), ("bf", "steer"))],
         );
-        assert_eq!(refusal(&wrong).as_deref(), Some(REFUSAL_STEER));
+        assert_eq!(
+            wrong.validate(),
+            Err(PatchError::TypeMismatch {
+                from: PortType::Events,
+                to: PortType::Bearing,
+            })
+        );
     }
 }
 
 #[test]
-fn adsb_accepts_only_adsb_or_a_filter() {
+fn adsb_accepts_only_what_carries_adsb() {
     for source in [
         channel("src", "adsb"),
         node("src", NodeBody::EventFilter(EventFilterNode::default())),
@@ -269,15 +321,36 @@ fn adsb_accepts_only_adsb_or_a_filter() {
             vec![source, node("radar", body("passive_radar"))],
             vec![edge(("src", "events"), ("radar", "adsb"))],
         );
-        assert!(truth.validate().is_ok());
+        assert_eq!(refusal(&truth), None);
     }
     for source in [channel("src", "ais"), node("src", body("df"))] {
         let wrong = graph(
             vec![source, node("radar", body("passive_radar"))],
             vec![edge(("src", "events"), ("radar", "adsb"))],
         );
-        assert_eq!(refusal(&wrong).as_deref(), Some(REFUSAL_ADSB));
+        assert_eq!(
+            refusal(&wrong).as_deref(),
+            Some("Passive radar takes ADS-B")
+        );
     }
+    let filtered = |decoder: &str| {
+        graph(
+            vec![
+                channel("src", decoder),
+                node("only", NodeBody::EventFilter(EventFilterNode::default())),
+                node("radar", body("passive_radar")),
+            ],
+            vec![
+                edge(("src", "events"), ("only", "events")),
+                edge(("only", "events"), ("radar", "adsb")),
+            ],
+        )
+    };
+    assert_eq!(refusal(&filtered("adsb")), None);
+    assert_eq!(
+        refusal(&filtered("rtty")).as_deref(),
+        Some("Passive radar takes ADS-B")
+    );
     let two_decoders = graph(
         vec![
             channel("a", "adsb"),
@@ -310,7 +383,10 @@ fn triangulation_accepts_only_bearing_sources() {
             vec![source, node("tri", body("triangulation"))],
             vec![edge(("src", "events"), ("tri", "events"))],
         );
-        assert_eq!(refusal(&wrong).as_deref(), Some(REFUSAL_TRIANGULATION));
+        assert_eq!(
+            refusal(&wrong).as_deref(),
+            Some("Triangulation takes bearings")
+        );
     }
 }
 
@@ -331,27 +407,25 @@ fn a_position_wire_names_its_source() {
             edge(("gps", "position"), ("radar", "tx")),
         ],
     );
-    assert!(wired.validate().is_ok());
+    let patch = compiled(&wired);
+    let gps = [("gps".to_owned(), "position".to_owned())];
     for id in ["arr", "hunt", "tri"] {
-        assert_eq!(wired.position_source(id), Some("gps"));
+        assert_eq!(sources(&patch, id, "position"), gps);
     }
-    assert_eq!(wired.position_source("radar"), None);
-    assert_eq!(wired.sources_of("radar", RADAR_TX_PORT).next(), Some("gps"));
+    assert!(sources(&patch, "radar", "position").is_empty());
+    assert_eq!(sources(&patch, "radar", RADAR_TX_PORT), gps);
 }
 
 #[test]
 fn every_catalog_kind_has_a_default_body() {
     let catalog = PatchCatalog::build();
-    assert_eq!(catalog.nodes.len(), catalog::catalog_rows().count());
+    assert_eq!(catalog.nodes.len(), NodeKind::ALL.len());
     for entry in &catalog.nodes {
         assert_eq!(entry.default_body.kind(), entry.kind);
-        assert_eq!(
-            NodeBody::default_for(&entry.kind).as_ref(),
-            Some(&entry.default_body)
-        );
+        assert_eq!(NodeBody::default_for(entry.kind), entry.default_body);
         assert_eq!(entry.category, entry.default_body.category());
     }
-    assert_eq!(NodeBody::default_for("combiner"), None);
+    assert_eq!(NodeKind::parse("combiner"), None);
     let json = serde_json::to_value(&catalog).expect("catalog json");
     assert_eq!(json["nodes"][0]["default_body"]["kind"], "device");
     for kind in [
@@ -368,7 +442,7 @@ fn every_catalog_kind_has_a_default_body() {
         let entry = catalog
             .nodes
             .iter()
-            .find(|entry| entry.kind == kind)
+            .find(|entry| entry.kind.as_str() == kind)
             .unwrap_or_else(|| panic!("{kind} in the palette"));
         assert_eq!(entry.category, NodeCategory::Tool, "{kind}");
     }
@@ -381,7 +455,7 @@ fn processor_params_follow_the_body() {
         match body.processor_params() {
             Some(params) => {
                 assert!(body.is_array_processor(), "{}", entry.kind);
-                assert_eq!(params.type_id(), entry.kind);
+                assert_eq!(params.type_id(), entry.kind.as_str());
                 assert!(params.valid(), "{}", entry.kind);
             }
             None => assert!(!body.is_array_processor(), "{}", entry.kind),
@@ -434,46 +508,64 @@ fn lane_outputs_follow_the_port_table() {
 
 #[test]
 fn processor_ports_follow_the_contract() {
-    let ports = |kind: &str| -> Vec<(String, PortType, PortDirection, bool)> {
+    let ports = |kind: &str| -> Vec<(String, PortType, PortDirection, Multi)> {
         body(kind)
-            .ports()
+            .ports(None)
             .into_iter()
             .map(|port| (port.name, port.port_type, port.direction, port.multi))
             .collect()
     };
     let row = |name: &str, ty, dir, multi| (name.to_owned(), ty, dir, multi);
+    use Multi::{Many, One};
     use PortDirection::{In, Out};
+    assert_eq!(
+        ports("df"),
+        [
+            row("array", PortType::Array, In, One),
+            row("events", PortType::Events, Out, Many),
+            row("bearing", PortType::Bearing, Out, Many),
+        ]
+    );
+    assert_eq!(
+        ports("beamformer"),
+        [
+            row("array", PortType::Array, In, One),
+            row("steer", PortType::Bearing, In, One),
+            row("beam", PortType::Iq, Out, Many),
+        ]
+    );
     assert_eq!(
         ports("passive_radar"),
         [
-            row("array", PortType::Array, In, false),
-            row("tx", PortType::Position, In, false),
-            row("adsb", PortType::Events, In, true),
-            row("events", PortType::Events, Out, true),
+            row("array", PortType::Array, In, One),
+            row("tx", PortType::Position, In, One),
+            row("adsb", PortType::Events, In, Many),
+            row("events", PortType::Events, Out, Many),
         ]
     );
     assert_eq!(
         ports("triangulation"),
         [
-            row("events", PortType::Events, In, true),
-            row("position", PortType::Position, In, false),
-            row("events", PortType::Events, Out, true),
+            row("events", PortType::Events, In, Many),
+            row("position", PortType::Position, In, One),
+            row("events", PortType::Events, Out, Many),
         ]
     );
     assert_eq!(
         ports("hunt"),
         [
-            row("control", PortType::Control, Out, false),
-            row("position", PortType::Position, In, false),
-            row("events", PortType::Events, Out, true),
+            row("iq", PortType::Iq, In, One),
+            row("control", PortType::Control, Out, One),
+            row("position", PortType::Position, In, One),
+            row("events", PortType::Events, Out, Many),
         ]
     );
     assert_eq!(
         ports("array"),
         [
-            row("lane", PortType::Iq, In, false),
-            row("position", PortType::Position, In, false),
-            row("array", PortType::Array, Out, true),
+            row("lane", PortType::Iq, In, One),
+            row("position", PortType::Position, In, One),
+            row("array", PortType::Array, Out, Many),
         ]
     );
 }
@@ -543,16 +635,13 @@ fn a_processor_body_is_tagged_by_its_type_id() {
 
 #[test]
 fn a_wiring_refusal_reads_as_its_reason() {
-    let error = PatchError::Wire {
-        from: PortRef {
-            node: "a".to_owned(),
-            port: "events".to_owned(),
+    let error = refused(
+        ("a", "events"),
+        ("b", "adsb"),
+        Refusal::Takes {
+            node: "Passive radar".to_owned(),
+            what: "ADS-B".to_owned(),
         },
-        to: PortRef {
-            node: "b".to_owned(),
-            port: "steer".to_owned(),
-        },
-        reason: REFUSAL_STEER.to_owned(),
-    };
-    assert_eq!(error.to_string(), REFUSAL_STEER);
+    );
+    assert_eq!(error.to_string(), "Passive radar takes ADS-B");
 }

@@ -7,7 +7,8 @@ import {
   decoderLogGroupsQuery,
   decoderLogQuery,
 } from "../lib/api";
-import { useDecodedStore } from "../lib/decoded";
+import { useKindLabel } from "../lib/eventKinds";
+import { useSinkFeed } from "../lib/sinks";
 import type { LogGroupKey } from "../lib/types";
 import { Input } from "./BaseControls";
 import { ConfirmButton } from "./ConfirmButton";
@@ -24,13 +25,11 @@ import {
   droppedNotice,
   FLEX_COLUMN,
   isFiltered,
-  kindLabel,
   LIMIT_OPTIONS,
   LOG_COLUMNS,
   type LogFilter,
   type LogRow,
   logDownloads,
-  matchesFilter,
   readColumnWidths,
   resizeColumn,
   toQuery,
@@ -48,7 +47,10 @@ import { groupOf, groupRows, VIEW_CHOICES, viewOf } from "./logGroups";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
-const NO_FRAMES = {};
+function newestMs(records: readonly { at: string }[]): number {
+  const at = Date.parse(records[0]?.at ?? "");
+  return Number.isNaN(at) ? 0 : at;
+}
 
 const LIMIT_CHOICES = LIMIT_OPTIONS.map((n) => ({ value: n, label: String(n) }));
 
@@ -90,20 +92,21 @@ export function DecoderLogPanel({
     () => (group === null ? [] : groupRows(grouped.data?.groups ?? [], group)),
     [grouped.data, group],
   );
-  const frames = useDecodedStore((s) => (wires.wired ? s.frames : NO_FRAMES));
-  const lost = useDecodedStore((s) => s.lost);
+  const feed = useSinkFeed(wires.sink);
+  const lost = feed.lost;
+  const [clearedAt, setClearedAt] = useState(0);
 
   const entries = log.data?.entries;
   const rows = useMemo(
-    () => buildRows(entries ?? [], collectLive(frames, filter, wires.sink)),
-    [entries, frames, filter, wires.sink],
+    () => buildRows(entries ?? [], collectLive(feed.records, filter, clearedAt)),
+    [entries, feed.records, filter, clearedAt],
   );
 
   const clearMut = useMutation({
     mutationFn: () => clearDecoderLog(query),
     onSuccess: (deleted) => {
       const live = rows.filter((row) => row.live).length;
-      useDecodedStore.getState().dropFrames((record) => matchesFilter(record, filter, wires.sink));
+      setClearedAt(newestMs(feed.records));
       setError(null);
       setCleared(deleted + live);
     },
@@ -336,6 +339,7 @@ function ColumnHandle({
 }
 
 function LogRows({ row, open, onToggle }: { row: LogRow; open: boolean; onToggle: () => void }) {
+  const kindLabel = useKindLabel();
   return (
     <>
       <tr

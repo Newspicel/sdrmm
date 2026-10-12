@@ -109,6 +109,7 @@ pub struct WrittenSerial {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct CreateChannelRequest {
+    pub node: String,
     #[serde(default)]
     pub stream: u32,
     pub settings: ChannelSettings,
@@ -124,8 +125,6 @@ pub struct PatchChannelRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelTypesResponse {
     pub types: Vec<ChannelDescriptor>,
-    #[serde(default)]
-    pub facets: Vec<crate::EventKindFacets>,
 }
 
 pub const PRESET_SNAPSHOT_VERSION: u32 = 2;
@@ -402,6 +401,8 @@ pub struct DecoderLogEntry {
     pub station: Option<String>,
     pub summary: String,
     pub event: DecoderEvent,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<crate::present::Presentation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callsign: Option<crate::Callsign>,
 }

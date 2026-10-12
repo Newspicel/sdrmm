@@ -1,14 +1,15 @@
+import { controlledBy, radioOf } from "../lib/resolved";
 import type { ChannelInfo, DeviceSet } from "../lib/types";
-import { controlledNodeOf, deviceNodeOf, type IqLane, iqSourceOf } from "./binding";
 import type { Workspace } from "./context";
+import { type IqLane, iqSourceOf } from "./lanes";
 
 export function deviceSetOf(workspace: Workspace, node: string): DeviceSet | null {
-  const owner = deviceNodeOf(workspace.graph, node, workspace.owners, workspace.devices);
+  const owner = radioOf(workspace.resolved, node);
   return owner === null ? null : (workspace.devices.get(owner) ?? null);
 }
 
 export function laneOf(workspace: Workspace, node: string): IqLane | null {
-  const wired = iqSourceOf(workspace.graph, node, workspace.devices);
+  const wired = iqSourceOf(workspace.resolved, node);
   const owner = workspace.owners.get(node);
   const channel = workspace.channels.get(node);
   if (owner !== undefined && channel !== undefined) {
@@ -25,7 +26,7 @@ export interface Decoder {
 }
 
 export function decoderOf(workspace: Workspace, node: string): Decoder | null {
-  const driven = controlledNodeOf(workspace.graph, node);
+  const driven = controlledBy(workspace.resolved, node);
   if (driven === null) {
     return null;
   }

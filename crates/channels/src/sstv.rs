@@ -10,8 +10,8 @@ use modes::{
 use num_complex::Complex;
 use sdrmm_dsp::FmDemod;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, SstvMode,
-    SstvModulation, SstvParams, SstvPicture,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    SstvMode, SstvModulation, SstvParams, SstvPicture,
 };
 
 use crate::{
@@ -55,7 +55,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
-    decoder_kind: Some("sstv".to_owned()),
+    emits: vec![EventKind::Sstv],
     ..ChannelDescriptor::default()
 });
 

@@ -1,11 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ISM_KIND_LABELS, percentOf, WIFI_BAND_LABELS } from "../lib/airtime";
-import { capturedImageUrl, imagesQuery } from "../lib/api";
-import { useBroadcastStore } from "../lib/broadcast";
 import { copyText } from "../lib/copyText";
-import { useDecodedKind, useDecodedStore, useStations } from "../lib/decoded";
+import { useKindLabel } from "../lib/eventKinds";
 import { type GsmCellView, gsmCells, gsmSummary } from "../lib/gsm";
 import {
   berText,
@@ -15,21 +12,22 @@ import {
   sparkPoints,
   wholeDb,
 } from "../lib/measurement";
-import type { DecodedRecordOf, DecoderKind, IdentSignal } from "../lib/types";
+import type { EntityOf } from "../lib/sinks";
+import type { DecodedRecordOf, IdentSignal } from "../lib/types";
+import { useNow } from "../lib/useNow";
+import type { PanelProps, Panels } from "../sinks/panels";
 import { Button } from "./BaseControls";
 import { BroadcastDataView } from "./BroadcastDataView";
-import { ALERT, BTN, TABLE_CELL, TABLE_HEAD } from "./controls";
+import { BTN, TABLE_CELL, TABLE_HEAD } from "./controls";
 import {
   type AprsWeatherStation,
   ageClass,
-  aircraftRow,
   aprsWeatherStations,
   type BleDevice,
   bleDevices,
   buildTranscript,
   candidateScore,
   cwSignalRows,
-  type DecoderScope,
   type DectStation,
   type Drone,
   dectStations,
@@ -39,7 +37,6 @@ import {
   formatPosition,
   identMeasurements,
   identOverview,
-  inScope,
   isAtBottom,
   type LoraStation,
   latestRecord,
@@ -54,15 +51,12 @@ import {
   radiosondeStations,
   rdsPicture,
   rdsQuality,
-  recordsInScope,
   remoteIdDrones,
-  shipRow,
   signalFrequency,
   sortTargets,
-  stationsInScope,
-  TARGET_MAX_AGE_MS,
   type TargetRow,
   type TargetSort,
+  targetRow,
   toneLabel,
 } from "./decoderViews";
 import { FaceFault } from "./face/Fault";
@@ -85,17 +79,7 @@ import {
 const PANE = "flex flex-col gap-2 p-3";
 const EMPTY = "text-sm text-ink-dim";
 
-function useNow(periodMs = 1000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), periodMs);
-    return () => clearInterval(id);
-  }, [periodMs]);
-  return now;
-}
-
-function RdsView({ scope = {} }: { scope?: DecoderScope }) {
-  const records = recordsInScope(useDecodedKind("rds"), scope);
+function RdsView({ records }: PanelProps<"rds">) {
   const rds = rdsPicture(records);
 
   if (rds === null) {
@@ -182,15 +166,10 @@ const TARGET_COLUMNS = {
   },
 } as const;
 
-function TargetsView({ kind, scope = {} }: { kind: "adsb" | "ais"; scope?: DecoderScope }) {
-  const now = useNow();
-  const ageOut = useDecodedStoreAgeOut();
-  const aircraft = stationsInScope(useStations("adsb"), scope);
-  const ships = stationsInScope(useStations("ais"), scope);
+function TargetsView({ entities }: { entities: readonly (EntityOf<"adsb"> | EntityOf<"ais">)[] }) {
+  const now = useNow(1000);
   const [sort, setSort] = useState<TargetSort>("age");
   const [descending, setDescending] = useState(false);
-
-  useEffect(() => ageOut(now), [ageOut, now]);
 
   const toggle = (key: TargetSort): void => {
     if (key === sort) {
@@ -201,8 +180,8 @@ function TargetsView({ kind, scope = {} }: { kind: "adsb" | "ais"; scope?: Decod
     }
   };
 
-  const rows =
-    kind === "adsb" ? aircraft.map((s) => aircraftRow(s, now)) : ships.map((s) => shipRow(s, now));
+  const rows = entities.map((entity) => targetRow(entity, now));
+  const kind = entities[0]?.key.kind === "ais" ? "ais" : "adsb";
 
   return (
     <div className={PANE}>
@@ -319,8 +298,14 @@ function SortButton({
   );
 }
 
-function TextView({ kind, scope = {} }: { kind: "rtty" | "morse" | "psk"; scope?: DecoderScope }) {
-  const records = recordsInScope(useDecodedKind(kind), scope);
+function TextView({
+  kind,
+  records,
+}: {
+  kind: "rtty" | "morse" | "psk";
+  records: PanelProps<"rtty" | "morse" | "psk">["records"];
+}) {
+  const kindLabel = useKindLabel();
   const text = buildTranscript(records);
   const wpm = kind === "morse" ? latestWpm(records as readonly DecodedRecordOf<"morse">[]) : null;
   const paneRef = useRef<HTMLPreElement>(null);
@@ -377,8 +362,8 @@ function TextView({ kind, scope = {} }: { kind: "rtty" | "morse" | "psk"; scope?
   );
 }
 
-function CwSkimmerView({ scope = {} }: { scope?: DecoderScope }) {
-  const rows = cwSignalRows(recordsInScope(useDecodedKind("cw_skimmer"), scope));
+function CwSkimmerView({ records }: PanelProps<"cw_skimmer">) {
+  const rows = cwSignalRows(records);
   return (
     <div className={PANE}>
       <div className="flex items-baseline gap-2">
@@ -424,17 +409,7 @@ function CwSkimmerView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-function kindLabel(kind: "rtty" | "morse" | "psk"): string {
-  return { rtty: "RTTY", morse: "Morse", psk: "PSK" }[kind];
-}
-
-function useDecodedStoreAgeOut(): (nowMs: number) => void {
-  const ageOut = useDecodedStore((s) => s.ageOut);
-  return useCallback((nowMs: number) => ageOut(TARGET_MAX_AGE_MS, nowMs), [ageOut]);
-}
-
-function ToneView({ scope = {} }: { scope?: DecoderScope }) {
-  const records = recordsInScope(useDecodedKind("tone"), scope);
+function ToneView({ records }: PanelProps<"tone">) {
   const latest = records[0];
 
   if (latest === undefined) {
@@ -462,8 +437,7 @@ function ToneView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-function IdentView({ scope = {} }: { scope?: DecoderScope }) {
-  const records = recordsInScope(useDecodedKind("ident"), scope);
+function IdentView({ records }: PanelProps<"ident">) {
   const latest = records[0];
 
   if (latest === undefined) {
@@ -590,8 +564,8 @@ function DectRow({ station }: { station: DectStation }) {
   );
 }
 
-function DectView({ scope = {} }: { scope?: DecoderScope }) {
-  const stations = dectStations(recordsInScope(useDecodedKind("dect"), scope));
+function DectView({ records }: PanelProps<"dect">) {
+  const stations = dectStations(records);
   if (stations.length === 0) {
     return (
       <div className={PANE}>
@@ -656,8 +630,7 @@ function GsmCellReadouts({ cell }: { cell: GsmCellView }) {
   );
 }
 
-function GsmView({ scope = {} }: { scope?: DecoderScope }) {
-  const records = recordsInScope(useDecodedKind("gsm"), scope);
+function GsmView({ records }: PanelProps<"gsm">) {
   if (records.length === 0) {
     return (
       <div className={PANE}>
@@ -747,9 +720,9 @@ function DroneRow({ drone, now }: { drone: Drone; now: number }) {
   );
 }
 
-function RemoteIdView({ scope = {} }: { scope?: DecoderScope }) {
-  const now = useNow();
-  const drones = remoteIdDrones(recordsInScope(useDecodedKind("remote_id"), scope));
+function RemoteIdView({ records }: PanelProps<"remote_id">) {
+  const now = useNow(1000);
+  const drones = remoteIdDrones(records);
   if (drones.length === 0) {
     return (
       <div className={PANE}>
@@ -811,9 +784,9 @@ function BleRow({ device, now }: { device: BleDevice; now: number }) {
   );
 }
 
-function BleView({ scope = {} }: { scope?: DecoderScope }) {
-  const now = useNow();
-  const devices = bleDevices(recordsInScope(useDecodedKind("ble"), scope));
+function BleView({ records }: PanelProps<"ble">) {
+  const now = useNow(1000);
+  const devices = bleDevices(records);
   if (devices.length === 0) {
     return (
       <div className={PANE}>
@@ -860,8 +833,8 @@ function LoadBar({ share }: { share: number }) {
   );
 }
 
-function WifiOccupancyView({ scope = {} }: { scope?: DecoderScope }) {
-  const latest = latestRecord(recordsInScope(useDecodedKind("wifi_occupancy"), scope));
+function WifiOccupancyView({ records }: PanelProps<"wifi_occupancy">) {
+  const latest = latestRecord(records);
   if (latest === null || latest.event.data.channels.length === 0) {
     return (
       <div className={PANE}>
@@ -911,8 +884,8 @@ function WifiOccupancyView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-function IsmSurveyView({ scope = {} }: { scope?: DecoderScope }) {
-  const latest = latestRecord(recordsInScope(useDecodedKind("ism_survey"), scope));
+function IsmSurveyView({ records }: PanelProps<"ism_survey">) {
+  const latest = latestRecord(records);
   if (latest === null) {
     return (
       <div className={PANE}>
@@ -968,9 +941,9 @@ function IsmSurveyView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-function LoraView({ scope = {} }: { scope?: DecoderScope }) {
-  const now = useNow();
-  const stations = loraStations(recordsInScope(useDecodedKind("lora"), scope));
+function LoraView({ records }: PanelProps<"lora">) {
+  const now = useNow(1000);
+  const stations = loraStations(records);
   if (stations.length === 0) {
     return (
       <div className={PANE}>
@@ -1089,9 +1062,8 @@ function RadiosondeLog({ records }: { records: readonly DecodedRecordOf<"radioso
   );
 }
 
-function RadiosondeView({ scope = {} }: { scope?: DecoderScope }) {
-  const now = useNow();
-  const records = recordsInScope(useDecodedKind("radiosonde"), scope);
+function RadiosondeView({ records }: PanelProps<"radiosonde">) {
+  const now = useNow(1000);
   const sondes = radiosondeStations(records);
   const [selected, setSelected] = useState<string | null>(null);
   const open = sondes.find((sonde) => sonde.serial === selected) ?? sondes[0];
@@ -1165,9 +1137,9 @@ function AprsWeatherRow({ station, now }: { station: AprsWeatherStation; now: nu
   );
 }
 
-function AprsWeatherView({ scope = {} }: { scope?: DecoderScope }) {
-  const now = useNow();
-  const stations = aprsWeatherStations(recordsInScope(useDecodedKind("aprs"), scope));
+function AprsWeatherView({ records }: PanelProps<"aprs">) {
+  const now = useNow(1000);
+  const stations = aprsWeatherStations(records);
   if (stations.length === 0) {
     return (
       <div className={PANE}>
@@ -1211,8 +1183,8 @@ function AprsWeatherView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-function VorView({ scope = {} }: { scope?: DecoderScope }) {
-  const readings = latestVorReadings(recordsInScope(useDecodedKind("vor"), scope));
+function VorView({ records }: PanelProps<"vor">) {
+  const readings = latestVorReadings(records);
   const fix = multiVorFix(readings);
   if (readings.length === 0) {
     return (
@@ -1278,108 +1250,26 @@ function VorView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-type PictureSource = "sstv" | "apt" | "lrpt" | "wefax";
-
-const PICTURE_HINTS: Record<PictureSource, string> = {
-  sstv: "No picture received yet: a scanning transmission takes between 36 s and four minutes.",
-  apt: "No NOAA pass yet.",
-  lrpt: "No Meteor pass yet.",
-  wefax: "No chart received yet.",
-};
-
-function PicturesView({ source, scope = {} }: { source: PictureSource; scope?: DecoderScope }) {
-  const result = useQuery(imagesQuery());
-  const images = (result.data?.images ?? []).filter(
-    (image) => image.source === source && inScope(image.device_set, image.channel, scope),
-  );
-  const [selected, setSelected] = useState<number | null>(null);
-  const open = images.find((image) => image.id === selected) ?? images[0];
-
-  if (images.length === 0) {
-    return (
-      <div className={PANE}>
-        <span className={EMPTY}>{PICTURE_HINTS[source]}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className={PANE}>
-      {open !== undefined && (
-        <figure className="flex flex-col gap-1">
-          {open.image == null ? (
-            <span className={ALERT}>{open.image_error ?? "the pixels were not kept"}</span>
-          ) : (
-            <img
-              src={capturedImageUrl(open.image.url)}
-              alt={`${open.mode} picture received at ${formatClock(open.at)}`}
-              className="w-full self-start rounded-control border border-line bg-black object-contain"
-              style={{ maxHeight: "50vh" }}
-            />
-          )}
-          <figcaption className="flex flex-wrap items-baseline gap-2">
-            <span className="font-mono text-xs tabular-nums text-accent">{open.mode}</span>
-            <span className="legend">
-              {open.width}&#215;{open.height}
-            </span>
-            <span className="legend">
-              {open.complete ? "complete" : `${open.lines} of ${open.height} lines`}
-            </span>
-            <span className="ml-auto font-mono text-xs tabular-nums text-ink-dim">
-              {formatClock(open.at)}
-            </span>
-          </figcaption>
-        </figure>
-      )}
-      {images.length > 1 && (
-        <ul className="flex flex-wrap gap-2">
-          {images.map((image) => (
-            <li key={image.id}>
-              <Button
-                type="button"
-                className={`${BTN} p-0.5`}
-                aria-current={image.id === open?.id}
-                aria-label={`${image.mode} at ${formatClock(image.at)}`}
-                onClick={() => setSelected(image.id)}
-              >
-                {image.image == null ? (
-                  <span className="legend px-2">no pixels</span>
-                ) : (
-                  <img
-                    src={capturedImageUrl(image.image.url)}
-                    alt=""
-                    className="h-12 w-16 rounded-inset bg-black object-contain"
-                  />
-                )}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function BroadcastView({ scope }: { scope: DecoderScope }) {
-  const current = useBroadcastStore((store) =>
-    Object.values(store.byChannel).find((entry) => inScope(entry.deviceSet, entry.channel, scope)),
-  );
-  const objects = recordsInScope(useDecodedKind("broadcast_data"), scope);
-  const status = current?.status;
-  const object = status?.locked
-    ? objects.find(
-        (record) =>
-          record.event.data.service_id === status.service_id &&
-          record.device_set === current?.deviceSet &&
-          record.channel === current?.channel,
-      )?.event.data
-    : undefined;
+function BroadcastView({ records }: PanelProps<"broadcast">) {
+  const status = records[0]?.event.data;
   return (
     <div className={PANE}>
       <span className="legend">{status?.label ?? "Broadcast service"}</span>
       {status?.dynamic_label && <p className="text-sm text-ink">{status.dynamic_label}</p>}
-      {object && <BroadcastDataView data={object} />}
-      {!status && !object && <span className={EMPTY}>Waiting for a broadcast service.</span>}
+      {!status && <span className={EMPTY}>Waiting for a broadcast service.</span>}
+    </div>
+  );
+}
+
+function BroadcastDataPanel({ records }: PanelProps<"broadcast_data">) {
+  const object = records[0]?.event.data;
+  return (
+    <div className={PANE}>
+      {object ? (
+        <BroadcastDataView data={object} />
+      ) : (
+        <span className={EMPTY}>No data object yet.</span>
+      )}
     </div>
   );
 }
@@ -1388,8 +1278,8 @@ function fixed(value: number | null | undefined, digits = 2): string {
   return value == null ? "-" : value.toFixed(digits);
 }
 
-function NoiseFigureView({ scope = {} }: { scope?: DecoderScope }) {
-  const latest = latestRecord(recordsInScope(useDecodedKind("noise_figure"), scope));
+function NoiseFigureView({ records }: PanelProps<"noise_figure">) {
+  const latest = latestRecord(records);
   if (latest === null) {
     return (
       <div className={PANE}>
@@ -1423,8 +1313,8 @@ function NoiseFigureView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-function PerView({ scope = {} }: { scope?: DecoderScope }) {
-  const latest = latestRecord(recordsInScope(useDecodedKind("per"), scope));
+function PerView({ records }: PanelProps<"per">) {
+  const latest = latestRecord(records);
   if (latest === null) {
     return (
       <div className={PANE}>
@@ -1477,8 +1367,7 @@ function Spark({ values }: { values: readonly number[] }) {
   );
 }
 
-function SidView({ scope = {} }: { scope?: DecoderScope }) {
-  const records = recordsInScope(useDecodedKind("sid"), scope);
+function SidView({ records }: PanelProps<"sid">) {
   const latest = latestRecord(records);
   if (latest === null) {
     return (
@@ -1542,74 +1431,29 @@ function SidView({ scope = {} }: { scope?: DecoderScope }) {
   );
 }
 
-const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = {
-  transmission: null,
-  call: null,
-  scrambler: null,
-  rds: (scope) => <RdsView scope={scope} />,
-  adsb: (scope) => <TargetsView kind="adsb" scope={scope} />,
-  ais: (scope) => <TargetsView kind="ais" scope={scope} />,
-  rtty: (scope) => <TextView kind="rtty" scope={scope} />,
-  morse: (scope) => <TextView kind="morse" scope={scope} />,
-  cw_skimmer: (scope) => <CwSkimmerView scope={scope} />,
-  psk: (scope) => <TextView kind="psk" scope={scope} />,
-  selcall: null,
-  tone: (scope) => <ToneView scope={scope} />,
-  ident: (scope) => <IdentView scope={scope} />,
-  aprs: (scope) => <AprsWeatherView scope={scope} />,
-  pocsag: null,
-  flex: null,
-  ermes: null,
-  eot: null,
-  ism: null,
-  sarsat: null,
-  tetrapol: null,
-  navtex: null,
-  acars: null,
-  dv: null,
-  ft8: null,
-  ft4: null,
-  wspr: null,
-  broadcast_data: (scope) => <BroadcastView scope={scope} />,
-  radio_clock: null,
-  gnss: null,
-  sstv: (scope) => <PicturesView source="sstv" scope={scope} />,
-  apt: (scope) => <PicturesView source="apt" scope={scope} />,
-  lrpt: (scope) => <PicturesView source="lrpt" scope={scope} />,
-  wefax: (scope) => <PicturesView source="wefax" scope={scope} />,
-  radiosonde: (scope) => <RadiosondeView scope={scope} />,
-  vor: (scope) => <VorView scope={scope} />,
-  ils: null,
-  df: null,
-  df_fix: null,
-  radar: null,
-  dsc: null,
-  inmarsat_stdc: null,
-  inmarsat_aero: null,
-  vdl2: null,
-  hfdl: null,
-  iridium: null,
-  dect: (scope) => <DectView scope={scope} />,
-  gsm: (scope) => <GsmView scope={scope} />,
-  lora: (scope) => <LoraView scope={scope} />,
-  remote_id: (scope) => <RemoteIdView scope={scope} />,
-  ble: (scope) => <BleView scope={scope} />,
-  wifi_occupancy: (scope) => <WifiOccupancyView scope={scope} />,
-  ism_survey: (scope) => <IsmSurveyView scope={scope} />,
-  noise_figure: (scope) => <NoiseFigureView scope={scope} />,
-  per: (scope) => <PerView scope={scope} />,
-  sid: (scope) => <SidView scope={scope} />,
-  stanag: null,
+export const PANELS: Panels = {
+  rds: (props) => <RdsView {...props} />,
+  adsb: (props) => <TargetsView entities={props.entities} />,
+  ais: (props) => <TargetsView entities={props.entities} />,
+  rtty: (props) => <TextView kind="rtty" records={props.records} />,
+  morse: (props) => <TextView kind="morse" records={props.records} />,
+  psk: (props) => <TextView kind="psk" records={props.records} />,
+  cw_skimmer: (props) => <CwSkimmerView {...props} />,
+  tone: (props) => <ToneView {...props} />,
+  ident: (props) => <IdentView {...props} />,
+  aprs: (props) => <AprsWeatherView {...props} />,
+  broadcast: (props) => <BroadcastView {...props} />,
+  broadcast_data: (props) => <BroadcastDataPanel {...props} />,
+  radiosonde: (props) => <RadiosondeView {...props} />,
+  vor: (props) => <VorView {...props} />,
+  dect: (props) => <DectView {...props} />,
+  gsm: (props) => <GsmView {...props} />,
+  lora: (props) => <LoraView {...props} />,
+  remote_id: (props) => <RemoteIdView {...props} />,
+  ble: (props) => <BleView {...props} />,
+  wifi_occupancy: (props) => <WifiOccupancyView {...props} />,
+  ism_survey: (props) => <IsmSurveyView {...props} />,
+  noise_figure: (props) => <NoiseFigureView {...props} />,
+  per: (props) => <PerView {...props} />,
+  sid: (props) => <SidView {...props} />,
 };
-
-function isDecoderKind(kind: string): kind is DecoderKind {
-  return Object.hasOwn(VIEWS, kind);
-}
-
-export function hasDecoderView(kind: string): boolean {
-  return isDecoderKind(kind) && VIEWS[kind] !== null;
-}
-
-export function DecoderView({ kind, scope }: { kind: string; scope: DecoderScope }) {
-  return isDecoderKind(kind) ? (VIEWS[kind]?.(scope) ?? null) : null;
-}

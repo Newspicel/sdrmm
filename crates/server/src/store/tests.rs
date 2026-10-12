@@ -473,6 +473,7 @@ fn record(at: &str, device_set: u32, event: DecoderEvent) -> DecodedRecord {
         at: at.to_string(),
         freq_hz: 1_090_000_000.0,
         event,
+        view: None,
     }
 }
 
@@ -485,6 +486,7 @@ fn bound(workspace: i64, node: &str, record: DecodedRecord) -> Routed {
         record,
         source: Some(node.to_owned()),
         workspace: Some(workspace),
+        history: true,
     }
 }
 
@@ -498,6 +500,7 @@ fn reaching(workspace: i64, sinks: &[&str], record: DecodedRecord) -> Routed {
         },
         source: Some("decoder".to_owned()),
         workspace: Some(workspace),
+        history: true,
     }
 }
 

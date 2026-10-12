@@ -24,13 +24,14 @@ import { devicesQuery } from "../../lib/api";
 import { useBroadcast } from "../../lib/broadcast";
 import { heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, usePipelineHealth } from "../../lib/pipeline";
+import { controllerOf } from "../../lib/resolved";
 import { trackedBy, useSatelliteStore } from "../../lib/satellite";
 import type { BandMiss, BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
-import { hasWire, iqLanesOf, tuningControllerOf } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { nodeOf, patchNode } from "../graph";
+import { hasFeed, iqLanesOf } from "../lanes";
 import { deviceSetOf, laneOf } from "../workspaceDevice";
 import { bandMissOf, bandMissSaid } from "./bandMiss";
 import {
@@ -57,7 +58,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const editChannel = useChannelEdit();
   const tracked = useSatelliteStore((store) => trackedBy(store.byNode, node.id));
   const live = liveChannelOf(workspace, node.id);
-  const broadcast = useBroadcast(live?.deviceSet, live?.id);
+  const broadcast = useBroadcast(node.id);
   if (node.kind !== "channel") {
     return null;
   }
@@ -66,11 +67,11 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const descriptor = workspace.context.channelTypes.find((type) => type.type_id === typeId);
   const name = descriptor?.name ?? typeId.toUpperCase();
   const channel = workspace.channels.get(node.id) ?? null;
-  const lanes = iqLanesOf(workspace.graph, node.id, workspace.devices);
+  const lanes = iqLanesOf(workspace.resolved, node.id);
   const source = laneOf(workspace, node.id);
-  const references = radioRefsOf(workspace.graph, node.id, workspace.devices);
+  const references = radioRefsOf(workspace.graph, workspace.resolved, node.id);
   const binding = channelBinding({
-    wired: hasWire(workspace.graph, node.id, "iq"),
+    wired: hasFeed(workspace.resolved, node.id, "iq"),
     open: set !== null,
     named: references.length > 0,
     attached: radioIsAttached(references, attached.data?.devices ?? []),
@@ -93,7 +94,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
       (scanner) => scanner.error == null && scanner.settings.channel === channel.id,
     ) ??
       false);
-  const controller = tuningControllerOf(workspace.graph, node.id);
+  const controller = controllerOf(workspace.resolved, node.id);
   const editNode = (next: Partial<ChannelNodeData>): void =>
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -158,7 +159,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
           <ChannelControls
             settings={settings}
             descriptor={descriptor}
-            broadcast={broadcast?.status}
+            broadcast={broadcast}
             onEdit={onEdit}
           />
         )}
@@ -168,7 +169,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
           <ChannelHealth
             deviceSet={live.deviceSet}
             channel={live.id}
-            broadcast={broadcast?.status}
+            broadcast={broadcast}
             rejected={channel?.rejected ?? 0}
             skipped={channel?.skipped ?? 0}
           />

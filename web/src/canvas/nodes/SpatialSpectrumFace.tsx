@@ -15,8 +15,8 @@ import type {
   SpatialSpectrumParams,
 } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { arrayOf } from "../binding";
 import { useWorkspaceContext } from "../context";
+import { arrayOf } from "../lanes";
 import { settingsOf } from "../newNode";
 import { BandChips } from "./BandRows";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
@@ -45,7 +45,7 @@ type Edit = (next: Partial<SpatialSpectrumParams>) => void;
 export function SpatialSpectrumFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const state = useProcessorStore((store) => store.byNode[node.id]);
-  const array = arrayOf(workspace.graph, node.id);
+  const array = arrayOf(workspace.resolved, node.id);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
   const edit = useProcessorEdit(node as PatchNodeOf<"spatial_spectrum">);
@@ -69,7 +69,7 @@ export function SpatialSpectrumFace({ node }: { node: PatchNode }) {
       node={node}
       title="Spatial spectrum"
       category="tool"
-      subtitle={processorSubtitle(workspace.graph, node.id, status, state, now, period)}
+      subtitle={processorSubtitle(workspace.resolved, node.id, status, state, now, period)}
     >
       <FaceBody scroll={false}>
         {settings === null ? (

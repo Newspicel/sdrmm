@@ -1,4 +1,4 @@
-import { refMatches } from "../canvas/binding";
+import { refMatches } from "../canvas/nodes/deviceNode";
 import type { DeviceInfo, DeviceRef } from "../lib/types";
 import type { Options } from "./controls";
 

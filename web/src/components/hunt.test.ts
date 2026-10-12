@@ -1,8 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { HuntFace } from "../canvas/nodes/HuntFace";
 import { HuntSweep, sweepNeedles } from "../canvas/nodes/HuntSweep";
-import { HuntFace } from "../canvas/nodes/SinkFaces";
 import type { ChannelInfo, DeviceSet, HuntStatus, PatchGraph } from "../lib/types";
 import { catalogBody } from "../test/catalog";
 import { renderFace } from "../test/faceHarness";

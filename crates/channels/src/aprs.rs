@@ -9,7 +9,7 @@ use sdrmm_dsp::{
 };
 use sdrmm_wire::{
     AprsMode, AprsPacket, AprsParams, ChannelDescriptor, ChannelParams, ChannelSettings,
-    DecoderEvent, DecoderFamily,
+    DecoderEvent, DecoderFamily, EventKind,
 };
 
 use crate::{
@@ -50,7 +50,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: 48_000.0,
     has_audio: false,
-    decoder_kind: Some("aprs".to_owned()),
+    emits: vec![EventKind::Aprs],
     ..ChannelDescriptor::default()
 });
 

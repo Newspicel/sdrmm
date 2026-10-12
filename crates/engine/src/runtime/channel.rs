@@ -9,7 +9,7 @@ use sdrmm_channels::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
 };
 use sdrmm_dsp::{LevelMeter, NoiseBlanker, Squelch};
-use sdrmm_wire::{BroadcastStatus, ChannelSettings, DecoderEvent, PositionFix};
+use sdrmm_wire::{ChannelSettings, DecoderEvent, PositionFix};
 use tokio::sync::broadcast;
 
 use super::{downconvert::Downconverter, dsp_block_len};
@@ -30,15 +30,11 @@ const SQUELCH_HOLD_S: f32 = 0.1;
 const DOPPLER_RAMP_S: f64 = 2.0;
 
 pub(crate) struct RawDecoded {
+    pub(crate) node: Option<Arc<str>>,
     pub(crate) device_set: u32,
     pub(crate) channel: u32,
     pub(crate) freq_hz: f64,
-    pub(crate) payload: RawPayload,
-}
-
-pub(crate) enum RawPayload {
-    Event(DecoderEvent),
-    Broadcast(BroadcastStatus),
+    pub(crate) event: DecoderEvent,
 }
 
 pub(crate) struct RawImage {
@@ -53,6 +49,7 @@ pub(crate) struct DecodedSink {
     tx: mpsc::SyncSender<RawDecoded>,
     image_tx: mpsc::SyncSender<RawImage>,
     dropped: Arc<AtomicU64>,
+    node: Option<Arc<str>>,
     device_set: u32,
     channel: u32,
 }
@@ -70,13 +67,14 @@ impl DecodedSink {
         tx: mpsc::SyncSender<RawDecoded>,
         image_tx: mpsc::SyncSender<RawImage>,
         dropped: Arc<AtomicU64>,
-        device_set: u32,
-        channel: u32,
+        node: Option<Arc<str>>,
+        (device_set, channel): (u32, u32),
     ) -> Self {
         Self {
             tx,
             image_tx,
             dropped,
+            node,
             device_set,
             channel,
         }
@@ -88,23 +86,16 @@ impl DecodedSink {
         drop(rx);
         let (image_tx, image_rx) = mpsc::sync_channel(1);
         drop(image_rx);
-        Self::new(tx, image_tx, Arc::new(AtomicU64::new(0)), 0, 0)
+        Self::new(tx, image_tx, Arc::new(AtomicU64::new(0)), None, (0, 0))
     }
 
     pub(crate) fn publish(&self, freq_hz: f64, event: DecoderEvent) {
-        self.send(freq_hz, RawPayload::Event(event));
-    }
-
-    pub(crate) fn publish_broadcast(&self, freq_hz: f64, status: BroadcastStatus) {
-        self.send(freq_hz, RawPayload::Broadcast(status));
-    }
-
-    fn send(&self, freq_hz: f64, payload: RawPayload) {
         let record = RawDecoded {
+            node: self.node.clone(),
             device_set: self.device_set,
             channel: self.channel,
             freq_hz,
-            payload,
+            event,
         };
         if self.tx.try_send(record).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
@@ -207,7 +198,7 @@ impl ChannelHost {
         let filter = sdrmm_channels::channel_filter(&settings.params)?;
         let rx = sdrmm_channels::create(ChannelCtx { input_rate }, settings)?;
         let audio_channels = sdrmm_channels::audio_channels(&settings.params);
-        let decodes = descriptor.decoder_kind.is_some();
+        let decodes = !descriptor.emits.is_empty();
         let emits_events = decodes && rx.needs_gated_input();
         let mut squelch = Squelch::new(
             input_rate,

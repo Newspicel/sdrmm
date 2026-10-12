@@ -6,7 +6,7 @@ import type {
   PatchNode,
   WorkspaceSnapshot,
 } from "../../lib/types";
-import { type GraphContext, nodeOf, patchNode, portsOf } from "../graph";
+import { catalogPorts, type GraphContext, nodeOf, patchNode } from "../graph";
 
 export const ANALOG_MODES = ["nfm", "wfm", "am", "ssb"] as const;
 
@@ -37,7 +37,7 @@ export function retypeChannel(
   if (node === undefined || node.kind !== "channel") {
     return retyped;
   }
-  const kept = new Set(portsOf(context, retyped, node).map((port) => port.name));
+  const kept = new Set(catalogPorts(context, node).map((port) => port.name));
   const held = retyped.edges ?? [];
   const edges = held.filter(
     (edge) =>

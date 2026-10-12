@@ -106,6 +106,7 @@ fn decoded() -> DecodedRecord {
         event: DecoderEvent::Rtty(RttyText {
             text: "CQ TEST".to_owned(),
         }),
+        view: None,
     }
 }
 
@@ -219,7 +220,8 @@ fn the_html_caption_escapes_the_audio_error() {
 
 #[test]
 fn summary_contains_generic_decoder_metadata() {
-    let text = format_decoded(&decoded());
+    let record = decoded();
+    let text = format_decoded(&record, &record.event.present());
     assert!(text.contains("RTTY decode"));
     assert!(text.contains("CQ TEST"));
     assert!(text.contains("Frequency: 14.080000 MHz"));
@@ -228,7 +230,7 @@ fn summary_contains_generic_decoder_metadata() {
 
 #[test]
 fn resolve_maps_configured_outputs_and_the_events_port() {
-    let store = Store::open(None).expect("open store");
+    let store = crate::Store::open(None).expect("open store");
     let active = store
         .active_workspace()
         .expect("read active workspace")
@@ -268,7 +270,7 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
         )
         .expect("update workspace");
 
-    let routing = resolve(&store).expect("resolve outputs");
+    let routing = routing_over(&store);
     let bindings = routing.bindings;
 
     assert_eq!(bindings.len(), 1);
@@ -1282,7 +1284,7 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
 
 #[test]
 fn beast_listener_requires_an_event_wire_and_explicit_enable() {
-    let store = Store::open(None).unwrap();
+    let store = crate::Store::open(None).unwrap();
     let active = store.active_workspace().unwrap().unwrap();
     let beast = |enabled| {
         NodeBody::EventOutput(EventOutputNode {
@@ -1321,7 +1323,7 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
             None,
         )
         .unwrap();
-    let routing = resolve(&store).unwrap();
+    let routing = routing_over(&store);
     assert_eq!(routing.bindings.len(), 1);
     assert_eq!(routing.bindings[0].node, "wired");
 }
@@ -1600,4 +1602,14 @@ async fn csv_refuses_a_path_and_a_missing_library() {
 
     assert!(escape.to_string().contains("plain name"), "{escape}");
     assert!(missing.to_string().contains("recordings"), "{missing}");
+}
+
+fn routing_over(store: &crate::Store) -> Routing {
+    let hub = crate::resolved::ResolvedHub::default();
+    hub.reload(
+        store,
+        &Engine::new(None),
+        &crate::problems::ProblemBoard::default(),
+    );
+    routing_of(&hub.current())
 }

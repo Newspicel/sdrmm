@@ -10,8 +10,8 @@ import { readingOf, useProcessorStore } from "../../lib/processors";
 import { clearAction, failAction } from "../../lib/refusals";
 import type { ArrayStatus, PatchNode, PatchNodeOf, RadarUpdate } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { arrayOf, hasWire } from "../binding";
 import { useWorkspaceContext } from "../context";
+import { arrayOf, hasFeed } from "../lanes";
 import { settingsOf } from "../newNode";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { ProcessorFooter } from "./ProcessorFooter";
@@ -58,7 +58,7 @@ function useTrackClear(node: string): { clear: () => void; pending: boolean } {
 export function RadarFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const state = useProcessorStore((store) => store.byNode[node.id]);
-  const array = arrayOf(workspace.graph, node.id);
+  const array = arrayOf(workspace.resolved, node.id);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
   const edit = useProcessorEdit(node as PatchNodeOf<"passive_radar">);
@@ -70,11 +70,11 @@ export function RadarFace({ node }: { node: PatchNode }) {
   const settings = settingsOf(node, workspace.context.catalog);
   const update = readingOf(state, "passive_radar");
   const stale = state !== undefined && update !== null && isStale(state.receivedAt, update, now);
-  const lanes = processorLanes(workspace.graph, array, status);
+  const lanes = processorLanes(workspace.resolved, array, status);
   const health = processorStatusOf(status, node.id);
   const subtitle = radarSubtitle({
     wired: array !== null,
-    txWired: hasWire(workspace.graph, node.id, RADAR_TX_PORT),
+    txWired: hasFeed(workspace.resolved, node.id, RADAR_TX_PORT),
     gate: processorGate(status, node.id),
     update,
     stale,

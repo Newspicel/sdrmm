@@ -12,14 +12,17 @@ fn framed(node: &str) -> Bindings {
             node: node.to_owned(),
             device_set: 1,
             channel: 2,
-            gate: Gate::Frames,
+            gate: CallGate::Frames,
         }],
     )])
 }
 
 fn record(kind: DvFrameKind, slot: u8) -> DecodedRecord {
     DecodedRecord {
-        origin: None,
+        origin: Some(sdrmm_wire::EventOrigin {
+            node: "dmr".to_owned(),
+            transmission: 0,
+        }),
         sinks: Vec::new(),
         callsign: None,
         device_set: 1,
@@ -36,6 +39,7 @@ fn record(kind: DvFrameKind, slot: u8) -> DecodedRecord {
             encrypted: Some(false),
             ..DvFrame::default()
         }),
+        view: None,
     }
 }
 
@@ -99,7 +103,7 @@ fn analog() -> Analog {
             node: "am".to_owned(),
             device_set,
             channel,
-            gate: Gate::Squelch,
+            gate: CallGate::Squelch,
         }],
     )]));
     Analog {
@@ -144,7 +148,7 @@ fn a_conventional_transmission_completes_one_call() {
 fn the_two_slots_of_one_channel_are_two_calls() {
     let engine = Engine::with_registry(DeviceRegistry::new(), None);
     let mut tracker = Tracker::new(Arc::new(Calls::default()), Arc::downgrade(&engine));
-    tracker.rebind(framed("trunk"));
+    tracker.rebind(framed("dmr"));
     for slot in [1, 2] {
         tracker.record(&record(DvFrameKind::Header, slot));
     }
@@ -156,7 +160,7 @@ fn a_framed_call_keeps_its_audio() {
     let engine = Engine::with_registry(DeviceRegistry::new(), None);
     let calls = Arc::new(Calls::default());
     let mut tracker = Tracker::new(calls.clone(), Arc::downgrade(&engine));
-    tracker.rebind(framed("trunk"));
+    tracker.rebind(framed("dmr"));
     tracker.record(&record(DvFrameKind::Header, 1));
     tracker.pcm(1, 2, &samples(100 * MS));
     tracker.record(&record(DvFrameKind::Terminator, 1));
@@ -166,6 +170,17 @@ fn a_framed_call_keeps_its_audio() {
     assert_eq!(listed[0].destination, Some(91));
     let audio = calls.audio(listed[0].id).expect("audio");
     assert!(audio.len() > 44 && audio.len() <= 44 + 800 * 2);
+}
+
+#[test]
+fn frames_of_another_node_on_the_same_channel_start_no_call() {
+    let engine = Engine::with_registry(DeviceRegistry::new(), None);
+    let mut tracker = Tracker::new(Arc::new(Calls::default()), Arc::downgrade(&engine));
+    tracker.rebind(framed("trunk"));
+
+    tracker.record(&record(DvFrameKind::Header, 1));
+
+    assert_eq!(tracker.active(), 0);
 }
 
 #[test]

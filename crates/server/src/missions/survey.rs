@@ -1,22 +1,17 @@
-use std::collections::HashMap;
-
 use sdrmm_wire::{
     MissionBody, MissionControl, MissionProblem, SignalMapNode, StateSnapshot, SurveyMission,
     port_stream,
 };
 
 use super::{Built, Scene, graph};
-use crate::survey::{IQ_PORT, Radio, radio_of};
+use crate::survey::{IQ_PORT, Radio};
 
 pub(super) fn survey(scene: &Scene<'_>, node: &str, settings: &SignalMapNode) -> Built {
-    let iq = graph::source_of(scene.graph, node, IQ_PORT);
-    let devices: HashMap<String, u32> = scene
-        .bindings
-        .iter()
-        .map(|binding| (binding.node.clone(), binding.device_set))
-        .collect();
-    let radio = iq.and_then(|from| radio_of(&devices, &scene.live, &from.node, &from.port));
-    let (position, phone) = graph::position_link(scene.graph, &scene.state.phones, node);
+    let iq = graph::source_of(&scene.resolved, node, IQ_PORT);
+    let radio = iq
+        .and_then(|feed| feed.tap.as_ref()?.lane())
+        .map(|(device_set, stream)| Radio { device_set, stream });
+    let (position, phone) = graph::position_link(&scene.resolved, &scene.state.phones, node);
     let mut problems = Vec::new();
     if iq.is_none() {
         problems.push(MissionProblem::Unwired {
@@ -42,7 +37,7 @@ pub(super) fn survey(scene: &Scene<'_>, node: &str, settings: &SignalMapNode) ->
     }
     let stream = radio
         .map(|radio| radio.stream)
-        .or_else(|| iq.and_then(|from| port_stream(IQ_PORT, &from.port)))
+        .or_else(|| iq.and_then(|feed| port_stream(IQ_PORT, &feed.port)))
         .unwrap_or_default();
     Built {
         body: MissionBody::Survey(SurveyMission {

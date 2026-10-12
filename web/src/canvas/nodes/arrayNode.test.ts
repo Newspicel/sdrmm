@@ -3,6 +3,7 @@ import { HEADING_SOURCE_LABEL } from "../../lib/phones";
 import type { PatchEdge, PatchGraph } from "../../lib/types";
 import { catalogBody } from "../../test/catalog";
 import { arrayStatus, capabilities, deviceSet, laneStatus, placed } from "../../test/fixtures";
+import { wiredPatch } from "../../test/resolved";
 import { streamPort } from "../graph";
 import {
   arrayLaneRows,
@@ -67,7 +68,7 @@ const KRAKEN = deviceSet({
 describe("arrayLaneRows", () => {
   it("labels lanes by port, not by position in the list", () => {
     const graph = patch([lane("kraken", 0), lane("kraken", 2)]);
-    const rows = arrayLaneRows(graph, new Map(), "north", undefined);
+    const rows = arrayLaneRows(graph, wiredPatch(graph), new Map(), "north", undefined);
     expect(rows.map((row) => [row.lane, row.port])).toEqual([
       [1, "lane"],
       [3, "lane3"],
@@ -79,7 +80,13 @@ describe("arrayLaneRows", () => {
     const status = arrayStatus("north", {
       lanes: [laneStatus(0), laneStatus(2, { phase_deg: 12.34 }), laneStatus(3)],
     });
-    const rows = arrayLaneRows(graph, new Map([["kraken", KRAKEN]]), "north", status);
+    const rows = arrayLaneRows(
+      graph,
+      wiredPatch(graph),
+      new Map([["kraken", KRAKEN]]),
+      "north",
+      status,
+    );
     expect(rows.map((row) => row.sourceLabel)).toEqual([
       "KrakenSDR iq1",
       "KrakenSDR iq3",
@@ -89,20 +96,20 @@ describe("arrayLaneRows", () => {
     expect(laneTitle(present(rows[1]))).toBe(
       "Lane 3 · KrakenSDR iq3 · phase 12.34° · gain 0.00 dB · delay 0.000 smp · gaps 0",
     );
-    const unmeasured = arrayLaneRows(graph, new Map(), "north", undefined)[0];
+    const unmeasured = arrayLaneRows(graph, wiredPatch(graph), new Map(), "north", undefined)[0];
     expect(unmeasured?.status).toBeNull();
     expect(laneTitle(present(unmeasured))).toBe("Lane 1 · virtual · kraken5 iq");
-    expect(memberDevices(graph, "north")).toEqual(["kraken", "rtl"]);
+    expect(memberDevices(wiredPatch(graph), "north")).toEqual(["kraken", "rtl"]);
   });
 
   it("maps held device streams to their array", () => {
     const graph = patch([lane("kraken", 0), lane("kraken", 1), lane("kraken", 4, "south", 0)]);
-    expect([...heldLanes(graph, "kraken")]).toEqual([
+    expect([...heldLanes(wiredPatch(graph), "kraken")]).toEqual([
       [0, "north"],
       [1, "north"],
       [4, "south"],
     ]);
-    expect(heldLanes(graph, "rtl").size).toBe(0);
+    expect(heldLanes(wiredPatch(graph), "rtl").size).toBe(0);
   });
 });
 
@@ -263,8 +270,12 @@ describe("array readouts", () => {
     });
     const graph = patch([lane("kraken", 0), lane("kraken", 1), lane("kraken", 2)]);
     const status = arrayStatus("north", { sample_rate: 2_400_000 });
-    expect(arraySpanHz(graph, new Map([["kraken", spread]]), "north", status)).toBe(6_400_000);
-    expect(arraySpanHz(graph, new Map(), "north", status)).toBeNull();
-    expect(arraySpanHz(graph, new Map([["kraken", spread]]), "north", undefined)).toBeNull();
+    expect(arraySpanHz(wiredPatch(graph), new Map([["kraken", spread]]), "north", status)).toBe(
+      6_400_000,
+    );
+    expect(arraySpanHz(wiredPatch(graph), new Map(), "north", status)).toBeNull();
+    expect(
+      arraySpanHz(wiredPatch(graph), new Map([["kraken", spread]]), "north", undefined),
+    ).toBeNull();
   });
 });

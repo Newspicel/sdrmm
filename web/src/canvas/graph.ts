@@ -1,11 +1,12 @@
+import { catalogType } from "../lib/catalog";
 import type {
   ArrayElement,
   Capabilities,
   ChannelDescriptor,
   DeviceSet,
-  Duplex,
-  EventKindFacets,
+  Face,
   NodeKind,
+  NodeTypeInfo,
   PatchCatalog,
   PatchEdge,
   PatchGraph,
@@ -14,17 +15,15 @@ import type {
   PortRef,
   PortSpec,
   RackLayout,
+  ResolvedPatch,
+  ResolvedPort,
   WorkspaceSnapshot,
 } from "../lib/types";
-import { arrayRefusal } from "./arrayRules";
-import { laneOutputOf } from "./binding";
-
-export const BEAM_TAKES_ONE = "a beam input takes one wire";
 
 export interface GraphContext {
   catalog: PatchCatalog;
   channelTypes: readonly ChannelDescriptor[];
-  facets: readonly EventKindFacets[];
+  resolved?: ResolvedPatch | null;
   bound?: ReadonlyMap<string, DeviceSet>;
 }
 
@@ -118,37 +117,28 @@ export function descriptorOf(
     : undefined;
 }
 
-export function hasTransmitter(duplex: Duplex | undefined): boolean {
-  return duplex === "half" || duplex === "full" || duplex === "tx_only";
+export function nodePorts(context: GraphContext, node: PatchNode): PortSpec[] {
+  const resolved = context.resolved?.nodes.find((candidate) => candidate.id === node.id);
+  return resolved === undefined || resolved.kind !== node.kind
+    ? catalogPorts(context, node)
+    : resolved.ports.map(specOf);
 }
 
-export function portsOf(context: GraphContext, graph: PatchGraph, node: PatchNode): PortSpec[] {
+function specOf({
+  feeds: _feeds,
+  reaches: _reaches,
+  ignored: _ignored,
+  kept: _kept,
+  ...spec
+}: ResolvedPort): PortSpec {
+  return spec;
+}
+
+export function catalogPorts(context: GraphContext, node: PatchNode): PortSpec[] {
   const entry = context.catalog.nodes.find((type) => type.kind === node.kind);
-  if (entry === undefined) {
-    return [];
-  }
-  const descriptor = descriptorOf(context, node);
-  const capabilities = context.bound?.get(node.id)?.capabilities;
-  return entry.ports
-    .filter((port) => {
-      switch (port.condition ?? "always") {
-        case "always":
-          return true;
-        case "channel_has_audio":
-          return descriptor?.has_audio === true;
-        case "channel_has_events":
-          return descriptor?.decoder_kind != null || descriptor?.has_audio === true;
-        case "channel_has_video":
-          return descriptor?.has_video === true;
-        case "channel_needs_position":
-          return descriptor?.needs_position === true;
-        case "device_is_tx_capable":
-          return hasTransmitter(capabilities?.duplex);
-        default:
-          return false;
-      }
-    })
-    .flatMap((port) => expandStreams(port, node, graph.edges ?? [], capabilities));
+  const declared =
+    entry?.needs_channel_type === true ? (descriptorOf(context, node)?.ports ?? []) : entry?.ports;
+  return (declared ?? []).map((port) => ({ ...port, repeat: "once" as const }));
 }
 
 export const ARRAY_LANE_PORT = "lane";
@@ -168,49 +158,6 @@ export function arrayWiredLanes(graph: PatchGraph, array: string): number {
   return wiredStreams(array, ARRAY_LANE_PORT, graph.edges ?? []);
 }
 
-function repeatCount(
-  spec: PortSpec,
-  node: PatchNode,
-  edges: readonly PatchEdge[],
-  capabilities: Capabilities | undefined,
-): number {
-  switch (spec.repeat) {
-    case "per_lane":
-      return clampStreams(wiredStreams(node.id, spec.name, edges) + 1);
-    case "per_rx_stream":
-      return clampStreams(capabilities?.rx_streams);
-    default:
-      return clampStreams(capabilities?.tx_streams);
-  }
-}
-
-function expandStreams(
-  spec: PortSpec,
-  node: PatchNode,
-  edges: readonly PatchEdge[],
-  capabilities: Capabilities | undefined,
-): PortSpec[] {
-  const repeat = spec.repeat ?? "once";
-  if (repeat === "once") {
-    return [spec];
-  }
-  const count = repeatCount(spec, node, edges, capabilities);
-  const streams = new Set<number>();
-  for (let stream = 0; stream < count; stream++) {
-    streams.add(stream);
-  }
-  for (const edge of edges) {
-    const end = spec.direction === "out" ? edge.from : edge.to;
-    const stream = end.node === node.id ? portStream(spec.name, end.port) : null;
-    if (stream !== null) {
-      streams.add(stream);
-    }
-  }
-  return [...streams]
-    .toSorted((a, b) => a - b)
-    .map((stream) => ({ ...spec, name: streamPort(spec.name, stream), repeat: "once" as const }));
-}
-
 export function portOf(
   context: GraphContext,
   graph: PatchGraph,
@@ -220,7 +167,7 @@ export function portOf(
   const node = nodeOf(graph, reference.node);
   return node === undefined
     ? undefined
-    : portsOf(context, graph, node).find(
+    : nodePorts(context, node).find(
         (port) =>
           port.name === reference.port && (direction === undefined || port.direction === direction),
       );
@@ -234,155 +181,53 @@ export function edgeKey(edge: PatchEdge): string {
   return `${edge.from.node}.${edge.from.port}->${edge.to.node}.${edge.to.port}`;
 }
 
-export function connectionRefusal(
-  context: GraphContext,
-  graph: PatchGraph,
-  from: PortRef,
-  to: PortRef,
-): string | null {
-  if (from.node === to.node) {
-    return "a node cannot wire to itself";
-  }
-  const out = portOf(context, graph, from, "out");
-  const input = portOf(context, graph, to, "in");
-  if (out === undefined || input === undefined) {
-    if (
-      portOf(context, graph, from, "in") !== undefined ||
-      portOf(context, graph, to, "out") !== undefined
-    ) {
-      return "wires run from an output to an input";
-    }
-    return "that port does not exist";
-  }
-  if (out.direction !== "out" || input.direction !== "in") {
-    return "wires run from an output to an input";
-  }
-  if (out.port_type !== input.port_type) {
-    return input.note ?? `${out.port_type} cannot feed a ${input.port_type} input`;
-  }
-  const rule = arrayRefusal(context, graph, from, to, input);
-  if (rule !== null) {
-    return rule;
-  }
-  const edges = graph.edges ?? [];
-  const landing = edges.filter((edge) => edge.to.node === to.node && edge.to.port === to.port);
-  if (landing.some((edge) => edge.from.node === from.node && edge.from.port === from.port)) {
-    return "already wired";
-  }
-  if (
-    input.port_type === "iq" &&
-    nodeOf(graph, to.node)?.kind === "channel" &&
-    landing.length > 0 &&
-    [from, ...landing.map((edge) => edge.from)].some(
-      (source) => laneOutputOf(nodeOf(graph, source.node)?.kind) === source.port,
-    )
-  ) {
-    return BEAM_TAKES_ONE;
-  }
-  if (!input.multi && landing.length > 0) {
-    return "that input takes one wire";
-  }
-  if (
-    !out.multi &&
-    edges.some((edge) => edge.from.node === from.node && edge.from.port === from.port)
-  ) {
-    return "that output drives one node at a time";
-  }
-  return null;
-}
-
 export interface NodeSize {
   w: number;
   h?: number;
 }
 
-export const NODE_SIZE: Record<NodeKind, NodeSize> = {
-  device: { w: 420 },
-  recording: { w: 420 },
-  signal_gen: { w: 420 },
-  gps: { w: 360 },
-  channel: { w: 440 },
-  event_output: { w: 420 },
-  event_filter: { w: 380 },
-  audio_fx: { w: 400 },
-  scope: { w: 520, h: 360 },
-  baseband_scope: { w: 420, h: 340 },
-  speaker: { w: 320 },
-  map: { w: 520, h: 380 },
-  signal_map: { w: 600, h: 440 },
-  propagation: { w: 640, h: 560 },
-  readout: { w: 560, h: 320 },
-  decoder_log: { w: 720, h: 380 },
-  dmr_trunk: { w: 480, h: 360 },
-  spectrum_monitor: { w: 320 },
-  video: { w: 380, h: 320 },
-  recorder: { w: 340 },
-  audio_recorder: { w: 340 },
-  baseband_recorder: { w: 340 },
-  time_machine: { w: 360 },
-  network_export: { w: 380 },
-  export: { w: 320 },
-  scanner: { w: 400 },
-  hunt: { w: 360 },
-  satellite: { w: 380 },
-  rotator: { w: 340 },
-  triangulation: { w: 400 },
-  array: { w: 460 },
-  df: { w: 400 },
-  beamformer: { w: 400 },
-  passive_radar: { w: 560, h: 540 },
-  spatial_spectrum: { w: 560, h: 420 },
-  correlator: { w: 520, h: 460 },
-  polarimeter: { w: 360 },
-  stitch: { w: 360 },
-};
-
 export const FIT_MIN_W = 280;
 
 const DIAL_MIN_W = 420;
 
-const DIAL_KINDS: ReadonlySet<NodeKind> = new Set([
-  "device",
-  "signal_gen",
-  "recording",
-  "channel",
-  "satellite",
-]);
+export function nodeType(kind: NodeKind): NodeTypeInfo | undefined {
+  return catalogType(kind);
+}
+
+export function opensDevice(kind: NodeKind): boolean {
+  return nodeType(kind)?.role.role === "opens_radio";
+}
+
+export function faceOf(kind: NodeKind): Face {
+  return nodeType(kind)?.face ?? { width: FIT_MIN_W };
+}
+
+export function nodeSize(kind: NodeKind): NodeSize {
+  const face = faceOf(kind);
+  return face.height == null ? { w: face.width } : { w: face.width, h: face.height };
+}
 
 export function fitWidth(kind: NodeKind): { minWidth: number; maxWidth: number } | null {
-  const size = NODE_SIZE[kind];
-  if (size.h !== undefined) {
+  const face = faceOf(kind);
+  if (face.height != null) {
     return null;
   }
-  const minWidth = DIAL_KINDS.has(kind) ? DIAL_MIN_W : FIT_MIN_W;
-  return { minWidth, maxWidth: Math.max(minWidth, size.w) };
+  const minWidth = face.dial === true ? DIAL_MIN_W : FIT_MIN_W;
+  return { minWidth, maxWidth: Math.max(minWidth, face.width) };
 }
 
 export function isResizable(kind: NodeKind): boolean {
-  return NODE_SIZE[kind].h !== undefined;
+  return faceOf(kind).height != null;
 }
-
-const RESIZE_FLOOR: Partial<Record<NodeKind, { w: number; h: number }>> = {
-  scope: { w: 320, h: 200 },
-  baseband_scope: { w: 320, h: 200 },
-  map: { w: 300, h: 220 },
-  signal_map: { w: 400, h: 300 },
-  propagation: { w: 440, h: 380 },
-  readout: { w: 300, h: 160 },
-  decoder_log: { w: 360, h: 200 },
-  dmr_trunk: { w: 380, h: 240 },
-  video: { w: 240, h: 200 },
-  passive_radar: { w: 420, h: 380 },
-  spatial_spectrum: { w: 400, h: 300 },
-  correlator: { w: 380, h: 340 },
-};
 
 export const HEADER_PX = 26;
 export const PORT_STEP_PX = 22;
 export const PORT_TOP_PX = HEADER_PX + PORT_STEP_PX / 2;
 
 export function nodeMinSize(kind: NodeKind, ports: readonly PortSpec[]): { w: number; h: number } {
-  const base = RESIZE_FLOOR[kind] ?? { w: NODE_SIZE[kind].w, h: 0 };
+  const face = faceOf(kind);
+  const base =
+    face.min == null ? { w: face.width, h: 0 } : { w: face.min.width, h: face.min.height };
   const deepest = Math.max(
     ports.filter((port) => port.direction === "in").length,
     ports.filter((port) => port.direction === "out").length,
@@ -461,10 +306,8 @@ export function migrateSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot 
   return graph === snapshot.graph ? snapshot : { ...snapshot, graph };
 }
 
-const port = (reference: PortRef): string => `${reference.node}.${reference.port}`;
-
 function migrateGraph(graph: PatchGraph): PatchGraph {
-  return fillBareNodes(idleBareRecorders(repointControlWires(flipScannerInputs(graph))));
+  return fillBareNodes(idleBareRecorders(repointControlWires(graph)));
 }
 
 const bare = (node: PatchNode): boolean =>
@@ -499,43 +342,6 @@ function fillBareNodes(graph: PatchGraph): PatchGraph {
       dataless(node) ? ({ ...node, data: {} } as PatchNode) : node,
     ),
   };
-}
-
-function flipScannerInputs(graph: PatchGraph): PatchGraph {
-  const scanners = new Set(
-    graph.nodes.filter((node) => node.kind === "scanner").map((node) => node.id),
-  );
-  const edges = graph.edges ?? [];
-  const consumed = (edge: PatchEdge): boolean =>
-    scanners.has(edge.to.node) && portStream("iq", edge.to.port) !== null;
-  if (!edges.some(consumed)) {
-    return graph;
-  }
-  const owned = new Set(
-    edges
-      .filter((edge) => edge.from.port === "control")
-      .flatMap((edge) => [port(edge.from), port(edge.to)]),
-  );
-  const migrated: PatchEdge[] = [];
-  for (const edge of edges) {
-    if (!consumed(edge)) {
-      migrated.push(edge);
-      continue;
-    }
-    const flipped: PatchEdge = {
-      from: { node: edge.to.node, port: "control" },
-      to: { node: edge.from.node, port: "control" },
-    };
-    const ends = [port(flipped.from), port(flipped.to)];
-    if (ends.some((end) => owned.has(end))) {
-      continue;
-    }
-    for (const end of ends) {
-      owned.add(end);
-    }
-    migrated.push(flipped);
-  }
-  return { ...graph, edges: migrated };
 }
 
 function decodersFedBy(graph: PatchGraph, device: string): string[] {

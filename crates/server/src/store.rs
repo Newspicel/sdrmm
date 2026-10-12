@@ -470,6 +470,7 @@ impl Store {
         migrate(&conn)?;
         audio_fx_lift::lift_audio_chains(&conn)?;
         coherent_break::break_old_snapshots(&conn)?;
+        steps::upgrade_stored(&conn)?;
         let server_id = ensure_server_id(&conn)?.into();
         let store = Self {
             conn: Mutex::new(conn),
@@ -760,16 +761,17 @@ impl Store {
             for routed in records {
                 let record = &routed.record;
                 let at = normalize_timestamp(&record.at)?;
+                let view = record.event.present();
                 stmt.execute(params![
                     at,
                     record.device_set,
                     record.channel,
                     routed.workspace,
                     routed.source,
-                    record.event.kind(),
+                    record.event.kind().as_str(),
                     record.freq_hz,
-                    record.event.station(),
-                    record.event.summary(),
+                    view.entity,
+                    view.summary,
                     serde_json::to_string(&record.event)?,
                     record
                         .origin
@@ -896,7 +898,7 @@ impl Store {
         snapshot: &WorkspaceSnapshot,
     ) -> Result<i64, StoreError> {
         validate_name(name)?;
-        snapshot.validate()?;
+        snapshot.validate_against(sdrmm_channels::descriptor_table())?;
         let json = serde_json::to_string(snapshot)?;
         let now = now_rfc3339();
         let conn = self.lock();
@@ -923,7 +925,7 @@ impl Store {
         export: &WorkspaceExport,
         notices: &[WorkspaceNoticeKind],
     ) -> Result<i64, StoreError> {
-        export.validate()?;
+        export.validate_against(sdrmm_channels::descriptor_table())?;
         let mut document = export.clone();
         document.forget_absent_nodes();
         let json = serde_json::to_string(&document.snapshot)?;
@@ -951,7 +953,7 @@ impl Store {
         author: Option<&str>,
     ) -> Result<WorkspaceDetail, StoreError> {
         if let Some(snapshot) = &req.snapshot {
-            snapshot.validate()?;
+            snapshot.validate_against(sdrmm_channels::descriptor_table())?;
         }
         if let Some(name) = &req.name {
             validate_name(name)?;
@@ -1369,22 +1371,15 @@ fn rebase(
     let base = parse_workspace_snapshot(&base)?;
     let mut merged = crate::merge::merge_typed(&base, ours, held).map_err(|_| conflict())?;
     merged.drop_dangling();
-    merged.validate().map_err(|_| conflict())?;
+    merged
+        .validate_against(sdrmm_channels::descriptor_table())
+        .map_err(|_| conflict())?;
     Ok(merged)
 }
 
 fn parse_workspace_snapshot(json: &str) -> Result<WorkspaceSnapshot, serde_json::Error> {
     let mut value: serde_json::Value = serde_json::from_str(json)?;
-    drop_retired_channels(&mut value);
-    migrate_call_buffers(&mut value);
-    migrate_trunk_carriers(&mut value);
-    migrate_event_outputs(&mut value);
-    migrate_recording_devices(&mut value);
-    migrate_control_wires(&mut value);
-    migrate_device_locks(&mut value);
-    migrate_signal_finders(&mut value);
-    migrate_baseband_scopes(&mut value);
-    migrate_dataless_nodes(&mut value);
+    steps::upgrade(&mut value);
     let snapshot: WorkspaceSnapshot = crate::json::from_value(&value)?;
     if snapshot.version != WORKSPACE_SNAPSHOT_VERSION {
         return Err(serde::de::Error::custom(WorkspaceError::Version(
@@ -1586,6 +1581,19 @@ fn migrate_device_locks(snapshot: &mut serde_json::Value) {
 
 fn node_kind(node: &serde_json::Value) -> Option<&str> {
     node.get("kind").and_then(serde_json::Value::as_str)
+}
+
+fn migrate_legacy(value: &mut serde_json::Value) {
+    drop_retired_channels(value);
+    migrate_call_buffers(value);
+    migrate_trunk_carriers(value);
+    migrate_event_outputs(value);
+    migrate_recording_devices(value);
+    migrate_control_wires(value);
+    migrate_device_locks(value);
+    migrate_signal_finders(value);
+    migrate_baseband_scopes(value);
+    migrate_dataless_nodes(value);
 }
 
 fn edge_end<'a>(edge: &'a serde_json::Value, end: &str) -> Option<(&'a str, &'a str)> {
@@ -1941,6 +1949,7 @@ fn read_log_entries(
             station: row.station,
             summary: row.summary,
             event: serde_json::from_str(&row.event)?,
+            view: None,
             callsign: None,
         });
     }
@@ -2149,10 +2158,11 @@ mod log_groups;
 mod nanovna;
 mod phones;
 mod remote;
+mod steps;
 
-pub(crate) use coherent_break::upgrade_export;
 pub(crate) use phones::{OfferFailure, OfferRow, PairWrite, PhoneRow};
 pub use remote::RemotePairing;
+pub(crate) use steps::upgrade_import;
 
 #[cfg(test)]
 mod tests;

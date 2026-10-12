@@ -1,9 +1,10 @@
-use std::{collections::HashSet, time::Duration};
+use std::time::Duration;
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelInfo, ChannelSettings, DeviceSet, DeviceSettings, NodeBody, PatchGraph, ServerEvent,
-    StateScope, StateSnapshot, WorkspaceChannel, WorkspaceDevice, WorkspaceState,
+    ChannelSettings, DeviceSettings, IQ_PORT, PatchGraph, ResolveCtx, ResolvedPatch, ServerEvent,
+    StateScope, StateSnapshot, Tap, WorkspaceChannel, WorkspaceDevice, WorkspaceState,
+    patch::resolve,
 };
 use tokio::{sync::broadcast::error::RecvError, time::Instant};
 
@@ -41,151 +42,52 @@ pub(crate) fn adopt_named_devices(engine: &Engine, store: &Store) {
     }
 }
 
+pub(crate) fn resolve(graph: &PatchGraph, state: &StateSnapshot) -> ResolvedPatch {
+    let ctx = ResolveCtx {
+        descriptors: Some(sdrmm_channels::descriptor_table()),
+        live: Some(state),
+    };
+    let (mut patch, _) = resolve::compile_draft(graph, &ctx);
+    resolve::bind(&mut patch, graph, state);
+    patch
+}
+
 pub(crate) fn bind_devices(graph: &PatchGraph, state: &StateSnapshot) -> Vec<(String, u32)> {
-    let mut bound = Vec::new();
-    let mut claimed: Vec<u32> = Vec::new();
-    for node in graph.device_nodes() {
-        let Some(reference) = node.body.device_ref(&node.id) else {
-            continue;
-        };
-        let reference = &reference;
-        if let Some(set) = state
-            .device_sets
-            .iter()
-            .find(|set| !claimed.contains(&set.id) && reference.matches(&set.device))
-        {
-            claimed.push(set.id);
-            bound.push((node.id.clone(), set.id));
-        }
-    }
-    bound
+    resolve::bound_devices(graph, state)
 }
 
-fn carries(live: &ChannelInfo, channel_type: &str, stream: u32) -> bool {
-    live.settings.params.type_id() == channel_type && live.stream == stream
-}
-
-/// Every channel node wired into a radio paired with the live decoder that is its own. A decoder
-/// opened for a node answers to that node alone; one nobody opened for a node, such as a
-/// template's, goes to the first node of its kind on its stream that is still unpaired.
-pub(crate) fn bind_channels(
-    graph: &PatchGraph,
-    device_node: &str,
-    set: &DeviceSet,
-    reserved: &HashSet<u32>,
-) -> Vec<(String, u32)> {
-    let mut free: Vec<&ChannelInfo> = set.channels.iter().collect();
-    let wired: Vec<(&str, &str, u32)> = graph
-        .channels_of(device_node)
-        .filter_map(|(node, stream)| match &node.body {
-            NodeBody::Channel(channel) => {
-                Some((node.id.as_str(), channel.channel_type.as_str(), stream))
-            }
-            _ => None,
-        })
-        .collect();
-    let mut bound = Vec::new();
-    for (node, channel_type, stream) in &wired {
-        let own = free.iter().position(|live| {
-            live.node.as_deref() == Some(*node) && carries(live, channel_type, *stream)
-        });
-        if let Some(at) = own {
-            bound.push(((*node).to_owned(), free.remove(at).id));
-        }
-    }
-    for (node, channel_type, stream) in &wired {
-        if bound.iter().any(|(held, _)| held == node) {
-            continue;
-        }
-        if graph.lanes_of(node).first() != Some(&(device_node, *stream)) {
-            continue;
-        }
-        let unclaimed = free.iter().position(|live| {
-            live.node.is_none()
-                && !reserved.contains(&live.id)
-                && carries(live, channel_type, *stream)
-        });
-        if let Some(at) = unclaimed {
-            bound.push(((*node).to_owned(), free.remove(at).id));
-        }
-    }
-    bound.extend(virtual_bound(graph, set));
-    bound
-}
-
-pub(crate) fn virtual_bound(graph: &PatchGraph, set: &DeviceSet) -> Vec<(String, u32)> {
-    let mut bound = Vec::new();
-    for lane in &set.virtual_lanes {
-        for listener in array::lane_port_listeners(graph, &lane.node, &lane.port) {
-            let Some(NodeBody::Channel(wanted)) = graph.node(&listener).map(|node| &node.body)
-            else {
-                continue;
-            };
-            if let Some(channel) = set.channels.iter().find(|channel| {
-                channel.node.as_deref() == Some(listener.as_str())
-                    && carries(channel, &wanted.channel_type, lane.stream)
-            }) {
-                bound.push((listener, channel.id));
-            }
-        }
-    }
-    bound
-}
-
-/// The channels a trunk system opened for itself on a radio. They belong to the system node and
-/// are never handed to a decoder node that happens to share their type.
-pub(crate) fn trunk_channels(state: &StateSnapshot, device_set: u32) -> HashSet<u32> {
-    state
-        .trunk_systems
-        .iter()
-        .flat_map(|system| {
-            system
-                .control
+pub(crate) fn bindings(patch: &ResolvedPatch) -> Vec<DeviceBinding> {
+    let channels = patch.channels();
+    patch
+        .radios()
+        .into_iter()
+        .map(|(node, device_set)| DeviceBinding {
+            channels: channels
                 .iter()
-                .map(|control| (control.device_set, control.channel))
-                .chain(
-                    system
-                        .followers
-                        .iter()
-                        .map(|follower| (follower.device_set, follower.channel)),
-                )
-                .chain(
-                    system
-                        .probes
-                        .iter()
-                        .map(|probe| (probe.device_set, probe.channel)),
-                )
+                .filter(|(_, addr)| addr.device_set == device_set)
+                .map(|(id, addr)| (id.clone(), addr.channel))
+                .collect(),
+            node,
+            device_set,
         })
-        .filter(|(set, _)| *set == device_set)
-        .map(|(_, channel)| channel)
         .collect()
+}
+
+pub(crate) fn feeds(
+    graph: &PatchGraph,
+    state: &StateSnapshot,
+    node: &str,
+    device_set: u32,
+    stream: u32,
+) -> bool {
+    resolve(graph, state)
+        .feeds(node, IQ_PORT)
+        .iter()
+        .any(|feed| feed.tap == Some(Tap::Lane { device_set, stream }))
 }
 
 pub(crate) fn bind(graph: &PatchGraph, state: &StateSnapshot) -> Vec<DeviceBinding> {
-    bind_devices(graph, state)
-        .into_iter()
-        .filter_map(|(node, device_set)| {
-            let set = state.device_sets.iter().find(|set| set.id == device_set)?;
-            let reserved = trunk_channels(state, device_set);
-            Some(DeviceBinding {
-                channels: bind_channels(graph, &node, set, &reserved)
-                    .into_iter()
-                    .filter(|(node, id)| {
-                        set.channels
-                            .iter()
-                            .any(|channel| channel.id == *id && channel.node.is_some())
-                            || !state.device_sets.iter().any(|set| {
-                                set.channels
-                                    .iter()
-                                    .any(|channel| channel.node.as_deref() == Some(node.as_str()))
-                            })
-                    })
-                    .collect(),
-                node,
-                device_set,
-            })
-        })
-        .collect()
+    bindings(&resolve(graph, state))
 }
 
 pub(crate) fn capture(
@@ -469,7 +371,8 @@ pub(crate) fn reconcile(
     saved: &WorkspaceState,
 ) -> Reconciled {
     let engine = &state.engine;
-    array::release(state, incoming);
+    let before = crate::resolved::Resolved::of(incoming.clone(), &engine.snapshot());
+    array::release(state, &before);
     let snapshot = engine.snapshot();
     let bindings = bind(incoming, &snapshot);
     let mut report = Reconciled::default();
@@ -600,10 +503,10 @@ pub(crate) fn channel_settings(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use sdrmm_device::{DeviceDriver, DeviceError, DeviceRegistry, SdrDevice};
     use sdrmm_wire::{
-        DeviceInfo, DeviceNode, DeviceRef, PatchNode, Position, TrunkChannelSource,
+        DeviceInfo, DeviceNode, DeviceRef, NodeBody, PatchNode, Position, TrunkChannelSource,
         TrunkSystemStatus, WorkspaceSnapshot,
     };
 
@@ -849,143 +752,5 @@ mod tests {
         assert!(
             crate::trunking::learned_for(&state, "sys", &[status("sys", None, &[])]).is_empty()
         );
-    }
-
-    fn dmr_channel(id: u32, node: Option<&str>) -> ChannelInfo {
-        ChannelInfo {
-            id,
-            stream: 0,
-            node: node.map(str::to_owned),
-            settings: ChannelSettings::default_for("dmr").expect("dmr"),
-            out_of_band: None,
-            rejected: 0,
-            skipped: 0,
-            audio_recordings: Vec::new(),
-            baseband_recording: None,
-            network_export: None,
-        }
-    }
-
-    fn radio_with(channels: Vec<ChannelInfo>) -> DeviceSet {
-        DeviceSet {
-            id: 1,
-            device: DeviceInfo {
-                driver: "virtual".to_owned(),
-                key: "band".to_owned(),
-                label: "Test band".to_owned(),
-                serial: None,
-                profile: None,
-            },
-            capabilities: sdrmm_wire::Capabilities {
-                freq_ranges: Vec::new(),
-                sample_rates: Vec::new(),
-                sample_rate_ranges: Vec::new(),
-                gains: Vec::new(),
-                antennas: Vec::new(),
-                bandwidths: Vec::new(),
-                bandwidth_ranges: Vec::new(),
-                bandwidth_auto: false,
-                bias_tee: false,
-                agc: sdrmm_wire::Agc::None,
-                extra: Vec::new(),
-                ppm: false,
-                duplex: sdrmm_wire::Duplex::RxOnly,
-                rx_streams: 1,
-                tx_streams: 0,
-                per_stream: sdrmm_wire::StreamScope::default(),
-                directional: None,
-                dc_artifact: sdrmm_wire::DcArtifact::Operator,
-                hardware_sweep: false,
-                coherence: sdrmm_wire::Coherence::None,
-                noise_source: sdrmm_wire::NoiseSource::None,
-                retune_keeps_phase: false,
-                rx_inputs: Vec::new(),
-            },
-            settings: sdrmm_wire::DeviceSettings::default(),
-            status: sdrmm_wire::DeviceSetStatus::Running,
-            channels,
-            overruns: 0,
-            clipping: Vec::new(),
-            error: None,
-            fault: None,
-            refused: None,
-            recording: None,
-            network_export: None,
-            time_machine: None,
-            scanners: Vec::new(),
-            hunts: Vec::new(),
-            playback: None,
-            agc_gains: Vec::new(),
-            virtual_lanes: Vec::new(),
-            held: Vec::new(),
-            loss: None,
-        }
-    }
-
-    fn dmr_graph() -> PatchGraph {
-        let mut snapshot = WorkspaceSnapshot::starter();
-        snapshot.graph.nodes.push(PatchNode {
-            id: "voice".to_owned(),
-            body: NodeBody::Channel(sdrmm_wire::ChannelNode {
-                channel_type: "dmr".to_owned(),
-                tuning_locked: false,
-            }),
-            position: Position { x: 0.0, y: 0.0 },
-            size: None,
-            label: None,
-        });
-        snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
-            from: sdrmm_wire::PortRef {
-                node: "device".to_owned(),
-                port: "iq".to_owned(),
-            },
-            to: sdrmm_wire::PortRef {
-                node: "voice".to_owned(),
-                port: "iq".to_owned(),
-            },
-        });
-        snapshot.graph
-    }
-
-    #[test]
-    fn a_decoder_node_never_adopts_a_trunk_systems_own_channel() {
-        let graph = dmr_graph();
-        let follower = radio_with(vec![dmr_channel(4, None)]);
-        assert_eq!(
-            bind_channels(&graph, "device", &follower, &HashSet::new()),
-            vec![("voice".to_owned(), 4)],
-            "a channel nobody opened for a node is adopted"
-        );
-        assert!(
-            bind_channels(&graph, "device", &follower, &HashSet::from([4])).is_empty(),
-            "a trunk system's follower stays with the system"
-        );
-        let state = StateSnapshot {
-            device_sets: vec![follower],
-            trunk_systems: vec![TrunkSystemStatus {
-                node: "trunk".to_owned(),
-                detected: None,
-                carriers: 1,
-                control: None,
-                followers: vec![sdrmm_wire::TrunkFollower {
-                    device_set: 1,
-                    channel: 4,
-                    logical_channel: None,
-                    slot: 1,
-                    freq_hz: 451_000_000,
-                }],
-                problems: Vec::new(),
-                channel_map: Vec::new(),
-                probes: Vec::new(),
-                searching: 0,
-                candidates: 0,
-                other_control_hz: Vec::new(),
-                color_code: None,
-            }],
-            arrays: Vec::new(),
-            revision: 1,
-        };
-        assert_eq!(trunk_channels(&state, 1), HashSet::from([4]));
-        assert!(trunk_channels(&state, 2).is_empty());
     }
 }

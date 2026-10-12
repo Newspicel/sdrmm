@@ -1,7 +1,7 @@
 use sdrmm_wire::{
-    NodeCategory, PatchApplyReport, PatchEdge, PatchGraph, PatchNode, PatchRefusal, Position,
-    StateScope, StateSnapshot, TimeMachineAction, TimeMachineNode, UpdateWorkspaceRequest,
-    WorkspaceDetail, WorkspaceSnapshot,
+    NodeCategory, NodeKind, PatchApplyReport, PatchEdge, PatchGraph, PatchNode, PatchRefusal,
+    Position, StateScope, StateSnapshot, TimeMachineAction, TimeMachineNode,
+    UpdateWorkspaceRequest, WorkspaceDetail, WorkspaceSnapshot,
 };
 
 use super::args::{PutNodeArgs, WireArgs};
@@ -53,7 +53,7 @@ pub(super) fn edit<T>(
         .update_workspace(info.id, &update, Some(super::MCP_AUTHOR))?;
     state.engine.emit_scope(StateScope::Workspaces);
     let released = release(state, &before, &after);
-    let mut report = rest::bring_up_active(state, info.id)?;
+    let mut report = crate::apply::bring_up_active(state, info.id)?;
     report.refused.extend(released);
     Ok((outcome, report))
 }
@@ -152,7 +152,7 @@ fn add(graph: &mut PatchGraph, args: PutNodeArgs) -> Result<String, AppError> {
     Ok(id)
 }
 
-fn fresh_id(graph: &PatchGraph, kind: &str) -> Result<String, AppError> {
+fn fresh_id(graph: &PatchGraph, kind: NodeKind) -> Result<String, AppError> {
     loop {
         let mut bytes = [0u8; ID_BYTES];
         getrandom::fill(&mut bytes)

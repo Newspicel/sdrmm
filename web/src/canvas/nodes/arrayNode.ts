@@ -2,6 +2,7 @@ import type { Options } from "../../components/controls";
 import { CAL_TEXT, failureText, SYNC_TEXT } from "../../lib/arrays";
 import { ARRAY_LIMITS } from "../../lib/limits";
 import { HEADING_SOURCE_LABEL } from "../../lib/phones";
+import { resolvedNode } from "../../lib/resolved";
 import type {
   ArrayCalSource,
   ArrayFailure,
@@ -13,9 +14,10 @@ import type {
   Coherence,
   DeviceSet,
   PatchGraph,
+  ResolvedPatch,
 } from "../../lib/types";
-import { lanesOf } from "../arrayRules";
 import { ARRAY_LANE_PORT, nodeOf, portStream, rxStreamCount, streamLabel } from "../graph";
+import { arrayLanes } from "../lanes";
 import { laneCenterHz, refLabel } from "./deviceNode";
 import { ageLabel } from "./processorFace";
 
@@ -24,17 +26,26 @@ export const RADIO = "Radio";
 export const NO_LANES = "no lanes";
 export const FAILED = "failed";
 
-export function heldLanes(graph: PatchGraph, device: string): ReadonlyMap<number, string> {
+function makesArray(resolved: ResolvedPatch | null, node: string): boolean {
+  return (resolvedNode(resolved, node)?.ports ?? []).some(
+    (port) => port.direction === "out" && port.port_type === "array",
+  );
+}
+
+export function heldLanes(
+  resolved: ResolvedPatch | null,
+  device: string,
+): ReadonlyMap<number, string> {
   const held = new Map<number, string>();
-  for (const edge of graph.edges ?? []) {
-    const stream = edge.from.node === device ? portStream("iq", edge.from.port) : null;
-    if (
-      stream !== null &&
-      portStream(ARRAY_LANE_PORT, edge.to.port) !== null &&
-      nodeOf(graph, edge.to.node)?.kind === "array" &&
-      !held.has(stream)
-    ) {
-      held.set(stream, edge.to.node);
+  for (const port of resolvedNode(resolved, device)?.ports ?? []) {
+    const stream = port.direction === "out" ? portStream("iq", port.name) : null;
+    const reach = (port.reaches ?? []).find(
+      (candidate) =>
+        portStream(ARRAY_LANE_PORT, candidate.port) !== null &&
+        makesArray(resolved, candidate.sink),
+    );
+    if (stream !== null && reach !== undefined && !held.has(stream)) {
+      held.set(stream, reach.sink);
     }
   }
   return held;
@@ -49,9 +60,13 @@ export interface LaneHold {
   label: string;
 }
 
-export function laneHolds(graph: PatchGraph, device: string): ReadonlyMap<number, LaneHold> {
+export function laneHolds(
+  graph: PatchGraph,
+  resolved: ResolvedPatch | null,
+  device: string,
+): ReadonlyMap<number, LaneHold> {
   return new Map(
-    [...heldLanes(graph, device)].map(([stream, array]) => [
+    [...heldLanes(resolved, device)].map(([stream, array]) => [
       stream,
       { array, label: arrayName(graph, array) },
     ]),
@@ -92,11 +107,12 @@ function sourceName(
 
 export function arrayLaneRows(
   graph: PatchGraph,
+  resolved: ResolvedPatch | null,
   devices: ReadonlyMap<string, DeviceSet>,
   array: string,
   status: ArrayStatus | undefined,
 ): ArrayLaneRow[] {
-  return lanesOf(graph, array).map((wire) => {
+  return arrayLanes(resolved, array).map((wire) => {
     const stream = portStream("iq", wire.source.port) ?? 0;
     const streams = rxStreamCount(devices.get(wire.source.node)?.capabilities);
     const name = sourceName(graph, devices, wire.source.node);
@@ -110,8 +126,8 @@ export function arrayLaneRows(
   });
 }
 
-export function memberDevices(graph: PatchGraph, array: string): string[] {
-  return [...new Set(lanesOf(graph, array).map((wire) => wire.source.node))];
+export function memberDevices(resolved: ResolvedPatch | null, array: string): string[] {
+  return [...new Set(arrayLanes(resolved, array).map((wire) => wire.source.node))];
 }
 
 export const TIER_TEXT: Readonly<Record<Coherence, string>> = {
@@ -247,12 +263,12 @@ export function headingLabel(
 }
 
 export function arraySpanHz(
-  graph: PatchGraph,
+  resolved: ResolvedPatch | null,
   devices: ReadonlyMap<string, DeviceSet>,
   array: string,
   status: ArrayStatus | undefined,
 ): number | null {
-  const centres = lanesOf(graph, array).flatMap((wire) => {
+  const centres = arrayLanes(resolved, array).flatMap((wire) => {
     const set = devices.get(wire.source.node);
     const stream = portStream("iq", wire.source.port);
     const hz = set === undefined || stream === null ? null : laneCenterHz(set, stream);

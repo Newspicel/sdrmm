@@ -25,15 +25,15 @@ use sdrmm_wire::{
     LicenseTextResponse, LocateQuery, LogGroupKey, MAX_RECORDING_UPLOAD_BYTES,
     MAX_SATELLITE_QUERY_LEN, NetworkExportAction, NetworkExportRequest, NetworkExportStatus,
     NmeaDevicesResponse, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport,
-    PatchBinding, PatchCatalog, PatchChannelRequest, PatchGraph, PatchRefusal, PlaybackRequest,
-    PlaybackStatus, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
-    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
-    SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScanAction,
-    ScanRequest, ScanSettings, ScannerStatus, ServerEvent, ServerStatus, StateScope, StateSnapshot,
-    TemplateInfo, TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus,
-    ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest,
-    VoiceCallsResponse, WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspaceState,
-    WorkspacesResponse, WriteSerialRequest, WrittenSerial,
+    PatchCatalog, PatchChannelRequest, PatchGraph, PlaybackRequest, PlaybackStatus, PresetDevice,
+    PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery, RecordingFormat,
+    RecordingInfo, RecordingUpload, RecordingsResponse, SatelliteCatalogQuery,
+    SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScanAction, ScanRequest, ScanSettings,
+    ScannerStatus, ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo,
+    TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus, ToolRequest,
+    ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest, VoiceCallsResponse,
+    WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspacesResponse, WriteSerialRequest,
+    WrittenSerial,
 };
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -50,6 +50,7 @@ mod info;
 mod media;
 mod missions;
 mod nanovna;
+mod patch;
 mod phones;
 mod presets;
 mod radar;
@@ -57,6 +58,7 @@ mod recordings;
 mod remote;
 mod satellites;
 mod scanning;
+mod sinks;
 mod survey;
 mod workspaces;
 
@@ -77,8 +79,7 @@ pub(crate) use scanning::scan;
 use scanning::*;
 use workspaces::*;
 pub(crate) use workspaces::{
-    HistoryStep, bring_up_active, check_channel_node, reconcile_graph, save_channel, step_history,
-    switch,
+    HistoryStep, check_channel_node, resolve_now, save_channel, step_history, switch,
 };
 
 use crate::{
@@ -489,9 +490,12 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(activate_workspace))
         .routes(routes!(apply_workspace))
         .routes(routes!(put_workspace_channel))
+        .routes(routes!(get_resolved))
         .routes(routes!(undo_workspace))
         .routes(routes!(redo_workspace))
         .routes(routes!(get_patch_catalog))
+        .routes(routes!(patch::post_patch_wiring))
+        .routes(routes!(sinks::clear_sink))
         .routes(routes!(list_band_regions))
         .routes(routes!(get_band_plan))
         .routes(routes!(locate_band_region))

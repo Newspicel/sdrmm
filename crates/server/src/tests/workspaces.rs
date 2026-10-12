@@ -895,6 +895,36 @@ async fn an_imported_workspace_lands_next_to_the_one_it_came_from_and_opens_its_
 }
 
 #[tokio::test]
+async fn an_import_drops_a_wire_to_nowhere_with_a_notice() {
+    let app = test_router();
+    let export = sdrmm_wire::WorkspaceExport::new(
+        "Airband Watch".to_string(),
+        sdrmm_wire::WorkspaceSnapshot::starter(),
+        sdrmm_wire::WorkspaceState::new(),
+    );
+    let mut broken = export.clone();
+    broken.snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: "device".to_string(),
+            port: "iq".to_string(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: "ghost".to_string(),
+            port: "iq".to_string(),
+        },
+    });
+    let (status, body) = import_document(&app, &serde_json::to_string(&broken).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    let created: sdrmm_wire::CreatedRowId = serde_json::from_slice(&body).expect("json");
+    let imported = workspace_detail(&app, created.id).await;
+    assert_eq!(imported.snapshot.graph, export.snapshot.graph);
+    assert!(imported.notices.iter().any(|notice| matches!(
+        notice.notice,
+        sdrmm_wire::WorkspaceNoticeKind::DroppedWires { .. }
+    )));
+}
+
+#[tokio::test]
 async fn importing_refuses_a_document_this_build_cannot_read() {
     let app = test_router();
     let export = sdrmm_wire::WorkspaceExport::new(
@@ -920,16 +950,8 @@ async fn importing_refuses_a_document_this_build_cannot_read() {
     assert!(String::from_utf8_lossy(&body).contains("state version"));
 
     let mut broken = export.clone();
-    broken.snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
-        from: sdrmm_wire::PortRef {
-            node: "device".to_string(),
-            port: "iq".to_string(),
-        },
-        to: sdrmm_wire::PortRef {
-            node: "ghost".to_string(),
-            port: "iq".to_string(),
-        },
-    });
+    let twin = broken.snapshot.graph.nodes[0].clone();
+    broken.snapshot.graph.nodes.push(twin);
     let (status, _) = import_document(&app, &serde_json::to_string(&broken).unwrap()).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
@@ -1437,26 +1459,25 @@ async fn a_decoder_wired_to_one_radio_keeps_it_while_the_flexible_ones_move_asid
 }
 
 #[tokio::test]
-async fn applying_adopts_an_unnamed_channel_without_copying_it() {
+async fn applying_never_adopts_a_channel_opened_for_no_node() {
     let (app, state) = test_router_with_state();
     let workspace = put_active_workspace(&app, &two_radio_snapshot(&[("voice", "nfm")])).await;
     let set = state.engine.create_device_set("virtual:band").unwrap();
     let settings = ChannelSettings::default_for("nfm").unwrap();
-    let id = state.engine.add_channel(set, 0, settings).unwrap();
+    let stray = state.engine.add_channel(set, 0, settings).unwrap();
     let report = apply(&app, workspace).await;
     assert!(report.refused.is_empty(), "{report:?}");
-    assert_eq!(report.created, 0);
+    assert_eq!(report.created, 1);
     let snapshot = state.engine.snapshot();
-    let (owner, channel) = carrier_of(&snapshot, "voice").unwrap();
-    assert_eq!((owner, channel.id), (set, id));
-    assert_eq!(
-        snapshot
-            .device_sets
-            .iter()
-            .map(|set| set.channels.len())
-            .sum::<usize>(),
-        1
-    );
+    let (_, channel) = carrier_of(&snapshot, "voice").unwrap();
+    assert_ne!(channel.id, stray);
+    let unowned = snapshot
+        .device_sets
+        .iter()
+        .flat_map(|set| &set.channels)
+        .find(|channel| channel.id == stray)
+        .expect("the stray channel is left alone");
+    assert_eq!(unowned.node, None);
 }
 
 #[tokio::test]

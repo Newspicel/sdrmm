@@ -4,14 +4,63 @@ import type {
   AgcSetting,
   Capabilities,
   Coherence,
+  DeviceInfo,
   DeviceRef,
   DeviceSet,
   DeviceSettings,
+  PatchGraph,
+  PatchNode,
   Tuning,
   VirtualLane,
 } from "../../lib/types";
 import { forStream } from "../../lib/useDevicePatch";
 import { rxStreamCount, streamLabel } from "../graph";
+import { siggenKey } from "./signalGen";
+
+export function deviceRefOf(info: DeviceInfo): DeviceRef {
+  return {
+    backend: info.driver,
+    ...(info.serial == null ? {} : { serial: info.serial }),
+    ...(info.serial == null || info.key.startsWith(`${info.serial}@`) ? { key: info.key } : {}),
+  };
+}
+
+export function refMatches(reference: DeviceRef, info: DeviceInfo): boolean {
+  if (reference.backend !== info.driver) {
+    return false;
+  }
+  if (reference.serial != null) {
+    return (
+      reference.serial === info.serial && (reference.key == null || reference.key === info.key)
+    );
+  }
+  return reference.key == null || reference.key === info.key;
+}
+
+export function claimedDevices(graph: PatchGraph, exceptNode: string): DeviceRef[] {
+  const claimed: DeviceRef[] = [];
+  for (const node of graph.nodes) {
+    if (node.kind === "device" && node.id !== exceptNode && node.data.device != null) {
+      claimed.push(node.data.device);
+    }
+  }
+  return claimed;
+}
+
+export function nodeDeviceRef(node: PatchNode): DeviceRef | null {
+  switch (node.kind) {
+    case "device":
+      return node.data.device ?? null;
+    case "recording":
+      return node.data.recording == null || node.data.recording === ""
+        ? null
+        : { backend: "recording", key: node.data.recording };
+    case "signal_gen":
+      return node.data.running ? { backend: "siggen", key: siggenKey(node.id) } : null;
+    default:
+      return null;
+  }
+}
 
 export function clippingSaid(set: DeviceSet): string | null {
   const lanes = set.clipping ?? [];

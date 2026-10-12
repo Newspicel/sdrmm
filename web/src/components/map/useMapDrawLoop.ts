@@ -1,69 +1,38 @@
 import type { GeoJSONSource } from "maplibre-gl";
 import { type RefObject, useEffect } from "react";
 import { paletteTable } from "../../gl/surface";
-import { useDecodedStore } from "../../lib/decoded";
 import type { FusionGridFrame } from "../../lib/frame";
-import { advanceFixTrails, type DfOverlay, drawDfOverlay, type FixTrails } from "../../lib/map/df";
 import { drawHeat, type HeatScratch } from "../../lib/map/heat";
-import {
-  DRAW_TICK_MS,
-  MAP_KINDS,
-  type MapKind,
-  sourceId,
-  type Target,
-  type TargetDetail,
-  type TrackCollection,
-  targetCollection,
-  targetDetail,
-  trackCollection,
-  trackSourceId,
-} from "../../lib/map/layers";
 import { POSITION_ROUTE_SOURCE, POSITION_SOURCE } from "../../lib/map/position";
 import { type PropagationOverlay, updatePropagationSources } from "../../lib/map/propagation";
-import { drawSatellites } from "../../lib/map/satellites";
 import { SIGNAL_SOURCE } from "../../lib/map/signal";
-import { FORECAST_SOURCE, forecastCollection } from "../../lib/map/sondeForecast";
 import {
   framePositionOnce,
   frameSignalOnce,
   frameTargetsOnce,
-  setSourceData,
+  type TrackPoint,
   updatePositionSources,
   updateSignalSource,
 } from "../../lib/map/sources";
-import { highlight } from "../../lib/map/targets";
-import { type PositionSample, usePositionStore } from "../../lib/position";
-import { useSatelliteStore } from "../../lib/satellite";
-import { trailsOf } from "../../lib/trails";
-import type { SatelliteStatus, SurveyCell } from "../../lib/types";
-import {
-  type Counts,
-  type MapCore,
-  type MapInputs,
-  type MapSinks,
-  readyCore,
-  sameCounts,
-  ZERO_COUNTS,
-} from "./mapState";
+import { usePositionStore } from "../../lib/position";
+import type { Entity, PositionTrack, SurveyCell } from "../../lib/types";
+import { drawSinkFeed } from "../../sinks/mapLayers";
+import { type MapCore, type MapInputs, type MapSinks, readyCore } from "./mapState";
 
+export const DRAW_TICK_MS = 500;
+const FADE_REDRAW_MS = 5_000;
 const HEAT_COLORMAP = "inferno";
-const EMPTY_STATIONS: readonly Target[] = Object.freeze([]);
-const EMPTY_HISTORY: readonly PositionSample[] = Object.freeze([]);
-const NO_TRACKS: TrackCollection = { type: "FeatureCollection", features: [] };
 
 interface Drawn {
   generation: number;
-  targets: Partial<Record<MapKind, readonly Target[]>>;
-  tracks: Partial<Record<MapKind, readonly Target[]>>;
+  entities: readonly Entity[] | null;
   tracksOn: boolean | null;
+  entitiesAt: number;
   position: string;
-  satellites: Readonly<Record<string, SatelliteStatus>> | null;
+  positions: readonly PositionTrack[] | null;
   signal: readonly SurveyCell[] | null;
   propagation: PropagationOverlay | null;
-  df: DfOverlay | null;
   heat: FusionGridFrame | null;
-  trails: FixTrails;
-  counts: Counts;
 }
 
 interface Painter {
@@ -71,45 +40,57 @@ interface Painter {
   scratch: HeatScratch;
 }
 
-function freshDrawn(generation: number, counts: Counts, trails: FixTrails): Drawn {
+function freshDrawn(generation: number): Drawn {
   return {
     generation,
-    targets: {},
-    tracks: {},
+    entities: null,
     tracksOn: null,
+    entitiesAt: 0,
     position: "",
-    satellites: null,
+    positions: null,
     signal: null,
     propagation: null,
-    df: null,
     heat: null,
-    trails,
-    counts,
   };
 }
 
-function findDetail(kind: MapKind, id: string): TargetDetail | null {
-  const station = useDecodedStore.getState().stations[kind]?.find((row) => row.id === id);
-  return station === undefined ? null : targetDetail(station);
+function trackPoints(track: PositionTrack): TrackPoint[] {
+  return (track.trail ?? []).map((at, index) => ({
+    latitude: at.lat,
+    longitude: at.lon,
+    receivedAt: index,
+  }));
+}
+
+function storeTracks(nodes: readonly string[]) {
+  const sources = usePositionStore.getState().sources;
+  return nodes.map((node) => ({
+    key: `${node}:${sources[node]?.history.length ?? 0}:${sources[node]?.history.at(-1)?.receivedAt ?? 0}:${sources[node]?.fix != null}`,
+    samples: sources[node]?.history ?? [],
+    active: sources[node]?.fix != null,
+  }));
 }
 
 function drawPositions(core: MapCore, inputs: MapInputs, drawn: Drawn, sinks: MapSinks): void {
-  const sources = usePositionStore.getState().sources;
-  const tracks = inputs.positionNodes.map((node) => ({
-    node,
-    samples: sources[node]?.history ?? EMPTY_HISTORY,
-    active: sources[node]?.fix != null,
-  }));
-  const key = tracks
-    .map(
-      ({ node, samples, active }) =>
-        `${node}:${samples.length}:${samples.at(-1)?.receivedAt ?? 0}:${active ? "live" : "stale"}`,
-    )
-    .join("|");
-  if (key === drawn.position) {
-    return;
+  let tracks: { samples: readonly TrackPoint[]; active: boolean }[];
+  if (inputs.positions !== null) {
+    if (inputs.positions === drawn.positions) {
+      return;
+    }
+    drawn.positions = inputs.positions;
+    tracks = inputs.positions.map((track) => ({
+      samples: trackPoints(track),
+      active: track.fix != null,
+    }));
+  } else {
+    const fromStore = storeTracks(inputs.positionNodes);
+    const key = fromStore.map((track) => track.key).join("|");
+    if (key === drawn.position) {
+      return;
+    }
+    drawn.position = key;
+    tracks = fromStore;
   }
-  drawn.position = key;
   const collection = updatePositionSources(
     core.map.getSource<GeoJSONSource>(POSITION_SOURCE),
     core.map.getSource<GeoJSONSource>(POSITION_ROUTE_SOURCE),
@@ -125,12 +106,6 @@ function drawOverlays(core: MapCore, inputs: MapInputs, drawn: Drawn, painter: P
     drawn.propagation = propagation;
     updatePropagationSources(core.map, propagation);
   }
-  const df = inputs.df;
-  if (df !== null && df !== drawn.df) {
-    drawn.df = df;
-    drawn.trails = advanceFixTrails(drawn.trails, df.tracks);
-    drawDfOverlay(core.map, df, drawn.trails);
-  }
   const heat = inputs.heat;
   if (heat !== null && heat !== drawn.heat) {
     drawn.heat = heat;
@@ -144,103 +119,20 @@ function drawOverlays(core: MapCore, inputs: MapInputs, drawn: Drawn, painter: P
   }
 }
 
-function drawTargets(core: MapCore, inputs: MapInputs, drawn: Drawn, sinks: MapSinks): void {
-  const stations = useDecodedStore.getState().stations;
-  const now = Date.now();
-  const next = { ...drawn.counts };
-  for (const kind of inputs.kinds) {
-    const rows = stations[kind] ?? EMPTY_STATIONS;
-    if (rows === drawn.targets[kind]) {
-      continue;
-    }
-    drawn.targets[kind] = rows;
-    if (kind === "radiosonde") {
-      setSourceData(
-        core.map.getSource<GeoJSONSource>(FORECAST_SOURCE),
-        forecastCollection(stations.radiosonde ?? [], now),
-      );
-    }
-    const collection = targetCollection(rows, now);
-    setSourceData(core.map.getSource<GeoJSONSource>(sourceId(kind)), collection);
-    next[kind] = collection.features.length;
-    frameTargetsOnce(core.map, collection, core.framing.targets);
-  }
-  if (!sameCounts(drawn.counts, next)) {
-    drawn.counts = next;
-    sinks.setCounts(next);
-  }
-}
-
-function drawSatelliteLayer(core: MapCore, inputs: MapInputs, drawn: Drawn, sinks: MapSinks): void {
-  const byNode = useSatelliteStore.getState().byNode;
-  if (inputs.satellites.length === 0 || byNode === drawn.satellites) {
+function drawEntities(core: MapCore, inputs: MapInputs, drawn: Drawn, now: number): void {
+  const entities = inputs.entities;
+  if (entities === null) {
     return;
   }
-  drawn.satellites = byNode;
-  const statuses = inputs.satellites.flatMap((node) => {
-    const status = byNode[node];
-    return status === undefined ? [] : [status];
-  });
-  sinks.setSatelliteCount(drawSatellites(core.map, statuses));
-}
-
-function drawTracks(core: MapCore, inputs: MapInputs, drawn: Drawn): void {
-  if (!inputs.tracks) {
-    if (drawn.tracksOn !== false) {
-      for (const kind of MAP_KINDS) {
-        setSourceData(core.map.getSource<GeoJSONSource>(trackSourceId(kind)), NO_TRACKS);
-      }
-      drawn.tracks = {};
-      drawn.tracksOn = false;
-    }
+  const stale = now - drawn.entitiesAt >= FADE_REDRAW_MS;
+  if (entities === drawn.entities && inputs.tracks === drawn.tracksOn && !stale) {
     return;
   }
-  drawn.tracksOn = true;
-  const stations = useDecodedStore.getState().stations;
-  const now = Date.now();
-  for (const kind of inputs.kinds) {
-    const rows = stations[kind] ?? EMPTY_STATIONS;
-    if (rows === drawn.tracks[kind]) {
-      continue;
-    }
-    drawn.tracks[kind] = rows;
-    setSourceData(
-      core.map.getSource<GeoJSONSource>(trackSourceId(kind)),
-      trackCollection(rows, trailsOf(kind), now),
-    );
-  }
-}
-
-function followSelection(core: MapCore, inputs: MapInputs, sinks: MapSinks): void {
-  const selected = core.selected;
-  if (selected === null) {
-    return;
-  }
-  const current = findDetail(selected.kind, selected.id);
-  sinks.setDetail((previous) =>
-    current === null || previous === null || current.lastSeen !== previous.lastSeen
-      ? current
-      : previous,
-  );
-  if (current === null) {
-    core.selected = null;
-    highlight(core.map, inputs.kinds, null);
-  }
-}
-
-function drawFrame(
-  core: MapCore,
-  inputs: MapInputs,
-  drawn: Drawn,
-  painter: Painter,
-  sinks: MapSinks,
-): void {
-  drawPositions(core, inputs, drawn, sinks);
-  drawOverlays(core, inputs, drawn, painter);
-  drawTargets(core, inputs, drawn, sinks);
-  drawSatelliteLayer(core, inputs, drawn, sinks);
-  drawTracks(core, inputs, drawn);
-  followSelection(core, inputs, sinks);
+  drawn.entities = entities;
+  drawn.tracksOn = inputs.tracks;
+  drawn.entitiesAt = now;
+  const points = drawSinkFeed(core.map, entities, core.hues, inputs.tracks, now);
+  frameTargetsOnce(core.map, points, core.framing.targets);
 }
 
 export function useMapDrawLoop(
@@ -250,16 +142,19 @@ export function useMapDrawLoop(
 ): void {
   useEffect(() => {
     const painter: Painter = { table: paletteTable(HEAT_COLORMAP), scratch: { pixels: null } };
-    let drawn = freshDrawn(-1, ZERO_COUNTS, new Map());
+    let drawn = freshDrawn(-1);
     const timer = setInterval(() => {
       const core = readyCore(coreRef.current);
       if (core === null) {
         return;
       }
       if (drawn.generation !== core.generation) {
-        drawn = freshDrawn(core.generation, drawn.counts, drawn.trails);
+        drawn = freshDrawn(core.generation);
       }
-      drawFrame(core, inputsRef.current, drawn, painter, sinks);
+      const inputs = inputsRef.current;
+      drawPositions(core, inputs, drawn, sinks);
+      drawOverlays(core, inputs, drawn, painter);
+      drawEntities(core, inputs, drawn, Date.now());
     }, DRAW_TICK_MS);
     return () => clearInterval(timer);
   }, [coreRef, inputsRef, sinks]);

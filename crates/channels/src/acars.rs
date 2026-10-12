@@ -37,7 +37,7 @@ use sdrmm_dsp::{DcBlocker, Decimator, crc16_ccitt, design_lowpass};
 use sdrmm_modem::cpm::MskDetector;
 use sdrmm_wire::{
     AcarsMessage, AcarsParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily,
+    DecoderFamily, EventKind,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -75,7 +75,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: 24_000.0,
     has_audio: false,
-    decoder_kind: Some("acars".to_owned()),
+    emits: vec![EventKind::Acars],
     ..ChannelDescriptor::default()
 });
 

@@ -7,8 +7,8 @@ import { CORRELATOR_LIMITS as LIMITS } from "../../lib/limits";
 import { isStale, readingOf, useProcessorStore } from "../../lib/processors";
 import type { CorrelatorParams, CorrelatorReading, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { arrayOf } from "../binding";
 import { useWorkspaceContext } from "../context";
+import { arrayOf } from "../lanes";
 import { settingsOf } from "../newNode";
 import { BandChips } from "./BandRows";
 import { CorrelatorPlots, FringeLine } from "./CorrelatorPlots";
@@ -49,7 +49,7 @@ function useFringe(reading: CorrelatorReading | null, index: number): readonly n
 export function CorrelatorFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const state = useProcessorStore((store) => store.byNode[node.id]);
-  const array = arrayOf(workspace.graph, node.id);
+  const array = arrayOf(workspace.resolved, node.id);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
   const edit = useProcessorEdit(node as PatchNodeOf<"correlator">);
@@ -70,7 +70,7 @@ export function CorrelatorFace({ node }: { node: PatchNode }) {
       node={node}
       title="Correlator"
       category="tool"
-      subtitle={processorSubtitle(workspace.graph, node.id, status, state, now, period)}
+      subtitle={processorSubtitle(workspace.resolved, node.id, status, state, now, period)}
     >
       <FaceBody scroll={false}>
         {settings === null ? (

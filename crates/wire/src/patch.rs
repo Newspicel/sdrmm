@@ -5,32 +5,23 @@ use crate::{
     EventOutputNode, GpsNode, MAX_NMEA_BAUD, MAX_NMEA_UPDATE_INTERVAL_MS,
     MAX_POSITION_ENDPOINT_LEN, MIN_NMEA_BAUD, MIN_NMEA_UPDATE_INTERVAL_MS, PositionSource,
     channel::{ChannelDescriptor, ChannelParams},
-    device::{
-        Capabilities, DeviceInfo, Direction, RECORDING_DRIVER_ID, SIGGEN_DRIVER_ID,
-        recording_stem_valid,
-    },
-    filter::EventFilterNode,
+    device::{DeviceInfo, RECORDING_DRIVER_ID, SIGGEN_DRIVER_ID, recording_stem_valid},
     fusion::TriangulationParams,
     hunt::HuntSweepParams,
-    network::{MAX_NETWORK_ADDRESS_LEN, NetworkExportNode},
-    propagation::PropagationNode,
-    rotator::RotatorNode,
-    satellite::SatelliteNode,
-    timemachine::TimeMachineNode,
     workspace::MAX_NAME_LEN,
 };
 
-#[macro_use]
-mod node_body;
-mod catalog;
-mod wiring;
+mod contract;
+mod ports;
+mod registry;
+pub mod resolve;
 
-use crate::array::MAX_ARRAY_LANES;
-use crate::processor::processors;
-use catalog::ports_for;
-pub use wiring::{
-    REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_ROTATOR, REFUSAL_SHARED_CLOCK,
-    REFUSAL_STEER, REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, REFUSALS,
+pub use contract::*;
+pub use ports::*;
+pub use registry::*;
+pub use resolve::{
+    ChannelAddr, Feed, NodeProblem, ProblemSource, Reach, RefusedEdge, ResolveCtx, ResolvedEdge,
+    ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Runs, Tap,
 };
 
 pub const MAX_NODES: usize = 128;
@@ -41,17 +32,6 @@ pub const MAX_NODE_SIZE: f32 = 10_000.0;
 pub const RACK_COLS: u16 = 12;
 pub const RACK_ROWS: u16 = 8;
 pub const MAX_STREAMS: u32 = 16;
-
-pub const ARRAY_PORT: &str = "array";
-pub const ARRAY_LANE_PORT: &str = "lane";
-pub const POSITION_PORT: &str = "position";
-pub const EVENTS_PORT: &str = "events";
-pub const CONTROL_PORT: &str = "control";
-pub const BEAM_PORT: &str = "beam";
-pub const STITCH_WIDE_PORT: &str = "wide";
-pub const STEER_PORT: &str = "steer";
-pub const RADAR_TX_PORT: &str = "tx";
-pub const RADAR_TRUTH_PORT: &str = "adsb";
 
 #[must_use]
 pub fn stream_port(base: &str, index: u32) -> String {
@@ -73,174 +53,6 @@ pub fn port_stream(base: &str, name: &str) -> Option<u32> {
         return None;
     }
     Some(n - 1)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PortType {
-    Iq,
-    Baseband,
-    Audio,
-    Events,
-    Video,
-    Control,
-    Position,
-    Tx,
-    Array,
-}
-
-impl PortType {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Iq => "iq",
-            Self::Baseband => "baseband",
-            Self::Audio => "audio",
-            Self::Events => "events",
-            Self::Video => "video",
-            Self::Control => "control",
-            Self::Position => "position",
-            Self::Tx => "tx",
-            Self::Array => "array",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PortDirection {
-    In,
-    Out,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PortCondition {
-    #[default]
-    Always,
-    ChannelHasAudio,
-    ChannelHasEvents,
-    ChannelHasVideo,
-    ChannelNeedsPosition,
-    DeviceIsTxCapable,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum PortBacking<'a> {
-    Channel(&'a ChannelDescriptor),
-    Device(&'a Capabilities),
-    Lanes(u32),
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PortRepeat {
-    #[default]
-    Once,
-    PerRxStream,
-    PerTxStream,
-    PerLane,
-}
-
-impl PortRepeat {
-    fn count(self, backing: Option<PortBacking<'_>>) -> u32 {
-        match (self, backing) {
-            (Self::Once, _) => 1,
-            (Self::PerRxStream, Some(PortBacking::Device(caps))) => {
-                caps.rx_streams.clamp(1, MAX_STREAMS)
-            }
-            (Self::PerTxStream, Some(PortBacking::Device(caps))) => {
-                caps.tx_streams.clamp(1, MAX_STREAMS)
-            }
-            (Self::PerLane, Some(PortBacking::Lanes(wired))) => {
-                wired.saturating_add(1).min(MAX_ARRAY_LANES)
-            }
-            (Self::PerRxStream | Self::PerTxStream | Self::PerLane, _) => 1,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct PortSpec {
-    pub name: String,
-    pub port_type: PortType,
-    pub direction: PortDirection,
-    pub multi: bool,
-    #[serde(default, skip_serializing_if = "is_always")]
-    pub condition: PortCondition,
-    #[serde(default, skip_serializing_if = "is_once")]
-    pub repeat: PortRepeat,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-}
-
-fn is_always(condition: &PortCondition) -> bool {
-    *condition == PortCondition::Always
-}
-
-fn is_once(repeat: &PortRepeat) -> bool {
-    *repeat == PortRepeat::Once
-}
-
-impl PortSpec {
-    fn new(
-        port_type: PortType,
-        direction: PortDirection,
-        multi: bool,
-        condition: PortCondition,
-    ) -> Self {
-        Self {
-            name: port_type.as_str().to_owned(),
-            port_type,
-            direction,
-            multi,
-            condition,
-            repeat: PortRepeat::Once,
-            note: None,
-        }
-    }
-
-    fn named(name: &str, port_type: PortType, direction: PortDirection, multi: bool) -> Self {
-        Self {
-            name: name.to_owned(),
-            ..Self::new(port_type, direction, multi, PortCondition::Always)
-        }
-    }
-
-    #[must_use]
-    fn noted(mut self, note: &str) -> Self {
-        self.note = Some(note.to_owned());
-        self
-    }
-
-    #[must_use]
-    fn repeated(mut self, repeat: PortRepeat) -> Self {
-        self.repeat = repeat;
-        self
-    }
-
-    #[must_use]
-    pub fn applies_to(&self, backing: Option<PortBacking<'_>>) -> bool {
-        match (self.condition, backing) {
-            (PortCondition::Always, _) => true,
-            (PortCondition::ChannelHasAudio, Some(PortBacking::Channel(channel))) => {
-                channel.has_audio
-            }
-            (PortCondition::ChannelHasEvents, Some(PortBacking::Channel(channel))) => {
-                channel.decoder_kind.is_some() || channel.has_audio
-            }
-            (PortCondition::ChannelHasVideo, Some(PortBacking::Channel(channel))) => {
-                channel.has_video
-            }
-            (PortCondition::ChannelNeedsPosition, Some(PortBacking::Channel(channel))) => {
-                channel.needs_position
-            }
-            (PortCondition::DeviceIsTxCapable, Some(PortBacking::Device(device))) => {
-                device.duplex.supports(Direction::Tx)
-            }
-            _ => false,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -354,14 +166,12 @@ impl Default for SignalGenNode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelNode {
     pub channel_type: String,
     #[serde(default)]
     pub tuning_locked: bool,
 }
-
-pub const DV_DECODER_KIND: &str = "dv";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -562,17 +372,7 @@ pub struct TriangulationNode {
     pub settings: TriangulationParams,
 }
 
-processors!(define_node_body);
-
 impl NodeBody {
-    #[must_use]
-    pub const fn opens_device(&self) -> bool {
-        matches!(
-            self,
-            Self::Device(_) | Self::Recording(_) | Self::SignalGen(_)
-        )
-    }
-
     #[must_use]
     pub fn device_ref(&self, node_id: &str) -> Option<DeviceRef> {
         match self {
@@ -586,50 +386,6 @@ impl NodeBody {
             _ => None,
         }
     }
-
-    #[must_use]
-    pub fn ports(&self) -> Vec<PortSpec> {
-        ports_for(self.kind())
-    }
-
-    #[must_use]
-    pub fn ports_with(&self, backing: Option<PortBacking<'_>>) -> Vec<PortSpec> {
-        let mut ports = Vec::new();
-        for spec in self.ports() {
-            if !spec.applies_to(backing) {
-                continue;
-            }
-            if spec.repeat == PortRepeat::Once {
-                ports.push(spec);
-                continue;
-            }
-            for stream in 0..spec.repeat.count(backing) {
-                let mut port = spec.clone();
-                port.name = stream_port(&spec.name, stream);
-                port.repeat = PortRepeat::Once;
-                ports.push(port);
-            }
-        }
-        ports
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct NodeTypeInfo {
-    pub kind: String,
-    pub name: String,
-    pub category: NodeCategory,
-    #[serde(default)]
-    pub summary: String,
-    pub ports: Vec<PortSpec>,
-    #[serde(default)]
-    pub needs_channel_type: bool,
-    pub default_body: NodeBody,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct PatchCatalog {
-    pub nodes: Vec<NodeTypeInfo>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -716,17 +472,14 @@ pub enum PatchError {
         to: PortType,
     },
     DuplicateEdge(PortRef),
-    PortOccupied(PortRef),
-    MixedNetworkSource(String),
     SelfEdge(String),
     Cycle(String),
     RackCell(String),
     DuplicateRackSlot(String),
     RackOverlap(String),
-    Wire {
-        from: PortRef,
-        to: PortRef,
-        reason: String,
+    Refused {
+        edge: Box<PatchEdge>,
+        refusal: Refusal,
     },
 }
 
@@ -761,15 +514,6 @@ impl std::fmt::Display for PatchError {
             Self::DuplicateEdge(port) => {
                 write!(f, "duplicate wire into {}.{}", port.node, port.port)
             }
-            Self::PortOccupied(port) => write!(
-                f,
-                "{}.{} already has a wire and takes only one",
-                port.node, port.port
-            ),
-            Self::MixedNetworkSource(id) => write!(
-                f,
-                "network sink {id} carries a radio's IQ or a channel's baseband, not both"
-            ),
             Self::SelfEdge(id) => write!(f, "node {id} cannot wire to itself"),
             Self::Cycle(id) => write!(f, "node {id} sits on a loop of wires"),
             Self::RackCell(node) => write!(
@@ -778,7 +522,7 @@ impl std::fmt::Display for PatchError {
             ),
             Self::DuplicateRackSlot(node) => write!(f, "node {node} is pinned twice"),
             Self::RackOverlap(node) => write!(f, "rack slot for {node} overlaps another"),
-            Self::Wire { reason, .. } => f.write_str(reason),
+            Self::Refused { refusal, .. } => f.write_str(&refusal.text()),
         }
     }
 }
@@ -816,55 +560,6 @@ impl PatchGraph {
     }
 
     #[must_use]
-    pub fn lanes_of(&self, channel_node: &str) -> Vec<(&str, u32)> {
-        self.edges
-            .iter()
-            .filter(|edge| edge.to.node == channel_node && edge.to.port == "iq")
-            .filter_map(|edge| {
-                let source = self.node(&edge.from.node)?;
-                if !source.body.opens_device() {
-                    return None;
-                }
-                Some((edge.from.node.as_str(), port_stream("iq", &edge.from.port)?))
-            })
-            .collect()
-    }
-
-    pub fn sources_of<'a>(&'a self, node: &'a str, port: &'a str) -> impl Iterator<Item = &'a str> {
-        self.edges
-            .iter()
-            .filter(move |edge| edge.to.node == node && edge.to.port == port)
-            .map(|edge| edge.from.node.as_str())
-    }
-
-    pub fn targets_of<'a>(&'a self, node: &'a str, port: &'a str) -> impl Iterator<Item = &'a str> {
-        self.edges
-            .iter()
-            .filter(move |edge| edge.from.node == node && edge.from.port == port)
-            .map(|edge| edge.to.node.as_str())
-    }
-
-    pub fn channels_of<'a>(
-        &'a self,
-        device_node: &'a str,
-    ) -> impl Iterator<Item = (&'a PatchNode, u32)> {
-        self.nodes
-            .iter()
-            .filter(|node| matches!(node.body, NodeBody::Channel(_)))
-            .flat_map(move |node| {
-                self.edges.iter().filter_map(move |edge| {
-                    if edge.to.node != node.id
-                        || edge.to.port != "iq"
-                        || edge.from.node != device_node
-                    {
-                        return None;
-                    }
-                    port_stream("iq", &edge.from.port).map(|stream| (node, stream))
-                })
-            })
-    }
-
-    #[must_use]
     pub fn same_topology(&self, other: &Self) -> bool {
         self.edges == other.edges
             && self.nodes.len() == other.nodes.len()
@@ -876,269 +571,19 @@ impl PatchGraph {
     }
 
     pub fn validate(&self) -> Result<(), PatchError> {
-        self.check(None)
+        resolve::compile(self, &ResolveCtx::default()).map(drop)
     }
 
     pub fn validate_against(&self, channels: &[ChannelDescriptor]) -> Result<(), PatchError> {
-        self.check(Some(channels))
-    }
-
-    fn check(&self, channels: Option<&[ChannelDescriptor]>) -> Result<(), PatchError> {
-        if self.nodes.len() > MAX_NODES {
-            return Err(PatchError::TooManyNodes);
-        }
-        if self.edges.len() > MAX_EDGES {
-            return Err(PatchError::TooManyEdges);
-        }
-        let mut seen: Vec<&str> = Vec::with_capacity(self.nodes.len());
-        for node in &self.nodes {
-            if node.id.is_empty() || node.id.len() > MAX_NODE_ID_LEN {
-                return Err(PatchError::NodeId(node.id.clone()));
-            }
-            if seen.contains(&node.id.as_str()) {
-                return Err(PatchError::DuplicateNode(node.id.clone()));
-            }
-            seen.push(&node.id);
-            if node
-                .label
-                .as_ref()
-                .is_some_and(|label| label.is_empty() || label.chars().count() > MAX_NAME_LEN)
-            {
-                return Err(PatchError::Label(node.id.clone()));
-            }
-            check_geometry(node)?;
-            match &node.body {
-                NodeBody::Device(device) => {
-                    if device
-                        .device
-                        .as_ref()
-                        .is_some_and(|r| r.backend.is_empty() || r.backend.len() > MAX_NAME_LEN)
-                    {
-                        return Err(PatchError::Backend(node.id.clone()));
-                    }
-                }
-                NodeBody::Channel(channel) => {
-                    if let Some(descriptors) = channels
-                        && !descriptors
-                            .iter()
-                            .any(|d| d.type_id == channel.channel_type)
-                    {
-                        return Err(PatchError::ChannelType(channel.channel_type.clone()));
-                    }
-                }
-                NodeBody::Recording(recording) if !recording.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::EventFilter(settings) if !settings.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::AudioFx(fx) if fx.settings.validate().is_err() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::SpectrumMonitor(settings) if !settings.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::Gps(gps) => {
-                    if let Some(source) = &gps.source {
-                        validate_gps_source(source)?;
-                    }
-                }
-                NodeBody::SignalMap(settings) => {
-                    if settings.offset_hz.unsigned_abs() > MAX_SIGNAL_MAP_OFFSET_HZ as u64
-                        || !(1..=MAX_SIGNAL_MAP_BANDWIDTH_HZ).contains(&settings.bandwidth_hz)
-                    {
-                        return Err(PatchError::NodeSettings(node.id.clone()));
-                    }
-                }
-                NodeBody::Propagation(settings) if !settings.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::NetworkExport(export) => {
-                    if !export.settings.valid_format()
-                        || export.settings.address.is_empty()
-                        || export.settings.address.len() > MAX_NETWORK_ADDRESS_LEN
-                        || !valid_host_port(&export.settings.address)
-                    {
-                        return Err(PatchError::NodeSettings(node.id.clone()));
-                    }
-                    if self.sources_of(&node.id, "iq").next().is_some()
-                        && self.sources_of(&node.id, "baseband").next().is_some()
-                    {
-                        return Err(PatchError::MixedNetworkSource(node.id.clone()));
-                    }
-                }
-                NodeBody::TimeMachine(settings) if !settings.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::DmrTrunk(settings) if !settings.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::EventOutput(settings) if !settings.target.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::Satellite(satellite) if !satellite.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::Rotator(rotator) if !rotator.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::Array(array) if !array.valid() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::Hunt(hunt) if hunt.sweep.problem().is_some() => {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                NodeBody::Triangulation(triangulation)
-                    if triangulation.settings.problem().is_some() =>
-                {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                body if body
-                    .processor_params()
-                    .is_some_and(|params| !params.valid()) =>
-                {
-                    return Err(PatchError::NodeSettings(node.id.clone()));
-                }
-                _ => {}
-            }
-        }
-        self.check_edges(channels)?;
-        self.check_acyclic()?;
-        Ok(())
-    }
-
-    fn check_acyclic(&self) -> Result<(), PatchError> {
-        let mut settled: Vec<&str> = Vec::with_capacity(self.nodes.len());
-        let mut walking: Vec<&str> = Vec::new();
-        for node in &self.nodes {
-            self.walk(&node.id, &mut settled, &mut walking)?;
-        }
-        Ok(())
-    }
-
-    fn walk<'a>(
-        &'a self,
-        node: &'a str,
-        settled: &mut Vec<&'a str>,
-        walking: &mut Vec<&'a str>,
-    ) -> Result<(), PatchError> {
-        if settled.contains(&node) {
-            return Ok(());
-        }
-        if walking.contains(&node) {
-            return Err(PatchError::Cycle(node.to_owned()));
-        }
-        walking.push(node);
-        for edge in self.edges.iter().filter(|edge| edge.from.node == node) {
-            self.walk(&edge.to.node, settled, walking)?;
-        }
-        walking.pop();
-        settled.push(node);
-        Ok(())
-    }
-
-    fn check_edges(&self, channels: Option<&[ChannelDescriptor]>) -> Result<(), PatchError> {
-        let mut landed: Vec<&PortRef> = Vec::with_capacity(self.edges.len());
-        let mut left: Vec<&PortRef> = Vec::with_capacity(self.edges.len());
-        for (index, edge) in self.edges.iter().enumerate() {
-            if edge.from.node == edge.to.node {
-                return Err(PatchError::SelfEdge(edge.from.node.clone()));
-            }
-            let out = self.port(&edge.from, PortDirection::Out, channels)?;
-            let input = self.port(&edge.to, PortDirection::In, channels)?;
-            if out.port_type != input.port_type {
-                return Err(PatchError::TypeMismatch {
-                    from: out.port_type,
-                    to: input.port_type,
-                });
-            }
-            if let Some(reason) = self.wiring_refusal(index, &input) {
-                return Err(PatchError::Wire {
-                    from: edge.from.clone(),
-                    to: edge.to.clone(),
-                    reason,
-                });
-            }
-            if input.port_type == PortType::Iq
-                && self
-                    .node(&edge.to.node)
-                    .is_some_and(|node| matches!(node.body, NodeBody::Channel(_)))
-                && self
-                    .edges
-                    .iter()
-                    .any(|other| other.to == edge.to && other.from != edge.from)
-                && self
-                    .edges
-                    .iter()
-                    .filter(|other| other.to == edge.to)
-                    .any(|other| {
-                        self.node(&other.from.node)
-                            .is_some_and(|node| !node.body.opens_device())
-                    })
-            {
-                return Err(PatchError::PortOccupied(edge.to.clone()));
-            }
-            if landed.contains(&&edge.to) && !input.multi {
-                return Err(PatchError::PortOccupied(edge.to.clone()));
-            }
-            if left.contains(&&edge.from) && !out.multi {
-                return Err(PatchError::PortOccupied(edge.from.clone()));
-            }
-            if self
-                .edges
-                .iter()
-                .filter(|other| other.from == edge.from && other.to == edge.to)
-                .count()
-                > 1
-            {
-                return Err(PatchError::DuplicateEdge(edge.to.clone()));
-            }
-            landed.push(&edge.to);
-            left.push(&edge.from);
-        }
-        Ok(())
-    }
-
-    fn port(
-        &self,
-        reference: &PortRef,
-        direction: PortDirection,
-        channels: Option<&[ChannelDescriptor]>,
-    ) -> Result<PortSpec, PatchError> {
-        let node = self
-            .node(&reference.node)
-            .ok_or_else(|| PatchError::UnknownNode(reference.node.clone()))?;
-        let matches_name = |port: &PortSpec| {
-            port.name == reference.port
-                || (port.repeat != PortRepeat::Once
-                    && port_stream(&port.name, &reference.port).is_some())
+        let ctx = ResolveCtx {
+            descriptors: Some(channels),
+            live: None,
         };
-        let ports = node.body.ports();
-        let Some(spec) = ports
-            .iter()
-            .find(|port| port.direction == direction && matches_name(port))
-            .cloned()
-        else {
-            return if ports.iter().any(matches_name) {
-                Err(PatchError::Direction(reference.clone()))
-            } else {
-                Err(PatchError::UnknownPort(reference.clone()))
-            };
-        };
-        if let (NodeBody::Channel(channel), Some(descriptors)) = (&node.body, channels) {
-            let descriptor = descriptors
-                .iter()
-                .find(|d| d.type_id == channel.channel_type)
-                .ok_or_else(|| PatchError::ChannelType(channel.channel_type.clone()))?;
-            if !spec.applies_to(Some(PortBacking::Channel(descriptor))) {
-                return Err(PatchError::UnknownPort(reference.clone()));
-            }
-        }
-        Ok(spec)
+        resolve::compile(self, &ctx).map(drop)
     }
 }
 
-fn validate_gps_source(source: &PositionSource) -> Result<(), PatchError> {
+pub(super) fn validate_gps_source(source: &PositionSource) -> Result<(), PatchError> {
     match source {
         PositionSource::Phone { phone } => {
             if crate::phone::valid_phone_id(phone) {
@@ -1216,7 +661,7 @@ pub(crate) fn valid_host_port(address: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
 }
 
-fn check_geometry(node: &PatchNode) -> Result<(), PatchError> {
+pub(super) fn check_geometry(node: &PatchNode) -> Result<(), PatchError> {
     let bad_position = !node.position.x.is_finite()
         || !node.position.y.is_finite()
         || node.position.x.abs() > MAX_COORD

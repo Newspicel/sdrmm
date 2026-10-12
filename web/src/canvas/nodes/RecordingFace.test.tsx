@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { DeviceSet, PatchGraph, PatchNode, RecordingInfo } from "../../lib/types";
 import { catalogBody } from "../../test/catalog";
 import { renderFace, stubWorkspace } from "../../test/faceHarness";
-import { portsOf } from "../graph";
+import { resolvedNodeOf, resolvedPatch, resolvedPort, wiredPatch } from "../../test/resolved";
+import { nodePorts } from "../graph";
 import { makeArray } from "../makeArray";
 import { arrayLaneRows } from "./arrayNode";
 import { RecordingFace, RecordingFacts } from "./RecordingFace";
@@ -60,18 +61,25 @@ function collection(lanes: number): RecordingInfo {
 const alone: PatchGraph = { nodes: [take], edges: [] };
 
 describe("RecordingFace", () => {
-  it("draws one iq output per recorded lane once the collection plays", () => {
-    const devices = new Map([["rec", played(LANES)]]);
-    const context = stubWorkspace({ graph: alone, devices }).context;
-    expect(portsOf(context, alone, take).map((port) => port.name)).toEqual([
+  it("draws the iq outputs the server resolved for the recording", () => {
+    const lanes = Array.from({ length: LANES }, (_, lane) =>
+      resolvedPort({
+        name: lane === 0 ? "iq" : `iq${lane + 1}`,
+        port_type: "iq",
+        direction: "out",
+      }),
+    );
+    const resolved = resolvedPatch([resolvedNodeOf("rec", "recording", lanes)]);
+    const context = stubWorkspace({ graph: alone, resolved }).context;
+    expect(nodePorts(context, take).map((port) => port.name)).toEqual([
       "iq",
       "iq2",
       "iq3",
       "iq4",
       "iq5",
     ]);
-    const single = stubWorkspace({ graph: alone, devices: new Map([["rec", played(1)]]) });
-    expect(portsOf(single.context, alone, take).map((port) => port.name)).toEqual(["iq"]);
+    const unresolved = stubWorkspace({ graph: alone }).context;
+    expect(nodePorts(unresolved, take).map((port) => port.name)).toEqual(["iq"]);
   });
 
   it("offers Make array for a playing collection and wires every lane", () => {
@@ -88,7 +96,7 @@ describe("RecordingFace", () => {
       throw new Error("an array body");
     }
     const made = makeArray(alone, "rec", LANES, body, "arr");
-    const rows = arrayLaneRows(made, devices, "arr", undefined);
+    const rows = arrayLaneRows(made, wiredPatch(made), devices, "arr", undefined);
     expect(rows.map((row) => row.sourceLabel)).toEqual([
       "take iq1",
       "take iq2",

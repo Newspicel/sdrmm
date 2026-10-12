@@ -64,6 +64,10 @@ impl SurfaceHub {
             .map(|surface| (surface.kind, surface.frames.subscribe()))
     }
 
+    pub(crate) fn kind_of(&self, node: &str) -> Option<StreamKind> {
+        self.lock().get(node).map(|surface| surface.kind)
+    }
+
     pub(crate) fn forget(&self, node: &str) {
         self.lock().remove(node);
     }

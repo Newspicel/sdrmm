@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{EventPayload, Field, Presentation, Unit, count, fields, number, text, text_of},
+};
+
 pub const BLUETOOTH_RATE_HZ: f64 = 4_000_000.0;
 pub const BLUETOOTH_BAND_RATE_HZ: f64 = 20_000_000.0;
 pub const BLUETOOTH_CHANNEL_WIDTH_HZ: f64 = 2_000_000.0;
@@ -289,6 +294,167 @@ impl BleAdvert {
     }
 }
 
+impl EventPayload for BleAdvert {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            entity: self.station(),
+            label: self.name.clone(),
+            fields: ble_fields(self),
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+fn ble_fields(a: &BleAdvert) -> Vec<Field> {
+    let mut shown = fields(&[
+        (
+            "Address",
+            text(a.address.as_ref().map(|address| address.address.as_str())),
+        ),
+        (
+            "Address type",
+            a.address
+                .as_ref()
+                .and_then(|address| text_of(address.kind.label())),
+        ),
+        (
+            "Target",
+            text(a.target.as_ref().map(|address| address.address.as_str())),
+        ),
+        ("Name", text(a.name.as_deref())),
+        (
+            "Beacon",
+            a.beacon.as_ref().and_then(|beacon| text_of(beacon.label())),
+        ),
+        (
+            "Beacon data",
+            a.beacon.as_ref().and_then(|beacon| text_of(beacon.text())),
+        ),
+    ]);
+    shown.extend(a.manufacturer.iter().filter_map(maker_field));
+    shown.extend(a.services.iter().filter_map(service_field));
+    shown.extend(fields(&[
+        ("URI", text(a.uri.as_deref())),
+        ("Flags", a.flags.and_then(|flags| text_of(flags.label()))),
+        ("Tx power", number(a.tx_power_dbm, Unit::Dbm, 0)),
+        (
+            "Appearance",
+            a.appearance
+                .and_then(|code| text_of(format!("{code:#06x}"))),
+        ),
+        ("PDU", text_of(a.pdu.label())),
+        ("PHY", text_of(a.phy.label())),
+        ("Channel", count(a.channel)),
+        (
+            "Set",
+            a.adi
+                .and_then(|adi| text_of(format!("{} · data {}", adi.set, adi.data_id))),
+        ),
+        ("Aux", a.aux.and_then(|aux| text_of(aux.label()))),
+        ("Level", number(Some(a.level_dbfs), Unit::Dbfs, 1)),
+        (
+            "Repeats",
+            count(Some(a.repeats).filter(|repeats| *repeats > 0)),
+        ),
+        ("Data", text(Some(&a.data))),
+    ]));
+    shown
+}
+
+fn maker_field(maker: &BleManufacturer) -> Option<Field> {
+    let label = maker
+        .company
+        .clone()
+        .unwrap_or_else(|| format!("Company {:#06x}", maker.company_id));
+    text(Some(&maker.data)).map(|value| Field { label, value })
+}
+
+fn service_field(service: &BleService) -> Option<Field> {
+    let label = service
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("Service {}", service.uuid));
+    let value = match &service.data {
+        Some(data) => format!("{} {data}", service.uuid),
+        None => service.uuid.clone(),
+    };
+    text(Some(&value)).map(|value| Field { label, value })
+}
+
+impl BleFlags {
+    #[must_use]
+    pub fn label(self) -> String {
+        let names = [
+            (self.limited, "limited"),
+            (self.general, "general"),
+            (self.le_only, "LE only"),
+        ]
+        .into_iter()
+        .filter_map(|(set, name)| set.then_some(name))
+        .collect::<Vec<_>>();
+        if names.is_empty() {
+            "none".to_owned()
+        } else {
+            names.join(", ")
+        }
+    }
+}
+
+impl BleAuxPointer {
+    #[must_use]
+    pub fn label(self) -> String {
+        format!(
+            "channel {} · {} · +{} µs",
+            self.channel,
+            self.phy.label(),
+            self.offset_us
+        )
+    }
+}
+
+impl BleBeacon {
+    #[must_use]
+    pub fn text(&self) -> String {
+        match self {
+            Self::Ibeacon {
+                uuid,
+                major,
+                minor,
+                measured_dbm,
+            } => format!("{uuid} {major}/{minor} · {measured_dbm} dBm at 1 m"),
+            Self::AltBeacon { id, measured_dbm } => format!("{id} · {measured_dbm} dBm at 1 m"),
+            Self::EddystoneUid {
+                namespace,
+                instance,
+                ..
+            } => format!("{namespace} {instance}"),
+            Self::EddystoneUrl { url, .. } => url.clone(),
+            Self::EddystoneTlm {
+                battery_mv,
+                temperature_c,
+                adverts,
+                uptime_s,
+            } => {
+                let mut parts = Vec::new();
+                parts.extend(battery_mv.map(|mv| format!("{:.2} V", f64::from(mv) / 1_000.0)));
+                parts.extend(temperature_c.map(|c| format!("{c:.1} °C")));
+                parts.push(format!("{adverts} adverts"));
+                parts.push(format!("up {uptime_s:.0} s"));
+                parts.join(" · ")
+            }
+            Self::EddystoneEid { eid, .. } => eid.clone(),
+            Self::FindMy { maintained } => if *maintained {
+                "owner nearby"
+            } else {
+                "separated"
+            }
+            .to_owned(),
+            Self::ExposureNotification { identifier } => identifier.clone(),
+            Self::FastPair { model } => format!("model {model}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +504,33 @@ mod tests {
         let json = serde_json::to_value(advert()).unwrap();
         assert!(json.get("repeats").is_none());
         assert_eq!(json["address"]["kind"], "random_static");
+    }
+
+    #[test]
+    fn fields_list_makers_services_and_radio_facts() {
+        let mut advert = advert();
+        advert.services = vec![BleService {
+            uuid: "181a".to_owned(),
+            name: None,
+            data: Some("0a0b".to_owned()),
+        }];
+        advert.flags = Some(BleFlags {
+            limited: false,
+            general: true,
+            le_only: true,
+        });
+        advert.beacon = Some(BleBeacon::FindMy { maintained: true });
+        let view = advert.present(EventKind::Ble);
+        assert_eq!(
+            view.field("Address type"),
+            text_of("random static").as_ref()
+        );
+        assert_eq!(view.field("Apple"), text_of("1005").as_ref());
+        assert_eq!(view.field("Service 181a"), text_of("181a 0a0b").as_ref());
+        assert_eq!(view.field("Flags"), text_of("general, LE only").as_ref());
+        assert_eq!(view.field("Beacon data"), text_of("owner nearby").as_ref());
+        assert_eq!(view.field("Channel"), count(Some(38)).as_ref());
+        assert_eq!(view.field("Repeats"), None);
+        assert_eq!(view.field("Data"), text_of("020106").as_ref());
     }
 }

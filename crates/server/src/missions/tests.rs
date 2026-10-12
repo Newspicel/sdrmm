@@ -513,7 +513,7 @@ async fn triangulation_lists_sources_and_clears() {
             node("h2", NodeBody::Hunt(HuntNode::default())),
             node(
                 "filter",
-                NodeBody::default_for("event_filter").expect("an event filter"),
+                NodeBody::default_for(sdrmm_wire::NodeKind::EventFilter),
             ),
             node("tri", NodeBody::Triangulation(TriangulationNode::default())),
             gps("car", fixed()),

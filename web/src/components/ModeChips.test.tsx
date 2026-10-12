@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { ChannelParams } from "../lib/types";
+import type { ChannelParams, ParamChoice } from "../lib/types";
 import { loraKeysShown } from "./LoraKeysChip";
 import { bandwidthOptions, ModeChips, serviceOptions } from "./ModeChips";
 import {
@@ -12,8 +12,56 @@ import {
   withLoraPreset,
 } from "./modeOptions";
 
-function render(params: ChannelParams): string {
-  return renderToStaticMarkup(<ModeChips params={params} limits={[]} onParams={() => undefined} />);
+const CHOICES: Partial<Record<ChannelParams["type"], readonly ParamChoice[]>> = {
+  nfm: [{ name: "ctcss_hz", options: [{ value: 100, label: "100.0 Hz" }] }],
+  radiosonde: [
+    {
+      name: "sonde",
+      options: [
+        { value: null, label: "Auto" },
+        { value: "dfm", label: "DFM" },
+      ],
+    },
+  ],
+  lrpt: [{ name: "mode", options: [{ value: "oqpsk72", label: "OQPSK 72k" }] }],
+  sstv: [
+    {
+      name: "modulation",
+      options: [
+        { value: "usb", label: "USB" },
+        { value: "fm", label: "FM", title: "Frequency modulation" },
+      ],
+    },
+    {
+      name: "mode",
+      options: [
+        { value: null, label: "Follow VIS" },
+        { value: "pd50", label: "PD50" },
+      ],
+    },
+  ],
+  dab: [
+    {
+      name: "transmission_mode",
+      options: [
+        { value: "auto", label: "Auto" },
+        { value: "i", label: "I" },
+      ],
+    },
+  ],
+  lora: [
+    { name: "bandwidth", options: [{ value: "khz125", label: "125 kHz" }] },
+    { name: "implicit_header.coding_rate", options: [{ value: "4/8", label: "4/8" }] },
+  ],
+};
+
+function render(
+  params: ChannelParams,
+  choices: readonly ParamChoice[] = CHOICES[params.type] ?? [],
+): string {
+  return renderToStaticMarkup(
+    <ModeChips params={params} limits={[]} choices={choices} onParams={() => undefined} />,
+  );
 }
 
 describe("ModeChips", () => {
@@ -72,6 +120,7 @@ describe("ModeChips", () => {
           transmission_mode: "ii",
         }}
         limits={[]}
+        choices={CHOICES.dab ?? []}
         onParams={() => undefined}
       />,
     );
@@ -105,6 +154,13 @@ describe("ModeChips", () => {
     expect(html).toContain('aria-label="Implicit header coding rate"');
     expect(html).toContain("4/8");
     expect(html).toContain('aria-label="Implicit header payload carries a CRC"');
+  });
+
+  it("labels options from the descriptor's choices", () => {
+    expect(render({ type: "sstv", settings: { modulation: "fm" } })).toContain("FM");
+    expect(render({ type: "sstv", settings: { mode: "pd50" } })).toContain("PD50");
+    expect(render({ type: "sstv", settings: {} })).toContain("Follow VIS");
+    expect(render({ type: "sstv", settings: {} }, [])).not.toContain("Follow VIS");
   });
 
   it("renders nothing for modes without settings", () => {

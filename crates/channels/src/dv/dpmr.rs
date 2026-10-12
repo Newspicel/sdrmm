@@ -4,8 +4,8 @@ use num_complex::Complex;
 use sdrmm_dsp::ParityCode;
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, DpmrParams,
-    DvFrame, DvFrameKind, DvMode,
+    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    DpmrParams, DvFrame, DvFrameKind, DvMode, EventKind,
 };
 
 use super::{
@@ -55,7 +55,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    decoder_kind: Some("dv".to_owned()),
+    emits: vec![EventKind::Dv],
+    calls: Some(CallGate::Frames),
     ..ChannelDescriptor::default()
 });
 

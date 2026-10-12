@@ -6,9 +6,9 @@ import {
   networkExportDeviceSet,
 } from "../lib/api";
 import { forgetNodes } from "../lib/nodeState";
-import { basebandSourceOf, iqSourceOf, opensDevice } from "./binding";
 import type { Workspace } from "./context";
-import { nodeOf, pruneRack, removeNode } from "./graph";
+import { nodeOf, opensDevice, pruneRack, removeNode } from "./graph";
+import { basebandSourceOf, iqSourceOf } from "./lanes";
 
 export function dropNodes(
   workspace: Pick<Workspace, "edit" | "apply">,
@@ -47,20 +47,13 @@ export async function closeEngineObjects(
       }
     } else if (node?.kind === "channel") {
       const channel = workspace.channels.get(id);
-      const owner =
-        workspace.owners.get(id) ?? iqSourceOf(workspace.graph, id, workspace.devices)?.source;
+      const owner = workspace.owners.get(id) ?? iqSourceOf(workspace.resolved, id)?.source;
       const set = owner === undefined ? undefined : workspace.devices.get(owner);
       if (channel !== undefined && set !== undefined) {
         await deleteChannel(set.id, channel.id);
       }
     } else if (node?.kind === "network_export") {
-      const baseband = basebandSourceOf(
-        workspace.graph,
-        id,
-        workspace.devices,
-        workspace.channels,
-        workspace.owners,
-      );
+      const baseband = basebandSourceOf(workspace.resolved, workspace.deviceSets, id);
       if (baseband !== null) {
         if (baseband.channel.network_export?.node === id) {
           await networkExportChannel(
@@ -73,13 +66,13 @@ export async function closeEngineObjects(
         }
         continue;
       }
-      const source = iqSourceOf(workspace.graph, id, workspace.devices);
+      const source = iqSourceOf(workspace.resolved, id);
       const set = source === null ? undefined : workspace.devices.get(source.source);
       if (set?.network_export?.node === id) {
         await networkExportDeviceSet(set.id, "stop", id, source?.stream ?? 0, node.data);
       }
     } else if (node?.kind === "time_machine") {
-      const source = iqSourceOf(workspace.graph, id, workspace.devices);
+      const source = iqSourceOf(workspace.resolved, id);
       const set = source === null ? undefined : workspace.devices.get(source.source);
       if (set?.time_machine?.node === id) {
         await controlTimeMachine(set.id, "disarm", id, source?.stream ?? 0, node.data);

@@ -7,17 +7,17 @@ use super::{Built, Scene, TRIANGULATION, graph};
 
 pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built {
     let mut problems = Vec::new();
-    let channel_node = graph::controlled_channel(scene.graph, node);
+    let channel_node = graph::controlled_channel(&scene.resolved, node);
     let bound = channel_node
         .as_deref()
         .and_then(|channel| scene.channel(channel));
-    let (position, phone) = graph::position_link(scene.graph, &scene.state.phones, node);
+    let (position, phone) = graph::position_link(&scene.resolved, &scene.state.phones, node);
     let mut mission = HuntMission {
         target: None,
         status: None,
         clicks: settings.clicks,
         position,
-        triangulations: graph::event_targets(scene.graph, node, TRIANGULATION),
+        triangulations: graph::event_targets(&scene.resolved, node, TRIANGULATION),
     };
     let mut scanning = false;
     match (channel_node, bound) {

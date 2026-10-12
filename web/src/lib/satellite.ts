@@ -1,7 +1,5 @@
 import { create } from "zustand";
-import { eventSourcesOf } from "../canvas/binding";
-import { nodeOf } from "../canvas/graph";
-import type { PatchGraph, SatelliteStatus, ServerEvent } from "./types";
+import type { SatelliteStatus, ServerEvent } from "./types";
 
 interface SatelliteStore {
   byNode: Readonly<Record<string, SatelliteStatus>>;
@@ -28,8 +26,4 @@ export function trackedBy(
   return (
     Object.values(statuses).find((status) => status.driving?.includes(channelNode) ?? false) ?? null
   );
-}
-
-export function satelliteSourcesOf(graph: PatchGraph, map: string): string[] {
-  return eventSourcesOf(graph, map).filter((id) => nodeOf(graph, id)?.kind === "satellite");
 }

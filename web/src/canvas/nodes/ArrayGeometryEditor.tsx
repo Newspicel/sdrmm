@@ -286,7 +286,7 @@ function ArrayPreview({
             cx={point.x}
             cy={point.y}
             r={5}
-            className="fill-port-array/30 stroke-port-array"
+            className="fill-hue-indigo/30 stroke-hue-indigo"
           />
           <text
             x={point.x}

@@ -5,14 +5,18 @@ use std::{
 };
 
 use sdrmm_engine::SpectrumSnapshot;
+pub(crate) use sdrmm_wire::IQ_PORT;
 use sdrmm_wire::{
-    NodeBody, PatchGraph, PositionFix, ServerEvent, SignalMapNode, StateSnapshot, SurveyAction,
-    SurveyCell, SurveyGrid, SurveyStop, SurveyUpdate, port_stream,
-    survey::SURVEY_LEVEL_INTERVAL_MS,
+    NodeBody, POSITION_PORT, PositionFix, ServerEvent, SignalMapNode, SurveyAction, SurveyCell,
+    SurveyGrid, SurveyStop, SurveyUpdate, survey::SURVEY_LEVEL_INTERVAL_MS,
 };
 use tokio::{sync::broadcast::error::RecvError, task::JoinHandle};
 
-use crate::{AppState, rest::AppError, workspace};
+use crate::{
+    AppState,
+    resolved::{self, Resolved},
+    rest::AppError,
+};
 
 mod measure;
 
@@ -22,8 +26,6 @@ mod tests;
 use measure::{Merged, measure_dbfs, merge};
 
 pub(crate) const LEVEL_INTERVAL: Duration = Duration::from_millis(SURVEY_LEVEL_INTERVAL_MS);
-
-pub(crate) const IQ_PORT: &str = "iq";
 
 pub(crate) enum SurveyRefusal {
     Missing(String),
@@ -359,66 +361,36 @@ fn gone(state: &AppState, node: &str, generation: u64) {
     }
 }
 
-pub(crate) fn radio_of(
-    devices: &HashMap<String, u32>,
-    snapshot: &StateSnapshot,
-    source: &str,
-    port: &str,
-) -> Option<Radio> {
-    if let Some(&device_set) = devices.get(source) {
-        return port_stream(IQ_PORT, port).map(|stream| Radio { device_set, stream });
-    }
-    snapshot.device_sets.iter().find_map(|set| {
-        set.virtual_lanes
-            .iter()
-            .find(|lane| lane.node == source && lane.port == port)
-            .map(|lane| Radio {
-                device_set: set.id,
-                stream: lane.stream,
-            })
-    })
-}
-
-fn wirings(graph: &PatchGraph, snapshot: &StateSnapshot) -> HashMap<String, Wiring> {
-    let devices: HashMap<String, u32> = workspace::bind_devices(graph, snapshot)
-        .into_iter()
-        .collect();
-    graph
+fn wirings(resolved: &Resolved) -> HashMap<String, Wiring> {
+    resolved
+        .graph
         .nodes
         .iter()
         .filter_map(|node| {
             let NodeBody::SignalMap(settings) = &node.body else {
                 return None;
             };
-            let iq = graph
-                .edges
-                .iter()
-                .find(|edge| edge.to.node == node.id && edge.to.port == IQ_PORT);
+            let iq = resolved.patch.first_feed(&node.id, IQ_PORT);
             let wiring = Wiring {
                 settings: *settings,
                 iq_wired: iq.is_some(),
-                radio: iq.and_then(|edge| {
-                    radio_of(&devices, snapshot, &edge.from.node, &edge.from.port)
-                }),
-                position_node: graph.position_source(&node.id).map(str::to_owned),
+                radio: iq
+                    .and_then(|feed| feed.tap.as_ref()?.lane())
+                    .map(|(device_set, stream)| Radio { device_set, stream }),
+                position_node: resolved
+                    .patch
+                    .first_feed(&node.id, POSITION_PORT)
+                    .map(|feed| feed.source.clone()),
             };
             Some((node.id.clone(), wiring))
         })
         .collect()
 }
 
-pub(crate) fn reconcile(state: &AppState, graph: &PatchGraph) -> Vec<(String, String)> {
-    let snapshot = state.engine.snapshot();
-    state.survey.apply(state, wirings(graph, &snapshot));
-    Vec::new()
-}
-
-pub(crate) fn start(state: &AppState) {
-    match state.store.active_workspace() {
-        Ok(Some(active)) => {
-            reconcile(state, &active.snapshot.graph);
-        }
-        Ok(None) => {}
-        Err(error) => tracing::error!(%error, "could not read the active workspace for surveys"),
-    }
+pub(crate) fn follow(state: &AppState) {
+    resolved::follow(state, "surveys", |state| {
+        state
+            .survey
+            .apply(state, wirings(&state.resolved.current()));
+    });
 }

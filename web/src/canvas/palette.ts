@@ -50,7 +50,7 @@ export function paletteGroups(
         id: entry.kind,
         name: entry.name,
         summary: entry.summary ?? "",
-        kind: entry.kind as NodeKind,
+        kind: entry.kind,
       });
     }
   }

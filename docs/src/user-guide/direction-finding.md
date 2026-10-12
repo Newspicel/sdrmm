@@ -49,7 +49,7 @@ on the Array.
 
 ## Listen in one direction
 
-Wire the finder's `events` to a [Beamformer](arrays.md#beamformer) `steer` input, and `beam` to
+Wire the finder's `bearing` to a [Beamformer](arrays.md#beamformer) `steer` input, and `beam` to
 a channel.
 
 ## Triangulate

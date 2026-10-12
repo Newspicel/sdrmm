@@ -4,8 +4,8 @@ import { processorStatusOf, useArrayStore } from "../../lib/arrays";
 import { isStale, readingOf, useProcessorStore } from "../../lib/processors";
 import type { BeamformerReading, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { arrayOf, hasWire } from "../binding";
 import { useWorkspaceContext } from "../context";
+import { arrayOf, hasFeed } from "../lanes";
 import { settingsOf } from "../newNode";
 import { BeamformerSettings } from "./BeamformerSettings";
 import {
@@ -38,7 +38,7 @@ const PATTERN_PX = 120;
 export function BeamformerFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const state = useProcessorStore((store) => store.byNode[node.id]);
-  const array = arrayOf(workspace.graph, node.id);
+  const array = arrayOf(workspace.resolved, node.id);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
   const edit = useProcessorEdit(node as PatchNodeOf<"beamformer">);
@@ -51,7 +51,7 @@ export function BeamformerFace({ node }: { node: PatchNode }) {
   const stale = state !== undefined && isStale(state.receivedAt, now, period);
   const health = processorStatusOf(status, node.id);
   const lanes = Math.max(
-    processorLanes(workspace.graph, array, status),
+    processorLanes(workspace.resolved, array, status),
     reading?.weights.length ?? 0,
   );
   return (
@@ -59,7 +59,7 @@ export function BeamformerFace({ node }: { node: PatchNode }) {
       node={node}
       title="Beamformer"
       category="tool"
-      subtitle={processorSubtitle(workspace.graph, node.id, status, state, now, period)}
+      subtitle={processorSubtitle(workspace.resolved, node.id, status, state, now, period)}
     >
       <FaceBody>
         {settings === null ? (
@@ -101,7 +101,7 @@ export function BeamformerFace({ node }: { node: PatchNode }) {
               settings={settings}
               edit={edit}
               lanes={lanes}
-              steerWired={hasWire(workspace.graph, node.id, STEER_PORT)}
+              steerWired={hasFeed(workspace.resolved, node.id, STEER_PORT)}
             />
             <ProcessorError status={health} />
           </>
@@ -175,7 +175,7 @@ function WeightBars({ reading }: { reading: BeamformerReading | null }) {
     <div role="group" className="flex flex-col gap-0.5" aria-label="Lane weights">
       {weights.map((weight, lane) => (
         <div key={lane} className="flex items-center gap-1.5" title={weightTitle(lane, weight)}>
-          <span className="w-4 font-mono text-3xs text-port-array">{lane + 1}</span>
+          <span className="w-4 font-mono text-3xs text-hue-indigo">{lane + 1}</span>
           <MeterBar
             label={`Lane ${lane + 1} weight`}
             value={(percent[lane] ?? 0) / 100}

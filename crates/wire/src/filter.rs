@@ -1,66 +1,15 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::decode::DecoderEvent;
+use crate::{
+    decode::{Capability, DecoderEvent, EventKind, KindSet},
+    present::{Presentation, VoiceFacts},
+};
 
 pub const MAX_FILTER_KINDS: usize = 64;
 pub const MAX_FILTER_IDS: usize = 256;
 pub const MAX_FILTER_DURATION_MS: u32 = 600_000;
 pub const MAX_FILTER_TEXT_LEN: usize = 128;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum EventFacet {
-    Position,
-    Voice,
-    Duration,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct EventKindFacets {
-    pub kind: String,
-    pub facets: Vec<EventFacet>,
-}
-
-const FACETS: &[(&str, &[EventFacet])] = &[
-    ("adsb", &[EventFacet::Position]),
-    ("ais", &[EventFacet::Position]),
-    ("aprs", &[EventFacet::Position]),
-    ("call", &[EventFacet::Voice, EventFacet::Duration]),
-    ("transmission", &[EventFacet::Duration]),
-    ("df", &[EventFacet::Position]),
-    ("df_fix", &[EventFacet::Position]),
-    ("dsc", &[EventFacet::Position]),
-    ("dv", &[EventFacet::Position, EventFacet::Voice]),
-    ("hfdl", &[EventFacet::Position]),
-    ("inmarsat_aero", &[EventFacet::Position]),
-    ("inmarsat_stdc", &[EventFacet::Position]),
-    ("iridium", &[EventFacet::Position]),
-    ("lora", &[EventFacet::Position]),
-    ("remote_id", &[EventFacet::Position]),
-    ("sarsat", &[EventFacet::Position]),
-    ("radar", &[EventFacet::Position]),
-    ("vdl2", &[EventFacet::Position]),
-];
-
-#[must_use]
-pub fn facets_of(kind: &str) -> &'static [EventFacet] {
-    FACETS
-        .iter()
-        .find(|(named, _)| *named == kind)
-        .map_or(&[], |(_, facets)| facets)
-}
-
-#[must_use]
-pub fn event_facets() -> Vec<EventKindFacets> {
-    FACETS
-        .iter()
-        .map(|(kind, facets)| EventKindFacets {
-            kind: (*kind).to_owned(),
-            facets: facets.to_vec(),
-        })
-        .collect()
-}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -75,7 +24,7 @@ pub struct EventFilterNode {
     #[serde(default)]
     pub mode: FilterMode,
     #[serde(default)]
-    pub kinds: Vec<String>,
+    pub kinds: Vec<EventKind>,
     #[serde(default)]
     pub stations: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,14 +56,6 @@ impl Verdict {
     }
 }
 
-struct Voice {
-    source: Option<u32>,
-    destination: Option<u32>,
-    encrypted: Option<bool>,
-    emergency: Option<bool>,
-    duration_ms: Option<u64>,
-}
-
 impl EventFilterNode {
     #[must_use]
     pub fn valid(&self) -> bool {
@@ -128,19 +69,42 @@ impl EventFilterNode {
                 .as_ref()
                 .is_none_or(|text| text.len() <= MAX_FILTER_TEXT_LEN)
             && self
-                .kinds
-                .iter()
-                .all(|kind| !kind.is_empty() && kind.len() <= 32)
-            && self
                 .stations
                 .iter()
                 .all(|station| !station.is_empty() && station.len() <= MAX_FILTER_TEXT_LEN)
     }
 
     #[must_use]
+    pub fn narrow(&self, offered: KindSet) -> KindSet {
+        let listed: KindSet = self.kinds.iter().copied().collect();
+        match self.mode {
+            FilterMode::Keep if listed.is_empty() => offered,
+            FilterMode::Keep => offered.intersection(listed),
+            FilterMode::Drop if self.judges_only_kinds() => offered.without(listed),
+            FilterMode::Drop => offered,
+        }
+    }
+
+    fn judges_only_kinds(&self) -> bool {
+        self.stations.is_empty()
+            && self.contains.as_deref().is_none_or(str::is_empty)
+            && self.has_position.is_none()
+            && self.talkgroups.is_empty()
+            && self.radios.is_empty()
+            && self.encrypted.is_none()
+            && self.emergency.is_none()
+            && self.min_duration_ms == 0
+    }
+
+    #[must_use]
     pub fn passes(&self, event: &DecoderEvent) -> bool {
+        self.admits(event.kind(), &event.present())
+    }
+
+    #[must_use]
+    pub fn admits(&self, kind: EventKind, view: &Presentation) -> bool {
         let mut judged = false;
-        for verdict in self.verdicts(event) {
+        for verdict in self.verdicts(kind, view) {
             match verdict {
                 Verdict::Missed => return self.mode == FilterMode::Drop,
                 Verdict::Matched => judged = true,
@@ -153,82 +117,75 @@ impl EventFilterNode {
         }
     }
 
-    fn verdicts(&self, event: &DecoderEvent) -> [Verdict; 9] {
-        let voice = voice_of(event);
-        let voice = voice.as_ref();
+    fn verdicts(&self, kind: EventKind, view: &Presentation) -> [Verdict; 9] {
+        let voice = view.voice.as_ref();
         [
-            self.kind_verdict(event),
-            self.station_verdict(event),
-            self.text_verdict(event),
-            self.position_verdict(event),
+            self.kind_verdict(kind),
+            self.station_verdict(view),
+            self.text_verdict(view),
+            self.position_verdict(kind, view),
             list_verdict(&self.talkgroups, voice, |v| v.destination),
             list_verdict(&self.radios, voice, |v| v.source),
             flag_verdict(self.encrypted, voice, |v| v.encrypted),
             flag_verdict(self.emergency, voice, |v| v.emergency),
-            match event {
-                DecoderEvent::Transmission(transmission) if self.min_duration_ms > 0 => {
-                    Verdict::of(transmission.duration_ms >= u64::from(self.min_duration_ms))
-                }
-                _ => self.duration_verdict(voice),
-            },
+            self.duration_verdict(view),
         ]
     }
 
-    fn kind_verdict(&self, event: &DecoderEvent) -> Verdict {
+    fn kind_verdict(&self, kind: EventKind) -> Verdict {
         if self.kinds.is_empty() {
             return Verdict::Unjudged;
         }
-        Verdict::of(self.kinds.iter().any(|kind| kind == event.kind()))
+        Verdict::of(self.kinds.contains(&kind))
     }
 
-    fn station_verdict(&self, event: &DecoderEvent) -> Verdict {
+    fn station_verdict(&self, view: &Presentation) -> Verdict {
         if self.stations.is_empty() {
             return Verdict::Unjudged;
         }
-        let Some(station) = event.station() else {
+        let Some(station) = view.entity.as_deref() else {
             return Verdict::Missed;
         };
         Verdict::of(
             self.stations
                 .iter()
-                .any(|wanted| wanted.eq_ignore_ascii_case(&station)),
+                .any(|wanted| wanted.eq_ignore_ascii_case(station)),
         )
     }
 
-    fn text_verdict(&self, event: &DecoderEvent) -> Verdict {
+    fn text_verdict(&self, view: &Presentation) -> Verdict {
         match self.contains.as_deref() {
             None | Some("") => Verdict::Unjudged,
-            Some(text) => Verdict::of(
-                event
-                    .summary()
-                    .to_lowercase()
-                    .contains(&text.to_lowercase()),
-            ),
+            Some(text) => Verdict::of(view.summary.to_lowercase().contains(&text.to_lowercase())),
         }
     }
 
-    fn position_verdict(&self, event: &DecoderEvent) -> Verdict {
+    fn position_verdict(&self, kind: EventKind, view: &Presentation) -> Verdict {
         let Some(want) = self.has_position else {
             return Verdict::Unjudged;
         };
-        if !facets_of(event.kind()).contains(&EventFacet::Position) {
+        if !kind.has(Capability::Geo) {
             return Verdict::Unjudged;
         }
-        Verdict::of(event.position().is_some() == want)
+        Verdict::of(view.place.is_some() == want)
     }
 
-    fn duration_verdict(&self, voice: Option<&Voice>) -> Verdict {
+    fn duration_verdict(&self, view: &Presentation) -> Verdict {
         if self.min_duration_ms == 0 {
             return Verdict::Unjudged;
         }
-        match voice.and_then(|v| v.duration_ms) {
+        match view.duration_ms {
             None => Verdict::Unjudged,
             Some(held) => Verdict::of(held >= u64::from(self.min_duration_ms)),
         }
     }
 }
 
-fn list_verdict(wanted: &[u32], voice: Option<&Voice>, pick: fn(&Voice) -> Option<u32>) -> Verdict {
+fn list_verdict(
+    wanted: &[u32],
+    voice: Option<&VoiceFacts>,
+    pick: fn(&VoiceFacts) -> Option<u32>,
+) -> Verdict {
     if wanted.is_empty() {
         return Verdict::Unjudged;
     }
@@ -240,8 +197,8 @@ fn list_verdict(wanted: &[u32], voice: Option<&Voice>, pick: fn(&Voice) -> Optio
 
 fn flag_verdict(
     want: Option<bool>,
-    voice: Option<&Voice>,
-    pick: fn(&Voice) -> Option<bool>,
+    voice: Option<&VoiceFacts>,
+    pick: fn(&VoiceFacts) -> Option<bool>,
 ) -> Verdict {
     let Some(want) = want else {
         return Verdict::Unjudged;
@@ -250,26 +207,6 @@ fn flag_verdict(
         return Verdict::Unjudged;
     };
     Verdict::of(pick(voice) == Some(want))
-}
-
-fn voice_of(event: &DecoderEvent) -> Option<Voice> {
-    match event {
-        DecoderEvent::Call(c) => Some(Voice {
-            source: c.source,
-            destination: c.destination,
-            encrypted: Some(c.encrypted),
-            emergency: Some(c.emergency),
-            duration_ms: Some(c.duration_ms),
-        }),
-        DecoderEvent::Dv(f) => Some(Voice {
-            source: f.source,
-            destination: f.destination,
-            encrypted: f.encrypted,
-            emergency: f.emergency,
-            duration_ms: None,
-        }),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -337,7 +274,7 @@ mod tests {
     #[test]
     fn naming_kinds_admits_only_those_kinds() {
         let filter = EventFilterNode {
-            kinds: vec!["call".to_owned()],
+            kinds: vec![EventKind::Call],
             ..EventFilterNode::default()
         };
         assert!(filter.passes(&DecoderEvent::Call(call())));
@@ -479,7 +416,7 @@ mod tests {
     #[test]
     fn every_predicate_has_to_agree() {
         let filter = EventFilterNode {
-            kinds: vec!["call".to_owned()],
+            kinds: vec![EventKind::Call],
             talkgroups: vec![505],
             min_duration_ms: 1_000,
             ..EventFilterNode::default()
@@ -489,21 +426,6 @@ mod tests {
             duration_ms: 100,
             ..call()
         })));
-    }
-
-    #[test]
-    fn facets_say_which_predicates_suit_a_kind() {
-        assert_eq!(facets_of("adsb"), &[EventFacet::Position]);
-        assert_eq!(facets_of("pocsag"), &[] as &[EventFacet]);
-        assert_eq!(
-            facets_of("call"),
-            &[EventFacet::Voice, EventFacet::Duration]
-        );
-        assert_eq!(facets_of("dv"), &[EventFacet::Position, EventFacet::Voice]);
-        assert_eq!(facets_of("radar"), &[EventFacet::Position]);
-        let listed = event_facets();
-        assert!(listed.iter().any(|entry| entry.kind == "ais"));
-        assert!(listed.iter().all(|entry| !entry.facets.is_empty()));
     }
 
     #[test]
@@ -532,7 +454,7 @@ mod tests {
     fn drop_mode_needs_every_rule_to_match_before_it_drops() {
         let filter = EventFilterNode {
             mode: FilterMode::Drop,
-            kinds: vec!["rtty".to_owned()],
+            kinds: vec![EventKind::Rtty],
             contains: Some("nothing here".to_owned()),
             ..EventFilterNode::default()
         };
@@ -580,6 +502,27 @@ mod tests {
     }
 
     #[test]
+    fn an_unknown_kind_is_refused_by_name() {
+        let error = serde_json::from_str::<EventFilterNode>(r#"{"kinds":["teletext"]}"#)
+            .expect_err("unknown kind");
+        assert!(error.to_string().contains("teletext"), "{error}");
+    }
+
+    #[test]
+    fn a_position_rule_judges_radiosondes_too() {
+        let fixed = EventFilterNode {
+            has_position: Some(true),
+            ..EventFilterNode::default()
+        };
+        let lost: DecoderEvent = serde_json::from_value(serde_json::json!({
+            "kind": "radiosonde",
+            "data": { "sonde": "rs41", "serial": "S1", "errors_corrected": 0 },
+        }))
+        .expect("radiosonde");
+        assert!(!fixed.passes(&lost));
+    }
+
+    #[test]
     fn oversized_lists_are_refused() {
         assert!(EventFilterNode::default().valid());
         assert!(
@@ -591,7 +534,7 @@ mod tests {
         );
         assert!(
             !EventFilterNode {
-                kinds: vec![String::new()],
+                kinds: vec![EventKind::Call; MAX_FILTER_KINDS + 1],
                 ..EventFilterNode::default()
             }
             .valid()
@@ -610,5 +553,33 @@ mod tests {
             }
             .valid()
         );
+    }
+
+    #[test]
+    fn a_filter_narrows_the_kinds_it_can_pass() {
+        let offered: KindSet = [EventKind::Adsb, EventKind::Rtty, EventKind::Call]
+            .into_iter()
+            .collect();
+        let only = |kinds: &[EventKind]| kinds.iter().copied().collect::<KindSet>();
+        assert_eq!(EventFilterNode::default().narrow(offered), offered);
+        let keep = EventFilterNode {
+            kinds: vec![EventKind::Adsb, EventKind::Ais],
+            ..EventFilterNode::default()
+        };
+        assert_eq!(keep.narrow(offered), only(&[EventKind::Adsb]));
+        let drop = EventFilterNode {
+            mode: FilterMode::Drop,
+            kinds: vec![EventKind::Rtty],
+            ..EventFilterNode::default()
+        };
+        assert_eq!(
+            drop.narrow(offered),
+            only(&[EventKind::Adsb, EventKind::Call])
+        );
+        let judged = EventFilterNode {
+            stations: vec!["DL1ABC".to_owned()],
+            ..drop
+        };
+        assert_eq!(judged.narrow(offered), offered);
     }
 }

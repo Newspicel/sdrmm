@@ -1041,116 +1041,195 @@ impl sdrmm_device::SdrDevice for FaultingDevice {
     }
 }
 
-#[tokio::test]
-async fn decoded_frames_reach_every_connection_from_one_encoding() {
-    let engine = test_engine();
-    let (addr, state) = serve_ws(engine).await;
+fn map_workspace(state: &AppState) {
+    let mut snapshot = sdrmm_wire::WorkspaceSnapshot::empty();
+    for (id, body) in [
+        (
+            "adsb",
+            sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
+                channel_type: "adsb".to_owned(),
+                tuning_locked: false,
+            }),
+        ),
+        ("map", sdrmm_wire::NodeBody::Map),
+    ] {
+        snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+            id: id.to_owned(),
+            body,
+            position: sdrmm_wire::Position { x: 0.0, y: 0.0 },
+            size: None,
+            label: None,
+        });
+    }
+    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: "adsb".to_owned(),
+            port: "events".to_owned(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: "map".to_owned(),
+            port: "events".to_owned(),
+        },
+    });
+    let id = state
+        .store
+        .create_workspace("map", &snapshot)
+        .expect("workspace");
+    state.store.activate_workspace(id).expect("activate");
+    state.resolve_now();
+}
+
+fn aircraft(icao: &str) -> sdrmm_wire::DecodedRecord {
+    sdrmm_wire::DecodedRecord {
+        origin: Some(sdrmm_wire::EventOrigin {
+            node: "adsb".to_owned(),
+            transmission: 0,
+        }),
+        sinks: Vec::new(),
+        callsign: None,
+        device_set: 1,
+        channel: 2,
+        at: "2026-08-09T12:00:00.000000000Z".to_string(),
+        freq_hz: 1_090_000_000.0,
+        event: sdrmm_wire::DecoderEvent::Adsb(sdrmm_wire::AdsbMessage {
+            icao: icao.to_string(),
+            df: 17,
+            lat: Some(52.5),
+            lon: Some(13.4),
+            raw: "8D3C6444".to_string(),
+            ..sdrmm_wire::AdsbMessage::default()
+        }),
+        view: None,
+    }
+}
+
+fn deliver(state: &AppState, record: sdrmm_wire::DecodedRecord) {
+    let mut record = record;
+    let resolved = state.resolved.current();
+    resolved.events.route(&mut record);
+    assert_eq!(
+        record.sinks,
+        ["map"],
+        "the test graph wires adsb into the map"
+    );
+    let routed = crate::events::Routed {
+        source: Some("adsb".to_owned()),
+        record,
+        workspace: resolved.events.workspace,
+        history: false,
+    };
+    state
+        .decoded
+        .send(crate::decoded::Decoded::Record(Box::new(routed)))
+        .expect("the sink task listens");
+}
+
+async fn snapshot_of(ws: &mut WsClient, node: &str) -> sdrmm_wire::SinkFeed {
+    send(
+        ws,
+        &ClientCommand::SubscribeSink {
+            node: node.to_owned(),
+        },
+    )
+    .await;
+    loop {
+        if let ServerEvent::SinkSnapshot { node: got, feed } = next_event(ws).await {
+            assert_eq!(got, node);
+            return *feed;
+        }
+    }
+}
+
+async fn wait_for_sink(state: &AppState, node: &str) {
+    timeout(WAIT, async {
+        while state.sinks.snapshot(node).is_none() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the sink feed appears once the patch resolves");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sink_update_reaches_only_the_sessions_watching_that_sink() {
+    let (addr, state) = serve_ws(test_engine()).await;
+    map_workspace(&state);
+    wait_for_sink(&state, "map").await;
     let mut a = dial(addr).await;
     let mut b = dial(addr).await;
-
-    let record = sdrmm_wire::DecodedRecord {
-        origin: None,
-        sinks: Vec::new(),
-        callsign: None,
-        device_set: 1,
-        channel: 2,
-        at: "2026-08-09T12:00:00.000000000Z".to_string(),
-        freq_hz: 1_090_000_000.0,
-        event: sdrmm_wire::DecoderEvent::Adsb(sdrmm_wire::AdsbMessage {
-            icao: "3C6444".to_string(),
-            df: 17,
-            raw: "8D3C6444".to_string(),
-            ..sdrmm_wire::AdsbMessage::default()
-        }),
-    };
-    let encoded = encode_event(&ServerEvent::Decoded(Box::new(record.clone())));
-    state.decoded_text.send(encoded).expect("subscribers");
-
-    for ws in [&mut a, &mut b] {
-        loop {
-            if let ServerEvent::Decoded(got) = next_event(ws).await {
-                assert_eq!(*got, record);
-                break;
-            }
-        }
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_late_client_is_handed_the_recent_past() {
-    let engine = test_engine();
-    let (addr, state) = serve_ws(engine).await;
-
-    let record = sdrmm_wire::DecodedRecord {
-        origin: None,
-        sinks: Vec::new(),
-        callsign: None,
-        device_set: 1,
-        channel: 2,
-        at: "2026-08-09T12:00:00.000000000Z".to_string(),
-        freq_hz: 1_090_000_000.0,
-        event: sdrmm_wire::DecoderEvent::Adsb(sdrmm_wire::AdsbMessage {
-            icao: "3C6444".to_string(),
-            df: 17,
-            raw: "8D3C6444".to_string(),
-            ..sdrmm_wire::AdsbMessage::default()
-        }),
-    };
-    state.tracks.observe(&record);
-
-    let mut ws = dial(addr).await;
-    assert!(
-        matches!(next_event(&mut ws).await, ServerEvent::Hello { .. }),
-        "the backlog follows Hello, never precedes it"
-    );
-    loop {
-        if let ServerEvent::DecodedBacklog { records } = next_event(&mut ws).await {
-            assert_eq!(records, vec![record]);
-            break;
-        }
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_silent_server_sends_no_backlog() {
-    let engine = test_engine();
-    let (addr, state) = serve_ws(engine).await;
-    let mut ws = dial(addr).await;
+    let mut idle = dial(addr).await;
+    assert!(snapshot_of(&mut a, "map").await.entities.is_empty());
+    assert!(snapshot_of(&mut b, "map").await.entities.is_empty());
     assert!(matches!(
-        next_event(&mut ws).await,
+        next_event(&mut idle).await,
         ServerEvent::Hello { .. }
     ));
 
-    let record = sdrmm_wire::DecodedRecord {
-        origin: None,
-        sinks: Vec::new(),
-        callsign: None,
-        device_set: 0,
-        channel: 0,
-        at: "2026-08-09T12:00:01.000000000Z".to_string(),
-        freq_hz: 1_090_000_000.0,
-        event: sdrmm_wire::DecoderEvent::Adsb(sdrmm_wire::AdsbMessage {
-            icao: "4CA1FA".to_string(),
-            df: 17,
-            raw: "8D4CA1FA".to_string(),
-            ..sdrmm_wire::AdsbMessage::default()
-        }),
-    };
-    state
-        .decoded_text
-        .send(encode_event(&ServerEvent::Decoded(Box::new(
-            record.clone(),
-        ))))
-        .expect("subscribers");
+    deliver(&state, aircraft("3c6444"));
 
-    loop {
-        match next_event(&mut ws).await {
-            ServerEvent::DecodedBacklog { .. } => panic!("nothing had been decoded yet"),
-            ServerEvent::Decoded(got) => {
-                assert_eq!(*got, record);
+    for ws in [&mut a, &mut b] {
+        loop {
+            if let ServerEvent::SinkUpdate { node, update } = next_event(ws).await {
+                assert_eq!(node, "map");
+                assert_eq!(update.upserts[0].key.id, "3C6444");
                 break;
             }
-            _ => {}
+        }
+    }
+    let quiet = timeout(Duration::from_secs(1), async {
+        loop {
+            if let ServerEvent::SinkUpdate { .. } = next_event(&mut idle).await {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(
+        quiet.is_err(),
+        "a session that watches no sink gets no records"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_late_watcher_gets_what_the_sink_holds() {
+    let (addr, state) = serve_ws(test_engine()).await;
+    map_workspace(&state);
+    wait_for_sink(&state, "map").await;
+    deliver(&state, aircraft("3c6444"));
+    timeout(WAIT, async {
+        while state
+            .sinks
+            .snapshot("map")
+            .is_none_or(|text| !text.as_str().contains("3C6444"))
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the sink took the record");
+
+    let mut ws = dial(addr).await;
+    let feed = snapshot_of(&mut ws, "map").await;
+
+    assert_eq!(feed.entities.len(), 1);
+    assert_eq!(feed.records.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watching_a_node_that_is_no_sink_is_refused() {
+    let (addr, _state) = serve_ws(test_engine()).await;
+    let mut ws = dial(addr).await;
+    send(
+        &mut ws,
+        &ClientCommand::SubscribeSink {
+            node: "nowhere".to_owned(),
+        },
+    )
+    .await;
+    loop {
+        if let ServerEvent::Error { message } = next_event(&mut ws).await {
+            assert_eq!(message, "Not a sink");
+            break;
         }
     }
 }

@@ -13,7 +13,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, Nco};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, HfdlParams,
+    DecoderFamily, EventKind, HfdlParams,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -39,7 +39,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("hfdl".to_owned()),
+    emits: vec![EventKind::Hfdl],
     ..ChannelDescriptor::default()
 });
 
@@ -188,3 +188,5 @@ impl ChannelRx for HfdlChannel {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::fixture;

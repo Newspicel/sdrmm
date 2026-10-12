@@ -39,8 +39,8 @@ export function Library({ onOpenTool }: { onOpenTool: (id: string) => void }) {
   const target = libraryTarget(
     workspace.graph,
     workspace.devices,
+    workspace.resolved,
     workspace.selected,
-    workspace.owners,
   );
 
   const openRecording = (recording: RecordingInfo): void => {

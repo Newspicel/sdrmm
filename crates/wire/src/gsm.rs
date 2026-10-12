@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{
+        EventPayload, Field, Presentation, Unit, count, fields, number, only_if, text, text_of,
+    },
+};
+
 pub const GSM_SYMBOL_RATE_HZ: f64 = 1_625_000.0 / 6.0;
 pub const GSM_CHANNEL_SPACING_HZ: f64 = 200_000.0;
 const ARFCN_TOLERANCE_HZ: f64 = 30_000.0;
@@ -538,6 +545,76 @@ impl GsmFrame {
     }
 }
 
+impl EventPayload for GsmFrame {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            entity: self.cgi.clone(),
+            fields: gsm_fields(self),
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+fn gsm_fields(f: &GsmFrame) -> Vec<Field> {
+    let channel = match f.subchannel {
+        Some(sub) => format!("{} {sub}", f.channel.label()),
+        None => f.channel.label().to_owned(),
+    };
+    let mut shown = fields(&[
+        ("Message", text_of(f.summary())),
+        ("Cell", text(f.cgi.as_deref())),
+        ("Band", f.band.and_then(|band| text_of(band.label()))),
+        ("ARFCN", count(f.arfcn)),
+        ("BSIC", text_of(f.bsic_label())),
+        ("Frame", count(Some(f.frame_number))),
+        ("Timeslot", count(Some(f.timeslot))),
+        ("Channel", text_of(channel)),
+    ]);
+    if let GsmMessage::SystemInformation { cell, .. } = &f.message {
+        shown.extend(cell_fields(cell));
+    }
+    shown.extend(fields(&[
+        ("Offset", number(Some(f.frequency_error_hz), Unit::Hz, 0)),
+        ("SNR", number(Some(f.snr_db), Unit::Db, 1)),
+        ("Raw", text(Some(&f.raw))),
+    ]));
+    shown
+}
+
+fn cell_fields(cell: &GsmCell) -> Vec<Field> {
+    let list = |arfcns: &[u16]| {
+        arfcns
+            .iter()
+            .map(u16::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let si = cell
+        .system_information
+        .iter()
+        .map(|si| si.label())
+        .collect::<Vec<_>>()
+        .join(", ");
+    fields(&[
+        ("CCCH", cell.ccch.and_then(|ccch| text_of(ccch.label()))),
+        ("Cell channels", text(Some(&list(&cell.cell_channels)))),
+        ("Neighbours", text(Some(&list(&cell.neighbours)))),
+        ("RxLev min", number(cell.rxlev_access_min_dbm, Unit::Dbm, 0)),
+        ("Max power level", count(cell.ms_txpwr_max_cch)),
+        (
+            "Periodic update",
+            number(
+                cell.t3212_min.map(|minutes| f64::from(minutes) * 60.0),
+                Unit::Seconds,
+                0,
+            ),
+        ),
+        ("Barred", only_if(cell.barred)),
+        ("GPRS", only_if(cell.gprs)),
+        ("System information", text(Some(&si))),
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -571,5 +648,37 @@ mod tests {
             ..GsmCell::default()
         };
         assert_eq!(cell.cgi().as_deref(), Some("262-02-318-11225"));
+    }
+
+    #[test]
+    fn a_system_information_frame_lists_the_cell() {
+        let frame: GsmFrame = serde_json::from_value(serde_json::json!({
+            "arfcn": 62, "band": "gsm900", "bsic": 45, "frame_number": 1234, "timeslot": 0,
+            "channel": "bcch", "cgi": "262-01-4711-3", "snr_db": 18.25,
+            "frequency_error_hz": -120.4, "raw": "55",
+            "message": {
+                "type": "system_information", "si": "si3",
+                "cell": { "mcc": "262", "mnc": "01", "lac": 4711, "cell_id": 3,
+                    "ccch": "combined", "neighbours": [1, 5], "t3212_min": 6, "gprs": true,
+                    "system_information": ["si1", "si3"] },
+            },
+        }))
+        .unwrap();
+        let view = frame.present(EventKind::Gsm);
+        assert_eq!(view.field("Band"), text_of("GSM 900").as_ref());
+        assert_eq!(view.field("BSIC"), text_of("5-5").as_ref());
+        assert_eq!(view.field("Channel"), text_of("BCCH").as_ref());
+        assert_eq!(view.field("CCCH"), text_of("1 CCCH with SDCCH/4").as_ref());
+        assert_eq!(view.field("Neighbours"), text_of("1, 5").as_ref());
+        assert_eq!(
+            view.field("Periodic update"),
+            number(Some(360.0), Unit::Seconds, 0).as_ref()
+        );
+        assert_eq!(view.field("GPRS"), only_if(true).as_ref());
+        assert_eq!(view.field("Barred"), None);
+        assert_eq!(
+            view.field("System information"),
+            text_of("SI1, SI3").as_ref()
+        );
     }
 }

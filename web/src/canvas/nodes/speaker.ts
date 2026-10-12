@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { watchAudio } from "../../lib/audio/monitor";
 import { audioEngine } from "../../lib/audio/useChannelAudio";
-import type { Input } from "../binding";
+import type { Input } from "../../lib/resolved";
 
 const LEVEL_TICK_MS = 100;
 const FRAMES_PER_MS = 48;

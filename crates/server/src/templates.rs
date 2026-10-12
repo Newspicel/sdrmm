@@ -1047,12 +1047,23 @@ mod tests {
     fn every_patch_draws_the_channels_the_template_creates() {
         for template in all() {
             let patch = template.patch.clone().expect("templates carry a patch");
+            let resolved = sdrmm_wire::patch::resolve::compile(&patch, &Default::default())
+                .expect("templates compile");
             let drawn: Vec<&str> = patch
-                .channels_of("dev")
-                .filter_map(|(node, stream)| match &node.body {
+                .nodes
+                .iter()
+                .filter_map(|node| match &node.body {
                     NodeBody::Channel(channel) => {
-                        assert_eq!(stream, 0, "{} wires a non-zero stream", template.id);
-                        Some(channel.channel_type.as_str())
+                        let lanes: Vec<&str> = resolved
+                            .feeds(&node.id, "iq")
+                            .iter()
+                            .filter(|feed| feed.source == "dev")
+                            .map(|feed| feed.port.as_str())
+                            .collect();
+                        (!lanes.is_empty()).then(|| {
+                            assert_eq!(lanes, ["iq"], "{} wires a non-zero stream", template.id);
+                            channel.channel_type.as_str()
+                        })
                     }
                     _ => None,
                 })

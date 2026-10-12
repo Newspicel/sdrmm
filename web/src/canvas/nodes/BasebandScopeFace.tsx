@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { PatchNode } from "../../lib/types";
-import { basebandSourceOf } from "../binding";
 import { useWorkspaceContext } from "../context";
+import { basebandSourceOf } from "../lanes";
 import { BasebandView } from "./BasebandView";
 import { FaceBody, NodeShell } from "./NodeShell";
 import { readPalette } from "./scopePalette";
@@ -9,13 +9,7 @@ import { readPalette } from "./scopePalette";
 export function BasebandScopeFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const [palette] = useState(readPalette);
-  const tap = basebandSourceOf(
-    workspace.graph,
-    node.id,
-    workspace.devices,
-    workspace.channels,
-    workspace.owners,
-  );
+  const tap = basebandSourceOf(workspace.resolved, workspace.deviceSets, node.id);
   return (
     <NodeShell node={node} title="Baseband scope" category="output">
       <FaceBody scroll={false}>

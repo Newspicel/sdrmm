@@ -2,9 +2,17 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
+    EventKind,
     audio::NoiseBlankerSettings,
     network::NetworkExportStatus,
     state::{AudioRecordingStatus, RecordingStatus},
+};
+
+mod choices;
+
+pub use choices::{
+    CTCSS_TONES_HZ, DCS_CODES, DEEMPHASIS_US, ParamChoice, ParamOption, RTTY_BAUDS, RTTY_SHIFTS_HZ,
+    SettingChoice,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -35,8 +43,10 @@ pub struct ChannelDescriptor {
     pub input_rate_hz: f64,
     #[serde(default = "default_has_audio")]
     pub has_audio: bool,
+    #[serde(default)]
+    pub emits: Vec<EventKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decoder_kind: Option<String>,
+    pub calls: Option<CallGate>,
     #[serde(default)]
     pub has_video: bool,
     #[serde(default)]
@@ -51,6 +61,24 @@ pub struct ChannelDescriptor {
     pub defaults: Option<ChannelSettings>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub limits: Vec<ParamLimit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<ParamChoice>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ports: Vec<crate::patch::PortSpec>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CallGate {
+    Frames,
+    Squelch,
+}
+
+impl ChannelDescriptor {
+    #[must_use]
+    pub fn has_events(&self) -> bool {
+        !self.emits.is_empty() || self.calls.is_some()
+    }
 }
 
 /// The range a numeric decoder setting is accepted in, named by its field in the params struct.
@@ -239,13 +267,16 @@ impl Default for ChannelDescriptor {
             bandwidth_hz: 0.0,
             input_rate_hz: 0.0,
             has_audio: default_has_audio(),
-            decoder_kind: None,
+            emits: Vec::new(),
+            calls: None,
             has_video: false,
             can_transmit: false,
             needs_position: false,
             identifiable: false,
             defaults: None,
             limits: Vec::new(),
+            choices: Vec::new(),
+            ports: Vec::new(),
         }
     }
 }
@@ -315,6 +346,18 @@ pub enum SelcallSystem {
     Zvei1,
 }
 
+impl SelcallSystem {
+    pub const ALL: [Self; 2] = [Self::Ccir1, Self::Zvei1];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Ccir1 => "CCIR-1",
+            Self::Zvei1 => "ZVEI-1",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SelcallParams {
     #[serde(default)]
@@ -358,6 +401,18 @@ pub enum Sideband {
     #[default]
     Usb,
     Lsb,
+}
+
+impl Sideband {
+    pub const ALL: [Self; 2] = [Self::Usb, Self::Lsb];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Usb => "USB",
+            Self::Lsb => "LSB",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -1006,7 +1061,7 @@ impl DatvCodeRate {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Auto => "auto",
+            Self::Auto => "Auto",
             Self::Half => "1/2",
             Self::TwoThirds => "2/3",
             Self::ThreeQuarters => "3/4",
@@ -1351,6 +1406,18 @@ pub enum PskBaud {
 }
 
 impl PskBaud {
+    pub const ALL: [Self; 4] = [Self::Psk31, Self::Psk63, Self::Psk125, Self::Psk250];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Psk31 => "PSK31",
+            Self::Psk63 => "PSK63",
+            Self::Psk125 => "PSK125",
+            Self::Psk250 => "PSK250",
+        }
+    }
+
     #[must_use]
     pub fn rate(self) -> f64 {
         match self {
@@ -1378,6 +1445,20 @@ pub enum RadioClockStandard {
     Wwvb,
     Msf,
     Jjy,
+}
+
+impl RadioClockStandard {
+    pub const ALL: [Self; 4] = [Self::Dcf77, Self::Wwvb, Self::Msf, Self::Jjy];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Dcf77 => "DCF77",
+            Self::Wwvb => "WWVB",
+            Self::Msf => "MSF",
+            Self::Jjy => "JJY",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]

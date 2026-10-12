@@ -1,50 +1,78 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useDecodedStore } from "../lib/decoded";
+import { useEventKinds } from "../lib/eventKinds";
 import type { FusionGridFrame } from "../lib/frame";
-import { type DfOverlay, overlayCounts } from "../lib/map/df";
-import { type MapKind, type TargetDetail, targetDetail } from "../lib/map/layers";
 import { useMapView } from "../lib/map/mapView";
 import type { PropagationOverlay } from "../lib/map/propagation";
-import { highlight, type Selection } from "../lib/map/targets";
-import type { SurveyCell } from "../lib/types";
-import { MapLegend } from "./map/MapLegend";
+import { entityKey } from "../lib/sinks";
+import type { Entity, EventKindEntry, PositionTrack, SurveyCell } from "../lib/types";
+import { HUE_COLOR } from "../sinks/hues";
+import { highlightEntity } from "../sinks/mapLayers";
+import { EntityCard } from "./map/EntityCard";
+import { type LegendGroup, MapLegend } from "./map/MapLegend";
 import { MapSettings } from "./map/MapSettings";
-import { type Counts, type MapInputs, type MapSinks, ZERO_COUNTS } from "./map/mapState";
-import { TargetCard } from "./map/TargetCard";
+import type { MapInputs, MapSinks } from "./map/mapState";
 import { useMapDrawLoop } from "./map/useMapDrawLoop";
 import { useLayerSync, useMapActive, useMapInstance } from "./map/useMapInstance";
 
-function detailOf(selection: Selection | null): TargetDetail | null {
-  if (selection === null) {
-    return null;
+export interface MapFeed {
+  entities: readonly Entity[];
+  tracks: readonly PositionTrack[];
+  sourceName: (source: string) => string;
+}
+
+function colorOf(entity: Entity): string {
+  return HUE_COLOR[entity.hue];
+}
+
+function nounOf(kind: string, entries: readonly EventKindEntry[]): string {
+  return entries.find((entry) => entry.kind === kind)?.noun ?? kind;
+}
+
+function nameOf(kind: string, entries: readonly EventKindEntry[]): string {
+  return entries.find((entry) => entry.kind === kind)?.name ?? kind;
+}
+
+export function legendGroups(
+  feed: MapFeed,
+  entries: readonly EventKindEntry[],
+  paint: (entity: Entity) => string,
+): LegendGroup[] {
+  const groups = new Map<string, LegendGroup>();
+  for (const entity of feed.entities) {
+    if (entity.view.place == null) {
+      continue;
+    }
+    const key = `${entity.key.source}\u0000${entity.key.kind}`;
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, {
+        key,
+        label: `${feed.sourceName(entity.key.source)} · ${nounOf(entity.key.kind, entries)}`,
+        color: paint(entity),
+        count: 1,
+      });
+    } else {
+      group.count += 1;
+    }
   }
-  const station = useDecodedStore
-    .getState()
-    .stations[selection.kind]?.find((row) => row.id === selection.id);
-  return station === undefined ? null : targetDetail(station);
+  return [...groups.values()].toSorted((a, b) => a.label.localeCompare(b.label));
 }
 
 export function MapPanel({
-  kinds,
-  references = [],
+  feed,
   positionNodes = [],
-  satellites = [],
   signalSamples,
   propagation,
-  df,
   heat,
   heatRefused = null,
   active = true,
   className,
 }: {
-  kinds: readonly MapKind[];
-  references?: readonly (readonly [number, number])[];
+  feed?: MapFeed;
   positionNodes?: readonly string[];
-  satellites?: readonly string[];
   signalSamples?: readonly SurveyCell[];
   propagation?: PropagationOverlay;
-  df?: DfOverlay;
   heat?: FusionGridFrame | null;
   heatRefused?: string | null;
   active?: boolean;
@@ -52,82 +80,68 @@ export function MapPanel({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const view = useMapView();
-  const inputsRef = useRef<MapInputs>({
-    kinds,
-    references,
+  const entries = useEventKinds();
+  const inputs = (): MapInputs => ({
+    entities: feed?.entities ?? null,
     positionNodes,
-    satellites,
+    positions: feed === undefined ? null : feed.tracks,
     signalSamples: signalSamples ?? null,
     propagation: propagation ?? null,
-    df: df ?? null,
     heat: heat ?? null,
     heatEnabled: heat !== undefined,
     tracks: view.tracks,
     globe: view.globe,
   });
+  const inputsRef = useRef<MapInputs>(inputs());
   useLayoutEffect(() => {
-    inputsRef.current = {
-      kinds,
-      references,
-      positionNodes,
-      satellites,
-      signalSamples: signalSamples ?? null,
-      propagation: propagation ?? null,
-      df: df ?? null,
-      heat: heat ?? null,
-      heatEnabled: heat !== undefined,
-      tracks: view.tracks,
-      globe: view.globe,
-    };
+    inputsRef.current = inputs();
   });
-  const [counts, setCounts] = useState<Counts>(ZERO_COUNTS);
   const [positionCount, setPositionCount] = useState(0);
-  const [satelliteCount, setSatelliteCount] = useState(0);
-  const [detail, setDetail] = useState<TargetDetail | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [headings, setHeadings] = useState(true);
-  const sinks = useMemo<MapSinks>(
-    () => ({ setCounts, setPositionCount, setSatelliteCount, setDetail, setHeadings }),
-    [],
-  );
-  const { coreRef, basemap } = useMapInstance(containerRef, inputsRef, sinks, view.basemap, (hit) =>
-    setDetail(detailOf(hit)),
+  const sinks = useMemo<MapSinks>(() => ({ setPositionCount, setHeadings }), []);
+  const { coreRef, basemap } = useMapInstance(
+    containerRef,
+    inputsRef,
+    sinks,
+    view.basemap,
+    setSelected,
   );
   const close = () => {
     const core = coreRef.current;
     if (core !== null) {
       core.selected = null;
-      highlight(core.map, kinds, null);
+      highlightEntity(core.map, null);
     }
-    setDetail(null);
+    setSelected(null);
   };
+  const positionsOn = positionNodes.length > 0 || (feed?.tracks.length ?? 0) > 0;
   useLayerSync(
     coreRef,
     {
-      kinds,
-      references,
-      positionNodes,
-      satellitesOn: satellites.length > 0,
+      entitiesOn: feed !== undefined,
+      positionsOn,
       globe: view.globe,
       signalEnabled: signalSamples !== undefined,
       propagationLayer: propagation?.layer ?? null,
-      dfEnabled: df !== undefined,
       heatEnabled: heat !== undefined,
     },
     sinks,
   );
   useMapDrawLoop(coreRef, inputsRef, sinks);
   useMapActive(containerRef, coreRef, active, basemap);
+  const picked =
+    selected === null
+      ? undefined
+      : feed?.entities.find((entity) => entityKey(entity.key) === selected);
 
   return (
     <div className={`relative ${className ?? "h-[min(60dvh,28rem)] min-h-64 w-full"}`}>
       <div ref={containerRef} className="h-full w-full bg-bg" />
       <MapLegend
-        kinds={kinds}
-        counts={counts}
-        positionCount={positionNodes.length > 0 ? positionCount : null}
-        satelliteCount={satellites.length > 0 ? satelliteCount : null}
+        groups={feed === undefined ? [] : legendGroups(feed, entries, colorOf)}
+        positionCount={positionsOn ? positionCount : null}
         signalCells={signalSamples === undefined ? null : signalSamples.length}
-        overlay={overlayCounts(df)}
         heat={heat != null}
         heatRefused={heatRefused}
         headings={headings}
@@ -136,7 +150,14 @@ export function MapPanel({
       <div className="absolute bottom-2 left-2 flex items-center rounded-control bg-plot-bg/85 p-0.5">
         <MapSettings />
       </div>
-      {detail !== null && <TargetCard detail={detail} onClose={close} />}
+      {picked !== undefined && (
+        <EntityCard
+          entity={picked}
+          kindName={nameOf(picked.key.kind, entries)}
+          color={colorOf(picked)}
+          onClose={close}
+        />
+      )}
     </div>
   );
 }

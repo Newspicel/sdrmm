@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compareCells, forecastAgreement, forecastAt } from "./ionosonde";
-import type { PropagationCell } from "./propagation";
-import type { IonosondeStation } from "./types";
+import type { IonosondeStation, PropagationCell } from "./types";
 
 function station(over: Partial<IonosondeStation> = {}): IonosondeStation {
   return {
@@ -23,11 +22,11 @@ function cell(over: Partial<PropagationCell> = {}): PropagationCell {
     weight: 1,
     decodes: 1,
     callsigns: 1,
-    bestFreqHz: 14_074_000,
-    bestSnrDb: -12,
-    measuredMuf3000Mhz: 18,
-    medianDistanceKm: 3_000,
-    lastSeen: 0,
+    best_freq_hz: 14_074_000,
+    best_snr_db: -12,
+    measured_muf3000_mhz: 18,
+    median_distance_km: 3_000,
+    last_seen: "2026-08-16T12:00:00Z",
     ...over,
   };
 }
@@ -92,23 +91,23 @@ describe("comparing what was heard against what was forecast", () => {
   ];
 
   it("reports the gap between a measured floor and the forecast", () => {
-    const compared = compareCells([cell({ measuredMuf3000Mhz: 18 })], sondes);
+    const compared = compareCells([cell({ measured_muf3000_mhz: 18 })], sondes);
     expect(compared).toHaveLength(1);
     expect(compared[0]?.forecast.muf3000Mhz).toBeCloseTo(16, 6);
     expect(compared[0]?.deltaMhz).toBeCloseTo(2, 6);
   });
 
   it("skips a cell with no measurement and one with no nearby site", () => {
-    expect(compareCells([cell({ measuredMuf3000Mhz: null })], sondes)).toHaveLength(0);
+    expect(compareCells([cell({ measured_muf3000_mhz: null })], sondes)).toHaveLength(0);
     expect(compareCells([cell({ latitude: -40, longitude: 150 })], sondes)).toHaveLength(0);
   });
 
   it("summarises how often the receiver beat the network", () => {
     const compared = compareCells(
       [
-        cell({ key: "IO91", measuredMuf3000Mhz: 18 }),
-        cell({ key: "IO92", latitude: 52.5, measuredMuf3000Mhz: 20 }),
-        cell({ key: "IO90", latitude: 50.5, measuredMuf3000Mhz: 12 }),
+        cell({ key: "IO91", measured_muf3000_mhz: 18 }),
+        cell({ key: "IO92", latitude: 52.5, measured_muf3000_mhz: 20 }),
+        cell({ key: "IO90", latitude: 50.5, measured_muf3000_mhz: 12 }),
       ],
       sondes,
     );

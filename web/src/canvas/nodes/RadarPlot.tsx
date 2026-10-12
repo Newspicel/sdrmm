@@ -213,7 +213,7 @@ function RadarMarks({
             <path
               key={truth.icao}
               d={`M${x} ${y - TRUTH_R}L${x + TRUTH_R} ${y + TRUTH_R}L${x - TRUTH_R} ${y + TRUTH_R}Z`}
-              className="fill-none stroke-port-events"
+              className="fill-none stroke-hue-amber"
             >
               <title>{truth.callsign ?? truth.icao}</title>
             </path>

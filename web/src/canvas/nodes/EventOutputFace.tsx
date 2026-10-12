@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Chips, ChoiceChip, NumberChip } from "../../components/face/Chips";
 import { TextChip } from "../../components/face/TextChip";
 import { aboutQuery } from "../../lib/api";
+import { useFeeds } from "../../lib/resolved";
 import type { EventOutputTarget, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -26,9 +27,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   const workspace = useWorkspaceContext();
   const notify = useQuery(aboutQuery(true)).data?.notify === true;
   const target = node.data.target;
-  const inputs = (workspace.graph.edges ?? []).filter(
-    (edge) => edge.to.node === node.id && edge.to.port === "events",
-  ).length;
+  const inputs = useFeeds(node.id, "events").length;
   const configured = eventOutputConfigured(target);
   const editTarget = (next: EventOutputTarget) => {
     workspace.edit((snapshot) => ({

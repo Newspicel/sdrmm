@@ -4,7 +4,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, bits_be, design_lowpass};
 use sdrmm_wire::{
     AisMessage, AisParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily,
+    DecoderFamily, EventKind,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -35,7 +35,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 25_000.0,
     input_rate_hz: 48_000.0,
     has_audio: false,
-    decoder_kind: Some("ais".to_owned()),
+    emits: vec![EventKind::Ais],
     ..ChannelDescriptor::default()
 });
 

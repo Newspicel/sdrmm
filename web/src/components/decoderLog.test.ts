@@ -1,21 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { DecodedState } from "../lib/decoded";
-import type { DecodedRecord, DecoderEvent, DecoderLogEntry, LoraFrame } from "../lib/types";
+import type { DecodedRecord, DecoderEvent, DecoderLogEntry, Presentation } from "../lib/types";
 import {
   buildRows,
   callsignTitle,
   clampColumnWidth,
   collectLive,
-  DECODER_KINDS,
   DEFAULT_LOG_FILTER,
   defaultColumnWidths,
   droppedNotice,
-  eventStation,
-  eventSummary,
   FLEX_COLUMN,
-  hasPosition,
   isFiltered,
-  kindLabel,
   LOG_COLUMNS,
   type LogFilter,
   liveRow,
@@ -23,7 +17,6 @@ import {
   MAX_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
   matchesFilter,
-  reachedSink,
   readColumnWidths,
   resizeColumn,
   storedRow,
@@ -52,17 +45,26 @@ const ais: DecoderEvent = {
   },
 };
 
+const PLANE_VIEW: Presentation = {
+  summary: "3C6444 · DLH123 · 35000 ft",
+  entity: "3C6444",
+  fields: [{ label: "ICAO", value: { type: "text", value: "3C6444" } }],
+};
+
+const SHIP_VIEW: Presentation = { summary: "211234560 · NORDLICHT", entity: "211234560" };
+
 function entry(over: Partial<DecoderLogEntry> = {}): DecoderLogEntry {
   return {
     id: 1,
     at: "2026-08-09T12:00:00Z",
     kind: "adsb",
-    station: "3c6444",
-    summary: "3c6444 · DLH123",
+    station: "3C6444",
+    summary: "3C6444 · DLH123",
     freq_hz: 1_090_000_000,
     device_set: 0,
     channel: 0,
     event: adsb,
+    origin: { node: "adsb", transmission: 0 },
     ...over,
   };
 }
@@ -74,7 +76,9 @@ function record(over: Partial<DecodedRecord> = {}): DecodedRecord {
     freq_hz: 1_090_000_000,
     device_set: 0,
     channel: 0,
+    origin: { node: "adsb", transmission: 0 },
     sinks: [LOG, "export:1"],
+    view: PLANE_VIEW,
     ...over,
   };
 }
@@ -82,20 +86,6 @@ function record(over: Partial<DecodedRecord> = {}): DecodedRecord {
 function filter(over: Partial<LogFilter> = {}): LogFilter {
   return { ...DEFAULT_LOG_FILTER, ...over };
 }
-
-describe("kind labels", () => {
-  it("labels every decoder the wire union declares", () => {
-    expect(DECODER_KINDS).toContain("adsb");
-    for (const kind of DECODER_KINDS) {
-      expect(kindLabel(kind)).not.toBe("");
-    }
-    expect(kindLabel("adsb")).toBe("ADS-B");
-  });
-
-  it("falls back for a kind this build does not know", () => {
-    expect(kindLabel("dmr")).toBe("DMR");
-  });
-});
 
 describe("toQuery", () => {
   const wires = { sink: LOG, wired: true };
@@ -127,47 +117,32 @@ describe("isFiltered", () => {
 
 describe("matchesFilter", () => {
   it("searches station and summary case-insensitively", () => {
-    expect(matchesFilter(record(), filter({ q: "DLH" }), LOG)).toBe(true);
-    expect(matchesFilter(record(), filter({ q: "3C6444" }), LOG)).toBe(true);
-    expect(matchesFilter(record(), filter({ q: "nordlicht" }), LOG)).toBe(false);
-  });
-
-  it("trusts the server's verdict on which sinks a frame reached", () => {
-    expect(matchesFilter(record(), filter(), LOG)).toBe(true);
-    expect(matchesFilter(record({ sinks: ["export:1"] }), filter(), LOG)).toBe(false);
-    expect(matchesFilter(record({ sinks: [] }), filter(), LOG)).toBe(false);
-    expect(reachedSink(record({ sinks: undefined }), LOG)).toBe(false);
+    expect(matchesFilter(record(), filter({ q: "DLH" }))).toBe(true);
+    expect(matchesFilter(record(), filter({ q: "3c6444" }))).toBe(true);
+    expect(matchesFilter(record(), filter({ q: "nordlicht" }))).toBe(false);
+    expect(matchesFilter(record(), filter())).toBe(true);
   });
 });
 
 describe("collectLive", () => {
-  const frames = {
-    adsb: [record({ at: "2026-08-09T12:00:03Z" }), record({ at: "2026-08-09T12:00:01Z" })],
-    ais: [record({ at: "2026-08-09T12:00:02Z", event: ais })],
-  } as DecodedState["frames"];
+  const records = [
+    record({ at: "2026-08-09T12:00:01Z" }),
+    record({ at: "2026-08-09T12:00:03Z" }),
+    record({ at: "2026-08-09T12:00:02Z", event: ais, view: SHIP_VIEW }),
+  ];
 
-  it("merges every decoder newest first", () => {
-    expect(collectLive(frames, filter(), LOG).map((r) => r.at)).toEqual([
+  it("lists the feed newest first", () => {
+    expect(collectLive(records, filter(), 0).map((r) => r.at)).toEqual([
       "2026-08-09T12:00:03Z",
       "2026-08-09T12:00:02Z",
       "2026-08-09T12:00:01Z",
     ]);
   });
 
-  it("honours the filter and the cap", () => {
-    expect(collectLive(frames, filter({ q: "nordlicht" }), LOG)).toHaveLength(1);
-    expect(collectLive(frames, filter(), LOG, 2).map((r) => r.at)).toEqual([
-      "2026-08-09T12:00:03Z",
-      "2026-08-09T12:00:02Z",
-    ]);
-  });
-
-  it("sorts an unstamped frame oldest instead of poisoning the order", () => {
-    const broken = {
-      ...frames,
-      adsb: [...(frames.adsb ?? []), record({ at: "not a date" })],
-    } as DecodedState["frames"];
-    expect(collectLive(broken, filter(), LOG).at(-1)?.at).toBe("not a date");
+  it("honours the filter, the cap and the last clear", () => {
+    expect(collectLive(records, filter({ q: "nordlicht" }), 0)).toHaveLength(1);
+    expect(collectLive(records, filter(), 0, 2)).toHaveLength(2);
+    expect(collectLive(records, filter(), Date.parse("2026-08-09T12:00:02Z"))).toHaveLength(1);
   });
 });
 
@@ -175,7 +150,7 @@ describe("buildRows", () => {
   it("puts live rows above the stored page and marks them", () => {
     const rows = buildRows([entry()], [record()]);
     expect(rows.map((r) => r.live)).toEqual([true, false]);
-    expect(rows[0]?.summary).toBe("3c6444 · DLH123 · 35000 ft");
+    expect(rows[0]?.summary).toBe("3C6444 · DLH123 · 35000 ft");
   });
 
   it("orders the tail and the stored page as one table", () => {
@@ -192,7 +167,7 @@ describe("buildRows", () => {
   });
 
   it("drops a live frame the stored page already carries", () => {
-    const stored = entry({ at: "2026-08-09T12:00:01Z", summary: "3c6444 · DLH123 · 35000 ft" });
+    const stored = entry({ at: "2026-08-09T12:00:01Z", view: PLANE_VIEW });
     expect(buildRows([stored], [record()])).toHaveLength(1);
     expect(buildRows([stored], [record()])[0]?.live).toBe(false);
   });
@@ -204,14 +179,16 @@ describe("buildRows", () => {
 });
 
 describe("row projection", () => {
-  it("keeps a stored row verbatim", () => {
-    expect(storedRow(entry({ station: null }))).toMatchObject({
+  it("reads a stored row from its presented view", () => {
+    expect(storedRow(entry({ view: SHIP_VIEW }))).toMatchObject({
       key: "stored:1",
-      kind: "adsb",
-      station: null,
-      summary: "3c6444 · DLH123",
-      freqHz: 1_090_000_000,
+      station: "211234560",
+      summary: "211234560 · NORDLICHT",
       live: false,
+    });
+    expect(storedRow(entry({ station: null }))).toMatchObject({
+      station: null,
+      summary: "3C6444 · DLH123",
     });
   });
 
@@ -230,455 +207,14 @@ describe("row projection", () => {
     expect(callsignTitle(germany)).toBe("Fed. Rep. of Germany, EU, CQ 14, ITU 28");
   });
 
-  it("derives station and summary for a live row", () => {
-    expect(liveRow(record({ event: ais }))).toMatchObject({
-      kind: "ais",
-      station: "211234560",
-      summary: "211234560 · NORDLICHT · 53.5512, 9.9937",
-      live: true,
-    });
-  });
-});
-
-describe("eventSummary", () => {
-  it("matches the server's rendering per decoder", () => {
-    expect(
-      eventSummary({
-        kind: "aprs",
-        data: { source: "DL1ABC-9", destination: "APRS", info: "hi", tnc2: "DL1ABC-9>APRS:hi" },
+  it("takes fields and the clip from the view", () => {
+    const row = liveRow(
+      record({
+        view: { ...PLANE_VIEW, clip: { url: "/api/calls/1/audio", media_type: "audio/wav" } },
       }),
-    ).toBe("DL1ABC-9>APRS:hi");
-    expect(
-      eventSummary({
-        kind: "aprs",
-        data: {
-          source: "DL1ABC-7",
-          destination: "S32U6T",
-          info: '`(_fn"Oj/',
-          tnc2: 'DL1ABC-7>S32U6T:`(_fn"Oj/',
-          mic_e_message: "Returning",
-        },
-      }),
-    ).toBe('DL1ABC-7>S32U6T:`(_fn"Oj/ · Returning');
-    expect(
-      eventSummary({
-        kind: "aprs",
-        data: {
-          source: "DL1WX",
-          destination: "APRS",
-          info: "_",
-          tnc2: "DL1WX>APRS:_",
-          weather: {
-            temperature_c: 12.5,
-            humidity_pct: 81,
-            pressure_hpa: 1013.2,
-            wind_dir_deg: 45,
-            wind_speed_ms: 3.1,
-            rain_1h_mm: 0.2,
-          },
-        },
-      }),
-    ).toBe("DL1WX · 12.5 °C · 81% · 1013.2 hPa · 045° 3.1 m/s · 0.2 mm/h");
-    expect(eventSummary({ kind: "rtty", data: { text: "CQ CQ" } })).toBe("CQ CQ");
-    expect(
-      eventSummary({
-        kind: "sstv",
-        data: {
-          seq: 1,
-          mode: "martin_m1",
-          width: 320,
-          height: 256,
-          lines: 256,
-          complete: true,
-          duration_ms: 114_300,
-        },
-      }),
-    ).toBe("Martin M1 \u00b7 320\u00d7256 \u00b7 complete in 114 s");
-    expect(
-      eventSummary({
-        kind: "sstv",
-        data: {
-          seq: 2,
-          mode: "robot36",
-          width: 320,
-          height: 240,
-          lines: 96,
-          complete: false,
-          duration_ms: 14_500,
-        },
-      }),
-    ).toBe("Robot 36 \u00b7 320\u00d7240 \u00b7 96 of 240 lines");
-    expect(
-      eventSummary({
-        kind: "apt",
-        data: {
-          seq: 1,
-          lines: 1200,
-          complete: true,
-          duration_ms: 600_400,
-          channel_a: "ch2",
-          channel_b: "ch4",
-        },
-      }),
-    ).toBe("APT · ch 2/4 · 1200 lines in 600 s");
-    expect(
-      eventSummary({
-        kind: "lrpt",
-        data: {
-          seq: 1,
-          mode: "oqpsk72",
-          width: 1568,
-          lines: 800,
-          complete: false,
-          duration_ms: 1,
-          apids: [64, 65],
-          frames: 10,
-          frames_corrected: 1,
-          frames_failed: 2,
-          packets_lost: 3,
-        },
-      }),
-    ).toBe("OQPSK 72k · APID 64/65 · 800 lines · 2 frames lost · 3 packets lost");
-    expect(
-      eventSummary({
-        kind: "wefax",
-        data: {
-          seq: 1,
-          ioc: "ioc576",
-          lpm: "lpm120",
-          width: 1810,
-          lines: 400,
-          complete: false,
-          duration_ms: 1,
-        },
-      }),
-    ).toBe("IOC 576 · 120 LPM · 400 lines, cut short");
-    expect(
-      eventSummary({
-        kind: "radiosonde",
-        data: {
-          sonde: "rs41",
-          serial: "S1234567",
-          altitude_m: 12_345.4,
-          climb_ms: 5.04,
-          temperature_c: -40.04,
-          lat: 48.1,
-          lon: 11.5,
-          errors_corrected: 0,
-        },
-      }),
-    ).toBe("RS41 S1234567 · 12345 m · +5.0 m/s · -40.0 °C · 48.10000, 11.50000");
-    expect(eventSummary({ kind: "tone", data: { ctcss_hz: 88.5, open: true } })).toBe(
-      "CTCSS 88.5 Hz · open",
     );
-    expect(eventSummary({ kind: "tone", data: { dcs_code: 23, open: false } })).toBe(
-      "DCS 023 · muted",
-    );
-    expect(eventSummary({ kind: "tone", data: { open: false } })).toBe("no tone · muted");
-    expect(
-      eventSummary({ kind: "scrambler", data: { inversion_hz: 3_300, confidence: 0.82 } }),
-    ).toBe("inversion 3300 Hz · 82% confidence");
-    expect(eventSummary({ kind: "scrambler", data: { confidence: 0 } })).toBe("no inversion");
-    expect(eventSummary({ kind: "morse", data: { text: "SOS", wpm: 18 } })).toBe("SOS");
-    expect(
-      eventSummary({
-        kind: "rds",
-        data: { block_errors: 0, blocks: 40, groups: 10, pi: "D3C2", ps: "NDR2" },
-      }),
-    ).toBe("PI D3C2 · NDR2");
-  });
-
-  it("renders a toned page without text as address and function", () => {
-    const tone: DecoderEvent = {
-      kind: "pocsag",
-      data: {
-        address: 1_234_567,
-        baud: 1200,
-        errors_corrected: 0,
-        function: 3,
-        payload: "tone",
-        text: "",
-      },
-    };
-    expect(eventSummary(tone)).toBe("1234567 (3)");
-    expect(eventSummary({ ...tone, data: { ...tone.data, text: "CALL 42" } })).toBe(
-      "1234567: CALL 42",
-    );
-  });
-
-  it("renders FLEX and ERMES pages with their pager address", () => {
-    const flex: DecoderEvent = {
-      kind: "flex",
-      data: {
-        address: 123456,
-        payload: "alpha",
-        text: "CALL 42",
-        baud: 3200,
-        levels: 4,
-        cycle: 2,
-        frame: 17,
-        phase: "C",
-        errors_corrected: 1,
-      },
-    };
-    const ermes: DecoderEvent = {
-      kind: "ermes",
-      data: {
-        local_address: 45678,
-        message_number: 3,
-        payload: "numeric",
-        text: "012345",
-        urgent: true,
-        alert: 2,
-        errors_corrected: 0,
-      },
-    };
-    expect(eventSummary(flex)).toBe("123456: CALL 42");
-    expect(eventStation(flex)).toBe("123456");
-    expect(eventSummary(ermes)).toBe("45678: 012345");
-    expect(eventStation(ermes)).toBe("45678");
-  });
-
-  it("renders a 406 MHz beacon like the server summary", () => {
-    const beacon: DecoderEvent = {
-      kind: "sarsat",
-      data: {
-        hex_id: "ADCD00800440401",
-        message: "56E6804002202009655250",
-        long: true,
-        self_test: true,
-        country: 366,
-        protocol: "serial_user",
-        beacon: "epirb",
-        identity: "S/N 1",
-        lat: 43.5333,
-        lon: -1.5,
-        errors_corrected: 0,
-        pdf2_ok: false,
-      },
-    };
-    expect(eventSummary(beacon)).toBe(
-      "EPIRB ADCD00800440401 · S/N 1 · 43.5333, -1.5000 · self-test · PDF-2 failed",
-    );
-    expect(eventStation(beacon)).toBe("ADCD00800440401");
-  });
-
-  it("renders Tetrapol signalling like the server summary", () => {
-    const activation: DecoderEvent = {
-      kind: "tetrapol",
-      data: {
-        channel: "paging",
-        frame: 98,
-        scrambling: 70,
-        address: { kind: "all_stations", id: 0x7fff },
-        payload: {
-          message: "group_activation",
-          group: 393,
-          call_type: "internal",
-          coverage: 200,
-          key: { kind: 4, index: 10 },
-          channel: 2890,
-          downlink_scrambling: 89,
-          uplink_scrambling: 125,
-        },
-        data: "551189c80b4a7d594a",
-        rejected: 0,
-      },
-    };
-    expect(eventSummary(activation)).toBe(
-      "PCH · all · group 393 active on channel 2890, encrypted",
-    );
-    expect(eventStation(activation)).toBe("group 393");
-    const info: DecoderEvent = {
-      kind: "tetrapol",
-      data: {
-        channel: "broadcast",
-        frame: 0,
-        scrambling: 70,
-        payload: {
-          message: "system_info",
-          cell: { bn: 28, rsw: 2, bs: 7 },
-          country: 1,
-          network: 2,
-          uplink_scrambling: 71,
-          mode: 0,
-          ciphered: false,
-          home_only: false,
-          superframe: 2118,
-        },
-        data: "90",
-        rejected: 0,
-      },
-    };
-    expect(eventSummary(info)).toBe("BCH · cell 28.2.7 · country 1 · network 2");
-    expect(eventStation(info)).toBe("28.2.7");
-  });
-
-  it("renders End-of-Train telemetry and head-end commands", () => {
-    const rear: DecoderEvent = {
-      kind: "eot",
-      data: {
-        unit_address: 23456,
-        report: {
-          unit: "rear",
-          message_type: 7,
-          arming: "armed",
-          pressure_psig: 87,
-          battery: "ok",
-          battery_charge_pct: 80,
-          valve_ok: true,
-          confirmed: true,
-          turbine: false,
-          motion: false,
-          marker_light: true,
-          marker_battery_low: false,
-          discretionary: false,
-          chaining: 3,
-        },
-        errors_corrected: 0,
-      },
-    };
-    const head: DecoderEvent = {
-      kind: "eot",
-      data: {
-        unit_address: 23456,
-        report: { unit: "head", command: "emergency", code: 0xaa, copies: 3 },
-        errors_corrected: 0,
-      },
-    };
-    expect(eventSummary(rear)).toBe("EOT 23456 · 87 psig · stopped · armed");
-    expect(eventSummary(head)).toBe("HOT 23456 · EMERGENCY");
-    expect(eventStation(head)).toBe("23456");
-  });
-
-  it("renders each CW skimmer signal with its passband offset and speed", () => {
-    const spot: DecoderEvent = {
-      kind: "cw_skimmer",
-      data: { offset_hz: -742.4, text: "CQ W1AW", wpm: 23.6, snr_db: 14.2 },
-    };
-    expect(eventSummary(spot)).toBe("-742 Hz · 24 WPM · CQ W1AW");
-    expect(eventStation(spot)).toBeNull();
-  });
-
-  it("omits fields a frame does not carry", () => {
-    expect(eventSummary({ kind: "adsb", data: { icao: "3c6444", df: 11, raw: "5d" } })).toBe(
-      "3c6444",
-    );
-    expect(eventSummary({ kind: "rds", data: { block_errors: 3, blocks: 3, groups: 0 } })).toBe("");
-  });
-});
-
-describe("eventStation", () => {
-  it("is null for the character-stream decoders", () => {
-    expect(eventStation({ kind: "rtty", data: { text: "x" } })).toBeNull();
-    expect(eventStation({ kind: "morse", data: { text: "x", wpm: 12 } })).toBeNull();
-    expect(
-      eventStation({ kind: "rds", data: { block_errors: 0, blocks: 4, groups: 1 } }),
-    ).toBeNull();
-  });
-
-  it("does not mistake a Selcall recipient for the transmitter", () => {
-    const event: DecoderEvent = {
-      kind: "selcall",
-      data: { system: "ccir1", code: "12234", tone_ms: 100 },
-    };
-    expect(eventSummary(event)).toBe("CCIR-1 · 12234");
-    expect(eventStation(event)).toBeNull();
-  });
-});
-
-function lora(decoded: LoraFrame["decoded"], integrity: LoraFrame["integrity"]): DecoderEvent {
-  return {
-    kind: "lora",
-    data: {
-      spreading_factor: 11,
-      bandwidth_hz: 250_000,
-      coding_rate: "4/5",
-      sync_word: 0x2b,
-      implicit_header: false,
-      low_data_rate: false,
-      inverted_iq: false,
-      integrity,
-      fec_corrected: 0,
-      snr_db: 3,
-      frequency_error_hz: 120,
-      payload: "00112233",
-      decoded,
-    },
-  };
-}
-
-describe("LoRa rows", () => {
-  it("labels the kind", () => {
-    expect(kindLabel("lora")).toBe("LoRa");
-  });
-
-  it("matches the server summary for a raw frame and a failed check", () => {
-    const raw = lora(null, "crc_failed");
-    expect(eventSummary(raw)).toBe("SF11 250 kHz · 4 bytes · CRC failed");
-    expect(eventStation(raw)).toBeNull();
-    expect(hasPosition(raw)).toBe(false);
-  });
-
-  it("names a Meshtastic node and finds its position", () => {
-    const event = lora(
-      {
-        protocol: "meshtastic",
-        to: 0xffff_ffff,
-        from: 0xa1b2c3d4,
-        id: 7,
-        hop_limit: 3,
-        hop_start: 3,
-        want_ack: false,
-        via_mqtt: false,
-        channel_hash: 8,
-        next_hop: 0,
-        relay_node: 0,
-        encryption: "channel",
-        content: { type: "position", lat: 47.5, lon: 8.25 },
-      },
-      "crc_ok",
-    );
-    expect(eventStation(event)).toBe("!a1b2c3d4");
-    expect(eventSummary(event)).toBe(
-      "SF11 250 kHz · !a1b2c3d4 → ^all · position 47.50000, 8.25000",
-    );
-    expect(hasPosition(event)).toBe(true);
-  });
-
-  it("keys LoRaWAN by DevAddr and MeshCore by advert name", () => {
-    const uplink = lora(
-      {
-        protocol: "lorawan",
-        message_type: "unconfirmed_up",
-        major: 0,
-        mic: "00",
-        dev_addr: "26011BDA",
-        f_cnt: 5,
-        f_port: 2,
-      },
-      "crc_ok",
-    );
-    expect(eventStation(uplink)).toBe("26011BDA");
-    expect(eventSummary(uplink)).toBe("SF11 250 kHz · Uplink · 26011BDA · FCnt 5 · port 2");
-    const advert = lora(
-      {
-        protocol: "meshcore",
-        route: "flood",
-        payload_type: "advert",
-        version: 1,
-        content: {
-          type: "advert",
-          public_key: "0011223344",
-          timestamp: 1,
-          node_type: "chat",
-          signature_ok: true,
-        },
-      },
-      "crc_ok",
-    );
-    expect(eventStation(advert)).toBe("00112233");
-    expect(eventSummary(advert)).toBe("SF11 250 kHz · Advert");
+    expect(row.fields).toEqual(PLANE_VIEW.fields);
+    expect(row.clip?.url).toBe("/api/calls/1/audio");
   });
 });
 
@@ -688,84 +224,6 @@ describe("droppedNotice", () => {
     expect(droppedNotice(1, 0)).toBe("1 live frame dropped");
     expect(droppedNotice(0, 12)).toBe("12 frames never reached the log");
     expect(droppedNotice(2, 12)).toBe("2 live frames dropped · 12 frames never reached the log");
-  });
-});
-
-describe("clock and GNSS summaries", () => {
-  it("keeps acquisition measurements visible in the live log", () => {
-    const event: DecoderEvent = {
-      kind: "gnss",
-      data: {
-        prn: 7,
-        doppler_hz: 1000,
-        code_phase_chips: 158.34,
-        cn0_db_hz: 44.5,
-      },
-    };
-    expect(eventSummary(event)).toBe("GPS PRN 7 · +1000 Hz · 44.5 dB-Hz · acquired");
-    expect(eventStation(event)).toBe("GPS-7");
-  });
-
-  it("names the clock service beside its decoded civil time", () => {
-    const event: DecoderEvent = {
-      kind: "radio_clock",
-      data: {
-        standard: "dcf77",
-        datetime: "2026-08-15T12:34:00+02:00",
-        dst: true,
-        leap_warning: false,
-        symbols: "M000",
-      },
-    };
-    expect(eventSummary(event)).toBe("DCF77 · 2026-08-15T12:34:00+02:00");
-    expect(eventStation(event)).toBe("DCF77");
-  });
-});
-
-describe("wave-2 summaries", () => {
-  it("renders a NAVTEX broadcast as header, subject and one line of text", () => {
-    expect(
-      eventSummary({
-        kind: "navtex",
-        data: {
-          station: "D",
-          subject: "A",
-          subject_name: "Navigational warning",
-          serial: 7,
-          text: "GALE WARNING\nGERMAN BIGHT",
-          errors_corrected: 0,
-          complete: true,
-        },
-      }),
-    ).toBe("DA07 · Navigational warning · GALE WARNING GERMAN BIGHT");
-  });
-
-  it("renders an ACARS block as aircraft, flight, label and text", () => {
-    const acars: DecoderEvent = {
-      kind: "acars",
-      data: {
-        mode: "2",
-        registration: "D-AIBC",
-        label: "H1",
-        block_id: "3",
-        downlink: true,
-        flight: "LH0400",
-        text: "REPORT OK",
-        more: false,
-      },
-    };
-    expect(eventSummary(acars)).toBe("D-AIBC · LH0400 · [H1] · REPORT OK");
-    expect(eventStation(acars)).toBe("D-AIBC");
-    expect(eventSummary({ ...acars, data: { ...acars.data, text: "" } })).toBe(
-      "D-AIBC · LH0400 · [H1]",
-    );
-  });
-
-  it("gives the new kinds the names operators use for them", () => {
-    expect(kindLabel("navtex")).toBe("NAVTEX");
-    expect(kindLabel("acars")).toBe("ACARS");
-    expect(DECODER_KINDS).toContain("navtex");
-    expect(DECODER_KINDS).toContain("acars");
   });
 });
 

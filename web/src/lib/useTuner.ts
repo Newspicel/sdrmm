@@ -1,6 +1,6 @@
-import { type IqLane, iqLanesOf, laneTuneTarget } from "../canvas/binding";
 import { useWorkspaceContext, type Workspace } from "../canvas/context";
 import { descriptorOf, nodeOf } from "../canvas/graph";
+import { type IqLane, iqLanesOf, laneTuneTarget } from "../canvas/lanes";
 import type { ChannelTarget, TuneTarget } from "../canvas/libraryTarget";
 import { autoTuning, laneCenterHz, laneRateHz, tuneDelta } from "../canvas/nodes/deviceNode";
 import { laneOf } from "../canvas/workspaceDevice";
@@ -123,7 +123,7 @@ function reachFor(workspace: Workspace, target: ChannelTarget, hz: number, reach
     { stream, tunes: stream },
     descriptor,
     hz,
-    iqLanesOf(workspace.graph, target.node, workspace.devices).length,
+    iqLanesOf(workspace.resolved, target.node).length,
   );
   if (pull !== null) {
     reach.applyPatch(set.id, pull);

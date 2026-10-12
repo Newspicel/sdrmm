@@ -77,7 +77,9 @@ async fn the_fusion_route_serves_and_clears_a_triangulation_grid() {
     let mut events = state.engine.subscribe_events();
     let (status, _) = request(app.clone(), "DELETE", "/api/fusion/cross", None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let told = events.try_recv().expect("the clear is announced");
+    let told = std::iter::from_fn(|| events.try_recv().ok())
+        .find(|event| matches!(event, ServerEvent::DfFusionUpdate { .. }))
+        .expect("the clear is announced");
     assert!(matches!(
         told,
         ServerEvent::DfFusionUpdate { ref node, ref state } if node == "cross" && state.samples == 0

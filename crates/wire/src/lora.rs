@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{EventPayload, Place, Presentation, lat_lon},
+};
+
+mod fields;
+
 pub const MAX_LORA_KEYS: usize = 32;
 pub const MAX_LORA_KEY_NAME_LEN: usize = 32;
 pub const MAX_LORA_KEY_TEXT_LEN: usize = 64;
@@ -721,6 +728,24 @@ impl LoraFrame {
     }
 
     #[must_use]
+    pub fn name(&self) -> Option<String> {
+        match self.decoded.as_ref()? {
+            LoraPayload::Meshtastic(packet) => match packet.content.as_ref()? {
+                MeshtasticContent::NodeInfo { long_name, .. }
+                | MeshtasticContent::MapReport { long_name, .. } => {
+                    crate::present::trimmed(Some(long_name))
+                }
+                _ => None,
+            },
+            LoraPayload::Meshcore(packet) => match &packet.content {
+                MeshcoreContent::Advert { name, .. } => name.clone(),
+                _ => None,
+            },
+            LoraPayload::Lorawan(_) => None,
+        }
+    }
+
+    #[must_use]
     pub fn summary(&self) -> String {
         let mut parts = vec![format!(
             "SF{} {}",
@@ -836,6 +861,31 @@ fn meshcore_summary(packet: &MeshcorePacket) -> Vec<String> {
         parts.push(format!("{} hops", packet.path.len()));
     }
     parts
+}
+
+impl EventPayload for LoraFrame {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let (lat, lon) = self.position().unzip();
+        Presentation {
+            entity: self.station(),
+            label: self.name(),
+            place: lat_lon(lat, lon).map(Place::at),
+            fields: self.fields(),
+            ..Presentation::of(self.summary())
+        }
+    }
+
+    fn merge(&mut self, newer: &Self) {
+        if newer.position().is_some() || self.position().is_none() {
+            *self = newer.clone();
+            return;
+        }
+        let decoded = self.decoded.take();
+        *self = Self {
+            decoded,
+            ..newer.clone()
+        };
+    }
 }
 
 #[cfg(test)]

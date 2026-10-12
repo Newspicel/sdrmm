@@ -81,6 +81,8 @@ mod wifi;
 mod xng_adapter;
 
 #[cfg(test)]
+mod fixtures;
+#[cfg(test)]
 mod testutil;
 
 #[cfg(any(test, feature = "synth"))]
@@ -830,7 +832,13 @@ static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::Laz
             descriptor.can_transmit = r.create_tx.is_some();
             descriptor.defaults = ChannelSettings::default_for(&descriptor.type_id);
             descriptor.limits = sdrmm_wire::param_limits(&descriptor.type_id);
+            descriptor.choices = descriptor
+                .defaults
+                .as_ref()
+                .map(|settings| settings.params.choices())
+                .unwrap_or_default();
             descriptor.identifiable = ident::identifiable(&descriptor.type_id);
+            descriptor.ports = sdrmm_wire::patch::channel_ports(&descriptor);
             descriptor
         })
         .collect()
@@ -839,6 +847,11 @@ static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::Laz
 #[must_use]
 pub fn descriptors() -> Vec<ChannelDescriptor> {
     DESCRIPTORS.clone()
+}
+
+#[must_use]
+pub fn descriptor_table() -> &'static [ChannelDescriptor] {
+    &DESCRIPTORS
 }
 
 #[must_use]
@@ -927,13 +940,13 @@ mod tests {
 
     use sdrmm_wire::{
         AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, AtvColor, AtvParams,
-        ChannelParams, CwSkimmerParams, DabParams, DatvParams, DectParams, DmrParams, DpmrParams,
-        DrmParams, DscParams, DstarParams, EotParams, ErmesParams, FlexParams, FreeDvParams,
-        GnssParams, HfdlParams, IdentParams, IlsParams, InmarsatAeroParams, InmarsatStdcParams,
-        IridiumParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NxdnParams,
-        P25Params, PocsagParams, PskParams, RadioClockParams, RadiosondeParams, RttyParams,
-        SelcallParams, SsbParams, SstvParams, TetraParams, Vdl2Params, VorParams, WefaxParams,
-        WfmParams, WsjtParams, WsprParams, YsfParams,
+        CallGate, ChannelParams, CwSkimmerParams, DabParams, DatvParams, DectParams, DmrParams,
+        DpmrParams, DrmParams, DscParams, DstarParams, EotParams, ErmesParams, EventKind,
+        FlexParams, FreeDvParams, GnssParams, HfdlParams, IdentParams, IlsParams,
+        InmarsatAeroParams, InmarsatStdcParams, IridiumParams, LrptParams, M17Params, MorseParams,
+        NavtexParams, NfmParams, NxdnParams, P25Params, PocsagParams, PskParams, RadioClockParams,
+        RadiosondeParams, RttyParams, SelcallParams, SsbParams, SstvParams, TetraParams,
+        Vdl2Params, VorParams, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
     };
 
     use super::*;
@@ -1191,7 +1204,7 @@ mod tests {
             assert_eq!(d.input_rate_hz, rate, "{}", d.type_id);
             assert!(!d.name.is_empty(), "{}", d.type_id);
             assert!(
-                d.has_audio || d.decoder_kind.is_some() || d.has_video,
+                d.has_audio || !d.emits.is_empty() || d.has_video,
                 "{} produces neither audio, decoder events nor video",
                 d.type_id
             );
@@ -1234,6 +1247,55 @@ mod tests {
     }
 
     #[test]
+    fn descriptors_serve_the_choices_of_their_settings() {
+        for descriptor in descriptors() {
+            let expected = descriptor
+                .defaults
+                .as_ref()
+                .map(|settings| settings.params.choices())
+                .unwrap_or_default();
+            assert_eq!(descriptor.choices, expected, "{}", descriptor.type_id);
+        }
+        let pocsag = descriptor("pocsag")
+            .map(|d| d.choices.clone())
+            .unwrap_or_default();
+        assert_eq!(pocsag[0].name, "baud");
+        assert_eq!(pocsag[0].options.len(), 4);
+    }
+
+    #[test]
+    fn calls_follow_the_mode_class() {
+        for d in descriptors() {
+            let expected = match d.type_id.as_str() {
+                "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv" | "tetra" => {
+                    Some(CallGate::Frames)
+                }
+                "nfm" | "am" | "ssb" | "wfm" | "atv" | "dect" => Some(CallGate::Squelch),
+                _ => None,
+            };
+            assert_eq!(d.calls, expected, "{}", d.type_id);
+            assert_eq!(
+                d.calls == Some(CallGate::Frames),
+                d.emits.contains(&EventKind::Dv),
+                "{} gates calls by frames exactly when it emits digital voice",
+                d.type_id
+            );
+            assert!(
+                !d.emits.contains(&EventKind::Call),
+                "{} declares calls, which only the call tracker makes",
+                d.type_id
+            );
+            if d.calls == Some(CallGate::Squelch) {
+                assert!(
+                    d.has_audio,
+                    "{} gates calls by squelch without audio",
+                    d.type_id
+                );
+            }
+        }
+    }
+
+    #[test]
     fn audio_channels_matches_the_frames_each_mode_produces() {
         const LEN: usize = 96_000;
         for d in descriptors().into_iter().filter(|d| d.has_audio) {
@@ -1253,7 +1315,7 @@ mod tests {
                 "{} emitted a partial sample frame",
                 d.type_id
             );
-            if matches!(d.decoder_kind.as_deref(), Some("dv" | "broadcast_data")) {
+            if d.calls == Some(CallGate::Frames) || d.emits.contains(&EventKind::BroadcastData) {
                 continue;
             }
             if d.type_id == "atv" && audio.is_empty() {

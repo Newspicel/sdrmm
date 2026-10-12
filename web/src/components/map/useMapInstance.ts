@@ -14,16 +14,18 @@ import {
   loadBasemap,
   sameBasemap,
 } from "../../lib/map/basemap";
-import { installDfLayers } from "../../lib/map/df";
 import { installHeatLayer } from "../../lib/map/heat";
-import { type MapKind, mapKindsOf } from "../../lib/map/layers";
 import { installPositionLayers } from "../../lib/map/position";
 import { installPropagationLayers, type PropagationLayer } from "../../lib/map/propagation";
-import { installReferenceLayer } from "../../lib/map/reference";
-import { installSatelliteLayers } from "../../lib/map/satellites";
 import { installSignalLayers } from "../../lib/map/signal";
-import { installForecastLayers } from "../../lib/map/sondeForecast";
-import { highlight, hitTarget, installTargetLayers, type Selection } from "../../lib/map/targets";
+import type { Hue } from "../../lib/types";
+import { HUE_TOKEN, HUES } from "../../sinks/hues";
+import {
+  type HueColors,
+  highlightEntity,
+  hitEntity,
+  installSinkLayers,
+} from "../../sinks/mapLayers";
 import { type MapCore, type MapInputs, type MapSinks, readyCore } from "./mapState";
 
 setWorkerUrl(workerUrl);
@@ -55,6 +57,16 @@ function themeColor(element: Element, token: string, fallback: string): string {
   return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
+const HUE_FALLBACK = "#76acfc";
+
+function hueColors(element: Element): HueColors {
+  const colors = {} as Record<Hue, string>;
+  for (const hue of HUES) {
+    colors[hue] = themeColor(element, HUE_TOKEN[hue], HUE_FALLBACK);
+  }
+  return colors;
+}
+
 function applyProjection(map: MapLibreMap, globe: boolean): void {
   map.setProjection({ type: globe ? "globe" : "mercator" });
 }
@@ -62,18 +74,18 @@ function applyProjection(map: MapLibreMap, globe: boolean): void {
 function installAll(core: MapCore, inputs: MapInputs, sinks: MapSinks): void {
   const { map, accent, edge } = core;
   applyProjection(map, inputs.globe);
-  installReferenceLayer(map, accent, edge, inputs.references);
-  installSatelliteLayers(map, edge, core.ground, inputs.satellites.length > 0);
-  installForecastLayers(map, edge, inputs.kinds.includes("radiosonde"));
-  sinks.setHeadings(installTargetLayers(map, edge, core.ground, inputs.kinds));
   installSignalLayers(map, edge, inputs.signalSamples !== null);
   installPropagationLayers(map, edge, accent, inputs.propagation?.layer ?? null);
-  installPositionLayers(map, accent, edge, inputs.positionNodes.length > 0);
-  installDfLayers(map, accent, inputs.df !== null);
+  installPositionLayers(map, accent, edge, positionsOn(inputs));
   installHeatLayer(map, inputs.heatEnabled);
+  sinks.setHeadings(installSinkLayers(map, edge, core.ground, inputs.entities !== null));
   core.ready = true;
   core.generation += 1;
-  highlight(map, inputs.kinds, core.selected);
+  highlightEntity(map, core.selected);
+}
+
+function positionsOn(inputs: Pick<MapInputs, "positionNodes" | "positions">): boolean {
+  return inputs.positionNodes.length > 0 || (inputs.positions?.length ?? 0) > 0;
 }
 
 function releaseFraming(core: MapCore): void {
@@ -92,7 +104,7 @@ async function buildCore(
   choice: BasemapChoice,
   inputs: () => MapInputs,
   sinks: MapSinks,
-  select: (hit: Selection | null) => void,
+  select: (hit: string | null) => void,
   alive: () => boolean,
 ): Promise<Built | null> {
   const edge = themeColor(element, "--color-bg", "#101113");
@@ -115,6 +127,7 @@ async function buildCore(
     edge,
     ground: groundOf(choice, chosen.kind, edge),
     accent,
+    hues: hueColors(element),
     framing: {
       targets: { current: false },
       position: { current: false },
@@ -131,13 +144,13 @@ async function buildCore(
     }
   });
   map.on("click", (event) => {
-    const hit = hitTarget(map, event);
+    const hit = hitEntity(map, event);
     core.selected = hit;
-    highlight(map, inputs().kinds, hit);
+    highlightEntity(map, hit);
     select(hit);
   });
   map.on("mousemove", (event) => {
-    map.getCanvas().style.cursor = hitTarget(map, event) === null ? "" : "pointer";
+    map.getCanvas().style.cursor = hitEntity(map, event) === null ? "" : "pointer";
   });
   return { basemap: chosen.kind, core };
 }
@@ -147,7 +160,7 @@ export function useMapInstance(
   inputsRef: RefObject<MapInputs>,
   sinks: MapSinks,
   choice: BasemapChoice,
-  onSelect: (hit: Selection | null) => void,
+  onSelect: (hit: string | null) => void,
 ): { coreRef: RefObject<MapCore | null>; basemap: BasemapKind } {
   const coreRef = useRef<MapCore | null>(null);
   const selectRef = useRef(onSelect);
@@ -232,14 +245,11 @@ function useBasemapSwitch(
 }
 
 export interface LayerKeys {
-  kinds: readonly MapKind[];
-  references: readonly (readonly [number, number])[];
-  positionNodes: readonly string[];
-  satellitesOn: boolean;
+  entitiesOn: boolean;
+  positionsOn: boolean;
   globe: boolean;
   signalEnabled: boolean;
   propagationLayer: PropagationLayer | null;
-  dfEnabled: boolean;
   heatEnabled: boolean;
 }
 
@@ -248,67 +258,36 @@ export function useLayerSync(
   keys: LayerKeys,
   sinks: MapSinks,
 ): void {
-  const kindsKey = keys.kinds.join(" ");
-  useEffect(() => {
-    const core = readyCore(coreRef.current);
-    if (core === null) {
-      return;
-    }
-    const wired = mapKindsOf(kindsKey.split(" "));
-    installForecastLayers(core.map, core.edge, wired.includes("radiosonde"));
-    sinks.setHeadings(installTargetLayers(core.map, core.edge, core.ground, wired));
-    core.generation += 1;
-    if (core.selected !== null && !wired.includes(core.selected.kind)) {
-      core.selected = null;
-      sinks.setDetail(() => null);
-    }
-    highlight(core.map, wired, core.selected);
-  }, [coreRef, kindsKey, sinks]);
-
-  const referencesKey = JSON.stringify(keys.references);
+  const { entitiesOn, positionsOn: positions, globe } = keys;
   useEffect(() => {
     const core = readyCore(coreRef.current);
     if (core !== null) {
-      const positions = JSON.parse(referencesKey) as [number, number][];
-      installReferenceLayer(core.map, core.accent, core.edge, positions);
+      sinks.setHeadings(installSinkLayers(core.map, core.edge, core.ground, entitiesOn));
+      core.generation += 1;
+      highlightEntity(core.map, core.selected);
     }
-  }, [coreRef, referencesKey]);
+  }, [coreRef, entitiesOn, sinks]);
 
-  const positionsOn = keys.positionNodes.length > 0;
   useEffect(() => {
     const core = readyCore(coreRef.current);
     if (core !== null) {
-      installPositionLayers(core.map, core.accent, core.edge, positionsOn);
+      installPositionLayers(core.map, core.accent, core.edge, positions);
       core.generation += 1;
     }
-  }, [coreRef, positionsOn]);
+  }, [coreRef, positions]);
 
-  useLayerToggles(coreRef, keys);
-  useSatelliteToggle(coreRef, keys.satellitesOn, keys.globe);
-}
-
-function useSatelliteToggle(
-  coreRef: RefObject<MapCore | null>,
-  satellitesOn: boolean,
-  globe: boolean,
-): void {
-  useEffect(() => {
-    const core = readyCore(coreRef.current);
-    if (core !== null) {
-      installSatelliteLayers(core.map, core.edge, core.ground, satellitesOn);
-      core.generation += 1;
-    }
-  }, [coreRef, satellitesOn]);
   useEffect(() => {
     const core = readyCore(coreRef.current);
     if (core !== null) {
       applyProjection(core.map, globe);
     }
   }, [coreRef, globe]);
+
+  useLayerToggles(coreRef, keys);
 }
 
 function useLayerToggles(coreRef: RefObject<MapCore | null>, keys: LayerKeys): void {
-  const { signalEnabled, propagationLayer, dfEnabled, heatEnabled } = keys;
+  const { signalEnabled, propagationLayer, heatEnabled } = keys;
   useEffect(() => {
     const core = readyCore(coreRef.current);
     if (core !== null) {
@@ -323,13 +302,6 @@ function useLayerToggles(coreRef: RefObject<MapCore | null>, keys: LayerKeys): v
       core.generation += 1;
     }
   }, [coreRef, propagationLayer]);
-  useEffect(() => {
-    const core = readyCore(coreRef.current);
-    if (core !== null) {
-      installDfLayers(core.map, core.accent, dfEnabled);
-      core.generation += 1;
-    }
-  }, [coreRef, dfEnabled]);
   useEffect(() => {
     const core = readyCore(coreRef.current);
     if (core !== null) {

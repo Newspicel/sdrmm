@@ -3,13 +3,12 @@ import type {
   ChannelDescriptor,
   ChannelInfo,
   ChannelSettings,
-  PatchCatalog,
   PatchGraph,
   PatchNode,
   PatchNodeOf,
   WorkspaceSnapshot,
 } from "../../lib/types";
-import { catalogBody } from "../../test/catalog";
+import { CATALOG, channelPortsNamed } from "../../test/catalog";
 import type { GraphContext } from "../graph";
 import {
   ANALOG_MODES,
@@ -18,64 +17,6 @@ import {
   retypedSettings,
   swapDecoder,
 } from "./decoderSwap";
-
-const CATALOG: PatchCatalog = {
-  nodes: [
-    {
-      kind: "device",
-      default_body: catalogBody("device"),
-      name: "Device",
-      category: "source",
-      ports: [{ name: "iq", port_type: "iq", direction: "out", multi: true }],
-    },
-    {
-      kind: "channel",
-      default_body: catalogBody("channel"),
-      name: "Channel",
-      category: "channel",
-      needs_channel_type: true,
-      ports: [
-        { name: "iq", port_type: "iq", direction: "in", multi: false },
-        {
-          name: "position",
-          port_type: "position",
-          direction: "in",
-          multi: false,
-          condition: "channel_needs_position",
-        },
-        { name: "baseband", port_type: "baseband", direction: "out", multi: true },
-        {
-          name: "audio",
-          port_type: "audio",
-          direction: "out",
-          multi: true,
-          condition: "channel_has_audio",
-        },
-        {
-          name: "events",
-          port_type: "events",
-          direction: "out",
-          multi: true,
-          condition: "channel_has_events",
-        },
-      ],
-    },
-    {
-      kind: "speaker",
-      default_body: catalogBody("speaker"),
-      name: "Speaker",
-      category: "output",
-      ports: [{ name: "audio", port_type: "audio", direction: "in", multi: true }],
-    },
-    {
-      kind: "decoder_log",
-      default_body: catalogBody("decoder_log"),
-      name: "Decoder log",
-      category: "output",
-      ports: [{ name: "events", port_type: "events", direction: "in", multi: true }],
-    },
-  ],
-};
 
 const settings = (type: string, frequencyHz: number): ChannelSettings => ({
   frequency_hz: frequencyHz,
@@ -96,20 +37,28 @@ const descriptor = (
   ...extra,
 });
 
-const NFM = descriptor("nfm", { decoder_kind: "tone" });
-const AM = descriptor("am");
-const DMR = descriptor("dmr", { decoder_kind: "dv" });
-const PROBE = descriptor("probe", { has_audio: false });
+const VOICE_PORTS = channelPortsNamed("iq", "control", "baseband", "audio", "events");
+const NFM = descriptor("nfm", {
+  emits: ["tone", "scrambler"],
+  calls: "squelch",
+  ports: VOICE_PORTS,
+});
+const AM = descriptor("am", { calls: "squelch", ports: VOICE_PORTS });
+const DMR = descriptor("dmr", { emits: ["dv"], calls: "frames", ports: VOICE_PORTS });
+const PROBE = descriptor("probe", {
+  has_audio: false,
+  ports: channelPortsNamed("iq", "control", "baseband"),
+});
 const ADSB = descriptor("adsb", {
   has_audio: false,
-  decoder_kind: "adsb",
+  emits: ["adsb"],
   needs_position: true,
+  ports: channelPortsNamed("iq", "control", "position", "baseband", "events"),
 });
 
 const context: GraphContext = {
   catalog: CATALOG,
   channelTypes: [NFM, AM, DMR, ADSB, PROBE],
-  facets: [],
 };
 
 function node(id: string, body: Partial<PatchNode> & Pick<PatchNode, "kind">): PatchNode {

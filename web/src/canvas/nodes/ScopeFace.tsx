@@ -64,13 +64,13 @@ import { bookmarksQuery } from "../../lib/api";
 import type { SpectrumFrame } from "../../lib/frame";
 import { heardHz, type SetLevels, useLevelStore } from "../../lib/levels";
 import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
+import { channelNodesOn } from "../../lib/resolved";
 import { SPECTRUM_MAX_BINS, spectrumHub } from "../../lib/spectrum";
 import type { Bookmark, ChannelInfo, ChannelParams, DeviceSet, PatchNode } from "../../lib/types";
 import { useArrayTune } from "../../lib/useArrayTune";
 import { useBandPlan } from "../../lib/useBandPlan";
 import { useChannelPatch } from "../../lib/useChannelPatch";
 import { useRadioTune } from "../../lib/useRadioTune";
-import { channelNodesOf, type IqLane, iqSourceOf, laneTuneTarget } from "../binding";
 import { useWorkspaceContext } from "../context";
 import {
   addEdge,
@@ -81,6 +81,7 @@ import {
   streamPort,
   tuningLocked,
 } from "../graph";
+import { type IqLane, iqSourceOf, laneTuneTarget } from "../lanes";
 import { channelPicker } from "../palette";
 import { useNodePlacement } from "../placement";
 import { deviceSetOf } from "../workspaceDevice";
@@ -147,7 +148,7 @@ interface Gesture {
 export function ScopeFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const set = deviceSetOf(workspace, node.id);
-  const source = iqSourceOf(workspace.graph, node.id, workspace.devices);
+  const source = iqSourceOf(workspace.resolved, node.id);
   return (
     <NodeShell node={node} title="Scope" category="output">
       <FaceBody scroll={false}>
@@ -262,12 +263,10 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
   const faces = new Map<number, string>();
   const deviceNode = source?.source;
   const onStream = new Set(channels.map((channel) => channel.id));
-  if (deviceNode !== undefined) {
-    for (const wired of channelNodesOf(workspace.graph, deviceNode, workspace.devices)) {
-      const channel = workspace.channels.get(wired.node.id);
-      const carried = (workspace.owners.get(wired.node.id) ?? deviceNode) === deviceNode;
-      if (carried && wired.stream === stream && channel !== undefined && onStream.has(channel.id)) {
-        faces.set(channel.id, wired.node.id);
+  if (setId !== null) {
+    for (const [channel, face] of channelNodesOn(workspace.resolved, setId)) {
+      if (onStream.has(channel)) {
+        faces.set(channel, face);
       }
     }
   }

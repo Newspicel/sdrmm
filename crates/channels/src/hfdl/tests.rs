@@ -32,6 +32,13 @@ fn gap() -> Vec<Complex<f32>> {
     vec![Complex::default(); 3_000]
 }
 
+pub(crate) fn fixture() -> crate::fixtures::Fixture {
+    let mut iq = gap();
+    iq.extend(burst_iq(&spdu(7, 1_234, 52), 0, 0.0));
+    iq.extend(gap());
+    crate::fixtures::Fixture::new(ChannelParams::Hfdl(HfdlParams::default()), iq)
+}
+
 fn channel() -> HfdlChannel {
     HfdlChannel::new(
         ChannelCtx { input_rate: RATE },

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PropagationCell, PropagationPath } from "../propagation";
-import type { IonosondeStation } from "../types";
+import type { IonosondeStation, PropagationCell, PropagationPath } from "../types";
 import {
   cellCollection,
   greatCircleLine,
@@ -19,11 +18,11 @@ function cell(over: Partial<PropagationCell> = {}): PropagationCell {
     weight: 2.5,
     decodes: 4,
     callsigns: 3,
-    bestFreqHz: 14_074_000,
-    bestSnrDb: -8,
-    measuredMuf3000Mhz: 18,
-    medianDistanceKm: 3_000,
-    lastSeen: 0,
+    best_freq_hz: 14_074_000,
+    best_snr_db: -8,
+    measured_muf3000_mhz: 18,
+    median_distance_km: 3_000,
+    last_seen: "2026-08-16T12:00:00Z",
     ...over,
   };
 }
@@ -31,10 +30,10 @@ function cell(over: Partial<PropagationCell> = {}): PropagationCell {
 function path(over: Partial<PropagationPath> = {}): PropagationPath {
   return {
     key: "p",
-    from: [52.5, 13],
-    to: [42.5, -71],
+    from: { lat: 52.5, lon: 13 },
+    to: { lat: 42.5, lon: -71 },
     weight: 0.8,
-    freqHz: 14_074_000,
+    freq_hz: 14_074_000,
     ...over,
   };
 }
@@ -54,7 +53,7 @@ describe("propagation map sources", () => {
   });
 
   it("flags a cell that has no measured MUF so the MUF layer can skip it", () => {
-    const collection = cellCollection([cell({ measuredMuf3000Mhz: null })]);
+    const collection = cellCollection([cell({ measured_muf3000_mhz: null })]);
     expect(collection.features[0]?.properties.hasMuf).toBe(false);
     expect(collection.features[0]?.properties.muf).toBe(0);
   });
@@ -71,7 +70,7 @@ describe("propagation map sources", () => {
 
   it("unwraps a path that crosses the antimeridian into one continuous line", () => {
     const line =
-      pathCollection([path({ from: [0, 170], to: [0, -170] })]).features[0]?.geometry.coordinates ??
+      pathCollection([path({ from: { lat: 0, lon: 170 }, to: { lat: 0, lon: -170 } })]).features[0]?.geometry.coordinates ??
       [];
     const jumps = line
       .slice(1)

@@ -1,6 +1,12 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{EventPayload, Field, Presentation, Unit, count, fields, number, text_of},
+    units::hertz,
+};
+
 pub const MEASUREMENT_REPORT_MS: u32 = 1_000;
 pub const MIN_ENR_DB: f32 = 1.0;
 pub const MAX_ENR_DB: f32 = 40.0;
@@ -223,6 +229,91 @@ impl SidReport {
     }
 }
 
+impl EventPayload for NoiseFigureReport {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let source = self.source_on.map(|on| if on { "on" } else { "off" });
+        Presentation {
+            fields: fields(&[
+                ("Noise figure", number(self.nf_db, Unit::Db, 2)),
+                (
+                    "Noise temperature",
+                    number(self.temperature_k, Unit::Kelvin, 0),
+                ),
+                ("Y-factor", number(self.y_db, Unit::Db, 2)),
+                ("Source on", number(self.hot_dbfs, Unit::Dbfs, 2)),
+                ("Source off", number(self.cold_dbfs, Unit::Dbfs, 2)),
+                ("Level", number(Some(self.level_dbfs), Unit::Dbfs, 2)),
+                ("Source", source.and_then(text_of)),
+                ("Settled", number(Some(self.settled_s), Unit::Seconds, 1)),
+            ]),
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+impl EventPayload for PerReport {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            fields: fields(&[
+                ("PER", number(Some(self.per * 100.0), Unit::Percent, 2)),
+                (
+                    "Received",
+                    text_of(format!("{} of {}", self.received, self.expected)),
+                ),
+                ("Missed", count(Some(self.missed as f64))),
+                ("CRC failed", count(Some(self.errored as f64))),
+                (
+                    "BER",
+                    self.ber.and_then(|ber| text_of(format!("{ber:.2e}"))),
+                ),
+                (
+                    "Bit errors",
+                    text_of(format!("{} of {}", self.bit_errors, self.bits)),
+                ),
+                ("Last frame", count(self.last_sequence)),
+                (
+                    "Restarts",
+                    count(Some(self.restarts).filter(|restarts| *restarts > 0)),
+                ),
+            ]),
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+impl EventPayload for SidReport {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let mut shown: Vec<Field> = self.stations.iter().filter_map(station_field).collect();
+        shown.extend(fields(&[(
+            "Floor",
+            text_of(format!("{:.0} dBFS/Hz", self.floor_dbfs_hz)),
+        )]));
+        Presentation {
+            fields: shown,
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+fn station_field(station: &SidStationLevel) -> Option<Field> {
+    let mut parts = vec![
+        format!("{:.1} dBFS", station.level_dbfs),
+        format!("SNR {:.0} dB", station.snr_db.round() + 0.0),
+    ];
+    parts.extend(
+        station
+            .deviation_db()
+            .map(|deviation| format!("{deviation:+.1} dB")),
+    );
+    if station.disturbed {
+        parts.push("SID".to_owned());
+    }
+    text_of(parts.join(" · ")).map(|value| Field {
+        label: format!("{} {}", station.call, hertz(station.frequency_hz)),
+        value,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,5 +381,72 @@ mod tests {
         sid.stations[0].snr_db = 40.2;
         sid.stations[0].disturbed = true;
         assert_eq!(sid.summary(), "SID · DHO38 +6.0 dB");
+    }
+
+    #[test]
+    fn a_noise_figure_report_shows_the_measured_figures() {
+        let view = NoiseFigureReport {
+            window_ms: 1000,
+            level_dbfs: -60.0,
+            settled_s: 2.5,
+            source_on: Some(true),
+            hot_dbfs: Some(-50.0),
+            cold_dbfs: Some(-60.0),
+            y_db: Some(10.0),
+            nf_db: Some(5.12),
+            temperature_k: Some(650.0),
+        }
+        .present(EventKind::NoiseFigure);
+        assert_eq!(
+            view.field("Noise figure"),
+            number(Some(5.12_f32), Unit::Db, 2).as_ref()
+        );
+        assert_eq!(
+            view.field("Noise temperature"),
+            number(Some(650.0_f32), Unit::Kelvin, 0).as_ref()
+        );
+        assert_eq!(view.field("Source"), text_of("on").as_ref());
+    }
+
+    #[test]
+    fn a_per_report_counts_frames_and_bits() {
+        let view = PerReport {
+            received: 98,
+            errored: 1,
+            missed: 1,
+            expected: 100,
+            per: 0.02,
+            bits: 25_088,
+            bit_errors: 3,
+            ber: Some(0.000_12),
+            last_sequence: Some(99),
+            restarts: 0,
+        }
+        .present(EventKind::Per);
+        assert_eq!(view.field("Received"), text_of("98 of 100").as_ref());
+        assert_eq!(view.field("BER"), text_of("1.20e-4").as_ref());
+        assert_eq!(view.field("Restarts"), None);
+    }
+
+    #[test]
+    fn sid_lists_each_station_and_the_floor() {
+        let view = SidReport {
+            window_ms: 5000,
+            floor_dbfs_hz: -150.0,
+            stations: vec![SidStationLevel {
+                call: "DHO38".to_owned(),
+                frequency_hz: 23_400.0,
+                level_dbfs: -40.0,
+                snr_db: 30.4,
+                baseline_dbfs: Some(-46.0),
+                disturbed: true,
+            }],
+        }
+        .present(EventKind::Sid);
+        assert_eq!(view.labels(), ["DHO38 23.4 kHz", "Floor"]);
+        assert_eq!(
+            view.field("DHO38 23.4 kHz"),
+            text_of("-40.0 dBFS · SNR 30 dB · +6.0 dB · SID").as_ref()
+        );
     }
 }

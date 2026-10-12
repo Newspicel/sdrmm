@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { PatchGraph, PatchNode } from "../lib/types";
 import { movedGeometry, withGeometry } from "./geometry";
-import { NODE_SIZE } from "./graph";
+import { nodeSize } from "./graph";
 
 function node(id: string, x: number): PatchNode {
   return { id, kind: "scope", position: { x, y: 0 } };
 }
 
 const graph: PatchGraph = { nodes: [node("a", 0), node("b", 0)], edges: [] };
-const natural = NODE_SIZE.scope;
+const natural = nodeSize("scope");
 
 describe("geometry", () => {
   it("names only the nodes that moved or resized", () => {

@@ -2433,7 +2433,7 @@
             }
           },
           "400": {
-            "description": "Invalid channel settings",
+            "description": "Invalid channel settings, or `node` is not a free channel node wired to this lane",
             "content": {
               "application/json": {
                 "schema": {
@@ -3828,6 +3828,46 @@
         }
       }
     },
+    "/api/patch/wiring": {
+      "post": {
+        "operationId": "post_patch_wiring",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WiringRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "For a wire dragged from `from`, every input of that port type in `graph` and why it would refuse the wire. Counts live radio clocks; the save stays the authority",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WireVerdict"
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/phones": {
       "get": {
         "operationId": "list_phones",
@@ -5132,6 +5172,37 @@
         }
       }
     },
+    "/api/sinks/{node}": {
+      "delete": {
+        "operationId": "clear_sink",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "description": "Map, Readout, Decoder log or Propagation node",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "What the node held is gone; new records still arrive"
+          },
+          "404": {
+            "description": "The node keeps no sink feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/state": {
       "get": {
         "operationId": "get_state",
@@ -5487,6 +5558,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/active/resolved": {
+      "get": {
+        "operationId": "get_resolved",
+        "responses": {
+          "200": {
+            "description": "The active workspace as the server resolved it: concrete ports, what feeds each input, what each output reaches, where each node runs, and node problems",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvedState"
                 }
               }
             }
@@ -9135,6 +9223,13 @@
           }
         }
       },
+      "AudioStream": {
+        "type": "string",
+        "enum": [
+          "live",
+          "clips"
+        ]
+      },
       "AuthInfo": {
         "type": "object",
         "required": [
@@ -9930,6 +10025,34 @@
             "items": {
               "$ref": "#/components/schemas/LaneWeight"
             }
+          }
+        }
+      },
+      "BearingRay": {
+        "type": "object",
+        "required": [
+          "from",
+          "true_deg",
+          "confidence"
+        ],
+        "properties": {
+          "confidence": {
+            "type": "number",
+            "format": "float"
+          },
+          "from": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "sigma_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "true_deg": {
+            "type": "number",
+            "format": "float"
           }
         }
       },
@@ -10844,6 +10967,13 @@
           "failed"
         ]
       },
+      "CallGate": {
+        "type": "string",
+        "enum": [
+          "frames",
+          "squelch"
+        ]
+      },
       "Callsign": {
         "type": "object",
         "required": [
@@ -11002,6 +11132,21 @@
             "minimum": 0
           }
         }
+      },
+      "Capability": {
+        "type": "string",
+        "enum": [
+          "log",
+          "station",
+          "geo",
+          "bearing",
+          "spot",
+          "voice",
+          "duration",
+          "text",
+          "picture",
+          "clip"
+        ]
       },
       "CapturedImage": {
         "type": "object",
@@ -11283,6 +11428,25 @@
           }
         ]
       },
+      "ChannelAddr": {
+        "type": "object",
+        "required": [
+          "device_set",
+          "channel"
+        ],
+        "properties": {
+          "channel": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "device_set": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "ChannelCapabilities": {
         "type": "object",
         "required": [
@@ -11408,14 +11572,24 @@
             "type": "number",
             "format": "double"
           },
+          "calls": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CallGate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "can_transmit": {
             "type": "boolean"
           },
-          "decoder_kind": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "choices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParamChoice"
+            }
           },
           "defaults": {
             "oneOf": [
@@ -11427,6 +11601,12 @@
                 "type": "null"
               }
             ]
+          },
+          "emits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventKind"
+            }
           },
           "family": {
             "$ref": "#/components/schemas/DecoderFamily"
@@ -11455,6 +11635,12 @@
           },
           "needs_position": {
             "type": "boolean"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortSpec"
+            }
           },
           "summary": {
             "type": "string"
@@ -12902,12 +13088,6 @@
           "types"
         ],
         "properties": {
-          "facets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EventKindFacets"
-            }
-          },
           "types": {
             "type": "array",
             "items": {
@@ -13434,6 +13614,58 @@
               "data": {
                 "type": "object",
                 "required": [
+                  "node"
+                ],
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubscribeSink"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "node"
+                ],
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "UnsubscribeSink"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
                   "author"
                 ],
                 "properties": {
@@ -13726,6 +13958,15 @@
           "private",
           "group",
           "all"
+        ]
+      },
+      "ControlVerb": {
+        "type": "string",
+        "enum": [
+          "tune",
+          "doppler",
+          "sweep",
+          "point"
         ]
       },
       "ConversionIssue": {
@@ -14570,9 +14811,13 @@
       "CreateChannelRequest": {
         "type": "object",
         "required": [
+          "node",
           "settings"
         ],
         "properties": {
+          "node": {
+            "type": "string"
+          },
           "settings": {
             "$ref": "#/components/schemas/ChannelSettings"
           },
@@ -14964,6 +15209,16 @@
             "items": {
               "type": "string"
             }
+          },
+          "view": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Presentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -15463,6 +15718,24 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/BroadcastStatus"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "broadcast"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
                 "$ref": "#/components/schemas/RadioClockFrame"
               },
               "kind": {
@@ -15703,6 +15976,60 @@
                 "type": "string",
                 "enum": [
                   "radar"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/RadarSites"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "radar_sites"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/NavGuide"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "nav"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/SatelliteFix"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "satellite"
                 ]
               }
             }
@@ -16086,6 +16413,16 @@
           },
           "summary": {
             "type": "string"
+          },
+          "view": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Presentation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -18783,6 +19120,83 @@
           "dvb_t2"
         ]
       },
+      "Entity": {
+        "type": "object",
+        "required": [
+          "key",
+          "hue",
+          "event",
+          "view",
+          "freq_hz",
+          "first_seen",
+          "last_seen",
+          "frames"
+        ],
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/DecoderEvent"
+          },
+          "first_seen": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "freq_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "hue": {
+            "$ref": "#/components/schemas/Hue"
+          },
+          "key": {
+            "$ref": "#/components/schemas/EntityKey"
+          },
+          "last_seen": {
+            "type": "string"
+          },
+          "symbol": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Symbol"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trail": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LatLon"
+            }
+          },
+          "view": {
+            "$ref": "#/components/schemas/Presentation"
+          }
+        }
+      },
+      "EntityKey": {
+        "type": "object",
+        "required": [
+          "source",
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
       "EotArming": {
         "type": "string",
         "enum": [
@@ -19061,14 +19475,6 @@
           }
         }
       },
-      "EventFacet": {
-        "type": "string",
-        "enum": [
-          "position",
-          "voice",
-          "duration"
-        ]
-      },
       "EventFilterNode": {
         "type": "object",
         "properties": {
@@ -19099,7 +19505,7 @@
           "kinds": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/EventKind"
             }
           },
           "min_duration_ms": {
@@ -19149,21 +19555,113 @@
           }
         }
       },
-      "EventKindFacets": {
+      "EventKind": {
+        "type": "string",
+        "enum": [
+          "transmission",
+          "rds",
+          "pocsag",
+          "flex",
+          "ermes",
+          "eot",
+          "sarsat",
+          "tetrapol",
+          "adsb",
+          "ais",
+          "aprs",
+          "rtty",
+          "morse",
+          "cw_skimmer",
+          "selcall",
+          "navtex",
+          "acars",
+          "tone",
+          "scrambler",
+          "dv",
+          "call",
+          "ft8",
+          "ft4",
+          "psk",
+          "wspr",
+          "ident",
+          "broadcast_data",
+          "broadcast",
+          "radio_clock",
+          "gnss",
+          "sstv",
+          "vor",
+          "ils",
+          "dsc",
+          "inmarsat_stdc",
+          "inmarsat_aero",
+          "vdl2",
+          "hfdl",
+          "iridium",
+          "df",
+          "df_fix",
+          "radar",
+          "radar_sites",
+          "nav",
+          "satellite",
+          "dect",
+          "gsm",
+          "apt",
+          "lrpt",
+          "wefax",
+          "radiosonde",
+          "lora",
+          "remote_id",
+          "ble",
+          "wifi_occupancy",
+          "ism_survey",
+          "ism",
+          "noise_figure",
+          "per",
+          "sid",
+          "stanag"
+        ]
+      },
+      "EventKindEntry": {
         "type": "object",
         "required": [
           "kind",
-          "facets"
+          "name",
+          "noun",
+          "caps",
+          "hue",
+          "lifetime"
         ],
         "properties": {
-          "facets": {
+          "caps": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/EventFacet"
+              "$ref": "#/components/schemas/Capability"
             }
           },
+          "hue": {
+            "$ref": "#/components/schemas/Hue"
+          },
           "kind": {
+            "$ref": "#/components/schemas/EventKind"
+          },
+          "lifetime": {
+            "$ref": "#/components/schemas/Lifetime"
+          },
+          "name": {
             "type": "string"
+          },
+          "noun": {
+            "type": "string"
+          },
+          "symbol": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Symbol"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -19601,6 +20099,222 @@
           },
           "value": {}
         }
+      },
+      "Face": {
+        "type": "object",
+        "required": [
+          "width"
+        ],
+        "properties": {
+          "dial": {
+            "type": "boolean"
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "min": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FaceSize"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "FaceSize": {
+        "type": "object",
+        "required": [
+          "width",
+          "height"
+        ],
+        "properties": {
+          "height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "Feed": {
+        "type": "object",
+        "required": [
+          "source",
+          "port",
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "$ref": "#/components/schemas/Payload"
+          },
+          "port": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tap": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Tap"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "via": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Field": {
+        "type": "object",
+        "required": [
+          "label",
+          "value"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/FieldValue"
+          }
+        }
+      },
+      "FieldValue": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "number"
+                ]
+              },
+              "value": {
+                "type": "object",
+                "required": [
+                  "value",
+                  "unit",
+                  "digits"
+                ],
+                "properties": {
+                  "digits": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "unit": {
+                    "$ref": "#/components/schemas/Unit"
+                  },
+                  "value": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "flag"
+                ]
+              },
+              "value": {
+                "type": "boolean"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "time"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "position"
+                ]
+              },
+              "value": {
+                "$ref": "#/components/schemas/LatLon"
+              }
+            }
+          }
+        ]
       },
       "FilterMode": {
         "type": "string",
@@ -20706,6 +21420,22 @@
           }
         }
       },
+      "Hue": {
+        "type": "string",
+        "enum": [
+          "accent",
+          "muted",
+          "blue",
+          "cyan",
+          "teal",
+          "green",
+          "amber",
+          "orange",
+          "violet",
+          "indigo",
+          "pink"
+        ]
+      },
       "HuntAction": {
         "type": "string",
         "enum": [
@@ -21434,6 +22164,14 @@
           }
         }
       },
+      "IqOrigin": {
+        "type": "string",
+        "enum": [
+          "radio",
+          "synthetic",
+          "derived"
+        ]
+      },
       "IridiumParams": {
         "type": "object",
         "properties": {
@@ -21801,6 +22539,83 @@
           "r3"
         ]
       },
+      "Keeps": {
+        "type": "string",
+        "enum": [
+          "history",
+          "clips",
+          "pictures"
+        ]
+      },
+      "KindSet": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "transmission",
+            "rds",
+            "pocsag",
+            "flex",
+            "ermes",
+            "eot",
+            "sarsat",
+            "tetrapol",
+            "adsb",
+            "ais",
+            "aprs",
+            "rtty",
+            "morse",
+            "cw_skimmer",
+            "selcall",
+            "navtex",
+            "acars",
+            "tone",
+            "scrambler",
+            "dv",
+            "call",
+            "ft8",
+            "ft4",
+            "psk",
+            "wspr",
+            "ident",
+            "broadcast_data",
+            "broadcast",
+            "radio_clock",
+            "gnss",
+            "sstv",
+            "vor",
+            "ils",
+            "dsc",
+            "inmarsat_stdc",
+            "inmarsat_aero",
+            "vdl2",
+            "hfdl",
+            "iridium",
+            "df",
+            "df_fix",
+            "radar",
+            "radar_sites",
+            "nav",
+            "satellite",
+            "dect",
+            "gsm",
+            "apt",
+            "lrpt",
+            "wefax",
+            "radiosonde",
+            "lora",
+            "remote_id",
+            "ble",
+            "wifi_occupancy",
+            "ism_survey",
+            "ism",
+            "noise_figure",
+            "per",
+            "sid",
+            "stanag"
+          ]
+        }
+      },
       "LaneLevel": {
         "type": "object",
         "required": [
@@ -21867,6 +22682,67 @@
             "type": "string"
           }
         }
+      },
+      "Lifetime": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "instant"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "ttl_s",
+              "type"
+            ],
+            "properties": {
+              "ttl_s": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "sighting"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "standing"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "LineStyle": {
+        "type": "string",
+        "enum": [
+          "track",
+          "forecast",
+          "route",
+          "footprint"
+        ]
       },
       "LogGroupKey": {
         "type": "string",
@@ -24109,6 +24985,14 @@
           }
         }
       },
+      "Multi": {
+        "type": "string",
+        "enum": [
+          "one",
+          "many",
+          "many_lanes"
+        ]
+      },
       "NanoVnaAntenna": {
         "type": "object",
         "required": [
@@ -25082,6 +25966,31 @@
           }
         }
       },
+      "NavGuide": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LatLon"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NavTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "NavMode": {
         "type": "string",
         "enum": [
@@ -25506,12 +26415,12 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/ArrayNode"
+                "$ref": "#/components/schemas/GpsNode"
               },
               "kind": {
                 "type": "string",
                 "enum": [
-                  "array"
+                  "gps"
                 ]
               }
             }
@@ -25524,12 +26433,12 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/GpsNode"
+                "$ref": "#/components/schemas/ArrayNode"
               },
               "kind": {
                 "type": "string",
                 "enum": [
-                  "gps"
+                  "array"
                 ]
               }
             }
@@ -25684,24 +26593,6 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/DmrTrunkNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "dmr_trunk"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
                 "$ref": "#/components/schemas/SpectrumMonitorNode"
               },
               "kind": {
@@ -25720,12 +26611,12 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/EventOutputNode"
+                "$ref": "#/components/schemas/DmrTrunkNode"
               },
               "kind": {
                 "type": "string",
                 "enum": [
-                  "event_output"
+                  "dmr_trunk"
                 ]
               }
             }
@@ -25762,6 +26653,24 @@
                 "type": "string",
                 "enum": [
                   "audio_fx"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/EventOutputNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "event_output"
                 ]
               }
             }
@@ -26111,12 +27020,76 @@
           "output"
         ]
       },
+      "NodeKind": {
+        "type": "string",
+        "enum": [
+          "device",
+          "recording",
+          "signal_gen",
+          "gps",
+          "array",
+          "channel",
+          "scope",
+          "baseband_scope",
+          "speaker",
+          "map",
+          "signal_map",
+          "propagation",
+          "readout",
+          "decoder_log",
+          "spectrum_monitor",
+          "dmr_trunk",
+          "event_filter",
+          "audio_fx",
+          "event_output",
+          "video",
+          "recorder",
+          "audio_recorder",
+          "baseband_recorder",
+          "time_machine",
+          "network_export",
+          "export",
+          "scanner",
+          "hunt",
+          "satellite",
+          "rotator",
+          "df",
+          "beamformer",
+          "passive_radar",
+          "stitch",
+          "spatial_spectrum",
+          "correlator",
+          "polarimeter",
+          "triangulation"
+        ]
+      },
+      "NodeProblem": {
+        "type": "object",
+        "required": [
+          "node",
+          "source",
+          "text"
+        ],
+        "properties": {
+          "node": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ProblemSource"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
       "NodeTypeInfo": {
         "type": "object",
         "required": [
           "kind",
           "name",
           "category",
+          "role",
+          "face",
           "ports",
           "default_body"
         ],
@@ -26127,8 +27100,11 @@
           "default_body": {
             "$ref": "#/components/schemas/NodeBody"
           },
+          "face": {
+            "$ref": "#/components/schemas/Face"
+          },
           "kind": {
-            "type": "string"
+            "$ref": "#/components/schemas/NodeKind"
           },
           "name": {
             "type": "string"
@@ -26141,6 +27117,9 @@
             "items": {
               "$ref": "#/components/schemas/PortSpec"
             }
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
           },
           "summary": {
             "type": "string"
@@ -26258,6 +27237,25 @@
           "width_hz": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "NoticeWire": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "reason"
+        ],
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/PortRef"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "to": {
+            "$ref": "#/components/schemas/PortRef"
           }
         }
       },
@@ -26577,6 +27575,24 @@
           }
         }
       },
+      "ParamChoice": {
+        "type": "object",
+        "required": [
+          "name",
+          "options"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParamOption"
+            }
+          }
+        }
+      },
       "ParamLimit": {
         "type": "object",
         "description": "The range a numeric decoder setting is accepted in, named by its field in the params struct.",
@@ -26604,6 +27620,25 @@
             ],
             "format": "double"
           }
+        }
+      },
+      "ParamOption": {
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {}
         }
       },
       "PassPoint": {
@@ -26825,13 +27860,27 @@
       "PatchCatalog": {
         "type": "object",
         "required": [
-          "nodes"
+          "nodes",
+          "port_types",
+          "event_kinds"
         ],
         "properties": {
+          "event_kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventKindEntry"
+            }
+          },
           "nodes": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NodeTypeInfo"
+            }
+          },
+          "port_types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortTypeInfo"
             }
           }
         }
@@ -26944,6 +27993,161 @@
             "type": "string"
           }
         }
+      },
+      "Payload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "origins",
+              "type"
+            ],
+            "properties": {
+              "origins": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/IqOrigin"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "iq"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "baseband"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "streams",
+              "type"
+            ],
+            "properties": {
+              "streams": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AudioStream"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "audio"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kinds",
+              "type"
+            ],
+            "properties": {
+              "kinds": {
+                "$ref": "#/components/schemas/KindSet"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "events"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "video"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "verbs",
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "control"
+                ]
+              },
+              "verbs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ControlVerb"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "position"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "array"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bearing"
+                ]
+              }
+            }
+          }
+        ]
       },
       "Peer": {
         "type": "object",
@@ -27340,6 +28544,31 @@
           "channel"
         ]
       },
+      "Place": {
+        "type": "object",
+        "required": [
+          "at"
+        ],
+        "properties": {
+          "altitude_m": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "at": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "heading_deg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          }
+        }
+      },
       "PlacementCoverage": {
         "type": "object",
         "required": [
@@ -27633,16 +28862,50 @@
           }
         }
       },
-      "PortCondition": {
-        "type": "string",
-        "enum": [
-          "always",
-          "channel_has_audio",
-          "channel_has_events",
-          "channel_has_video",
-          "channel_needs_position",
-          "device_is_tx_capable"
-        ]
+      "PortActivity": {
+        "type": "object",
+        "required": [
+          "node",
+          "port",
+          "emitted",
+          "delivered",
+          "unrouted",
+          "ignored",
+          "lost"
+        ],
+        "properties": {
+          "delivered": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "emitted": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "ignored": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "lost": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "node": {
+            "type": "string"
+          },
+          "port": {
+            "type": "string"
+          },
+          "unrouted": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
       },
       "PortDirection": {
         "type": "string",
@@ -27679,7 +28942,6 @@
         "enum": [
           "once",
           "per_rx_stream",
-          "per_tx_stream",
           "per_lane"
         ]
       },
@@ -27689,17 +28951,40 @@
           "name",
           "port_type",
           "direction",
+          "payload",
           "multi"
         ],
         "properties": {
-          "condition": {
-            "$ref": "#/components/schemas/PortCondition"
+          "coherent": {
+            "type": "boolean"
+          },
+          "direct": {
+            "type": "boolean"
           },
           "direction": {
             "$ref": "#/components/schemas/PortDirection"
           },
-          "multi": {
+          "exclusive": {
             "type": "boolean"
+          },
+          "group": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "keeps": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Keeps"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "multi": {
+            "$ref": "#/components/schemas/Multi"
           },
           "name": {
             "type": "string"
@@ -27710,11 +28995,20 @@
               "null"
             ]
           },
+          "payload": {
+            "$ref": "#/components/schemas/Payload"
+          },
           "port_type": {
             "$ref": "#/components/schemas/PortType"
           },
           "repeat": {
             "$ref": "#/components/schemas/PortRepeat"
+          },
+          "takes": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -27728,9 +29022,34 @@
           "video",
           "control",
           "position",
-          "tx",
-          "array"
+          "array",
+          "bearing"
         ]
+      },
+      "PortTypeInfo": {
+        "type": "object",
+        "required": [
+          "port_type",
+          "name",
+          "hue"
+        ],
+        "properties": {
+          "hue": {
+            "$ref": "#/components/schemas/Hue"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port_type": {
+            "$ref": "#/components/schemas/PortType"
+          }
+        }
       },
       "Position": {
         "type": "object",
@@ -27922,6 +29241,33 @@
           }
         ]
       },
+      "PositionTrack": {
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "fix": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PositionFix"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "trail": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LatLon"
+            }
+          }
+        }
+      },
       "Power": {
         "type": "string",
         "enum": [
@@ -27931,6 +29277,114 @@
           "high",
           "max"
         ]
+      },
+      "Presentation": {
+        "type": "object",
+        "required": [
+          "summary"
+        ],
+        "properties": {
+          "bearing": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BearingRay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "callsign": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "clip": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventAudio"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "entity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            }
+          },
+          "gone": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "place": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Place"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shapes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Shape"
+            }
+          },
+          "spot": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Spot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "voice": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VoiceFacts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
       },
       "PresetDevice": {
         "type": "object",
@@ -28002,6 +29456,15 @@
             "minimum": 0
           }
         }
+      },
+      "ProblemSource": {
+        "type": "string",
+        "enum": [
+          "bind",
+          "position",
+          "monitor",
+          "apply"
+        ]
       },
       "ProcessorGate": {
         "type": "string",
@@ -28227,6 +29690,70 @@
           }
         }
       },
+      "PropagationCell": {
+        "type": "object",
+        "required": [
+          "key",
+          "latitude",
+          "longitude",
+          "weight",
+          "decodes",
+          "callsigns",
+          "best_freq_hz",
+          "best_snr_db",
+          "median_distance_km",
+          "last_seen"
+        ],
+        "properties": {
+          "best_freq_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "best_snr_db": {
+            "type": "number",
+            "format": "float"
+          },
+          "callsigns": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "decodes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "key": {
+            "type": "string"
+          },
+          "last_seen": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "measured_muf3000_mhz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "median_distance_km": {
+            "type": "number",
+            "format": "double"
+          },
+          "weight": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "PropagationNode": {
         "type": "object",
         "properties": {
@@ -28249,6 +29776,117 @@
           "show_paths": {
             "type": "boolean",
             "default": false
+          }
+        }
+      },
+      "PropagationPath": {
+        "type": "object",
+        "required": [
+          "key",
+          "from",
+          "to",
+          "weight",
+          "freq_hz"
+        ],
+        "properties": {
+          "freq_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "from": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "key": {
+            "type": "string"
+          },
+          "to": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "weight": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "PropagationSummary": {
+        "type": "object",
+        "required": [
+          "decodes",
+          "grids",
+          "callsigns",
+          "bands",
+          "best_freq_hz",
+          "farthest_km"
+        ],
+        "properties": {
+          "bands": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "best_freq_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "best_muf3000_mhz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "callsigns": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "decodes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "farthest_km": {
+            "type": "number",
+            "format": "double"
+          },
+          "grids": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "PropagationView": {
+        "type": "object",
+        "required": [
+          "cells",
+          "summary"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PropagationCell"
+            }
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PropagationPath"
+            }
+          },
+          "receiver": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LatLon"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PropagationSummary"
           }
         }
       },
@@ -28945,6 +30583,28 @@
           "lon": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "RadarSites": {
+        "type": "object",
+        "properties": {
+          "geometry": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RadarGeometry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ranges_km": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
           }
         }
       },
@@ -29781,6 +31441,30 @@
               "boolean",
               "null"
             ]
+          }
+        }
+      },
+      "Reach": {
+        "type": "object",
+        "required": [
+          "sink",
+          "port"
+        ],
+        "properties": {
+          "kinds": {
+            "$ref": "#/components/schemas/KindSet"
+          },
+          "port": {
+            "type": "string"
+          },
+          "sink": {
+            "type": "string"
+          },
+          "via": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -30637,6 +32321,207 @@
           }
         }
       },
+      "ResolvedEdge": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/PortRef"
+          },
+          "retunes_source": {
+            "type": "boolean"
+          },
+          "to": {
+            "$ref": "#/components/schemas/PortRef"
+          }
+        }
+      },
+      "ResolvedNode": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "ports",
+          "runs"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NodeKind"
+          },
+          "label": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedPort"
+            }
+          },
+          "runs": {
+            "$ref": "#/components/schemas/Runs"
+          }
+        }
+      },
+      "ResolvedPatch": {
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "properties": {
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedEdge"
+            }
+          },
+          "epoch": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedNode"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "workspace": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "ResolvedPort": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PortSpec"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "feeds": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Feed"
+                }
+              },
+              "ignored": {
+                "$ref": "#/components/schemas/KindSet"
+              },
+              "kept": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Keeps"
+                }
+              },
+              "reaches": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Reach"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ResolvedState": {
+        "type": "object",
+        "required": [
+          "patch",
+          "problems"
+        ],
+        "properties": {
+          "patch": {
+            "$ref": "#/components/schemas/ResolvedPatch"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeProblem"
+            }
+          }
+        }
+      },
+      "Role": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "role"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "opens_radio"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "of",
+              "role"
+            ],
+            "properties": {
+              "of": {
+                "$ref": "#/components/schemas/PortType"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "pass"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "role"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "processor"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "role"
+            ],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": [
+                  "plain"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "RotatorAxes": {
         "type": "string",
         "enum": [
@@ -30821,6 +32706,139 @@
           }
         }
       },
+      "Runs": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "runs"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "runs": {
+                "type": "string",
+                "enum": [
+                  "unbound"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "device_set",
+              "runs"
+            ],
+            "properties": {
+              "device_set": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "runs": {
+                "type": "string",
+                "enum": [
+                  "radio"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "device_set",
+              "channel",
+              "stream",
+              "runs"
+            ],
+            "properties": {
+              "channel": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "device_set": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "runs": {
+                "type": "string",
+                "enum": [
+                  "channel"
+                ]
+              },
+              "stream": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "followers",
+              "runs"
+            ],
+            "properties": {
+              "control": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ChannelAddr"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "followers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChannelAddr"
+                }
+              },
+              "runs": {
+                "type": "string",
+                "enum": [
+                  "trunk"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "runs"
+            ],
+            "properties": {
+              "runs": {
+                "type": "string",
+                "enum": [
+                  "engine"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "runs"
+            ],
+            "properties": {
+              "runs": {
+                "type": "string",
+                "enum": [
+                  "server"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "SarsatBeacon": {
         "type": "string",
         "enum": [
@@ -30956,6 +32974,65 @@
           },
           "source": {
             "type": "string"
+          }
+        }
+      },
+      "SatelliteFix": {
+        "type": "object",
+        "required": [
+          "ground"
+        ],
+        "properties": {
+          "catalog": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "doppler_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "ground": {
+            "$ref": "#/components/schemas/SatelliteGround"
+          },
+          "ground_track": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LatLon"
+            }
+          },
+          "look": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SatelliteLook"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_pass": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SatellitePass"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visible": {
+            "type": "boolean"
           }
         }
       },
@@ -32063,53 +34140,6 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/DecodedRecord"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "Decoded"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "records"
-                ],
-                "properties": {
-                  "records": {
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/DecodedRecord"
-                    }
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "DecodedBacklog"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
                 "type": "object",
                 "required": [
                   "count"
@@ -32263,20 +34293,12 @@
               "data": {
                 "type": "object",
                 "required": [
-                  "device_set",
-                  "channel",
+                  "node",
                   "status"
                 ],
                 "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
+                  "node": {
+                    "type": "string"
                   },
                   "status": {
                     "$ref": "#/components/schemas/BroadcastStatus"
@@ -32286,7 +34308,7 @@
               "type": {
                 "type": "string",
                 "enum": [
-                  "BroadcastUpdate"
+                  "ChannelBroadcast"
                 ]
               }
             }
@@ -32613,6 +34635,142 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/ResolvedPatch"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "PatchResolved"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "problems"
+                ],
+                "properties": {
+                  "problems": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/NodeProblem"
+                    }
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "NodeProblems"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "ports"
+                ],
+                "properties": {
+                  "ports": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/PortActivity"
+                    }
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "NodeActivity"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "node",
+                  "feed"
+                ],
+                "properties": {
+                  "feed": {
+                    "$ref": "#/components/schemas/SinkFeed"
+                  },
+                  "node": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SinkSnapshot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "node",
+                  "update"
+                ],
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "update": {
+                    "$ref": "#/components/schemas/SinkUpdate"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SinkUpdate"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
                 "type": "object",
                 "required": [
                   "message"
@@ -32671,6 +34829,156 @@
             }
           }
         }
+      },
+      "Shape": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "from",
+              "bearing_deg",
+              "length_m",
+              "faint",
+              "shape"
+            ],
+            "properties": {
+              "bearing_deg": {
+                "type": "number",
+                "format": "float"
+              },
+              "faint": {
+                "type": "boolean"
+              },
+              "from": {
+                "$ref": "#/components/schemas/LatLon"
+              },
+              "length_m": {
+                "type": "number",
+                "format": "float"
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "ray"
+                ]
+              },
+              "sigma_deg": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "float"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "center",
+              "major_m",
+              "minor_m",
+              "bearing_deg",
+              "shape"
+            ],
+            "properties": {
+              "bearing_deg": {
+                "type": "number",
+                "format": "float"
+              },
+              "center": {
+                "$ref": "#/components/schemas/LatLon"
+              },
+              "major_m": {
+                "type": "number",
+                "format": "float"
+              },
+              "minor_m": {
+                "type": "number",
+                "format": "float"
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "ellipse"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "center",
+              "radius_m",
+              "shape"
+            ],
+            "properties": {
+              "center": {
+                "$ref": "#/components/schemas/LatLon"
+              },
+              "radius_m": {
+                "type": "number",
+                "format": "float"
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "circle"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "points",
+              "style",
+              "shape"
+            ],
+            "properties": {
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LatLon"
+                }
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "line"
+                ]
+              },
+              "style": {
+                "$ref": "#/components/schemas/LineStyle"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "at",
+              "symbol",
+              "label",
+              "shape"
+            ],
+            "properties": {
+              "at": {
+                "$ref": "#/components/schemas/LatLon"
+              },
+              "label": {
+                "type": "string"
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "pin"
+                ]
+              },
+              "symbol": {
+                "$ref": "#/components/schemas/Symbol"
+              }
+            }
+          }
+        ]
       },
       "SidParams": {
         "type": "object",
@@ -32776,6 +35084,125 @@
             "type": "integer",
             "format": "int64",
             "default": 0
+          }
+        }
+      },
+      "SinkFeed": {
+        "type": "object",
+        "required": [
+          "entities",
+          "records",
+          "tracks",
+          "surfaces",
+          "lost"
+        ],
+        "properties": {
+          "entities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entity"
+            }
+          },
+          "lost": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pictures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapturedImage"
+            }
+          },
+          "propagation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PropagationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecodedRecord"
+            }
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SurfaceRef"
+            }
+          },
+          "tracks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PositionTrack"
+            }
+          }
+        }
+      },
+      "SinkUpdate": {
+        "type": "object",
+        "required": [
+          "lost"
+        ],
+        "properties": {
+          "lost": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pictures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapturedImage"
+            }
+          },
+          "propagation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PropagationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecodedRecord"
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntityKey"
+            }
+          },
+          "surfaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SurfaceRef"
+            }
+          },
+          "tracks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PositionTrack"
+            }
+          },
+          "upserts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entity"
+            }
           }
         }
       },
@@ -33035,6 +35462,30 @@
               "null"
             ],
             "format": "double"
+          }
+        }
+      },
+      "Spot": {
+        "type": "object",
+        "required": [
+          "grid",
+          "at",
+          "callsign",
+          "snr_db"
+        ],
+        "properties": {
+          "at": {
+            "$ref": "#/components/schemas/LatLon"
+          },
+          "callsign": {
+            "type": "string"
+          },
+          "grid": {
+            "type": "string"
+          },
+          "snr_db": {
+            "type": "number",
+            "format": "float"
           }
         }
       },
@@ -33877,6 +36328,21 @@
           }
         }
       },
+      "SurfaceRef": {
+        "type": "object",
+        "required": [
+          "node",
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/StreamKind"
+          },
+          "node": {
+            "type": "string"
+          }
+        }
+      },
       "SurfaceRefusal": {
         "type": "string",
         "enum": [
@@ -34182,6 +36648,26 @@
           }
         }
       },
+      "Symbol": {
+        "type": "string",
+        "enum": [
+          "plane",
+          "ship",
+          "station",
+          "balloon",
+          "drone",
+          "beacon",
+          "node",
+          "person",
+          "vehicle",
+          "satellite",
+          "antenna",
+          "fix",
+          "target",
+          "echo",
+          "dot"
+        ]
+      },
       "SyncState": {
         "type": "string",
         "enum": [
@@ -34190,6 +36676,83 @@
           "locked",
           "drifting",
           "lost"
+        ]
+      },
+      "Tap": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "device_set",
+              "stream",
+              "tap"
+            ],
+            "properties": {
+              "device_set": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "stream": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "tap": {
+                "type": "string",
+                "enum": [
+                  "lane"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "device_set",
+              "channel",
+              "tap"
+            ],
+            "properties": {
+              "channel": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "device_set": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "tap": {
+                "type": "string",
+                "enum": [
+                  "channel"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "channels",
+              "tap"
+            ],
+            "properties": {
+              "channels": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChannelAddr"
+                }
+              },
+              "tap": {
+                "type": "string",
+                "enum": [
+                  "channels"
+                ]
+              }
+            }
+          }
         ]
       },
       "TemplateInfo": {
@@ -35664,6 +38227,38 @@
           "back"
         ]
       },
+      "Unit": {
+        "type": "string",
+        "enum": [
+          "none",
+          "hz",
+          "db",
+          "dbfs",
+          "degrees",
+          "feet",
+          "metres",
+          "kilometres",
+          "knots",
+          "metres_per_second",
+          "feet_per_minute",
+          "celsius",
+          "percent",
+          "hectopascal",
+          "seconds",
+          "baud",
+          "millimetres",
+          "volts",
+          "db_hz",
+          "kilometres_per_hour",
+          "watts_per_square_metre",
+          "chips",
+          "wpm",
+          "dbm",
+          "psi",
+          "lux",
+          "kelvin"
+        ]
+      },
       "UpdateNanoVnaMeasurementRequest": {
         "type": "object",
         "required": [
@@ -35902,6 +38497,39 @@
             "items": {
               "$ref": "#/components/schemas/VoiceCall"
             }
+          }
+        }
+      },
+      "VoiceFacts": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "emergency": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "encrypted": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -36189,6 +38817,38 @@
           "counter_clockwise"
         ]
       },
+      "WireVerdict": {
+        "type": "object",
+        "required": [
+          "to"
+        ],
+        "properties": {
+          "refusal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "$ref": "#/components/schemas/PortRef"
+          }
+        }
+      },
+      "WiringRequest": {
+        "type": "object",
+        "required": [
+          "graph",
+          "from"
+        ],
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/PortRef"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/PatchGraph"
+          }
+        }
+      },
       "WorkspaceArray": {
         "type": "object",
         "required": [
@@ -36418,6 +39078,97 @@
                 "type": "string",
                 "enum": [
                   "cleared_gps"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "node",
+                  "kinds"
+                ],
+                "properties": {
+                  "kinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "node": {
+                    "type": "string"
+                  }
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "dropped_filter_kinds"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "wires"
+                ],
+                "properties": {
+                  "wires": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/NoticeWire"
+                    }
+                  }
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "dropped_wires"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "wires"
+                ],
+                "properties": {
+                  "wires": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/NoticeWire"
+                    }
+                  }
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "added_wires"
                 ]
               }
             }

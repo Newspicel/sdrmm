@@ -1,6 +1,22 @@
 import { SONDE_BURST_M } from "../lib/limits";
-import type { BroadcastStatus, ChannelParams, ParamLimit } from "../lib/types";
-import { type ChannelTypeId, limitOf, type NumberLimit, scaledLimit } from "./channelSettings";
+import type {
+  BroadcastStatus,
+  ChannelParams,
+  LoraCodingRate,
+  ParamChoice,
+  ParamLimit,
+  SondeType,
+  SstvMode,
+} from "../lib/types";
+import {
+  type ChannelTypeId,
+  choiceOptions,
+  choicesOf,
+  limitOf,
+  type NumberLimit,
+  scaledLimit,
+  unsetAs,
+} from "./channelSettings";
 import type { Options } from "./controls";
 import {
   ChipField,
@@ -13,64 +29,12 @@ import {
 import { formatHz } from "./format";
 import { LoraKeysChip } from "./LoraKeysChip";
 import {
-  AERO_CHANNELS,
-  AIRTIME_SPANS,
-  AIS_CHANNELS,
-  APRS_MODES,
-  ATV_COLORS,
-  ATV_MODULATIONS,
-  ATV_STANDARDS,
-  BLE_LINKS,
   CTCSS_DEFAULT_HZ,
-  CTCSS_OPTIONS,
-  DAB_MODES,
-  DAB_TRANSMISSION_MODES,
-  DATV_CODE_RATES,
-  DATV_ROLL_OFFS,
-  DATV_STANDARDS,
   DCS_DEFAULT_CODE,
-  DCS_OPTIONS,
-  DECT_BANDS,
-  DECT_SIDES,
-  DECT_SPANS,
-  DEEMPHASIS_US,
-  DMR_SLOTS,
-  DRM_MODES,
-  DVBT_BANDWIDTHS,
-  DVBT_STANDARDS,
-  ILS_COMPONENTS,
   INVERSION_DEFAULT_HZ,
-  IRIDIUM_SPANS,
-  LORA_BANDWIDTHS,
-  LORA_CODING_RATES,
   LORA_CUSTOM,
-  LORA_IQ,
   LORA_PRESET_OPTIONS,
-  LORA_PROTOCOLS,
-  LORA_SPREADING_FACTORS,
-  LRPT_MODES,
   loraPresetOf,
-  NFM_SCRAMBLER_MODES,
-  NFM_TONE_MODES,
-  NXDN_WIDTHS,
-  PER_BAUDS,
-  POCSAG_BAUDS,
-  PSK_BAUDS,
-  RADIO_CLOCK_STANDARDS,
-  REMOTE_ID_LINKS,
-  RTTY_BAUDS,
-  RTTY_SHIFTS_HZ,
-  RTTY_STOP_BITS,
-  SELCALL_SYSTEMS,
-  SIDEBANDS,
-  SONDE_AUTO,
-  SONDE_TYPES,
-  SSTV_AUTO,
-  SSTV_MODES,
-  SSTV_MODULATIONS,
-  TETRAPOL_BANDS,
-  WEFAX_IOCS,
-  WEFAX_LPMS,
   withLoraPreset,
 } from "./modeOptions";
 import { NumberField } from "./NumberField";
@@ -79,11 +43,16 @@ import { withCurrent } from "./selectOptions";
 import { TextAutocomplete } from "./TextAutocomplete";
 
 type Limits = readonly ParamLimit[];
+type Choices = readonly ParamChoice[];
+
+const SSTV_AUTO = "auto";
+const SONDE_AUTO = "auto";
 type ParamsOf<K extends ChannelTypeId> = Extract<ChannelParams, { type: K }>;
 
 interface Mode<K extends ChannelTypeId> {
   params: ParamsOf<K>;
   limits: Limits;
+  choices: Choices;
   onParams: (params: ChannelParams) => void;
 }
 
@@ -95,14 +64,16 @@ export function ModeChips({
   params,
   broadcast,
   limits,
+  choices,
   onParams,
 }: {
   params: ChannelParams;
   broadcast?: BroadcastStatus;
   limits: Limits;
+  choices: Choices;
   onParams: (params: ChannelParams) => void;
 }) {
-  const mode = { limits, onParams };
+  const mode = { limits, choices, onParams };
   switch (params.type) {
     case "nfm":
       return <NfmChips params={params} {...mode} />;
@@ -230,7 +201,7 @@ function unhandledMode(_params: never): null {
   return null;
 }
 
-function NfmChips({ params, limits, onParams }: Mode<"nfm">) {
+function NfmChips({ params, choices, limits, onParams }: Mode<"nfm">) {
   const settings = params.settings;
   const mode = settings.tone_mode ?? "off";
   const scrambler = settings.scrambler_mode ?? "off";
@@ -246,7 +217,7 @@ function NfmChips({ params, limits, onParams }: Mode<"nfm">) {
         label="Tone"
         title="Tone squelch"
         value={mode}
-        options={NFM_TONE_MODES}
+        options={choicesOf(choices, params.settings, "tone_mode")}
         quiet={mode === "off"}
         onChange={(tone_mode) =>
           set({
@@ -262,7 +233,7 @@ function NfmChips({ params, limits, onParams }: Mode<"nfm">) {
           label="CTCSS"
           title="CTCSS tone"
           value={settings.ctcss_hz ?? CTCSS_DEFAULT_HZ}
-          options={CTCSS_OPTIONS}
+          options={choicesOf(choices, params.settings, "ctcss_hz")}
           onChange={(ctcss_hz) => set({ ...settings, ctcss_hz })}
         />
       )}
@@ -271,7 +242,7 @@ function NfmChips({ params, limits, onParams }: Mode<"nfm">) {
           label="DCS"
           title="DCS code"
           value={settings.dcs_code ?? DCS_DEFAULT_CODE}
-          options={DCS_OPTIONS}
+          options={choicesOf(choices, params.settings, "dcs_code")}
           onChange={(dcs_code) => set({ ...settings, dcs_code })}
         />
       )}
@@ -279,7 +250,7 @@ function NfmChips({ params, limits, onParams }: Mode<"nfm">) {
         label="Scrambler"
         title="Voice scrambler"
         value={scrambler}
-        options={NFM_SCRAMBLER_MODES}
+        options={choicesOf(choices, params.settings, "scrambler_mode")}
         quiet={scrambler === "off"}
         onChange={(scrambler_mode) =>
           set({
@@ -308,13 +279,13 @@ function NfmChips({ params, limits, onParams }: Mode<"nfm">) {
   );
 }
 
-function SelcallChips({ params, onParams }: Mode<"selcall">) {
+function SelcallChips({ params, choices, onParams }: Mode<"selcall">) {
   return (
     <ChoiceChip
       label="Plan"
       title="Selective calling tone plan"
       value={params.settings.system ?? "ccir1"}
-      options={SELCALL_SYSTEMS}
+      options={choicesOf(choices, params.settings, "system")}
       onChange={(system) => onParams({ type: "selcall", settings: { ...params.settings, system } })}
     />
   );
@@ -341,7 +312,7 @@ function AmChips({ params, onParams }: Mode<"am">) {
   );
 }
 
-function SsbChips({ params, limits, onParams }: Mode<"ssb">) {
+function SsbChips({ params, choices, limits, onParams }: Mode<"ssb">) {
   const settings = params.settings;
   return (
     <>
@@ -349,7 +320,7 @@ function SsbChips({ params, limits, onParams }: Mode<"ssb">) {
         label="Side"
         title="Sideband"
         value={settings.sideband ?? "usb"}
-        options={SIDEBANDS}
+        options={choicesOf(choices, params.settings, "sideband")}
         onChange={(sideband) => onParams({ type: "ssb", settings: { ...settings, sideband } })}
       />
       <HzChip
@@ -365,7 +336,7 @@ function SsbChips({ params, limits, onParams }: Mode<"ssb">) {
   );
 }
 
-function WfmChips({ params, onParams }: Mode<"wfm">) {
+function WfmChips({ params, choices, onParams }: Mode<"wfm">) {
   const settings = params.settings;
   return (
     <>
@@ -373,7 +344,7 @@ function WfmChips({ params, onParams }: Mode<"wfm">) {
         label="De-emph"
         title="De-emphasis"
         value={settings.deemphasis_us ?? 50}
-        options={DEEMPHASIS_US}
+        options={choicesOf(choices, params.settings, "deemphasis_us")}
         onChange={(deemphasis_us) =>
           onParams({ type: "wfm", settings: { ...settings, deemphasis_us } })
         }
@@ -388,7 +359,7 @@ function WfmChips({ params, onParams }: Mode<"wfm">) {
   );
 }
 
-function PocsagChips({ params, onParams }: Mode<"pocsag">) {
+function PocsagChips({ params, choices, onParams }: Mode<"pocsag">) {
   const settings = params.settings;
   const baud = settings.baud ?? "auto";
   return (
@@ -397,7 +368,7 @@ function PocsagChips({ params, onParams }: Mode<"pocsag">) {
         label="Baud"
         title="POCSAG baud"
         value={baud}
-        options={POCSAG_BAUDS}
+        options={choicesOf(choices, params.settings, "baud")}
         quiet={baud === "auto"}
         onChange={(next) => onParams({ type: "pocsag", settings: { ...settings, baud: next } })}
       />
@@ -470,7 +441,7 @@ function SarsatChips({ params, onParams }: Mode<"sarsat">) {
   );
 }
 
-function TetrapolChips({ params, limits, onParams }: Mode<"tetrapol">) {
+function TetrapolChips({ params, choices, limits, onParams }: Mode<"tetrapol">) {
   const { settings } = params;
   const set = (next: typeof settings) => onParams({ type: "tetrapol", settings: next });
   return (
@@ -479,7 +450,7 @@ function TetrapolChips({ params, limits, onParams }: Mode<"tetrapol">) {
         label="Band"
         title="Tetrapol band"
         value={settings.band ?? "uhf"}
-        options={TETRAPOL_BANDS}
+        options={choicesOf(choices, params.settings, "band")}
         onChange={(band) => set({ ...settings, band })}
       />
       <OptionalNumberChip
@@ -505,13 +476,13 @@ function AdsbChips({ params, onParams }: Mode<"adsb">) {
   );
 }
 
-function AisChips({ params, onParams }: Mode<"ais">) {
+function AisChips({ params, choices, onParams }: Mode<"ais">) {
   return (
     <ChoiceChip
       label="Channel"
       title="AIS channel"
       value={params.settings.ais_channel ?? "a"}
-      options={AIS_CHANNELS}
+      options={choicesOf(choices, params.settings, "ais_channel")}
       onChange={(ais_channel) =>
         onParams({ type: "ais", settings: { ...params.settings, ais_channel } })
       }
@@ -519,13 +490,13 @@ function AisChips({ params, onParams }: Mode<"ais">) {
   );
 }
 
-function AeroChips({ params, onParams }: Mode<"inmarsat_aero">) {
+function AeroChips({ params, choices, onParams }: Mode<"inmarsat_aero">) {
   return (
     <ChoiceChip
       label="Channel"
       title="Aero channel"
       value={params.settings.channel ?? "p"}
-      options={AERO_CHANNELS}
+      options={choicesOf(choices, params.settings, "channel")}
       onChange={(channel) =>
         onParams({ type: "inmarsat_aero", settings: { ...params.settings, channel } })
       }
@@ -533,19 +504,19 @@ function AeroChips({ params, onParams }: Mode<"inmarsat_aero">) {
   );
 }
 
-function IridiumChips({ params, onParams }: Mode<"iridium">) {
+function IridiumChips({ params, choices, onParams }: Mode<"iridium">) {
   return (
     <ChoiceChip
       label="Span"
       title="Iridium span"
       value={params.settings.span ?? "channel"}
-      options={IRIDIUM_SPANS}
+      options={choicesOf(choices, params.settings, "span")}
       onChange={(span) => onParams({ type: "iridium", settings: { ...params.settings, span } })}
     />
   );
 }
 
-function AprsChips({ params, onParams }: Mode<"aprs">) {
+function AprsChips({ params, choices, onParams }: Mode<"aprs">) {
   const settings = params.settings;
   return (
     <>
@@ -553,7 +524,7 @@ function AprsChips({ params, onParams }: Mode<"aprs">) {
         label="Mode"
         title="APRS mode"
         value={settings.mode ?? "afsk1200"}
-        options={APRS_MODES}
+        options={choicesOf(choices, params.settings, "mode")}
         onChange={(mode) => onParams({ type: "aprs", settings: { ...settings, mode } })}
       />
       <BandwidthChip
@@ -567,7 +538,7 @@ function AprsChips({ params, onParams }: Mode<"aprs">) {
   );
 }
 
-function RttyChips({ params, limits, onParams }: Mode<"rtty">) {
+function RttyChips({ params, choices, limits, onParams }: Mode<"rtty">) {
   const settings = params.settings;
   const set = (next: typeof settings) => onParams({ type: "rtty", settings: next });
   return (
@@ -576,7 +547,7 @@ function RttyChips({ params, limits, onParams }: Mode<"rtty">) {
         label="Baud"
         title="RTTY baud"
         value={settings.baud ?? 45.45}
-        presets={RTTY_BAUDS}
+        presets={choicesOf(choices, params.settings, "baud")}
         limit={limitOf(limits, "baud")}
         onCommit={(baud) => set({ ...settings, baud })}
       />
@@ -585,7 +556,7 @@ function RttyChips({ params, limits, onParams }: Mode<"rtty">) {
         title="RTTY shift"
         unit="Hz"
         value={settings.shift_hz ?? 170}
-        presets={RTTY_SHIFTS_HZ}
+        presets={choicesOf(choices, params.settings, "shift_hz")}
         limit={limitOf(limits, "shift_hz")}
         onCommit={(shift_hz) => set({ ...settings, shift_hz })}
       />
@@ -593,7 +564,7 @@ function RttyChips({ params, limits, onParams }: Mode<"rtty">) {
         label="Stop"
         title="RTTY stop bits"
         value={settings.stop_bits ?? "one_and_half"}
-        options={RTTY_STOP_BITS}
+        options={choicesOf(choices, params.settings, "stop_bits")}
         onChange={(stop_bits) => set({ ...settings, stop_bits })}
       />
       <InvertChip
@@ -706,7 +677,7 @@ function WsjtChips({ params, limits, onParams }: Mode<"ft8" | "ft4" | "wspr">) {
   );
 }
 
-function PskChips({ params, onParams }: Mode<"psk">) {
+function PskChips({ params, choices, onParams }: Mode<"psk">) {
   const settings = params.settings;
   return (
     <>
@@ -714,7 +685,7 @@ function PskChips({ params, onParams }: Mode<"psk">) {
         label="Mode"
         title="PSK symbol rate"
         value={settings.baud ?? "psk31"}
-        options={PSK_BAUDS}
+        options={choicesOf(choices, params.settings, "baud")}
         onChange={(baud) => onParams({ type: "psk", settings: { ...settings, baud } })}
       />
       <InvertChip
@@ -734,7 +705,7 @@ function NavtexChips({ params, onParams }: Mode<"navtex">) {
   );
 }
 
-function RadioClockChips({ params, onParams }: Mode<"radio_clock">) {
+function RadioClockChips({ params, choices, onParams }: Mode<"radio_clock">) {
   const settings = params.settings;
   return (
     <>
@@ -742,7 +713,7 @@ function RadioClockChips({ params, onParams }: Mode<"radio_clock">) {
         label="Service"
         title="Radio clock service"
         value={settings.standard ?? "dcf77"}
-        options={RADIO_CLOCK_STANDARDS}
+        options={choicesOf(choices, params.settings, "standard")}
         onChange={(standard) =>
           onParams({ type: "radio_clock", settings: { ...settings, standard } })
         }
@@ -851,7 +822,7 @@ function VorChips({ params, limits, onParams }: Mode<"vor">) {
   );
 }
 
-function IlsChips({ params, limits, onParams }: Mode<"ils">) {
+function IlsChips({ params, choices, limits, onParams }: Mode<"ils">) {
   const settings = params.settings;
   return (
     <>
@@ -859,7 +830,7 @@ function IlsChips({ params, limits, onParams }: Mode<"ils">) {
         label="Component"
         title="ILS component"
         value={settings.component ?? "localizer"}
-        options={ILS_COMPONENTS}
+        options={choicesOf(choices, params.settings, "component")}
         onChange={(component) => onParams({ type: "ils", settings: { ...settings, component } })}
       />
       <NumberChip
@@ -886,7 +857,7 @@ function AcarsChips({ params, onParams }: Mode<"acars">) {
   );
 }
 
-function AtvChips({ params, limits, onParams }: Mode<"atv">) {
+function AtvChips({ params, choices, limits, onParams }: Mode<"atv">) {
   const settings = params.settings;
   const set = (next: typeof settings) => onParams({ type: "atv", settings: next });
   return (
@@ -895,14 +866,14 @@ function AtvChips({ params, limits, onParams }: Mode<"atv">) {
         label="Mod"
         title="Modulation"
         value={settings.modulation ?? "am"}
-        options={ATV_MODULATIONS}
+        options={choicesOf(choices, params.settings, "modulation")}
         onChange={(modulation) => set({ ...settings, modulation })}
       />
       <ChoiceChip
         label="Lines"
         title="Scanning standard"
         value={settings.standard ?? "ccir625"}
-        options={ATV_STANDARDS}
+        options={choicesOf(choices, params.settings, "standard")}
         onChange={(standard) => set({ ...settings, standard })}
       />
       <BandwidthChip
@@ -914,7 +885,7 @@ function AtvChips({ params, limits, onParams }: Mode<"atv">) {
         label="Colour"
         title="Composite colour system"
         value={settings.color ?? "monochrome"}
-        options={ATV_COLORS}
+        options={choicesOf(choices, params.settings, "color")}
         onChange={(color) => set({ ...settings, color })}
       />
       <OptionalNumberChip
@@ -944,7 +915,7 @@ function AtvChips({ params, limits, onParams }: Mode<"atv">) {
   );
 }
 
-function SstvChips({ params, onParams }: Mode<"sstv">) {
+function SstvChips({ params, choices, onParams }: Mode<"sstv">) {
   const settings = params.settings;
   const mode = settings.mode ?? SSTV_AUTO;
   return (
@@ -953,14 +924,14 @@ function SstvChips({ params, onParams }: Mode<"sstv">) {
         label="Mod"
         title="Modulation"
         value={settings.modulation ?? "usb"}
-        options={SSTV_MODULATIONS}
+        options={choicesOf(choices, params.settings, "modulation")}
         onChange={(modulation) => onParams({ type: "sstv", settings: { ...settings, modulation } })}
       />
       <ChoiceChip
         label="Mode"
         title="Scanning mode"
         value={mode}
-        options={SSTV_MODES}
+        options={unsetAs(choiceOptions<SstvMode | null>(choices, "mode"), SSTV_AUTO)}
         quiet={mode === SSTV_AUTO}
         onChange={(next) =>
           onParams({
@@ -989,15 +960,20 @@ function SstvChips({ params, onParams }: Mode<"sstv">) {
   );
 }
 
-function DabChips({ params, broadcast, onParams }: Mode<"dab"> & { broadcast?: BroadcastStatus }) {
+function DabChips({
+  params,
+  choices,
+  broadcast,
+  onParams,
+}: Mode<"dab"> & { broadcast?: BroadcastStatus }) {
   const settings = params.settings;
   const mode = settings.mode ?? "auto";
   const transmissionMode = settings.transmission_mode ?? "i";
   const detected = broadcast?.transmission_mode;
   const transmissionModes =
     detected == null
-      ? DAB_TRANSMISSION_MODES
-      : DAB_TRANSMISSION_MODES.map((option) =>
+      ? choicesOf(choices, settings, "transmission_mode")
+      : choicesOf(choices, settings, "transmission_mode").map((option) =>
           option.value === "auto" ? { ...option, label: `Auto ${detected.toUpperCase()}` } : option,
         );
   return (
@@ -1006,7 +982,7 @@ function DabChips({ params, broadcast, onParams }: Mode<"dab"> & { broadcast?: B
         label="Type"
         title="DAB generation"
         value={mode}
-        options={DAB_MODES}
+        options={choicesOf(choices, params.settings, "mode")}
         quiet={mode === "auto"}
         onChange={(next) => onParams({ type: "dab", settings: { ...settings, mode: next } })}
       />
@@ -1032,6 +1008,7 @@ function DabChips({ params, broadcast, onParams }: Mode<"dab"> & { broadcast?: B
 
 function DatvChips({
   params,
+  choices,
   broadcast,
   limits,
   onParams,
@@ -1045,7 +1022,7 @@ function DatvChips({
         label="Standard"
         title="DATV standard"
         value={settings.standard ?? "dvb_s"}
-        options={DATV_STANDARDS}
+        options={choicesOf(choices, params.settings, "standard")}
         onChange={(standard) => set({ ...settings, standard })}
       />
       <NumberChip
@@ -1068,7 +1045,7 @@ function DatvChips({
             label="Roll-off"
             title="Match the transmitter's filter shape; DVB-S2 signals it in the base band header"
             value={settings.roll_off ?? "pct35"}
-            options={DATV_ROLL_OFFS}
+            options={choicesOf(choices, params.settings, "roll_off")}
             onChange={(roll_off) => set({ ...settings, roll_off })}
           />
           <ToggleChip
@@ -1117,7 +1094,7 @@ function DatvChips({
           label="FEC"
           title="DVB-S code rate"
           value={codeRate}
-          options={DATV_CODE_RATES}
+          options={choicesOf(choices, params.settings, "code_rate")}
           quiet={codeRate === "auto"}
           onChange={(code_rate) => set({ ...settings, code_rate })}
         />
@@ -1128,6 +1105,7 @@ function DatvChips({
 
 function DvbtChips({
   params,
+  choices,
   broadcast,
   onParams,
 }: Mode<"dvbt"> & { broadcast?: BroadcastStatus }) {
@@ -1139,14 +1117,14 @@ function DvbtChips({
         label="Standard"
         title="Terrestrial standard"
         value={settings.standard ?? "dvb_t"}
-        options={DVBT_STANDARDS}
+        options={choicesOf(choices, params.settings, "standard")}
         onChange={(standard) => set({ ...settings, standard })}
       />
       <ChoiceChip
         label="BW"
         title="DVB-T bandwidth"
         value={settings.bandwidth ?? "mhz8"}
-        options={DVBT_BANDWIDTHS}
+        options={choicesOf(choices, params.settings, "bandwidth")}
         onChange={(bandwidth) => set({ ...settings, bandwidth })}
       />
       {settings.standard === "dvb_t2" ? (
@@ -1178,7 +1156,12 @@ function DvbtChips({
   );
 }
 
-function DrmChips({ params, broadcast, onParams }: Mode<"drm"> & { broadcast?: BroadcastStatus }) {
+function DrmChips({
+  params,
+  choices,
+  broadcast,
+  onParams,
+}: Mode<"drm"> & { broadcast?: BroadcastStatus }) {
   const settings = params.settings;
   const mode = settings.mode ?? "auto";
   return (
@@ -1187,7 +1170,7 @@ function DrmChips({ params, broadcast, onParams }: Mode<"drm"> & { broadcast?: B
         label="Mode"
         title="DRM mode"
         value={mode}
-        options={DRM_MODES}
+        options={choicesOf(choices, params.settings, "mode")}
         quiet={mode === "auto"}
         onChange={(next) =>
           onParams({
@@ -1218,7 +1201,7 @@ function DrmChips({ params, broadcast, onParams }: Mode<"drm"> & { broadcast?: B
   );
 }
 
-function DmrChips({ params, onParams }: Mode<"dmr">) {
+function DmrChips({ params, choices, onParams }: Mode<"dmr">) {
   const settings = params.settings;
   return (
     <>
@@ -1226,7 +1209,7 @@ function DmrChips({ params, onParams }: Mode<"dmr">) {
         label="Slot"
         title="Slot"
         value={settings.slots ?? "both"}
-        options={DMR_SLOTS}
+        options={choicesOf(choices, params.settings, "slots")}
         onChange={(slots) => onParams({ type: "dmr", settings: { ...settings, slots } })}
       />
       <ToggleChip
@@ -1239,13 +1222,13 @@ function DmrChips({ params, onParams }: Mode<"dmr">) {
   );
 }
 
-function NxdnChips({ params, onParams }: Mode<"nxdn">) {
+function NxdnChips({ params, choices, onParams }: Mode<"nxdn">) {
   return (
     <ChoiceChip
       label="Width"
       title="Width"
       value={params.settings.bandwidth ?? "narrow"}
-      options={NXDN_WIDTHS}
+      options={choicesOf(choices, params.settings, "bandwidth")}
       onChange={(bandwidth) =>
         onParams({ type: "nxdn", settings: { ...params.settings, bandwidth } })
       }
@@ -1253,13 +1236,13 @@ function NxdnChips({ params, onParams }: Mode<"nxdn">) {
   );
 }
 
-function FreedvChips({ params, onParams }: Mode<"freedv">) {
+function FreedvChips({ params, choices, onParams }: Mode<"freedv">) {
   return (
     <ChoiceChip
       label="Side"
       title="FreeDV sideband"
       value={params.settings.sideband ?? "usb"}
-      options={SIDEBANDS}
+      options={choicesOf(choices, params.settings, "sideband")}
       onChange={(sideband) =>
         onParams({ type: "freedv", settings: { ...params.settings, sideband } })
       }
@@ -1299,7 +1282,7 @@ function IdentChips({ params, limits, onParams }: Mode<"ident">) {
   );
 }
 
-function DectChips({ params, onParams }: Mode<"dect">) {
+function DectChips({ params, choices, onParams }: Mode<"dect">) {
   const settings = params.settings;
   return (
     <>
@@ -1307,21 +1290,21 @@ function DectChips({ params, onParams }: Mode<"dect">) {
         label="Band"
         title="DECT band"
         value={settings.band ?? "eu"}
-        options={DECT_BANDS}
+        options={choicesOf(choices, params.settings, "band")}
         onChange={(band) => onParams({ type: "dect", settings: { ...settings, band } })}
       />
       <ChoiceChip
         label="Span"
         title="DECT span"
         value={settings.span ?? "carrier"}
-        options={DECT_SPANS}
+        options={choicesOf(choices, params.settings, "span")}
         onChange={(span) => onParams({ type: "dect", settings: { ...settings, span } })}
       />
       <ChoiceChip
         label="Side"
         title="DECT side"
         value={settings.sides ?? "both"}
-        options={DECT_SIDES}
+        options={choicesOf(choices, params.settings, "sides")}
         onChange={(sides) => onParams({ type: "dect", settings: { ...settings, sides } })}
       />
     </>
@@ -1362,20 +1345,20 @@ function AptChips({ params, onParams }: Mode<"apt">) {
   );
 }
 
-function LrptChips({ params, onParams }: Mode<"lrpt">) {
+function LrptChips({ params, choices, onParams }: Mode<"lrpt">) {
   const settings = params.settings;
   return (
     <ChoiceChip
       label="Mode"
       title="Meteor-M downlink mode"
       value={settings.mode ?? "oqpsk72"}
-      options={LRPT_MODES}
+      options={choicesOf(choices, params.settings, "mode")}
       onChange={(mode) => onParams({ type: "lrpt", settings: { ...settings, mode } })}
     />
   );
 }
 
-function WefaxChips({ params, onParams }: Mode<"wefax">) {
+function WefaxChips({ params, choices, onParams }: Mode<"wefax">) {
   const settings = params.settings;
   const set = (next: typeof settings) => onParams({ type: "wefax", settings: next });
   return (
@@ -1384,14 +1367,14 @@ function WefaxChips({ params, onParams }: Mode<"wefax">) {
         label="IOC"
         title="Index of cooperation"
         value={settings.ioc ?? "ioc576"}
-        options={WEFAX_IOCS}
+        options={choicesOf(choices, params.settings, "ioc")}
         onChange={(ioc) => set({ ...settings, ioc })}
       />
       <ChoiceChip
         label="LPM"
         title="Lines per minute"
         value={settings.lpm ?? "lpm120"}
-        options={WEFAX_LPMS}
+        options={choicesOf(choices, params.settings, "lpm")}
         onChange={(lpm) => set({ ...settings, lpm })}
       />
       <ToggleChip
@@ -1404,7 +1387,7 @@ function WefaxChips({ params, onParams }: Mode<"wefax">) {
   );
 }
 
-function RadiosondeChips({ params, limits, onParams }: Mode<"radiosonde">) {
+function RadiosondeChips({ params, choices, limits, onParams }: Mode<"radiosonde">) {
   const settings = params.settings;
   const set = (next: typeof settings) => onParams({ type: "radiosonde", settings: next });
   const sonde = settings.sonde ?? SONDE_AUTO;
@@ -1414,7 +1397,7 @@ function RadiosondeChips({ params, limits, onParams }: Mode<"radiosonde">) {
         label="Sonde"
         title="Sonde type"
         value={sonde}
-        options={SONDE_TYPES}
+        options={unsetAs(choiceOptions<SondeType | null>(choices, "sonde"), SONDE_AUTO)}
         quiet={sonde === SONDE_AUTO}
         onChange={(next) => set({ ...settings, sonde: next === SONDE_AUTO ? null : next })}
       />
@@ -1438,19 +1421,24 @@ function RadiosondeChips({ params, limits, onParams }: Mode<"radiosonde">) {
   );
 }
 
-function BleChips({ params, onParams }: Mode<"ble">) {
+function BleChips({ params, choices, onParams }: Mode<"ble">) {
   return (
     <ChoiceChip
       label="Link"
       title="Bluetooth channels to listen on"
       value={params.settings.link ?? "channel"}
-      options={BLE_LINKS}
+      options={choicesOf(choices, params.settings, "link")}
       onChange={(link) => onParams({ type: "ble", settings: { ...params.settings, link } })}
     />
   );
 }
 
-function AirtimeChips({ params, limits, onParams }: Mode<"wifi_occupancy" | "ism_survey">) {
+function AirtimeChips({
+  params,
+  choices,
+  limits,
+  onParams,
+}: Mode<"wifi_occupancy" | "ism_survey">) {
   const { type, settings } = params;
   return (
     <>
@@ -1458,7 +1446,7 @@ function AirtimeChips({ params, limits, onParams }: Mode<"wifi_occupancy" | "ism
         label="Span"
         title="Width of the window measured, in MHz"
         value={settings.span ?? "mhz20"}
-        options={AIRTIME_SPANS}
+        options={choicesOf(choices, params.settings, "span")}
         onChange={(span) => onParams({ type, settings: { ...settings, span } })}
       />
       <NumberChip
@@ -1486,7 +1474,7 @@ function NoiseFigureChips({ params, limits, onParams }: Mode<"noise_figure">) {
   );
 }
 
-function PerChips({ params, limits, onParams }: Mode<"per">) {
+function PerChips({ params, choices, limits, onParams }: Mode<"per">) {
   const settings = params.settings;
   const set = (next: typeof settings) => onParams({ type: "per", settings: next });
   return (
@@ -1495,7 +1483,7 @@ function PerChips({ params, limits, onParams }: Mode<"per">) {
         label="Baud"
         title="2-FSK symbol rate of the test frames"
         value={settings.baud ?? "baud9600"}
-        options={PER_BAUDS}
+        options={choicesOf(choices, params.settings, "baud")}
         onChange={(baud) => set({ ...settings, baud })}
       />
       <NumberChip
@@ -1548,19 +1536,19 @@ function SidChips({ params, limits, onParams }: Mode<"sid">) {
   );
 }
 
-function RemoteIdChips({ params, onParams }: Mode<"remote_id">) {
+function RemoteIdChips({ params, choices, onParams }: Mode<"remote_id">) {
   return (
     <ChoiceChip
       label="Link"
       title="Radio link to listen on"
       value={params.settings.link ?? "bluetooth"}
-      options={REMOTE_ID_LINKS}
+      options={choicesOf(choices, params.settings, "link")}
       onChange={(link) => onParams({ type: "remote_id", settings: { ...params.settings, link } })}
     />
   );
 }
 
-function LoraChips({ params, onParams }: Mode<"lora">) {
+function LoraChips({ params, choices, onParams }: Mode<"lora">) {
   const settings = params.settings;
   const set = (next: typeof settings) => onParams({ type: "lora", settings: next });
   const preset = loraPresetOf(settings);
@@ -1581,14 +1569,14 @@ function LoraChips({ params, onParams }: Mode<"lora">) {
         label="BW"
         title="LoRa bandwidth"
         value={settings.bandwidth ?? "khz125"}
-        options={LORA_BANDWIDTHS}
+        options={choicesOf(choices, params.settings, "bandwidth")}
         onChange={(bandwidth) => set({ ...settings, bandwidth })}
       />
       <ChoiceChip
         label="SF"
         title="Spreading factor"
         value={spreadingFactor}
-        options={LORA_SPREADING_FACTORS}
+        options={choicesOf(choices, params.settings, "spreading_factor")}
         quiet={spreadingFactor === "all"}
         onChange={(spreading_factor) => set({ ...settings, spreading_factor })}
       />
@@ -1596,14 +1584,14 @@ function LoraChips({ params, onParams }: Mode<"lora">) {
         label="IQ"
         title="Chirp direction"
         value={settings.iq ?? "normal"}
-        options={LORA_IQ}
+        options={choicesOf(choices, params.settings, "iq")}
         onChange={(iq) => set({ ...settings, iq })}
       />
       <ChoiceChip
         label="Protocol"
         title="Payload protocol"
         value={protocol}
-        options={LORA_PROTOCOLS}
+        options={choicesOf(choices, params.settings, "protocol")}
         quiet={protocol === "auto"}
         onChange={(next) => set({ ...settings, protocol: next })}
       />
@@ -1633,7 +1621,7 @@ function LoraChips({ params, onParams }: Mode<"lora">) {
             label="CR"
             title="Implicit header coding rate"
             value={header.coding_rate ?? "4/5"}
-            options={LORA_CODING_RATES}
+            options={choiceOptions<LoraCodingRate>(choices, "implicit_header.coding_rate")}
             onChange={(coding_rate) =>
               set({ ...settings, implicit_header: { ...header, coding_rate } })
             }

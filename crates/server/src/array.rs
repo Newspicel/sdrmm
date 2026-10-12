@@ -10,14 +10,15 @@ use std::{
 use sdrmm_channels::array_processor::processor_descriptor;
 use sdrmm_engine::{ArraySpec, EngineError, LaneRef, ProcessorSpec};
 use sdrmm_wire::{
-    ArrayCalRecord, ArrayCalSource, ArrayFailure, ArrayNode, ArrayOrientation,
-    ArrayRecordingRequest, ArrayRecordingStarted, ArrayTune, ArrayTuneRequest, ChannelSettings,
-    DeviceSet, HeadingSource, LaneKey, NodeBody, PatchApplyReport, PatchGraph, PatchNode,
-    PatchRefusal, PositionFix, ServerEvent, StateSnapshot, StreamKind, WorkspaceArray,
-    WorkspaceState, array::MAX_ARRAY_LANES,
+    ARRAY_LANE_PORT, ARRAY_PORT, ArrayCalRecord, ArrayCalSource, ArrayFailure, ArrayNode,
+    ArrayOrientation, ArrayRecordingRequest, ArrayRecordingStarted, ArrayTune, ArrayTuneRequest,
+    ChannelSettings, DeviceSet, HeadingSource, IQ_PORT, LaneKey, NodeBody, NodeKind, POSITION_PORT,
+    PatchApplyReport, PatchGraph, PatchNode, PatchRefusal, PositionFix, ResolvedPatch, STEER_PORT,
+    ServerEvent, StateSnapshot, StreamKind, WorkspaceArray, WorkspaceState, array::MAX_ARRAY_LANES,
+    port_stream,
 };
 
-use crate::{AppState, rest::AppError};
+use crate::{AppState, resolved::Resolved, rest::AppError};
 
 mod pump;
 
@@ -177,8 +178,32 @@ impl ArrayHub {
     }
 }
 
-pub(crate) fn wired_array(graph: &PatchGraph, node: &str) -> ArrayWiring {
-    let lanes = graph.array_lanes(node);
+fn array_lanes(patch: &ResolvedPatch, node: &str) -> Vec<Option<(String, u32)>> {
+    let mut lanes: Vec<Option<(String, u32)>> = Vec::new();
+    let Some(array) = patch.node(node) else {
+        return lanes;
+    };
+    for port in array.inputs() {
+        let Some(lane) = port_stream(ARRAY_LANE_PORT, &port.spec.name) else {
+            continue;
+        };
+        let Some(feed) = port.feeds.first() else {
+            continue;
+        };
+        let Some(stream) = port_stream(IQ_PORT, &feed.port) else {
+            continue;
+        };
+        let index = lane as usize;
+        if lanes.len() <= index {
+            lanes.resize(index + 1, None);
+        }
+        lanes[index] = Some((feed.source.clone(), stream));
+    }
+    lanes
+}
+
+pub(crate) fn wired_array(patch: &ResolvedPatch, node: &str) -> ArrayWiring {
+    let lanes = array_lanes(patch, node);
     if lanes.is_empty() {
         return ArrayWiring::Unwired;
     }
@@ -188,10 +213,9 @@ pub(crate) fn wired_array(graph: &PatchGraph, node: &str) -> ArrayWiring {
     let mut wired = Vec::with_capacity(lanes.len());
     for (slot, lane) in lanes.into_iter().enumerate() {
         let slot = u32::try_from(slot).unwrap_or(MAX_ARRAY_LANES);
-        let Some((device, stream)) = lane else {
+        let Some(lane) = lane else {
             return ArrayWiring::Gap { lane: slot };
         };
-        let lane = (device.to_owned(), stream);
         if wired.contains(&lane) {
             return ArrayWiring::Duplicate { lane: slot };
         }
@@ -200,24 +224,30 @@ pub(crate) fn wired_array(graph: &PatchGraph, node: &str) -> ArrayWiring {
     ArrayWiring::Lanes(wired)
 }
 
-pub(crate) fn lane_port_listeners(graph: &PatchGraph, processor: &str, port: &str) -> Vec<String> {
-    graph
-        .edges
+pub(crate) fn lane_port_listeners(
+    patch: &ResolvedPatch,
+    processor: &str,
+    port: &str,
+) -> Vec<String> {
+    patch
+        .reaches(processor, port)
         .iter()
-        .filter(|edge| edge.from.node == processor && edge.from.port == port)
-        .filter(|edge| {
-            graph
-                .node(&edge.to.node)
-                .is_some_and(|target| matches!(target.body, NodeBody::Channel(_)))
+        .filter(|reach| {
+            patch
+                .node(&reach.sink)
+                .is_some_and(|target| target.kind == NodeKind::Channel)
         })
-        .map(|edge| edge.to.node.clone())
+        .map(|reach| reach.sink.clone())
         .collect()
+}
+
+fn source_of(patch: &ResolvedPatch, node: &str, port: &str) -> Option<String> {
+    patch.first_feed(node, port).map(|feed| feed.source.clone())
 }
 
 struct Bring<'a> {
     state: &'a AppState,
-    graph: &'a PatchGraph,
-    bound: &'a [(String, u32)],
+    resolved: &'a Resolved,
     saved: &'a WorkspaceState,
     live: StateSnapshot,
     previous: HashMap<String, ArrayBinding>,
@@ -225,10 +255,7 @@ struct Bring<'a> {
 
 impl Bring<'_> {
     fn device_set(&self, device_node: &str) -> Option<u32> {
-        self.bound
-            .iter()
-            .find(|(node, _)| node == device_node)
-            .map(|(_, device_set)| *device_set)
+        self.resolved.patch.device_set(device_node)
     }
 
     fn set(&self, device_set: u32) -> Option<&DeviceSet> {
@@ -241,7 +268,7 @@ impl Bring<'_> {
     fn bind_all(&self) -> HashMap<String, ArrayBinding> {
         let mut arrays = HashMap::new();
         let mut waiting = Vec::new();
-        for (node, settings) in array_nodes(self.graph) {
+        for (node, settings) in array_nodes(&self.resolved.graph) {
             let (binding, held) = self.bind(&node.id, settings);
             if held {
                 waiting.push((node, settings));
@@ -256,10 +283,10 @@ impl Bring<'_> {
 
     fn bind(&self, node: &str, settings: &ArrayNode) -> (ArrayBinding, bool) {
         let mut binding = ArrayBinding {
-            position_node: self.graph.position_source(node).map(str::to_owned),
+            position_node: source_of(&self.resolved.patch, node, POSITION_PORT),
             ..ArrayBinding::default()
         };
-        let lanes = match wired_array(self.graph, node) {
+        let lanes = match wired_array(&self.resolved.patch, node) {
             ArrayWiring::Lanes(lanes) => lanes,
             refused => {
                 binding.problem = refused.failure().map(|failure| failure.to_string());
@@ -364,34 +391,29 @@ impl Bring<'_> {
         refusals: &mut Vec<(String, String)>,
     ) -> HashMap<String, ProcessorBinding> {
         let mut processors = HashMap::new();
-        for node in &self.graph.nodes {
+        let patch = &self.resolved.patch;
+        for node in &self.resolved.graph.nodes {
             let Some(params) = node.body.processor_params() else {
                 continue;
             };
-            let Some(array) = self.graph.array_of_processor(&node.id) else {
+            let Some(array) = source_of(patch, &node.id, ARRAY_PORT) else {
                 continue;
             };
-            if !arrays.get(array).is_some_and(|array| array.spec.is_some()) {
+            if !arrays.get(&array).is_some_and(|array| array.spec.is_some()) {
                 continue;
             }
-            let lane_ports = wired_lane_ports(self.graph, node);
+            let lane_ports = wired_lane_ports(patch, node);
             let spec = ProcessorSpec {
                 node: node.id.clone(),
-                array: array.to_owned(),
+                array: array.clone(),
                 params,
                 lane_ports: lane_ports.clone(),
-                steer_from: self.graph.steer_source(&node.id).map(str::to_owned),
+                steer_from: source_of(patch, &node.id, STEER_PORT),
             };
             if let Err(error) = self.state.engine.apply_processor(spec) {
                 refusals.push((node.id.clone(), error.to_string()));
             }
-            processors.insert(
-                node.id.clone(),
-                ProcessorBinding {
-                    array: array.to_owned(),
-                    lane_ports,
-                },
-            );
+            processors.insert(node.id.clone(), ProcessorBinding { array, lane_ports });
         }
         processors
     }
@@ -404,48 +426,48 @@ fn array_nodes(graph: &PatchGraph) -> impl Iterator<Item = (&PatchNode, &ArrayNo
     })
 }
 
-fn wired_arrays(graph: &PatchGraph) -> Vec<String> {
-    array_nodes(graph)
-        .filter(|(node, _)| matches!(wired_array(graph, &node.id), ArrayWiring::Lanes(_)))
+fn wired_arrays(resolved: &Resolved) -> Vec<String> {
+    array_nodes(&resolved.graph)
+        .filter(|(node, _)| {
+            matches!(
+                wired_array(&resolved.patch, &node.id),
+                ArrayWiring::Lanes(_)
+            )
+        })
         .map(|(node, _)| node.id.clone())
         .collect()
 }
 
-fn processors_on(graph: &PatchGraph, arrays: &[String]) -> Vec<String> {
-    graph
+fn processors_on(resolved: &Resolved, arrays: &[String]) -> Vec<String> {
+    resolved
+        .graph
         .nodes
         .iter()
         .filter(|node| node.body.processor_params().is_some())
         .filter(|node| {
-            graph
-                .array_of_processor(&node.id)
-                .is_some_and(|array| arrays.iter().any(|wired| wired == array))
+            source_of(&resolved.patch, &node.id, ARRAY_PORT)
+                .is_some_and(|array| arrays.contains(&array))
         })
         .map(|node| node.id.clone())
         .collect()
 }
 
-pub(crate) fn release(state: &AppState, graph: &PatchGraph) {
-    let arrays = wired_arrays(graph);
-    let processors = processors_on(graph, &arrays);
+pub(crate) fn release(state: &AppState, resolved: &Resolved) {
+    let arrays = wired_arrays(resolved);
+    let processors = processors_on(resolved, &arrays);
     state.engine.retain_arrays(&arrays);
     state.engine.retain_processors(&processors);
     for node in state.arrays.keep(&arrays, &processors) {
         state.surfaces.forget(&node);
     }
-    crate::radar::release(state, graph);
+    crate::radar::release(state, &resolved.graph);
 }
 
-fn wired_lane_ports(graph: &PatchGraph, node: &PatchNode) -> Vec<String> {
+fn wired_lane_ports(patch: &ResolvedPatch, node: &PatchNode) -> Vec<String> {
     node.body
         .lane_outputs()
         .iter()
-        .filter(|port| {
-            graph
-                .edges
-                .iter()
-                .any(|edge| edge.from.node == node.id && edge.from.port == **port)
-        })
+        .filter(|port| !patch.reaches(&node.id, port).is_empty())
         .map(|port| (*port).to_owned())
         .collect()
 }
@@ -457,19 +479,17 @@ fn surface_kind(body: &NodeBody) -> Option<StreamKind> {
 
 pub(crate) fn reconcile(
     state: &AppState,
-    graph: &PatchGraph,
-    bound: &[(String, u32)],
+    resolved: &Resolved,
     saved: &WorkspaceState,
 ) -> Vec<(String, String)> {
     let bring = Bring {
         state,
-        graph,
-        bound,
+        resolved,
         saved,
         live: state.engine.snapshot(),
         previous: state.arrays.arrays().clone(),
     };
-    state.engine.retain_arrays(&wired_arrays(graph));
+    state.engine.retain_arrays(&wired_arrays(resolved));
     let arrays = bring.bind_all();
     let mut refusals: Vec<(String, String)> = arrays
         .iter()
@@ -484,7 +504,7 @@ pub(crate) fn reconcile(
     let processors = bring.bind_processors(&arrays, &mut refusals);
     let listed: Vec<String> = processors.keys().cloned().collect();
     state.engine.retain_processors(&listed);
-    open_surfaces(state, graph, &processors);
+    open_surfaces(state, &resolved.graph, &processors);
     let gone = state.arrays.replace(arrays, processors);
     for node in gone.keys().filter(|node| !listed.contains(node)) {
         state.surfaces.forget(node);
@@ -538,7 +558,7 @@ fn pose(state: &AppState, array: &str, fix: Option<PositionFix>, received_ns: i6
 
 pub(crate) fn virtual_lane_channels(
     state: &AppState,
-    graph: &PatchGraph,
+    patch: &ResolvedPatch,
     live: &StateSnapshot,
 ) -> Vec<(String, u32, u32)> {
     let processors = state.arrays.processors();
@@ -553,7 +573,7 @@ pub(crate) fn virtual_lane_channels(
                         .is_some_and(|binding| binding.lane_ports.contains(&lane.port))
                 })
                 .flat_map(|lane| {
-                    lane_port_listeners(graph, &lane.node, &lane.port)
+                    lane_port_listeners(patch, &lane.node, &lane.port)
                         .into_iter()
                         .map(|listener| (listener, set.id, lane.stream))
                 })
@@ -563,13 +583,14 @@ pub(crate) fn virtual_lane_channels(
 
 pub(crate) fn open_virtual_lane_channels(
     state: &AppState,
-    graph: &PatchGraph,
+    resolved: &Resolved,
     saved: &WorkspaceState,
     report: &mut PatchApplyReport,
 ) {
     let live = state.engine.snapshot();
-    for (node, device_set, stream) in virtual_lane_channels(state, graph, &live) {
-        let Some(NodeBody::Channel(channel)) = graph.node(&node).map(|patch| &patch.body) else {
+    for (node, device_set, stream) in virtual_lane_channels(state, &resolved.patch, &live) {
+        let Some(NodeBody::Channel(channel)) = resolved.graph.node(&node).map(|patch| &patch.body)
+        else {
             continue;
         };
         let Some(set) = live.device_sets.iter().find(|set| set.id == device_set) else {
@@ -667,8 +688,8 @@ fn resend_poses(state: &AppState) {
     }
 }
 
-pub(crate) fn summary(state: &AppState, graph: &PatchGraph, node: &str) -> Option<ArraySummary> {
-    let NodeBody::Array(settings) = &graph.node(node)?.body else {
+pub(crate) fn summary(state: &AppState, resolved: &Resolved, node: &str) -> Option<ArraySummary> {
+    let NodeBody::Array(settings) = &resolved.graph.node(node)?.body else {
         return None;
     };
     let binding = state.arrays.binding(node);
@@ -687,7 +708,7 @@ pub(crate) fn summary(state: &AppState, graph: &PatchGraph, node: &str) -> Optio
             device_sets.push(lane.device_set);
         }
     }
-    let problem = wired_array(graph, node)
+    let problem = wired_array(&resolved.patch, node)
         .failure()
         .map(|failure| failure.to_string())
         .or_else(|| binding.as_ref().and_then(|binding| binding.problem.clone()))

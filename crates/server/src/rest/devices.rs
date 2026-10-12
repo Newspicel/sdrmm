@@ -144,7 +144,12 @@ pub(crate) fn patch_device_live(
     request_body = CreateChannelRequest,
     responses(
         (status = 200, description = "Channel created", body = CreatedId),
-        (status = 400, description = "Invalid channel settings", body = ApiError),
+        (
+            status = 400,
+            description = "Invalid channel settings, or `node` is not a free channel node \
+                           wired to this lane",
+            body = ApiError,
+        ),
         (status = 404, description = "Device set not found", body = ApiError),
         (status = 422, description = "Malformed request body", body = ApiError),
     ),
@@ -154,10 +159,40 @@ pub(super) async fn create_channel(
     Path(ds): Path<u32>,
     Json(req): Json<CreateChannelRequest>,
 ) -> Result<Json<CreatedId>, AppError> {
-    let engine = state.engine.clone();
-    let id = tokio::task::spawn_blocking(move || engine.add_channel(ds, req.stream, req.settings))
-        .await??;
+    let id = tokio::task::spawn_blocking(move || -> Result<u32, AppError> {
+        let _serialized = lock_gate(&state.apply_gate);
+        let graph = active_workspace(&state.store)?.snapshot.graph;
+        check_channel_node(&graph, &req.node, &req.settings)?;
+        let live = state.engine.snapshot();
+        if !live.device_sets.iter().any(|set| set.id == ds) {
+            return Err(EngineError::DeviceSetNotFound(ds).into());
+        }
+        if !workspace::feeds(&graph, &live, &req.node, ds, req.stream) {
+            return Err(AppError::bad_request(format!(
+                "{:?} is not wired to lane {} of this radio",
+                req.node, req.stream
+            )));
+        }
+        if node_has_channel(&live, &req.node) {
+            return Err(AppError::bad_request(format!(
+                "{:?} already has a channel",
+                req.node
+            )));
+        }
+        Ok(state
+            .engine
+            .add_channel_for(ds, req.stream, req.settings, Some(&req.node))?)
+    })
+    .await??;
     Ok(Json(CreatedId { id }))
+}
+
+fn node_has_channel(state: &StateSnapshot, node: &str) -> bool {
+    state
+        .device_sets
+        .iter()
+        .flat_map(|set| &set.channels)
+        .any(|channel| channel.node.as_deref() == Some(node))
 }
 
 #[utoipa::path(
@@ -271,7 +306,6 @@ pub(super) async fn delete_channel(
 pub(super) async fn get_channel_types(State(state): State<AppState>) -> Json<ChannelTypesResponse> {
     Json(ChannelTypesResponse {
         types: state.engine.channel_types(),
-        facets: sdrmm_wire::event_facets(),
     })
 }
 

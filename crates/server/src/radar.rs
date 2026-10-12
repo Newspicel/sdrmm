@@ -1,19 +1,21 @@
 use std::{
     collections::HashMap,
     sync::{Mutex, MutexGuard, PoisonError},
+    time::{Duration, Instant},
 };
 
 use jiff::Timestamp;
 use sdrmm_dsp::radar::assign::Assignment;
 use sdrmm_engine::{EngineError, ProcessorAction};
 use sdrmm_wire::{
-    AdsbMessage, AoaState, ArrayFailure, ArrayStatus, DecodedRecord, DecoderEvent, EventOrigin,
-    NO_CHANNEL, NodeBody, PassiveRadarParams, PatchGraph, ProcessorReading, RADAR_TX_PORT,
-    RadarProblem, RadarTrack, RadarTrackEvent, RadarUpdate, ReferenceMode, ServerEvent,
+    ARRAY_PORT, AdsbMessage, AoaState, ArrayFailure, ArrayStatus, DecodedRecord, DecoderEvent,
+    EventOrigin, NO_CHANNEL, NodeBody, PassiveRadarParams, PatchGraph, ProcessorReading,
+    RADAR_TX_PORT, RadarProblem, RadarSites, RadarTrack, RadarTrackEvent, RadarUpdate,
+    ReferenceMode, ResolvedPatch, ServerEvent, TrackState,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 
-use crate::{AppState, array, decoded::Decoded};
+use crate::{AppState, array, decoded::Decoded, resolved::Resolved};
 
 mod geometry;
 mod truth;
@@ -25,6 +27,7 @@ use geometry::Sites;
 use truth::AircraftTable;
 
 const OVERLOAD_CPIS: u32 = 3;
+const SITES_EVERY: Duration = Duration::from_secs(1);
 const NOT_RUNNING: &str = "Not running";
 
 #[derive(Debug, thiserror::Error)]
@@ -43,13 +46,11 @@ pub(crate) struct RadarBinding {
 }
 
 impl RadarBinding {
-    fn of(graph: &PatchGraph, node: &str, params: PassiveRadarParams) -> Self {
+    fn of(patch: &ResolvedPatch, node: &str, params: PassiveRadarParams) -> Self {
+        let source = |port| patch.first_feed(node, port).map(|feed| feed.source.clone());
         Self {
-            array: graph.array_of_processor(node).map(str::to_owned),
-            tx: graph
-                .sources_of(node, RADAR_TX_PORT)
-                .next()
-                .map(str::to_owned),
+            array: source(ARRAY_PORT),
+            tx: source(RADAR_TX_PORT),
             params,
         }
     }
@@ -94,6 +95,7 @@ struct RadarNode {
     overloaded: u32,
     lagged: u64,
     remembered: HashMap<u32, Enrichment>,
+    sites: Option<(RadarSites, Instant)>,
 }
 
 fn cpi_centre(update: &RadarUpdate) -> Timestamp {
@@ -120,7 +122,32 @@ impl RadarNode {
             overloaded: 0,
             lagged: 0,
             remembered: HashMap::new(),
+            sites: None,
         }
+    }
+
+    fn sites_due(&mut self, update: &RadarUpdate, now: Instant) -> Option<RadarSites> {
+        let next = RadarSites {
+            geometry: update.geometry,
+            ranges_km: update
+                .tracks
+                .iter()
+                .filter(|track| track.state == TrackState::Confirmed)
+                .map(|track| track.range_km)
+                .collect(),
+        };
+        let due = match &self.sites {
+            None => next.geometry.is_some(),
+            Some((told, at)) => {
+                told.geometry != next.geometry
+                    || (told.ranges_km != next.ranges_km && now.duration_since(*at) >= SITES_EVERY)
+            }
+        };
+        if !due {
+            return None;
+        }
+        self.sites = Some((next.clone(), now));
+        Some(next)
     }
 
     fn complete(&mut self, update: &mut RadarUpdate, sites: &Sites) {
@@ -276,10 +303,14 @@ impl RadarHub {
             let enriched = entry.enrich(events, &update.tracks);
             entry.refused = None;
             entry.latest = Some(update.clone());
-            enriched
+            (enriched, entry.sites_due(&update, Instant::now()))
         };
+        let (enriched, sites) = enriched;
+        let anchor = anchor(state, binding.array.as_deref());
+        if let Some(sites) = sites {
+            publish_sites(state, node, anchor, sites);
+        }
         if !enriched.is_empty() {
-            let anchor = anchor(state, binding.array.as_deref());
             publish(state, node, anchor, &update, enriched);
         }
         update
@@ -291,7 +322,7 @@ impl RadarHub {
             problems: vec![problem.clone()],
             ..RadarUpdate::default()
         };
-        {
+        let sites = {
             let mut nodes = self.lock();
             let entry = nodes
                 .entry(node.to_owned())
@@ -302,6 +333,10 @@ impl RadarHub {
             entry.refused = Some(problem);
             entry.remembered.clear();
             entry.latest = Some(update.clone());
+            entry.sites_due(&update, Instant::now())
+        };
+        if let Some(sites) = sites {
+            publish_sites(state, node, 0, sites);
         }
         emit(state, node, update);
     }
@@ -412,8 +447,26 @@ fn publish(
             event: DecoderEvent::Radar(event),
             sinks: Vec::new(),
             callsign: None,
+            view: None,
         });
     }
+}
+
+fn publish_sites(state: &AppState, node: &str, anchor: u32, sites: RadarSites) {
+    state.engine.publish_decoded(DecodedRecord {
+        origin: Some(EventOrigin {
+            node: node.to_owned(),
+            transmission: 0,
+        }),
+        device_set: anchor,
+        channel: NO_CHANNEL,
+        at: now_at(),
+        freq_hz: 0.0,
+        event: DecoderEvent::RadarSites(sites),
+        sinks: Vec::new(),
+        callsign: None,
+        view: None,
+    });
 }
 
 fn emit(state: &AppState, node: &str, update: RadarUpdate) {
@@ -449,14 +502,14 @@ fn refusal(
     }
 }
 
-pub(crate) fn reconcile(state: &AppState, graph: &PatchGraph) -> Vec<(String, String)> {
-    release(state, graph);
+pub(crate) fn reconcile(state: &AppState, resolved: &Resolved) -> Vec<(String, String)> {
+    release(state, &resolved.graph);
     let statuses = state.engine.array_statuses();
-    for node in &graph.nodes {
+    for node in &resolved.graph.nodes {
         let NodeBody::PassiveRadar(radar) = &node.body else {
             continue;
         };
-        let binding = RadarBinding::of(graph, &node.id, radar.settings);
+        let binding = RadarBinding::of(&resolved.patch, &node.id, radar.settings);
         let fresh = state.radar.bind(&node.id, binding.clone());
         match refusal(state, &statuses, &node.id, &binding) {
             Some(problem) => state.radar.refuse(state, &node.id, problem),

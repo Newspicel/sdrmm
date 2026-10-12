@@ -5,7 +5,7 @@ async fn nfm_decoder(app: &Router, ds: u32) -> u32 {
         app.clone(),
         "POST",
         &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100100000.0,"params":{"type":"nfm","settings":{}}}}"#),
+        Some(&tapped(app, ds, r#"{"settings":{"frequency_hz":100100000.0,"params":{"type":"nfm","settings":{}}}}"#).await),
     )
     .await;
     assert_eq!(status, StatusCode::OK);

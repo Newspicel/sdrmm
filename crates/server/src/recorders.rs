@@ -5,20 +5,23 @@ use std::{
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    AudioRoute, MAX_AUDIO_FX_CHAIN, NodeBody, PatchGraph, StateScope, StateSnapshot, port_stream,
+    AUDIO_PORT, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeKind, PatchGraph, ResolvedPatch,
+    StateScope, StateSnapshot,
 };
 
 use crate::{
     gps::GpsHub,
+    problems::ProblemBoard,
+    resolved::Resolved,
     rest::{lock_gate, reconcile_recordings},
     store::Store,
-    workspace::{bind, bind_devices},
 };
 
 pub(crate) struct Hooks {
     pub(crate) store: Arc<Store>,
     pub(crate) gate: Arc<Mutex<()>>,
     pub(crate) gps: Arc<GpsHub>,
+    pub(crate) problems: Arc<ProblemBoard>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -41,15 +44,8 @@ struct Tick<'a> {
 }
 
 impl Recorders {
-    pub(crate) fn reconcile(
-        &mut self,
-        engine: &Arc<Engine>,
-        graph: Option<&PatchGraph>,
-        hooks: &Hooks,
-    ) {
+    pub(crate) fn reconcile(&mut self, engine: &Arc<Engine>, resolved: &Resolved, hooks: &Hooks) {
         let snapshot = engine.snapshot();
-        let empty = PatchGraph::default();
-        let graph = graph.unwrap_or(&empty);
         let mut tick = Tick {
             engine,
             hooks,
@@ -57,9 +53,25 @@ impl Recorders {
             moved_iq: false,
         };
         let mut wanted_targets = HashSet::new();
-        self.audio(&mut tick, graph, &snapshot, &mut wanted_targets);
-        self.baseband(&mut tick, graph, &snapshot, &mut wanted_targets);
-        self.iq(&mut tick, graph, &snapshot, &mut wanted_targets);
+        let (graph, patch) = (&resolved.graph, &resolved.patch);
+        self.audio(
+            &mut tick,
+            wanted_audio(graph, patch),
+            &snapshot,
+            &mut wanted_targets,
+        );
+        self.baseband(
+            &mut tick,
+            wanted_baseband(graph, patch),
+            &snapshot,
+            &mut wanted_targets,
+        );
+        self.iq(
+            &mut tick,
+            wanted_iq(graph, patch),
+            &snapshot,
+            &mut wanted_targets,
+        );
         self.failures
             .retain(|target, _| wanted_targets.contains(target));
         tick.finish();
@@ -68,11 +80,10 @@ impl Recorders {
     fn audio(
         &mut self,
         tick: &mut Tick<'_>,
-        graph: &PatchGraph,
+        wanted: HashMap<AudioRoute, bool>,
         snapshot: &StateSnapshot,
         targets: &mut HashSet<Target>,
     ) {
-        let wanted = wanted_audio(graph, snapshot);
         let current = running_audio(snapshot);
         for route in current.iter().filter(|route| !wanted.contains_key(*route)) {
             match tick.engine.stop_route_recording(route) {
@@ -99,11 +110,10 @@ impl Recorders {
     fn baseband(
         &mut self,
         tick: &mut Tick<'_>,
-        graph: &PatchGraph,
+        wanted: HashSet<(u32, u32)>,
         snapshot: &StateSnapshot,
         targets: &mut HashSet<Target>,
     ) {
-        let wanted = wanted_baseband(graph, snapshot);
         let current = running_baseband(snapshot);
         for &(device_set, channel) in current.difference(&wanted) {
             match tick
@@ -142,11 +152,10 @@ impl Recorders {
     fn iq(
         &mut self,
         tick: &mut Tick<'_>,
-        graph: &PatchGraph,
+        wanted: HashMap<u32, u32>,
         snapshot: &StateSnapshot,
         targets: &mut HashSet<Target>,
     ) {
-        let wanted = wanted_iq(graph, snapshot);
         let current = running_iq(snapshot);
         for (&device_set, &stream) in &current {
             if wanted.get(&device_set) == Some(&stream) {
@@ -196,7 +205,7 @@ impl Recorders {
 impl Tick<'_> {
     fn finish(self) {
         if self.moved_iq {
-            self.hooks.gps.route_for(self.engine, &self.hooks.store);
+            self.hooks.gps.route_for(self.engine, &self.hooks.problems);
         }
         if !self.finished {
             return;
@@ -223,26 +232,11 @@ fn skips_silence(body: &NodeBody) -> bool {
     matches!(body, NodeBody::AudioRecorder(recorder) if recorder.skip_silence)
 }
 
-fn switched_on<'a>(
-    graph: &'a PatchGraph,
-    kind: &'a str,
-) -> impl Iterator<Item = &'a sdrmm_wire::PatchNode> {
+fn switched_on(graph: &PatchGraph, kind: NodeKind) -> impl Iterator<Item = &sdrmm_wire::PatchNode> {
     graph
         .nodes
         .iter()
         .filter(move |node| node.body.kind() == kind && recording(&node.body))
-}
-
-fn channel_bindings(graph: &PatchGraph, snapshot: &StateSnapshot) -> Vec<(String, u32, u32)> {
-    bind(graph, snapshot)
-        .into_iter()
-        .flat_map(|binding| {
-            binding
-                .channels
-                .into_iter()
-                .map(move |(node, channel)| (node, binding.device_set, channel))
-        })
-        .collect()
 }
 
 fn running_audio(snapshot: &StateSnapshot) -> HashSet<AudioRoute> {
@@ -264,19 +258,16 @@ fn running_audio(snapshot: &StateSnapshot) -> HashSet<AudioRoute> {
         .collect()
 }
 
-fn wanted_audio(graph: &PatchGraph, snapshot: &StateSnapshot) -> HashMap<AudioRoute, bool> {
-    let channels = channel_bindings(graph, snapshot);
+fn wanted_audio(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<AudioRoute, bool> {
     let mut wanted = HashMap::new();
-    for node in switched_on(graph, "audio_recorder") {
+    for node in switched_on(graph, NodeKind::AudioRecorder) {
         let skip = skips_silence(&node.body);
-        for (channel_node, fx) in audio_paths_into(graph, &node.id) {
-            for &(_, device_set, channel) in
-                channels.iter().filter(|(node, _, _)| *node == channel_node)
-            {
+        for feed in patch.feeds(&node.id, AUDIO_PORT) {
+            for addr in feed.tap.iter().flat_map(sdrmm_wire::Tap::channels) {
                 let route = AudioRoute {
-                    device_set,
-                    channel,
-                    fx: fx.clone(),
+                    device_set: addr.device_set,
+                    channel: addr.channel,
+                    fx: feed.via.clone(),
                 };
                 wanted
                     .entry(route)
@@ -301,16 +292,11 @@ fn running_baseband(snapshot: &StateSnapshot) -> HashSet<(u32, u32)> {
         .collect()
 }
 
-fn wanted_baseband(graph: &PatchGraph, snapshot: &StateSnapshot) -> HashSet<(u32, u32)> {
-    let channels = channel_bindings(graph, snapshot);
-    switched_on(graph, "baseband_recorder")
-        .flat_map(|node| graph.sources_of(&node.id, "baseband"))
-        .flat_map(|source| {
-            channels
-                .iter()
-                .filter(move |(node, _, _)| node == source)
-                .map(|&(_, device_set, channel)| (device_set, channel))
-        })
+fn wanted_baseband(graph: &PatchGraph, patch: &ResolvedPatch) -> HashSet<(u32, u32)> {
+    switched_on(graph, NodeKind::BasebandRecorder)
+        .flat_map(|node| patch.feeds(&node.id, BASEBAND_PORT))
+        .flat_map(|feed| feed.tap.iter().flat_map(sdrmm_wire::Tap::channels))
+        .map(|addr| (addr.device_set, addr.channel))
         .collect()
 }
 
@@ -322,62 +308,25 @@ fn running_iq(snapshot: &StateSnapshot) -> HashMap<u32, u32> {
         .collect()
 }
 
-fn wanted_iq(graph: &PatchGraph, snapshot: &StateSnapshot) -> HashMap<u32, u32> {
-    let devices: HashMap<String, u32> = bind_devices(graph, snapshot).into_iter().collect();
+fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<u32, u32> {
     let mut wanted = HashMap::new();
-    for node in switched_on(graph, "recorder") {
-        for edge in graph
-            .edges
+    for node in switched_on(graph, NodeKind::Recorder) {
+        for (device_set, stream) in patch
+            .feeds(&node.id, IQ_PORT)
             .iter()
-            .filter(|edge| edge.to.node == node.id && edge.to.port == "iq")
+            .filter_map(|feed| feed.tap.as_ref()?.lane())
         {
-            let (Some(&device_set), Some(stream)) = (
-                devices.get(&edge.from.node),
-                port_stream("iq", &edge.from.port),
-            ) else {
-                continue;
-            };
             wanted.entry(device_set).or_insert(stream);
         }
     }
     wanted
 }
 
-pub(crate) fn audio_paths_into(graph: &PatchGraph, sink: &str) -> Vec<(String, Vec<String>)> {
-    let mut paths = Vec::new();
-    walk(graph, sink, &mut Vec::new(), &mut paths);
-    paths
-}
-
-fn walk(
-    graph: &PatchGraph,
-    node: &str,
-    fx: &mut Vec<String>,
-    paths: &mut Vec<(String, Vec<String>)>,
-) {
-    if fx.len() > MAX_AUDIO_FX_CHAIN {
-        return;
-    }
-    for source in graph.sources_of(node, "audio") {
-        match graph.node(source).map(|found| &found.body) {
-            Some(NodeBody::AudioFx(_)) => {
-                fx.push(source.to_owned());
-                walk(graph, source, fx, paths);
-                fx.pop();
-            }
-            Some(NodeBody::Channel(_)) => {
-                paths.push((source.to_owned(), fx.iter().rev().cloned().collect()));
-            }
-            _ => {}
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::{
-        AudioFxNode, AudioRecorderNode, ChannelNode, DeviceNode, DeviceRef, PatchEdge, PatchNode,
-        PortRef, Position, RecorderNode,
+        AudioRecorderNode, ChannelNode, DeviceNode, DeviceRef, PatchEdge, PatchNode, PortRef,
+        Position, RecorderNode,
     };
 
     use super::*;
@@ -419,10 +368,6 @@ mod tests {
         )
     }
 
-    fn fx(id: &str) -> PatchNode {
-        node(id, NodeBody::AudioFx(AudioFxNode::default()))
-    }
-
     fn on(recording: bool) -> RecorderNode {
         RecorderNode { recording }
     }
@@ -434,32 +379,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_recorder_sees_each_channel_through_the_fx_chain_in_front_of_it() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("a"),
-                channel("b"),
-                fx("near"),
-                fx("far"),
-                node("rec", NodeBody::AudioRecorder(audio_on(true))),
-            ],
-            edges: vec![
-                audio("a", "near"),
-                audio("near", "far"),
-                audio("far", "rec"),
-                audio("b", "rec"),
-            ],
-        };
-        let mut paths = audio_paths_into(&graph, "rec");
-        paths.sort();
-        assert_eq!(
-            paths,
-            vec![
-                ("a".to_owned(), vec!["near".to_owned(), "far".to_owned()]),
-                ("b".to_owned(), Vec::new()),
-            ]
-        );
+    fn resolved(graph: Option<PatchGraph>, engine: &Engine) -> Resolved {
+        graph.map_or_else(Resolved::default, |graph| Resolved {
+            patch: crate::workspace::resolve(&graph, &engine.snapshot()),
+            graph: Arc::new(graph),
+            ..Resolved::default()
+        })
+    }
+
+    fn wanted(graph: &PatchGraph, engine: &Engine) -> HashMap<AudioRoute, bool> {
+        let resolved = resolved(Some(graph.clone()), engine);
+        wanted_audio(&resolved.graph, &resolved.patch)
     }
 
     fn patch(recording: bool) -> PatchGraph {
@@ -537,15 +467,9 @@ mod tests {
             }),
         ));
         graph.edges.push(audio("ch", "quiet"));
-        assert_eq!(
-            wanted_audio(&graph, &engine.snapshot()).get(&route),
-            Some(&false)
-        );
+        assert_eq!(wanted(&graph, &engine).get(&route), Some(&false));
         graph.nodes.retain(|found| found.id != "audio");
-        assert_eq!(
-            wanted_audio(&graph, &engine.snapshot()).get(&route),
-            Some(&true)
-        );
+        assert_eq!(wanted(&graph, &engine).get(&route), Some(&true));
         engine.remove_device_set(ds).expect("close");
     }
 
@@ -558,25 +482,26 @@ mod tests {
             store,
             gate: Arc::new(Mutex::new(())),
             gps: Arc::new(GpsHub::default()),
+            problems: Arc::default(),
         };
         let mut recorders = Recorders::default();
 
-        recorders.reconcile(&engine, Some(&patch(true)), &hooks);
+        recorders.reconcile(&engine, &resolved(Some(patch(true)), &engine), &hooks);
         let started = running(&engine, ch);
         assert!(started.iq && started.baseband && started.audio == 1);
-        recorders.reconcile(&engine, Some(&patch(true)), &hooks);
+        recorders.reconcile(&engine, &resolved(Some(patch(true)), &engine), &hooks);
         assert_eq!(
             running(&engine, ch).audio,
             1,
             "a second tick doubled a file"
         );
 
-        recorders.reconcile(&engine, Some(&patch(false)), &hooks);
+        recorders.reconcile(&engine, &resolved(Some(patch(false)), &engine), &hooks);
         let stopped = running(&engine, ch);
         assert!(!stopped.iq && !stopped.baseband && stopped.audio == 0);
 
-        recorders.reconcile(&engine, Some(&patch(true)), &hooks);
-        recorders.reconcile(&engine, None, &hooks);
+        recorders.reconcile(&engine, &resolved(Some(patch(true)), &engine), &hooks);
+        recorders.reconcile(&engine, &resolved(None, &engine), &hooks);
         let closed = running(&engine, ch);
         assert!(!closed.iq && !closed.baseband && closed.audio == 0);
         engine.remove_device_set(ds).expect("close");

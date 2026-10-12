@@ -10,7 +10,7 @@ use sdrmm_modem::{
 use sdrmm_wire::{
     BroadcastService, BroadcastServiceKind, BroadcastStatus, BroadcastSystem, ChannelDescriptor,
     ChannelParams, ChannelSettings, DatvParams, DatvRollOff, DatvStandard, DecoderEvent,
-    DecoderFamily, MAX_DATV_SYMBOL_RATE, MAX_SUPERFRAME_CODE, MIN_DATV_SYMBOL_RATE,
+    DecoderFamily, EventKind, MAX_DATV_SYMBOL_RATE, MAX_SUPERFRAME_CODE, MIN_DATV_SYMBOL_RATE,
     SuperframeStatus,
 };
 
@@ -65,7 +65,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: input_rate_hz(&DatvParams::default()),
     has_audio: true,
     has_video: true,
-    decoder_kind: Some("broadcast_data".to_owned()),
+    emits: vec![EventKind::BroadcastData, EventKind::Broadcast],
     ..ChannelDescriptor::default()
 });
 

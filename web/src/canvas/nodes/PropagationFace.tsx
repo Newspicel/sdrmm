@@ -1,5 +1,5 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { ConfirmButton } from "../../components/ConfirmButton";
 import { TABLE_CELL, TABLE_HEAD } from "../../components/controls";
 import { Chips, ChoiceChip, ToggleChip } from "../../components/face/Chips";
@@ -7,7 +7,7 @@ import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { formatMhz } from "../../components/format";
 import { MapPanel } from "../../components/MapPanel";
-import { decoderLogQuery, ionosondeQuery } from "../../lib/api";
+import { clearSink, ionosondeQuery } from "../../lib/api";
 import {
   type CellComparison,
   compareCells,
@@ -15,35 +15,15 @@ import {
   forecastAt,
 } from "../../lib/ionosonde";
 import { mufColor, type PropagationLayer } from "../../lib/map/propagation";
-import { positionSourcesOf, usePositionStore } from "../../lib/position";
-import {
-  EMPTY_SESSION,
-  liveObservations,
-  mergeObservations,
-  observationOf,
-  type PathObservation,
-  PROPAGATION_KINDS,
-  propagationCells,
-  propagationPaths,
-  propagationSummary,
-  receiverOf,
-  usePropagationStore,
-} from "../../lib/propagation";
-import type { DecodedRecord, PatchNode, PatchNodeOf, ServerEvent } from "../../lib/types";
-import { type Input, inputsOf } from "../binding";
+import { useFeeds } from "../../lib/resolved";
+import { useSinkFeed } from "../../lib/sinks";
+import type { PatchNode, PatchNodeOf, PropagationCell, PropagationView } from "../../lib/types";
+import { toastError } from "../../lib/toasts";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
 
-const REDRAW_MS = 2_000;
-
 const NO_POSITIONS: readonly string[] = [];
-
-const NO_RECEIVER: readonly [number, number] = [0, 0];
-
-const HISTORY_HOURS = 6;
-
-const HISTORY_LIMIT = 2_000;
 
 const EMPTY_SONDES: never[] = [];
 
@@ -70,142 +50,42 @@ const LAYER_OPTIONS = [
   { value: "muf" as const, label: "MUF" },
 ];
 
-export function PropagationFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
-  const inputs = inputsOf(
-    workspace.graph,
-    node.id,
-    "events",
-    workspace.devices,
-    workspace.channels,
-    workspace.trunks,
-    workspace.owners,
-  );
-  const wired = inputs.filter((input) =>
-    (PROPAGATION_KINDS as readonly string[]).includes(
-      workspace.context.channelTypes.find(
-        (type) => type.type_id === input.channel.settings.params.type,
-      )?.decoder_kind ?? "",
-    ),
-  );
-  const positionNode = positionSourcesOf(workspace.graph, node.id)[0];
-  const fix = usePositionStore((store) =>
-    positionNode === undefined ? undefined : store.sources[positionNode]?.fix,
-  );
-  const receiver = receiverOf(fix ?? undefined);
+const EMPTY_VIEW: PropagationView = {
+  cells: [],
+  summary: { decodes: 0, grids: 0, callsigns: 0, bands: 0, best_freq_hz: 0, farthest_km: 0 },
+};
 
+const NO_RECEIVER: [number, number] = [0, 0];
+
+export function PropagationFace({ node }: { node: PatchNode }) {
   if (node.kind !== "propagation") {
     return null;
   }
-
   return (
     <NodeShell node={node} title="Propagation map" category="output">
-      <Propagation
-        node={node}
-        inputs={wired}
-        positionNode={positionNode ?? null}
-        receiver={receiver}
-      />
+      <Propagation node={node} />
     </NodeShell>
   );
 }
 
-function Propagation({
-  node,
-  inputs,
-  positionNode,
-  receiver,
-}: {
-  node: PatchNodeOf<"propagation">;
-  inputs: readonly Input[];
-  positionNode: string | null;
-  receiver: readonly [number, number] | null;
-}) {
+function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
   const workspace = useWorkspaceContext();
   const active = useFaceActive();
-  const session = usePropagationStore((store) => store.sessions[node.id]) ?? EMPTY_SESSION;
-  const observe = usePropagationStore((store) => store.observe);
-  const clear = usePropagationStore((store) => store.clear);
+  const positionNode = useFeeds(node.id, "position")[0]?.source ?? null;
+  const view = useSinkFeed(node.id).propagation ?? EMPTY_VIEW;
   const [layer, setLayer] = useState<PropagationLayer>("activity");
-  const [tick, setTick] = useState(() => Date.now());
-
-  const settings = node.data;
-  const heightKm = settings.reflection_height_km;
-  const halfLifeMinutes = settings.half_life_minutes;
-  const sources = inputs.map((input) => `${input.deviceSet}:${input.channel.id}`).join(",");
-  const nodes = inputs.map((input) => input.node).join(",");
-  const [latitude, longitude] = receiver ?? NO_RECEIVER;
-  const station = useMemo<[number, number]>(() => [latitude, longitude], [latitude, longitude]);
-  const options = useMemo(() => ({ halfLifeMinutes, nowMs: tick }), [halfLifeMinutes, tick]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setTick(Date.now()), REDRAW_MS);
-    return () => clearInterval(timer);
-  }, []);
-
-  const socket = workspace.socket;
-  const located = receiver !== null;
-  useEffect(() => {
-    if (socket === null || !located) {
-      return;
-    }
-    const wanted = new Set(sources === "" ? [] : sources.split(","));
-    return socket.on("event", (event: ServerEvent) => {
-      const records: DecodedRecord[] =
-        event.type === "Decoded"
-          ? [event.data]
-          : event.type === "DecodedBacklog"
-            ? event.data.records
-            : [];
-      const observations = records
-        .filter((record) => wanted.has(`${record.device_set}:${record.channel}`))
-        .map((record) => observationOf(record, station, heightKm))
-        .filter((observation): observation is PathObservation => observation !== null);
-      observe(node.id, observations);
-    });
-  }, [socket, located, sources, station, heightKm, node.id, observe]);
-
-  const [since] = useState(() => new Date(Date.now() - HISTORY_HOURS * 3_600_000).toISOString());
-  const stored = useQueries({
-    queries: PROPAGATION_KINDS.map((kind) =>
-      decoderLogQuery({ kind, nodes, sources, since, limit: HISTORY_LIMIT }),
-    ),
-    combine: (results) => results.flatMap((result) => result.data?.entries ?? []),
+  const clear = useMutation({
+    mutationFn: () => clearSink(node.id),
+    onError: (error: Error) => toastError(error),
   });
-  const seed = useMemo(
-    () =>
-      stored
-        .map((entry) =>
-          observationOf(
-            {
-              device_set: entry.device_set,
-              channel: entry.channel,
-              at: entry.at,
-              freq_hz: entry.freq_hz,
-              event: entry.event,
-            },
-            station,
-            heightKm,
-          ),
-        )
-        .filter((observation): observation is PathObservation => observation !== null),
-    [stored, station, heightKm],
+  const settings = node.data;
+  const { cells, summary } = view;
+  const paths = view.paths ?? EMPTY_PATHS;
+  const receiver = view.receiver;
+  const station = useMemo<[number, number]>(
+    () => (receiver == null ? NO_RECEIVER : [receiver.lat, receiver.lon]),
+    [receiver],
   );
-
-  const held = useMemo(
-    () => mergeObservations(seed, session.observations),
-    [seed, session.observations],
-  );
-  const observations = useMemo(
-    () => liveObservations(held, options, session.clearedAt),
-    [held, session.clearedAt, options],
-  );
-  const cells = useMemo(() => propagationCells(observations, options), [observations, options]);
-  const paths = useMemo(
-    () => (settings.show_paths ? propagationPaths(observations, station, options) : EMPTY_PATHS),
-    [observations, station, settings.show_paths, options],
-  );
-  const summary = useMemo(() => propagationSummary(observations), [observations]);
 
   const ionosonde = useQuery(ionosondeQuery(settings.compare_forecast));
   const reported = ionosonde.data?.stations;
@@ -236,7 +116,6 @@ function Propagation({
     <>
       <FaceBody scroll={false}>
         <MapPanel
-          kinds={[]}
           positionNodes={positionNode === null ? NO_POSITIONS : [positionNode]}
           propagation={overlay}
           active={active}
@@ -248,15 +127,15 @@ function Propagation({
           <Readout label="Grids">{summary.grids}</Readout>
           <Readout label="Cells">{cells.length}</Readout>
           <Readout label="Highest" title="Highest frequency heard">
-            {formatMhz(summary.bestFreqHz)}
+            {formatMhz(summary.best_freq_hz)}
           </Readout>
           <Readout
             label="MUF(3000)"
             title="Measured MUF is a floor: the highest frequency decoded over each path, projected onto a 3000 km hop"
           >
-            {summary.bestMuf3000Mhz === null ? "-" : `≥ ${summary.bestMuf3000Mhz.toFixed(1)} MHz`}
+            {summary.best_muf3000_mhz == null ? "-" : `≥ ${summary.best_muf3000_mhz.toFixed(1)} MHz`}
           </Readout>
-          <Readout label="Farthest">{Math.round(summary.farthestKm)} km</Readout>
+          <Readout label="Farthest">{Math.round(summary.farthest_km)} km</Readout>
           {settings.compare_forecast && (
             <ForecastReadouts
               overheadMhz={overhead?.muf3000Mhz ?? null}
@@ -282,8 +161,8 @@ function Propagation({
       <FaceFooter>
         <ConfirmButton
           label="Clear"
-          disabled={observations.length === 0}
-          onConfirm={() => clear(node.id)}
+          disabled={summary.decodes === 0 || clear.isPending}
+          onConfirm={() => clear.mutate()}
         />
       </FaceFooter>
     </>
@@ -389,13 +268,13 @@ function PathTable({
   compareForecast,
 }: {
   comparisons: readonly CellComparison[];
-  cells: readonly ReturnType<typeof propagationCells>[number][];
+  cells: readonly PropagationCell[];
   compareForecast: boolean;
 }) {
   const rows = compareForecast
     ? comparisons.toSorted((a, b) => b.cell.weight - a.cell.weight).slice(0, 12)
     : [];
-  const plain = compareForecast ? [] : cells.slice(0, 12);
+  const plain = rows.length === 0 ? cells.slice(0, 12) : [];
   if (rows.length === 0 && plain.length === 0) {
     return <p className="px-2 py-2 font-mono text-3xs text-ink-faint">No reflection points yet.</p>;
   }
@@ -407,8 +286,8 @@ function PathTable({
           <th className={TABLE_HEAD}>Decodes</th>
           <th className={TABLE_HEAD}>Highest</th>
           <th className={TABLE_HEAD}>Measured MUF</th>
-          {compareForecast && <th className={TABLE_HEAD}>Forecast</th>}
-          {compareForecast && <th className={TABLE_HEAD}>Δ</th>}
+          {rows.length > 0 && <th className={TABLE_HEAD}>Forecast</th>}
+          {rows.length > 0 && <th className={TABLE_HEAD}>Δ</th>}
         </tr>
       </thead>
       <tbody>
@@ -416,7 +295,7 @@ function PathTable({
           <tr key={row.cell.key} className="border-t border-line">
             <td className={TABLE_CELL}>{row.cell.key}</td>
             <td className={TABLE_CELL}>{row.cell.decodes}</td>
-            <td className={TABLE_CELL}>{formatMhz(row.cell.bestFreqHz)}</td>
+            <td className={TABLE_CELL}>{formatMhz(row.cell.best_freq_hz)}</td>
             <td className={TABLE_CELL} style={{ color: mufColor(row.measuredMuf3000Mhz) }}>
               ≥ {row.measuredMuf3000Mhz.toFixed(1)}
             </td>
@@ -431,9 +310,9 @@ function PathTable({
           <tr key={cell.key} className="border-t border-line">
             <td className={TABLE_CELL}>{cell.key}</td>
             <td className={TABLE_CELL}>{cell.decodes}</td>
-            <td className={TABLE_CELL}>{formatMhz(cell.bestFreqHz)}</td>
+            <td className={TABLE_CELL}>{formatMhz(cell.best_freq_hz)}</td>
             <td className={TABLE_CELL}>
-              {cell.measuredMuf3000Mhz === null ? "-" : `≥ ${cell.measuredMuf3000Mhz.toFixed(1)}`}
+              {cell.measured_muf3000_mhz == null ? "-" : `≥ ${cell.measured_muf3000_mhz.toFixed(1)}`}
             </td>
           </tr>
         ))}

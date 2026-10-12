@@ -224,7 +224,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
       </FaceBody>
       <FaceFooter>
         <SourceHealth set={set} />
-        {offersMakeArray(workspace.graph, node.id, set) && (
+        {offersMakeArray(workspace.resolved, node.id, set) && (
           <MakeArrayButton node={node.id} set={set} />
         )}
         <Button

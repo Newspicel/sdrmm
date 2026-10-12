@@ -20,9 +20,9 @@ import {
   timeMachinePhase,
 } from "../../components/timeMachine";
 import type { PatchNode, PatchNodeOf, TimeMachineStatus } from "../../lib/types";
-import { iqSourceOf } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { iqSourceOf } from "../lanes";
 import { deviceSetOf } from "../workspaceDevice";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 
@@ -36,7 +36,7 @@ export function TimeMachineFace({ node }: { node: PatchNode }) {
 function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
   const workspace = useWorkspaceContext();
   const set = deviceSetOf(workspace, node.id);
-  const stream = iqSourceOf(workspace.graph, node.id, workspace.devices)?.stream ?? 0;
+  const stream = iqSourceOf(workspace.resolved, node.id)?.stream ?? 0;
   const seconds = node.data.history_seconds ?? DEFAULT_HISTORY_SECONDS;
   const phase = timeMachinePhase(set, node.id);
   const status = phase.kind === "armed" || phase.kind === "capturing" ? phase.status : null;

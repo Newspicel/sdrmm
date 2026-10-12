@@ -9,7 +9,14 @@ async fn channel_audio_record_list_download_and_delete_roundtrip_over_http() {
         app.clone(),
         "POST",
         &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#),
+        Some(
+            &tapped(
+                &app,
+                ds,
+                r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#,
+            )
+            .await,
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK);

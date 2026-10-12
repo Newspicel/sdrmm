@@ -23,6 +23,7 @@ import { BTN_QUIET, SURFACE } from "../components/controls";
 import { CANVAS_MOVED } from "../components/Popover";
 import { createPointerSender, draggedByOthers, othersOf, usePresenceStore } from "../lib/presence";
 import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types";
+import { HUE_COLOR, portHue } from "../sinks/hues";
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
 import { useClipboard } from "./clipboard";
 import { useWorkspaceContext } from "./context";
@@ -32,8 +33,8 @@ import {
   type GraphContext,
   isPinned,
   isResizable,
-  NODE_SIZE,
   nodeOf,
+  nodeSize,
   patchNode,
   pin,
   portOf,
@@ -141,7 +142,7 @@ export function Canvas() {
     commitGeometry,
   );
 
-  const { isValidConnection, onConnect, onConnectEnd } = useConnections(workspace);
+  const { isValidConnection, onConnect, onConnectStart, onConnectEnd } = useConnections(workspace);
   useFitOnceMeasured();
   const { screenToFlowPosition } = useReactFlow();
 
@@ -205,6 +206,7 @@ export function Canvas() {
           commitGeometry();
         }}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onBeforeDelete={onBeforeDelete}
         isValidConnection={isValidConnection}
@@ -449,7 +451,7 @@ function ContextMenu({
 
 function toFlowNodes(graph: PatchGraph): Node<FlowData>[] {
   return graph.nodes.map((node) => {
-    const size = (isResizable(node.kind) ? node.size : null) ?? NODE_SIZE[node.kind];
+    const size = (isResizable(node.kind) ? node.size : null) ?? nodeSize(node.kind);
     return {
       id: node.id,
       type: node.kind,
@@ -472,6 +474,9 @@ function toFlowEdges(graph: PatchGraph, context: GraphContext): Edge[] {
       target: edge.to.node,
       targetHandle: edge.to.port,
       className: `wire-${carried}`,
+      ...(carried === undefined
+        ? {}
+        : { style: { stroke: HUE_COLOR[portHue(context.catalog, carried)] } }),
     };
   });
 }

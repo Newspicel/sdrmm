@@ -1,5 +1,4 @@
 import { useArrayStore } from "./arrays";
-import { useBearingStore } from "./bearings";
 import { useFusionStore } from "./fusion";
 import { usePositionStore } from "./position";
 import { useProcessorStore } from "./processors";
@@ -9,7 +8,6 @@ import { useSurveyStore } from "./survey";
 const STORES = [
   useProcessorStore,
   useArrayStore,
-  useBearingStore,
   useFusionStore,
   useSurveyStore,
   useRefusalStore,

@@ -5,10 +5,11 @@ use std::{
 };
 
 use sdrmm_wire::{
-    NodeBody, PatchGraph, RotatorAxes, RotatorLink, RotatorNode, RotatorStatus, ServerEvent,
+    CONTROL_PORT, NodeBody, NodeKind, RotatorAxes, RotatorLink, RotatorNode, RotatorStatus,
+    ServerEvent,
 };
 
-use crate::AppState;
+use crate::{AppState, resolved::Resolved};
 
 mod driver;
 mod gs232;
@@ -67,16 +68,7 @@ impl RotatorHub {
     }
 
     pub(crate) fn reconcile(&self, state: &AppState) {
-        let graph = match state.store.active_workspace() {
-            Ok(active) => active
-                .map(|active| active.snapshot.graph)
-                .unwrap_or_default(),
-            Err(error) => {
-                tracing::warn!(%error, "could not reconcile rotators");
-                return;
-            }
-        };
-        let wanted = wanted(&graph);
+        let wanted = wanted(&state.resolved.current());
         let mut workers = locked(&self.workers);
         workers.retain(|node, worker| {
             let keep = wanted
@@ -139,8 +131,9 @@ impl Drop for RotatorHub {
     }
 }
 
-fn wanted(graph: &PatchGraph) -> Vec<Wanted> {
-    graph
+fn wanted(resolved: &Resolved) -> Vec<Wanted> {
+    resolved
+        .graph
         .nodes
         .iter()
         .filter_map(|node| match &node.body {
@@ -151,14 +144,17 @@ fn wanted(graph: &PatchGraph) -> Vec<Wanted> {
                     axes: settings.axes,
                 },
                 follow: Follow {
-                    satellite: graph
-                        .sources_of(&node.id, "control")
-                        .find(|source| {
-                            graph
-                                .node(source)
-                                .is_some_and(|node| matches!(node.body, NodeBody::Satellite(_)))
+                    satellite: resolved
+                        .patch
+                        .feeds(&node.id, CONTROL_PORT)
+                        .iter()
+                        .find(|feed| {
+                            resolved
+                                .patch
+                                .node(&feed.source)
+                                .is_some_and(|source| source.kind == NodeKind::Satellite)
                         })
-                        .map(str::to_owned),
+                        .map(|feed| feed.source.clone()),
                     settings: settings.clone(),
                 },
             }),

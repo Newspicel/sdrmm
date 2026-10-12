@@ -11,9 +11,9 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass, flat_bandwidth_hz};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, IdentFeatures,
-    IdentParams, IdentReport, IdentSignal, MAX_IDENT_BANDWIDTH_HZ, MIN_IDENT_BANDWIDTH_HZ,
-    Modulation,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    IdentFeatures, IdentParams, IdentReport, IdentSignal, MAX_IDENT_BANDWIDTH_HZ,
+    MIN_IDENT_BANDWIDTH_HZ, Modulation,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -52,7 +52,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: MAX_IDENT_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    decoder_kind: Some("ident".to_owned()),
+    emits: vec![EventKind::Ident],
     ..ChannelDescriptor::default()
 });
 

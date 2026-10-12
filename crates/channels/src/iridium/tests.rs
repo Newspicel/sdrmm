@@ -27,6 +27,16 @@ const ORACLE_DA: &str = "0011000000110000111100111100110011001100100000000001001
 
 type Snapshot = (String, Value, Option<Value>);
 
+pub(crate) fn fixture() -> crate::fixtures::Fixture {
+    crate::fixtures::Fixture::new(
+        ChannelParams::Iridium(IridiumParams::default()),
+        place(
+            &[modulate(&canonical(OFF_AIR_RA), 64, CHANNEL_RATE, 0.0, 0.5)],
+            4_000,
+        ),
+    )
+}
+
 fn canonical(raw: &str) -> Vec<u8> {
     symbol_reverse(&bits_of_str(raw))
 }

@@ -7,7 +7,8 @@ import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatHz, formatSignedHz } from "../../components/format";
 import { MapPanel } from "../../components/MapPanel";
 import { OffsetStepper } from "../../components/OffsetStepper";
-import { positionSourcesOf, usePositionStore } from "../../lib/position";
+import { usePositionStore } from "../../lib/position";
+import { useFeeds } from "../../lib/resolved";
 import {
   canStart,
   retunedSince,
@@ -19,9 +20,9 @@ import {
 } from "../../lib/signalSurvey";
 import { EMPTY_SURVEY, useSurveyControl, useSurveySeed, useSurveyStore } from "../../lib/survey";
 import type { PatchNode, PatchNodeOf, SurveyCell } from "../../lib/types";
-import { hasWire, iqSourceOf } from "../binding";
 import { useWorkspaceContext, type Workspace } from "../context";
 import { patchNode } from "../graph";
+import { iqSourceOf } from "../lanes";
 import { deviceSetOf } from "../workspaceDevice";
 import { laneCenterHz, laneRateHz } from "./deviceNode";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
@@ -33,8 +34,9 @@ const MAX_BANDWIDTH_HZ = 100_000_000;
 export function SignalMapFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const set = deviceSetOf(workspace, node.id);
-  const iq = iqSourceOf(workspace.graph, node.id, workspace.devices);
-  const positionNode = positionSourcesOf(workspace.graph, node.id)[0] ?? null;
+  const iq = iqSourceOf(workspace.resolved, node.id);
+  const radioFeeds = useFeeds(node.id, "iq");
+  const positionNode = useFeeds(node.id, "position")[0]?.source ?? null;
   const positioned = usePositionStore(
     (store) => positionNode !== null && (store.sources[positionNode]?.fix ?? null) !== null,
   );
@@ -48,7 +50,7 @@ export function SignalMapFace({ node }: { node: PatchNode }) {
       node={node}
       centerHz={set === null || iq === null ? null : laneCenterHz(set, iq.stream)}
       spanHz={set === null || iq === null ? null : (laneRateHz(set, iq.stream) ?? null)}
-      radioWired={hasWire(workspace.graph, node.id, "iq")}
+      radioWired={radioFeeds.length > 0}
       positionNode={positionNode}
       positioned={positioned}
     />
@@ -126,7 +128,6 @@ function SignalSurvey({
     >
       <FaceBody scroll={false}>
         <MapPanel
-          kinds={[]}
           positionNodes={positionNode === null ? NO_POSITIONS : [positionNode]}
           signalSamples={cells}
           active={active}

@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { Handle, NodeResizer, Position, useUpdateNodeInternals } from "@xyflow/react";
-import { Maximize2, Minimize2, Pin, X } from "lucide-react";
+import { CircleAlert, Maximize2, Minimize2, Pin, X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -18,8 +18,13 @@ import { ICON_BTN_SM } from "../../components/controls";
 import { FaceAlert } from "../../components/FaceAlert";
 import { Icon } from "../../components/Icon";
 import { PortalContainerProvider } from "../../components/PortalContainer";
+import { activityText, idlePort, usePortActivity } from "../../lib/activity";
+import { kindLabel } from "../../lib/eventKinds";
+import { ignoredOf, useNodeProblems } from "../../lib/resolved";
 import { toastError } from "../../lib/toasts";
 import type { NodeCategory, PatchNode, PortSpec, PortType } from "../../lib/types";
+import { portKey, useWiringStore } from "../../lib/wiring";
+import { HUE_TEXT, portHue } from "../../sinks/hues";
 import { useWorkspaceContext } from "../context";
 import {
   echoesWire,
@@ -28,11 +33,11 @@ import {
   isPinned,
   isResizable,
   nodeMinSize,
+  nodePorts,
   PORT_STEP_PX,
   PORT_TOP_PX,
   pin,
   portLabel,
-  portsOf,
   unpin,
 } from "../graph";
 import { closeEngineObjects, dropNodes } from "../remove";
@@ -127,22 +132,10 @@ const CATEGORY_BAR: Record<NodeCategory, string> = {
   output: "bg-cat-output/17 shadow-[inset_0_2px_0_var(--color-cat-output)]",
 };
 
-const PORT_COLOR: Record<PortType, string> = {
-  iq: "text-port-iq",
-  baseband: "text-port-baseband",
-  audio: "text-port-audio",
-  events: "text-port-events",
-  video: "text-port-video",
-  control: "text-port-control",
-  position: "text-accent",
-  tx: "text-port-tx",
-  array: "text-port-array",
-};
-
 function PortGlyph({ type }: { type: PortType }) {
   const common = {
-    fill: type === "tx" ? "none" : "currentColor",
-    stroke: type === "tx" ? "currentColor" : "var(--color-line-strong)",
+    fill: "currentColor",
+    stroke: "var(--color-line-strong)",
     strokeWidth: 1,
   };
   return (
@@ -152,8 +145,10 @@ function PortGlyph({ type }: { type: PortType }) {
           <circle cx="6" cy="6" r="4.5" {...common} />
           <circle cx="6" cy="6" r="2.2" fill="none" stroke="var(--color-panel)" strokeWidth={1} />
         </>
-      ) : type === "iq" || type === "position" || type === "tx" ? (
+      ) : type === "iq" || type === "position" ? (
         <circle cx="6" cy="6" r="4.5" {...common} />
+      ) : type === "bearing" ? (
+        <path d="M6 1 9.5 11 6 8.5 2.5 11Z" {...common} />
       ) : type === "baseband" ? (
         <path d="M10.5 6 A4.5 4.5 0 0 1 1.5 6 Z" {...common} />
       ) : type === "audio" ? (
@@ -193,7 +188,7 @@ export function NodeShell({
   const workspace = useWorkspaceContext();
   const surface = useContext(Surface);
   const remove = useRemoveNode(node);
-  const ports = surface === "canvas" ? portsOf(workspace.context, workspace.graph, node) : [];
+  const ports = surface === "canvas" ? nodePorts(workspace.context, node) : [];
   const pinned = isPinned(workspace.rack, node.id);
   const selected = workspace.selected === node.id;
   const active = surface === "rack" || selected;
@@ -244,6 +239,7 @@ export function NodeShell({
           {badge !== undefined && (
             <span className="shrink-0 font-mono text-2xs text-ink-faint">{badge}</span>
           )}
+          <ProblemMark node={node.id} />
           {subtitle !== undefined && (
             <span className="ml-auto truncate font-mono text-2xs text-ink-faint">{subtitle}</span>
           )}
@@ -306,7 +302,9 @@ export function NodeShell({
         {ports.map((port, index) => (
           <PortHandle
             key={`${port.direction}:${port.name}`}
+            node={node.id}
             port={port}
+            color={HUE_TEXT[portHue(workspace.context.catalog, port.port_type)]}
             label={portLabel(port.name, ports)}
             offset={anchors[port.name] ?? PORT_TOP_PX + PORT_STEP_PX * indexOnSide(ports, index)}
             labelled={!(port.name in anchors) && !echoesWire(workspace.graph, node.id, port)}
@@ -314,6 +312,19 @@ export function NodeShell({
         ))}
       </PortalContainerProvider>
     </div>
+  );
+}
+
+function ProblemMark({ node }: { node: string }) {
+  const problems = useNodeProblems(node);
+  if (problems.length === 0) {
+    return null;
+  }
+  const text = problems.map((problem) => problem.text).join("\n");
+  return (
+    <span role="img" aria-label={text} title={text} className="flex shrink-0 text-warn">
+      <Icon glyph={CircleAlert} size={12} />
+    </span>
   );
 }
 
@@ -387,18 +398,37 @@ function indexOnSide(ports: readonly PortSpec[], index: number): number {
 }
 
 function PortHandle({
+  node,
   port,
+  color,
   label,
   offset,
   labelled,
 }: {
+  node: string;
   port: PortSpec;
+  color: string;
   label: string;
   offset: number;
   labelled: boolean;
 }) {
   const out = port.direction === "out";
-  const description = port.note == null ? `${label} (${port.port_type})` : `${label}: ${port.note}`;
+  const refusal = useWiringStore((state) =>
+    out ? undefined : state.verdicts?.get(portKey({ node, port: port.name })),
+  );
+  const workspace = useWorkspaceContext();
+  const ignored = ignoredOf(workspace.resolved, node, port.name).map((kind) =>
+    kindLabel(kind, workspace.context.catalog.event_kinds),
+  );
+  const activity = usePortActivity(node, port.name);
+  const named = port.note == null ? `${label} (${port.port_type})` : `${label}: ${port.note}`;
+  const description = [
+    named,
+    ignored.length === 0 ? null : `Ignores ${ignored.join(", ")}`,
+    activityText(activity),
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
   return (
     <>
       <Handle
@@ -406,9 +436,9 @@ function PortHandle({
         type={out ? "source" : "target"}
         position={out ? Position.Right : Position.Left}
         style={{ top: offset }}
-        title={description}
+        title={refusal ?? description}
         aria-label={`${out ? "output" : "input"} ${description}`}
-        className={`!size-3 !border-0 !bg-transparent ${PORT_COLOR[port.port_type]}`}
+        className={`!size-3 !border-0 !bg-transparent ${color} ${idlePort(activity) ? "opacity-40" : ""}`}
       >
         <PortGlyph type={port.port_type} />
       </Handle>

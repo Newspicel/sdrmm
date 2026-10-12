@@ -5,6 +5,7 @@ use sdrmm_dsp::{Decimator, Soft, design_lowpass};
 use sdrmm_wire::{
     BroadcastService, BroadcastServiceKind, BroadcastStatus, BroadcastSystem, ChannelDescriptor,
     ChannelParams, ChannelSettings, DabMode, DabParams, DabTransmissionMode, DecoderFamily,
+    EventKind,
 };
 
 use super::{
@@ -40,7 +41,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    decoder_kind: Some("broadcast_data".to_owned()),
+    emits: vec![EventKind::BroadcastData, EventKind::Broadcast],
     ..ChannelDescriptor::default()
 });
 

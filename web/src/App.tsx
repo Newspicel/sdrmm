@@ -3,14 +3,6 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppHotkeys } from "./appHotkeys";
 import { applyToasts, notConnectedToast } from "./canvas/applyToasts";
-import {
-  bindCarriers,
-  bindDevices,
-  channelsOf,
-  deviceNodeOf,
-  ownersOf,
-  speakerInputsOf,
-} from "./canvas/binding";
 import { Canvas } from "./canvas/Canvas";
 import { WorkspaceProvider } from "./canvas/context";
 import { FullFace } from "./canvas/FullFace";
@@ -30,17 +22,28 @@ import { SerialDialog } from "./components/SerialDialog";
 import { ServerDown } from "./components/ServerDown";
 import { Toasts } from "./components/Toasts";
 import { TokenGate } from "./components/TokenGate";
-import { channelTypesQuery, patchCatalogQuery, stateQuery } from "./lib/api";
+import { channelTypesQuery, patchCatalogQuery, resolvedQuery, stateQuery } from "./lib/api";
 import { audioEngine } from "./lib/audio/useChannelAudio";
+import { loadCatalog, useCatalogStore } from "./lib/catalog";
 import { useRefusalStore } from "./lib/refusals";
+import {
+  activePatch,
+  boundChannels,
+  boundRadios,
+  channelOwners,
+  radioOf,
+  speakerTaps,
+} from "./lib/resolved";
 import { closeToast, pushToast } from "./lib/toasts";
-import type { PatchApplyReport, PatchGraph, WorkspaceSettings } from "./lib/types";
+import type { NodeProblem, PatchApplyReport, PatchGraph, WorkspaceSettings } from "./lib/types";
 import { useChannelPatch } from "./lib/useChannelPatch";
 import { useDevicePatch } from "./lib/useDevicePatch";
 import { useNodeStateSync } from "./lib/useNodeStateSync";
 import { useRadioTune } from "./lib/useRadioTune";
 import { useSdrSocket } from "./lib/useSdrSocket";
 import { ToolsDialog } from "./tools/ToolsDialog";
+
+const NO_PROBLEMS: readonly NodeProblem[] = [];
 
 export function App() {
   const queryClient = useQueryClient();
@@ -54,8 +57,15 @@ export function App() {
   const state = useQuery(stateQuery());
   const channelTypes = useQuery(channelTypesQuery());
   const catalog = useQuery(patchCatalogQuery());
+  const resolvedState = useQuery(resolvedQuery());
   const workspace = useWorkspace();
   const activeId = workspace.active?.id ?? null;
+  useEffect(() => {
+    if (catalog.data !== undefined) {
+      loadCatalog(catalog.data);
+    }
+  }, [catalog.data]);
+  const catalogReady = useCatalogStore((held) => held.catalog !== null);
   const [selected, setSelected] = useScopedState<string | null>(activeId, null);
   const [expanded, setExpanded] = useScopedState<string | null>(activeId, null);
   const applied = useSwitchStore((held) => held.report);
@@ -64,6 +74,11 @@ export function App() {
   const { applyEdit } = useChannelPatch();
   const deviceSets = useMemo(() => state.data?.device_sets ?? [], [state.data?.device_sets]);
   const trunks = useMemo(() => state.data?.trunk_systems ?? [], [state.data?.trunk_systems]);
+  const resolved = useMemo(
+    () => activePatch(resolvedState.data, activeId),
+    [resolvedState.data, activeId],
+  );
+  const problems = resolvedState.data?.problems ?? NO_PROBLEMS;
 
   const { socket, retrySocket } = useSdrSocket(queryClient, workspace.error);
 
@@ -98,40 +113,36 @@ export function App() {
     [save],
   );
 
-  const devices = useMemo(() => bindDevices(graph, deviceSets), [graph, deviceSets]);
+  const devices = useMemo(() => boundRadios(resolved, deviceSets), [resolved, deviceSets]);
   useEffect(() => {
     useRefusalStore.getState().connected(devices.keys());
     for (const node of devices.keys()) {
       closeToast(notConnectedToast(graph.nodes, node));
     }
   }, [devices, graph.nodes]);
-  const carriers = useMemo(() => bindCarriers(graph, devices, trunks), [graph, devices, trunks]);
-  const channels = useMemo(() => channelsOf(carriers), [carriers]);
-  const owners = useMemo(() => ownersOf(carriers), [carriers]);
+  const channels = useMemo(() => boundChannels(resolved, deviceSets), [resolved, deviceSets]);
+  const owners = useMemo(() => channelOwners(resolved), [resolved]);
 
-  const reachable = useMemo(
-    () => speakerInputsOf(graph, devices, channels, trunks, owners),
-    [graph, devices, channels, trunks, owners],
-  );
+  const reachable = useMemo(() => speakerTaps(resolved), [resolved]);
   useEffect(() => {
-    if (state.data !== undefined) {
+    if (state.data !== undefined && resolved !== null) {
       audioEngine.retain(reachable);
     }
-  }, [reachable, state.data]);
+  }, [reachable, state.data, resolved]);
 
   const context = useMemo(
     () => ({
-      catalog: catalog.data ?? { nodes: [] },
+      catalog: catalog.data ?? { nodes: [], port_types: [], event_kinds: [] },
       channelTypes: channelTypes.data?.types ?? [],
-      facets: channelTypes.data?.facets ?? [],
+      resolved,
       bound: devices,
     }),
-    [catalog.data, channelTypes.data, devices],
+    [catalog.data, channelTypes.data, resolved, devices],
   );
 
   const selectedNode = graph.nodes.find((node) => node.id === selected) ?? null;
   const selectedChannel = selected === null ? null : (channels.get(selected) ?? null);
-  const selectedDevice = selected === null ? null : deviceNodeOf(graph, selected, owners, devices);
+  const selectedDevice = selected === null ? null : radioOf(resolved, selected);
   const selectedSet = selectedDevice === null ? null : (devices.get(selectedDevice) ?? null);
 
   const channelNodes = graph.nodes.filter((node) => node.kind === "channel");
@@ -160,7 +171,7 @@ export function App() {
   return (
     <TokenGate onToken={() => socket?.retryNow()}>
       <div className="flex h-full flex-col bg-bg text-ink">
-        {socket !== null && snapshot !== null && (
+        {socket !== null && snapshot !== null && catalogReady && (
           <WorkspaceProvider
             value={{
               socket,
@@ -168,6 +179,8 @@ export function App() {
               rack,
               settings,
               context,
+              resolved,
+              problems,
               deviceSets,
               trunks,
               devices,

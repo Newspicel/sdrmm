@@ -67,6 +67,75 @@ async fn channeltypes_lists_every_demod_exactly_once() {
 }
 
 #[tokio::test]
+async fn a_channel_create_needs_a_channel_node_wired_to_the_radio() {
+    let app = test_router();
+    let ds = create_virtual_set(&app).await;
+    let workspace = workspaces(&app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(&app, workspace).await.snapshot;
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: "loose".to_string(),
+        body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
+            channel_type: "nfm".to_string(),
+            tuning_locked: false,
+        }),
+        position: sdrmm_wire::Position { x: 400.0, y: 600.0 },
+        size: None,
+        label: None,
+    });
+    put_workspace(&app, &snapshot).await;
+    let nfm = r#"{"params":{"type":"nfm","settings":{}}}"#;
+    for (body, wanted) in [
+        (
+            format!(r#"{{"settings":{nfm}}}"#),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            format!(r#"{{"node":"nobody","settings":{nfm}}}"#),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!(r#"{{"node":"scope","settings":{nfm}}}"#),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!(r#"{{"node":"loose","settings":{nfm}}}"#),
+            StatusCode::BAD_REQUEST,
+        ),
+    ] {
+        let (status, body) = request(
+            app.clone(),
+            "POST",
+            &format!("/api/devicesets/{ds}/channels"),
+            Some(&body),
+        )
+        .await;
+        assert_eq!(status, wanted, "{}", String::from_utf8_lossy(&body));
+    }
+    assert!(get_state(&app).await.device_sets[0].channels.is_empty());
+
+    let body = tapped(&app, ds, &format!(r#"{{"settings":{nfm}}}"#)).await;
+    let create = async || {
+        request(
+            app.clone(),
+            "POST",
+            &format!("/api/devicesets/{ds}/channels"),
+            Some(&body),
+        )
+        .await
+        .0
+    };
+    assert_eq!(create().await, StatusCode::OK);
+    assert_eq!(
+        create().await,
+        StatusCode::BAD_REQUEST,
+        "a node holds one channel"
+    );
+    let channels = &get_state(&app).await.device_sets[0].channels;
+    assert_eq!(channels.len(), 1);
+    assert_eq!(channels[0].node.as_deref(), Some("tap-nfm"));
+}
+
+#[tokio::test]
 async fn channel_create_patch_and_error_mapping_over_http() {
     let app = test_router();
     let ds = create_virtual_set(&app).await;
@@ -83,7 +152,7 @@ async fn channel_create_patch_and_error_mapping_over_http() {
         app.clone(),
         "POST",
         &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100100000.0,"params":{"type":"nfm","settings":{}}}}"#),
+        Some(&tapped(&app, ds, r#"{"settings":{"frequency_hz":100100000.0,"params":{"type":"nfm","settings":{}}}}"#).await),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -196,7 +265,7 @@ async fn dab_transmission_modes_round_trip_over_http() {
         app.clone(),
         "POST",
         &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"dab","settings":{}}}}"#),
+        Some(&tapped(&app, ds, r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"dab","settings":{}}}}"#).await),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -266,7 +335,7 @@ async fn terrestrial_bandwidth_priority_and_service_round_trip_over_http() {
         app.clone(),
         "POST",
         &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"dvbt","settings":{}}}}"#),
+        Some(&tapped(&app, ds, r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"dvbt","settings":{}}}}"#).await),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
@@ -315,7 +384,7 @@ async fn satellite_superframes_and_stream_selection_round_trip_over_http() {
     let app = test_router();
     let ds = create_virtual_set(&app).await;
     let (status, body) = request(app.clone(), "POST", &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"datv","settings":{"standard":"dvb_s2"}}}}"#)).await;
+        Some(&tapped(&app, ds, r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"datv","settings":{"standard":"dvb_s2"}}}}"#).await)).await;
     assert_eq!(status, StatusCode::OK);
     let ch = serde_json::from_slice::<CreatedId>(&body)
         .expect("created channel")
@@ -351,7 +420,7 @@ async fn two_clients_change_different_fields_of_one_channel() {
         app.clone(),
         "POST",
         &format!("/api/devicesets/{ds}/channels"),
-        Some(&format!(r#"{{"settings":{base}}}"#)),
+        Some(&tapped(&app, ds, &format!(r#"{{"settings":{base}}}"#)).await),
     )
     .await;
     assert_eq!(status, StatusCode::OK);

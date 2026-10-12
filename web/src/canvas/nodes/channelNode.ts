@@ -1,6 +1,7 @@
-import type { DeviceInfo, DeviceRef, DeviceSet, PatchGraph } from "../../lib/types";
-import { deviceNodeOf, iqLanesOf, nodeDeviceRef, refMatches } from "../binding";
+import type { DeviceInfo, DeviceRef, PatchGraph, ResolvedPatch } from "../../lib/types";
 import { tuningLocked } from "../graph";
+import { iqLanesOf } from "../lanes";
+import { nodeDeviceRef, refMatches } from "./deviceNode";
 
 export type ChannelBinding =
   | "unwired"
@@ -9,23 +10,13 @@ export type ChannelBinding =
   | "radio-closed"
   | "not-started";
 
-export function radioRefOf(
-  graph: PatchGraph,
-  node: string,
-  devices?: ReadonlyMap<string, DeviceSet>,
-): DeviceRef | null {
-  const device = deviceNodeOf(graph, node, undefined, devices);
-  const found = graph.nodes.find((candidate) => candidate.id === device);
-  return found === undefined ? null : nodeDeviceRef(found);
-}
-
 export function radioRefsOf(
   graph: PatchGraph,
+  resolved: ResolvedPatch | null,
   node: string,
-  devices?: ReadonlyMap<string, DeviceSet>,
 ): DeviceRef[] {
   const refs: DeviceRef[] = [];
-  for (const lane of iqLanesOf(graph, node, devices)) {
+  for (const lane of iqLanesOf(resolved, node)) {
     const found = graph.nodes.find((candidate) => candidate.id === lane.source);
     const reference = found === undefined ? null : nodeDeviceRef(found);
     if (reference !== null) {

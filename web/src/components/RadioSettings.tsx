@@ -863,7 +863,7 @@ function StageRow({
   const lead =
     typeof label === "string" ? (
       <span
-        className={`truncate ${lane !== undefined && label === lane ? "font-mono text-2xs text-port-iq" : "legend"}`}
+        className={`truncate ${lane !== undefined && label === lane ? "font-mono text-2xs text-hue-blue" : "legend"}`}
         title={
           heldBy === undefined
             ? unit === ""

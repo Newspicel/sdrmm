@@ -6,7 +6,6 @@ import type {
   StitchLane,
   StitchReading,
 } from "../../lib/types";
-import { arrayOf } from "../binding";
 import { nodeOf, patchNode } from "../graph";
 import type { Chip } from "./ProcessorHealth";
 
@@ -21,8 +20,7 @@ export const SPREAD_CHIP: Chip = {
   danger: true,
 };
 
-export function spreadArrayEdit(graph: PatchGraph, stitch: string): PatchGraph | null {
-  const array = arrayOf(graph, stitch);
+export function spreadArrayEdit(graph: PatchGraph, array: string | null): PatchGraph | null {
   if (array === null) {
     return null;
   }
@@ -33,13 +31,12 @@ export function spreadArrayEdit(graph: PatchGraph, stitch: string): PatchGraph |
 
 export function needsSpread(
   graph: PatchGraph,
-  stitch: string,
+  array: string | null,
   gate: ProcessorGate | null,
 ): boolean {
   if (gate === "tuning_mode") {
     return true;
   }
-  const array = arrayOf(graph, stitch);
   const node = array === null ? undefined : nodeOf(graph, array);
   return node?.kind === "array" && (node.data.tuning ?? "together") !== "spread";
 }

@@ -5,7 +5,10 @@ use sdrmm_dsp::{
     ComplexOnePole, Decimator, Deemphasis, Nco, Pll, RealDecimator, design_lowpass, one_pole_coeff,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
-use sdrmm_wire::{ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, WfmParams};
+use sdrmm_wire::{
+    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, EventKind,
+    WfmParams,
+};
 
 use crate::{
     AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx,
@@ -48,7 +51,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 200_000.0,
     input_rate_hz: 240_000.0,
     has_audio: true,
-    decoder_kind: Some("rds".to_owned()),
+    emits: vec![EventKind::Rds],
+    calls: Some(CallGate::Squelch),
     ..ChannelDescriptor::default()
 });
 

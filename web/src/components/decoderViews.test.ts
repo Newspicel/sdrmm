@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StationOf } from "../lib/decoded";
+import type { EntityOf } from "../lib/sinks";
 import type {
   DecodedRecordOf,
   DecoderEventOf,
@@ -27,7 +27,6 @@ import {
   formatClock,
   formatPosition,
   formatSpeedKt,
-  inScope,
   isAtBottom,
   latestRecord,
   latestVorReadings,
@@ -39,11 +38,9 @@ import {
   radiosondeStations,
   rdsPicture,
   rdsQuality,
-  recordsInScope,
   remoteIdDrones,
   shipRow,
   sortTargets,
-  stationsInScope,
   TARGET_MAX_AGE_MS,
   TARGET_STALE_MS,
   toneLabel,
@@ -70,16 +67,16 @@ function station<K extends DecoderKind>(
   kind: K,
   id: string,
   data: DecoderEventOf<K>["data"],
-  over: Partial<StationOf<K>> = {},
-): StationOf<K> {
+  over: Partial<EntityOf<K>> = {},
+): EntityOf<K> {
   return {
-    kind,
-    id,
+    key: { source: "decoder", kind, id },
+    hue: "teal",
     event: { kind, data } as DecoderEventOf<K>,
-    lastSeen: NOW,
-    freqHz: 1_090_000_000,
-    deviceSet: 1,
-    channel: 0,
+    view: { summary: id },
+    freq_hz: 1_090_000_000,
+    first_seen: new Date(NOW).toISOString(),
+    last_seen: new Date(NOW).toISOString(),
     frames: 1,
     ...over,
   };
@@ -98,26 +95,6 @@ function vorReading(stationName: string, lat: number, lon: number, radial: numbe
     confidence: 1,
   };
 }
-
-describe("scoping", () => {
-  it("matches everything when the scope is empty", () => {
-    expect(inScope(3, 7, {})).toBe(true);
-    expect(inScope(3, 7, { deviceSet: 3 })).toBe(true);
-    expect(inScope(3, 7, { deviceSet: 3, channel: 7 })).toBe(true);
-    expect(inScope(3, 7, { deviceSet: 2 })).toBe(false);
-    expect(inScope(3, 7, { deviceSet: 3, channel: 8 })).toBe(false);
-  });
-
-  it("returns the same array identity when nothing can be filtered out", () => {
-    const records = [record("rtty", { text: "a" })];
-    expect(recordsInScope(records, {})).toBe(records);
-    expect(recordsInScope(records, { channel: 1 })).toHaveLength(0);
-
-    const stations = [station("adsb", "abc123", { icao: "abc123", df: 17, raw: "8d" })];
-    expect(stationsInScope(stations, {})).toBe(stations);
-    expect(stationsInScope(stations, { deviceSet: 9 })).toHaveLength(0);
-  });
-});
 
 describe("multi-VOR fixes", () => {
   it("intersects two non-parallel radials", () => {
@@ -188,7 +165,7 @@ describe("target rows", () => {
       lat: 52.52,
       lon: 13.405,
     },
-    { frames: 42, lastSeen: NOW - 12_000 },
+    { frames: 42, last_seen: new Date(NOW - 12_000).toISOString() },
   );
 
   it("projects an aircraft", () => {
@@ -208,7 +185,7 @@ describe("target rows", () => {
       "adsb",
       "3c6444",
       { icao: "3c6444", df: 17, raw: "8d", on_ground: true, altitude_ft: 0 },
-      { lastSeen: NOW + 500 },
+      { last_seen: new Date(NOW + 500).toISOString() },
     );
     const row = aircraftRow(onGround, NOW);
     expect(row.primary).toBe("GND");
@@ -231,7 +208,7 @@ describe("target rows", () => {
         cog_deg: 359.7,
         destination: "HAMBURG",
       },
-      { lastSeen: NOW - 90_000 },
+      { last_seen: new Date(NOW - 90_000).toISOString() },
     );
     expect(shipRow(ship, NOW)).toMatchObject({
       id: "211234560",

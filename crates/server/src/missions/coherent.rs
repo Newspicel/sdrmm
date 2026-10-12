@@ -24,7 +24,7 @@ pub(super) fn df(scene: &Scene<'_>, node: &str) -> Built {
             device_sets: wired.device_sets,
             center_hz: wired.center_hz,
             position: wired.position,
-            triangulations: graph::event_targets(scene.graph, node, TRIANGULATION),
+            triangulations: graph::event_targets(&scene.resolved, node, TRIANGULATION),
         }),
         problems: wired.problems,
         controls: wired.controls,
@@ -33,7 +33,8 @@ pub(super) fn df(scene: &Scene<'_>, node: &str) -> Built {
 
 pub(super) fn radar(scene: &Scene<'_>, node: &str) -> Built {
     let mut wired = wired(scene, node);
-    let (transmitter, phone) = graph::link(scene.graph, &scene.state.phones, node, RADAR_TX_PORT);
+    let (transmitter, phone) =
+        graph::link(&scene.resolved, &scene.state.phones, node, RADAR_TX_PORT);
     wired.problems.extend(phone);
     Built {
         body: MissionBody::Radar(RadarMission {
@@ -56,13 +57,15 @@ fn wired(scene: &Scene<'_>, node: &str) -> Wired {
         }],
         ..Wired::default()
     };
-    let Some(array) = scene.graph.array_of_processor(node) else {
+    let Some(array) =
+        graph::source_of(&scene.resolved, node, ARRAY_PORT).map(|feed| feed.source.as_str())
+    else {
         return unwired();
     };
-    let Some(summary) = array::summary(scene.state, scene.graph, array) else {
+    let Some(summary) = array::summary(scene.state, &scene.resolved, array) else {
         return unwired();
     };
-    let (position, phone) = graph::position_link(scene.graph, &scene.state.phones, array);
+    let (position, phone) = graph::position_link(&scene.resolved, &scene.state.phones, array);
     let mut problems = Vec::new();
     if let Some(reason) = summary.problem {
         problems.push(MissionProblem::Refused { reason });

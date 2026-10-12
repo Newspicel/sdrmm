@@ -10,7 +10,7 @@ use std::{
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
     DecodedRecord, DecoderEvent, DfEstimate, DfFusionState, EventOrigin, FusionGridOwned,
-    NO_CHANNEL, PositionFix, ServerEvent, SurfaceFrame,
+    NO_CHANNEL, NavGuide, PositionFix, ServerEvent, SurfaceFrame,
 };
 
 use super::{FusionHub, FusionOutcome, Job, Refusal, Sighting, now_s};
@@ -139,11 +139,18 @@ impl Worker {
             publish_frame(surfaces, node, frame);
         }
         let mark = GuideMark::of(&outcome.state);
-        let due = self
-            .guides
-            .get(node)
-            .is_none_or(|(told, at)| *told != mark || now_s - at >= GUIDE_REFRESH_S);
+        let told = self.guides.get(node).map(|(told, at)| (*told, *at));
+        let due = told.is_none_or(|(told, at)| told != mark || now_s - at >= GUIDE_REFRESH_S);
         if due {
+            let guided =
+                mark.revision.is_some() || told.is_some_and(|(told, _)| told.revision.is_some());
+            if guided {
+                let guide = NavGuide {
+                    target: outcome.state.nav,
+                    from: fix.map(PositionFix::at),
+                };
+                engine.publish_decoded(nav_record(node, guide));
+            }
             self.guides.insert(node.to_owned(), (mark, now_s));
             emit(engine, node, outcome.state);
         }
@@ -162,6 +169,24 @@ fn fix_record(sighting: &Sighting, estimate: DfEstimate) -> DecodedRecord {
         freq_hz: sighting.bearing.freq_hz.unwrap_or(0.0),
         event: DecoderEvent::DfFix(estimate),
         sinks: Vec::new(),
+        callsign: None,
+        view: None,
+    }
+}
+
+fn nav_record(node: &str, guide: NavGuide) -> DecodedRecord {
+    DecodedRecord {
+        origin: Some(EventOrigin {
+            node: node.to_owned(),
+            transmission: 0,
+        }),
+        device_set: 0,
+        channel: NO_CHANNEL,
+        at: format!("{:.9}", jiff::Timestamp::now()),
+        freq_hz: 0.0,
+        event: DecoderEvent::Nav(guide),
+        sinks: Vec::new(),
+        view: None,
         callsign: None,
     }
 }

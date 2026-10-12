@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    decode::DecodedRecord,
     position::PositionFix,
     presence::{Peer, Pointer},
     workspace::PatchApplyReport,
@@ -74,6 +73,17 @@ impl SurfaceRefusal {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PortActivity {
+    pub node: String,
+    pub port: String,
+    pub emitted: u64,
+    pub delivered: u64,
+    pub unrouted: u64,
+    pub ignored: u64,
+    pub lost: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", content = "data")]
 pub enum ServerEvent {
@@ -133,10 +143,6 @@ pub enum ServerEvent {
         stream_id: u16,
         kind: StreamKind,
     },
-    Decoded(Box<DecodedRecord>),
-    DecodedBacklog {
-        records: Vec<DecodedRecord>,
-    },
     DecodedLost {
         count: u64,
     },
@@ -155,9 +161,8 @@ pub enum ServerEvent {
         device_set: u32,
         status: Box<crate::hunt::HuntStatus>,
     },
-    BroadcastUpdate {
-        device_set: u32,
-        channel: u32,
+    ChannelBroadcast {
+        node: String,
         status: Box<crate::decode::BroadcastStatus>,
     },
     SatelliteUpdate {
@@ -201,6 +206,21 @@ pub enum ServerEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         by: Option<String>,
         report: PatchApplyReport,
+    },
+    PatchResolved(Box<crate::patch::ResolvedPatch>),
+    NodeProblems {
+        problems: Vec<crate::patch::NodeProblem>,
+    },
+    NodeActivity {
+        ports: Vec<PortActivity>,
+    },
+    SinkSnapshot {
+        node: String,
+        feed: Box<crate::sink::SinkFeed>,
+    },
+    SinkUpdate {
+        node: String,
+        update: Box<crate::sink::SinkUpdate>,
     },
     Error {
         message: String,
@@ -273,6 +293,12 @@ pub enum ClientCommand {
         fit: Option<SurfaceFit>,
     },
     UnsubscribeSurface {
+        node: String,
+    },
+    SubscribeSink {
+        node: String,
+    },
+    UnsubscribeSink {
         node: String,
     },
     Present {

@@ -13,8 +13,8 @@ use sdrmm_modem::{
     pulse::{self, Norm},
 };
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, MAX_TETRAPOL_SCRAMBLING,
-    TETRAPOL_BANDWIDTH_HZ, TetrapolBand, TetrapolParams,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, EventKind,
+    MAX_TETRAPOL_SCRAMBLING, TETRAPOL_BANDWIDTH_HZ, TetrapolBand, TetrapolParams,
 };
 
 use crate::{
@@ -41,7 +41,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: TETRAPOL_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    decoder_kind: Some("tetrapol".to_owned()),
+    emits: vec![EventKind::Tetrapol],
     ..ChannelDescriptor::default()
 });
 

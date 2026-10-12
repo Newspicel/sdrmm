@@ -1,5 +1,4 @@
 import { BLE_BEACON_LABELS, BLE_PDU_LABELS, bleStation, bleVendor } from "../lib/ble";
-import type { StationOf } from "../lib/decoded";
 import { loraMessage, loraName, loraProtocol, loraStation } from "../lib/lora";
 import {
   distanceM,
@@ -13,12 +12,12 @@ import {
   UA_TYPE_LABELS,
   withRemoteIdState,
 } from "../lib/remoteId";
+import { type EntityOf, lastSeenMs } from "../lib/sinks";
 import type {
   AdsbMessage,
   AisMessage,
   AprsWeather,
   BleAdvert,
-  DecodedRecord,
   DecodedRecordOf,
   DvFrame,
   IdentReport,
@@ -29,28 +28,6 @@ import type {
   VorReading,
 } from "../lib/types";
 import { formatBaud, formatHz } from "./format";
-
-export interface DecoderScope {
-  deviceSet?: number;
-  channel?: number;
-}
-
-export function inScope(deviceSet: number, channel: number, scope: DecoderScope): boolean {
-  return (
-    (scope.deviceSet === undefined || scope.deviceSet === deviceSet) &&
-    (scope.channel === undefined || scope.channel === channel)
-  );
-}
-
-export function recordsInScope<K extends DecodedRecord["event"]["kind"]>(
-  records: readonly DecodedRecordOf<K>[],
-  scope: DecoderScope,
-): readonly DecodedRecordOf<K>[] {
-  if (scope.deviceSet === undefined && scope.channel === undefined) {
-    return records;
-  }
-  return records.filter((r) => inScope(r.device_set, r.channel, scope));
-}
 
 export function latestVorReadings(
   records: readonly DecodedRecordOf<"vor">[],
@@ -462,16 +439,6 @@ function normalizeRadians(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
-export function stationsInScope<S extends { deviceSet: number; channel: number }>(
-  stations: readonly S[],
-  scope: DecoderScope,
-): readonly S[] {
-  if (scope.deviceSet === undefined && scope.channel === undefined) {
-    return stations;
-  }
-  return stations.filter((s) => inScope(s.deviceSet, s.channel, scope));
-}
-
 export const TARGET_STALE_MS = 30_000;
 
 export const TARGET_MAX_AGE_MS = 300_000;
@@ -502,30 +469,36 @@ export interface TargetRow {
   frames: number;
 }
 
-export function aircraftRow(station: StationOf<"adsb">, nowMs: number): TargetRow {
-  const m: AdsbMessage = station.event.data;
+export function aircraftRow(entity: EntityOf<"adsb">, nowMs: number): TargetRow {
+  const m: AdsbMessage = entity.event.data;
   return {
     id: m.icao.toUpperCase(),
     label: m.callsign?.trim() || "-",
     primary: m.on_ground === true ? "GND" : formatAltitudeFt(m.altitude_ft),
     secondary: joinFields(formatSpeedKt(m.ground_speed_kt), formatBearing(m.track_deg)),
     position: formatPosition(m.lat, m.lon),
-    ageMs: Math.max(0, nowMs - station.lastSeen),
-    frames: station.frames,
+    ageMs: Math.max(0, nowMs - lastSeenMs(entity)),
+    frames: entity.frames,
   };
 }
 
-export function shipRow(station: StationOf<"ais">, nowMs: number): TargetRow {
-  const m: AisMessage = station.event.data;
+export function shipRow(entity: EntityOf<"ais">, nowMs: number): TargetRow {
+  const m: AisMessage = entity.event.data;
   return {
     id: String(m.mmsi),
     label: m.name?.trim() || m.call_sign?.trim() || "-",
     primary: formatSpeedKt(m.sog_kt),
     secondary: joinFields(formatBearing(m.cog_deg), m.destination?.trim() ?? ""),
     position: formatPosition(m.lat, m.lon),
-    ageMs: Math.max(0, nowMs - station.lastSeen),
-    frames: station.frames,
+    ageMs: Math.max(0, nowMs - lastSeenMs(entity)),
+    frames: entity.frames,
   };
+}
+
+export function targetRow(entity: EntityOf<"adsb"> | EntityOf<"ais">, nowMs: number): TargetRow {
+  return entity.event.kind === "adsb"
+    ? aircraftRow(entity as EntityOf<"adsb">, nowMs)
+    : shipRow(entity as EntityOf<"ais">, nowMs);
 }
 
 export type TargetSort = "age" | "id";

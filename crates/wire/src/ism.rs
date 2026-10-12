@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{
+        EventPayload, Field, Presentation, Unit, count, fields, flag, number, text, text_of,
+    },
+};
+
 pub const ISM_SAMPLE_RATE_HZ: f64 = 250_000.0;
 pub const ISM_BANDWIDTH_HZ: f64 = 240_000.0;
 
@@ -28,6 +35,16 @@ pub enum IsmModulation {
     Fsk,
 }
 
+impl IsmModulation {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Ook => "OOK",
+            Self::Fsk => "FSK",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IsmCoding {
@@ -38,6 +55,18 @@ pub enum IsmCoding {
     Manchester,
 }
 
+impl IsmCoding {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Pwm => "PWM",
+            Self::Ppm => "PPM",
+            Self::Pcm => "PCM",
+            Self::Manchester => "Manchester",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IsmIntegrity {
@@ -45,6 +74,17 @@ pub enum IsmIntegrity {
     Checksum,
     #[default]
     Repeats,
+}
+
+impl IsmIntegrity {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Crc => "CRC",
+            Self::Checksum => "checksum",
+            Self::Repeats => "repeats",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -146,6 +186,69 @@ impl IsmMessage {
 
 pub const UNKNOWN_MODEL: &str = "Unknown";
 
+impl EventPayload for IsmMessage {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            entity: Some(self.station()),
+            fields: ism_fields(self),
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+fn ism_fields(m: &IsmMessage) -> Vec<Field> {
+    let mut shown = fields(&[
+        ("Model", text(Some(&m.model))),
+        ("ID", text(Some(&m.id))),
+        ("Channel", text(m.channel.as_deref())),
+    ]);
+    shown.extend(reading_fields(m));
+    shown.extend(fields(&[
+        (
+            "Signal",
+            text_of(format!("{} {}", m.modulation.label(), m.coding.label())),
+        ),
+        (
+            "Timing",
+            m.short_us
+                .and_then(|short| text_of(format!("{short}/{} µs", m.long_us.unwrap_or(short)))),
+        ),
+        ("Check", text_of(m.integrity.label())),
+        ("SNR", number(Some(m.snr_db), Unit::Db, 1)),
+        ("Bits", count(Some(m.bits))),
+        ("Raw", text(Some(&m.raw))),
+    ]));
+    shown
+}
+
+fn reading_fields(m: &IsmMessage) -> Vec<Field> {
+    let contact = m
+        .contact_open
+        .map(|open| if open { "open" } else { "closed" });
+    let battery = m.battery_ok.map(|ok| if ok { "ok" } else { "low" });
+    fields(&[
+        ("Temperature", number(m.temperature_c, Unit::Celsius, 1)),
+        ("Temperature 2", number(m.temperature_2_c, Unit::Celsius, 1)),
+        ("Humidity", number(m.humidity_pct, Unit::Percent, 0)),
+        (
+            "Pressure",
+            number(m.pressure_kpa.map(|kpa| kpa * 10.0), Unit::Hectopascal, 0),
+        ),
+        ("Wind", number(m.wind_avg_m_s, Unit::MetresPerSecond, 1)),
+        ("Gust", number(m.wind_max_m_s, Unit::MetresPerSecond, 1)),
+        ("Wind from", number(m.wind_dir_deg, Unit::Degrees, 0)),
+        ("Rain", number(m.rain_mm, Unit::Millimetres, 1)),
+        ("UV", number(m.uv_index, Unit::None, 1)),
+        ("Light", number(m.light_lux, Unit::Lux, 0)),
+        ("Contact", contact.and_then(text_of)),
+        ("Tamper", flag(m.tamper)),
+        ("Alarm", flag(m.alarm)),
+        ("Command", count(m.command)),
+        ("Tristate", text(m.tristate.as_deref())),
+        ("Battery", battery.and_then(text_of)),
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,5 +307,34 @@ mod tests {
     fn params_default_to_showing_unknown_codes() {
         let params: IsmParams = serde_json::from_str("{}").unwrap();
         assert!(params.unknown);
+    }
+
+    #[test]
+    fn a_sensor_lists_its_readings_and_signal() {
+        let message = IsmMessage {
+            model: "Acurite-Tower".to_owned(),
+            id: "1234".to_owned(),
+            channel: Some("A".to_owned()),
+            battery_ok: Some(false),
+            temperature_c: Some(21.4),
+            humidity_pct: Some(48),
+            pressure_kpa: Some(101.3),
+            short_us: Some(500),
+            bits: 56,
+            raw: "abcd".to_owned(),
+            snr_db: 12.5,
+            ..IsmMessage::default()
+        };
+        let view = message.present(EventKind::Ism);
+        assert_eq!(view.field("Channel"), text_of("A").as_ref());
+        assert_eq!(
+            view.field("Pressure"),
+            number(Some(1013.0_f32), Unit::Hectopascal, 0).as_ref()
+        );
+        assert_eq!(view.field("Battery"), text_of("low").as_ref());
+        assert_eq!(view.field("Signal"), text_of("OOK PWM").as_ref());
+        assert_eq!(view.field("Timing"), text_of("500/500 µs").as_ref());
+        assert_eq!(view.field("Check"), text_of("repeats").as_ref());
+        assert_eq!(view.field("Wind"), None);
     }
 }

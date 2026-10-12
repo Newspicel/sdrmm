@@ -1,26 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ChannelDescriptor,
-  DeviceSet,
   NodeBodyOf,
   NodeKind,
   PatchCatalog,
   PatchGraph,
   PatchNode,
-  PortCondition,
   PortSpec,
   WorkspaceSnapshot,
 } from "../lib/types";
-import { catalogBody, CATALOG as REAL_CATALOG } from "../test/catalog";
+import { catalogBody, channelPortsNamed, CATALOG as REAL_CATALOG } from "../test/catalog";
+import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../test/resolved";
 import {
   addEdge,
   addNode,
   arrayWiredLanes,
-  BEAM_TAKES_ONE,
   clampCells,
-  connectionRefusal,
   echoesWire,
   edgeKey,
+  FIT_MIN_W,
   fitWidth,
   type GraphContext,
   handleSignature,
@@ -28,18 +26,17 @@ import {
   isResizable,
   migrateSnapshot,
   moveSlot,
-  NODE_SIZE,
-  type NodeSize,
   newNodeId,
   nodeIds,
   nodeMinSize,
+  nodePorts,
+  nodeSize,
   PORT_STEP_PX,
   PORT_TOP_PX,
   pin,
   placeSlot,
   portLabel,
   portStream,
-  portsOf,
   pruneRack,
   RACK_COLS,
   removeNode,
@@ -54,86 +51,10 @@ import {
 } from "./graph";
 
 const CATALOG: PatchCatalog = {
-  nodes: [
-    {
-      kind: "device",
-      default_body: catalogBody("device"),
-      name: "Device",
-      category: "source",
-      ports: [
-        {
-          name: "tx",
-          port_type: "tx",
-          direction: "in",
-          multi: false,
-          condition: "device_is_tx_capable",
-          note: "reserved: transmit is not built",
-          repeat: "per_tx_stream",
-        },
-        { name: "iq", port_type: "iq", direction: "out", multi: true, repeat: "per_rx_stream" },
-      ],
-    },
-    {
-      kind: "channel",
-      default_body: catalogBody("channel"),
-      name: "Channel",
-      category: "channel",
-      needs_channel_type: true,
-      ports: [
-        { name: "iq", port_type: "iq", direction: "in", multi: true },
-        { name: "control", port_type: "control", direction: "in", multi: false },
-        {
-          name: "position",
-          port_type: "position",
-          direction: "in",
-          multi: false,
-          condition: "channel_needs_position",
-        },
-        {
-          name: "audio",
-          port_type: "audio",
-          direction: "out",
-          multi: true,
-          condition: "channel_has_audio",
-        },
-        {
-          name: "events",
-          port_type: "events",
-          direction: "out",
-          multi: true,
-          condition: "channel_has_events",
-        },
-        {
-          name: "video",
-          port_type: "video",
-          direction: "out",
-          multi: true,
-          condition: "channel_has_video",
-        },
-      ],
-    },
-    {
-      kind: "scope",
-      default_body: catalogBody("scope"),
-      name: "Scope",
-      category: "output",
-      ports: [{ name: "iq", port_type: "iq", direction: "in", multi: false }],
-    },
-    {
-      kind: "speaker",
-      default_body: catalogBody("speaker"),
-      name: "Speaker",
-      category: "output",
-      ports: [{ name: "audio", port_type: "audio", direction: "in", multi: true }],
-    },
-    {
-      kind: "scanner",
-      default_body: catalogBody("scanner"),
-      name: "Scanner",
-      category: "tool",
-      ports: [{ name: "control", port_type: "control", direction: "out", multi: false }],
-    },
-  ],
+  ...REAL_CATALOG,
+  nodes: REAL_CATALOG.nodes.filter((entry) =>
+    ["device", "channel", "scope", "speaker", "scanner"].includes(entry.kind),
+  ),
 };
 
 const TYPES: ChannelDescriptor[] = [
@@ -143,6 +64,9 @@ const TYPES: ChannelDescriptor[] = [
     bandwidth_hz: 12_500,
     input_rate_hz: 48_000,
     has_audio: true,
+    emits: ["tone", "scrambler"],
+    calls: "squelch",
+    ports: channelPortsNamed("iq", "control", "baseband", "audio", "events"),
   },
   {
     type_id: "adsb",
@@ -150,8 +74,9 @@ const TYPES: ChannelDescriptor[] = [
     bandwidth_hz: 2_000_000,
     input_rate_hz: 2_400_000,
     has_audio: false,
-    decoder_kind: "adsb",
+    emits: ["adsb"],
     needs_position: true,
+    ports: channelPortsNamed("iq", "control", "position", "baseband", "events"),
   },
   {
     type_id: "atv",
@@ -160,10 +85,11 @@ const TYPES: ChannelDescriptor[] = [
     input_rate_hz: 16_000_000,
     has_audio: false,
     has_video: true,
+    ports: channelPortsNamed("iq", "control", "baseband", "video"),
   },
 ];
 
-const context: GraphContext = { catalog: CATALOG, channelTypes: TYPES, facets: [] };
+const context: GraphContext = { catalog: CATALOG, channelTypes: TYPES };
 
 function node(id: string, body: Partial<PatchNode> & Pick<PatchNode, "kind">): PatchNode {
   return { id, position: { x: 0, y: 0 }, ...body } as PatchNode;
@@ -184,18 +110,13 @@ function workspace(): PatchGraph {
   };
 }
 
-const port = (n: string, p: string) => ({ node: n, port: p });
-
-const bound = (id: string, radio: { rate?: number; tx?: boolean; rx?: number }) =>
-  new Map([
-    [
-      id,
-      {
-        settings: { sample_rate: radio.rate },
-        capabilities: { duplex: radio.tx === true ? "half" : "rx_only", rx_streams: radio.rx },
-      } as DeviceSet,
-    ],
-  ]);
+function radioResolved(outputs: readonly string[], inputs: readonly PortSpec[] = []) {
+  const ports = [
+    ...inputs.map((spec) => resolvedPort(spec)),
+    ...outputs.map((name) => resolvedPort(iqOut(name))),
+  ];
+  return resolvedPatch([resolvedNodeOf("dev", "device", ports, { runs: "radio", device_set: 1 })]);
+}
 
 const deviceNode = (graph: PatchGraph): PatchNode => {
   const dev = graph.nodes[0];
@@ -205,8 +126,23 @@ const deviceNode = (graph: PatchGraph): PatchNode => {
   return dev;
 };
 
-const positionPort = (name: string, direction: "in" | "out") =>
-  ({ name, port_type: "position", direction, multi: false }) as PortSpec;
+const positionPort = (name: string, direction: "in" | "out"): PortSpec => ({
+  name,
+  port_type: "position",
+  direction,
+  multi: "one",
+  payload: { type: "position" },
+});
+
+function iqOut(name: string): PortSpec {
+  return {
+    name,
+    port_type: "iq",
+    direction: "out",
+    multi: "many",
+    payload: { type: "iq", origins: ["radio"] },
+  };
+}
 
 describe("echoesWire", () => {
   const graph = {
@@ -237,13 +173,10 @@ describe("fitWidth", () => {
 
 describe("portLabel", () => {
   it("numbers the first stream only when there is a second to tell it from", () => {
-    const one = [{ name: "iq", port_type: "iq", direction: "out", multi: true }] as PortSpec[];
+    const one = [iqOut("iq")];
     expect(portLabel("iq", one)).toBe("iq");
 
-    const two = [
-      { name: "iq", port_type: "iq", direction: "out", multi: true },
-      { name: "iq2", port_type: "iq", direction: "out", multi: true },
-    ] as PortSpec[];
+    const two = [iqOut("iq"), iqOut("iq2")];
     expect(portLabel("iq", two)).toBe("iq1");
     expect(portLabel("iq2", two)).toBe("iq2");
 
@@ -260,101 +193,60 @@ describe("portLabel", () => {
 
 describe("handleSignature", () => {
   it("changes when a node gains a port", () => {
-    const iq = { name: "iq", port_type: "iq", direction: "out", multi: true } as const;
-    const one = handleSignature([iq]);
-    const two = handleSignature([iq, { ...iq, name: "iq2" }]);
+    const one = handleSignature([iqOut("iq")]);
+    const two = handleSignature([iqOut("iq"), iqOut("iq2")]);
     expect(two).not.toBe(one);
     expect(two).toContain("out:iq2");
   });
 });
 
 describe("ports", () => {
-  it("resolves a channel's conditional outputs against its type", () => {
+  it("draws an unresolved channel with the ports the server serves for its type", () => {
     const graph = workspace();
     const nfm = graph.nodes[2];
     const adsb = node("adsb", { kind: "channel", data: { channel_type: "adsb" } });
     const atv = node("atv", { kind: "channel", data: { channel_type: "atv" } });
-    expect(nfm && portsOf(context, graph, nfm).map((p) => p.name)).toEqual([
+    expect(nfm && nodePorts(context, nfm).map((p) => p.name)).toEqual([
       "iq",
       "control",
+      "baseband",
       "audio",
       "events",
     ]);
-    expect(portsOf(context, graph, adsb).map((p) => p.name)).toEqual([
+    expect(nodePorts(context, adsb).map((p) => p.name)).toEqual([
       "iq",
       "control",
       "position",
+      "baseband",
       "events",
     ]);
-    expect(portsOf(context, graph, atv).map((p) => p.name)).toEqual(["iq", "control", "video"]);
-  });
-
-  it("leaves off a port whose condition it does not know", () => {
-    const graph = workspace();
-    const nfm = graph.nodes[2];
-    const catalog: PatchCatalog = {
-      nodes: CATALOG.nodes.map((entry) =>
-        entry.kind === "channel"
-          ? {
-              ...entry,
-              ports: entry.ports.map((spec) =>
-                spec.name === "audio"
-                  ? { ...spec, condition: "channel_is_telepathic" as PortCondition }
-                  : spec,
-              ),
-            }
-          : entry,
-      ),
-    };
-    expect(nfm && portsOf({ ...context, catalog }, graph, nfm).map((p) => p.name)).toEqual([
+    expect(nodePorts(context, atv).map((p) => p.name)).toEqual([
       "iq",
       "control",
-      "events",
+      "baseband",
+      "video",
     ]);
   });
 
-  it("gives an unknown channel type only its input", () => {
-    const graph = workspace();
+  it("gives an unknown channel type no ports until the server resolves it", () => {
     const ghost = node("x", { kind: "channel", data: { channel_type: "wefax" } });
-    expect(portsOf(context, graph, ghost).map((p) => p.name)).toEqual(["iq", "control"]);
+    expect(nodePorts(context, ghost)).toEqual([]);
   });
 
-  it("draws a transmit input only on a radio that has one", () => {
+  it("draws the ports the server resolved, and catalog ports until it has", () => {
     const graph = workspace();
     const dev = deviceNode(graph);
-    const receiver = { ...context, bound: bound("dev", { tx: false }) };
-    expect(portsOf(receiver, graph, dev).map((p) => p.name)).toEqual(["iq"]);
-
-    const transceiver = { ...context, bound: bound("dev", { tx: true }) };
-    expect(portsOf(transceiver, graph, dev).map((p) => p.name)).toEqual(["tx", "iq"]);
-
-    expect(portsOf(context, graph, dev).map((p) => p.name)).toEqual(["iq"]);
-  });
-
-  it("expands the IQ family to one output per receive stream of the attached radio", () => {
-    const graph = workspace();
-    const dev = deviceNode(graph);
-    const four = { ...context, bound: bound("dev", { rx: 4 }) };
-    const ports = portsOf(four, graph, dev);
+    expect(nodePorts(context, dev).map((p) => p.name)).toEqual(["iq"]);
+    const four = { ...context, resolved: radioResolved(["iq", "iq2", "iq3", "iq4"]) };
+    const ports = nodePorts(four, dev);
     expect(ports.map((p) => p.name)).toEqual(["iq", "iq2", "iq3", "iq4"]);
-    expect(ports.every((p) => (p.repeat ?? "once") === "once")).toBe(true);
-    expect(connectionRefusal(four, graph, port("dev", "iq3"), port("spk", "audio"))).toMatch(
-      /iq cannot feed a audio input/,
-    );
-    const withScope = { ...graph, nodes: [...graph.nodes, node("scope2", { kind: "scope" })] };
-    expect(connectionRefusal(four, withScope, port("dev", "iq3"), port("scope2", "iq"))).toBeNull();
-    expect(portsOf({ ...context, bound: bound("dev", { rx: 99 }) }, graph, dev)).toHaveLength(16);
+    expect(ports.every((p) => !("feeds" in p) && !("reaches" in p))).toBe(true);
   });
 
-  it("keeps the streams stored wires name while the radio is absent", () => {
-    const graph = addEdge(workspace(), {
-      from: { node: "dev", port: "iq3" },
-      to: { node: "scope", port: "iq" },
-    });
-    const dev = deviceNode(graph);
-    expect(portsOf(context, graph, dev).map((p) => p.name)).toEqual(["iq", "iq3"]);
-    const two = { ...context, bound: bound("dev", { rx: 2 }) };
-    expect(portsOf(two, graph, dev).map((p) => p.name)).toEqual(["iq", "iq2", "iq3"]);
+  it("falls back to catalog ports when the resolved node has another kind", () => {
+    const dev = deviceNode(workspace());
+    const stale = resolvedPatch([resolvedNodeOf("dev", "scope", [])]);
+    expect(nodePorts({ ...context, resolved: stale }, dev).map((p) => p.name)).toEqual(["iq"]);
   });
 
   it("numbers stream ports from two and answers only canonical spellings", () => {
@@ -400,96 +292,21 @@ describe("ports", () => {
   });
 
   it("gives every kind a width and only the viewports a height", () => {
-    for (const [kind, size] of Object.entries(NODE_SIZE) as [NodeKind, NodeSize][]) {
-      expect(size.w).toBeGreaterThan(0);
-      expect(size.h !== undefined).toBe(isResizable(kind));
+    for (const entry of REAL_CATALOG.nodes) {
+      const size = nodeSize(entry.kind);
+      expect(size.w).toBe(entry.face.width);
+      expect(size.h !== undefined).toBe(isResizable(entry.kind));
     }
   });
 
   it("floors a content-sized kind at its width and its ports' depth", () => {
-    expect(nodeMinSize("speaker", [])).toEqual({ w: NODE_SIZE.speaker.w, h: PORT_TOP_PX });
-  });
-});
-
-describe("connectionRefusal", () => {
-  it("accepts the wires the model is for", () => {
-    const graph = workspace();
-    expect(
-      connectionRefusal(context, graph, port("nfm", "audio"), port("spk", "audio")),
-    ).toBeNull();
-    const withScope = { ...graph, nodes: [...graph.nodes, node("scope2", { kind: "scope" })] };
-    expect(
-      connectionRefusal(context, withScope, port("dev", "iq"), port("scope2", "iq")),
-    ).toBeNull();
+    expect(nodeMinSize("speaker", [])).toEqual({ w: nodeSize("speaker").w, h: PORT_TOP_PX });
   });
 
-  it("names the reason for every refusal", () => {
-    const graph = workspace();
-    expect(connectionRefusal(context, graph, port("dev", "iq"), port("dev", "iq"))).toMatch(
-      /itself/,
-    );
-    expect(connectionRefusal(context, graph, port("dev", "iq"), port("spk", "audio"))).toMatch(
-      /iq cannot feed a audio input/,
-    );
-    expect(connectionRefusal(context, graph, port("scope", "iq"), port("nfm", "iq"))).toMatch(
-      /output to an input/,
-    );
-    expect(connectionRefusal(context, graph, port("dev", "iq"), port("nfm", "tap"))).toMatch(
-      /does not exist/,
-    );
-    expect(connectionRefusal(context, graph, port("dev", "iq"), port("nfm", "iq"))).toMatch(
-      /already wired/,
-    );
-  });
-
-  it("takes a second device on a channel", () => {
-    const graph = {
-      ...workspace(),
-      nodes: [...workspace().nodes, node("dev2", { kind: "device", data: {} })],
-    };
-    expect(connectionRefusal(context, graph, port("dev2", "iq"), port("nfm", "iq"))).toBeNull();
-  });
-
-  it("wires a scanner into the decoder it drives, and only one", () => {
-    const graph = {
-      ...workspace(),
-      nodes: [
-        ...workspace().nodes,
-        node("scan", { kind: "scanner" }),
-        node("am", { kind: "channel", data: { channel_type: "am" } }),
-      ],
-    };
-    expect(
-      connectionRefusal(context, graph, port("scan", "control"), port("nfm", "control")),
-    ).toBeNull();
-    expect(
-      connectionRefusal(context, graph, port("scan", "control"), port("dev", "control")),
-    ).toMatch(/does not exist/);
-    const driving = addEdge(graph, {
-      from: { node: "scan", port: "control" },
-      to: { node: "nfm", port: "control" },
-    });
-    expect(
-      connectionRefusal(context, driving, port("scan", "control"), port("am", "control")),
-    ).toMatch(/one node at a time/);
-    const second = { ...driving, nodes: [...driving.nodes, node("scan2", { kind: "scanner" })] };
-    expect(
-      connectionRefusal(context, second, port("scan2", "control"), port("nfm", "control")),
-    ).toMatch(/takes one wire/);
-  });
-
-  it("refuses everything at the reserved transmit input, with the reason", () => {
-    const graph = {
-      ...workspace(),
-      nodes: [...workspace().nodes, node("dev2", { kind: "device", data: {} })],
-    };
-    const transceiver = { ...context, bound: bound("dev2", { tx: true }) };
-    expect(connectionRefusal(transceiver, graph, port("dev", "iq"), port("dev2", "tx"))).toMatch(
-      /transmit is not built/,
-    );
-    expect(connectionRefusal(context, graph, port("dev", "iq"), port("dev2", "tx"))).toMatch(
-      /does not exist/,
-    );
+  it("widens a dial face to the dial floor", () => {
+    expect(fitWidth("device")).toEqual({ minWidth: 420, maxWidth: 420 });
+    expect(fitWidth("speaker")).toEqual({ minWidth: FIT_MIN_W, maxWidth: 320 });
+    expect(fitWidth("map")).toBeNull();
   });
 });
 
@@ -569,29 +386,12 @@ describe("editing", () => {
     expect(() => addNode(graph, drawn)).toThrow(/duplicate node id/);
   });
 
-  it("turns a stored scanner's IQ wire into the control wire that drives the radio's decoder", () => {
+  it("keeps the lane a stored scanner watches", () => {
     const stored = scanning([
-      { from: { node: "dev", port: "iq" }, to: { node: "scope", port: "iq" } },
       { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
       { from: { node: "dev", port: "iq" }, to: { node: "scan", port: "iq" } },
     ]);
-    expect(migrateSnapshot(stored).graph.edges?.map(edgeKey)).toEqual([
-      "dev.iq->scope.iq",
-      "dev.iq->nfm.iq",
-      "scan.control->nfm.control",
-    ]);
-    const migrated = migrateSnapshot(stored);
-    expect(migrateSnapshot(migrated)).toBe(migrated);
-
-    const fanned = scanning([
-      { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
-      { from: { node: "dev", port: "iq" }, to: { node: "scan", port: "iq" } },
-      { from: { node: "dev2", port: "iq" }, to: { node: "scan", port: "iq" } },
-    ]);
-    expect(migrateSnapshot(fanned).graph.edges?.map(edgeKey)).toEqual([
-      "dev.iq->nfm.iq",
-      "scan.control->nfm.control",
-    ]);
+    expect(migrateSnapshot(stored).graph.edges).toEqual(stored.graph.edges);
   });
 
   it("opens a recorder saved without a switch as switched off", () => {
@@ -798,7 +598,7 @@ describe("tuningLocked", () => {
   });
 });
 
-const ARRAY_CONTEXT: GraphContext = { catalog: REAL_CATALOG, channelTypes: [], facets: [] };
+const ARRAY_CONTEXT: GraphContext = { catalog: REAL_CATALOG, channelTypes: [] };
 
 function arrayNodeOf(geometry?: object): PatchNode {
   const body = catalogBody("array") as NodeBodyOf<"array">;
@@ -820,24 +620,31 @@ function lanesWired(lanes: readonly number[], geometry?: object): PatchGraph {
   };
 }
 
-function laneInputs(graph: PatchGraph): string[] {
+function laneInputs(graph: PatchGraph, lanes: number): string[] {
   const array = graph.nodes.find((candidate) => candidate.id === "arr");
   if (array === undefined) {
     return [];
   }
-  const ports = portsOf(ARRAY_CONTEXT, graph, array);
+  const resolved = resolvedPatch([
+    resolvedNodeOf(
+      "arr",
+      "array",
+      Array.from({ length: lanes }, (_, lane) =>
+        resolvedPort({ name: streamPort("lane", lane), port_type: "iq", direction: "in" }),
+      ),
+      { runs: "engine" },
+    ),
+  ]);
+  const ports = nodePorts({ ...ARRAY_CONTEXT, resolved }, array);
   return ports
     .filter((spec) => spec.port_type === "iq" && spec.direction === "in")
     .map((spec) => portLabel(spec.name, ports));
 }
 
 describe("arrays", () => {
-  it("draws one free lane input more than the array holds", () => {
-    expect(laneInputs(lanesWired([]))).toEqual(["lane"]);
-    expect(laneInputs(lanesWired([0, 1]))).toEqual(["lane1", "lane2", "lane3"]);
-    expect(laneInputs(lanesWired([3]))).toEqual(["lane1", "lane2", "lane3", "lane4", "lane5"]);
-    const full = Array.from({ length: 16 }, (_, lane) => lane);
-    expect(laneInputs(lanesWired(full))).toHaveLength(16);
+  it("labels the resolved lane inputs from one", () => {
+    expect(laneInputs(lanesWired([]), 1)).toEqual(["lane"]);
+    expect(laneInputs(lanesWired([0, 1]), 3)).toEqual(["lane1", "lane2", "lane3"]);
   });
 
   it("counts lanes from the highest wired lane port", () => {
@@ -878,56 +685,12 @@ describe("arrays", () => {
   });
 
   it("sizes new processor kinds", () => {
-    expect(NODE_SIZE.array).toEqual({ w: 460 });
-    expect(NODE_SIZE.passive_radar).toEqual({ w: 560, h: 540 });
+    expect(nodeSize("array")).toEqual({ w: 460 });
+    expect(nodeSize("passive_radar")).toEqual({ w: 560, h: 540 });
     expect(isResizable("spatial_spectrum")).toBe(true);
     expect(isResizable("polarimeter")).toBe(false);
     expect(nodeMinSize("passive_radar", []).w).toBe(420);
     expect(nodeMinSize("spatial_spectrum", [])).toEqual({ w: 400, h: 300 });
     expect(nodeMinSize("correlator", [])).toEqual({ w: 380, h: 340 });
-  });
-
-  it("keeps a beam exclusive in either connection order", () => {
-    const graph: PatchGraph = {
-      nodes: [
-        ...lanesWired([]).nodes,
-        placedNode("beam", catalogBody("beamformer")),
-        placedNode("nfm", { kind: "channel", data: { channel_type: "nfm" } }),
-      ],
-      edges: [],
-    };
-    const beam = { node: "beam", port: "beam" };
-    const radio = { node: "dev", port: "iq" };
-    const nfm = { node: "nfm", port: "iq" };
-    expect(connectionRefusal(ARRAY_CONTEXT, graph, beam, nfm)).toBeNull();
-    expect(
-      connectionRefusal(ARRAY_CONTEXT, { ...graph, edges: [{ from: beam, to: nfm }] }, radio, nfm),
-    ).toBe(BEAM_TAKES_ONE);
-    expect(
-      connectionRefusal(ARRAY_CONTEXT, { ...graph, edges: [{ from: radio, to: nfm }] }, beam, nfm),
-    ).toBe(BEAM_TAKES_ONE);
-  });
-
-  it("refuses array wiring through the array rules", () => {
-    const graph: PatchGraph = {
-      nodes: [...lanesWired([]).nodes, placedNode("scope", { kind: "scope" })],
-      edges: [],
-    };
-    expect(
-      connectionRefusal(
-        ARRAY_CONTEXT,
-        graph,
-        { node: "dev", port: "iq" },
-        { node: "arr", port: "lane" },
-      ),
-    ).toBeNull();
-    expect(
-      connectionRefusal(
-        ARRAY_CONTEXT,
-        graph,
-        { node: "arr", port: "array" },
-        { node: "scope", port: "iq" },
-      ),
-    ).not.toBeNull();
   });
 });

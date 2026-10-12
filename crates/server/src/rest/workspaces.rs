@@ -1,5 +1,6 @@
 use super::*;
-use crate::workspace::Restored;
+use crate::apply::{bring_up, bring_up_active};
+use sdrmm_wire::ResolvedState;
 
 #[utoipa::path(
     get, path = "/api/templates",
@@ -72,217 +73,227 @@ pub(super) async fn apply_template(
 ) -> Result<StatusCode, AppError> {
     let template = crate::templates::get(&id)
         .ok_or_else(|| AppError::not_found(format!("template {id} not found")))?;
-    let engine = state.engine.clone();
-    let store = state.store.clone();
-    let channels = template.channels.clone();
+    let app = state.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let open = engine.snapshot();
-        let mut rate = template.sample_rate;
-        if let Some(set) = open.device_sets.iter().find(|set| set.id == req.device_set) {
-            let profile = set.capabilities.profile();
-            if let Some(reason) = template.unmet_by(&profile) {
-                return Err(AppError::bad_request(format!(
-                    "{} cannot run this template: {reason}",
-                    set.device.label
-                )));
-            }
-            rate = template.rate_on(&profile).unwrap_or(rate);
-        }
-        let settings = DeviceSettings {
-            center_hz: Some(template.center_hz),
-            sample_rate: Some(rate),
-            tuning: (!channels.is_empty()).then_some(sdrmm_wire::Tuning::Auto),
-            ..DeviceSettings::default()
-        };
-        apply_configuration(&engine, req.device_set, settings, channels, "template")?;
-        apply_template_patch(&engine, &store, template, req.device_set)
+        let _serialized = lock_gate(&app.apply_gate);
+        let merge = template_merge(template, req.device_set)?;
+        active_workspace(&app.store)?;
+        let settings = template_settings(&app.engine, template, req.device_set)?;
+        app.engine
+            .validate_configuration(req.device_set, &settings, &template.channels)?;
+        app.engine.patch_device(req.device_set, settings)?;
+        place_merged(&app, &merge)
     })
     .await??;
+    resolve_now(state).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub(super) fn apply_template_patch(
+fn template_settings(
     engine: &sdrmm_engine::Engine,
-    store: &Store,
     template: &TemplateInfo,
     device_set: u32,
-) -> Result<(), AppError> {
-    let Some(patch) = &template.patch else {
-        return Ok(());
-    };
-    let Some(mut active) = store.active_workspace()? else {
-        return Ok(());
-    };
-    let device = engine
-        .snapshot()
-        .device_sets
+) -> Result<DeviceSettings, AppError> {
+    let open = engine.snapshot();
+    let mut rate = template.sample_rate;
+    if let Some(set) = open.device_sets.iter().find(|set| set.id == device_set) {
+        let profile = set.capabilities.profile();
+        if let Some(reason) = template.unmet_by(&profile) {
+            return Err(AppError::bad_request(format!(
+                "{} cannot run this template: {reason}",
+                set.device.label
+            )));
+        }
+        rate = template.rate_on(&profile).unwrap_or(rate);
+    }
+    Ok(DeviceSettings {
+        center_hz: Some(template.center_hz),
+        sample_rate: Some(rate),
+        tuning: (!template.channels.is_empty()).then_some(sdrmm_wire::Tuning::Auto),
+        ..DeviceSettings::default()
+    })
+}
+
+fn template_merge(template: &TemplateInfo, device_set: u32) -> Result<Merge, AppError> {
+    let patch = template
+        .patch
+        .as_ref()
+        .ok_or_else(|| AppError::internal(format!("template {} has no patch", template.id)))?;
+    let radios = patch
+        .device_nodes()
+        .map(|node| (node.id.clone(), device_set))
+        .take(1)
+        .collect();
+    Ok(Merge {
+        settings: template_decoders(template, patch)?,
+        patch: patch.clone(),
+        prefix: format!("template:{}:", template.id),
+        radios,
+    })
+}
+
+fn template_decoders(
+    template: &TemplateInfo,
+    patch: &PatchGraph,
+) -> Result<Vec<(String, ChannelSettings)>, AppError> {
+    let nodes: Vec<(&str, &str)> = patch
+        .nodes
         .iter()
-        .find(|set| set.id == device_set)
-        .map(|set| sdrmm_wire::DeviceRef::from_info(&set.device));
-    active.snapshot.merge_patch(
-        patch,
-        &format!("template:{}:", template.id),
-        device.as_ref(),
-    );
+        .filter_map(|node| match &node.body {
+            NodeBody::Channel(channel) => Some((node.id.as_str(), channel.channel_type.as_str())),
+            _ => None,
+        })
+        .collect();
+    let paired = nodes.len() == template.channels.len()
+        && nodes
+            .iter()
+            .zip(&template.channels)
+            .all(|((_, channel_type), settings)| settings.params.type_id() == *channel_type);
+    if !paired {
+        return Err(AppError::internal(format!(
+            "template {} draws other decoders than it configures",
+            template.id
+        )));
+    }
+    Ok(nodes
+        .into_iter()
+        .zip(&template.channels)
+        .map(|((node, _), settings)| (node.to_owned(), settings.clone()))
+        .collect())
+}
+
+pub(super) fn active_workspace(store: &Store) -> Result<WorkspaceDetail, AppError> {
+    store
+        .active_workspace()?
+        .ok_or_else(|| AppError::bad_request("no active workspace".to_owned()))
+}
+
+pub(super) struct Merge {
+    pub patch: PatchGraph,
+    pub prefix: String,
+    pub radios: Vec<(String, u32)>,
+    pub settings: Vec<(String, ChannelSettings)>,
+}
+
+pub(super) fn place_merged(app: &AppState, merge: &Merge) -> Result<(), AppError> {
+    let mut active = active_workspace(&app.store)?;
+    merge_onto(&mut active.snapshot, merge, &app.engine.snapshot());
+    let id = active.info.id;
     let update = UpdateWorkspaceRequest {
         revision: active.info.revision,
         name: None,
         snapshot: Some(active.snapshot),
     };
-    match store.update_workspace(active.info.id, &update, None) {
-        Ok(_) => {
-            engine.emit_scope(StateScope::Workspaces);
-            Ok(())
-        }
-        Err(StoreError::WorkspaceConflict { .. }) => Ok(()),
-        Err(err) => Err(err.into()),
-    }
+    app.store.update_workspace(id, &update, None)?;
+    let placed: Vec<(String, ChannelSettings)> = merge
+        .settings
+        .iter()
+        .map(|(node, settings)| (format!("{}{node}", merge.prefix), settings.clone()))
+        .collect();
+    hold_settings(app, id, &placed)?;
+    app.engine.emit_scope(StateScope::Workspaces);
+    let report = bring_up_active(app, id)?;
+    refused_among(&report, &placed)
 }
 
-pub(super) fn first_binding(app: &AppState, workspace: i64, node: &str, device_set: u32) -> bool {
-    app.restored
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert((workspace, node.to_string(), device_set))
-}
-
-pub(super) fn note_restore(app: &AppState, node: &str, restored: bool) {
-    let mut unrestored = app
-        .unrestored
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    unrestored.retain(|held| held != node);
-    if !restored {
-        unrestored.push(node.to_string());
-    }
-}
-
-pub(super) fn forget_closed_bindings(app: &AppState, state: &StateSnapshot) {
-    app.restored
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .retain(|(_, _, set)| state.device_sets.iter().any(|live| live.id == *set));
-}
-
-pub(super) fn bring_up(
-    app: &AppState,
-    workspace: i64,
-    snapshot: &WorkspaceSnapshot,
-    saved: &WorkspaceState,
-) -> Result<PatchApplyReport, AppError> {
-    let engine = &app.engine;
-    let mut report = PatchApplyReport::default();
-    let mut state = engine.snapshot();
-    forget_closed_bindings(app, &state);
-
-    for (node, device_set) in workspace::bind_devices(&snapshot.graph, &state) {
-        if first_binding(app, workspace, &node, device_set) {
-            match workspace::restore_device(engine, &app.store, device_set, &node, saved) {
-                Ok(whole) => note_restore(app, &node, whole == Restored::Whole),
-                Err(reason) => {
-                    note_restore(app, &node, false);
-                    report.refused.push(PatchRefusal {
-                        node: node.clone(),
-                        reason,
-                    });
-                }
-            }
-        }
-        report.bound.push(PatchBinding { node, device_set });
-    }
-
-    let mut attached: Option<Vec<DeviceInfo>> = None;
-    for node in snapshot.graph.device_nodes() {
-        let Some(reference) = node.body.device_ref(&node.id) else {
-            continue;
-        };
-        let reference = &reference;
-        if report.bound.iter().any(|bound| bound.node == node.id) {
-            continue;
-        }
-        let devices = attached.get_or_insert_with(|| engine.probe_devices());
-        if !devices.iter().any(|info| reference.matches(info))
-            && let Some(key) = &reference.key
-            && let Some(adopted) = engine.adopt_device(&format!("{}:{key}", reference.backend))
-        {
-            devices.push(adopted);
-        }
-        let open = devices
+fn merge_onto(snapshot: &mut WorkspaceSnapshot, merge: &Merge, live: &StateSnapshot) {
+    let bound = workspace::bind_devices(&snapshot.graph, live);
+    let mut patch = merge.patch.clone();
+    let mut reused: Vec<(String, String)> = Vec::new();
+    for (device, set) in &merge.radios {
+        if let Some((node, _)) = bound
             .iter()
-            .filter(|info| reference.matches(info))
-            .find(|info| {
-                !state
-                    .device_sets
-                    .iter()
-                    .any(|set| set.device.id() == info.id())
-            })
-            .map(DeviceInfo::id);
-        match open {
-            Some(device_id) => match engine.create_device_set(&device_id) {
-                Ok(id) => {
-                    report.opened += 1;
-                    first_binding(app, workspace, &node.id, id);
-                    match workspace::restore_device(engine, &app.store, id, &node.id, saved) {
-                        Ok(whole) => note_restore(app, &node.id, whole == Restored::Whole),
-                        Err(reason) => {
-                            note_restore(app, &node.id, false);
-                            report.refused.push(PatchRefusal {
-                                node: node.id.clone(),
-                                reason,
-                            });
-                        }
-                    }
-                    report.bound.push(PatchBinding {
-                        node: node.id.clone(),
-                        device_set: id,
-                    });
-                    state = engine.snapshot();
-                }
-                Err(err) => report.refused.push(PatchRefusal {
-                    node: node.id.clone(),
-                    reason: err.to_string(),
-                }),
-            },
-            None => report.absent.push(node.id.clone()),
+            .find(|(node, held)| held == set && !node.starts_with(&merge.prefix))
+        {
+            reused.push((device.clone(), node.clone()));
+            continue;
         }
-    }
-
-    crate::placement::settle_workspace(app, &snapshot.graph, saved, &mut report);
-    state = engine.snapshot();
-    for binding in &report.bound {
-        let Some(set) = state
+        let named = live
             .device_sets
             .iter()
-            .find(|set| set.id == binding.device_set)
-        else {
-            continue;
-        };
-        let reserved = workspace::trunk_channels(&state, set.id);
-        let bound = workspace::bind_channels(&snapshot.graph, &binding.node, set, &reserved);
-        let cut = set.channels.iter().filter(|channel| {
-            channel.node.is_some() && !bound.iter().any(|(_, held)| *held == channel.id)
-        });
-        for channel in cut {
-            if let Err(err) = engine.remove_channel(set.id, channel.id) {
-                tracing::warn!(set = set.id, channel = channel.id, %err, "could not close an unwired decoder");
-            } else {
-                tracing::info!(set = set.id, channel = channel.id, node = ?channel.node, "closed an unwired decoder");
-                report.closed += 1;
-            }
+            .find(|open| open.id == *set)
+            .map(|open| sdrmm_wire::DeviceRef::from_info(&open.device));
+        if let Some(node) = patch.nodes.iter_mut().find(|node| node.id == *device)
+            && let NodeBody::Device(body) = &mut node.body
+        {
+            body.device = named;
         }
     }
-    let bound: Vec<(String, u32)> = report
-        .bound
-        .iter()
-        .map(|binding| (binding.node.clone(), binding.device_set))
-        .collect();
-    for (node, reason) in
-        crate::reconcile::reconcile_graph_hooks(app, &snapshot.graph, &bound, saved)
-    {
-        report.refused.push(PatchRefusal { node, reason });
+    patch
+        .nodes
+        .retain(|node| !reused.iter().any(|(device, _)| *device == node.id));
+    snapshot.merge_patch(&patch, &merge.prefix, None);
+    let placed = |id: &str| {
+        reused
+            .iter()
+            .find(|(device, _)| device == id)
+            .map_or_else(|| format!("{}{id}", merge.prefix), |(_, node)| node.clone())
+    };
+    let to_reused = merge.patch.edges.iter().filter(|edge| {
+        reused
+            .iter()
+            .any(|(device, _)| *device == edge.from.node || *device == edge.to.node)
+    });
+    for edge in to_reused {
+        let wired = sdrmm_wire::PatchEdge {
+            from: sdrmm_wire::PortRef {
+                node: placed(&edge.from.node),
+                port: edge.from.port.clone(),
+            },
+            to: sdrmm_wire::PortRef {
+                node: placed(&edge.to.node),
+                port: edge.to.port.clone(),
+            },
+        };
+        if !snapshot.graph.edges.contains(&wired) {
+            snapshot.graph.edges.push(wired);
+        }
     }
-    crate::array::open_virtual_lane_channels(app, &snapshot.graph, saved, &mut report);
-    Ok(report)
+}
+
+fn hold_settings(
+    app: &AppState,
+    id: i64,
+    placed: &[(String, ChannelSettings)],
+) -> Result<(), AppError> {
+    let mut saved = app.store.workspace_state(id)?;
+    for (node, settings) in placed {
+        saved.put_channel(node, settings.clone());
+    }
+    app.store.put_workspace_state(id, &saved)?;
+    let live = app.engine.snapshot();
+    for (node, settings) in placed {
+        let carried = live.device_sets.iter().flat_map(|set| {
+            set.channels
+                .iter()
+                .filter(|channel| {
+                    channel.node.as_deref() == Some(node.as_str())
+                        && channel.settings.params.type_id() == settings.params.type_id()
+                })
+                .map(|channel| (set.id, channel.id))
+        });
+        for (set, channel) in carried {
+            app.engine.patch_channel(set, channel, settings.clone())?;
+        }
+    }
+    Ok(())
+}
+
+fn refused_among(
+    report: &PatchApplyReport,
+    placed: &[(String, ChannelSettings)],
+) -> Result<(), AppError> {
+    let refused: Vec<String> = report
+        .refused
+        .iter()
+        .filter(|refusal| placed.iter().any(|(node, _)| *node == refusal.node))
+        .map(|refusal| format!("{}: {}", refusal.node, refusal.reason))
+        .collect();
+    if refused.is_empty() {
+        return Ok(());
+    }
+    Err(AppError::bad_request(refused.join("; "))
+        .with_detail("the decoders are on the canvas but did not all open".to_owned()))
 }
 
 #[utoipa::path(
@@ -440,7 +451,7 @@ pub(super) async fn import_workspace(
     State(state): State<AppState>,
     Json(mut document): Json<serde_json::Value>,
 ) -> Result<Json<CreatedRowId>, AppError> {
-    let broken = crate::store::upgrade_export(&mut document);
+    let notices = crate::store::upgrade_import(&mut document);
     let export: WorkspaceExport = crate::json::from_value(&document).map_err(|err| {
         rejection(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -451,7 +462,7 @@ pub(super) async fn import_workspace(
     let engine = state.engine.clone();
     let store = state.store.clone();
     let id = tokio::task::spawn_blocking(move || -> Result<i64, AppError> {
-        let id = store.import_workspace(&export, &broken.notices())?;
+        let id = store.import_workspace(&export, &notices)?;
         engine.emit_scope(StateScope::Workspaces);
         Ok(id)
     })
@@ -524,7 +535,7 @@ pub(super) async fn update_workspace(
         Ok(detail)
     })
     .await??;
-    reconcile_graph(state).await?;
+    resolve_now(state).await?;
     Ok(Json(detail))
 }
 
@@ -562,7 +573,7 @@ pub(super) async fn delete_workspace(
         Ok(())
     })
     .await??;
-    reconcile_graph(gps_state).await?;
+    resolve_now(gps_state).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -594,7 +605,7 @@ pub(super) async fn activate_workspace(
         switch(&state, id, by)
     })
     .await??;
-    reconcile_graph(gps_state).await?;
+    resolve_now(gps_state).await?;
     Ok(Json(report))
 }
 
@@ -712,7 +723,7 @@ pub(crate) async fn step_history(
         Ok(detail)
     })
     .await??;
-    reconcile_graph(gps_state).await?;
+    resolve_now(gps_state).await?;
     Ok(Json(detail))
 }
 
@@ -741,24 +752,30 @@ pub(super) async fn apply_workspace(
         bring_up_active(&state, id)
     })
     .await??;
-    reconcile_graph(gps_state).await?;
+    resolve_now(gps_state).await?;
     Ok(Json(report))
 }
 
-pub(crate) fn bring_up_active(state: &AppState, id: i64) -> Result<PatchApplyReport, AppError> {
-    let workspace = state.store.workspace(id)?;
-    let saved = state.store.workspace_state(id)?;
-    bring_up(state, id, &workspace.snapshot, &saved)
+pub(crate) async fn resolve_now(state: AppState) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || state.resolve_now()).await?;
+    Ok(())
 }
 
-pub(crate) async fn reconcile_graph(state: AppState) -> Result<(), AppError> {
-    tokio::task::spawn_blocking(move || {
-        state.gps.reconcile(&state);
-        state.satellites.reconcile(&state);
-        state.rotators.reconcile(&state);
+#[utoipa::path(
+    get, path = "/api/workspaces/active/resolved",
+    responses((
+        status = 200,
+        description = "The active workspace as the server resolved it: concrete ports, what feeds \
+                       each input, what each output reaches, where each node runs, and node \
+                       problems",
+        body = ResolvedState,
+    )),
+)]
+pub(super) async fn get_resolved(State(state): State<AppState>) -> Json<ResolvedState> {
+    Json(ResolvedState {
+        patch: state.resolved.current().patch.clone(),
+        problems: state.problems.all(),
     })
-    .await?;
-    Ok(())
 }
 
 #[utoipa::path(

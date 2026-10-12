@@ -13,7 +13,8 @@ use tokio::{
     time::{MissedTickBehavior, interval},
 };
 
-use crate::trunking::{CallBinding, CallPolicy, Gate, Recording};
+use crate::trunking::{CallBinding, CallPolicy, Recording};
+use sdrmm_wire::CallGate;
 
 mod tracker;
 
@@ -316,7 +317,7 @@ fn resolve_bindings(engine: &Engine, policy: &CallPolicy) -> Bindings {
                     node: system.node.clone(),
                     device_set: follower.device_set,
                     channel: follower.channel,
-                    gate: Gate::Frames,
+                    gate: CallGate::Frames,
                 });
         }
     }

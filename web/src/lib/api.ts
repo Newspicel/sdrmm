@@ -61,12 +61,14 @@ import type {
   PairingOffer,
   PatchApplyReport,
   PatchCatalog,
+  PatchGraph,
   Phone,
   PhoneAccess,
   PhoneAccessStatus,
   PhonesResponse,
   PlaybackAction,
   PlaybackStatus,
+  PortRef,
   PresetInfo,
   RadioIdent,
   RadioModelsResponse,
@@ -75,6 +77,7 @@ import type {
   RecordingInfo,
   RecordingsResponse,
   RemoteStatus,
+  ResolvedState,
   SatelliteCatalogResponse,
   SavedRadio,
   SaveNanoVnaMeasurementRequest,
@@ -94,6 +97,7 @@ import type {
   TransmittersResponse,
   UpdateNanoVnaMeasurementRequest,
   VoiceCallsResponse,
+  WireVerdict,
   WorkspaceDetail,
   WorkspaceExport,
   WorkspaceSnapshot,
@@ -143,6 +147,7 @@ export const ABOUT_KEY = ["get", "/api/about"] as const;
 export const REMOTE_KEY = ["get", "/api/remote"] as const;
 export const WORKSPACES_KEY = ["get", "/api/workspaces"] as const;
 export const PATCH_CATALOG_KEY = ["get", "/api/patch/catalog"] as const;
+export const RESOLVED_KEY = ["get", "/api/workspaces/active/resolved"] as const;
 export const BAND_REGIONS_KEY = ["get", "/api/bandplan/regions"] as const;
 export const TOOLS_KEY = ["get", "/api/tools"] as const;
 export const CPS_MODELS_KEY = ["get", "/api/cps/models"] as const;
@@ -285,15 +290,6 @@ export function channelTypesQuery() {
     queryFn: async (): Promise<ChannelTypesResponse> =>
       unwrap(await client.GET("/api/channeltypes")),
   });
-}
-
-export async function createChannel(ds: number, settings: ChannelSettings): Promise<number> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels", {
-      params: { path: { ds } },
-      body: { settings },
-    }),
-  ).id;
 }
 
 export async function patchChannel(
@@ -702,10 +698,23 @@ export async function stepWorkspace(id: number, step: "undo" | "redo"): Promise<
   return { ...detail, snapshot: migrateSnapshot(detail.snapshot) };
 }
 
+export async function wiringVerdicts(graph: PatchGraph, from: PortRef): Promise<WireVerdict[]> {
+  return unwrap(await client.POST("/api/patch/wiring", { body: { graph, from } }));
+}
+
 export function patchCatalogQuery() {
   return queryOptions({
     queryKey: PATCH_CATALOG_KEY,
     queryFn: async (): Promise<PatchCatalog> => unwrap(await client.GET("/api/patch/catalog")),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export function resolvedQuery() {
+  return queryOptions({
+    queryKey: RESOLVED_KEY,
+    queryFn: async (): Promise<ResolvedState> =>
+      unwrap(await client.GET("/api/workspaces/active/resolved")),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
@@ -985,6 +994,14 @@ export async function clearDecoderLog(filter: DecoderLogFilter): Promise<number>
       params: { query: normalizeFilter(filter) },
     }),
   ).deleted;
+}
+
+export async function clearSink(node: string): Promise<void> {
+  unwrap(
+    await client.DELETE("/api/sinks/{node}", {
+      params: { path: { node } },
+    }),
+  );
 }
 
 export function decoderLogExportUrl(format: ExportFormat, filter: DecoderLogFilter): string {
