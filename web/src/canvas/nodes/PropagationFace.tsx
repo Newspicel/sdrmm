@@ -17,8 +17,8 @@ import {
 import { mufColor, type PropagationLayer } from "../../lib/map/propagation";
 import { useFeeds } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
-import type { PatchNode, PatchNodeOf, PropagationCell, PropagationView } from "../../lib/types";
 import { toastError } from "../../lib/toasts";
+import type { PatchNode, PatchNodeOf, PropagationCell, PropagationView } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
@@ -133,7 +133,9 @@ function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
             label="MUF(3000)"
             title="Measured MUF is a floor: the highest frequency decoded over each path, projected onto a 3000 km hop"
           >
-            {summary.best_muf3000_mhz == null ? "-" : `≥ ${summary.best_muf3000_mhz.toFixed(1)} MHz`}
+            {summary.best_muf3000_mhz == null
+              ? "-"
+              : `≥ ${summary.best_muf3000_mhz.toFixed(1)} MHz`}
           </Readout>
           <Readout label="Farthest">{Math.round(summary.farthest_km)} km</Readout>
           {settings.compare_forecast && (
@@ -312,7 +314,9 @@ function PathTable({
             <td className={TABLE_CELL}>{cell.decodes}</td>
             <td className={TABLE_CELL}>{formatMhz(cell.best_freq_hz)}</td>
             <td className={TABLE_CELL}>
-              {cell.measured_muf3000_mhz == null ? "-" : `≥ ${cell.measured_muf3000_mhz.toFixed(1)}`}
+              {cell.measured_muf3000_mhz == null
+                ? "-"
+                : `≥ ${cell.measured_muf3000_mhz.toFixed(1)}`}
             </td>
           </tr>
         ))}

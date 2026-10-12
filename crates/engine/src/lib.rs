@@ -19,8 +19,8 @@ use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_recorder::{data_path, meta_path};
 use sdrmm_wire::{
     AudioRecordingStatus, AudioRoute, BandMiss, Capabilities, ChannelInfo, ChannelSettings,
-    DecodedRecord, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus, DeviceSettings,
-    EventOrigin, HeldLane, NetworkExportSettings, NetworkExportStatus, PositionFix,
+    DecodedRecord, DecoderEvent, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus,
+    DeviceSettings, EventOrigin, HeldLane, NetworkExportSettings, NetworkExportStatus, PositionFix,
     RecordingStatus, ServerEvent, SettingsRefused, StateScope, StateSnapshot, StreamScope,
     TrunkSystemStatus, VirtualLane,
 };
@@ -1072,6 +1072,7 @@ impl Engine {
     }
 
     fn route_raw(&self, raw: RawDecoded) {
+        self.tell_face(raw.node.as_deref(), &raw.event);
         let trunked = self.trunked(raw.node.as_deref());
         let record = DecodedRecord {
             origin: raw.node.map(|node| EventOrigin {
@@ -1093,6 +1094,15 @@ impl Engine {
                 .send(trunking::TrunkInput::Record(Box::new(record.clone())));
         }
         let _ = self.decoded_tx_out.send(record);
+    }
+
+    fn tell_face(&self, node: Option<&str>, event: &DecoderEvent) {
+        if let (Some(node), DecoderEvent::Broadcast(status)) = (node, event) {
+            self.emit(ServerEvent::ChannelBroadcast {
+                node: node.to_owned(),
+                status: Box::new(status.clone()),
+            });
+        }
     }
 
     fn trunked(&self, node: Option<&str>) -> bool {

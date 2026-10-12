@@ -4,7 +4,6 @@ import type { Listener, Unsubscribe } from "./listeners";
 import type {
   ClientCommand,
   DecodedRecord,
-  DecodedRecordOf,
   DecoderEventOf,
   DecoderKind,
   Entity,
@@ -90,7 +89,7 @@ export function updatedView(view: SinkView, update: SinkUpdate): SinkView {
       added.length === 0
         ? view.records
         : added.toReversed().concat(view.records).slice(0, SINK_RECORDS),
-    tracks: (update.tracks?.length ?? 0) > 0 ? (update.tracks ?? []) : view.tracks,
+    tracks: update.tracks ?? view.tracks,
     surfaces: update.surfaces ?? view.surfaces,
     propagation: update.propagation ?? view.propagation,
     lost: update.lost,
@@ -227,20 +226,6 @@ export function groupsOf(view: SinkView): SinkGroup[] {
   return [...groups.values()].toSorted(
     (a, b) => a.source.localeCompare(b.source) || a.kind.localeCompare(b.kind),
   );
-}
-
-export function recordsOf<K extends DecoderKind>(
-  group: SinkGroup,
-  kind: K,
-): readonly DecodedRecordOf<K>[] {
-  return group.kind === kind ? (group.records as readonly DecodedRecordOf<K>[]) : [];
-}
-
-export function entitiesOf<K extends DecoderKind>(
-  group: SinkGroup,
-  kind: K,
-): readonly EntityOf<K>[] {
-  return group.kind === kind ? (group.entities as readonly EntityOf<K>[]) : [];
 }
 
 export function lastSeenMs(entity: Pick<Entity, "last_seen">): number {

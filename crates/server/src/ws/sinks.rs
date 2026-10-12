@@ -32,22 +32,9 @@ impl Sinks {
 }
 
 impl Session {
-    pub(super) async fn subscribe_sink(&mut self, node: String) {
+    pub(super) fn subscribe_sink(&mut self, node: String) {
         self.sinks.stop(&node);
-        let Some((snapshot, updates)) = self.state.sinks.subscribe(&node) else {
-            let refused = ServerEvent::Error {
-                message: NOT_A_SINK.to_owned(),
-            };
-            let _ = self.out.send(text_event(&refused)).await;
-            return;
-        };
-        let task = spawn(
-            node.clone(),
-            snapshot,
-            updates,
-            self.out.clone(),
-            self.state.sinks.clone(),
-        );
+        let task = spawn(node.clone(), self.out.clone(), self.state.sinks.clone());
         self.sinks.watching.insert(node, task);
     }
 
@@ -56,29 +43,40 @@ impl Session {
     }
 }
 
-fn spawn(
-    node: String,
+fn spawn(node: String, out: Outbox, hub: Arc<SinkHub>) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let Some((snapshot, updates)) = hub.watch(&node).await else {
+            let refused = ServerEvent::Error {
+                message: NOT_A_SINK.to_owned(),
+            };
+            let _ = out.send(text_event(&refused)).await;
+            return;
+        };
+        forward(&node, snapshot, updates, &out, &hub).await;
+    })
+}
+
+async fn forward(
+    node: &str,
     snapshot: Utf8Bytes,
     mut updates: broadcast::Receiver<Utf8Bytes>,
-    out: Outbox,
-    hub: Arc<SinkHub>,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        if out.send(Message::Text(snapshot)).await.is_err() {
+    out: &Outbox,
+    hub: &SinkHub,
+) {
+    if out.send(Message::Text(snapshot)).await.is_err() {
+        return;
+    }
+    loop {
+        let text = match updates.recv().await {
+            Ok(text) => text,
+            Err(RecvError::Lagged(_)) => match hub.snapshot(node) {
+                Some(fresh) => fresh,
+                None => return,
+            },
+            Err(RecvError::Closed) => return,
+        };
+        if out.send(Message::Text(text)).await.is_err() {
             return;
         }
-        loop {
-            let text = match updates.recv().await {
-                Ok(text) => text,
-                Err(RecvError::Lagged(_)) => match hub.snapshot(&node) {
-                    Some(fresh) => fresh,
-                    None => return,
-                },
-                Err(RecvError::Closed) => return,
-            };
-            if out.send(Message::Text(text)).await.is_err() {
-                return;
-            }
-        }
-    })
+    }
 }

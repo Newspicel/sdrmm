@@ -1216,13 +1216,41 @@ async fn a_late_watcher_gets_what_the_sink_holds() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn watching_a_node_that_is_no_sink_is_refused() {
-    let (addr, _state) = serve_ws(test_engine()).await;
+async fn watching_a_sink_before_the_patch_holds_it_waits_for_it() {
+    let (addr, state) = serve_ws(test_engine()).await;
     let mut ws = dial(addr).await;
     send(
         &mut ws,
         &ClientCommand::SubscribeSink {
-            node: "nowhere".to_owned(),
+            node: "map".to_owned(),
+        },
+    )
+    .await;
+
+    map_workspace(&state);
+
+    loop {
+        match next_event(&mut ws).await {
+            ServerEvent::SinkSnapshot { node, .. } => {
+                assert_eq!(node, "map");
+                break;
+            }
+            ServerEvent::Error { message } => panic!("refused: {message}"),
+            _ => {}
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watching_a_node_that_is_no_sink_is_refused() {
+    let (addr, state) = serve_ws(test_engine()).await;
+    map_workspace(&state);
+    wait_for_sink(&state, "map").await;
+    let mut ws = dial(addr).await;
+    send(
+        &mut ws,
+        &ClientCommand::SubscribeSink {
+            node: "adsb".to_owned(),
         },
     )
     .await;

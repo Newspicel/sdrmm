@@ -216,7 +216,7 @@ impl Session {
                 self.subscribe_surface(node, fit).await;
             }
             ClientCommand::UnsubscribeSurface { node } => self.unsubscribe_surface(&node).await,
-            ClientCommand::SubscribeSink { node } => self.subscribe_sink(node).await,
+            ClientCommand::SubscribeSink { node } => self.subscribe_sink(node),
             ClientCommand::UnsubscribeSink { node } => self.unsubscribe_sink(&node),
             ClientCommand::PublishPose { fix, error } => self.publish_pose(fix, error).await,
             ClientCommand::Present { author, name } => self.present(&author, &name).await,

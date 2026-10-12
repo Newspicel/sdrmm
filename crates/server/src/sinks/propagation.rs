@@ -46,7 +46,10 @@ pub(crate) fn heard_of(record: &DecodedRecord, spot: &Spot) -> Option<Heard> {
         key: format!(
             "{}|{}|{}|{}",
             record.at,
-            record.origin.as_ref().map_or("", |origin| origin.node.as_str()),
+            record
+                .origin
+                .as_ref()
+                .map_or("", |origin| origin.node.as_str()),
             spot.callsign,
             spot.grid
         ),
@@ -160,7 +163,10 @@ impl CellSum {
         self.calls.insert(heard.callsign.clone());
         self.distances.push(observation.distance_km);
         self.best_freq_hz = self.best_freq_hz.max(heard.freq_hz);
-        self.best_snr_db = Some(self.best_snr_db.map_or(heard.snr_db, |snr| snr.max(heard.snr_db)));
+        self.best_snr_db = Some(
+            self.best_snr_db
+                .map_or(heard.snr_db, |snr| snr.max(heard.snr_db)),
+        );
         if let Some(muf) = observation.muf3000_mhz {
             self.muf = Some(self.muf.map_or(muf, |held| held.max(muf)));
         }
@@ -245,17 +251,14 @@ pub(crate) fn paths(
         }
     }
     let mut kept: Vec<&Observation> = newest.into_values().collect();
-    kept.sort_by(|a, b| b.heard.at_ms.cmp(&a.heard.at_ms));
+    kept.sort_by_key(|observation| std::cmp::Reverse(observation.heard.at_ms));
     kept.into_iter()
         .take(PATH_CAP)
         .map(|observation| PropagationPath {
             key: observation.heard.key.clone(),
             from: receiver,
             to: observation.heard.from,
-            weight: decay_weight(
-                (now_ms - observation.heard.at_ms) as f64,
-                half_life_minutes,
-            ),
+            weight: decay_weight((now_ms - observation.heard.at_ms) as f64, half_life_minutes),
             freq_hz: observation.heard.freq_hz,
         })
         .collect()
@@ -277,7 +280,8 @@ pub(crate) fn summary(observations: &[Observation]) -> PropagationSummary {
         summary.best_freq_hz = summary.best_freq_hz.max(heard.freq_hz);
         summary.farthest_km = summary.farthest_km.max(observation.distance_km);
         if let Some(muf) = observation.muf3000_mhz {
-            summary.best_muf3000_mhz = Some(summary.best_muf3000_mhz.map_or(muf, |best| best.max(muf)));
+            summary.best_muf3000_mhz =
+                Some(summary.best_muf3000_mhz.map_or(muf, |best| best.max(muf)));
         }
     }
     summary.grids = grids.len() as u32;
@@ -301,9 +305,7 @@ impl Propagation {
         if heard.at_ms <= self.cleared_ms || !self.keys.insert(heard.key.clone()) {
             return;
         }
-        let at = self
-            .heard
-            .partition_point(|held| held.at_ms <= heard.at_ms);
+        let at = self.heard.partition_point(|held| held.at_ms <= heard.at_ms);
         self.heard.insert(at, heard);
         if self.heard.len() > OBSERVATION_CAPACITY {
             let gone = self.heard.remove(0);

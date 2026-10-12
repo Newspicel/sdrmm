@@ -76,7 +76,10 @@ fn great_circles_measure_the_equator_and_berlin_to_tokyo() {
 fn a_path_is_halved_at_its_midpoint() {
     let mid = along_great_circle(at(0.0, 0.0), at(0.0, 80.0), 0.5);
     assert!((mid.lon - 40.0).abs() < 1e-6);
-    assert_eq!(along_great_circle(at(0.0, 0.0), at(0.0, 0.0), 0.5), at(0.0, 0.0));
+    assert_eq!(
+        along_great_circle(at(0.0, 0.0), at(0.0, 0.0), 0.5),
+        at(0.0, 0.0)
+    );
 }
 
 #[test]
@@ -97,7 +100,10 @@ fn the_measured_muf_follows_the_hop_length() {
     let long = muf3000_mhz(14_074_000.0, 8_000.0, 300.0).expect("long");
     assert!((24.0..26.0).contains(&short), "{short}");
     assert!(long > 14.074 && long < 15.5, "{long}");
-    assert_eq!(muf3000_mhz(14_074_000.0, MIN_MUF_PATH_KM - 1.0, 300.0), None);
+    assert_eq!(
+        muf3000_mhz(14_074_000.0, MIN_MUF_PATH_KM - 1.0, 300.0),
+        None
+    );
     assert_eq!(muf3000_mhz(0.0, 3_000.0, 300.0), None);
     assert_eq!(muf3000_mhz(f64::NAN, 3_000.0, 300.0), None);
 }
@@ -173,7 +179,12 @@ fn paths_keep_the_newest_per_square_and_band() {
     other.heard.grid = "JO62".to_owned();
     other.heard.at_ms = NOW - 500;
 
-    let drawn = paths(&[older, observation("new", at(0.0, 0.0)), other], BERLIN, 30, NOW);
+    let drawn = paths(
+        &[older, observation("new", at(0.0, 0.0)), other],
+        BERLIN,
+        30,
+        NOW,
+    );
 
     assert_eq!(drawn.len(), 2);
     assert_eq!(drawn[0].key, "new");
@@ -192,7 +203,12 @@ fn the_summary_counts_what_was_heard() {
     let summary = summary(&[observation("a", at(0.0, 0.0)), near]);
 
     assert_eq!(
-        (summary.decodes, summary.grids, summary.callsigns, summary.bands),
+        (
+            summary.decodes,
+            summary.grids,
+            summary.callsigns,
+            summary.bands
+        ),
         (2, 2, 2, 2)
     );
     assert!((summary.best_freq_hz - 28_074_000.0).abs() < 1e-6);
@@ -212,7 +228,11 @@ fn the_model_merges_once_stays_cleared_and_forgets_what_decayed() {
     ancient.at_ms = NOW - 24 * 3_600_000;
     model.hear(ancient);
 
-    assert_eq!(model.view(NOW).summary.decodes, 1, "duplicates and decayed spots");
+    assert_eq!(
+        model.view(NOW).summary.decodes,
+        1,
+        "duplicates and decayed spots"
+    );
 
     model.clear(NOW);
     model.hear(heard("before the clear"));

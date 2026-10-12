@@ -260,9 +260,8 @@ fn a_clip_stays_only_where_an_audio_wire_brought_it() {
     assert_eq!(clip("heard"), (true, true));
 }
 
-#[test]
-fn a_gps_wired_into_a_map_becomes_a_track() {
-    let graph = PatchGraph {
+fn gps_and_map() -> PatchGraph {
+    PatchGraph {
         nodes: vec![
             node("gps", NodeBody::Gps(Default::default())),
             channel("adsb", "adsb"),
@@ -272,9 +271,11 @@ fn a_gps_wired_into_a_map_becomes_a_track() {
             events("adsb", "map"),
             wire(("gps", "position"), ("map", "position")),
         ],
-    };
-    let bench = Bench::over(graph);
-    let fix = PositionFix {
+    }
+}
+
+fn berlin() -> PositionFix {
+    PositionFix {
         latitude: 52.5,
         longitude: 13.4,
         altitude_m: None,
@@ -283,7 +284,36 @@ fn a_gps_wired_into_a_map_becomes_a_track() {
         track_deg: None,
         time: "2026-09-21T10:00:00Z".to_owned(),
         attitude: sdrmm_wire::Attitude::default(),
+    }
+}
+
+#[test]
+fn unwiring_a_gps_sends_an_empty_track_list() {
+    let mut graph = gps_and_map();
+    let bench = Bench::over(graph.clone());
+    bench.hub.position("gps", Some(&berlin()));
+    let (_, mut updates) = bench.hub.subscribe("map").expect("map is a sink");
+    bench.hub.flush(&SurfaceHub::default());
+    let _first = updates.try_recv().expect("the track went out");
+
+    graph.edges.retain(|edge| edge.from.node != "gps");
+    bench
+        .hub
+        .rewire(&Resolved::of(graph, &StateSnapshot::default()), |_| None);
+    bench.hub.flush(&SurfaceHub::default());
+
+    let text = updates.try_recv().expect("the removal went out");
+    let event: ServerEvent = serde_json::from_str(text.as_str()).expect("update json");
+    let ServerEvent::SinkUpdate { update, .. } = event else {
+        panic!("a sink update");
     };
+    assert_eq!(update.tracks, Some(Vec::new()));
+}
+
+#[test]
+fn a_gps_wired_into_a_map_becomes_a_track() {
+    let bench = Bench::over(gps_and_map());
+    let fix = berlin();
 
     bench.hub.position("gps", Some(&fix));
     bench.hub.position("elsewhere", Some(&fix));
@@ -416,7 +446,10 @@ fn a_propagation_node_turns_wired_spots_into_cells_from_its_receiver() {
             channel("ft8", "ft8"),
             node("prop", NodeBody::Propagation(Default::default())),
         ],
-        edges: vec![events("ft8", "prop"), wire(("gps", "position"), ("prop", "position"))],
+        edges: vec![
+            events("ft8", "prop"),
+            wire(("gps", "position"), ("prop", "position")),
+        ],
     };
     let bench = Bench::over(graph);
     let fix = PositionFix {

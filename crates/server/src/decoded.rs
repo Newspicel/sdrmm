@@ -1,7 +1,7 @@
 use std::sync::{Arc, Weak};
 
 use sdrmm_engine::Engine;
-use sdrmm_wire::{DecodedRecord, DecoderEvent, ServerEvent};
+use sdrmm_wire::DecodedRecord;
 use tokio::sync::{
     broadcast::{self, error::RecvError},
     watch,
@@ -58,7 +58,6 @@ pub(crate) async fn run(router: Router) {
             },
             record = records.recv() => match record {
                 Ok(record) => {
-                    tell_face(&engine, &record);
                     if let Some(routed) = route(&routes, record, &reference, &activity) {
                         let _ = feed.send(Decoded::Record(Box::new(routed)));
                     }
@@ -70,18 +69,6 @@ pub(crate) async fn run(router: Router) {
                 Err(RecvError::Closed) => break,
             },
         }
-    }
-}
-
-fn tell_face(engine: &Weak<Engine>, record: &DecodedRecord) {
-    let (Some(origin), DecoderEvent::Broadcast(status)) = (&record.origin, &record.event) else {
-        return;
-    };
-    if let Some(engine) = engine.upgrade() {
-        engine.emit_event(ServerEvent::ChannelBroadcast {
-            node: origin.node.clone(),
-            status: Box::new(status.clone()),
-        });
     }
 }
 

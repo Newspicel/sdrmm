@@ -70,8 +70,8 @@ describe("propagation map sources", () => {
 
   it("unwraps a path that crosses the antimeridian into one continuous line", () => {
     const line =
-      pathCollection([path({ from: { lat: 0, lon: 170 }, to: { lat: 0, lon: -170 } })]).features[0]?.geometry.coordinates ??
-      [];
+      pathCollection([path({ from: { lat: 0, lon: 170 }, to: { lat: 0, lon: -170 } })]).features[0]
+        ?.geometry.coordinates ?? [];
     const jumps = line
       .slice(1)
       .filter((point, index) => Math.abs(point[0] - (line[index]?.[0] ?? 0)) > 180);

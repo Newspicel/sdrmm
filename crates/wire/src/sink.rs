@@ -112,8 +112,8 @@ pub struct SinkUpdate {
     pub removed: Vec<EntityKey>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub records: Vec<DecodedRecord>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tracks: Vec<PositionTrack>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracks: Option<Vec<PositionTrack>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surfaces: Option<Vec<SurfaceRef>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -129,7 +129,7 @@ impl SinkUpdate {
         self.upserts.is_empty()
             && self.removed.is_empty()
             && self.records.is_empty()
-            && self.tracks.is_empty()
+            && self.tracks.is_none()
             && self.surfaces.is_none()
             && self.pictures.is_empty()
             && self.propagation.is_none()

@@ -9410,7 +9410,7 @@ export interface components {
             records?: components["schemas"]["DecodedRecord"][];
             removed?: components["schemas"]["EntityKey"][];
             surfaces?: components["schemas"]["SurfaceRef"][] | null;
-            tracks?: components["schemas"]["PositionTrack"][];
+            tracks?: components["schemas"]["PositionTrack"][] | null;
             upserts?: components["schemas"]["Entity"][];
         };
         Size: {

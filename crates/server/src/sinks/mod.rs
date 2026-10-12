@@ -11,8 +11,11 @@ use sdrmm_wire::{
     StreamKind, SurfaceRef,
 };
 use tokio::{
-    sync::broadcast::{self, error::RecvError},
-    time::{MissedTickBehavior, interval},
+    sync::{
+        broadcast::{self, error::RecvError},
+        watch,
+    },
+    time::{MissedTickBehavior, interval, timeout},
 };
 
 use crate::{AppState, decoded::Decoded, resolved::Resolved, surfaces::SurfaceHub};
@@ -29,6 +32,15 @@ pub(crate) const AGE_OUT_EVERY: Duration = Duration::from_secs(15);
 pub(crate) const PROPAGATION_EVERY: Duration = Duration::from_secs(2);
 pub(crate) const PROPAGATION_HISTORY: Duration = Duration::from_secs(6 * 60 * 60);
 const SINK_BACKLOG: usize = 16;
+pub(crate) const SINK_WAIT: Duration = Duration::from_secs(10);
+
+pub(crate) type Watched = (Utf8Bytes, broadcast::Receiver<Utf8Bytes>);
+
+enum Lookup {
+    Sink(Watched),
+    Other,
+    Unknown,
+}
 
 #[derive(Default)]
 struct Pending {
@@ -114,17 +126,15 @@ impl Sink {
                 .collect(),
             removed: pending.removed.into_iter().collect(),
             records: pending.records,
-            tracks: if pending.tracks {
-                self.tracks.values().cloned().collect()
-            } else {
-                Vec::new()
-            },
+            tracks: pending
+                .tracks
+                .then(|| self.tracks.values().cloned().collect()),
             surfaces: pending.surfaces.then(|| self.surfaces.clone()),
             pictures: Vec::new(),
             propagation,
             lost: self.lost,
         };
-        (!update.is_empty() || pending.lost || pending.tracks).then_some(update)
+        (!update.is_empty() || pending.lost).then_some(update)
     }
 
     fn take(&mut self, record: DecodedRecord, now: Instant) -> u64 {
@@ -209,14 +219,29 @@ fn shows_events(node: &ResolvedNode) -> bool {
             .any(|port| port.spec.port_type == PortType::Events)
 }
 
-#[derive(Default)]
 pub(crate) struct SinkHub {
     sinks: Mutex<HashMap<String, Sink>>,
+    others: Mutex<HashSet<String>>,
+    rewired: watch::Sender<u64>,
+}
+
+impl Default for SinkHub {
+    fn default() -> Self {
+        Self {
+            sinks: Mutex::default(),
+            others: Mutex::default(),
+            rewired: watch::Sender::new(0),
+        }
+    }
 }
 
 impl SinkHub {
     fn lock(&self) -> MutexGuard<'_, HashMap<String, Sink>> {
         self.sinks.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn others(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.others.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub(crate) fn rewire(
@@ -253,6 +278,16 @@ impl SinkHub {
             }
             locate(sink);
         }
+        drop(sinks);
+        *self.others() = resolved
+            .patch
+            .nodes
+            .iter()
+            .filter(|node| !shows_events(node))
+            .map(|node| node.id.clone())
+            .collect();
+        self.rewired
+            .send_modify(|count| *count = count.wrapping_add(1));
         seeded
     }
 
@@ -336,18 +371,34 @@ impl SinkHub {
         }
     }
 
-    pub(crate) fn subscribe(
-        &self,
-        node: &str,
-    ) -> Option<(Utf8Bytes, broadcast::Receiver<Utf8Bytes>)> {
-        let sinks = self.lock();
-        let sink = sinks.get(node)?;
-        let updates = sink.out.subscribe();
-        let snapshot = ServerEvent::SinkSnapshot {
-            node: node.to_owned(),
-            feed: Box::new(sink.feed()),
+    fn lookup(&self, node: &str) -> Lookup {
+        if let Some(sink) = self.lock().get(node) {
+            let updates = sink.out.subscribe();
+            let snapshot = ServerEvent::SinkSnapshot {
+                node: node.to_owned(),
+                feed: Box::new(sink.feed()),
+            };
+            return Lookup::Sink((crate::ws::encode_event(&snapshot), updates));
+        }
+        if self.others().contains(node) {
+            Lookup::Other
+        } else {
+            Lookup::Unknown
+        }
+    }
+
+    pub(crate) async fn watch(&self, node: &str) -> Option<Watched> {
+        let mut rewired = self.rewired.subscribe();
+        let found = async {
+            loop {
+                match self.lookup(node) {
+                    Lookup::Sink(watched) => return Some(watched),
+                    Lookup::Other => return None,
+                    Lookup::Unknown => rewired.changed().await.ok()?,
+                }
+            }
         };
-        Some((crate::ws::encode_event(&snapshot), updates))
+        timeout(SINK_WAIT, found).await.ok().flatten()
     }
 
     pub(crate) fn snapshot(&self, node: &str) -> Option<Utf8Bytes> {
@@ -357,6 +408,14 @@ impl SinkHub {
             feed: Box::new(sinks.get(node)?.feed()),
         };
         Some(crate::ws::encode_event(&snapshot))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn subscribe(&self, node: &str) -> Option<Watched> {
+        match self.lookup(node) {
+            Lookup::Sink(watched) => Some(watched),
+            Lookup::Other | Lookup::Unknown => None,
+        }
     }
 
     #[cfg(test)]
@@ -492,7 +551,8 @@ fn rewire(state: &AppState, resolved: &Arc<Resolved>) {
 }
 
 fn seed(state: &AppState, node: &str) {
-    let since = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(PROPAGATION_HISTORY.as_secs() as i64);
+    let since = jiff::Timestamp::now()
+        - jiff::SignedDuration::from_secs(PROPAGATION_HISTORY.as_secs() as i64);
     let query = DecoderLogQuery {
         sink: Some(node.to_owned()),
         since: Some(since.to_string()),

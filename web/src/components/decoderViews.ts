@@ -19,7 +19,6 @@ import type {
   AprsWeather,
   BleAdvert,
   DecodedRecordOf,
-  DvFrame,
   IdentReport,
   IdentSignal,
   Modulation,
@@ -34,7 +33,7 @@ export function latestVorReadings(
 ): DecodedRecordOf<"vor">[] {
   const latest = new Map<string, DecodedRecordOf<"vor">>();
   for (const record of records) {
-    const key = record.event.data.station ?? `${record.device_set}:${record.channel}`;
+    const key = record.event.data.station ?? record.origin?.node ?? "";
     const previous = latest.get(key);
     if (previous === undefined || Date.parse(record.at) > Date.parse(previous.at)) {
       latest.set(key, record);
@@ -66,7 +65,7 @@ export function dectStations(records: readonly DecodedRecordOf<"dect">[]): DectS
   const latest = new Map<string, DectStation>();
   for (const record of records) {
     const frame = record.event.data;
-    const key = frame.identity?.rfpi ?? `${record.device_set}:${record.channel}:${frame.side}`;
+    const key = frame.identity?.rfpi ?? `${record.origin?.node ?? ""}:${frame.side}`;
     const previous = latest.get(key);
     if (previous !== undefined && Date.parse(record.at) <= Date.parse(previous.at)) {
       continue;
@@ -718,88 +717,6 @@ function groupThousands(n: number): string {
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-const DV_MODE_LABELS: Record<DvFrame["mode"], string> = {
-  dmr: "DMR",
-  dstar: "D-STAR",
-  ysf: "YSF",
-  nxdn: "NXDN",
-  p25: "P25",
-  dpmr: "dPMR",
-  m17: "M17",
-  freedv: "FreeDV",
-  tetra: "TETRA",
-};
-
-export function dvMode(frame: Pick<DvFrame, "mode">): string {
-  return DV_MODE_LABELS[frame.mode];
-}
-
-export function callMode(mode: string): string {
-  return DV_MODE_LABELS[mode as DvFrame["mode"]] ?? mode.toUpperCase();
-}
-
-export function dvNetwork(frame: Pick<DvFrame, "mode" | "color_code" | "slot">): string {
-  const parts: string[] = [];
-  if (frame.slot != null) {
-    parts.push(`TS${frame.slot}`);
-  }
-  if (frame.color_code != null) {
-    if (frame.mode === "p25") {
-      parts.push(`NAC ${frame.color_code.toString(16).toUpperCase().padStart(3, "0")}`);
-    } else if (frame.mode === "nxdn" || frame.mode === "dpmr") {
-      parts.push(`RAN ${frame.color_code}`);
-    } else {
-      parts.push(`CC ${frame.color_code}`);
-    }
-  }
-  return parts.join(" ");
-}
-
-export function dvTrunking(
-  frame: Pick<DvFrame, "trunk_protocol" | "control_channel">,
-): string | undefined {
-  const names: Record<NonNullable<DvFrame["trunk_protocol"]>, string> = {
-    capacity_plus: "Capacity Plus",
-    hytera_xpt: "Hytera XPT",
-    tier_three: "Tier III",
-  };
-  const system = frame.trunk_protocol == null ? undefined : names[frame.trunk_protocol];
-  const role =
-    frame.control_channel == null
-      ? undefined
-      : frame.control_channel
-        ? "control channel"
-        : "traffic channel";
-  return [system, role].filter((part) => part !== undefined).join(" · ") || undefined;
-}
-
-export function dvChecksum(frame: Pick<DvFrame, "crc_verified">): string | undefined {
-  if (frame.crc_verified == null) {
-    return undefined;
-  }
-  return frame.crc_verified ? "verified" : "not verified: read on error correction alone";
-}
-
-export function dvParties(
-  frame: Pick<
-    DvFrame,
-    "source" | "destination" | "source_call" | "destination_call" | "group_call"
-  >,
-): string {
-  const to =
-    frame.destination_call ??
-    (frame.destination == null
-      ? null
-      : frame.group_call === false
-        ? String(frame.destination)
-        : `TG ${frame.destination}`);
-  const from = frame.source_call ?? (frame.source == null ? null : String(frame.source));
-  if (to != null && from != null) {
-    return `${to} ← ${from}`;
-  }
-  return to ?? from ?? "";
 }
 
 const MODULATION_LABELS: Record<Modulation, string> = {

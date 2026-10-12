@@ -1,4 +1,4 @@
-use sdrmm_wire::{DecoderEvent, RttyText};
+use sdrmm_wire::{BroadcastStatus, DecoderEvent, RttyText, ServerEvent};
 
 use super::*;
 
@@ -45,6 +45,36 @@ async fn a_channel_publishes_with_the_node_it_was_opened_for() {
     );
     assert_eq!((owned.device_set, owned.channel), (1, 2));
     assert_eq!(next(&mut decoded).await.origin, None);
+}
+
+#[tokio::test]
+async fn broadcast_status_also_reaches_its_own_channel_face() {
+    let engine = virtual_engine();
+    let mut events = engine.subscribe_events();
+    let mut decoded = engine.subscribe_decoded();
+    let status = BroadcastStatus {
+        locked: true,
+        ..BroadcastStatus::default()
+    };
+
+    engine
+        .decoded_sink(1, 2, Some("channel:dab"))
+        .publish(225_648_000.0, DecoderEvent::Broadcast(status.clone()));
+
+    assert!(matches!(
+        next(&mut decoded).await.event,
+        DecoderEvent::Broadcast(_)
+    ));
+    let face = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(ServerEvent::ChannelBroadcast { node, status }) = events.recv().await {
+                return (node, *status);
+            }
+        }
+    })
+    .await
+    .expect("the face hears its status");
+    assert_eq!(face, ("channel:dab".to_owned(), status));
 }
 
 #[test]

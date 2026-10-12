@@ -1227,10 +1227,8 @@ function VorView({ records }: PanelProps<"vor">) {
             {readings.map((record) => {
               const reading = record.event.data;
               return (
-                <tr key={reading.station ?? `${record.device_set}:${record.channel}`}>
-                  <td className={TABLE_CELL}>
-                    {reading.station ?? `D${record.device_set} C${record.channel}`}
-                  </td>
+                <tr key={reading.station ?? record.origin?.node ?? ""}>
+                  <td className={TABLE_CELL}>{reading.station ?? "-"}</td>
                   <td className={`${TABLE_CELL} font-mono tabular-nums`}>
                     {reading.radial_deg.toFixed(1)}°
                   </td>

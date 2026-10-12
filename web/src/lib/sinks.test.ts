@@ -47,6 +47,13 @@ describe("sink feeds", () => {
     expect(next.lost).toBe(2);
   });
 
+  it("drops tracks only when an update says the list is empty", () => {
+    const track = { source: "gps", trail: [] };
+    const tracked = updatedView(EMPTY_SINK, { tracks: [track], lost: 0 });
+    expect(updatedView(tracked, { lost: 0 }).tracks).toEqual([track]);
+    expect(updatedView(tracked, { tracks: [], lost: 0 }).tracks).toEqual([]);
+  });
+
   it("caps its records", () => {
     const many = Array.from({ length: SINK_RECORDS + 5 }, (_, n) =>
       sinkRecord("rtty", RTTY, { summary: String(n) }),

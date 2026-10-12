@@ -33,10 +33,6 @@ const SUFFIX: Readonly<Record<Unit, string>> = {
 
 const TIGHT: ReadonlySet<Unit> = new Set<Unit>(["degrees", "percent"]);
 
-export function unitSuffix(unit: Unit): string {
-  return SUFFIX[unit];
-}
-
 export function formatNumber(value: number, unit: Unit, digits: number): string {
   if (unit === "hz") {
     return formatHz(value);
