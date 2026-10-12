@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 9600.0,
+    "core:recorder": "SDR--",
+    "core:hw": "sigidwiki.com audio sample, CC BY-SA",
+    "core:description": "MIL-STD-188-110 Appendix A 16-tone, USB audio"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Source: https://www.sigidwiki.com/images/b/bf/MIL188-110A_AppA.mp3 (CC BY-SA); source SHA-256 844db5c71524adc9d4c1e66d78ce8780532f9bcbb7df110dbc39373cf50c218d; USB audio 2..6 s resampled to 9600 Hz, zero quadrature",
+      "core:sample_count": 38400,
+      "core:sample_start": 0
+    }
+  ]
+}

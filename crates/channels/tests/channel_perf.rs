@@ -53,6 +53,7 @@ fn survey() -> Vec<Row> {
             "ft8" => 15.0,
             "ft4" => 7.5,
             "wspr" => 120.0,
+            "stanag" => 4.0,
             _ => SURVEY_SECONDS,
         };
         let mut iq = vec![Complex::new(0.0, 0.0); ((rate * seconds) as usize).max(BLOCK)];
@@ -182,6 +183,21 @@ fn the_cw_skimmer_allocates_nothing_while_it_searches_an_empty_band() {
         drive(rx.as_mut(), &iq, &mut outputs);
     }
     assert_no_alloc("cw_skimmer", || drive(rx.as_mut(), &iq, &mut outputs));
+}
+
+#[test]
+fn the_stanag_identifier_allocates_nothing_while_it_analyses_windows() {
+    let settings = ChannelSettings::default_for("stanag").expect("settings");
+    let rate = sdrmm_channels::input_rate(&settings.params);
+    let mut rx =
+        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+    let mut iq = vec![Complex::new(0.0, 0.0); (rate * 3.0) as usize];
+    sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
+    let mut outputs = ChannelOutputs::default();
+    drive(rx.as_mut(), &iq, &mut outputs);
+    assert_no_alloc("stanag", || drive(rx.as_mut(), &iq, &mut outputs));
+    assert!(outputs.events.is_empty());
+    assert_eq!(rx.rejected(), 0);
 }
 
 #[test]

@@ -18,7 +18,7 @@ covers the modes that need more than a frequency.
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -370,6 +370,19 @@ and **Wi-Fi occupancy** templates set them up. The signal generator sends BLE be
 Tested on recordings: a USRP X310 at 100 MS/s beside a DJI Mini 4 Pro (RFUAV) and a 40 MS/s
 Bluetooth capture with OmniSIG labels, where the survey counted 138 Bluetooth bursts against 137
 labelled.
+
+## HF modems
+
+The **STANAG modem identifier** names HF data modems from USB audio: STANAG 4285, STANAG 4529,
+MIL-STD-188-110A serial, STANAG 4539 (110B Appendix C), 39-tone, 16-tone and 2G ALE. Put the
+channel on the USB dial. Each report gives the modem, its carrier and the frequency; for 110A the
+rate and interleave come from the preamble. A modem that stops is reported gone.
+
+**Window** is how much signal each verdict uses, 2 to 12 s; longer finds weaker signals. A
+busy channel that matches no modem counts as rejected. The **HF data modems** template sets it
+up.
+
+Tested on 49 sigidwiki recordings, including all 14 MIL-STD-188-110A rates.
 
 ## Measurements
 

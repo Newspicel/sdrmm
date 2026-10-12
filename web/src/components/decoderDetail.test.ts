@@ -486,6 +486,16 @@ describe("eventDetail", () => {
           ],
         },
       },
+      stanag: {
+        kind: "stanag",
+        data: {
+          modem: "stanag_4285",
+          confidence: 0.8,
+          audio_hz: 1_800,
+          frequency_hz: 8_501_800,
+          bandwidth_hz: 2_900,
+        },
+      },
     };
     for (const kind of DECODER_KINDS) {
       expect(() => eventDetail(sample[kind]), kind).not.toThrow();

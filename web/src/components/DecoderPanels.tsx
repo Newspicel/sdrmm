@@ -1523,6 +1523,7 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   noise_figure: (scope) => <NoiseFigureView scope={scope} />,
   per: (scope) => <PerView scope={scope} />,
   sid: (scope) => <SidView scope={scope} />,
+  stanag: null,
 };
 
 function isDecoderKind(kind: string): kind is DecoderKind {

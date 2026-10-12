@@ -43,6 +43,7 @@ pub mod rotator;
 pub mod sarsat;
 pub mod satellite;
 pub mod scan;
+pub mod stanag;
 pub mod state;
 pub mod survey;
 pub mod tetrapol;
@@ -291,6 +292,10 @@ pub use satellite::{
 pub use scan::{
     MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanRequest,
     ScanSettings, ScanState, ScannerStatus,
+};
+pub use stanag::{
+    MAX_STANAG_WINDOW_S, MIN_STANAG_WINDOW_S, STANAG_WINDOW_S, StanagInterleave, StanagModem,
+    StanagParams, StanagRate, StanagReport,
 };
 pub use state::{
     AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, LaneLevel,

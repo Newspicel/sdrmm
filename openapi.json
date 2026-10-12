@@ -12792,6 +12792,24 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
+                "$ref": "#/components/schemas/StanagParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "stanag"
+                ]
+              }
+            }
           }
         ]
       },
@@ -15914,6 +15932,24 @@
                 "type": "string",
                 "enum": [
                   "sid"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/StanagReport"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "stanag"
                 ]
               }
             }
@@ -32548,6 +32584,105 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "StanagInterleave": {
+        "type": "string",
+        "enum": [
+          "zero",
+          "short",
+          "long"
+        ]
+      },
+      "StanagModem": {
+        "type": "string",
+        "enum": [
+          "stanag_4285",
+          "stanag_4529",
+          "mil_std_188_110a",
+          "stanag_4539",
+          "thirty_nine_tone",
+          "sixteen_tone",
+          "ale_2g"
+        ]
+      },
+      "StanagParams": {
+        "type": "object",
+        "properties": {
+          "window_s": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "StanagRate": {
+        "type": "object",
+        "required": [
+          "bps",
+          "interleave"
+        ],
+        "properties": {
+          "bps": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "interleave": {
+            "$ref": "#/components/schemas/StanagInterleave"
+          },
+          "voice": {
+            "type": "boolean"
+          }
+        }
+      },
+      "StanagReport": {
+        "type": "object",
+        "required": [
+          "confidence",
+          "audio_hz",
+          "bandwidth_hz"
+        ],
+        "properties": {
+          "audio_hz": {
+            "type": "number",
+            "format": "float"
+          },
+          "bandwidth_hz": {
+            "type": "number",
+            "format": "float"
+          },
+          "confidence": {
+            "type": "number",
+            "format": "float"
+          },
+          "frequency_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "modem": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StanagModem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rate": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StanagRate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

@@ -9,8 +9,8 @@ use sdrmm_wire::{
     M17Params, MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge,
     PatchGraph, PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
     RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SarsatParams, SidParams, Squelch,
-    SsbParams, SstvParams, TemplateInfo, TetraParams, WefaxParams, WfmParams, WifiOccupancyParams,
-    WsjtParams, WsprParams, YsfParams,
+    SsbParams, SstvParams, StanagParams, TemplateInfo, TetraParams, WefaxParams, WfmParams,
+    WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -740,6 +740,28 @@ static TEMPLATES: &[Entry] = &[
             ),
             Channel::at(
                 14_230_000.0,
+                || ChannelParams::Ssb(SsbParams::default()),
+                LISTEN,
+            ),
+        ],
+    },
+    Entry {
+        id: "hf-modems",
+        name: "HF data modems",
+        description: "Names STANAG, MIL-STD-188-110 and 2G ALE signals.",
+        explainer: "Put the channel on the USB dial of a data signal. The identifier names \
+                    the modem, its carrier and, for MIL-STD-188-110A, the rate from its \
+                    preamble.",
+        center_hz: 8_500_000.0,
+        sample_rate: 250_000.0,
+        channels: &[
+            Channel::at(
+                8_500_000.0,
+                || ChannelParams::Stanag(StanagParams::default()),
+                LOG_READ,
+            ),
+            Channel::at(
+                8_500_000.0,
                 || ChannelParams::Ssb(SsbParams::default()),
                 LISTEN,
             ),

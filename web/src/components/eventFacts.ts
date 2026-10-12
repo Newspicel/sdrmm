@@ -5,6 +5,7 @@ import { loraPosition, loraStation, loraSummary } from "../lib/lora";
 import { noiseFigureSummary, perSummary, sidSummary } from "../lib/measurement";
 import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
 import { sarsatName } from "../lib/sarsat";
+import { stanagSummary } from "../lib/stanag";
 import { tetrapolStation, tetrapolSummary } from "../lib/tetrapol";
 import type { DecoderEvent, HotCommand } from "../lib/types";
 import {
@@ -411,6 +412,8 @@ export function eventSummary(event: DecoderEvent): string {
       return perSummary(event.data);
     case "sid":
       return sidSummary(event.data);
+    case "stanag":
+      return stanagSummary(event.data);
   }
 }
 
@@ -530,6 +533,7 @@ export function eventStation(event: DecoderEvent): string | null {
     case "noise_figure":
     case "per":
     case "sid":
+    case "stanag":
       return null;
     case "sstv":
       return SSTV_MODE_LABELS[event.data.mode];

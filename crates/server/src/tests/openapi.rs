@@ -118,6 +118,8 @@ fn openapi_registers_paths_and_ws_schemas() {
         "PerParams",
         "SidReport",
         "SidParams",
+        "StanagReport",
+        "StanagParams",
         "LorawanFrame",
         "MeshtasticPacket",
         "MeshcorePacket",

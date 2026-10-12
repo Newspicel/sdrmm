@@ -155,6 +155,12 @@ pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
             f64::from(crate::measurement::MAX_PER_PAYLOAD_BYTES),
             1.0,
         )],
+        "stanag" => vec![limit(
+            "window_s",
+            f64::from(crate::stanag::MIN_STANAG_WINDOW_S),
+            f64::from(crate::stanag::MAX_STANAG_WINDOW_S),
+            1.0,
+        )],
         "sid" => vec![
             limit(
                 "report_s",
@@ -1689,6 +1695,7 @@ pub enum ChannelParams {
     NoiseFigure(crate::measurement::NoiseFigureParams),
     Per(crate::measurement::PerParams),
     Sid(crate::measurement::SidParams),
+    Stanag(crate::stanag::StanagParams),
 }
 
 impl ChannelParams {
@@ -1758,6 +1765,7 @@ impl ChannelParams {
             Self::NoiseFigure(_) => "noise_figure",
             Self::Per(_) => "per",
             Self::Sid(_) => "sid",
+            Self::Stanag(_) => "stanag",
         }
     }
 }

@@ -87,6 +87,15 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `tetra_call_offair_48k` | 48 k | `tetra` @ +0.3 kHz | MCC 228, MNC 8889, D-SETUP 100701 to group 100601, D-TX GRANTED to 100702 |
 | `tetrapol_control_48k` | 48 k | `tetrapol` @ 0 Hz | scrambling 70, system info for cell 28.2.7 at BCH frame 0, group 393 active on channel 2890, PCH paging CGI 125 and 399 |
 | `tetrapol_traffic_48k` | 48 k | `tetrapol` @ 0 Hz | group idle (cause 0x12) under scrambling 115, then voice under 118 |
+| `stanag/stanag_4285_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4285 |
+| `stanag/stanag_4529_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4529 |
+| `stanag/stanag_110a_600s_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 600 bps short |
+| `stanag/stanag_110a_2400l_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 2400 bps long |
+| `stanag/stanag_110a_150l_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 150 bps long |
+| `stanag/stanag_4539_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4539 |
+| `stanag/stanag_39tone_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 39-tone |
+| `stanag/stanag_16tone_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 16-tone |
+| `stanag/stanag_ale_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 2G ALE |
 | `dvbt/qpsk_2k_reference` | 9.142857 M | `dvbt` @ 0 Hz | 2K QPSK, rate 1/2, guard 1/8, 1750 Hz offset; PID 0x123 packets, TPS cell 0x5a |
 | `dab/mode_ii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | Mode II frame: ensemble `0x4a2c`, service `0xc201`, no failed FIB CRCs |
 | `dab/mode_iii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | the same ensemble in Mode III |
@@ -302,3 +311,10 @@ MCU row of APIDs 64, 65 and 68. The source IQ is sigidwiki's LRPT sample
 Not IQ: PyEOT's `demo3eot.wav`, unmodified, 2.6 s of FM-discriminator audio from 457.9375 MHz
 with three rear-unit packets. GPL-3.0, see `eot/README.md`. The test FM-modulates it at ±3 kHz.
 `eot::tests::decodes_three_rear_units_from_an_off_air_recording` reads it.
+
+### HF modems: `stanag/`
+
+Four-second slices of sigidwiki audio samples (CC BY-SA), so these pairs are test data under that
+license. The USB audio was resampled to 9.6 kHz `ci16_le` with zero quadrature; each annotation
+names the source URL, slice and SHA-256. `stanag::tests::air::names_recorded_modems` reads them.
+`names_the_sigidwiki_library` runs 49 full samples when `STANAG_SIGID_DIR` points at them.

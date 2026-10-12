@@ -3571,6 +3571,10 @@ export interface components {
             settings: components["schemas"]["SidParams"];
             /** @enum {string} */
             type: "sid";
+        } | {
+            settings: components["schemas"]["StanagParams"];
+            /** @enum {string} */
+            type: "stanag";
         };
         ChannelSettings: {
             blanker?: components["schemas"]["NoiseBlankerSettings"];
@@ -4400,6 +4404,10 @@ export interface components {
             data: components["schemas"]["SidReport"];
             /** @enum {string} */
             kind: "sid";
+        } | {
+            data: components["schemas"]["StanagReport"];
+            /** @enum {string} */
+            kind: "stanag";
         };
         /** @enum {string} */
         DecoderFamily: "analog_voice" | "digital_voice" | "aviation" | "marine" | "amateur" | "paging" | "video" | "broadcast" | "weather" | "utility";
@@ -8874,6 +8882,32 @@ export interface components {
             seq: number;
             /** Format: int32 */
             width: number;
+        };
+        /** @enum {string} */
+        StanagInterleave: "zero" | "short" | "long";
+        /** @enum {string} */
+        StanagModem: "stanag_4285" | "stanag_4529" | "mil_std_188_110a" | "stanag_4539" | "thirty_nine_tone" | "sixteen_tone" | "ale_2g";
+        StanagParams: {
+            /** Format: int32 */
+            window_s?: number;
+        };
+        StanagRate: {
+            /** Format: int32 */
+            bps: number;
+            interleave: components["schemas"]["StanagInterleave"];
+            voice?: boolean;
+        };
+        StanagReport: {
+            /** Format: float */
+            audio_hz: number;
+            /** Format: float */
+            bandwidth_hz: number;
+            /** Format: float */
+            confidence: number;
+            /** Format: double */
+            frequency_hz?: number | null;
+            modem?: components["schemas"]["StanagModem"] | null;
+            rate?: components["schemas"]["StanagRate"] | null;
         };
         StateScope: {
             /** @enum {string} */

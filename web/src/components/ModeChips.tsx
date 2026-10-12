@@ -206,6 +206,8 @@ export function ModeChips({
       return <PerChips params={params} {...mode} />;
     case "sid":
       return <SidChips params={params} {...mode} />;
+    case "stanag":
+      return <StanagChips params={params} {...mode} />;
     case "dstar":
     case "ysf":
     case "p25":
@@ -1483,6 +1485,19 @@ function PerChips({ params, limits, onParams }: Mode<"per">) {
         onCommit={(payload_bytes) => set({ ...settings, payload_bytes })}
       />
     </>
+  );
+}
+
+function StanagChips({ params, limits, onParams }: Mode<"stanag">) {
+  return (
+    <NumberChip
+      label="Window"
+      title="Seconds of signal behind each verdict"
+      value={params.settings.window_s ?? 2}
+      {...limitOf(limits, "window_s")}
+      unit="s"
+      onCommit={(window_s) => onParams({ type: "stanag", settings: { window_s } })}
+    />
   );
 }
 
