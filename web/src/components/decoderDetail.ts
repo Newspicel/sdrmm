@@ -6,7 +6,6 @@ import {
   BLE_PHY_LABELS,
   bleBeaconText,
 } from "../lib/ble";
-import { ISM_CODING_LABELS, ISM_INTEGRITY_LABELS, ISM_MODULATION_LABELS } from "../lib/ism";
 import {
   bsicLabel,
   ccchLabel,
@@ -15,6 +14,7 @@ import {
   gsmSummary,
   siLabel,
 } from "../lib/gsm";
+import { ISM_CODING_LABELS, ISM_INTEGRITY_LABELS, ISM_MODULATION_LABELS } from "../lib/ism";
 import {
   LORA_INTEGRITY_LABELS,
   LORA_PROTOCOL_LABELS,
