@@ -1,18 +1,20 @@
 import { useMemo } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
+import { randomHex } from "./hex";
 import { PRESENCE_LIMITS } from "./limits";
 import type { Peer, Pointer, Position, ServerEvent } from "./types";
 
 const AUTHOR_KEY = "sdrmm.author";
 const NAME_KEY = "sdrmm.name";
+const AUTHOR_BYTES = 16;
 const POINTER_HEADROOM = 1.5;
 export const POINTER_MS = Math.ceil((1000 * POINTER_HEADROOM) / PRESENCE_LIMITS.pointer_rate_hz);
 
 let fallbackAuthor: string | null = null;
 
 function freshAuthor(): string {
-  return crypto.randomUUID();
+  return randomHex(AUTHOR_BYTES);
 }
 
 export function authorKey(): string {
