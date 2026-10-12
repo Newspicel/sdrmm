@@ -14,7 +14,7 @@ export interface ToolPanel {
 export type ToolSize = "standard" | "full";
 
 export const TOOL_PANELS: readonly ToolPanel[] = [
-  { id: "antenna", panel: AntennaPanel },
+  { id: "antenna", panel: AntennaPanel, size: "full" },
   {
     id: "cps",
     panel: CpsPanel,

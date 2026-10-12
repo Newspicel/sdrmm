@@ -171,7 +171,7 @@ function Workbench({
   );
 }
 
-function FrequencyChart({
+export function FrequencyChart({
   viewId,
   subjects,
   zoom,
@@ -253,7 +253,7 @@ function FrequencyChart({
   );
 }
 
-function Legend({ subjects }: { subjects: readonly Subject[] }) {
+export function Legend({ subjects }: { subjects: readonly Subject[] }) {
   if (subjects.length < 2) {
     return null;
   }

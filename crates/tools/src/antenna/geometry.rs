@@ -180,6 +180,12 @@ pub(super) fn j_pole(
                 AntennaPoint::ORIGIN,
                 at(spacing_m, 0.0, 0.0),
             ),
+            segment(
+                "Feed tap",
+                Role::Matching,
+                at(0.0, feed_height_m, 0.0),
+                at(spacing_m, feed_height_m, 0.0),
+            ),
         ],
         feed: at(spacing_m / 2.0, feed_height_m, 0.0),
     }

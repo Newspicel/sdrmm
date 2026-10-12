@@ -76,10 +76,10 @@ describe("groupTools", () => {
 });
 
 describe("toolSize", () => {
-  it("gives the instrument the whole window and the calculator a dialog", () => {
+  it("gives the instruments and the antenna workbench the whole window", () => {
     expect(toolSize("nanovna")).toBe("full");
     expect(toolSize("cps")).toBe("full");
-    expect(toolSize("antenna")).toBe("standard");
+    expect(toolSize("antenna")).toBe("full");
   });
 
   it("falls back to the dialog for a tool this client has no panel for", () => {
