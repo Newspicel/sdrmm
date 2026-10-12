@@ -122,7 +122,7 @@ export function ScopeSettings(props: ScopeSettingsProps) {
         name="Levels"
         hint="dBFS range the waterfall colours span"
         aside={
-          <span className="flex items-center gap-2 font-mono text-[10.5px] text-ink-faint">
+          <span className="flex items-center gap-2 font-mono text-2xs text-ink-faint">
             auto
             <Switch
               label="Automatic levels"
@@ -159,7 +159,7 @@ function gradient(palette: Palette, direction: string): string {
 
 function TraceSample({ children }: { children: ReactNode }) {
   return (
-    <span className="flex h-3.5 w-5 shrink-0 items-center overflow-hidden rounded-[3px] bg-plot-bg px-0.5">
+    <span className="flex h-3.5 w-5 shrink-0 items-center overflow-hidden rounded-control bg-plot-bg px-0.5">
       {children}
     </span>
   );
@@ -178,7 +178,7 @@ function Level({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="w-12 shrink-0 font-mono text-[10.5px] text-ink-faint">{name}</span>
+      <span className="w-12 shrink-0 font-mono text-2xs text-ink-faint">{name}</span>
       <Slider
         label={label}
         className="min-w-0 flex-1"
@@ -188,7 +188,7 @@ function Level({
         value={value}
         onChange={onChange}
       />
-      <span className="w-14 shrink-0 text-right font-mono text-[11px] tabular-nums text-ink-dim">
+      <span className="w-14 shrink-0 text-right font-mono text-2xs tabular-nums text-ink-dim">
         {value} dB
       </span>
     </div>
@@ -211,7 +211,7 @@ function TraceToggle({
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`flex h-7 items-center gap-2 rounded-[3px] border px-2 font-mono text-[11px] transition-colors duration-100 ${
+      className={`flex h-7 items-center gap-2 rounded-control border px-2 font-mono text-2xs transition-colors duration-100 ${
         on
           ? "border-accent-dim bg-accent/12 text-accent"
           : "border-line bg-well text-ink-dim hover:border-line-strong hover:text-ink"

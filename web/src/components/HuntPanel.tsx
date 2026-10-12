@@ -149,7 +149,7 @@ export function HuntPanel({
           </>
         )}
         {status?.error != null && <FaceFault message={status.error} />}
-        <Chips className="border-t border-line p-2">
+        <Chips className="border-t border-line">
           <ToggleChip label="Clicks" title="Geiger clicks" on={clicks} onChange={onClicks} />
           {positionWired && sweep !== null && <HuntSweepChips params={sweep} edit={onSweep} />}
         </Chips>

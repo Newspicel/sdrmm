@@ -14,7 +14,7 @@ import {
 } from "./protocols";
 
 const KEY =
-  "inline-flex h-6 items-center gap-1.5 rounded-[3px] border px-1.5 font-mono text-[11px] " +
+  "inline-flex h-5 items-center gap-1.5 rounded-control border px-1.5 font-mono text-2xs " +
   "transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 " +
   "focus-visible:ring-accent/30";
 
@@ -129,7 +129,7 @@ function Family({
           onChange={(enabled) => onToggle(kinds, enabled)}
         />
         <span className="flex-1">{group.title}</span>
-        <span className="font-mono text-[10.5px] tabular-nums text-ink-faint">
+        <span className="font-mono text-2xs tabular-nums text-ink-faint">
           {on}/{kinds.length}
         </span>
       </label>

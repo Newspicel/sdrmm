@@ -1,5 +1,6 @@
 import { ismSurveySummary, wifiOccupancySummary } from "../lib/airtime";
 import { bleStation, bleSummary } from "../lib/ble";
+import { ismStation, ismSummary } from "../lib/ism";
 import { loraPosition, loraStation, loraSummary } from "../lib/lora";
 import { noiseFigureSummary, perSummary, sidSummary } from "../lib/measurement";
 import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
@@ -190,6 +191,8 @@ export function eventSummary(event: DecoderEvent): string {
     }
     case "eot":
       return eotSummary(event.data);
+    case "ism":
+      return ismSummary(event.data);
     case "sarsat":
       return sarsatSummary(event.data);
     case "tetrapol":
@@ -454,6 +457,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return String(event.data.local_address);
     case "eot":
       return String(event.data.unit_address);
+    case "ism":
+      return ismStation(event.data);
     case "sarsat":
       return event.data.hex_id;
     case "tetrapol":

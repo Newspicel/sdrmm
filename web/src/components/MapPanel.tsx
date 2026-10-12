@@ -133,7 +133,7 @@ export function MapPanel({
         headings={headings}
         basemap={basemap}
       />
-      <div className="absolute bottom-2 left-2 flex items-center rounded-[3px] bg-plot-bg/85 p-0.5">
+      <div className="absolute bottom-2 left-2 flex items-center rounded-control bg-plot-bg/85 p-0.5">
         <MapSettings />
       </div>
       {detail !== null && <TargetCard detail={detail} onClose={close} />}

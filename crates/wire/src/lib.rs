@@ -22,6 +22,7 @@ pub mod geo;
 mod pipeline;
 pub use pipeline::{PipelineQueue, PipelineStage, QueueHealth};
 pub mod hunt;
+pub mod ism;
 pub mod labels;
 pub mod limits;
 pub mod lora;
@@ -99,8 +100,8 @@ pub use channel::{
     NfmScramblerMode, NfmToneMode, NxdnBandwidth, NxdnParams, P25Params, ParamLimit, PocsagBaud,
     PocsagParams, PskBaud, PskParams, RETIRED_CHANNEL_TYPES, RadioClockParams, RadioClockStandard,
     RttyParams, RttyStopBits, SelcallParams, SelcallSystem, Sideband, Squelch, SsbParams, SstvMode,
-    SstvModulation, SstvParams, Vdl2Params, VorParams, WfmParams, WsjtParams, WsprParams,
-    YsfParams, home_frequency_hz, param_limits, retired_channel_type,
+    SstvModulation, SstvParams, TetraParams, Vdl2Params, VorParams, WfmParams, WsjtParams,
+    WsprParams, YsfParams, home_frequency_hz, param_limits, retired_channel_type,
 };
 pub use cps::{
     ALL_CALL_NUMBER, Admit, Bandwidth, CODEPLUG_VERSION, ChannelKind, ChannelMode, Codeplug,
@@ -160,6 +161,10 @@ pub use fusion::{
 pub use geo::LatLon;
 pub use hunt::{
     HuntAction, HuntRequest, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState,
+};
+pub use ism::{
+    ISM_BANDWIDTH_HZ, ISM_SAMPLE_RATE_HZ, IsmCoding, IsmIntegrity, IsmMessage, IsmModulation,
+    IsmParams, UNKNOWN_MODEL,
 };
 pub use lora::{
     LoraBandwidth, LoraCodingRate, LoraFrame, LoraImplicitHeader, LoraIntegrity, LoraIq, LoraKey,
@@ -304,22 +309,26 @@ pub use timemachine::{
     TimeMachineStatus, history_capacity_samples,
 };
 pub use tools::{
-    ANTENNA_TOOL_ID, AntennaDesign, AntennaGeometry, AntennaPart, AntennaPoint, AntennaReport,
-    AntennaRequest, AntennaSegment, AntennaSegmentRole, GroundPlaneParams, InvertedVParams,
-    MAX_ANTENNA_FREQ_HZ, MAX_APEX_ANGLE_DEG, MAX_FEEDLINE_VELOCITY_FACTOR, MAX_NANOVNA_AVERAGES,
-    MAX_NANOVNA_BANDWIDTH_HZ, MAX_NANOVNA_CAL_SLOT, MAX_NANOVNA_FREQ_HZ, MAX_NANOVNA_NAME_LEN,
-    MAX_NANOVNA_NOTE_LEN, MAX_NANOVNA_POINTS, MAX_NANOVNA_PORT_LEN, MAX_NANOVNA_POWER,
-    MAX_RADIAL_SLOPE_DEG, MAX_RADIALS, MAX_VELOCITY_FACTOR, MAX_YAGI_DIRECTORS,
-    MAX_YAGI_SPACING_WL, MIN_ANTENNA_FREQ_HZ, MIN_APEX_ANGLE_DEG, MIN_FEEDLINE_VELOCITY_FACTOR,
-    MIN_NANOVNA_BANDWIDTH_HZ, MIN_NANOVNA_FREQ_HZ, MIN_NANOVNA_POINTS, MIN_VELOCITY_FACTOR,
-    MIN_YAGI_SPACING_WL, NANOVNA_AUTO_POWER, NANOVNA_TOOL_ID, NanoVnaAntenna,
-    NanoVnaAntennaRequest, NanoVnaCalStep, NanoVnaCalibrateRequest, NanoVnaCalibration,
-    NanoVnaComplex, NanoVnaConfigureRequest, NanoVnaDevice, NanoVnaDeviceReport,
-    NanoVnaLibraryResponse, NanoVnaMatch, NanoVnaMeasurement, NanoVnaMeasurementInfo, NanoVnaPoint,
-    NanoVnaPortRequest, NanoVnaPower, NanoVnaRequest, NanoVnaResult, NanoVnaStandard, NanoVnaSweep,
-    NanoVnaSweepRequest, NanoVnaSweepState, SaveNanoVnaMeasurementRequest, ToolCategory,
-    ToolDescriptor, ToolRequest, ToolResponse, ToolsResponse, UpdateNanoVnaMeasurementRequest,
-    YagiParams,
+    ANTENNA_TOOL_ID, AntennaDesign, AntennaGeometry, AntennaGround, AntennaMaterial, AntennaModel,
+    AntennaPart, AntennaPatternCut, AntennaPoint, AntennaPolarization, AntennaReport,
+    AntennaRequest, AntennaSegment, AntennaSegmentRole, AntennaSimulation,
+    AntennaSimulationOutcome, AntennaSweepPoint, AntennaSweepRequest, AntennaWire,
+    GroundPlaneParams, InvertedVParams, MAX_ANTENNA_FREQ_HZ, MAX_ANTENNA_HEIGHT_M,
+    MAX_ANTENNA_SWEEP_POINTS, MAX_ANTENNA_SWEEP_RATIO, MAX_APEX_ANGLE_DEG,
+    MAX_FEEDLINE_VELOCITY_FACTOR, MAX_NANOVNA_AVERAGES, MAX_NANOVNA_BANDWIDTH_HZ,
+    MAX_NANOVNA_CAL_SLOT, MAX_NANOVNA_FREQ_HZ, MAX_NANOVNA_NAME_LEN, MAX_NANOVNA_NOTE_LEN,
+    MAX_NANOVNA_POINTS, MAX_NANOVNA_PORT_LEN, MAX_NANOVNA_POWER, MAX_RADIAL_SLOPE_DEG, MAX_RADIALS,
+    MAX_VELOCITY_FACTOR, MAX_WIRE_DIAMETER_MM, MAX_YAGI_DIRECTORS, MAX_YAGI_SPACING_WL,
+    MIN_ANTENNA_FREQ_HZ, MIN_ANTENNA_SWEEP_POINTS, MIN_APEX_ANGLE_DEG,
+    MIN_FEEDLINE_VELOCITY_FACTOR, MIN_NANOVNA_BANDWIDTH_HZ, MIN_NANOVNA_FREQ_HZ,
+    MIN_NANOVNA_POINTS, MIN_VELOCITY_FACTOR, MIN_WIRE_DIAMETER_MM, MIN_YAGI_SPACING_WL,
+    NANOVNA_AUTO_POWER, NANOVNA_TOOL_ID, NanoVnaAntenna, NanoVnaAntennaRequest, NanoVnaCalStep,
+    NanoVnaCalibrateRequest, NanoVnaCalibration, NanoVnaComplex, NanoVnaConfigureRequest,
+    NanoVnaDevice, NanoVnaDeviceReport, NanoVnaLibraryResponse, NanoVnaMatch, NanoVnaMeasurement,
+    NanoVnaMeasurementInfo, NanoVnaPoint, NanoVnaPortRequest, NanoVnaPower, NanoVnaRequest,
+    NanoVnaResult, NanoVnaStandard, NanoVnaSweep, NanoVnaSweepRequest, NanoVnaSweepState,
+    SaveNanoVnaMeasurementRequest, ToolCategory, ToolDescriptor, ToolRequest, ToolResponse,
+    ToolsResponse, UpdateNanoVnaMeasurementRequest, YagiParams,
 };
 pub use weather::{
     AprsWeather, AptImage, AptParams, AvhrrChannel, DEFAULT_SONDE_BURST_M, LrptImage, LrptMode,
@@ -1592,12 +1601,16 @@ mod contract_tests {
             feedpoint_ohms: Some(73.0),
             balanced: true,
             notes: Vec::new(),
+            simulation: AntennaSimulationOutcome::Unavailable {
+                reason: "not solved".to_owned(),
+            },
         });
         let json = serde_json::to_value(&response).unwrap();
         assert_eq!(json["tool"], "antenna");
         assert_eq!(json["result"]["design"]["type"], "dipole");
         assert_eq!(json["result"]["geometry"]["segments"][0]["role"], "driven");
         assert_eq!(json["result"]["geometry"]["feed"]["x_m"], 0.0);
+        assert_eq!(json["result"]["simulation"]["status"], "unavailable");
         assert_eq!(response.tool_id(), "antenna");
         assert_eq!(
             serde_json::from_value::<ToolResponse>(json).unwrap(),
@@ -1620,6 +1633,9 @@ mod contract_tests {
             serde_json::from_str(r#"{"frequency_hz":14200000.0,"design":{"type":"dipole"}}"#)
                 .unwrap();
         assert_eq!(bare.design, AntennaDesign::Dipole);
+        assert_eq!(bare.model, AntennaModel::default());
+        assert_eq!(bare.sweep, None);
+        assert!(!bare.trim);
     }
 
     #[test]

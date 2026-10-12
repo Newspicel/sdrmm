@@ -65,7 +65,7 @@ pub use fec::{
     conv7::{ConvCode, Depuncturer, StreamViterbiK7, ViterbiK7, depuncture, puncture},
     crc4_msb, crc8_msb, crc16_ccitt, crc16_msb, crc16_msb_bits, crc16_x25, crc24_reflected,
     crc32_ieee, crc32_mpeg, ermes_bch_decode, ermes_bch_encode, golay23_correct, golay23_encode,
-    golay23_ok, hdlc_fcs_ok, hdlc_repair, lfsr_digest8, lfsr_digest8_reflect,
+    golay23_ok, hdlc_fcs_ok, hdlc_repair, lfsr_digest8, lfsr_digest8_reflect, lfsr_digest16,
     mode_s_append_overlaid_parity, mode_s_append_parity, mode_s_bit_overlays,
     mode_s_fix_single_bit, mode_s_overlay, mode_s_syndrome, pocsag_bch_decode, pocsag_bch_encode,
     prbs::{DAB_DISPERSAL, DVB_DISPERSAL, Prbs, PrbsSpec},

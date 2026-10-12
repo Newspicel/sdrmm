@@ -134,7 +134,7 @@ export function DeviceReport({
             Device info
           </Collapsible.Trigger>
           <Collapsible.Panel>
-            <pre className="mt-2 overflow-x-auto rounded-[3px] border border-line bg-panel-2 p-2 font-mono text-[11px] leading-relaxed">
+            <pre className="mt-2 overflow-x-auto rounded-control border border-line bg-panel-2 p-2 font-mono text-2xs leading-relaxed">
               {report.info.join("\n")}
             </pre>
           </Collapsible.Panel>

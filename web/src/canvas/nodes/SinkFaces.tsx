@@ -1,7 +1,7 @@
 import { Circle, Play, Square } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN, BTN_DANGER, ICON_BTN } from "../../components/controls";
+import { BTN, BTN_DANGER, BTN_PRIMARY, ICON_BTN } from "../../components/controls";
 import { DecoderLogPanel } from "../../components/DecoderLogPanel";
 import { DecoderView, hasDecoderView } from "../../components/DecoderPanels";
 import { DownloadMenu } from "../../components/DownloadMenu";
@@ -399,7 +399,7 @@ function RecorderSwitch({
   return (
     <Button
       type="button"
-      className={recording ? BTN_DANGER : BTN}
+      className={recording ? BTN_DANGER : BTN_PRIMARY}
       title={recording ? undefined : (unwired ?? title)}
       disabled={unwired !== null && !recording}
       onClick={() => switchTo(!recording)}
@@ -408,9 +408,7 @@ function RecorderSwitch({
         "Stop"
       ) : (
         <>
-          <span className="flex text-danger">
-            <Icon glyph={Circle} size={12} filled />
-          </span>
+          <Icon glyph={Circle} size={12} filled />
           Record
         </>
       )}

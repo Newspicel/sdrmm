@@ -1213,6 +1213,7 @@ empty_params! {
     P25Params,
     DpmrParams,
     M17Params,
+    TetraParams,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -1656,6 +1657,7 @@ pub enum ChannelParams {
     P25(P25Params),
     Dpmr(DpmrParams),
     M17(M17Params),
+    Tetra(TetraParams),
     Tetrapol(crate::tetrapol::TetrapolParams),
     Ft8(WsjtParams),
     Ft4(WsjtParams),
@@ -1683,6 +1685,7 @@ pub enum ChannelParams {
     Ble(crate::ble::BleParams),
     WifiOccupancy(crate::airtime::WifiOccupancyParams),
     IsmSurvey(crate::airtime::IsmSurveyParams),
+    Ism(crate::ism::IsmParams),
     NoiseFigure(crate::measurement::NoiseFigureParams),
     Per(crate::measurement::PerParams),
     Sid(crate::measurement::SidParams),
@@ -1723,6 +1726,7 @@ impl ChannelParams {
             Self::P25(_) => "p25",
             Self::Dpmr(_) => "dpmr",
             Self::M17(_) => "m17",
+            Self::Tetra(_) => "tetra",
             Self::Tetrapol(_) => "tetrapol",
             Self::Ft8(_) => "ft8",
             Self::Ft4(_) => "ft4",
@@ -1750,6 +1754,7 @@ impl ChannelParams {
             Self::Ble(_) => "ble",
             Self::WifiOccupancy(_) => "wifi_occupancy",
             Self::IsmSurvey(_) => "ism_survey",
+            Self::Ism(_) => "ism",
             Self::NoiseFigure(_) => "noise_figure",
             Self::Per(_) => "per",
             Self::Sid(_) => "sid",
@@ -1860,6 +1865,7 @@ pub fn home_frequency_hz(type_id: &str) -> Option<f64> {
         "remote_id" | "ble" => 2_426_000_000.0,
         "wifi_occupancy" => 2_437_000_000.0,
         "ism_survey" => 2_442_000_000.0,
+        "ism" => 433_920_000.0,
         "sid" => 30_000.0,
         "sarsat" => 406_034_000.0,
         _ => return None,

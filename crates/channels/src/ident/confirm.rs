@@ -2,6 +2,7 @@ use num_complex::Complex;
 use sdrmm_dsp::Ddc;
 use sdrmm_wire::{
     ChannelParams, ChannelSettings, DecoderEvent, ProtocolMatch, SelcallParams, SelcallSystem,
+    UNKNOWN_MODEL,
 };
 
 use super::detect::Band;
@@ -36,6 +37,7 @@ fn decoded(type_id: &str, event: &DecoderEvent) -> bool {
         | ("hfdl", DecoderEvent::Hfdl(message))
         | ("inmarsat_stdc", DecoderEvent::InmarsatStdc(message))
         | ("inmarsat_aero", DecoderEvent::InmarsatAero(message)) => message.crc_ok,
+        ("ism", DecoderEvent::Ism(message)) => message.model != UNKNOWN_MODEL,
         _ => false,
     }
 }
@@ -59,6 +61,7 @@ fn confirmable(type_id: &str) -> bool {
             | "hfdl"
             | "inmarsat_stdc"
             | "inmarsat_aero"
+            | "ism"
     )
 }
 

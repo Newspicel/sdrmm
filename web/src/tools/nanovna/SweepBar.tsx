@@ -172,7 +172,7 @@ export function SweepBar({
         {exportable !== null && <ExportMenu source={exportable} />}
       </div>
       {status !== null && (
-        <span className="pb-1.5 font-mono text-[11px] text-ink-faint tabular-nums">{status}</span>
+        <span className="pb-1.5 font-mono text-2xs text-ink-faint tabular-nums">{status}</span>
       )}
     </div>
   );

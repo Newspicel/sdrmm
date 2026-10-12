@@ -1,0 +1,21 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:license": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "core:description": "TETRA downlink off air with a group call: MCC 228, MNC 8889, D-SETUP from 100701 to group 100601, D-TX GRANTED to 100702; the spectrum is inverted"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0
+    }
+  ],
+  "annotations": [
+    {
+      "core:sample_start": 0,
+      "core:sample_count": 336000,
+      "core:comment": "sigidwiki TETRA_IQ.zip (CC BY-SA), TETRA_IQ.wav seconds 22..29 as recorded (I left, Q right); the carrier sits at about +0.3 kHz; the RF frequency is not recorded upstream; source WAV SHA-256 5d7596866e6a140fbfd543bdf44c26051d715c185e4c8958db7512dbaa276ba6"
+    }
+  ]
+}

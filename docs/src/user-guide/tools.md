@@ -4,9 +4,27 @@
 
 | Tool | Does |
 |---|---|
-| Antenna calculator | Dimensions for dipoles, folded and inverted-V dipoles, end-fed half-waves, ground planes, 5/8 verticals, J-poles, quad loops, and Yagis |
+| Antenna calculator | Dimensions for dipoles, folded and inverted-V dipoles, end-fed half-waves, ground planes, 5/8 verticals, J-poles, quad loops, and Yagis, with simulated SWR, gain, and radiation pattern |
 | NanoVNA | Sweeps an antenna over USB and shows SWR, impedance, a Smith chart, and cable faults. Keeps sweeps per antenna to compare. |
 | Radio programmer | Reads, merges, and writes codeplugs, and copies them between radios |
+
+## Antenna calculator
+
+Pick a design and a band or frequency. Every design is also simulated: the wires are solved
+with the method of moments, over the ground you pick.
+
+- **Design**: the cut list and a drawing. **Current** shades each wire by how much current it
+  carries. Hover a part to find it in the drawing.
+- **Trim** finds the element factor where the feedpoint is resonant.
+- **Performance**: SWR, return loss and impedance over the band, a Smith chart, and the
+  azimuth and elevation patterns. **Matching** compares baluns, ununs, a quarter-wave line,
+  and L networks; pick one to see its SWR. The dashed trace is the bare feedpoint.
+- **Resonances**: a sweep from 0.4 to 3.2 times the frequency. ▼ marks a series resonance,
+  ▽ a parallel one. **Bands** shows which amateur bands the antenna also works on.
+- **Save to NanoVNA** keeps the simulated curve in the NanoVNA antenna library, to overlay on
+  a real sweep. **Export** writes a NEC model for 4nec2 or EZNEC, or a Touchstone `.s1p`.
+
+The model ignores nearby metal, trees, and the feedline. Cut 2 to 5% long and trim on site.
 
 ## NanoVNA
 

@@ -74,7 +74,7 @@ export function OccupancyPanel({ active }: { active: DeviceSet | null }) {
                       {Array.from({ length: HOURS }, (_, hour) => (
                         <span
                           key={hour}
-                          className="h-3 min-w-0 flex-1 rounded-[1px] bg-accent"
+                          className="h-3 min-w-0 flex-1 rounded-inset bg-accent"
                           style={{ opacity: dutyAlpha(bucket.by_hour[hour] ?? 0) }}
                         />
                       ))}

@@ -40,7 +40,7 @@ export const DECAY_OPTIONS: Options<DecayKind> = [
 export const NAV_OPTIONS: Options<NavMode> = [
   { value: "auto", label: "Auto", title: "Cross the bearings first, then drive at the fix" },
   { value: "direct", label: "Direct", title: "Drive at the fix as soon as there is one" },
-  { value: "off", label: "Off" },
+  { value: "off", label: "off" },
 ];
 
 export interface Box {

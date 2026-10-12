@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "rtl_433_tests",
+    "core:description": "honeywell-001.cu8"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 345000000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/honeywell/01/honeywell-001.cu8; source SHA-256 975e2ca86da210c92fd5afd61b605513f3a90a21d3f5d33cc2d9ffce16e4563b; samples 15439..27939 at 250000 Hz",
+      "core:sample_count": 12500,
+      "core:sample_start": 0
+    }
+  ]
+}

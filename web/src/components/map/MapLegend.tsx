@@ -9,8 +9,9 @@ import { SIGNAL_MAX_DBFS, SIGNAL_MIN_DBFS } from "../../lib/signalSurvey";
 import { colormapGradient } from "../plotFrame";
 import type { Counts } from "./mapState";
 
-const ROW = "flex items-center gap-2 font-mono text-[10px] tabular-nums";
-const BADGE = "rounded border border-line bg-bg/85 px-2 py-1 font-mono text-[10px] text-ink-dim";
+const ROW = "flex items-center gap-2 font-mono text-3xs tabular-nums";
+const BADGE =
+  "rounded-control border border-line bg-bg/85 px-2 py-1 font-mono text-3xs text-ink-dim";
 
 function Row({
   swatch,
@@ -78,7 +79,7 @@ export function MapLegend({
   return (
     <div className="pointer-events-none absolute top-2 left-2 flex flex-col items-start gap-1">
       {hasRows && (
-        <div className="flex flex-col gap-1 rounded border border-line bg-bg/85 px-2 py-1.5">
+        <div className="flex flex-col gap-1 rounded-control border border-line bg-bg/85 px-2 py-1.5">
           {kinds.map((kind) => (
             <Row
               key={kind}
@@ -114,7 +115,7 @@ export function MapLegend({
 
 function SignalRows({ cells }: { cells: number }) {
   return (
-    <div className="flex min-w-36 flex-col gap-1 font-mono text-[10px] tabular-nums">
+    <div className="flex min-w-36 flex-col gap-1 font-mono text-3xs tabular-nums">
       <div className="flex items-center justify-between gap-3">
         <span className="text-ink-dim">Signal cells</span>
         <span className="text-ink">{cells}</span>
@@ -144,7 +145,7 @@ function OverlayRows({ overlay, heat }: { overlay: OverlayCounts; heat: boolean 
         <Row
           swatch={
             <span
-              className="inline-block h-2 w-4 shrink-0 rounded-[2px]"
+              className="inline-block h-2 w-4 shrink-0 rounded-inset"
               style={{ background: colormapGradient("inferno", "to right"), opacity: HEAT_OPACITY }}
             />
           }

@@ -23,7 +23,7 @@ import { useBandPlan } from "../../lib/useBandPlan";
 export const BAND_RULER_H = 16;
 const LABEL_MIN = 0.07;
 const TIP_DELAY_MS = 120;
-const META = "block text-[11px] leading-snug text-ink-faint";
+const META = "block text-2xs leading-snug text-ink-faint";
 
 export const BandRuler = memo(function BandRuler({
   centerHz,
@@ -131,7 +131,7 @@ function Lane({
             />
           )}
           {span.width >= LABEL_MIN && (
-            <span className="absolute inset-y-0 right-1 left-1 flex items-center overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[10px] text-ink">
+            <span className="absolute inset-y-0 right-1 left-1 flex items-center overflow-hidden text-ellipsis whitespace-nowrap font-mono text-3xs text-ink">
               {span.allocation.name}
             </span>
           )}
@@ -208,7 +208,7 @@ function BandDetail({
       <div className="flex items-start gap-1.5">
         <span
           aria-hidden
-          className={`mt-1.5 size-2 shrink-0 rounded-[1px] ${serviceEdge(allocation.service)}`}
+          className={`mt-1.5 size-2 shrink-0 rounded-inset ${serviceEdge(allocation.service)}`}
         />
         <span className="min-w-0 flex-1 text-sm leading-snug text-ink">{allocation.name}</span>
         {!allocation.primary && (
@@ -221,7 +221,7 @@ function BandDetail({
         )}
       </div>
       {allocation.official_name !== allocation.name && (
-        <span className="font-mono text-[11px] leading-snug text-ink-dim">
+        <span className="font-mono text-2xs leading-snug text-ink-dim">
           {allocation.official_name}
         </span>
       )}
@@ -248,7 +248,7 @@ function BandDetail({
         coveredByLayer(entry.covered, (layer) =>
           layer === allocation.layer ? "also" : `over ${layerName(layer)}`,
         ).map((group) => (
-          <span key={group.label} className="text-[11px] leading-snug text-ink-faint">
+          <span key={group.label} className="text-2xs leading-snug text-ink-faint">
             {group.label}: {group.names.join(" · ")}
           </span>
         ))}

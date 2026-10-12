@@ -29,7 +29,7 @@ export function RowDetail({ row }: { row: LogRow }) {
         </dl>
       )}
       {detail.body !== null && (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded border border-line bg-panel px-2 py-1.5 text-ink">
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-control border border-line bg-panel px-2 py-1.5 text-ink">
           {detail.body}
         </pre>
       )}
