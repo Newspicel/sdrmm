@@ -1207,6 +1207,7 @@ empty_params! {
     P25Params,
     DpmrParams,
     M17Params,
+    TetraParams,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -1650,6 +1651,7 @@ pub enum ChannelParams {
     P25(P25Params),
     Dpmr(DpmrParams),
     M17(M17Params),
+    Tetra(TetraParams),
     Ft8(WsjtParams),
     Ft4(WsjtParams),
     Psk(PskParams),
@@ -1716,6 +1718,7 @@ impl ChannelParams {
             Self::P25(_) => "p25",
             Self::Dpmr(_) => "dpmr",
             Self::M17(_) => "m17",
+            Self::Tetra(_) => "tetra",
             Self::Ft8(_) => "ft8",
             Self::Ft4(_) => "ft4",
             Self::Psk(_) => "psk",

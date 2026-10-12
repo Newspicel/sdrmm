@@ -10,7 +10,7 @@ covers the modes that need more than a frequency.
 | Group | Tested on air | Fixture only | Experimental |
 |---|---|---|---|
 | Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
-| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | | |
+| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17, [TETRA](#tetra) | | |
 | Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium), [Drone Remote ID](#drone-remote-id) | VOR, ILS localizer / glideslope |
 | Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC, [406 MHz beacons](#406-mhz-beacons) | |
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
@@ -224,6 +224,21 @@ Calls use 32 kbit/s ADPCM (G.726). The channel plays both directions of the firs
 hears and holds it until it goes quiet. Encrypted bearers stay muted. Voice before the first
 multiframe marker cannot be descrambled; those frames, X-CRC errors, and late frames are counted
 in the record.
+
+## TETRA
+
+The TETRA channel reads one 25 kHz downlink carrier. It needs no settings.
+
+| Logged | From |
+|---|---|
+| Cell | MCC, MNC, colour code, location area, carrier and duplex frequencies |
+| Calls | D-SETUP, D-CONNECT, D-TX GRANTED, D-RELEASE with group, caller and talker |
+| Traffic | A voice record when a timeslot turns to traffic |
+| SDS | Status codes, text, LIP positions on the map, other data as hex |
+| Mobility | Location update and group attach messages |
+
+Voice is not decoded. Air-encrypted cells report only their identity. Control blocks that fail
+their CRC are counted as rejected.
 
 ## LoRa
 

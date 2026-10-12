@@ -434,9 +434,18 @@ const DETAIL: {
           : `LCN ${f.channel_definition.channel} · TX ${formatHz(f.channel_definition.tx_hz)} · RX ${formatHz(f.channel_definition.rx_hz)}`,
       ],
       ["Rest channel", f.rest_channel == null ? undefined : String(f.rest_channel)],
-      ["Network ID", f.network_id == null ? undefined : String(f.network_id)],
-      ["System ID", f.system_id == null ? undefined : String(f.system_id)],
-      ["Site ID", f.site_id == null ? undefined : String(f.site_id)],
+      [
+        f.mode === "tetra" ? "MNC" : "Network ID",
+        f.network_id == null ? undefined : String(f.network_id),
+      ],
+      [
+        f.mode === "tetra" ? "MCC" : "System ID",
+        f.system_id == null ? undefined : String(f.system_id),
+      ],
+      [
+        f.mode === "tetra" ? "Location area" : "Site ID",
+        f.site_id == null ? undefined : String(f.site_id),
+      ],
       ["Emergency", flag(f.emergency)],
       ["Late entry", flag(f.late_entry)],
       ["Slot activity", slotActivity(f)],
