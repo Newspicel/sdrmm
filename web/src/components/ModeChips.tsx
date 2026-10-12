@@ -68,6 +68,7 @@ import {
   SSTV_AUTO,
   SSTV_MODES,
   SSTV_MODULATIONS,
+  TETRAPOL_BANDS,
   WEFAX_IOCS,
   WEFAX_LPMS,
   withLoraPreset,
@@ -124,6 +125,8 @@ export function ModeChips({
       return <IsmChips params={params} {...mode} />;
     case "sarsat":
       return <SarsatChips params={params} {...mode} />;
+    case "tetrapol":
+      return <TetrapolChips params={params} {...mode} />;
     case "adsb":
       return <AdsbChips params={params} {...mode} />;
     case "ais":
@@ -460,6 +463,30 @@ function SarsatChips({ params, onParams }: Mode<"sarsat">) {
         onParams({ type: "sarsat", settings: { ...settings, bandwidth_hz } })
       }
     />
+  );
+}
+
+function TetrapolChips({ params, limits, onParams }: Mode<"tetrapol">) {
+  const { settings } = params;
+  const set = (next: typeof settings) => onParams({ type: "tetrapol", settings: next });
+  return (
+    <>
+      <ChoiceChip
+        label="Band"
+        title="Tetrapol band"
+        value={settings.band ?? "uhf"}
+        options={TETRAPOL_BANDS}
+        onChange={(band) => set({ ...settings, band })}
+      />
+      <OptionalNumberChip
+        label="Scrambling"
+        title="Scrambling code, empty to find it"
+        placeholder="auto"
+        value={settings.scrambling ?? null}
+        {...limitOf(limits, "scrambling")}
+        onCommit={(scrambling) => set({ ...settings, scrambling })}
+      />
+    </>
   );
 }
 

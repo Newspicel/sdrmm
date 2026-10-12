@@ -1431,6 +1431,7 @@ pub enum DecoderEvent {
     Ermes(ErmesMessage),
     Eot(EotMessage),
     Sarsat(crate::sarsat::SarsatMessage),
+    Tetrapol(crate::tetrapol::TetrapolMessage),
     Adsb(AdsbMessage),
     Ais(AisMessage),
     Aprs(AprsPacket),
@@ -1700,6 +1701,7 @@ impl DecoderEvent {
             Self::Ermes(_) => "ermes",
             Self::Eot(_) => "eot",
             Self::Sarsat(_) => "sarsat",
+            Self::Tetrapol(_) => "tetrapol",
             Self::Adsb(_) => "adsb",
             Self::Ais(_) => "ais",
             Self::Aprs(_) => "aprs",
@@ -1778,6 +1780,7 @@ impl DecoderEvent {
             }
             Self::Eot(m) => m.summary(),
             Self::Sarsat(m) => m.summary(),
+            Self::Tetrapol(m) => m.summary(),
             Self::Adsb(a) => {
                 let mut parts = vec![a.icao.clone()];
                 if let Some(cs) = &a.callsign {
@@ -1977,6 +1980,7 @@ impl DecoderEvent {
             Self::Ermes(p) => Some(p.local_address.to_string()),
             Self::Eot(m) => Some(m.unit_address.to_string()),
             Self::Sarsat(m) => Some(m.hex_id.clone()),
+            Self::Tetrapol(m) => m.station(),
             Self::Adsb(a) => Some(a.icao.clone()),
             Self::Ais(m) => Some(m.mmsi.to_string()),
             Self::Aprs(p) => Some(p.source.clone()),
@@ -2187,6 +2191,15 @@ mod tests {
                 homing: None,
                 errors_corrected: 0,
                 pdf2_ok: None,
+            }),
+            DecoderEvent::Tetrapol(crate::tetrapol::TetrapolMessage {
+                channel: crate::tetrapol::TetrapolLogicalChannel::Traffic,
+                frame: None,
+                scrambling: 0,
+                address: None,
+                payload: crate::tetrapol::TetrapolPayload::GroupIdle { cause: 0 },
+                data: String::new(),
+                rejected: 0,
             }),
             DecoderEvent::Adsb(AdsbMessage::default()),
             DecoderEvent::Ais(AisMessage::default()),

@@ -24,6 +24,13 @@ import {
   UA_TYPE_LABELS,
 } from "../lib/remoteId";
 import { SARSAT_BEACON_LABELS, SARSAT_PROTOCOL_LABELS, sarsatChecks } from "../lib/sarsat";
+import {
+  TETRAPOL_CALL_LABELS,
+  TETRAPOL_CHANNEL_LABELS,
+  tetrapolAddress,
+  tetrapolCell,
+  tetrapolEncrypted,
+} from "../lib/tetrapol";
 import type {
   AprsPacket,
   BleAdvert,
@@ -45,6 +52,8 @@ import type {
   PerReport,
   RemoteIdFrame,
   SidReport,
+  TetrapolMessage,
+  TetrapolPayload,
   WifiOccupancyReport,
 } from "../lib/types";
 import { hex5 } from "./decoderLog";
@@ -211,6 +220,8 @@ const DETAIL: {
     ]),
     body: null,
   }),
+
+  tetrapol: tetrapolDetail,
 
   adsb: (a) => ({
     fields: fields([
@@ -848,6 +859,61 @@ export function dectCarriers(mask: number | null | undefined): string | undefine
     if ((mask >> (9 - carrier)) & 1) on.push(carrier);
   }
   return on.length === 0 ? undefined : on.join(", ");
+}
+
+function tetrapolPayloadFields(
+  payload: TetrapolPayload,
+): (readonly [string, string | undefined])[] {
+  switch (payload.message) {
+    case "system_info":
+      return [
+        ["Cell", tetrapolCell(payload.cell)],
+        ["Country", payload.country?.toString()],
+        ["Network", payload.network?.toString()],
+        ["Location area", payload.location_area?.toString()],
+        ["Uplink code", String(payload.uplink_scrambling)],
+        ["Ciphered", flag(payload.ciphered)],
+        ["Home only", payload.home_only ? "yes" : undefined],
+        ["Superframe", payload.superframe?.toString()],
+        ["Control channel", payload.control_channel?.toString()],
+      ];
+    case "group_activation":
+    case "group_paging":
+      return [
+        ["Group", String(payload.group)],
+        ["Call", TETRAPOL_CALL_LABELS[payload.call_type]],
+        ["Coverage", String(payload.coverage)],
+        ["Traffic channel", payload.channel?.toString()],
+        ["Downlink code", payload.downlink_scrambling?.toString()],
+        ["Uplink code", payload.uplink_scrambling?.toString()],
+        ["Encrypted", flag(tetrapolEncrypted(payload))],
+      ];
+    case "group_idle":
+    case "group_end":
+      return [["Cause", String(payload.cause)]];
+    case "paging":
+      return [["Terminals", payload.terminals.map(tetrapolAddress).join(", ")]];
+    case "voice":
+      return [["Voice", `${payload.seconds.toFixed(1)} s`]];
+    case "other":
+      return [["Codop", `0x${payload.codop.toString(16).padStart(2, "0")}`]];
+  }
+}
+
+function tetrapolDetail(m: TetrapolMessage): EventDetail {
+  return {
+    fields: fields([
+      ["Channel", TETRAPOL_CHANNEL_LABELS[m.channel]],
+      ["Frame", m.frame?.toString()],
+      ["Scrambling", String(m.scrambling)],
+      ["Address", m.address == null ? undefined : tetrapolAddress(m.address)],
+      ["Message", m.payload.message === "other" ? m.payload.name : undefined],
+      ...tetrapolPayloadFields(m.payload),
+      ["Rejected", m.rejected > 0 ? String(m.rejected) : undefined],
+      ["Data", m.data || undefined],
+    ]),
+    body: null,
+  };
 }
 
 function dectDetail(frame: DectFrame): EventDetail {

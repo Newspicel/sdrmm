@@ -3,6 +3,7 @@ import { bleStation } from "./ble";
 import { ismStation } from "./ism";
 import { loraStation, withLoraPosition } from "./lora";
 import { remoteIdStation, withRemoteIdState } from "./remoteId";
+import { tetrapolStation } from "./tetrapol";
 import { clearTrails, dropTrail, recordTrail } from "./trails";
 import type {
   DecodedRecord,
@@ -281,6 +282,8 @@ function stationId(event: DecoderEvent): string | null {
       return ismStation(event.data);
     case "sarsat":
       return event.data.hex_id;
+    case "tetrapol":
+      return tetrapolStation(event.data);
     case "rds":
       return event.data.pi ?? null;
     case "transmission":

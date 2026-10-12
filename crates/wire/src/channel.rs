@@ -94,6 +94,12 @@ pub fn param_limits(type_id: &str) -> Vec<ParamLimit> {
     match type_id {
         "nfm" => vec![limit("inversion_hz", 1_500.0, 4_500.0, 50.0)],
         "ssb" => vec![limit("bandwidth_hz", 200.0, 10_000.0, 100.0)],
+        "tetrapol" => vec![limit(
+            "scrambling",
+            0.0,
+            f64::from(crate::tetrapol::MAX_TETRAPOL_SCRAMBLING),
+            1.0,
+        )],
         "sarsat" => vec![limit(
             "bandwidth_hz",
             crate::sarsat::MIN_SARSAT_BANDWIDTH_HZ,
@@ -1652,6 +1658,7 @@ pub enum ChannelParams {
     Dpmr(DpmrParams),
     M17(M17Params),
     Tetra(TetraParams),
+    Tetrapol(crate::tetrapol::TetrapolParams),
     Ft8(WsjtParams),
     Ft4(WsjtParams),
     Psk(PskParams),
@@ -1720,6 +1727,7 @@ impl ChannelParams {
             Self::Dpmr(_) => "dpmr",
             Self::M17(_) => "m17",
             Self::Tetra(_) => "tetra",
+            Self::Tetrapol(_) => "tetrapol",
             Self::Ft8(_) => "ft8",
             Self::Ft4(_) => "ft4",
             Self::Psk(_) => "psk",

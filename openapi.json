@@ -12243,6 +12243,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/TetrapolParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tetrapol"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/WsjtParams"
               },
               "type": {
@@ -15032,6 +15050,24 @@
                 "type": "string",
                 "enum": [
                   "sarsat"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/TetrapolMessage"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tetrapol"
                 ]
               }
             }
@@ -33496,6 +33532,461 @@
       },
       "TetraParams": {
         "type": "object"
+      },
+      "TetrapolAddress": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TetrapolAddressKind"
+          }
+        }
+      },
+      "TetrapolAddressKind": {
+        "type": "string",
+        "enum": [
+          "terminal",
+          "random",
+          "group",
+          "object",
+          "all_stations"
+        ]
+      },
+      "TetrapolBand": {
+        "type": "string",
+        "enum": [
+          "uhf",
+          "vhf"
+        ]
+      },
+      "TetrapolCallType": {
+        "type": "string",
+        "enum": [
+          "open_channel",
+          "internal",
+          "broadcast",
+          "external"
+        ]
+      },
+      "TetrapolCell": {
+        "type": "object",
+        "required": [
+          "bn",
+          "rsw",
+          "bs"
+        ],
+        "properties": {
+          "bn": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "bs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rsw": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "TetrapolGroupCall": {
+        "type": "object",
+        "required": [
+          "group",
+          "call_type",
+          "coverage",
+          "key"
+        ],
+        "properties": {
+          "call_type": {
+            "$ref": "#/components/schemas/TetrapolCallType"
+          },
+          "channel": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "coverage": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "downlink_scrambling": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "group": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "key": {
+            "$ref": "#/components/schemas/TetrapolKey"
+          },
+          "uplink_scrambling": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "TetrapolKey": {
+        "type": "object",
+        "required": [
+          "kind",
+          "index"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "TetrapolLogicalChannel": {
+        "type": "string",
+        "enum": [
+          "broadcast",
+          "paging",
+          "signalling",
+          "traffic",
+          "unknown"
+        ]
+      },
+      "TetrapolMessage": {
+        "type": "object",
+        "required": [
+          "channel",
+          "scrambling",
+          "payload",
+          "data",
+          "rejected"
+        ],
+        "properties": {
+          "address": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TetrapolAddress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "channel": {
+            "$ref": "#/components/schemas/TetrapolLogicalChannel"
+          },
+          "data": {
+            "type": "string"
+          },
+          "frame": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "payload": {
+            "$ref": "#/components/schemas/TetrapolPayload"
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "scrambling": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "TetrapolParams": {
+        "type": "object",
+        "properties": {
+          "band": {
+            "$ref": "#/components/schemas/TetrapolBand"
+          },
+          "scrambling": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "TetrapolPayload": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TetrapolSystemInfo"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "enum": [
+                      "system_info"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TetrapolGroupCall"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "enum": [
+                      "group_activation"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TetrapolGroupCall"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "enum": [
+                      "group_paging"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "cause",
+              "message"
+            ],
+            "properties": {
+              "cause": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "message": {
+                "type": "string",
+                "enum": [
+                  "group_idle"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "cause",
+              "message"
+            ],
+            "properties": {
+              "cause": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "message": {
+                "type": "string",
+                "enum": [
+                  "group_end"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "terminals",
+              "message"
+            ],
+            "properties": {
+              "message": {
+                "type": "string",
+                "enum": [
+                  "paging"
+                ]
+              },
+              "terminals": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TetrapolAddress"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "seconds",
+              "message"
+            ],
+            "properties": {
+              "message": {
+                "type": "string",
+                "enum": [
+                  "voice"
+                ]
+              },
+              "seconds": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "codop",
+              "name",
+              "message"
+            ],
+            "properties": {
+              "codop": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "message": {
+                "type": "string",
+                "enum": [
+                  "other"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "TetrapolSystemInfo": {
+        "type": "object",
+        "required": [
+          "cell",
+          "uplink_scrambling",
+          "mode",
+          "ciphered",
+          "home_only"
+        ],
+        "properties": {
+          "cell": {
+            "$ref": "#/components/schemas/TetrapolCell"
+          },
+          "ciphered": {
+            "type": "boolean"
+          },
+          "control_channel": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "country": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "home_only": {
+            "type": "boolean"
+          },
+          "location_area": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "mode": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "network": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "superframe": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "uplink_scrambling": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "TimeMachineAction": {
         "type": "string",

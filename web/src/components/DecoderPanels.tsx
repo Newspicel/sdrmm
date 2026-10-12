@@ -1488,6 +1488,7 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   eot: null,
   ism: null,
   sarsat: null,
+  tetrapol: null,
   navtex: null,
   acars: null,
   dv: null,

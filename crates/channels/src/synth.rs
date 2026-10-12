@@ -38,6 +38,7 @@ pub mod selcall;
 pub mod sid;
 pub mod sstv;
 pub mod tetra;
+pub mod tetrapol;
 pub mod vor;
 pub mod weak_signal;
 pub mod wefax;

@@ -439,5 +439,12 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"
+  },
+  {
+    "bench": "tetrapol",
+    "msamples_per_s": 50.41174744673618,
+    "realtime_factor": 1050.2447384736704,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
   }
 ]

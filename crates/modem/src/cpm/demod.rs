@@ -152,11 +152,16 @@ struct Gate {
     settle_samples: usize,
     keyed: usize,
     support: usize,
+    always_keyed: bool,
 }
 
 impl Gate {
     #[inline]
     fn step(&mut self, power: f32) -> (bool, bool) {
+        if self.always_keyed {
+            self.keyed = (self.keyed + 1).min(self.support);
+            return (true, self.keyed == self.support);
+        }
         self.envelope += self.envelope_alpha * (power - self.envelope);
         self.mean += self.floor_alpha * (power - self.mean);
         self.mean_square += self.floor_alpha * (power * power - self.mean_square);
@@ -355,6 +360,7 @@ impl CpmDemod {
                 settle_samples: settle,
                 keyed: 0,
                 support: receive_filter.len() + front_support,
+                always_keyed: false,
             },
             demod_buf: Vec::new(),
             filtered: Vec::new(),
@@ -365,6 +371,12 @@ impl CpmDemod {
             retimed_carrier: Vec::new(),
             retimed_settled: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn continuous(mut self) -> Self {
+        self.gate.always_keyed = true;
+        self
     }
 
     #[must_use]

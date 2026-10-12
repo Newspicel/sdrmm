@@ -439,5 +439,12 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"
+  },
+  {
+    "bench": "tetrapol",
+    "msamples_per_s": 110.09946002036604,
+    "realtime_factor": 2293.7387504242924,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
   }
 ]

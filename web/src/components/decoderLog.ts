@@ -25,6 +25,7 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   eot: "End-of-Train",
   ism: "ISM sensor",
   sarsat: "406 MHz beacon",
+  tetrapol: "Tetrapol",
   rds: "RDS",
   rtty: "RTTY",
   morse: "Morse",

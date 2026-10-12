@@ -5,6 +5,7 @@ import { loraPosition, loraStation, loraSummary } from "../lib/lora";
 import { noiseFigureSummary, perSummary, sidSummary } from "../lib/measurement";
 import { remoteIdPosition, remoteIdStation, remoteIdSummary } from "../lib/remoteId";
 import { sarsatName } from "../lib/sarsat";
+import { tetrapolStation, tetrapolSummary } from "../lib/tetrapol";
 import type { DecoderEvent, HotCommand } from "../lib/types";
 import {
   callMode,
@@ -194,6 +195,8 @@ export function eventSummary(event: DecoderEvent): string {
       return ismSummary(event.data);
     case "sarsat":
       return sarsatSummary(event.data);
+    case "tetrapol":
+      return tetrapolSummary(event.data);
     case "adsb": {
       const a = event.data;
       return join([
@@ -458,6 +461,8 @@ export function eventStation(event: DecoderEvent): string | null {
       return ismStation(event.data);
     case "sarsat":
       return event.data.hex_id;
+    case "tetrapol":
+      return tetrapolStation(event.data);
     case "rds":
       return event.data.pi ?? null;
     case "navtex":

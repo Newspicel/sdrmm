@@ -92,6 +92,8 @@ fn openapi_registers_paths_and_ws_schemas() {
         "EotParams",
         "SarsatMessage",
         "SarsatParams",
+        "TetrapolMessage",
+        "TetrapolParams",
         "CwSkimmerSpot",
         "SelcallSequence",
         "LoraParams",

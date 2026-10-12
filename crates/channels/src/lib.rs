@@ -65,6 +65,7 @@ mod sstv;
 pub mod stitch;
 pub mod symbols;
 mod tetra;
+mod tetrapol;
 pub mod tone_squelch;
 mod tx;
 mod vdl2;
@@ -145,6 +146,7 @@ pub use ssb::{SsbChannel, SsbTx};
 pub use sstv::SstvChannel;
 pub use symbols::SymbolTap;
 pub use tetra::TetraChannel;
+pub use tetrapol::TetrapolChannel;
 pub use vdl2::Vdl2Channel;
 pub use vor::VorChannel;
 pub use weak_signal::{Ft4Channel, Ft8Channel, WsprChannel};
@@ -192,6 +194,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Ermes(p) => ermes::occupied_band(p),
         ChannelParams::Eot(p) => eot::occupied_band(p),
         ChannelParams::Sarsat(p) => sarsat::occupied_band(p),
+        ChannelParams::Tetrapol(_) => tetrapol::occupied_band(),
         ChannelParams::Adsb(_) => adsb::occupied_band(),
         ChannelParams::Ais(p) => ais::occupied_band(p),
         ChannelParams::Aprs(p) => aprs::occupied_band(p),
@@ -286,6 +289,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Ermes(p) => ermes::channel_filter(p),
         ChannelParams::Eot(p) => eot::channel_filter(p),
         ChannelParams::Sarsat(p) => sarsat::channel_filter(p),
+        ChannelParams::Tetrapol(_) => Ok(tetrapol::channel_filter()),
         ChannelParams::Adsb(_) => Ok(adsb::channel_filter()),
         ChannelParams::Ais(p) => ais::channel_filter(p),
         ChannelParams::Aprs(p) => aprs::channel_filter(p),
@@ -527,6 +531,11 @@ const REGISTRY: &[Registration] = &[
     Registration {
         descriptor: SarsatChannel::descriptor,
         create: boxed::<SarsatChannel>,
+        create_tx: None,
+    },
+    Registration {
+        descriptor: TetrapolChannel::descriptor,
+        create: boxed::<TetrapolChannel>,
         create_tx: None,
     },
     Registration {
@@ -920,6 +929,7 @@ mod tests {
             "ermes" => ChannelParams::Ermes(ErmesParams::default()),
             "eot" => ChannelParams::Eot(EotParams::default()),
             "sarsat" => ChannelParams::Sarsat(sdrmm_wire::SarsatParams::default()),
+            "tetrapol" => ChannelParams::Tetrapol(sdrmm_wire::TetrapolParams::default()),
             "adsb" => ChannelParams::Adsb(AdsbParams::default()),
             "ais" => ChannelParams::Ais(AisParams::default()),
             "aprs" => ChannelParams::Aprs(AprsParams::default()),
@@ -1037,6 +1047,7 @@ mod tests {
                 "ermes",
                 "eot",
                 "sarsat",
+                "tetrapol",
                 "adsb",
                 "ais",
                 "aprs",
@@ -1101,6 +1112,7 @@ mod tests {
                 "pocsag" => (12_500.0, 24_000.0),
                 "flex" | "ermes" | "eot" => (12_500.0, 48_000.0),
                 "sarsat" => (20_000.0, 24_000.0),
+                "tetrapol" => (12_500.0, 48_000.0),
                 "adsb" => (2_000_000.0, 2_400_000.0),
                 "ais" => (25_000.0, 48_000.0),
                 "aprs" => (12_500.0, 48_000.0),
