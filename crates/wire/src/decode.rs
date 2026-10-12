@@ -1473,6 +1473,7 @@ pub enum DecoderEvent {
     NoiseFigure(crate::measurement::NoiseFigureReport),
     Per(crate::measurement::PerReport),
     Sid(crate::measurement::SidReport),
+    Stanag(crate::stanag::StanagReport),
 }
 
 fn dect_summary(f: &DectFrame) -> String {
@@ -1742,6 +1743,7 @@ impl DecoderEvent {
             Self::NoiseFigure(_) => "noise_figure",
             Self::Per(_) => "per",
             Self::Sid(_) => "sid",
+            Self::Stanag(_) => "stanag",
         }
     }
 
@@ -1933,6 +1935,7 @@ impl DecoderEvent {
             Self::NoiseFigure(r) => r.summary(),
             Self::Per(r) => r.summary(),
             Self::Sid(r) => r.summary(),
+            Self::Stanag(r) => r.summary(),
         }
     }
 
@@ -2018,7 +2021,8 @@ impl DecoderEvent {
             | Self::IsmSurvey(_)
             | Self::NoiseFigure(_)
             | Self::Per(_)
-            | Self::Sid(_) => None,
+            | Self::Sid(_)
+            | Self::Stanag(_) => None,
         }
     }
 }

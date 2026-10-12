@@ -316,6 +316,7 @@ function stationId(event: DecoderEvent): string | null {
     case "noise_figure":
     case "per":
     case "sid":
+    case "stanag":
       return null;
     case "ble":
       return bleStation(event.data);

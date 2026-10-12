@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 9600.0,
+    "core:recorder": "SDR--",
+    "core:hw": "sigidwiki.com audio sample, CC BY-SA",
+    "core:description": "MIL-STD-188-110A 150 bps long interleave, USB audio"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Source: https://www.sigidwiki.com/images/9/9e/150L.wav (CC BY-SA); source SHA-256 08e53841c0814ac3c281613187b5d94e9de04e141bbdfefe8ffa31f5e7c26140; USB audio 1.5..5.5 s resampled to 9600 Hz, zero quadrature",
+      "core:sample_count": 38400,
+      "core:sample_start": 0
+    }
+  ]
+}

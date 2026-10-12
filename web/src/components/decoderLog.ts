@@ -64,6 +64,7 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   noise_figure: "Noise figure",
   per: "PER",
   sid: "SID",
+  stanag: "STANAG",
   df: "Bearing",
   df_fix: "Fix",
   radar: "Radar",

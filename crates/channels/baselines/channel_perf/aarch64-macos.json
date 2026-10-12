@@ -420,6 +420,13 @@
     "host": "aarch64-macos"
   },
   {
+    "bench": "stanag",
+    "msamples_per_s": 110.0,
+    "realtime_factor": 11458.333333333334,
+    "config": "noise including deferred decode slots, 9600 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
     "bench": "__calibration",
     "msamples_per_s": 1993.8866181589308,
     "realtime_factor": 0.0,

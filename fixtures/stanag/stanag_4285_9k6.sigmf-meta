@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 9600.0,
+    "core:recorder": "SDR--",
+    "core:hw": "sigidwiki.com audio sample, CC BY-SA",
+    "core:description": "STANAG 4285 traffic, USB audio"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Source: https://www.sigidwiki.com/images/7/7e/STANAG4285_TFC.mp3 (CC BY-SA); source SHA-256 55733ab47df81aa5d05749613bb3f6d9c2c38ceed837703d7c7d5f7b19420a77; USB audio 0..4 s resampled to 9600 Hz, zero quadrature",
+      "core:sample_count": 38400,
+      "core:sample_start": 0
+    }
+  ]
+}

@@ -420,6 +420,13 @@
     "host": "x86_64-linux"
   },
   {
+    "bench": "stanag",
+    "msamples_per_s": 50.0,
+    "realtime_factor": 5208.333333333333,
+    "config": "noise including deferred decode slots, 9600 Hz, 2048 sample blocks",
+    "host": "x86_64-linux"
+  },
+  {
     "bench": "__calibration",
     "msamples_per_s": 849.1363690288924,
     "realtime_factor": 0.0,

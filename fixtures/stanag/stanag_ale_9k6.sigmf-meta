@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 9600.0,
+    "core:recorder": "SDR--",
+    "core:hw": "sigidwiki.com audio sample, CC BY-SA",
+    "core:description": "MIL-STD-188-141 2G ALE, USB audio"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Source: https://www.sigidwiki.com/images/a/ab/2G_ALEaudio.mp3 (CC BY-SA); source SHA-256 e28f234a4f27e03433d215933465e12202fc3d0c33239329e34f11456a7b712c; USB audio 0..4 s resampled to 9600 Hz, zero quadrature",
+      "core:sample_count": 38400,
+      "core:sample_start": 0
+    }
+  ]
+}

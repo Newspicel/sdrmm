@@ -82,6 +82,15 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
 | `radio_clock_wwvb_offair_2k` | 2 k | `radio_clock` / WWVB @ 0 Hz | 2021-03-14 05:35 UTC |
 | `flex_p2000_offair_48k` | 48 k | `flex` @ 0 Hz | P2000 page to capcode 2029574, `A2 DP2 Leidschendam-Voorburg ...` |
+| `stanag/stanag_4285_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4285 |
+| `stanag/stanag_4529_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4529 |
+| `stanag/stanag_110a_600s_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 600 bps short |
+| `stanag/stanag_110a_2400l_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 2400 bps long |
+| `stanag/stanag_110a_150l_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | MIL-STD-188-110A, 150 bps long |
+| `stanag/stanag_4539_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | STANAG 4539 |
+| `stanag/stanag_39tone_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 39-tone |
+| `stanag/stanag_16tone_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 16-tone |
+| `stanag/stanag_ale_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 2G ALE |
 | `dvbt/qpsk_2k_reference` | 9.142857 M | `dvbt` @ 0 Hz | 2K QPSK, rate 1/2, guard 1/8, 1750 Hz offset; PID 0x123 packets, TPS cell 0x5a |
 | `dab/mode_ii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | Mode II frame: ensemble `0x4a2c`, service `0xc201`, no failed FIB CRCs |
 | `dab/mode_iii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | the same ensemble in Mode III |
@@ -278,3 +287,10 @@ MCU row of APIDs 64, 65 and 68. The source IQ is sigidwiki's LRPT sample
 Not IQ: PyEOT's `demo3eot.wav`, unmodified, 2.6 s of FM-discriminator audio from 457.9375 MHz
 with three rear-unit packets. GPL-3.0, see `eot/README.md`. The test FM-modulates it at ±3 kHz.
 `eot::tests::decodes_three_rear_units_from_an_off_air_recording` reads it.
+
+### HF modems: `stanag/`
+
+Four-second slices of sigidwiki audio samples (CC BY-SA), so these pairs are test data under that
+license. The USB audio was resampled to 9.6 kHz `ci16_le` with zero quadrature; each annotation
+names the source URL, slice and SHA-256. `stanag::tests::air::names_recorded_modems` reads them.
+`names_the_sigidwiki_library` runs 49 full samples when `STANAG_SIGID_DIR` points at them.

@@ -23,6 +23,7 @@ import {
   UA_TYPE_LABELS,
 } from "../lib/remoteId";
 import { SARSAT_BEACON_LABELS, SARSAT_PROTOCOL_LABELS, sarsatChecks } from "../lib/sarsat";
+import { stanagModem, stanagRate } from "../lib/stanag";
 import type {
   AprsPacket,
   BleAdvert,
@@ -43,6 +44,7 @@ import type {
   PerReport,
   RemoteIdFrame,
   SidReport,
+  StanagReport,
   WifiOccupancyReport,
 } from "../lib/types";
 import { hex5 } from "./decoderLog";
@@ -566,6 +568,7 @@ const DETAIL: {
   noise_figure: noiseFigureDetail,
   per: perDetail,
   sid: sidDetail,
+  stanag: stanagDetail,
   apt: (p) => ({
     fields: fields([
       ["Channels", avhrrChannels(p)],
@@ -1121,6 +1124,18 @@ function perDetail(report: PerReport): EventDetail {
     ["Bit errors", `${report.bit_errors} of ${report.bits}`],
     ["Last frame", report.last_sequence == null ? undefined : String(report.last_sequence)],
     ["Restarts", report.restarts ? String(report.restarts) : undefined],
+  ];
+  return { fields: fields(rows), body: null };
+}
+
+function stanagDetail(report: StanagReport): EventDetail {
+  const rows: Rows = [
+    ["Modem", report.modem == null ? "gone" : stanagModem(report.modem)],
+    ["Rate", report.rate == null ? undefined : stanagRate(report.rate)],
+    ["Carrier", report.modem == null ? undefined : `${Math.round(report.audio_hz)} Hz audio`],
+    ["Frequency", report.frequency_hz == null ? undefined : formatHz(report.frequency_hz)],
+    ["Bandwidth", report.modem == null ? undefined : `${Math.round(report.bandwidth_hz)} Hz`],
+    ["Confidence", report.modem == null ? undefined : `${Math.round(report.confidence * 100)}%`],
   ];
   return { fields: fields(rows), body: null };
 }

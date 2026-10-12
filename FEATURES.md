@@ -49,7 +49,6 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 - Tetrapol
 - GSM downlink analysis, OsmocomBB-style monitoring
 - ISM remotes and sensors (OOK/FSK)
-- STANAG modem identification
 
 ## 4. Recording & measurement
 - Recording scheduler and unattended satellite-pass automation

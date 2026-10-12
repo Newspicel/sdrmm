@@ -61,6 +61,7 @@ mod sid;
 pub mod spatial_spectrum;
 mod ssb;
 mod sstv;
+mod stanag;
 pub mod stitch;
 pub mod symbols;
 pub mod tone_squelch;
@@ -140,6 +141,7 @@ pub use selcall::SelcallChannel;
 pub use sid::SidChannel;
 pub use ssb::{SsbChannel, SsbTx};
 pub use sstv::SstvChannel;
+pub use stanag::StanagChannel;
 pub use symbols::SymbolTap;
 pub use vdl2::Vdl2Channel;
 pub use vor::VorChannel;
@@ -238,6 +240,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::NoiseFigure(_) => noise_figure::occupied_band(),
         ChannelParams::Per(p) => per::occupied_band(p),
         ChannelParams::Sid(_) => sid::occupied_band(),
+        ChannelParams::Stanag(_) => stanag::occupied_band(),
     }
 }
 
@@ -330,6 +333,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::NoiseFigure(_) => Ok(noise_figure::channel_filter()),
         ChannelParams::Per(p) => Ok(per::channel_filter(p)),
         ChannelParams::Sid(_) => Ok(sid::channel_filter()),
+        ChannelParams::Stanag(_) => Ok(stanag::channel_filter()),
     }
 }
 
@@ -771,6 +775,11 @@ const REGISTRY: &[Registration] = &[
         create: boxed::<SidChannel>,
         create_tx: None,
     },
+    Registration {
+        descriptor: StanagChannel::descriptor,
+        create: boxed::<StanagChannel>,
+        create_tx: None,
+    },
 ];
 
 static DESCRIPTORS: std::sync::LazyLock<Vec<ChannelDescriptor>> = std::sync::LazyLock::new(|| {
@@ -954,6 +963,7 @@ mod tests {
             "noise_figure" => ChannelParams::NoiseFigure(sdrmm_wire::NoiseFigureParams::default()),
             "per" => ChannelParams::Per(sdrmm_wire::PerParams::default()),
             "sid" => ChannelParams::Sid(sdrmm_wire::SidParams::default()),
+            "stanag" => ChannelParams::Stanag(sdrmm_wire::StanagParams::default()),
             other => panic!("unexpected type id {other}"),
         }
     }
@@ -1002,7 +1012,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 60);
+        assert_eq!(all.len(), 61);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -1067,6 +1077,7 @@ mod tests {
                 "noise_figure",
                 "per",
                 "sid",
+                "stanag",
             ])
         );
         for d in &all {
@@ -1121,6 +1132,7 @@ mod tests {
                 "noise_figure" => (400_000.0, 500_000.0),
                 "per" => (28_800.0, 96_000.0),
                 "sid" => (42_000.0, 48_000.0),
+                "stanag" => (3_400.0, 9_600.0),
                 other => panic!("unexpected type id {other}"),
             };
             assert_eq!(d.bandwidth_hz, bandwidth, "{}", d.type_id);
