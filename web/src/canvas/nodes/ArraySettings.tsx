@@ -78,7 +78,7 @@ const CAL_SOURCES: Options<ArrayCalSource["kind"]> = [
   { value: "noise", label: "Noise", title: "Built-in noise source" },
   { value: "pilot", label: "Pilot", title: "A carrier at a known offset" },
   { value: "emitter", label: "Emitter", title: "A transmitter at a known bearing" },
-  { value: "off", label: "Off", title: "No calibration" },
+  { value: "off", label: "off", title: "No calibration" },
 ];
 
 export interface ArrayChipsProps {
@@ -95,7 +95,7 @@ export function ArrayChips(props: ArrayChipsProps) {
   const { data, status, edit } = props;
   const cal = data.cal;
   return (
-    <Chips className="px-2 pb-2">
+    <Chips inset="below">
       <ChoiceChip
         label="Tuning"
         value={data.tuning}

@@ -27,6 +27,7 @@
   --color-plot-hold: #ffff00;
   --color-plot-ink: #ffffff;
   --color-plot-ink-dim: #7f7f7f;
+  --color-waterfall-ink: #7f7f7f;
   --color-plot-ref-1: #d95926;
   --color-plot-ref-2: #199e70;
   --color-plot-ref-3: #9085e9;
@@ -56,6 +57,17 @@
   --color-band-amateur: oklch(0.64 0.1 300);
   --color-band-satellite: oklch(0.64 0.1 345);
   --color-band-other: oklch(0.6 0.02 80);
+
+  --text-plot: 9px;
+  --text-3xs: 10px;
+  --text-2xs: 11px;
+  --text-dial-sm: 16px;
+  --text-dial-md: 20px;
+  --text-dial-lg: 26px;
+  --text-dial-xl: 34px;
+
+  --radius-inset: 2px;
+  --radius-control: 3px;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
@@ -90,6 +102,13 @@
     --color-danger: oklch(0.51 0.19 27);
     --color-warn: oklch(0.58 0.14 75);
     --color-ok: oklch(0.5 0.115 155);
+
+    --color-plot-bg: oklch(0.99 0.002 240);
+    --color-plot-grid: oklch(0.9 0.006 240);
+    --color-plot-trace: oklch(0.52 0.12 225);
+    --color-plot-hold: oklch(0.62 0.15 70);
+    --color-plot-ink: oklch(0.24 0.012 240);
+    --color-plot-ink-dim: oklch(0.52 0.012 240);
 
     --color-port-iq: oklch(0.592 0.11 228);
     --color-port-audio: oklch(0.583 0.12 158);

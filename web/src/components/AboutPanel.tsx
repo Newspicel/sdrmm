@@ -59,7 +59,7 @@ export function AboutPanel({
                   License
                 </Collapsible.Trigger>
                 <Collapsible.Panel>
-                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-[3px] bg-panel-2 p-2 font-mono text-[11px] text-ink-dim">
+                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-control bg-panel-2 p-2 font-mono text-2xs text-ink-dim">
                     {about.data.license_text}
                   </pre>
                 </Collapsible.Panel>
@@ -157,7 +157,7 @@ function Row({
         <span className="text-ink">{component.name}</span>
       )}
       {component.version !== undefined && component.version !== null && (
-        <span className="font-mono text-[11px] text-ink-dim">{component.version}</span>
+        <span className="font-mono text-2xs text-ink-dim">{component.version}</span>
       )}
       <span className="text-ink-dim">{component.license}</span>
       {component.texts.map((id, index) => (
@@ -178,14 +178,14 @@ function Row({
 function LicenseText({ id, onClose }: { id: string; onClose: () => void }) {
   const text = useQuery(licenseTextQuery(id));
   return (
-    <div className="absolute inset-0 z-10 flex flex-col rounded-md bg-panel-3 p-4">
+    <div className="absolute inset-0 z-10 flex flex-col rounded-control bg-panel-3 p-4">
       <div className="flex items-baseline justify-between gap-4">
         <h3 className="text-sm font-medium text-ink">License text</h3>
         <Button type="button" className={BTN} onClick={onClose}>
           Back
         </Button>
       </div>
-      <pre className="mt-3 min-h-0 flex-1 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-ink-dim">
+      <pre className="mt-3 min-h-0 flex-1 overflow-auto whitespace-pre-wrap font-mono text-2xs text-ink-dim">
         {text.isError ? "Could not load this license text." : (text.data?.text ?? "Loading…")}
       </pre>
     </div>

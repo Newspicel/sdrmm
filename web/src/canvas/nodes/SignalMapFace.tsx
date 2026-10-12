@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { Button } from "../../components/BaseControls";
+import { ConfirmButton } from "../../components/ConfirmButton";
 import { BTN, BTN_DANGER, BTN_PRIMARY } from "../../components/controls";
 import { ChipField, Chips, NumberChip, SettingChip } from "../../components/face/Chips";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -98,7 +98,6 @@ function SignalSurvey({
   useSurveySeed(node.id);
   const survey = useSurveyStore((store) => store.byNode[node.id] ?? EMPTY_SURVEY);
   const { control, pending } = useSurveyControl(node.id);
-  const [clearArmed, setClearArmed] = useState(false);
   const cells = survey.cells;
   const held = cells.length > 0;
   const targetHz = radioWired ? survey.targetHz : null;
@@ -133,7 +132,7 @@ function SignalSurvey({
           active={active}
           className="min-h-0 w-full flex-1"
         />
-        <Chips className="shrink-0 border-t border-line p-2">
+        <Chips className="shrink-0 border-t border-line">
           <SettingChip
             label="Offset"
             value={formatSignedHz(node.data.offset_hz)}
@@ -200,20 +199,11 @@ function SignalSurvey({
         >
           Export CSV
         </Button>
-        <Button
-          type="button"
-          className={clearArmed ? BTN_DANGER : BTN}
+        <ConfirmButton
+          label="Clear"
           disabled={pending || !held}
-          onBlur={() => setClearArmed(false)}
-          onClick={() => {
-            if (clearArmed) {
-              control("clear");
-            }
-            setClearArmed(!clearArmed);
-          }}
-        >
-          {clearArmed ? "Confirm clear" : "Clear"}
-        </Button>
+          onConfirm={() => control("clear")}
+        />
         <Button
           type="button"
           className={survey.recording ? BTN_DANGER : BTN_PRIMARY}

@@ -54,7 +54,7 @@ export function MeasureView({
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_17rem]">
       {primary === null ? (
-        <div className="flex min-h-64 items-center justify-center rounded-[3px] border border-dashed border-line text-xs text-ink-faint">
+        <div className="flex min-h-64 items-center justify-center rounded-control border border-dashed border-line text-xs text-ink-faint">
           Sweep, or open a saved measurement.
         </div>
       ) : (
@@ -146,7 +146,7 @@ function Workbench({
         </div>
       </div>
       {zoom !== null && viewId !== "tdr" && (
-        <div className="-mt-1 flex items-center gap-2 font-mono text-[11px] text-ink-dim">
+        <div className="-mt-1 flex items-center gap-2 font-mono text-2xs text-ink-dim">
           {formatHz(zoom.low)} to {formatHz(zoom.high)}
           <Button type="button" className={BTN} onClick={() => setZoom(null)}>
             Reset zoom

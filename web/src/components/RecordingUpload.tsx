@@ -88,7 +88,7 @@ export function RecordingUpload({
     <div className="flex flex-col gap-1">
       {control}
       {said !== null && (
-        <p role="alert" className="font-mono text-[10px] text-danger">
+        <p role="alert" className="font-mono text-3xs text-danger">
           {said}
         </p>
       )}

@@ -49,16 +49,14 @@ export function CorrelatorPlots({
   const phase = { x: whole.x, y: whole.y + half + GAP, w: whole.w, h: half };
   return (
     <div ref={ref} className="relative min-h-40 flex-1 bg-plot-bg">
-      <span className="absolute top-0 left-1 font-mono text-[9px] text-ink-faint">
-        Amplitude dB
-      </span>
+      <span className="absolute top-0 left-1 font-mono text-plot text-ink-faint">Amplitude dB</span>
       <span
-        className="absolute left-1 font-mono text-[9px] text-ink-faint"
+        className="absolute left-1 font-mono text-plot text-ink-faint"
         style={{ top: phase.y - GUTTERS.top }}
       >
         Phase °
       </span>
-      <span className="absolute right-1 bottom-0.5 font-mono text-[9px] text-ink-faint">MHz</span>
+      <span className="absolute right-1 bottom-0.5 font-mono text-plot text-ink-faint">MHz</span>
       <SurfaceRefused text={refused} />
       {frame !== null && whole.w > 0 && half > 0 && (
         <svg
@@ -133,7 +131,7 @@ export function FringeLine({ history }: { history: readonly number[] }) {
       aria-label="Fringe phase"
       width={FRINGE_W}
       height={FRINGE_H}
-      className="shrink-0 rounded-[2px] bg-well"
+      className="shrink-0 rounded-inset bg-well"
     >
       <title>{`Phase over the last ${FRINGE_POINTS} results`}</title>
       <path

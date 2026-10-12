@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, FolderOpen, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AUDIO_RECORDINGS_KEY,
   aboutQuery,
@@ -20,6 +20,7 @@ import {
 import { pushToast } from "../lib/toasts";
 import type { RecordingAnnotation, RecordingInfo } from "../lib/types";
 import { Button, Form, Input, Textarea } from "./BaseControls";
+import { ConfirmButton } from "./ConfirmButton";
 import { BTN_SM, CHIP_SM, FIELD } from "./controls";
 import { formatBytes, formatSampleRate } from "./format";
 import {
@@ -164,21 +165,9 @@ export function RecordingsPanel({ onOpen }: { onOpen: (recording: RecordingInfo)
   );
 }
 
-const CLEAR_ARM_MS = 3000;
-
 function ClearAllRecordings({ iq }: { iq: readonly number[] }) {
   const queryClient = useQueryClient();
   const audio = useQuery(audioRecordingsQuery()).data?.recordings ?? [];
-  const [armed, setArmed] = useState(false);
-
-  useEffect(() => {
-    if (!armed) {
-      return;
-    }
-    const timer = window.setTimeout(() => setArmed(false), CLEAR_ARM_MS);
-    return () => window.clearTimeout(timer);
-  }, [armed]);
-
   const clearMut = useMutation({
     mutationFn: () =>
       deleteAll([
@@ -192,7 +181,6 @@ function ClearAllRecordings({ iq }: { iq: readonly number[] }) {
     },
     onError: (e) => pushToast(e.message),
     onSettled: () => {
-      setArmed(false);
       void queryClient.invalidateQueries({ queryKey: RECORDINGS_KEY });
       void queryClient.invalidateQueries({ queryKey: AUDIO_RECORDINGS_KEY });
     },
@@ -202,17 +190,13 @@ function ClearAllRecordings({ iq }: { iq: readonly number[] }) {
     return null;
   }
   return (
-    <Button
-      type="button"
-      className={`${BTN_SM} hover:border-danger hover:text-danger ${
-        armed ? "border-danger text-danger" : ""
-      }`}
+    <ConfirmButton
+      label="Clear all"
+      size="sm"
       title="Delete every IQ and audio recording"
       disabled={clearMut.isPending}
-      onClick={() => (armed ? clearMut.mutate() : setArmed(true))}
-    >
-      {armed ? "Confirm clear" : "Clear all"}
-    </Button>
+      onConfirm={() => clearMut.mutate()}
+    />
   );
 }
 

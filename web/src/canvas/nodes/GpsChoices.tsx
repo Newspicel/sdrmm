@@ -68,7 +68,7 @@ function ReceiverChoices({ onChoose }: { onChoose: Choose }) {
               <span className="flex w-full min-w-0 flex-col gap-0.5">
                 <span className="truncate">{device.path}</span>
                 {detail !== "" && (
-                  <span className="truncate font-mono text-[10px] text-ink-faint">{detail}</span>
+                  <span className="truncate font-mono text-3xs text-ink-faint">{detail}</span>
                 )}
               </span>
             </Button>
@@ -111,7 +111,7 @@ function PhoneChoices({ onChoose }: { onChoose: Choose }) {
               className={`size-2 shrink-0 rounded-full ${phone.online ? "bg-ok" : "bg-ink-faint"}`}
             />
             <span className="min-w-0 flex-1 truncate text-left">{phone.name}</span>
-            <span className="font-mono text-[10px] text-ink-faint">
+            <span className="font-mono text-3xs text-ink-faint">
               {STANDING_LABEL[phone.online ? "online" : "offline"]}
             </span>
           </Button>

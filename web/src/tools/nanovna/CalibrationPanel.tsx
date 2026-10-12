@@ -184,7 +184,7 @@ function Step({
   return (
     <li className="flex items-center gap-3 border-b border-line/60 py-2">
       <span
-        className={`flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] ${
+        className={`flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-2xs ${
           done ? "border-ok bg-ok/15 text-ok" : "border-line-strong text-ink-dim"
         }`}
         aria-label={done ? `${label} done` : undefined}

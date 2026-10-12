@@ -154,7 +154,7 @@ export function CpsPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <section className="flex flex-wrap items-end gap-2 rounded-[3px] border border-line bg-panel-2 p-2">
+      <section className="flex flex-wrap items-end gap-2 rounded-control border border-line bg-panel-2 p-2">
         <label className="flex flex-col gap-1">
           <span className={LABEL}>Port</span>
           <Select
@@ -235,7 +235,7 @@ export function CpsPanel() {
       </section>
 
       {job !== null && (
-        <section className="flex items-center gap-3 rounded-[3px] border border-line bg-panel-2 px-2 py-1.5">
+        <section className="flex items-center gap-3 rounded-control border border-line bg-panel-2 px-2 py-1.5">
           <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">
             {describeJob(job)}
           </span>

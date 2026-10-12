@@ -261,7 +261,7 @@ function ScanSetup({
   const patchRange = (index: number, next: Partial<ScanRange>): void =>
     patch({ ranges: ranges.map((r, i) => (i === index ? { ...r, ...next } : r)) });
   return (
-    <Chips className="border-t border-line p-2">
+    <Chips className="border-t border-line">
       <BandChip settings={settings} plan={plan} onSettings={onSettings} />
       {ranges.map((range, index) => (
         <RangeChip

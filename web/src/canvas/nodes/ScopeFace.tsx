@@ -844,13 +844,13 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
         className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-between p-1.5"
         style={{ top: bandRuler && plan !== null ? BAND_RULER_H : 0 }}
       >
-        <span className="legend self-end font-mono text-[10.5px] text-right whitespace-pre text-plot-ink-dim">
+        <span className="legend self-end font-mono text-2xs text-right whitespace-pre text-plot-ink-dim">
           {meta !== null && `${formatCentre(meta, view)}${formatFloor(meta.floorDb)}`}
           {range !== null && " · manual"}
         </span>
         <div
           data-plot-chrome
-          className="pointer-events-auto flex items-center gap-1 self-start rounded-[3px] bg-plot-bg/85 p-0.5"
+          className="pointer-events-auto flex items-center gap-1 self-start rounded-control bg-plot-bg/85 p-0.5"
         >
           <ScopeSettings
             colormap={paletteChoice}
@@ -911,7 +911,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
       {glError !== null && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-2">
           <span
-            className="pointer-events-auto rounded-[3px] border border-danger bg-bg/90 px-2 py-1 font-mono text-xs text-danger"
+            className="pointer-events-auto rounded-control border border-danger bg-bg/90 px-2 py-1 font-mono text-xs text-danger"
             title={GRAPHICS_HELP}
           >
             waterfall unavailable: {glError}
@@ -1140,7 +1140,7 @@ function Bookmarks({
             title={members
               .map((mark) => `${mark.bookmark.label}: ${formatMhz(mark.bookmark.freq_hz)}`)
               .join("\n")}
-            className="absolute -translate-x-1/2 rounded-[2px] border border-accent/40 bg-bg/85 px-1 py-px font-mono text-[10px] whitespace-nowrap text-accent"
+            className="absolute -translate-x-1/2 rounded-inset border border-accent/40 bg-bg/85 px-1 py-px font-mono text-3xs whitespace-nowrap text-accent"
             style={{ left: `${anchor.at * 100}%`, top: `${labelTop}px` }}
           >
             {anchor.bookmark.label}
@@ -1191,7 +1191,7 @@ function MarkerLabel({
       aria-hidden
       data-marker={channel}
       title={title}
-      className={`rounded-[2px] border px-1 py-px font-mono text-[10px] whitespace-nowrap tabular-nums ${
+      className={`rounded-inset border px-1 py-px font-mono text-3xs whitespace-nowrap tabular-nums ${
         active ? "border-accent bg-bg text-accent" : "border-line bg-bg/85 text-ink-dim"
       } ${channel === undefined || owned ? "" : "cursor-ew-resize"} ${className ?? ""}`}
     >

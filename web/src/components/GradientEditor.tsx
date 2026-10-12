@@ -19,7 +19,7 @@ export function GradientEditor({
     <div className="flex flex-col gap-2 px-1.5">
       <div>
         <div
-          className="h-4 rounded-[3px] border border-line"
+          className="h-4 rounded-control border border-line"
           style={{ background: `linear-gradient(to right, ${stops.map(rgbToHex).join(", ")})` }}
         />
         <div className="relative h-4">
@@ -30,7 +30,7 @@ export function GradientEditor({
               aria-label={`Colour stop ${mark.index + 1}`}
               aria-pressed={mark.index === selected}
               onClick={() => setSelected(mark.index)}
-              className={`absolute top-1 size-3 -translate-x-1/2 rotate-45 rounded-[2px] border-2 transition-colors duration-100 ${
+              className={`absolute top-1 size-3 -translate-x-1/2 rotate-45 rounded-inset border-2 transition-colors duration-100 ${
                 mark.index === selected
                   ? "border-accent"
                   : "border-line-strong hover:border-ink-dim"

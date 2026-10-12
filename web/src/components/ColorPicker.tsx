@@ -46,7 +46,7 @@ export function ColorPicker({
       <HueSlider label={`${label} hue`} hue={hsv.h} onChange={(h) => apply({ ...hsv, h })} />
       <div className="flex items-center gap-2">
         <span
-          className="size-6 shrink-0 rounded-[3px] border border-line"
+          className="size-6 shrink-0 rounded-control border border-line"
           style={{ background: rgbToHex(value) }}
         />
         <Input
@@ -105,7 +105,7 @@ function SaturationValue({
       aria-valuenow={Math.round(hsv.v * 100)}
       aria-valuetext={`saturation ${Math.round(hsv.s * 100)}%, brightness ${Math.round(hsv.v * 100)}%`}
       data-hotkeys="off"
-      className="relative h-28 cursor-crosshair touch-none rounded-[3px] outline-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+      className="relative h-28 cursor-crosshair touch-none rounded-control outline-none focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
       style={{
         background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hsv.h} 100% 50%))`,
       }}

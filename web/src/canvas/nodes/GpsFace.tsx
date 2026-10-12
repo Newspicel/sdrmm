@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
-import { BTN_QUIET } from "../../components/controls";
+import { BTN_QUIET_DANGER } from "../../components/controls";
 import { ChipField, Chips, ChoiceChip, NumberChip, SettingChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -73,7 +73,7 @@ export function GpsFace({ node }: { node: PatchNode }) {
     >
       <FaceBody>
         {fix !== null && <FixReadout fix={fix} phone={source.type === "phone"} />}
-        <Chips className="p-2">
+        <Chips>
           <SourceChips source={source} onChange={setSource} />
         </Chips>
         {source.type === "phone" && <PhoneListFault />}
@@ -85,7 +85,7 @@ export function GpsFace({ node }: { node: PatchNode }) {
       <FaceFooter>
         <Button
           type="button"
-          className={BTN_QUIET}
+          className={BTN_QUIET_DANGER}
           title="Free this node so you can pick a different source"
           onClick={() => setSource(null)}
         >
