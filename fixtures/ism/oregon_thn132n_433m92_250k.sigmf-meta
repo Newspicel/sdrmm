@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "rtl_433_tests",
+    "core:description": "THN132N_-940_ch1.cu8"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 433920000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/oregon_scientific/THN132N/THN132N_-940_ch1.cu8; source SHA-256 04515a6b50be6340b97bfb9560f54106851486d7e7a888a7535d0a5e55c289ee; samples 34023..81523 at 250000 Hz",
+      "core:sample_count": 47500,
+      "core:sample_start": 0
+    }
+  ]
+}

@@ -3465,6 +3465,10 @@ export interface components {
             /** @enum {string} */
             type: "ism_survey";
         } | {
+            settings: components["schemas"]["IsmParams"];
+            /** @enum {string} */
+            type: "ism";
+        } | {
             settings: components["schemas"]["NoiseFigureParams"];
             /** @enum {string} */
             type: "noise_figure";
@@ -4285,6 +4289,10 @@ export interface components {
             data: components["schemas"]["IsmSurveyReport"];
             /** @enum {string} */
             kind: "ism_survey";
+        } | {
+            data: components["schemas"]["IsmMessage"];
+            /** @enum {string} */
+            kind: "ism";
         } | {
             data: components["schemas"]["NoiseFigureReport"];
             /** @enum {string} */
@@ -5624,6 +5632,10 @@ export interface components {
         /** @enum {string} */
         IridiumSpan: "channel" | "mhz1" | "mhz2_5" | "mhz5" | "mhz10";
         /** @enum {string} */
+        IsmCoding: "pwm" | "ppm" | "pcm" | "manchester";
+        /** @enum {string} */
+        IsmIntegrity: "crc" | "checksum" | "repeats";
+        /** @enum {string} */
         IsmKind: "wifi" | "bluetooth" | "ieee802154" | "microwave_oven" | "narrowband" | "wideband" | "continuous";
         IsmKindLoad: {
             /** Format: float */
@@ -5636,6 +5648,55 @@ export interface components {
             mean_us: number;
             /** Format: float */
             peak_dbfs: number;
+        };
+        IsmMessage: {
+            alarm?: boolean | null;
+            battery_ok?: boolean | null;
+            /** Format: int32 */
+            bits: number;
+            channel?: string | null;
+            coding: components["schemas"]["IsmCoding"];
+            /** Format: int32 */
+            command?: number | null;
+            contact_open?: boolean | null;
+            /** Format: int32 */
+            humidity_pct?: number | null;
+            id: string;
+            integrity: components["schemas"]["IsmIntegrity"];
+            /** Format: float */
+            light_lux?: number | null;
+            /** Format: int32 */
+            long_us?: number | null;
+            model: string;
+            modulation: components["schemas"]["IsmModulation"];
+            /** Format: float */
+            pressure_kpa?: number | null;
+            /** Format: float */
+            rain_mm?: number | null;
+            raw: string;
+            /** Format: int32 */
+            short_us?: number | null;
+            /** Format: float */
+            snr_db: number;
+            tamper?: boolean | null;
+            /** Format: float */
+            temperature_2_c?: number | null;
+            /** Format: float */
+            temperature_c?: number | null;
+            tristate?: string | null;
+            /** Format: float */
+            uv_index?: number | null;
+            /** Format: float */
+            wind_avg_m_s?: number | null;
+            /** Format: float */
+            wind_dir_deg?: number | null;
+            /** Format: float */
+            wind_max_m_s?: number | null;
+        };
+        /** @enum {string} */
+        IsmModulation: "ook" | "fsk";
+        IsmParams: {
+            unknown?: boolean;
         };
         IsmSurveyParams: {
             /** Format: float */

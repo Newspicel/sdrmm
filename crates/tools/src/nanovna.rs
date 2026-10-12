@@ -384,11 +384,8 @@ mod tests {
 
     #[test]
     fn firmware_that_ignores_the_output_mask_is_read_back_array_by_array() {
-        let transcript = READ_BACK_SESSION.replacen(
-            "scan 1000000 2000000 11",
-            "scan 1000000 2000000 11 7",
-            1,
-        );
+        let transcript =
+            READ_BACK_SESSION.replacen("scan 1000000 2000000 11", "scan 1000000 2000000 11 7", 1);
         let mut connection = FixtureConnection::new(&transcript);
         let mut session = Session::new(&mut connection);
         let sweep = device::acquire(&mut session, &request()).expect("read the arrays back");

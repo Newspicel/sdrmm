@@ -1,0 +1,22 @@
+{
+  "global": {
+    "core:datatype": "cu8",
+    "core:version": "1.2.6",
+    "core:sample_rate": 250000.0,
+    "core:recorder": "rtl_433_tests",
+    "core:description": "gfile001.cu8"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 433920000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/nexus/01/gfile001.cu8; source SHA-256 e4a27a908b69e20fc416d84492608226b42db77f53a3f6d9dd5c3b4c951c2598; samples 19424..84424 at 250000 Hz",
+      "core:sample_count": 65000,
+      "core:sample_start": 0
+    }
+  ]
+}

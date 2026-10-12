@@ -6,6 +6,7 @@ import {
   BLE_PHY_LABELS,
   bleBeaconText,
 } from "../lib/ble";
+import { ISM_CODING_LABELS, ISM_INTEGRITY_LABELS, ISM_MODULATION_LABELS } from "../lib/ism";
 import {
   LORA_INTEGRITY_LABELS,
   LORA_PROTOCOL_LABELS,
@@ -32,6 +33,7 @@ import type {
   DectFrame,
   DvFrame,
   EotBattery,
+  IsmMessage,
   IsmSurveyReport,
   LoraFrame,
   LorawanFrame,
@@ -563,6 +565,7 @@ const DETAIL: {
   ble: bleDetail,
   wifi_occupancy: wifiOccupancyDetail,
   ism_survey: ismSurveyDetail,
+  ism: ismDetail,
   noise_figure: noiseFigureDetail,
   per: perDetail,
   sid: sidDetail,
@@ -1073,6 +1076,35 @@ function wifiOccupancyDetail(report: WifiOccupancyReport): EventDetail {
   ]);
   rows.push(["Measured", percentOf(report.measured)]);
   return { fields: fields(rows), body: null };
+}
+
+function ismDetail(m: IsmMessage): EventDetail {
+  const rows: Rows = [
+    ["Model", m.model],
+    ["ID", m.id],
+    ["Channel", m.channel],
+    ["Temperature", celsius(m.temperature_c)],
+    ["Temperature 2", celsius(m.temperature_2_c)],
+    ["Humidity", percent(m.humidity_pct)],
+    ["Pressure", m.pressure_kpa == null ? undefined : `${m.pressure_kpa.toFixed(1)} kPa`],
+    ["Wind", metresPerSecond(m.wind_avg_m_s)],
+    ["Gust", metresPerSecond(m.wind_max_m_s)],
+    ["Direction", m.wind_dir_deg == null ? undefined : `${Math.round(m.wind_dir_deg)}°`],
+    ["Rain", m.rain_mm == null ? undefined : `${m.rain_mm.toFixed(1)} mm`],
+    ["UV", m.uv_index?.toFixed(1)],
+    ["Light", m.light_lux == null ? undefined : `${Math.round(m.light_lux)} lx`],
+    ["Contact", m.contact_open == null ? undefined : m.contact_open ? "open" : "closed"],
+    ["Tamper", flag(m.tamper)],
+    ["Alarm", flag(m.alarm)],
+    ["Command", m.command?.toString()],
+    ["Tristate", m.tristate],
+    ["Battery", m.battery_ok == null ? undefined : m.battery_ok ? "ok" : "low"],
+    ["Signal", `${ISM_MODULATION_LABELS[m.modulation]} ${ISM_CODING_LABELS[m.coding]}`],
+    ["Timing", m.short_us == null ? undefined : `${m.short_us}/${m.long_us ?? m.short_us} µs`],
+    ["Check", ISM_INTEGRITY_LABELS[m.integrity]],
+    ["SNR", `${m.snr_db.toFixed(1)} dB`],
+  ];
+  return { fields: fields(rows), body: `${m.bits} bits ${m.raw}` };
 }
 
 function ismSurveyDetail(report: IsmSurveyReport): EventDetail {

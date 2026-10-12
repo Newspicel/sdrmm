@@ -152,6 +152,22 @@ describe("eventDetail", () => {
           errors_corrected: 1,
         },
       },
+      ism: {
+        kind: "ism",
+        data: {
+          model: "Acurite-Tower",
+          id: "12053",
+          channel: "C",
+          temperature_c: 21,
+          humidity_pct: 73,
+          modulation: "ook",
+          coding: "pwm",
+          integrity: "checksum",
+          bits: 56,
+          raw: "2f1544ca12d4a6",
+          snr_db: 21.5,
+        },
+      },
       sarsat: {
         kind: "sarsat",
         data: {
