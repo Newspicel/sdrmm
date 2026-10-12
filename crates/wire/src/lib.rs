@@ -44,6 +44,7 @@ pub mod satellite;
 pub mod scan;
 pub mod state;
 pub mod survey;
+pub mod tetrapol;
 pub mod timemachine;
 pub mod tools;
 pub mod units;
@@ -292,6 +293,11 @@ pub use state::{
     TrunkChannelSource, TrunkControl, TrunkFollower, TrunkProbe, TrunkProblem, TrunkSystemStatus,
 };
 pub use survey::{SurveyAction, SurveyCell, SurveyGrid, SurveyRequest, SurveyStop, SurveyUpdate};
+pub use tetrapol::{
+    MAX_TETRAPOL_SCRAMBLING, TETRAPOL_BANDWIDTH_HZ, TetrapolAddress, TetrapolAddressKind,
+    TetrapolBand, TetrapolCallType, TetrapolCell, TetrapolGroupCall, TetrapolKey,
+    TetrapolLogicalChannel, TetrapolMessage, TetrapolParams, TetrapolPayload, TetrapolSystemInfo,
+};
 pub use timemachine::{
     DEFAULT_TIME_MACHINE_SECONDS, MAX_TIME_MACHINE_BYTES, MAX_TIME_MACHINE_SECONDS,
     MIN_TIME_MACHINE_SECONDS, TimeMachineAction, TimeMachineNode, TimeMachineRequest,

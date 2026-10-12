@@ -165,6 +165,16 @@ describe("eventDetail", () => {
           errors_corrected: 0,
         },
       },
+      tetrapol: {
+        kind: "tetrapol",
+        data: {
+          channel: "traffic",
+          scrambling: 118,
+          payload: { message: "voice", seconds: 3.5 },
+          data: "",
+          rejected: 0,
+        },
+      },
       adsb: { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } },
       ais: { kind: "ais", data: { mmsi: 1, msg_type: 1, ais_channel: "A", nmea: "!AIVDM" } },
       aprs: { kind: "aprs", data: { source: "A", destination: "B", info: "", tnc2: "A>B:" } },
@@ -593,6 +603,34 @@ describe("eventDetail", () => {
     expect(located["Self-test"]).toBe("yes");
     expect(located.BCH).toBe("PDF-2 failed");
     expect(located.Repaired).toBe("2");
+  });
+
+  it("reads a Tetrapol group call", () => {
+    const call = fieldsOf({
+      kind: "tetrapol",
+      data: {
+        channel: "paging",
+        frame: 98,
+        scrambling: 70,
+        address: { kind: "terminal", id: 0x1a2 },
+        payload: {
+          message: "group_paging",
+          group: 171,
+          call_type: "broadcast",
+          coverage: 3,
+          key: { kind: 15, index: 0 },
+        },
+        data: "5b",
+        rejected: 2,
+      },
+    });
+    expect(call.Channel).toBe("PCH");
+    expect(call.Address).toBe("TTI 01A2");
+    expect(call.Group).toBe("171");
+    expect(call.Call).toBe("Broadcast");
+    expect(call.Encrypted).toBe("no");
+    expect(call.Rejected).toBe("2");
+    expect(call["Traffic channel"]).toBeUndefined();
   });
 
   it("reads an EOT rear unit and a HOT command", () => {

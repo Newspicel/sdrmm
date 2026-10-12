@@ -10,7 +10,7 @@ covers the modes that need more than a frequency.
 | Group | Tested on air | Fixture only | Experimental |
 |---|---|---|---|
 | Analog voice | AM, NFM, SSB, WFM (broadcast) | | |
-| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | | |
+| Digital voice | DMR, FreeDV 1600, D-STAR, System Fusion, NXDN, P25 Phase 1, dPMR, M17 | [Tetrapol](#tetrapol) | |
 | Aviation | ADS-B (1090ES), ACARS, VDL Mode 2, High Frequency Data Link | [Inmarsat Classic Aero](#inmarsat-and-iridium), [Drone Remote ID](#drone-remote-id) | VOR, ILS localizer / glideslope |
 | Marine | AIS, NAVTEX, Digital Selective Calling | Inmarsat STD-C / EGC, [406 MHz beacons](#406-mhz-beacons) | |
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
@@ -54,6 +54,16 @@ needs.
 Following runs on the server with no browser open. Voice channels must fit inside the Device's
 window; a grant outside it is reported. To save call audio, see
 [Record each call](recording.md#record-each-call).
+
+## Tetrapol
+
+The Tetrapol channel reads 12.5 kHz Tetrapol PMR downlinks. Tune the carrier; the scrambling code
+is found on its own, or set **Scrambling** to pin it. Pick **VHF** for 70 to 87 MHz systems.
+
+On a control channel it logs cell system info, group activations with the traffic channel and
+its scrambling codes, group paging and the paging channel. On a traffic channel it logs group
+idle and end messages and the length of each voice burst; voice audio is not decoded. Frames
+that fail their checks count under **Rejected**. Uplinks are not decoded.
 
 ## Inmarsat and Iridium
 

@@ -19,8 +19,8 @@ use sdrmm_wire::{
     NfmToneMode, NoiseFigureParams, PerParams, PipelineStage, PocsagBaud, PocsagParams, PskBaud,
     PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
     RemoteIdTransport, RttyParams, SarsatParams, SelcallParams, SelcallSystem, ServerEvent,
-    SidParams, SondeType, SymbolPlane, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm,
-    WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+    SidParams, SondeType, SymbolPlane, TetrapolParams, TetrapolPayload, UaType, UasIdType,
+    VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -357,6 +357,39 @@ async fn a_406_beacon_survives_the_ddc_and_reaches_the_decoded_stream() {
     assert_eq!(beacon.pdf2_ok, Some(true));
     let (lat, lon) = beacon.position().expect("located");
     assert!((lat - 69.6492).abs() < 0.001 && (lon - 18.9553).abs() < 0.001);
+}
+
+#[tokio::test]
+async fn a_tetrapol_control_channel_survives_the_ddc_and_reaches_the_decoded_stream() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let offset_hz = 37_500.0;
+    let mut iq = synth::tetrapol::control_channel(NARROW_DEVICE_RATE, 2);
+    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    let device = plant(dir.path(), "tetrapol", iq, NARROW_DEVICE_RATE);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ + offset_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Tetrapol(TetrapolParams::default()),
+            blanker: Default::default(),
+        },
+        |event| {
+            matches!(
+                event,
+                DecoderEvent::Tetrapol(message)
+                    if matches!(message.payload, TetrapolPayload::SystemInfo(_))
+            )
+        },
+    )
+    .await;
+    let DecoderEvent::Tetrapol(message) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(message.scrambling, 70);
+    assert_eq!(message.station().as_deref(), Some("28.2.7"));
 }
 
 #[tokio::test]

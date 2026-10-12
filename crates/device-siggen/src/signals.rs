@@ -267,6 +267,12 @@ pub static SIGNALS: &[Signal] = &[
         render: nxdn,
     },
     Signal {
+        id: "tetrapol",
+        label: "Tetrapol control channel",
+        rate_hz: AUDIO,
+        render: tetrapol,
+    },
+    Signal {
         id: "dstar",
         label: "D-STAR voice",
         rate_hz: AUDIO,
@@ -814,6 +820,10 @@ fn p25() -> Vec<Complex<f32>> {
 
 fn nxdn() -> Vec<Complex<f32>> {
     dv::nxdn::transmission(&dv::nxdn::Shape::default(), 1, true, AUDIO)
+}
+
+fn tetrapol() -> Vec<Complex<f32>> {
+    synth::tetrapol::control_channel(AUDIO, 1)
 }
 
 fn dstar() -> Vec<Complex<f32>> {

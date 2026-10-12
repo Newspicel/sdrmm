@@ -164,6 +164,7 @@ const EOT_CHANNELS: &[Range] = &[
     spot_khz(477_700.0, 6.25),
 ];
 const SARSAT_BAND: &[Range] = &[mhz(406.0, 406.1)];
+const TETRAPOL_BANDS: &[Range] = &[mhz(70.0, 87.5), mhz(380.0, 400.0), mhz(410.0, 430.0)];
 const ISM: &[Range] = &[
     mhz(314.5, 315.5),
     mhz(433.05, 434.79),
@@ -541,6 +542,18 @@ const SIGNATURES: &[Signature] = &[
             &[Modulation::Psk2, Modulation::Carrier, Modulation::Unknown],
             range(500.0, 6_000.0),
             "half-second phase keyed bursts in the 406 MHz distress band",
+        )
+    },
+    Signature {
+        symbol_rate_hz: Some(range(7_600.0, 8_400.0)),
+        deviation_hz: Some(range(1_400.0, 2_600.0)),
+        frequencies: TETRAPOL_BANDS,
+        ..signature(
+            "Tetrapol",
+            Some("tetrapol"),
+            &[Modulation::Fsk2],
+            range(8_000.0, 14_000.0),
+            "8 kbaud GMSK in a 12.5 kHz channel on a Tetrapol band",
         )
     },
     Signature {

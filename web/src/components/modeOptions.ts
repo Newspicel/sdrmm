@@ -8,6 +8,10 @@ export const DMR_SLOTS: Options<NonNullable<ChannelParamsOf<"dmr">["slots"]>> = 
   { value: "one", label: "TS1" },
   { value: "two", label: "TS2" },
 ];
+export const TETRAPOL_BANDS: Options<NonNullable<ChannelParamsOf<"tetrapol">["band"]>> = [
+  { value: "uhf", label: "UHF" },
+  { value: "vhf", label: "VHF", title: "70 to 87 MHz systems" },
+];
 export const NXDN_WIDTHS: Options<NonNullable<ChannelParamsOf<"nxdn">["bandwidth"]>> = [
   { value: "narrow", label: "6.25" },
   { value: "wide", label: "12.5" },

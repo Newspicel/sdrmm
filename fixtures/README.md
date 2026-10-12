@@ -43,7 +43,7 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 
 ## Committed fixtures
 
-These thirty-seven pairs are not regenerated: twenty-three are recordings, two are frozen synthetic waveforms,
+These thirty-nine pairs are not regenerated: twenty-five are recordings, two are frozen synthetic waveforms,
 and twelve are reference waveforms from generators that are independent of the Rust modulators.
 They retain cases that the current generators do not reproduce.
 
@@ -82,6 +82,8 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
 | `radio_clock_wwvb_offair_2k` | 2 k | `radio_clock` / WWVB @ 0 Hz | 2021-03-14 05:35 UTC |
 | `flex_p2000_offair_48k` | 48 k | `flex` @ 0 Hz | P2000 page to capcode 2029574, `A2 DP2 Leidschendam-Voorburg ...` |
+| `tetrapol_control_48k` | 48 k | `tetrapol` @ 0 Hz | scrambling 70, system info for cell 28.2.7 at BCH frame 0, group 393 active on channel 2890, PCH paging CGI 125 and 399 |
+| `tetrapol_traffic_48k` | 48 k | `tetrapol` @ 0 Hz | group idle (cause 0x12) under scrambling 115, then voice under 118 |
 | `dvbt/qpsk_2k_reference` | 9.142857 M | `dvbt` @ 0 Hz | 2K QPSK, rate 1/2, guard 1/8, 1750 Hz offset; PID 0x123 packets, TPS cell 0x5a |
 | `dab/mode_ii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | Mode II frame: ensemble `0x4a2c`, service `0xc201`, no failed FIB CRCs |
 | `dab/mode_iii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | the same ensemble in Mode III |
@@ -265,6 +267,12 @@ The first three seconds of the FreeDV GUI project's `wav/ve9qrp_1600.wav` receiv
 Signed 16-bit mono audio was converted to normalized `cf32_le` with zero quadrature. The SigMF
 annotation records the source SHA-256, pinned upstream commit, and LGPL-2.1 license.
 `dv::freedv::tests::decodes_the_upstream_receive_recording` reads it directly.
+
+### Tetrapol: `tetrapol_control_48k`, `tetrapol_traffic_48k`
+
+Excerpts of sigidwiki's `Tetrapol_2_channels.zip` (`Tetrapol.wav`, 48 kHz IQ, states no license),
+which holds a control channel near +5.8 kHz and a traffic channel near -6.6 kHz. Each is shifted to
+0 Hz; the annotations hold the source SHA-256 and sample range. `tetrapol::tests` reads both.
 
 ### Meteor LRPT: `lrpt/meteor_m2_qpsk72_symbols.bin`
 

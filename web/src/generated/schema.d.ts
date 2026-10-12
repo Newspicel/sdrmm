@@ -3361,6 +3361,10 @@ export interface components {
             /** @enum {string} */
             type: "m17";
         } | {
+            settings: components["schemas"]["TetrapolParams"];
+            /** @enum {string} */
+            type: "tetrapol";
+        } | {
             settings: components["schemas"]["WsjtParams"];
             /** @enum {string} */
             type: "ft8";
@@ -4113,6 +4117,10 @@ export interface components {
             data: components["schemas"]["SarsatMessage"];
             /** @enum {string} */
             kind: "sarsat";
+        } | {
+            data: components["schemas"]["TetrapolMessage"];
+            /** @enum {string} */
+            kind: "tetrapol";
         } | {
             data: components["schemas"]["AdsbMessage"];
             /** @enum {string} */
@@ -8975,6 +8983,118 @@ export interface components {
         };
         TemplatesResponse: {
             templates: components["schemas"]["TemplateInfo"][];
+        };
+        TetrapolAddress: {
+            /** Format: int32 */
+            id: number;
+            kind: components["schemas"]["TetrapolAddressKind"];
+        };
+        /** @enum {string} */
+        TetrapolAddressKind: "terminal" | "random" | "group" | "object" | "all_stations";
+        /** @enum {string} */
+        TetrapolBand: "uhf" | "vhf";
+        /** @enum {string} */
+        TetrapolCallType: "open_channel" | "internal" | "broadcast" | "external";
+        TetrapolCell: {
+            /** Format: int32 */
+            bn: number;
+            /** Format: int32 */
+            bs: number;
+            /** Format: int32 */
+            rsw: number;
+        };
+        TetrapolGroupCall: {
+            call_type: components["schemas"]["TetrapolCallType"];
+            /** Format: int32 */
+            channel?: number | null;
+            /** Format: int32 */
+            coverage: number;
+            /** Format: int32 */
+            downlink_scrambling?: number | null;
+            /** Format: int32 */
+            group: number;
+            key: components["schemas"]["TetrapolKey"];
+            /** Format: int32 */
+            uplink_scrambling?: number | null;
+        };
+        TetrapolKey: {
+            /** Format: int32 */
+            index: number;
+            /** Format: int32 */
+            kind: number;
+        };
+        /** @enum {string} */
+        TetrapolLogicalChannel: "broadcast" | "paging" | "signalling" | "traffic" | "unknown";
+        TetrapolMessage: {
+            address?: components["schemas"]["TetrapolAddress"] | null;
+            channel: components["schemas"]["TetrapolLogicalChannel"];
+            data: string;
+            /** Format: int32 */
+            frame?: number | null;
+            payload: components["schemas"]["TetrapolPayload"];
+            /** Format: int32 */
+            rejected: number;
+            /** Format: int32 */
+            scrambling: number;
+        };
+        TetrapolParams: {
+            band?: components["schemas"]["TetrapolBand"];
+            /** Format: int32 */
+            scrambling?: number | null;
+        };
+        TetrapolPayload: (components["schemas"]["TetrapolSystemInfo"] & {
+            /** @enum {string} */
+            message: "system_info";
+        }) | (components["schemas"]["TetrapolGroupCall"] & {
+            /** @enum {string} */
+            message: "group_activation";
+        }) | (components["schemas"]["TetrapolGroupCall"] & {
+            /** @enum {string} */
+            message: "group_paging";
+        }) | {
+            /** Format: int32 */
+            cause: number;
+            /** @enum {string} */
+            message: "group_idle";
+        } | {
+            /** Format: int32 */
+            cause: number;
+            /** @enum {string} */
+            message: "group_end";
+        } | {
+            /** @enum {string} */
+            message: "paging";
+            terminals: components["schemas"]["TetrapolAddress"][];
+        } | {
+            /** @enum {string} */
+            message: "voice";
+            /** Format: float */
+            seconds: number;
+        } | {
+            /** Format: int32 */
+            codop: number;
+            /** @enum {string} */
+            message: "other";
+            name: string;
+        };
+        TetrapolSystemInfo: {
+            cell: components["schemas"]["TetrapolCell"];
+            ciphered: boolean;
+            /** Format: int32 */
+            control_channel?: number | null;
+            /** Format: int32 */
+            country?: number | null;
+            home_only: boolean;
+            /** Format: int32 */
+            location_area?: number | null;
+            /** Format: int32 */
+            mode: number;
+            /** Format: int32 */
+            network?: number | null;
+            /** Format: int32 */
+            superframe?: number | null;
+            /** Format: int32 */
+            uplink_scrambling: number;
         };
         /** @enum {string} */
         TimeMachineAction: "arm" | "capture" | "stop" | "disarm";
