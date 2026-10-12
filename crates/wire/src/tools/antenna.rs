@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::nanovna::NanoVnaComplex;
+
 pub const ANTENNA_TOOL_ID: &str = "antenna";
 
 pub const MIN_ANTENNA_FREQ_HZ: f64 = 10_000.0;
@@ -19,6 +21,12 @@ pub const MAX_RADIALS: u8 = 32;
 pub const MIN_APEX_ANGLE_DEG: f64 = 60.0;
 pub const MAX_APEX_ANGLE_DEG: f64 = 180.0;
 pub const MAX_RADIAL_SLOPE_DEG: f64 = 60.0;
+pub const MIN_WIRE_DIAMETER_MM: f64 = 0.1;
+pub const MAX_WIRE_DIAMETER_MM: f64 = 100.0;
+pub const MAX_ANTENNA_HEIGHT_M: f64 = 1_000.0;
+pub const MIN_ANTENNA_SWEEP_POINTS: u16 = 3;
+pub const MAX_ANTENNA_SWEEP_POINTS: u16 = 201;
+pub const MAX_ANTENNA_SWEEP_RATIO: f64 = 8.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AntennaRequest {
@@ -28,6 +36,72 @@ pub struct AntennaRequest {
     #[serde(default = "default_feedline_velocity_factor")]
     pub feedline_velocity_factor: f64,
     pub design: AntennaDesign,
+    #[serde(default)]
+    pub model: AntennaModel,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep: Option<AntennaSweepRequest>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub trim: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AntennaMaterial {
+    Lossless,
+    #[default]
+    Copper,
+    Aluminium,
+    StainlessSteel,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AntennaGround {
+    FreeSpace,
+    Perfect,
+    Poor,
+    #[default]
+    Average,
+    Good,
+    Seawater,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AntennaModel {
+    #[serde(default = "default_wire_diameter_mm")]
+    pub wire_diameter_mm: f64,
+    #[serde(default)]
+    pub material: AntennaMaterial,
+    #[serde(default)]
+    pub ground: AntennaGround,
+    #[serde(default = "default_height_m")]
+    pub height_m: f64,
+}
+
+fn default_wire_diameter_mm() -> f64 {
+    2.0
+}
+
+fn default_height_m() -> f64 {
+    10.0
+}
+
+impl Default for AntennaModel {
+    fn default() -> Self {
+        Self {
+            wire_diameter_mm: default_wire_diameter_mm(),
+            material: AntennaMaterial::default(),
+            ground: AntennaGround::default(),
+            height_m: default_height_m(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AntennaSweepRequest {
+    pub start_hz: f64,
+    pub stop_hz: f64,
+    pub points: u16,
 }
 
 fn default_velocity_factor() -> f64 {
@@ -45,6 +119,9 @@ impl Default for AntennaRequest {
             velocity_factor: default_velocity_factor(),
             feedline_velocity_factor: default_feedline_velocity_factor(),
             design: AntennaDesign::Dipole,
+            model: AntennaModel::default(),
+            sweep: None,
+            trim: false,
         }
     }
 }
@@ -222,4 +299,66 @@ pub struct AntennaReport {
     pub feedpoint_ohms: Option<f64>,
     pub balanced: bool,
     pub notes: Vec<String>,
+    pub simulation: AntennaSimulationOutcome,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum AntennaSimulationOutcome {
+    Solved(Box<AntennaSimulation>),
+    Unavailable { reason: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AntennaSimulation {
+    pub impedance: NanoVnaComplex,
+    pub gain_dbi: f64,
+    pub efficiency: f64,
+    pub takeoff_deg: f64,
+    pub bearing_deg: f64,
+    pub front_to_back_db: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beamwidth_azimuth_deg: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beamwidth_elevation_deg: Option<f64>,
+    pub polarization: AntennaPolarization,
+    pub azimuth: AntennaPatternCut,
+    pub elevation: AntennaPatternCut,
+    pub sweep: Vec<AntennaSweepPoint>,
+    pub wires: Vec<AntennaWire>,
+    pub feed_wire: u32,
+    pub feed_segment: u32,
+    pub wire_radius_m: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loading_coil_h: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resonant_velocity_factor: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AntennaPolarization {
+    Horizontal,
+    Vertical,
+    Mixed,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AntennaPatternCut {
+    pub step_deg: f64,
+    pub gain_dbi: Vec<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AntennaSweepPoint {
+    pub frequency_hz: f64,
+    pub impedance: NanoVnaComplex,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AntennaWire {
+    pub from: AntennaPoint,
+    pub to: AntennaPoint,
+    pub segments: u32,
+    pub current: Vec<f64>,
 }

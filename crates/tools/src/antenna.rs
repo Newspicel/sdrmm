@@ -1,4 +1,8 @@
+mod field;
 mod geometry;
+mod simulate;
+mod solver;
+mod structure;
 
 use geometry::BoomElement;
 use sdrmm_wire::{
@@ -8,6 +12,10 @@ use sdrmm_wire::{
     MAX_YAGI_DIRECTORS, MAX_YAGI_SPACING_WL, MIN_ANTENNA_FREQ_HZ, MIN_APEX_ANGLE_DEG,
     MIN_FEEDLINE_VELOCITY_FACTOR, MIN_VELOCITY_FACTOR, MIN_YAGI_SPACING_WL, ToolCategory,
     ToolDescriptor, ToolRequest, ToolResponse, YagiParams,
+};
+use sdrmm_wire::{
+    MAX_ANTENNA_HEIGHT_M, MAX_ANTENNA_SWEEP_POINTS, MAX_ANTENNA_SWEEP_RATIO, MAX_WIRE_DIAMETER_MM,
+    MIN_ANTENNA_SWEEP_POINTS, MIN_WIRE_DIAMETER_MM,
 };
 
 use crate::{Tool, ToolError};
@@ -25,8 +33,8 @@ impl Tool for AntennaTool {
         ToolDescriptor {
             id: ANTENNA_TOOL_ID.to_owned(),
             name: "Antenna calculator".to_owned(),
-            summary: "Element lengths, boom positions and feedpoint estimates for common \
-                      designs."
+            summary: "Element lengths, simulated SWR, impedance, gain and radiation pattern for \
+                      common designs."
                 .to_owned(),
             category: ToolCategory::Calculator,
             needs_hardware: false,
@@ -46,12 +54,46 @@ impl Tool for AntennaTool {
 
 pub fn report(request: &AntennaRequest) -> Result<AntennaReport, ToolError> {
     validate(request)?;
-    let lengths = Lengths {
+    let design = design_for(request, request.velocity_factor);
+    let job = simulate::Job {
+        frequency_hz: request.frequency_hz,
+        velocity_factor: request.velocity_factor,
+        model: request.model,
+        sweep: request.sweep,
+        geometry: &design.geometry,
+        loading_coil: matches!(request.design, AntennaDesign::FiveEighthsVertical),
+    };
+    let rebuild = |factor: f64| design_for(request, factor).geometry;
+    let simulation = simulate::simulate(&job, trimmable(request).then_some(&rebuild));
+    Ok(AntennaReport {
+        design: request.design,
+        frequency_hz: request.frequency_hz,
         wavelength_m: SPEED_OF_LIGHT_M_S / request.frequency_hz,
         velocity_factor: request.velocity_factor,
+        parts: design.parts,
+        geometry: design.geometry,
+        feedpoint_ohms: design.feedpoint_ohms,
+        balanced: design.balanced,
+        notes: design.notes,
+        simulation,
+    })
+}
+
+fn trimmable(request: &AntennaRequest) -> bool {
+    request.trim
+        && !matches!(
+            request.design,
+            AntennaDesign::QuadLoop | AntennaDesign::FiveEighthsVertical
+        )
+}
+
+fn design_for(request: &AntennaRequest, velocity_factor: f64) -> Design {
+    let lengths = Lengths {
+        wavelength_m: SPEED_OF_LIGHT_M_S / request.frequency_hz,
+        velocity_factor,
         feedline_velocity_factor: request.feedline_velocity_factor,
     };
-    let design = match request.design {
+    match request.design {
         AntennaDesign::Dipole => dipole(&lengths),
         AntennaDesign::InvertedV(params) => inverted_v(&lengths, params),
         AntennaDesign::GroundPlane(params) => ground_plane(&lengths, params),
@@ -61,18 +103,7 @@ pub fn report(request: &AntennaRequest) -> Result<AntennaReport, ToolError> {
         AntennaDesign::Yagi(params) => yagi(&lengths, params),
         AntennaDesign::QuadLoop => quad_loop(&lengths),
         AntennaDesign::EndFedHalfWave => end_fed_half_wave(&lengths),
-    };
-    Ok(AntennaReport {
-        design: request.design,
-        frequency_hz: request.frequency_hz,
-        wavelength_m: lengths.wavelength_m,
-        velocity_factor: request.velocity_factor,
-        parts: design.parts,
-        geometry: design.geometry,
-        feedpoint_ohms: design.feedpoint_ohms,
-        balanced: design.balanced,
-        notes: design.notes,
-    })
+    }
 }
 
 struct Lengths {
@@ -516,6 +547,7 @@ fn validate(request: &AntennaRequest) -> Result<(), ToolError> {
         MIN_FEEDLINE_VELOCITY_FACTOR,
         MAX_FEEDLINE_VELOCITY_FACTOR,
     )?;
+    validate_model(request)?;
     match request.design {
         AntennaDesign::InvertedV(params) => range(
             "apex_angle_deg",
@@ -543,6 +575,43 @@ fn validate(request: &AntennaRequest) -> Result<(), ToolError> {
         }
         _ => Ok(()),
     }
+}
+
+fn validate_model(request: &AntennaRequest) -> Result<(), ToolError> {
+    range(
+        "wire_diameter_mm",
+        request.model.wire_diameter_mm,
+        MIN_WIRE_DIAMETER_MM,
+        MAX_WIRE_DIAMETER_MM,
+    )?;
+    range(
+        "height_m",
+        request.model.height_m,
+        0.0,
+        MAX_ANTENNA_HEIGHT_M,
+    )?;
+    let Some(sweep) = request.sweep else {
+        return Ok(());
+    };
+    range(
+        "start_hz",
+        sweep.start_hz,
+        MIN_ANTENNA_FREQ_HZ,
+        MAX_ANTENNA_FREQ_HZ,
+    )?;
+    range(
+        "stop_hz",
+        sweep.stop_hz,
+        sweep.start_hz,
+        (sweep.start_hz * MAX_ANTENNA_SWEEP_RATIO).min(MAX_ANTENNA_FREQ_HZ),
+    )?;
+    if sweep.points < MIN_ANTENNA_SWEEP_POINTS || sweep.points > MAX_ANTENNA_SWEEP_POINTS {
+        return Err(ToolError::Invalid(format!(
+            "points must be between {MIN_ANTENNA_SWEEP_POINTS} and {MAX_ANTENNA_SWEEP_POINTS}, got {}",
+            sweep.points
+        )));
+    }
+    Ok(())
 }
 
 fn range(field: &str, value: f64, min: f64, max: f64) -> Result<(), ToolError> {
@@ -757,6 +826,7 @@ mod tests {
             velocity_factor: 0.90,
             feedline_velocity_factor: 0.80,
             design: AntennaDesign::QuadLoop,
+            ..AntennaRequest::default()
         };
         let report = report(&request).expect("a valid request");
         let total = part_named(&report, "Total wire").length_m;

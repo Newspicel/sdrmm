@@ -11,6 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+num-complex.workspace = true
 sdrmm-wire.workspace = true
 serialport.workspace = true
 thiserror.workspace = true

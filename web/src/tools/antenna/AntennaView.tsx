@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN_QUIET, LABEL, type Options } from "../../components/controls";
+import { BTN_QUIET, LABEL, type Options, TOGGLE_QUIET } from "../../components/controls";
 import { Segmented } from "../../components/Segmented";
-import type { AntennaPoint, AntennaReport, AntennaSegment } from "../../lib/types";
+import type { AntennaPoint, AntennaReport, AntennaSegment, AntennaWire } from "../../lib/types";
 import { designLabel, formatLength, type LengthUnit } from "./antenna";
 import {
   type Angles,
   type Bounds,
   boundsOf,
+  currentPieces,
   type Fit,
   fitTo,
   ISOMETRIC,
@@ -47,16 +48,23 @@ function keyOf(from: AntennaPoint, to: AntennaPoint, label: string): string {
 
 export function AntennaView({
   report,
+  wires,
   unit,
   highlight,
   onHighlight,
 }: {
   report: AntennaReport;
+  wires: readonly AntennaWire[] | null;
   unit: LengthUnit;
   highlight: string | null;
   onHighlight: (label: string | null) => void;
 }) {
   const [mode, setMode] = useState<ViewMode>("plan");
+  const [showCurrent, setShowCurrent] = useState(true);
+  const currents = useMemo(
+    () => (wires === null || !showCurrent ? [] : currentPieces(wires)),
+    [wires, showCurrent],
+  );
   const [orbit, setOrbit] = useState<Angles>(ISOMETRIC);
   const drag = useRef<Point2 | null>(null);
 
@@ -88,6 +96,17 @@ export function AntennaView({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className={LABEL}>{view}</span>
         <div className="flex items-center gap-2">
+          {wires !== null && (
+            <Button
+              type="button"
+              aria-pressed={showCurrent}
+              className={TOGGLE_QUIET}
+              title="Shade each wire by the simulated current on it"
+              onClick={() => setShowCurrent(!showCurrent)}
+            >
+              Current
+            </Button>
+          )}
           {mode === "orbit" && (
             <Button type="button" className={BTN_QUIET} onClick={() => setOrbit(ISOMETRIC)}>
               Reset angle
@@ -150,11 +169,34 @@ export function AntennaView({
             angles={angles}
             fit={drawn.fit}
             unit={unit}
-            dimmed={highlight !== null && highlight !== segment.label}
+            dimmed={
+              (highlight !== null && highlight !== segment.label) ||
+              (currents.length > 0 && segment.role !== "feedline" && segment.role !== "structure")
+            }
             lit={highlight === segment.label}
             onHighlight={onHighlight}
           />
         ))}
+
+        <g pointerEvents="none">
+          {currents.map((piece) => {
+            const from = place(project(piece.from, angles), drawn.fit);
+            const to = place(project(piece.to, angles), drawn.fit);
+            return (
+              <line
+                key={keyOf(piece.from, piece.to, "current")}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+                className="stroke-accent"
+                strokeOpacity={0.12 + 0.88 * piece.level}
+                strokeWidth={1.5 + 3 * piece.level}
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </g>
 
         <circle
           cx={drawn.feed.x}
@@ -184,7 +226,8 @@ export function AntennaView({
         </g>
       </svg>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {currents.length > 0 && <CurrentScale />}
         {rolesIn(report.geometry).map((role) => (
           <span key={role} className="flex items-center gap-1.5 font-mono text-[10px] text-ink-dim">
             <svg viewBox="0 0 16 4" className="h-1 w-4" aria-hidden>
@@ -203,6 +246,23 @@ export function AntennaView({
         ))}
       </div>
     </div>
+  );
+}
+
+function CurrentScale() {
+  return (
+    <span className="flex items-center gap-1.5 font-mono text-[10px] text-ink-dim">
+      <svg viewBox="0 0 32 6" className="h-1.5 w-8" aria-hidden>
+        <defs>
+          <linearGradient id="antenna-current-scale">
+            <stop offset="0" stopColor="var(--color-accent)" stopOpacity={0.12} />
+            <stop offset="1" stopColor="var(--color-accent)" stopOpacity={1} />
+          </linearGradient>
+        </defs>
+        <rect width={32} height={6} rx={3} fill="url(#antenna-current-scale)" />
+      </svg>
+      Current, low to high
+    </span>
   );
 }
 

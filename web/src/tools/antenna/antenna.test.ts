@@ -76,6 +76,7 @@ describe("antennaRequest", () => {
       geometry: { segments: [], feed: { x_m: 0, y_m: 0, z_m: 0 } },
       balanced: true,
       notes: [],
+      simulation: { status: "unavailable", reason: "not solved" },
     };
     expect(antennaReport({ tool: "antenna", result: report })).toBe(report);
   });
