@@ -219,9 +219,8 @@ test.describe("the workspace", () => {
     await expect(channel.getByRole("slider", { name: /squelch threshold/i })).toBeVisible();
 
     await expect(channel.locator('.react-flow__handle[data-handleid="video"]')).toHaveCount(0);
-    for (const port of ["iq", "audio"]) {
-      expect(await rowOffset(channel, port)).toBeLessThan(1);
-    }
+    await expect(channel.locator('.react-flow__handle[data-handleid="iq"] + span')).toHaveCount(0);
+    expect(await rowOffset(channel, "audio")).toBeLessThan(1);
 
     const squelchAuto = channel.getByRole("button", { name: "Automatic squelch" });
     const threshold = channel.getByRole("slider", { name: /squelch threshold/i });

@@ -371,6 +371,55 @@
     "host": "aarch64-macos"
   },
   {
+    "bench": "ism_survey",
+    "msamples_per_s": 466.47,
+    "realtime_factor": 23.3235,
+    "config": "noise including deferred decode slots, 20000000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
+    "bench": "wifi_occupancy",
+    "msamples_per_s": 588.52,
+    "realtime_factor": 29.426,
+    "config": "noise including deferred decode slots, 20000000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
+    "bench": "ble",
+    "msamples_per_s": 175.1,
+    "realtime_factor": 43.775,
+    "config": "noise including deferred decode slots, 4000000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
+    "bench": "noise_figure",
+    "msamples_per_s": 545.32,
+    "realtime_factor": 1090.64,
+    "config": "noise including deferred decode slots, 500000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
+    "bench": "per",
+    "msamples_per_s": 137.68,
+    "realtime_factor": 1434.1666666666667,
+    "config": "noise including deferred decode slots, 96000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
+    "bench": "sarsat",
+    "msamples_per_s": 75.63,
+    "realtime_factor": 3151.25,
+    "config": "noise including deferred decode slots, 24000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
+    "bench": "sid",
+    "msamples_per_s": 522.21,
+    "realtime_factor": 10879.375000000002,
+    "config": "noise including deferred decode slots, 48000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
     "bench": "__calibration",
     "msamples_per_s": 1993.8866181589308,
     "realtime_factor": 0.0,
