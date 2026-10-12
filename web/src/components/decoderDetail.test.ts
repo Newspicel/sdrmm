@@ -333,6 +333,19 @@ describe("eventDetail", () => {
           level_dbfs: -31.5,
         },
       },
+      gsm: {
+        kind: "gsm",
+        data: {
+          bsic: 48,
+          frame_number: 862_208,
+          timeslot: 0,
+          channel: "bcch",
+          message: { type: "other", message_type: 0x20 },
+          snr_db: 20,
+          frequency_error_hz: 9_800,
+          raw: "0506208b",
+        },
+      },
       apt: { kind: "apt", data: { seq: 1, lines: 1200, complete: true, duration_ms: 600_000 } },
       lrpt: {
         kind: "lrpt",
@@ -509,6 +522,45 @@ describe("eventDetail", () => {
     expect(shown.Encryption).toBe("encryption active");
     expect(shown["Carriers available"]).toBe("0, 1, 2, 3, 4, 5, 6, 7, 8, 9");
     expect(detail.body).toContain("standard ciphering (DSC)");
+  });
+
+  it("names a GSM cell from its system information", () => {
+    const detail = eventDetail({
+      kind: "gsm",
+      data: {
+        arfcn: 725,
+        band: "dcs1800",
+        bsic: 48,
+        frame_number: 862_208,
+        timeslot: 0,
+        channel: "bcch",
+        cgi: "262-02-318-11225",
+        message: {
+          type: "system_information",
+          si: "si3",
+          cell: {
+            mcc: "262",
+            mnc: "02",
+            lac: 318,
+            cell_id: 11225,
+            ccch: "separate",
+            neighbours: [730, 733],
+            system_information: ["si2", "si3"],
+          },
+        },
+        snr_db: 24.5,
+        frequency_error_hz: 9_812,
+        raw: "49061b2b",
+      },
+    });
+    const shown = Object.fromEntries(detail.fields);
+    expect(shown.Message).toBe("SI3 · 262-02 · LAC 318 · CI 11225");
+    expect(shown.Band).toBe("DCS 1800");
+    expect(shown.BSIC).toBe("6-0");
+    expect(shown.CCCH).toBe("1 CCCH");
+    expect(shown.Neighbours).toBe("730, 733");
+    expect(shown["System information"]).toBe("SI2, SI3");
+    expect(detail.body).toBe("49061b2b");
   });
 
   it("shows DSAA2, DSC2 and the voice counters of a DECT bearer", () => {

@@ -52,6 +52,7 @@ export const KIND_LABELS: Record<DecoderKind, string> = {
   hfdl: "HFDL",
   iridium: "Iridium",
   dect: "DECT",
+  gsm: "GSM",
   apt: "NOAA APT",
   lrpt: "Meteor LRPT",
   wefax: "WEFAX",

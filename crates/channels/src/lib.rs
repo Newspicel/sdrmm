@@ -27,6 +27,7 @@ mod eot;
 mod ermes;
 mod flex;
 mod gnss;
+mod gsm;
 mod hfdl;
 pub mod hunt_sweep;
 mod ident;
@@ -109,6 +110,7 @@ pub use eot::EotChannel;
 pub use ermes::ErmesChannel;
 pub use flex::FlexChannel;
 pub use gnss::GnssChannel;
+pub use gsm::GsmChannel;
 pub use hfdl::HfdlChannel;
 pub use ident::IdentChannel;
 pub use ils::IlsChannel;
@@ -226,6 +228,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Hfdl(_) => hfdl::occupied_band(),
         ChannelParams::Iridium(p) => iridium::occupied_band(p),
         ChannelParams::Dect(p) => dect::occupied_band(p),
+        ChannelParams::Gsm(_) => gsm::occupied_band(),
         ChannelParams::Apt(p) => apt::occupied_band(p),
         ChannelParams::Lrpt(p) => lrpt::occupied_band(p),
         ChannelParams::Wefax(p) => wefax::occupied_band(p),
@@ -318,6 +321,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Hfdl(_) => Ok(hfdl::channel_filter()),
         ChannelParams::Iridium(p) => Ok(iridium::channel_filter(p)),
         ChannelParams::Dect(p) => Ok(dect::channel_filter(p)),
+        ChannelParams::Gsm(_) => Ok(gsm::channel_filter()),
         ChannelParams::Apt(p) => apt::channel_filter(p),
         ChannelParams::Lrpt(p) => lrpt::channel_filter(p),
         ChannelParams::Wefax(p) => wefax::channel_filter(p),
@@ -712,6 +716,11 @@ const REGISTRY: &[Registration] = &[
         create_tx: None,
     },
     Registration {
+        descriptor: GsmChannel::descriptor,
+        create: boxed::<GsmChannel>,
+        create_tx: None,
+    },
+    Registration {
         descriptor: AptChannel::descriptor,
         create: boxed::<AptChannel>,
         create_tx: None,
@@ -940,6 +949,7 @@ mod tests {
             "hfdl" => ChannelParams::Hfdl(HfdlParams::default()),
             "iridium" => ChannelParams::Iridium(IridiumParams::default()),
             "dect" => ChannelParams::Dect(DectParams::default()),
+            "gsm" => ChannelParams::Gsm(sdrmm_wire::GsmParams::default()),
             "apt" => ChannelParams::Apt(AptParams::default()),
             "lrpt" => ChannelParams::Lrpt(LrptParams::default()),
             "wefax" => ChannelParams::Wefax(WefaxParams::default()),
@@ -1002,7 +1012,7 @@ mod tests {
     #[test]
     fn descriptors_are_unique_and_complete() {
         let all = descriptors();
-        assert_eq!(all.len(), 60);
+        assert_eq!(all.len(), 61);
         let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
         assert_eq!(
             ids,
@@ -1055,6 +1065,7 @@ mod tests {
                 "hfdl",
                 "iridium",
                 "dect",
+                "gsm",
                 "apt",
                 "lrpt",
                 "wefax",
@@ -1111,6 +1122,7 @@ mod tests {
                 "hfdl" => (6_000.0, 12_000.0),
                 "iridium" => (50_000.0, 250_000.0),
                 "dect" => (1_728_000.0, 2_304_000.0),
+                "gsm" => (200_000.0, 1_625_000.0 / 3.0),
                 "apt" => (40_000.0, 60_000.0),
                 "lrpt" => (140_000.0, 288_000.0),
                 "wefax" => (1_600.0, 12_000.0),

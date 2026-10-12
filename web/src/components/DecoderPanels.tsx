@@ -6,6 +6,7 @@ import { capturedImageUrl, imagesQuery } from "../lib/api";
 import { useBroadcastStore } from "../lib/broadcast";
 import { copyText } from "../lib/copyText";
 import { useDecodedKind, useDecodedStore, useStations } from "../lib/decoded";
+import { type GsmCellView, gsmCells, gsmSummary } from "../lib/gsm";
 import {
   berText,
   sidDeviation,
@@ -623,6 +624,80 @@ function DectView({ scope = {} }: { scope?: DecoderScope }) {
             {stations.map((station) => (
               <DectRow key={station.key} station={station} />
             ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const GSM_LOG_ROWS = 50;
+
+function GsmCellReadouts({ cell }: { cell: GsmCellView }) {
+  return (
+    <Readouts ruled={false} padded={false} columns={2} label={cell.cgi ?? "Cell"}>
+      <Readout label="ARFCN" title={cell.band ?? undefined}>
+        {cell.arfcn ?? "-"}
+      </Readout>
+      <Readout label="BSIC" title="Network and base station colour code">
+        {cell.bsic}
+      </Readout>
+      <Readout label="CCCH">{cell.ccch ?? "-"}</Readout>
+      <Readout label="Neighbours" title={cell.neighbours.join(", ")}>
+        {cell.neighbours.length}
+      </Readout>
+      <Readout label="SI" title={cell.systemInformation.join(", ")}>
+        {cell.systemInformation.length}
+      </Readout>
+      <Readout label="Paged">{cell.paged}</Readout>
+      <Readout label="Offset">{Math.round(cell.frequencyErrorHz)} Hz</Readout>
+      <Readout label="SNR">{cell.snrDb.toFixed(1)} dB</Readout>
+    </Readouts>
+  );
+}
+
+function GsmView({ scope = {} }: { scope?: DecoderScope }) {
+  const records = recordsInScope(useDecodedKind("gsm"), scope);
+  if (records.length === 0) {
+    return (
+      <div className={PANE}>
+        <span className={EMPTY}>No GSM cell heard yet.</span>
+      </div>
+    );
+  }
+  const log = records.slice(-GSM_LOG_ROWS).toReversed();
+  return (
+    <div className={PANE}>
+      {gsmCells(records).map((cell) => (
+        <GsmCellReadouts key={cell.key} cell={cell} />
+      ))}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              <th className={TABLE_HEAD}>Time</th>
+              <th className={TABLE_HEAD}>FN</th>
+              <th className={TABLE_HEAD}>TS</th>
+              <th className={TABLE_HEAD}>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {log.map((record) => {
+              const frame = record.event.data;
+              return (
+                <tr
+                  key={`${record.at}:${frame.frame_number}:${frame.timeslot}`}
+                  className="border-b border-line/50"
+                >
+                  <td className={`${TABLE_CELL} tabular-nums`}>{formatClock(record.at)}</td>
+                  <td className={`${TABLE_CELL} tabular-nums`}>{frame.frame_number}</td>
+                  <td className={`${TABLE_CELL} tabular-nums`}>{frame.timeslot}</td>
+                  <td className={`${TABLE_CELL} max-w-96 truncate`} title={frame.raw}>
+                    {gsmSummary(frame)}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1513,6 +1588,7 @@ const VIEWS: Record<DecoderKind, ((scope: DecoderScope) => ReactNode) | null> = 
   hfdl: null,
   iridium: null,
   dect: (scope) => <DectView scope={scope} />,
+  gsm: (scope) => <GsmView scope={scope} />,
   lora: (scope) => <LoraView scope={scope} />,
   remote_id: (scope) => <RemoteIdView scope={scope} />,
   ble: (scope) => <BleView scope={scope} />,

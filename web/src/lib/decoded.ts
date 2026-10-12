@@ -307,6 +307,7 @@ function stationId(event: DecoderEvent): string | null {
     case "vdl2":
     case "hfdl":
     case "iridium":
+    case "gsm":
     case "df_fix":
     case "apt":
     case "lrpt":

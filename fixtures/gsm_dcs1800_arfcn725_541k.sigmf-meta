@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 541666.6666666666,
+    "core:recorder": "SDR--",
+    "core:hw": "unknown",
+    "core:description": "GSM 1800 cell on ARFCN 725 with paging, an SDCCH/8 assignment, a paging response and a ciphering command"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1847800000.0,
+      "core:datetime": "2026-10-12T02:16:39.437604714Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "SRLabs airprobe capture vf_call6_a725_d174_g5, mirrored in ptrkrysik/test_data; source SHA-256 95785e6e94d7a11322d03958a0b1fd6fcca8a2a145c615ccbef9b6914e0c445e; samples 3379310..3793103 at 574712.6436781608 Hz",
+      "core:sample_count": 390000,
+      "core:sample_start": 0
+    }
+  ]
+}

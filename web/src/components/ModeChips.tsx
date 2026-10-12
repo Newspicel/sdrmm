@@ -178,6 +178,8 @@ export function ModeChips({
       return <IdentChips params={params} {...mode} />;
     case "dect":
       return <DectChips params={params} {...mode} />;
+    case "gsm":
+      return <GsmChips params={params} {...mode} />;
     case "apt":
       return <AptChips params={params} {...mode} />;
     case "lrpt":
@@ -1278,6 +1280,26 @@ function DectChips({ params, onParams }: Mode<"dect">) {
         value={settings.sides ?? "both"}
         options={DECT_SIDES}
         onChange={(sides) => onParams({ type: "dect", settings: { ...settings, sides } })}
+      />
+    </>
+  );
+}
+
+function GsmChips({ params, onParams }: Mode<"gsm">) {
+  const settings = params.settings;
+  return (
+    <>
+      <ToggleChip
+        label="Paging"
+        title="Show paging and assignments"
+        on={settings.paging ?? true}
+        onChange={(paging) => onParams({ type: "gsm", settings: { ...settings, paging } })}
+      />
+      <ToggleChip
+        label="Follow"
+        title="Follow assigned SDCCH on this carrier"
+        on={settings.follow ?? true}
+        onChange={(follow) => onParams({ type: "gsm", settings: { ...settings, follow } })}
       />
     </>
   );

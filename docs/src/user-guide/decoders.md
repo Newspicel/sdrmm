@@ -18,7 +18,7 @@ covers the modes that need more than a frequency.
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy) | [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -224,6 +224,24 @@ Calls use 32 kbit/s ADPCM (G.726). The channel plays both directions of the firs
 hears and holds it until it goes quiet. Encrypted bearers stay muted. Voice before the first
 multiframe marker cannot be descrambled; those frames, X-CRC errors, and late frames are counted
 in the record.
+
+## GSM downlink
+
+The GSM channel logs one cell, like OsmocomBB's cell monitor. Tune it to a downlink carrier (C0);
+band and ARFCN follow from the frequency. It runs at 541.667 kS/s over 200 kHz.
+
+It locks on FCCH and SCH, then decodes BCCH and CCCH: system information (cell identity,
+neighbours, CCCH layout), paging identities and immediate assignments.
+
+| Setting | Choice |
+|---|---|
+| Paging | Show paging, assignments and rejects |
+| Follow | Decode assigned SDCCH on this carrier |
+
+**Follow** decodes a non-hopping SDCCH/8 or SDCCH/4 on the same ARFCN until release, ciphering or
+silence. Records show LAPDm frames, RR, MM, CC, SS and SMS message names, identities, and the A5
+algorithm from a Ciphering Mode Command. Ciphered traffic, hopping channels and other carriers are
+not decoded. Blocks that fail CRC count as rejected.
 
 ## LoRa
 

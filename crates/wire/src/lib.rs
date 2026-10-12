@@ -19,6 +19,7 @@ pub mod filter;
 pub mod frame;
 pub mod fusion;
 pub mod geo;
+pub mod gsm;
 mod pipeline;
 pub use pipeline::{PipelineQueue, PipelineStage, QueueHealth};
 pub mod hunt;
@@ -157,6 +158,11 @@ pub use fusion::{
     NavMode, NavTarget, NavTargetKind, TriangulationParams,
 };
 pub use geo::LatLon;
+pub use gsm::{
+    GSM_CHANNEL_SPACING_HZ, GSM_SYMBOL_RATE_HZ, GsmAssignment, GsmBand, GsmCcch, GsmCell,
+    GsmChannelType, GsmDedicated, GsmFrame, GsmHopping, GsmIdentity, GsmIdentityKind,
+    GsmLapdmFrame, GsmLogicalChannel, GsmMessage, GsmParams, GsmProtocol, GsmSi, cipher_label,
+};
 pub use hunt::{
     HuntAction, HuntRequest, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState,
 };

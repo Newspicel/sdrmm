@@ -1461,6 +1461,7 @@ pub enum DecoderEvent {
     DfFix(crate::fusion::DfEstimate),
     Radar(crate::radar::RadarTrackEvent),
     Dect(DectFrame),
+    Gsm(crate::gsm::GsmFrame),
     Apt(crate::weather::AptImage),
     Lrpt(crate::weather::LrptImage),
     Wefax(crate::weather::WefaxPicture),
@@ -1730,6 +1731,7 @@ impl DecoderEvent {
             Self::DfFix(_) => "df_fix",
             Self::Radar(_) => "radar",
             Self::Dect(_) => "dect",
+            Self::Gsm(_) => "gsm",
             Self::Apt(_) => "apt",
             Self::Lrpt(_) => "lrpt",
             Self::Wefax(_) => "wefax",
@@ -1921,6 +1923,7 @@ impl DecoderEvent {
             | Self::Hfdl(m)
             | Self::Iridium(m) => data_link_summary(m),
             Self::Dect(f) => dect_summary(f),
+            Self::Gsm(f) => f.summary(),
             Self::Apt(p) => crate::weather::apt_summary(p),
             Self::Lrpt(p) => crate::weather::lrpt_summary(p),
             Self::Wefax(p) => crate::weather::wefax_summary(p),
@@ -2006,6 +2009,7 @@ impl DecoderEvent {
             | Self::Hfdl(m)
             | Self::Iridium(m) => m.station.clone(),
             Self::Dect(f) => f.identity.as_ref().map(|id| id.rfpi.clone()),
+            Self::Gsm(f) => f.cgi.clone(),
             Self::Ils(_) => None,
             Self::Apt(_) => Some("APT".to_owned()),
             Self::Lrpt(_) => Some("LRPT".to_owned()),
