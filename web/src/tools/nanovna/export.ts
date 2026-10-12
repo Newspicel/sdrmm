@@ -1,4 +1,4 @@
-import type { NanoVnaComplex, NanoVnaSweep } from "../../lib/types";
+import type { NanoVnaComplex, NanoVnaPoint, NanoVnaSweep } from "../../lib/types";
 import { readouts } from "./analysis";
 import { gainDb, magnitude, phaseDeg, REFERENCE_OHMS } from "./nanovna";
 
@@ -14,8 +14,41 @@ interface ExportContext {
   recordedAt?: string;
 }
 
+export interface ExportSource {
+  name: string;
+  points: readonly NanoVnaPoint[];
+  notes: string[];
+}
+
+export function sweepSource(sweep: NanoVnaSweep): ExportSource {
+  const device = sweep.device;
+  const calibration = device.calibration.raw === "" ? "none" : device.calibration.raw;
+  return {
+    name: device.board ?? "nanovna",
+    points: sweep.points,
+    notes: [
+      `Instrument ${device.board ?? "NanoVNA"} firmware ${device.firmware} on ${device.port}`,
+      `Points ${sweep.points.length} averages ${sweep.averages}`,
+      ...(device.bandwidth_hz == null ? [] : [`IF bandwidth ${device.bandwidth_hz} Hz`]),
+      `Calibration ${calibration}`,
+    ],
+  };
+}
+
+export function savedSource(
+  name: string,
+  points: readonly NanoVnaPoint[],
+  instrument: string | null,
+): ExportSource {
+  return {
+    name,
+    points,
+    notes: [name, ...(instrument === null ? [] : [`Instrument ${instrument}`])],
+  };
+}
+
 export function touchstoneS2p(
-  sweep: NanoVnaSweep,
+  sweep: ExportSource,
   format: TouchstoneFormat,
   context: ExportContext = {},
 ): string {
@@ -40,7 +73,7 @@ export function touchstoneS2p(
 }
 
 export function touchstoneS1p(
-  sweep: NanoVnaSweep,
+  sweep: ExportSource,
   format: TouchstoneFormat,
   context: ExportContext = {},
 ): string {
@@ -80,7 +113,7 @@ const CSV_COLUMNS = [
   "group_delay_s",
 ] as const;
 
-export function sweepCsv(sweep: NanoVnaSweep): string {
+export function sweepCsv(sweep: ExportSource): string {
   const rows = readouts(sweep.points).map((row) =>
     [
       row.frequencyHz,
@@ -121,16 +154,11 @@ function cell(value: number | undefined): string {
   return String(value);
 }
 
-function header(sweep: NanoVnaSweep, context: ExportContext): string[] {
-  const device = sweep.device;
-  const calibration = device.calibration.raw === "" ? "none" : device.calibration.raw;
+function header(source: ExportSource, context: ExportContext): string[] {
   return [
     "! Measured with SDR-- (https://github.com/Newspicel/sdrmm)",
     ...(context.recordedAt === undefined ? [] : [`! Recorded ${context.recordedAt}`]),
-    `! Instrument ${device.board ?? "NanoVNA"} firmware ${device.firmware} on ${device.port}`,
-    `! Points ${sweep.points.length} averages ${sweep.averages}`,
-    ...(device.bandwidth_hz === undefined ? [] : [`! IF bandwidth ${device.bandwidth_hz} Hz`]),
-    `! Calibration ${calibration}`,
+    ...source.notes.map((note) => `! ${note}`),
   ];
 }
 
@@ -153,10 +181,14 @@ function fixed(value: number): string {
   return Number.isFinite(value) ? value.toFixed(9) : "0.000000000";
 }
 
-export function exportFilename(sweep: NanoVnaSweep, extension: string): string {
-  const first = sweep.points[0]?.frequency_hz ?? 0;
-  const last = sweep.points[sweep.points.length - 1]?.frequency_hz ?? 0;
-  const model = (sweep.device.board ?? "nanovna").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+export function exportFilename(source: ExportSource, extension: string): string {
+  const first = source.points[0]?.frequency_hz ?? 0;
+  const last = source.points[source.points.length - 1]?.frequency_hz ?? 0;
+  const model = source.name
+    .toLowerCase()
+    .replace(/\.s[12]p$/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
   return `${model}-${khz(first)}-to-${khz(last)}.${extension}`;
 }
 

@@ -1,15 +1,33 @@
 use std::time::Instant;
 
 use sdrmm_wire::{
-    NanoVnaCalStep, NanoVnaCalibration, NanoVnaComplex, NanoVnaDeviceReport, NanoVnaPoint,
-    NanoVnaStandard, NanoVnaSweep, NanoVnaSweepRequest, NanoVnaSweepState,
+    MIN_NANOVNA_POINTS, NanoVnaCalStep, NanoVnaCalibration, NanoVnaComplex,
+    NanoVnaConfigureRequest, NanoVnaDeviceReport, NanoVnaPoint, NanoVnaPower, NanoVnaStandard,
+    NanoVnaSweep, NanoVnaSweepRequest, NanoVnaSweepState,
 };
 
-use super::shell::{Session, first_number, parse_complex, parse_frequencies, reported_value};
+use super::shell::{
+    Session, Trace, first_number, parse_complex, parse_frequencies, parse_scan_rows, reported_value,
+};
 
-const SEGMENT_POINTS: u32 = 101;
+const LEGACY_SEGMENT_POINTS: u32 = 101;
+
+const SCAN_EVERYTHING: u8 = 0b111;
+
+const AUTO_POWER: u16 = 255;
 
 const APPLIED_TOKEN: &str = "cal'ed";
+
+pub fn paused<T>(
+    session: &mut Session<'_>,
+    work: impl FnOnce(&mut Session<'_>) -> Result<T, String>,
+) -> Result<T, String> {
+    session.silent("pause")?;
+    let outcome = work(session);
+    let resumed = session.silent("resume");
+    let value = outcome?;
+    resumed.map(|()| value)
+}
 
 pub fn describe(session: &mut Session<'_>, port: &str) -> Result<NanoVnaDeviceReport, String> {
     let firmware = session.command("version")?.join(" ");
@@ -21,6 +39,7 @@ pub fn describe(session: &mut Session<'_>, port: &str) -> Result<NanoVnaDeviceRe
         .iter()
         .find_map(|line| line.strip_prefix("Board:"))
         .map(|board| board.trim().to_owned());
+    let max_points = max_points(&info);
     let battery_mv = value(session, "vbat")?
         .as_deref()
         .and_then(first_number)
@@ -49,6 +68,7 @@ pub fn describe(session: &mut Session<'_>, port: &str) -> Result<NanoVnaDeviceRe
         firmware,
         board,
         info,
+        max_points,
         battery_mv,
         bandwidth_hz,
         power,
@@ -60,6 +80,43 @@ pub fn describe(session: &mut Session<'_>, port: &str) -> Result<NanoVnaDeviceRe
         calibration,
         commands,
     })
+}
+
+fn max_points(info: &[String]) -> Option<u32> {
+    info.iter()
+        .find_map(|line| line.split_once("[p:").map(|(_, rest)| rest))
+        .and_then(first_number)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|points| *points >= MIN_NANOVNA_POINTS)
+}
+
+pub fn configure(
+    session: &mut Session<'_>,
+    request: &NanoVnaConfigureRequest,
+) -> Result<NanoVnaDeviceReport, String> {
+    if let Some(hz) = request.bandwidth_hz {
+        set_bandwidth(session, hz)?;
+    }
+    if let Some(power) = request.power {
+        session.silent(&format!("power {}", power_code(power)))?;
+    }
+    describe(session, &request.port)
+}
+
+fn set_bandwidth(session: &mut Session<'_>, hz: u32) -> Result<(), String> {
+    let request = format!("bandwidth {hz} Hz");
+    let lines = session.command(&request)?;
+    if lines.iter().any(|line| line.starts_with("bandwidth ")) {
+        return Ok(());
+    }
+    Err(format!("device refused `{request}`: {}", lines.join(" ")))
+}
+
+fn power_code(power: NanoVnaPower) -> u16 {
+    match power {
+        NanoVnaPower::Auto => AUTO_POWER,
+        NanoVnaPower::Level(level) => level,
+    }
 }
 
 fn value(session: &mut Session<'_>, request: &str) -> Result<Option<String>, String> {
@@ -172,9 +229,10 @@ pub fn acquire(
 ) -> Result<NanoVnaSweep, String> {
     let started = Instant::now();
     let device = describe(session, &request.port)?;
+    let segment_limit = device.max_points.unwrap_or(LEGACY_SEGMENT_POINTS);
     let mut points = Vec::with_capacity(request.points as usize);
     let mut point_offset = 0;
-    for size in segment_sizes(request.points) {
+    for size in segment_sizes(request.points, segment_limit) {
         let segment_start = frequency_at(request, point_offset);
         let segment_stop = frequency_at(request, point_offset + size - 1);
         let values = acquire_segment(session, segment_start, segment_stop, size, request.averages)?;
@@ -185,9 +243,8 @@ pub fn acquire(
         "sweep {} {} {}",
         request.start_hz,
         request.stop_hz,
-        request.points.min(SEGMENT_POINTS)
+        request.points.min(segment_limit)
     ))?;
-    session.silent("resume")?;
     if points.len() != request.points as usize {
         return Err(format!(
             "requested {} points but the device returned {}",
@@ -215,18 +272,15 @@ fn acquire_segment(
     let mut s11_sum = vec![NanoVnaComplex { re: 0.0, im: 0.0 }; points as usize];
     let mut s21_sum = vec![NanoVnaComplex { re: 0.0, im: 0.0 }; points as usize];
     for average in 0..averages {
-        session.silent(&format!("scan {start_hz} {stop_hz} {points}"))?;
-        let next_frequencies = parse_frequencies(session.command("frequencies")?)?;
-        let s11 = parse_complex(session.command("data 0")?)?;
-        let s21 = parse_complex(session.command("data 1")?)?;
-        ensure_lengths(points, &next_frequencies, &s11, &s21)?;
+        let trace = measure(session, start_hz, stop_hz, points)?;
+        ensure_lengths(points, &trace)?;
         if average == 0 {
-            frequencies = next_frequencies;
-        } else if frequencies != next_frequencies {
+            frequencies = trace.frequencies;
+        } else if frequencies != trace.frequencies {
             return Err("device frequencies changed while averaging".to_owned());
         }
-        accumulate(&mut s11_sum, &s11);
-        accumulate(&mut s21_sum, &s21);
+        accumulate(&mut s11_sum, &trace.s11);
+        accumulate(&mut s21_sum, &trace.s21);
     }
     let divisor = f64::from(averages);
     Ok(frequencies
@@ -241,8 +295,30 @@ fn acquire_segment(
         .collect())
 }
 
-fn segment_sizes(points: u32) -> Vec<u32> {
-    let segment_count = points.div_ceil(SEGMENT_POINTS);
+fn measure(
+    session: &mut Session<'_>,
+    start_hz: u64,
+    stop_hz: u64,
+    points: u32,
+) -> Result<Trace, String> {
+    let request = format!("scan {start_hz} {stop_hz} {points} {SCAN_EVERYTHING}");
+    let rows = session.command(&request)?;
+    if rows.is_empty() {
+        return read_back(session);
+    }
+    parse_scan_rows(&request, &rows)
+}
+
+fn read_back(session: &mut Session<'_>) -> Result<Trace, String> {
+    Ok(Trace {
+        frequencies: parse_frequencies(session.command("frequencies")?)?,
+        s11: parse_complex(session.command("data 0")?)?,
+        s21: parse_complex(session.command("data 1")?)?,
+    })
+}
+
+fn segment_sizes(points: u32, limit: u32) -> Vec<u32> {
+    let segment_count = points.div_ceil(limit.max(1));
     let base_size = points / segment_count;
     let extra = points % segment_count;
     (0..segment_count)
@@ -250,21 +326,19 @@ fn segment_sizes(points: u32) -> Vec<u32> {
         .collect()
 }
 
-fn ensure_lengths(
-    expected: u32,
-    frequencies: &[u64],
-    s11: &[NanoVnaComplex],
-    s21: &[NanoVnaComplex],
-) -> Result<(), String> {
+fn ensure_lengths(expected: u32, trace: &Trace) -> Result<(), String> {
     let expected = expected as usize;
-    if frequencies.len() == expected && s11.len() == expected && s21.len() == expected {
+    if trace.frequencies.len() == expected
+        && trace.s11.len() == expected
+        && trace.s21.len() == expected
+    {
         return Ok(());
     }
     Err(format!(
         "device returned {} frequencies, {} S11 values, and {} S21 values; expected {expected}",
-        frequencies.len(),
-        s11.len(),
-        s21.len()
+        trace.frequencies.len(),
+        trace.s11.len(),
+        trace.s21.len()
     ))
 }
 
@@ -295,15 +369,32 @@ mod tests {
 
     #[test]
     fn segment_distribution_keeps_every_chunk_within_device_limits() {
-        let sizes = segment_sizes(102);
-        assert_eq!(sizes, vec![51, 51]);
-        assert!(sizes.into_iter().all(|size| size <= SEGMENT_POINTS));
-        assert_eq!(segment_sizes(11), vec![11]);
-        assert!(
-            segment_sizes(10_001)
-                .into_iter()
-                .all(|size| size <= SEGMENT_POINTS)
-        );
+        assert_eq!(segment_sizes(102, 101), vec![51, 51]);
+        assert_eq!(segment_sizes(11, 101), vec![11]);
+        assert_eq!(segment_sizes(401, 401), vec![401]);
+        assert_eq!(segment_sizes(1001, 401), vec![334, 334, 333]);
+        for limit in [101, 401] {
+            let sizes = segment_sizes(10_001, limit);
+            assert_eq!(sizes.iter().sum::<u32>(), 10_001);
+            assert!(sizes.into_iter().all(|size| size <= limit));
+        }
+    }
+
+    #[test]
+    fn the_point_limit_is_read_from_the_version_line() {
+        let info = vec![
+            "Board: NanoVNA-H 4".to_owned(),
+            "Version: 1.2.46 [p:401, IF:12k, ADC:384k, Lcd:480x320]".to_owned(),
+        ];
+        assert_eq!(max_points(&info), Some(401));
+        assert_eq!(max_points(&["Version: 0.4.5".to_owned()]), None);
+        assert_eq!(max_points(&["Version: x [p:3]".to_owned()]), None);
+    }
+
+    #[test]
+    fn auto_power_is_the_firmware_sentinel() {
+        assert_eq!(power_code(NanoVnaPower::Auto), 255);
+        assert_eq!(power_code(NanoVnaPower::Level(2)), 2);
     }
 
     #[test]

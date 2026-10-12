@@ -304,6 +304,16 @@ export type NanoVnaSweepState = components["schemas"]["NanoVnaSweepState"];
 export type NanoVnaCalibration = components["schemas"]["NanoVnaCalibration"];
 export type NanoVnaStandard = components["schemas"]["NanoVnaStandard"];
 export type NanoVnaMatch = components["schemas"]["NanoVnaMatch"];
+export type NanoVnaConfigureRequest = components["schemas"]["NanoVnaConfigureRequest"];
+export type NanoVnaPower = components["schemas"]["NanoVnaPower"];
+export type NanoVnaAntenna = components["schemas"]["NanoVnaAntenna"];
+export type NanoVnaAntennaRequest = components["schemas"]["NanoVnaAntennaRequest"];
+export type NanoVnaMeasurementInfo = components["schemas"]["NanoVnaMeasurementInfo"];
+export type NanoVnaMeasurement = components["schemas"]["NanoVnaMeasurement"];
+export type SaveNanoVnaMeasurementRequest = components["schemas"]["SaveNanoVnaMeasurementRequest"];
+export type UpdateNanoVnaMeasurementRequest =
+  components["schemas"]["UpdateNanoVnaMeasurementRequest"];
+export type NanoVnaLibraryResponse = components["schemas"]["NanoVnaLibraryResponse"];
 export type AntennaDesignType = AntennaDesign["type"];
 export type AntennaDesignOf<T extends AntennaDesignType> = Extract<AntennaDesign, { type: T }>;
 export type DoctorReport = components["schemas"]["DoctorReport"];

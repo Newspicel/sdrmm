@@ -9,6 +9,10 @@ pub const MAX_NANOVNA_POINTS: u32 = 10_001;
 pub const MAX_NANOVNA_AVERAGES: u16 = 16;
 pub const MAX_NANOVNA_PORT_LEN: usize = 1024;
 pub const MAX_NANOVNA_CAL_SLOT: u8 = 6;
+pub const MIN_NANOVNA_BANDWIDTH_HZ: u32 = 10;
+pub const MAX_NANOVNA_BANDWIDTH_HZ: u32 = 4_000;
+pub const MAX_NANOVNA_POWER: u16 = 3;
+pub const NANOVNA_AUTO_POWER: u16 = 255;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -17,6 +21,23 @@ pub enum NanoVnaRequest {
     Describe(NanoVnaPortRequest),
     Sweep(NanoVnaSweepRequest),
     Calibrate(NanoVnaCalibrateRequest),
+    Configure(NanoVnaConfigureRequest),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NanoVnaPower {
+    Auto,
+    Level(u16),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct NanoVnaConfigureRequest {
+    pub port: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bandwidth_hz: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power: Option<NanoVnaPower>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -109,6 +130,8 @@ pub struct NanoVnaDeviceReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
     pub info: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_points: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battery_mv: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -247,6 +270,30 @@ mod tests {
         .expect("serialize calibration");
         assert_eq!(json["action"], "calibrate");
         assert_eq!(json["step"], "open");
+    }
+
+    #[test]
+    fn a_configuration_names_only_what_it_changes() {
+        let request: NanoVnaRequest = serde_json::from_str(
+            r#"{"action":"configure","port":"COM3","bandwidth_hz":100,"power":{"level":2}}"#,
+        )
+        .expect("deserialize configure");
+        assert_eq!(
+            request,
+            NanoVnaRequest::Configure(NanoVnaConfigureRequest {
+                port: "COM3".to_owned(),
+                bandwidth_hz: Some(100),
+                power: Some(NanoVnaPower::Level(2)),
+            })
+        );
+        let json = serde_json::to_value(NanoVnaRequest::Configure(NanoVnaConfigureRequest {
+            port: "COM3".to_owned(),
+            bandwidth_hz: None,
+            power: Some(NanoVnaPower::Auto),
+        }))
+        .expect("serialize configure");
+        assert_eq!(json["power"], "auto");
+        assert!(json.get("bandwidth_hz").is_none());
     }
 
     #[test]

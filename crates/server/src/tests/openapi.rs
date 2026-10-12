@@ -44,6 +44,10 @@ fn openapi_registers_paths_and_ws_schemas() {
         "/api/tools/run",
         "/api/images",
         "/api/images/{id}/png",
+        "/api/nanovna/library",
+        "/api/nanovna/antennas/{id}",
+        "/api/nanovna/antennas/{id}/measurements",
+        "/api/nanovna/measurements/{id}",
     ] {
         assert!(spec.contains(path), "missing path {path}");
     }

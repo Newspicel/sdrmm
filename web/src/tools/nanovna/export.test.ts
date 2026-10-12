@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { exportFilename, sweepCsv, touchstoneS1p, touchstoneS2p } from "./export";
+import {
+  exportFilename,
+  savedSource,
+  sweepCsv,
+  sweepSource,
+  touchstoneS1p,
+  touchstoneS2p,
+} from "./export";
 import { point, sweepOf } from "./testdata";
 
-const SWEEP = sweepOf([
-  point(1_000_000, { re: 0, im: 0.5 }, { re: 0.5, im: 0 }),
-  point(2_000_000, { re: 0.25, im: -0.25 }, { re: 0.9, im: 0.1 }),
-]);
+const SWEEP = sweepSource(
+  sweepOf([
+    point(1_000_000, { re: 0, im: 0.5 }, { re: 0.5, im: 0 }),
+    point(2_000_000, { re: 0.25, im: -0.25 }, { re: 0.9, im: 0.1 }),
+  ]),
+);
 
 describe("Touchstone", () => {
   it("writes a two-port file with the option line the reader needs", () => {
@@ -57,7 +66,7 @@ describe("CSV", () => {
   });
 
   it("writes an unmeasurable cell as empty and an infinite one as inf", () => {
-    const matched = sweepCsv(sweepOf([point(1_000_000, { re: 0, im: 0 })]));
+    const matched = sweepCsv(sweepSource(sweepOf([point(1_000_000, { re: 0, im: 0 })])));
     const cells = matched.trim().split("\n")[1]?.split(",") ?? [];
     const columns = matched.split("\n")[0]?.split(",") ?? [];
     expect(cells[columns.indexOf("return_loss_db")]).toBe("inf");
@@ -68,5 +77,11 @@ describe("CSV", () => {
 describe("filenames", () => {
   it("names the instrument and the range it swept", () => {
     expect(exportFilename(SWEEP, "s2p")).toBe("nanovna-h-4-1000khz-to-2000khz.s2p");
+  });
+
+  it("names a saved measurement after its label", () => {
+    const saved = savedSource("Garden EFHW", SWEEP.points, null);
+    expect(exportFilename(saved, "s1p")).toBe("garden-efhw-1000khz-to-2000khz.s1p");
+    expect(touchstoneS1p(saved, "ri")).toContain("! Garden EFHW");
   });
 });

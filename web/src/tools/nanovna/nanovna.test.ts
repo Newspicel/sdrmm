@@ -10,6 +10,7 @@ import {
   lowestVswrIndex,
   mismatchLossDb,
   nanoVnaCalibrateRequest,
+  nanoVnaConfigureRequest,
   nanoVnaDescribeRequest,
   nanoVnaDevices,
   nanoVnaDevicesRequest,
@@ -52,6 +53,13 @@ describe("NanoVNA requests", () => {
         points: 101,
         averages: 2,
       },
+    });
+  });
+
+  it("sends only the settings a configuration changes", () => {
+    expect(nanoVnaConfigureRequest({ port: "COM3", power: { level: 2 } })).toEqual({
+      tool: "nanovna",
+      request: { action: "configure", port: "COM3", power: { level: 2 } },
     });
   });
 

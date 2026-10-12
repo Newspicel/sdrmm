@@ -27,6 +27,10 @@
   --color-plot-hold: #ffff00;
   --color-plot-ink: #ffffff;
   --color-plot-ink-dim: #7f7f7f;
+  --color-plot-ref-1: #d95926;
+  --color-plot-ref-2: #199e70;
+  --color-plot-ref-3: #9085e9;
+  --color-plot-ref-4: #d55181;
 
   --color-port-iq: oklch(0.72 0.11 228);
   --color-port-baseband: oklch(0.74 0.1 196);

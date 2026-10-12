@@ -49,6 +49,7 @@ mod fusion;
 mod info;
 mod media;
 mod missions;
+mod nanovna;
 mod phones;
 mod presets;
 mod radar;
@@ -317,14 +318,20 @@ impl From<StoreError> for AppError {
             | StoreError::OfferGone
             | StoreError::CpsUserNotFound(_)
             | StoreError::CpsDeviceNotFound(_)
-            | StoreError::CpsCodeplugNotFound(_) => (StatusCode::NOT_FOUND, ErrorCode::NotFound),
+            | StoreError::CpsCodeplugNotFound(_)
+            | StoreError::NanoVnaAntennaNotFound(_)
+            | StoreError::NanoVnaMeasurementNotFound(_) => {
+                (StatusCode::NOT_FOUND, ErrorCode::NotFound)
+            }
             StoreError::Timestamp(_)
             | StoreError::Sources(_)
             | StoreError::WorkspaceLayout(_)
-            | StoreError::CpsField(_) => (StatusCode::BAD_REQUEST, ErrorCode::Request),
+            | StoreError::CpsField(_)
+            | StoreError::NanoVnaField(_) => (StatusCode::BAD_REQUEST, ErrorCode::Request),
             StoreError::WorkspaceNameTaken(_)
             | StoreError::WorkspaceConflict { .. }
             | StoreError::CpsNameTaken
+            | StoreError::NanoVnaNameTaken
             | StoreError::WorkspaceHistoryEnd { .. } => (StatusCode::CONFLICT, ErrorCode::Conflict),
             StoreError::Db(_) | StoreError::Corrupt(_) | StoreError::NewerSchema { .. } => {
                 (StatusCode::INTERNAL_SERVER_ERROR, ErrorCode::Storage)
@@ -528,4 +535,5 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .merge(survey::routes())
         .merge(fusion::routes())
         .merge(denoise::routes())
+        .merge(nanovna::routes())
 }

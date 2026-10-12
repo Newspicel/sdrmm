@@ -1,6 +1,7 @@
 import type {
   NanoVnaCalibration,
   NanoVnaComplex,
+  NanoVnaConfigureRequest,
   NanoVnaDevice,
   NanoVnaDeviceReport,
   NanoVnaPoint,
@@ -48,6 +49,10 @@ export function nanoVnaCalibrateRequest(
     tool: "nanovna",
     request: { action: "calibrate", port, ...(range === undefined ? {} : { range }), ...step },
   };
+}
+
+export function nanoVnaConfigureRequest(request: NanoVnaConfigureRequest): ToolRequest {
+  return { tool: "nanovna", request: { action: "configure", ...request } };
 }
 
 export function nanoVnaDevices(response: ToolResponse | undefined): NanoVnaDevice[] {

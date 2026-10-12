@@ -48,6 +48,11 @@ import type {
   IonosondeReport,
   LicenseTextResponse,
   LogGroupKey,
+  NanoVnaAntenna,
+  NanoVnaAntennaRequest,
+  NanoVnaLibraryResponse,
+  NanoVnaMeasurement,
+  NanoVnaMeasurementInfo,
   NetworkExportAction,
   NetworkExportSettings,
   NetworkExportStatus,
@@ -72,6 +77,7 @@ import type {
   RemoteStatus,
   SatelliteCatalogResponse,
   SavedRadio,
+  SaveNanoVnaMeasurementRequest,
   SaveRadioRequest,
   ScannerStatus,
   ScanSettings,
@@ -86,6 +92,7 @@ import type {
   ToolResponse,
   ToolsResponse,
   TransmittersResponse,
+  UpdateNanoVnaMeasurementRequest,
   VoiceCallsResponse,
   WorkspaceDetail,
   WorkspaceExport,
@@ -142,6 +149,7 @@ export const CPS_MODELS_KEY = ["get", "/api/cps/models"] as const;
 export const CPS_PORTS_KEY = ["get", "/api/cps/ports"] as const;
 export const CPS_LIBRARY_KEY = ["get", "/api/cps/library"] as const;
 export const CPS_JOBS_KEY = ["get", "/api/cps/jobs"] as const;
+export const NANOVNA_LIBRARY_KEY = ["get", "/api/nanovna/library"] as const;
 export const TOOL_RUN_KEY = ["post", "/api/tools/run"] as const;
 export const PHONES_KEY = ["get", "/api/phones"] as const;
 export const FUSION_KEY = ["get", "/api/fusion/{node}"] as const;
@@ -1160,4 +1168,73 @@ export async function mergeCpsCodeplug(
       body: request,
     }),
   );
+}
+
+export function nanoVnaLibraryQuery() {
+  return queryOptions({
+    queryKey: NANOVNA_LIBRARY_KEY,
+    queryFn: async (): Promise<NanoVnaLibraryResponse> =>
+      unwrap(await client.GET("/api/nanovna/library")),
+  });
+}
+
+export function nanoVnaMeasurementQuery(id: number | null) {
+  return queryOptions({
+    queryKey: ["get", "/api/nanovna/measurements", id] as const,
+    enabled: id !== null,
+    staleTime: Number.POSITIVE_INFINITY,
+    queryFn: async (): Promise<NanoVnaMeasurement> =>
+      unwrap(
+        await client.GET("/api/nanovna/measurements/{id}", {
+          params: { path: { id: id ?? 0 } },
+        }),
+      ),
+  });
+}
+
+export async function createNanoVnaAntenna(
+  request: NanoVnaAntennaRequest,
+): Promise<NanoVnaAntenna> {
+  return unwrap(await client.POST("/api/nanovna/antennas", { body: request }));
+}
+
+export async function updateNanoVnaAntenna(
+  id: number,
+  request: NanoVnaAntennaRequest,
+): Promise<NanoVnaAntenna> {
+  return unwrap(
+    await client.PATCH("/api/nanovna/antennas/{id}", { params: { path: { id } }, body: request }),
+  );
+}
+
+export async function deleteNanoVnaAntenna(id: number): Promise<void> {
+  unwrap(await client.DELETE("/api/nanovna/antennas/{id}", { params: { path: { id } } }));
+}
+
+export async function saveNanoVnaMeasurement(
+  antennaId: number,
+  request: SaveNanoVnaMeasurementRequest,
+): Promise<NanoVnaMeasurementInfo> {
+  return unwrap(
+    await client.POST("/api/nanovna/antennas/{id}/measurements", {
+      params: { path: { id: antennaId } },
+      body: request,
+    }),
+  );
+}
+
+export async function updateNanoVnaMeasurement(
+  id: number,
+  request: UpdateNanoVnaMeasurementRequest,
+): Promise<NanoVnaMeasurementInfo> {
+  return unwrap(
+    await client.PATCH("/api/nanovna/measurements/{id}", {
+      params: { path: { id } },
+      body: request,
+    }),
+  );
+}
+
+export async function deleteNanoVnaMeasurement(id: number): Promise<void> {
+  unwrap(await client.DELETE("/api/nanovna/measurements/{id}", { params: { path: { id } } }));
 }

@@ -1,0 +1,51 @@
+version
+1.2.46
+ch> info
+Board: NanoVNA-H 4
+2019-2024 Copyright @DiSlord (based on @edy555 source)
+Licensed under GPL.
+  https://github.com/DiSlord/NanoVNA-D
+Donate support:
+  WebMoney: Z313822869119
+Version: 1.2.46 [p:401, IF:12k, ADC:384k, Lcd:480x320]
+Build Time: Aug 17 2025 - 20:34:48
+Architecture: ARMv7E-M Core Variant: Cortex-M4F
+Platform: STM32F303xC Analog & DSP
+ch> vbat
+4183 mV
+ch> bandwidth
+bandwidth 3 (1000Hz)
+ch> power
+usage: power {0-3}|{255 - auto}
+power: 255
+ch> tcxo
+usage: tcxo {TCXO frequency(Hz)}
+current: 26000000
+ch> threshold
+usage: threshold {frequency in harmonic mode}
+current: 300000100
+ch> edelay
+0.000000000
+ch> s21offset
+0.000000000
+ch> sweep
+1000000 30000000 101
+ch> cal
+load isoln Es Er Et cal'ed 
+ch> help
+Commands: scan scan_bin data frequencies freq sweep power offset bandwidth time sd_list sd_read sd_delete saveconfig clearconfig dump touchcal touchtest pause resume msg cal save recall trace marker edelay s21offset capture measure refresh touch release vbat tcxo reset smooth config usart_cfg usart vbat_offset transform threshold help info version color
+ch> scan 1000000 2000000 11 7
+1000000 0.990377856 -0.007170825 0.000005201 -0.000003988 
+1100000 0.990330752 -0.006832843 0.000026281 0.000034286 
+1200000 0.990483520 -0.006995394 0.000016528 0.000005598 
+1300000 0.990547712 -0.006930482 0.000010425 -0.000007767 
+1400000 0.990399104 -0.006645468 0.000003015 0.000012888 
+1500000 0.990519040 -0.006636424 0.000000564 0.000031894 
+1600000 0.990612032 -0.006630254 0.000004874 0.000020060 
+1700000 0.990539776 -0.006340694 0.000025302 0.000016818 
+1800000 0.990661440 -0.006417681 0.000021928 0.000048171 
+1900000 0.990689600 -0.006259996 -0.000022081 0.000059251 
+2000000 0.990622848 -0.006272538 -0.000000437 0.000016126 
+ch> sweep 1000000 2000000 11
+ch> resume
+ch> 

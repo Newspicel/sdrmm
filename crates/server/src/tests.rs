@@ -27,6 +27,7 @@ mod devices;
 mod diagnostics;
 mod fusion;
 mod mcp_canvas;
+mod nanovna;
 mod openapi;
 mod phones;
 mod presets;

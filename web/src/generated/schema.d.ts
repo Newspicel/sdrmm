@@ -1012,6 +1012,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/nanovna/antennas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_nanovna_antenna"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/nanovna/antennas/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_nanovna_antenna"];
+        options?: never;
+        head?: never;
+        patch: operations["update_nanovna_antenna"];
+        trace?: never;
+    };
+    "/api/nanovna/antennas/{id}/measurements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["save_nanovna_measurement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/nanovna/library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_nanovna_library"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/nanovna/measurements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_nanovna_measurement"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_nanovna_measurement"];
+        options?: never;
+        head?: never;
+        patch: operations["update_nanovna_measurement"];
+        trace?: never;
+    };
     "/api/occupancy": {
         parameters: {
             query?: never;
@@ -6126,6 +6206,17 @@ export interface components {
             /** Format: float */
             wpm: number;
         };
+        NanoVnaAntenna: {
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            notes: string;
+        };
+        NanoVnaAntennaRequest: {
+            name: string;
+            notes?: string;
+        };
         NanoVnaCalibrateRequest: components["schemas"]["NanoVnaCalStep"] & {
             port: string;
             range?: components["schemas"]["NanoVnaSweepState"] | null;
@@ -6184,6 +6275,12 @@ export interface components {
             /** Format: double */
             re: number;
         };
+        NanoVnaConfigureRequest: {
+            /** Format: int32 */
+            bandwidth_hz?: number | null;
+            port: string;
+            power?: components["schemas"]["NanoVnaPower"] | null;
+        };
         NanoVnaDevice: {
             label: string;
             manufacturer?: string | null;
@@ -6211,6 +6308,8 @@ export interface components {
             /** Format: int64 */
             harmonic_threshold_hz?: number | null;
             info: string[];
+            /** Format: int32 */
+            max_points?: number | null;
             port: string;
             /** Format: int32 */
             power?: number | null;
@@ -6220,8 +6319,35 @@ export interface components {
             /** Format: int64 */
             tcxo_hz?: number | null;
         };
+        NanoVnaLibraryResponse: {
+            antennas: components["schemas"]["NanoVnaAntenna"][];
+            measurements: components["schemas"]["NanoVnaMeasurementInfo"][];
+        };
         /** @enum {string} */
         NanoVnaMatch: "confirmed" | "probable";
+        NanoVnaMeasurement: components["schemas"]["NanoVnaMeasurementInfo"] & {
+            points: components["schemas"]["NanoVnaPoint"][];
+        };
+        NanoVnaMeasurementInfo: {
+            /** Format: int64 */
+            antenna_id: number;
+            /** Format: int64 */
+            best_hz?: number | null;
+            /** Format: double */
+            best_vswr?: number | null;
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            instrument?: string | null;
+            label: string;
+            note: string;
+            /** Format: int32 */
+            point_count: number;
+            /** Format: int64 */
+            start_hz: number;
+            /** Format: int64 */
+            stop_hz: number;
+        };
         NanoVnaPoint: {
             /** Format: int64 */
             frequency_hz: number;
@@ -6230,6 +6356,10 @@ export interface components {
         };
         NanoVnaPortRequest: {
             port: string;
+        };
+        NanoVnaPower: "auto" | {
+            /** Format: int32 */
+            level: number;
         };
         NanoVnaRequest: {
             /** @enum {string} */
@@ -6243,6 +6373,9 @@ export interface components {
         }) | (components["schemas"]["NanoVnaCalibrateRequest"] & {
             /** @enum {string} */
             action: "calibrate";
+        }) | (components["schemas"]["NanoVnaConfigureRequest"] & {
+            /** @enum {string} */
+            action: "configure";
         });
         NanoVnaResult: {
             devices: components["schemas"]["NanoVnaDevice"][];
@@ -8007,6 +8140,12 @@ export interface components {
             id: number;
             label: string;
         };
+        SaveNanoVnaMeasurementRequest: {
+            instrument?: string | null;
+            label: string;
+            note?: string;
+            points: components["schemas"]["NanoVnaPoint"][];
+        };
         SaveRadioRequest: {
             device_id: string;
             label: string;
@@ -9121,6 +9260,10 @@ export interface components {
         UaType: "none" | "aeroplane" | "rotorcraft" | "gyroplane" | "hybrid_lift" | "ornithopter" | "glider" | "kite" | "free_balloon" | "captive_balloon" | "airship" | "parachute" | "rocket" | "tethered_aircraft" | "ground_obstacle" | "other";
         /** @enum {string} */
         UlaSide: "both" | "front" | "back";
+        UpdateNanoVnaMeasurementRequest: {
+            label: string;
+            note?: string;
+        };
         UpdateWorkspaceRequest: {
             name?: string | null;
             /** Format: int64 */
@@ -12165,6 +12308,304 @@ export interface operations {
             };
             /** @description Malformed request body */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    create_nanovna_antenna: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NanoVnaAntennaRequest"];
+            };
+        };
+        responses: {
+            /** @description Antenna stored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NanoVnaAntenna"];
+                };
+            };
+            /** @description Unusable field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description That name is taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    delete_nanovna_antenna: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Antenna id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Antenna and its measurements removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Antenna not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    update_nanovna_antenna: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Antenna id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NanoVnaAntennaRequest"];
+            };
+        };
+        responses: {
+            /** @description Antenna updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NanoVnaAntenna"];
+                };
+            };
+            /** @description Unusable field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Antenna not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description That name is taken */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    save_nanovna_measurement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Antenna id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveNanoVnaMeasurementRequest"];
+            };
+        };
+        responses: {
+            /** @description Measurement stored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NanoVnaMeasurementInfo"];
+                };
+            };
+            /** @description Unusable field or points */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Antenna not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    get_nanovna_library: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved antennas and their measurements, without points */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NanoVnaLibraryResponse"];
+                };
+            };
+        };
+    };
+    get_nanovna_measurement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Measurement id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The measurement with its points */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NanoVnaMeasurement"];
+                };
+            };
+            /** @description Measurement not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    delete_nanovna_measurement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Measurement id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Measurement removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Measurement not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    update_nanovna_measurement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Measurement id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateNanoVnaMeasurementRequest"];
+            };
+        };
+        responses: {
+            /** @description Measurement updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NanoVnaMeasurementInfo"];
+                };
+            };
+            /** @description Unusable field */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Measurement not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

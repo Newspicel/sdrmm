@@ -86,6 +86,33 @@ impl<'a> Session<'a> {
     }
 }
 
+pub struct Trace {
+    pub frequencies: Vec<u64>,
+    pub s11: Vec<NanoVnaComplex>,
+    pub s21: Vec<NanoVnaComplex>,
+}
+
+pub fn parse_scan_rows(request: &str, lines: &[String]) -> Result<Trace, String> {
+    let mut trace = Trace {
+        frequencies: Vec::with_capacity(lines.len()),
+        s11: Vec::with_capacity(lines.len()),
+        s21: Vec::with_capacity(lines.len()),
+    };
+    for line in lines {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let Some(frequency) = fields.first().and_then(|field| field.parse::<u64>().ok()) else {
+            return Err(format!("device refused `{request}`: {}", lines.join(" ")));
+        };
+        let [_, s11_re, s11_im, s21_re, s21_im] = fields[..] else {
+            return Err(format!("invalid scan row `{line}`"));
+        };
+        trace.frequencies.push(frequency);
+        trace.s11.push(complex(line, s11_re, s11_im)?);
+        trace.s21.push(complex(line, s21_re, s21_im)?);
+    }
+    Ok(trace)
+}
+
 pub fn reported_value(lines: &[String]) -> Option<&str> {
     if let Some(current) = lines
         .iter()
@@ -127,21 +154,25 @@ pub fn parse_complex(lines: Vec<String>) -> Result<Vec<NanoVnaComplex>, String> 
         .into_iter()
         .map(|line| {
             let fields: Vec<&str> = line.split_whitespace().collect();
-            if fields.len() != 2 {
+            let [re, im] = fields[..] else {
                 return Err(format!("invalid complex row `{line}`"));
-            }
-            let re = fields[0]
-                .parse::<f64>()
-                .map_err(|error| format!("invalid complex row `{line}`: {error}"))?;
-            let im = fields[1]
-                .parse::<f64>()
-                .map_err(|error| format!("invalid complex row `{line}`: {error}"))?;
-            if !re.is_finite() || !im.is_finite() {
-                return Err(format!("non-finite complex row `{line}`"));
-            }
-            Ok(NanoVnaComplex { re, im })
+            };
+            complex(&line, re, im)
         })
         .collect()
+}
+
+fn complex(line: &str, re: &str, im: &str) -> Result<NanoVnaComplex, String> {
+    let re = re
+        .parse::<f64>()
+        .map_err(|error| format!("invalid complex row `{line}`: {error}"))?;
+    let im = im
+        .parse::<f64>()
+        .map_err(|error| format!("invalid complex row `{line}`: {error}"))?;
+    if !re.is_finite() || !im.is_finite() {
+        return Err(format!("non-finite complex row `{line}`"));
+    }
+    Ok(NanoVnaComplex { re, im })
 }
 
 #[cfg(test)]
@@ -214,6 +245,34 @@ mod tests {
         assert_eq!(first_number("4177 mV"), Some(4177));
         assert_eq!(first_number("bandwidth 3 (1000Hz)"), Some(3));
         assert_eq!(first_number("no digits here"), None);
+    }
+
+    #[test]
+    fn a_masked_scan_row_carries_frequency_and_both_parameters() {
+        let trace = parse_scan_rows("scan", &["1000000 0.5 -0.25 0.001 0.002 ".to_owned()])
+            .expect("parse a scan row");
+        assert_eq!(trace.frequencies, vec![1_000_000]);
+        assert_eq!(trace.s11, vec![NanoVnaComplex { re: 0.5, im: -0.25 }]);
+        assert_eq!(
+            trace.s21,
+            vec![NanoVnaComplex {
+                re: 0.001,
+                im: 0.002
+            }]
+        );
+    }
+
+    #[test]
+    fn a_scan_that_answers_with_text_is_a_refusal() {
+        let error = parse_scan_rows(
+            "scan 1 2 402 7",
+            &["sweep points exceeds range 401".to_owned()],
+        )
+        .err()
+        .unwrap_or_default();
+        assert!(error.contains("refused `scan 1 2 402 7`"), "{error}");
+        assert!(parse_scan_rows("scan", &["1000 1 2 3".to_owned()]).is_err());
+        assert!(parse_scan_rows("scan", &["1000 1 2 3 NaN".to_owned()]).is_err());
     }
 
     #[test]

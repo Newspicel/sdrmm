@@ -4,8 +4,10 @@ import {
   client,
   decoderLogExportUrl,
   NMEA_DEVICES_KEY,
+  nanoVnaMeasurementQuery,
   nmeaDevicesQuery,
   recordingDownloadUrl,
+  saveNanoVnaMeasurement,
   TOOL_RUN_KEY,
   toolRunQuery,
   unwrap,
@@ -59,6 +61,44 @@ describe("nmeaDevicesQuery", () => {
     await expect(query.queryFn?.({} as never)).resolves.toEqual(response);
     expect(get).toHaveBeenCalledOnce();
     expect(get).toHaveBeenCalledWith("/api/position/nmea-devices");
+  });
+});
+
+describe("nanoVnaMeasurementQuery", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("stays idle without a measurement and keeps a saved one forever", async () => {
+    expect(nanoVnaMeasurementQuery(null).enabled).toBe(false);
+    const get = vi.spyOn(client, "GET").mockResolvedValue({
+      data: { id: 4, points: [] },
+      response: new Response(null, { status: 200 }),
+    });
+    const query = nanoVnaMeasurementQuery(4);
+
+    expect(query.enabled).toBe(true);
+    expect(query.staleTime).toBe(Number.POSITIVE_INFINITY);
+    await expect(query.queryFn?.({} as never)).resolves.toEqual({ id: 4, points: [] });
+    expect(get).toHaveBeenCalledWith("/api/nanovna/measurements/{id}", {
+      params: { path: { id: 4 } },
+    });
+  });
+});
+
+describe("saveNanoVnaMeasurement", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("posts the sweep under the antenna it belongs to", async () => {
+    const post = vi.spyOn(client, "POST").mockResolvedValue({
+      data: { id: 9 },
+      response: new Response(null, { status: 200 }),
+    });
+    const request = { label: "After trim", points: [] };
+
+    await expect(saveNanoVnaMeasurement(3, request)).resolves.toEqual({ id: 9 });
+    expect(post).toHaveBeenCalledWith("/api/nanovna/antennas/{id}/measurements", {
+      params: { path: { id: 3 } },
+      body: request,
+    });
   });
 });
 

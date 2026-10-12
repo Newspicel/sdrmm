@@ -45,6 +45,14 @@ pub enum StoreError {
     CpsField(&'static str),
     #[error("that name is already taken")]
     CpsNameTaken,
+    #[error("antenna {0} not found")]
+    NanoVnaAntennaNotFound(i64),
+    #[error("measurement {0} not found")]
+    NanoVnaMeasurementNotFound(i64),
+    #[error("unusable {0}")]
+    NanoVnaField(&'static str),
+    #[error("an antenna with that name exists")]
+    NanoVnaNameTaken,
     #[error("a workspace named {0:?} already exists")]
     WorkspaceNameTaken(String),
     #[error("workspace {id} moved on (revision {current}, not {sent}), reload and reapply")]
@@ -390,6 +398,29 @@ const MIGRATIONS: &[&str] = &[
         SELECT history_at FROM workspaces WHERE workspaces.id = workspace_history.workspace_id
     );
     ALTER TABLE workspaces DROP COLUMN history_at;
+    ",
+    "
+    CREATE TABLE nanovna_antennas (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE nanovna_measurements (
+        id INTEGER PRIMARY KEY,
+        antenna_id INTEGER NOT NULL REFERENCES nanovna_antennas(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        instrument TEXT,
+        created_at TEXT NOT NULL,
+        start_hz INTEGER NOT NULL,
+        stop_hz INTEGER NOT NULL,
+        point_count INTEGER NOT NULL,
+        best_hz INTEGER,
+        best_vswr REAL,
+        points TEXT NOT NULL
+    );
+    CREATE INDEX nanovna_measurements_antenna ON nanovna_measurements (antenna_id, created_at DESC);
     ",
 ];
 
@@ -2115,6 +2146,7 @@ mod coherent_break;
 mod cps;
 mod history;
 mod log_groups;
+mod nanovna;
 mod phones;
 mod remote;
 

@@ -1,5 +1,6 @@
 pub mod antenna;
 pub mod nanovna;
+pub mod nanovna_library;
 
 pub use antenna::{
     ANTENNA_TOOL_ID, AntennaDesign, AntennaGeometry, AntennaPart, AntennaPoint, AntennaReport,
@@ -10,11 +11,18 @@ pub use antenna::{
     YagiParams,
 };
 pub use nanovna::{
-    MAX_NANOVNA_AVERAGES, MAX_NANOVNA_CAL_SLOT, MAX_NANOVNA_FREQ_HZ, MAX_NANOVNA_POINTS,
-    MAX_NANOVNA_PORT_LEN, MIN_NANOVNA_FREQ_HZ, MIN_NANOVNA_POINTS, NANOVNA_TOOL_ID, NanoVnaCalStep,
-    NanoVnaCalibrateRequest, NanoVnaCalibration, NanoVnaComplex, NanoVnaDevice,
-    NanoVnaDeviceReport, NanoVnaMatch, NanoVnaPoint, NanoVnaPortRequest, NanoVnaRequest,
-    NanoVnaResult, NanoVnaStandard, NanoVnaSweep, NanoVnaSweepRequest, NanoVnaSweepState,
+    MAX_NANOVNA_AVERAGES, MAX_NANOVNA_BANDWIDTH_HZ, MAX_NANOVNA_CAL_SLOT, MAX_NANOVNA_FREQ_HZ,
+    MAX_NANOVNA_POINTS, MAX_NANOVNA_PORT_LEN, MAX_NANOVNA_POWER, MIN_NANOVNA_BANDWIDTH_HZ,
+    MIN_NANOVNA_FREQ_HZ, MIN_NANOVNA_POINTS, NANOVNA_AUTO_POWER, NANOVNA_TOOL_ID, NanoVnaCalStep,
+    NanoVnaCalibrateRequest, NanoVnaCalibration, NanoVnaComplex, NanoVnaConfigureRequest,
+    NanoVnaDevice, NanoVnaDeviceReport, NanoVnaMatch, NanoVnaPoint, NanoVnaPortRequest,
+    NanoVnaPower, NanoVnaRequest, NanoVnaResult, NanoVnaStandard, NanoVnaSweep,
+    NanoVnaSweepRequest, NanoVnaSweepState,
+};
+pub use nanovna_library::{
+    MAX_NANOVNA_NAME_LEN, MAX_NANOVNA_NOTE_LEN, NanoVnaAntenna, NanoVnaAntennaRequest,
+    NanoVnaLibraryResponse, NanoVnaMeasurement, NanoVnaMeasurementInfo,
+    SaveNanoVnaMeasurementRequest, UpdateNanoVnaMeasurementRequest,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

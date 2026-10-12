@@ -3433,6 +3433,354 @@
         }
       }
     },
+    "/api/nanovna/antennas": {
+      "post": {
+        "operationId": "create_nanovna_antenna",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NanoVnaAntennaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Antenna stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NanoVnaAntenna"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unusable field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That name is taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/nanovna/antennas/{id}": {
+      "delete": {
+        "operationId": "delete_nanovna_antenna",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Antenna id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Antenna and its measurements removed"
+          },
+          "404": {
+            "description": "Antenna not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "update_nanovna_antenna",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Antenna id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NanoVnaAntennaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Antenna updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NanoVnaAntenna"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unusable field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Antenna not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "That name is taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/nanovna/antennas/{id}/measurements": {
+      "post": {
+        "operationId": "save_nanovna_measurement",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Antenna id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveNanoVnaMeasurementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Measurement stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NanoVnaMeasurementInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unusable field or points",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Antenna not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/nanovna/library": {
+      "get": {
+        "operationId": "get_nanovna_library",
+        "responses": {
+          "200": {
+            "description": "Saved antennas and their measurements, without points",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NanoVnaLibraryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/nanovna/measurements/{id}": {
+      "get": {
+        "operationId": "get_nanovna_measurement",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Measurement id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The measurement with its points",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NanoVnaMeasurement"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Measurement not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_nanovna_measurement",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Measurement id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Measurement removed"
+          },
+          "404": {
+            "description": "Measurement not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "update_nanovna_measurement",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Measurement id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNanoVnaMeasurementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Measurement updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NanoVnaMeasurementInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unusable field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Measurement not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/occupancy": {
       "get": {
         "operationId": "get_occupancy",
@@ -22523,6 +22871,44 @@
           }
         }
       },
+      "NanoVnaAntenna": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "notes",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "NanoVnaAntennaRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
       "NanoVnaCalStep": {
         "oneOf": [
           {
@@ -22785,6 +23171,35 @@
           }
         }
       },
+      "NanoVnaConfigureRequest": {
+        "type": "object",
+        "required": [
+          "port"
+        ],
+        "properties": {
+          "bandwidth_hz": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "port": {
+            "type": "string"
+          },
+          "power": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NanoVnaPower"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "NanoVnaDevice": {
         "type": "object",
         "required": [
@@ -22909,6 +23324,14 @@
               "type": "string"
             }
           },
+          "max_points": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
           "port": {
             "type": "string"
           },
@@ -22947,12 +23370,122 @@
           }
         }
       },
+      "NanoVnaLibraryResponse": {
+        "type": "object",
+        "required": [
+          "antennas",
+          "measurements"
+        ],
+        "properties": {
+          "antennas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NanoVnaAntenna"
+            }
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NanoVnaMeasurementInfo"
+            }
+          }
+        }
+      },
       "NanoVnaMatch": {
         "type": "string",
         "enum": [
           "confirmed",
           "probable"
         ]
+      },
+      "NanoVnaMeasurement": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NanoVnaMeasurementInfo"
+          },
+          {
+            "type": "object",
+            "required": [
+              "points"
+            ],
+            "properties": {
+              "points": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NanoVnaPoint"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "NanoVnaMeasurementInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "antenna_id",
+          "label",
+          "note",
+          "created_at",
+          "start_hz",
+          "stop_hz",
+          "point_count"
+        ],
+        "properties": {
+          "antenna_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "best_hz": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "best_vswr": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "instrument": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "point_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "start_hz": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "stop_hz": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
       },
       "NanoVnaPoint": {
         "type": "object",
@@ -22985,6 +23518,29 @@
             "type": "string"
           }
         }
+      },
+      "NanoVnaPower": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "auto"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "level"
+            ],
+            "properties": {
+              "level": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          }
+        ]
       },
       "NanoVnaRequest": {
         "oneOf": [
@@ -23059,6 +23615,27 @@
                     "type": "string",
                     "enum": [
                       "calibrate"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NanoVnaConfigureRequest"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "configure"
                     ]
                   }
                 }
@@ -29365,6 +29942,33 @@
           }
         }
       },
+      "SaveNanoVnaMeasurementRequest": {
+        "type": "object",
+        "required": [
+          "label",
+          "points"
+        ],
+        "properties": {
+          "instrument": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NanoVnaPoint"
+            }
+          }
+        }
+      },
       "SaveRadioRequest": {
         "type": "object",
         "required": [
@@ -33250,6 +33854,20 @@
           "front",
           "back"
         ]
+      },
+      "UpdateNanoVnaMeasurementRequest": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
       },
       "UpdateWorkspaceRequest": {
         "type": "object",
