@@ -69,9 +69,24 @@ describe("pointer sender", () => {
 });
 
 describe("author key", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
   it("stays the same across calls", () => {
     expect(authorKey()).toBe(authorKey());
     expect(authorKey()).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it("mints one where randomUUID is absent, as on a plain-HTTP origin", () => {
+    localStorage.clear();
+    const real = globalThis.crypto;
+    vi.stubGlobal("crypto", {
+      getRandomValues: (buffer: Uint8Array<ArrayBuffer>) => real.getRandomValues(buffer),
+    });
+
+    expect(authorKey()).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 

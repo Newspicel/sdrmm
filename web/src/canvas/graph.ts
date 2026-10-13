@@ -1,4 +1,5 @@
 import { catalogType } from "../lib/catalog";
+import { randomHex } from "../lib/hex";
 import { MAX_STREAMS } from "../lib/limits";
 import type {
   Capabilities,
@@ -63,16 +64,11 @@ export function nodeIds(graph: PatchGraph): Set<string> {
 }
 
 export function newNodeId(kind: NodeKind, taken: ReadonlySet<string>): string {
-  let id = `${kind}:${randomHex()}`;
+  let id = `${kind}:${randomHex(ID_BYTES)}`;
   while (taken.has(id)) {
-    id = `${kind}:${randomHex()}`;
+    id = `${kind}:${randomHex(ID_BYTES)}`;
   }
   return id;
-}
-
-function randomHex(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(ID_BYTES));
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function descriptorOf(
