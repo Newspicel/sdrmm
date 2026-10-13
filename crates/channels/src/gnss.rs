@@ -3,8 +3,8 @@ use std::{f32::consts::TAU, sync::LazyLock};
 use num_complex::Complex;
 use sdrmm_dsp::fft::FftPair;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, GnssFrame,
-    GnssParams,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    GnssFrame, GnssParams,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -26,7 +26,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2_046_000.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("gnss".to_owned()),
+    emits: vec![EventKind::Gnss],
     ..ChannelDescriptor::default()
 });
 

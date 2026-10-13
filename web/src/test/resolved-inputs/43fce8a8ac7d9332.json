@@ -1,0 +1,140 @@
+{
+  "name": "43fce8a8ac7d9332",
+  "test": "ArrayFace > spans spread lanes and hides the span when tuned together",
+  "graph": {
+    "nodes": [
+      {
+        "id": "kraken",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "kraken5"
+          }
+        }
+      },
+      {
+        "id": "rtl",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "rtlsdr",
+            "key": "rtl"
+          }
+        }
+      },
+      {
+        "id": "north",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "spread",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        },
+        "label": "North"
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane"
+        }
+      },
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq2"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane2"
+        }
+      },
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq3"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane3"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "kraken5",
+          "label": "KrakenSDR"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "duplex": "rx_only",
+          "rx_streams": 3,
+          "per_stream": {
+            "tuning": true
+          }
+        },
+        "settings": {
+          "center_hz": 100000000,
+          "streams": [
+            {
+              "stream": 1,
+              "center_hz": 102000000
+            },
+            {
+              "stream": 2,
+              "center_hz": 104000000
+            }
+          ]
+        },
+        "status": "running",
+        "channels": [],
+        "overruns": 0
+      }
+    ],
+    "revision": 0
+  }
+}

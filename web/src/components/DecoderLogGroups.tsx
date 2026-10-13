@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { useKindLabel } from "../lib/eventKinds";
 import type { LogGroupKey } from "../lib/types";
 import { Button } from "./BaseControls";
 import { TABLE_CELL, TABLE_HEAD } from "./controls";
-import { kindLabel } from "./decoderLog";
 import { formatClock } from "./decoderViews";
 import { RowDetail } from "./LogRowDetail";
 import { formatAirtime, type GroupRow, type GroupSort, hasAirtime, sortGroups } from "./logGroups";
@@ -125,6 +125,7 @@ function GroupRows({
   open: boolean;
   onToggle: () => void;
 }) {
+  const kindLabel = useKindLabel();
   return (
     <>
       <tr

@@ -18,7 +18,7 @@ use num_complex::Complex;
 use receiver::Receiver;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
     GSM_CHANNEL_SPACING_HZ, GsmParams,
 };
 
@@ -35,7 +35,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: GSM_CHANNEL_SPACING_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    decoder_kind: Some("gsm".to_owned()),
+    emits: vec![EventKind::Gsm],
     ..ChannelDescriptor::default()
 });
 

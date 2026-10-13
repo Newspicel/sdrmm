@@ -11,7 +11,7 @@ import type {
 import { catalogBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
 import { arrayStatus, capabilities, deviceSet, laneStatus, placed } from "../../test/fixtures";
-import { streamPort } from "../graph";
+import { portName } from "../../test/resolved";
 import { ArrayFace } from "./ArrayFace";
 import { ALIASING, NOT_WIRED, SAME_PLACE } from "./ArrayGeometryEditor";
 import { NO_LANES_HINT } from "./ArrayLanes";
@@ -32,8 +32,8 @@ const RTL = deviceSet({ id: 2, device: { driver: "rtlsdr", key: "rtl", label: "R
 
 function wires(device: string, streams: number, from = 0): PatchEdge[] {
   return Array.from({ length: streams }, (_, index) => ({
-    from: { node: device, port: streamPort("iq", index) },
-    to: { node: "north", port: streamPort("lane", from + index) },
+    from: { node: device, port: portName("iq", index) },
+    to: { node: "north", port: portName("lane", from + index) },
   }));
 }
 

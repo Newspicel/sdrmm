@@ -89,7 +89,7 @@ function LaneRow({ row }: { row: ArrayLaneRow }) {
     <div role="listitem" title={laneTitle(row)}>
       <MeterRow
         port={row.port}
-        label={<span className="truncate font-mono text-2xs text-port-array">L{row.lane}</span>}
+        label={<span className="truncate font-mono text-2xs text-hue-indigo">L{row.lane}</span>}
         meter={
           <MeterBar
             label={`Lane ${row.lane} quality`}

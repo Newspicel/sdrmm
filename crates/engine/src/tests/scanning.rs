@@ -1271,3 +1271,44 @@ async fn hunt_sweep_publishes_a_df_event() {
     engine.stop_hunt(ds, ch).unwrap();
     engine.remove_device_set(ds).unwrap();
 }
+
+#[tokio::test]
+async fn a_scan_or_hunt_watching_another_lane_is_refused() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(SignalDriver));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
+    let elsewhere = Some(sdrmm_wire::WatchedLane {
+        device_set: ds,
+        stream: 1,
+    });
+    let scan = sdrmm_wire::ScanSettings {
+        frequencies: vec![SIGNAL_HZ],
+        lane: elsewhere,
+        ..sdrmm_wire::ScanSettings::for_channel(ch)
+    };
+    assert!(matches!(
+        engine.start_scan(ds, scan),
+        Err(EngineError::OtherLane)
+    ));
+    let hunt = sdrmm_wire::HuntSettings {
+        lane: elsewhere,
+        ..sdrmm_wire::HuntSettings::for_channel(ch)
+    };
+    assert!(matches!(
+        engine.start_hunt(ds, hunt),
+        Err(EngineError::OtherLane)
+    ));
+    let own = sdrmm_wire::ScanSettings {
+        frequencies: vec![SIGNAL_HZ],
+        lane: Some(sdrmm_wire::WatchedLane {
+            device_set: ds,
+            stream: 0,
+        }),
+        ..sdrmm_wire::ScanSettings::for_channel(ch)
+    };
+    engine.start_scan(ds, own).expect("its own lane scans");
+    engine.stop_scan(ds, ch).expect("stop");
+    engine.remove_device_set(ds).unwrap();
+}

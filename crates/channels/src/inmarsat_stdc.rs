@@ -3,7 +3,7 @@ use std::{ops::RangeInclusive, sync::LazyLock};
 use num_complex::Complex;
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, InmarsatStdcParams,
+    DecoderFamily, EventKind, InmarsatStdcParams,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -46,7 +46,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("inmarsat_stdc".to_owned()),
+    emits: vec![EventKind::InmarsatStdc],
     ..ChannelDescriptor::default()
 });
 
@@ -273,6 +273,9 @@ impl ChannelRx for InmarsatStdcChannel {
 }
 
 #[cfg(test)]
+pub(crate) use tests::fixture;
+
+#[cfg(test)]
 mod tests {
     use sdrmm_dsp::Ddc;
 
@@ -302,6 +305,17 @@ mod tests {
         let mut iq = Vec::new();
         ddc.process(&capture, &mut iq);
         iq
+    }
+
+    pub(crate) fn fixture() -> crate::fixtures::Fixture {
+        let symbols = bulletin_board_frame();
+        let mut bits: Vec<u8> = (0..4_000).map(|index| (index % 2) as u8).collect();
+        bits.extend(&symbols);
+        bits.extend(&symbols);
+        crate::fixtures::Fixture::new(
+            ChannelParams::InmarsatStdc(InmarsatStdcParams::default()),
+            modulate::modulate(&bits, 1_200.0, RATE, 0.0, 0.5),
+        )
     }
 
     #[test]

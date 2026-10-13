@@ -14,8 +14,8 @@ use burst::{Burst, Detector, INPUT_RATE_HZ, OCCUPIED_BANDWIDTH_HZ};
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, DectParams,
-    DectSpan,
+    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    DectParams, DectSpan, EventKind,
 };
 use wideband::Wideband;
 
@@ -31,7 +31,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: OCCUPIED_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    decoder_kind: Some("dect".to_owned()),
+    emits: vec![EventKind::Dect],
+    calls: Some(CallGate::Squelch),
     ..ChannelDescriptor::default()
 });
 

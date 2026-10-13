@@ -6,6 +6,7 @@ import type { DfEstimate, DfFusionState, DfStation, PatchGraph, PatchNode } from
 import { CATALOG, catalogBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
 import { placed } from "../../test/fixtures";
+import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
 import { HeatMarks } from "./FusionHeat";
 import { TriangulationFace } from "./TriangulationFace";
 import {
@@ -38,17 +39,15 @@ const WIRED: PatchGraph = {
   nodes: [
     placed("finder", catalogBody("df")),
     placed("walk", catalogBody("hunt")),
-    placed("filter", { kind: "event_filter" }),
-    placed("log", { kind: "decoder_log" }),
+    placed("filter", catalogBody("event_filter")),
+    placed("east", catalogBody("df")),
     TRI,
   ],
   edges: [
     wire("finder", "tri"),
-    wire("finder", "tri"),
     wire("walk", "tri"),
+    wire("east", "filter"),
     wire("filter", "tri"),
-    wire("log", "tri"),
-    wire("finder", "log"),
   ],
 };
 
@@ -179,11 +178,25 @@ describe("HeatMarks", () => {
   });
 });
 
+function events(sources: { source: string; via?: string[] }[]) {
+  return resolvedPort(
+    { name: "events", port_type: "events", direction: "in", multi: "many" },
+    { feeds: sources.map((feed) => ({ port: "events", ...feed })) },
+  );
+}
+
 describe("fusionSources", () => {
-  it("counts each wired finder, hunt and filter once", () => {
-    expect(fusionSources(WIRED, "tri")).toBe(3);
-    expect(fusionSources(WIRED, "log")).toBe(1);
-    expect(fusionSources({ nodes: [TRI], edges: [] }, "tri")).toBe(0);
+  it("counts each producer feeding the events input once, through filters", () => {
+    const resolved = resolvedPatch([
+      resolvedNodeOf("tri", "triangulation", [
+        events([{ source: "finder" }, { source: "walk" }, { source: "finder", via: ["filter"] }]),
+      ]),
+      resolvedNodeOf("log", "decoder_log", [events([{ source: "finder" }])]),
+    ]);
+    expect(fusionSources(resolved, "tri")).toBe(2);
+    expect(fusionSources(resolved, "log")).toBe(1);
+    expect(fusionSources(resolved, "nowhere")).toBe(0);
+    expect(fusionSources(null, "tri")).toBe(0);
   });
 });
 

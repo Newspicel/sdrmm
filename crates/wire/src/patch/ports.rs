@@ -1,0 +1,15 @@
+pub const IQ_PORT: &str = "iq";
+pub const BASEBAND_PORT: &str = "baseband";
+pub const AUDIO_PORT: &str = "audio";
+pub const EVENTS_PORT: &str = "events";
+pub const VIDEO_PORT: &str = "video";
+pub const CONTROL_PORT: &str = "control";
+pub const POSITION_PORT: &str = "position";
+pub const ARRAY_PORT: &str = "array";
+pub const ARRAY_LANE_PORT: &str = "lane";
+pub const BEAM_PORT: &str = "beam";
+pub const BEARING_PORT: &str = "bearing";
+pub const STITCH_WIDE_PORT: &str = "wide";
+pub const STEER_PORT: &str = "steer";
+pub const RADAR_TX_PORT: &str = "tx";
+pub const RADAR_TRUTH_PORT: &str = "adsb";

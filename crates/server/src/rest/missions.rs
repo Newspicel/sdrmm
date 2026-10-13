@@ -82,7 +82,7 @@ pub(super) async fn switch_mission_workspace(
         switch_for_phone(&switched, request.workspace, by)
     })
     .await??;
-    reconcile_graph(state.clone()).await?;
+    resolve_now(state.clone()).await?;
     Ok(Json(listing(state).await?))
 }
 

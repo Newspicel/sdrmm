@@ -9,7 +9,7 @@ use sdrmm_modem::analog::{
     Sideband as EngineSideband, SsbDemod, SsbDetector, SsbMethod, SsbParams as SsbWaveform,
 };
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, Sideband, SsbParams,
+    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderFamily, Sideband, SsbParams,
 };
 
 use crate::{
@@ -30,7 +30,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 3_000.0,
     input_rate_hz: 48_000.0,
     has_audio: true,
-    decoder_kind: None,
+    calls: Some(CallGate::Squelch),
     ..ChannelDescriptor::default()
 });
 

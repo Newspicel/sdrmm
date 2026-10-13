@@ -1,7 +1,14 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::LatLon;
+use crate::{
+    LatLon,
+    decode::EventKind,
+    present::{
+        EventPayload, FieldValue, LineStyle, Place, Presentation, Shape, Unit, fields, flag,
+        number, text, trimmed,
+    },
+};
 
 pub const MAX_TLE_LEN: usize = 256;
 pub const MAX_TRANSMITTER_ID_LEN: usize = 64;
@@ -126,6 +133,8 @@ pub struct SatelliteStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uplink_hz: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub downlink_hz: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_pass: Option<SatellitePass>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pass_track: Vec<PassPoint>,
@@ -226,5 +235,195 @@ mod tests {
         for node in bad {
             assert!(!node.valid(), "{node:?}");
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct SatelliteFix {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground: Option<SatelliteGround>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ground_track: Vec<LatLon>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look: Option<SatelliteLook>,
+    #[serde(default)]
+    pub visible: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doppler_hz: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_pass: Option<SatellitePass>,
+}
+
+impl SatelliteFix {
+    #[must_use]
+    pub fn of(status: &SatelliteStatus) -> Self {
+        Self {
+            name: status.name.clone(),
+            catalog: status.catalog.clone(),
+            ground: status.ground,
+            ground_track: status.ground_track.clone(),
+            look: status.look,
+            visible: status.visible,
+            doppler_hz: status.doppler_hz,
+            next_pass: status.next_pass,
+        }
+    }
+
+    fn label(&self) -> Option<String> {
+        trimmed(self.name.as_deref()).or_else(|| self.catalog.clone())
+    }
+}
+
+fn unix_time(seconds: i64) -> Option<FieldValue> {
+    jiff::Timestamp::from_second(seconds)
+        .ok()
+        .map(|at| FieldValue::Time(at.to_string()))
+}
+
+const SATELLITE_ENTITY: &str = "satellite";
+
+impl EventPayload for SatelliteFix {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let label = self.label();
+        let Some(ground) = self.ground else {
+            return Presentation {
+                entity: Some(SATELLITE_ENTITY.to_owned()),
+                label,
+                gone: true,
+                ..Presentation::of("Satellite lost".to_owned())
+            };
+        };
+        let at = ground.at;
+        let mut shapes = vec![Shape::Circle {
+            center: at,
+            radius_m: (ground.footprint_km * 1_000.0) as f32,
+        }];
+        if self.ground_track.len() >= 2 {
+            shapes.push(Shape::Line {
+                points: self.ground_track.clone(),
+                style: LineStyle::Track,
+            });
+        }
+        let summary = match (&label, self.look) {
+            (Some(label), Some(look)) => format!("{label} el {:.0}°", look.elevation_deg),
+            (Some(label), None) => label.clone(),
+            (None, _) => "Satellite".to_owned(),
+        };
+        Presentation {
+            entity: Some(SATELLITE_ENTITY.to_owned()),
+            label,
+            place: Some(Place::at(at).altitude(Some((ground.altitude_km * 1_000.0) as f32))),
+            shapes,
+            fields: fields(&[
+                ("Catalog", text(self.catalog.as_deref())),
+                (
+                    "Altitude",
+                    number(Some(ground.altitude_km), Unit::Kilometres, 0),
+                ),
+                (
+                    "Footprint",
+                    number(Some(ground.footprint_km), Unit::Kilometres, 0),
+                ),
+                ("Visible", flag(Some(self.visible))),
+                (
+                    "Elevation",
+                    number(self.look.map(|look| look.elevation_deg), Unit::Degrees, 1),
+                ),
+                (
+                    "Azimuth",
+                    number(self.look.map(|look| look.azimuth_deg), Unit::Degrees, 1),
+                ),
+                (
+                    "Range",
+                    number(self.look.map(|look| look.range_km), Unit::Kilometres, 0),
+                ),
+                ("Doppler", number(self.doppler_hz, Unit::Hz, 0)),
+                (
+                    "Next pass",
+                    self.next_pass.and_then(|pass| unix_time(pass.max_at)),
+                ),
+            ]),
+            ..Presentation::of(summary)
+        }
+    }
+}
+
+#[cfg(test)]
+mod fix_tests {
+    use super::*;
+
+    fn fix(track: Vec<LatLon>) -> SatelliteFix {
+        SatelliteFix {
+            name: Some("ISS (ZARYA)".to_owned()),
+            catalog: Some("25544".to_owned()),
+            ground: Some(SatelliteGround {
+                at: LatLon {
+                    lat: 51.0,
+                    lon: 10.0,
+                },
+                altitude_km: 420.0,
+                footprint_km: 2_200.0,
+            }),
+            ground_track: track,
+            look: None,
+            visible: true,
+            doppler_hz: None,
+            next_pass: None,
+        }
+    }
+
+    #[test]
+    fn a_satellite_draws_its_footprint_and_ground_track() {
+        let track = vec![
+            LatLon {
+                lat: 50.0,
+                lon: 9.0,
+            },
+            LatLon {
+                lat: 51.0,
+                lon: 10.0,
+            },
+        ];
+        let view = fix(track.clone()).present(EventKind::Satellite);
+
+        assert_eq!(view.entity.as_deref(), Some(SATELLITE_ENTITY));
+        assert!(!view.gone);
+        assert_eq!(view.label.as_deref(), Some("ISS (ZARYA)"));
+        assert_eq!(
+            view.shapes,
+            [
+                Shape::Circle {
+                    center: LatLon {
+                        lat: 51.0,
+                        lon: 10.0
+                    },
+                    radius_m: 2_200_000.0,
+                },
+                Shape::Line {
+                    points: track,
+                    style: LineStyle::Track,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_satellite_without_a_track_draws_only_its_footprint() {
+        assert_eq!(
+            fix(Vec::new()).present(EventKind::Satellite).shapes.len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_status_without_a_ground_point_says_the_satellite_is_gone() {
+        let view = SatelliteFix::of(&SatelliteStatus::default()).present(EventKind::Satellite);
+        assert!(view.gone);
+        assert_eq!(view.entity.as_deref(), Some(SATELLITE_ENTITY));
+        assert_eq!(view.place, None);
     }
 }

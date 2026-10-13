@@ -1,4 +1,4 @@
-import { Chips, NumberChip, OptionalNumberChip, ToggleChip } from "../../components/face/Chips";
+import { Chips, NumberChip, OptionalNumberChip } from "../../components/face/Chips";
 import type { PatchNode, SpectrumMonitorNode } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -70,12 +70,6 @@ export function SpectrumMonitorFace({ node }: { node: PatchNode }) {
             max={100}
             step={5}
             onCommit={(value) => edit({ min_confidence: value / 100 })}
-          />
-          <ToggleChip
-            label="Clips"
-            title="Attach temporary audio clips to transmission events"
-            on={node.data.record_audio ?? true}
-            onChange={(record_audio) => edit({ record_audio })}
           />
         </Chips>
       </FaceBody>

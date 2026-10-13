@@ -66,24 +66,6 @@ pub struct NetworkExportNode {
     pub settings: NetworkExportSettings,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct NetworkExportRequest {
-    pub action: NetworkExportAction,
-    pub node: String,
-    #[serde(default)]
-    pub stream: u32,
-    #[serde(default)]
-    pub settings: NetworkExportSettings,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct ChannelNetworkExportRequest {
-    pub action: NetworkExportAction,
-    pub node: String,
-    #[serde(default)]
-    pub settings: NetworkExportSettings,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkExportAction {

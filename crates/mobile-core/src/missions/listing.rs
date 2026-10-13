@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use sdrmm_wire::{
     fusion::DfFusionState,
@@ -205,33 +205,34 @@ fn mission(
 }
 
 fn project(response: &MissionsResponse) -> Vec<Entry> {
-    let triangulations: HashMap<&str, &wire::Mission> = response
+    let fusions: Vec<&wire::Mission> = response
         .missions
         .iter()
         .filter(|listed| matches!(listed.body, MissionBody::Triangulation(_)))
-        .map(|listed| (listed.node.as_str(), listed))
         .collect();
-    let reached: HashSet<&str> = response
+    let dfs: HashSet<&str> = response
         .missions
         .iter()
-        .filter_map(|listed| match &listed.body {
-            MissionBody::Df(df) => Some(df.triangulations.iter().map(String::as_str)),
-            _ => None,
-        })
-        .flatten()
+        .filter(|listed| matches!(listed.body, MissionBody::Df(_)))
+        .map(|listed| listed.node.as_str())
         .collect();
     response
         .missions
         .iter()
-        .filter_map(|listed| entry(listed, &triangulations, &reached))
+        .filter_map(|listed| entry(listed, &fusions, &dfs))
         .collect()
 }
 
-fn entry(
-    listed: &wire::Mission,
-    triangulations: &HashMap<&str, &wire::Mission>,
-    reached: &HashSet<&str>,
-) -> Option<Entry> {
+fn fused_by<'a>(fusions: &[&'a wire::Mission], node: &str) -> Option<&'a wire::Mission> {
+    fusions.iter().copied().find(|fusion| match &fusion.body {
+        MissionBody::Triangulation(triangulation) => {
+            triangulation.sources.iter().any(|source| source == node)
+        }
+        _ => false,
+    })
+}
+
+fn entry(listed: &wire::Mission, fusions: &[&wire::Mission], dfs: &HashSet<&str>) -> Option<Entry> {
     let own = |extra: &[MissionControl]| controls(&listed.controls, extra);
     Some(match &listed.body {
         MissionBody::Hunt(hunt) => {
@@ -248,8 +249,8 @@ fn entry(
             }
         }
         MissionBody::Df(df) => {
-            let first = df.triangulations.first();
-            let fused = first.and_then(|node| triangulations.get(node.as_str()));
+            let fused = fused_by(fusions, &listed.node);
+            let first = fused.map(|fused| &fused.node);
             let clear_on = fused
                 .filter(|fused| fused.controls.contains(&wire::MissionControl::ClearFusion))
                 .map(|fused| fused.node.clone());
@@ -300,7 +301,11 @@ fn entry(
             },
         },
         MissionBody::Triangulation(triangulation) => {
-            if reached.contains(listed.node.as_str()) {
+            if triangulation
+                .sources
+                .iter()
+                .any(|source| dfs.contains(source.as_str()))
+            {
                 return None;
             }
             let detail = match triangulation.sources.len() {

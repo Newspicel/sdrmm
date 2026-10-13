@@ -11,7 +11,7 @@ use axum::{
 use reqwest::StatusCode;
 use sdrmm_wire::{
     ChannelNode, DecoderEvent, EventAudio, EventOutputNode, PatchEdge, PatchGraph, PatchNode,
-    PortRef, Position, RackLayout, RttyText, UpdateWorkspaceRequest, WorkspaceSnapshot,
+    PortRef, Position, RackLayout, RttyText, UpdateWorkspaceRequest, VoiceCall, WorkspaceSnapshot,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -89,9 +89,43 @@ fn call_record() -> DecodedRecord {
         origin: None,
         sinks: Vec::new(),
         callsign: None,
+        freq_hz: 451_125_000.0,
         event: DecoderEvent::Call(call()),
         ..decoded()
     }
+}
+
+fn message(node: &str, record: &DecodedRecord) -> OutputMessage {
+    decoded_message(node, record, 1, view_of(record), None)
+}
+
+fn clip_message(node: &str, bytes: Bytes) -> OutputMessage {
+    let record = call_record();
+    let view = view_of(&record);
+    let audio = OutputAudio {
+        bytes,
+        stem: clip_stem(&record, &view),
+        duration_ms: view.duration_ms.unwrap_or_default(),
+    };
+    decoded_message(node, &record, 1, view, Some(audio))
+}
+
+fn call_text(call: VoiceCall) -> OutputMessage {
+    message(
+        "chat",
+        &DecodedRecord {
+            event: DecoderEvent::Call(call),
+            ..call_record()
+        },
+    )
+}
+
+fn stem_of(call: VoiceCall) -> String {
+    let record = DecodedRecord {
+        event: DecoderEvent::Call(call),
+        ..call_record()
+    };
+    clip_stem(&record, &view_of(&record))
 }
 
 fn decoded() -> DecodedRecord {
@@ -106,6 +140,7 @@ fn decoded() -> DecodedRecord {
         event: DecoderEvent::Rtty(RttyText {
             text: "CQ TEST".to_owned(),
         }),
+        view: None,
     }
 }
 
@@ -189,37 +224,51 @@ async fn capture(State(captures): State<Captures>, request: Request) -> AxumResp
 }
 
 #[test]
-fn summary_is_one_caption_line_holding_the_complete_call_metadata() {
-    let text = format_call(&call());
-    assert_eq!(
-        text,
-        "DMR call · talkgroup 91 · from 1001 · TS2 · CC3 · 1.2 s · 451.125000 MHz"
-    );
+fn a_call_message_leads_with_its_mode_and_holds_the_call_facts() {
+    let body = call_text(call()).body;
+    let lines: Vec<&str> = body.lines().collect();
+    assert_eq!(lines[0], "DMR call");
+    for fact in ["talkgroup 91", "from 1001", "TS2", "1.2 s"] {
+        assert!(lines[1].contains(fact), "{fact} in {body}");
+    }
+    assert!(body.contains("Frequency: 451.125000 MHz"), "{body}");
 }
 
 #[test]
 fn an_emergency_encrypted_call_names_both_flags() {
-    let text = format_call(&VoiceCall {
+    let body = call_text(VoiceCall {
         emergency: true,
         encrypted: true,
         ..call()
-    });
-    assert!(text.ends_with("· emergency · encrypted"));
+    })
+    .body;
+    assert!(
+        body.contains("emergency") && body.contains("encrypted"),
+        "{body}"
+    );
 }
 
 #[test]
 fn the_html_caption_escapes_the_audio_error() {
-    let html = format_call_html(&VoiceCall {
+    let message = call_text(VoiceCall {
         audio_error: Some("lost <2> blocks & counting".to_owned()),
         ..call()
     });
-    assert!(html.starts_with("<strong>DMR call</strong> · talkgroup 91"));
-    assert!(html.ends_with("<br/><em>lost &lt;2&gt; blocks &amp; counting</em>"));
+    let html = message.html.expect("html");
+    assert!(html.starts_with("<strong>DMR call</strong><br/>"), "{html}");
+    assert!(
+        html.ends_with("<br/>Audio: lost &lt;2&gt; blocks &amp; counting"),
+        "{html}"
+    );
+    assert_eq!(
+        message.audio_error.as_deref(),
+        Some("lost <2> blocks & counting")
+    );
 }
 
 #[test]
 fn summary_contains_generic_decoder_metadata() {
-    let text = format_decoded(&decoded());
+    let text = message("chat", &decoded()).body;
     assert!(text.contains("RTTY decode"));
     assert!(text.contains("CQ TEST"));
     assert!(text.contains("Frequency: 14.080000 MHz"));
@@ -228,7 +277,7 @@ fn summary_contains_generic_decoder_metadata() {
 
 #[test]
 fn resolve_maps_configured_outputs_and_the_events_port() {
-    let store = Store::open(None).expect("open store");
+    let store = crate::Store::open(None).expect("open store");
     let active = store
         .active_workspace()
         .expect("read active workspace")
@@ -268,7 +317,7 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
         )
         .expect("update workspace");
 
-    let routing = resolve(&store).expect("resolve outputs");
+    let routing = routing_over(&store);
     let bindings = routing.bindings;
 
     assert_eq!(bindings.len(), 1);
@@ -321,7 +370,7 @@ fn a_completed_call_travels_the_events_wire_like_any_other_decode() {
     let deliveries = decoded_deliveries(&routing, &record, 9, &Calls::default());
 
     assert_eq!(deliveries.len(), 1);
-    assert_eq!(deliveries[0].event, "call 7");
+    assert_eq!(deliveries[0].event, "call /api/calls/7/audio");
     assert!(deliveries[0].message.body.contains("talkgroup 91"));
 }
 
@@ -331,6 +380,17 @@ fn recordings_routing() -> Routing {
             node: "matched".to_owned(),
             target: EventOutputTarget::Recordings,
         }],
+    }
+}
+
+fn from_voice(event: DecoderEvent) -> DecodedRecord {
+    DecodedRecord {
+        origin: Some(sdrmm_wire::EventOrigin {
+            node: "voice".to_owned(),
+            transmission: 0,
+        }),
+        event,
+        ..decoded()
     }
 }
 
@@ -349,34 +409,33 @@ fn analog_call() -> VoiceCall {
 }
 
 #[test]
-fn recordings_take_only_events_that_carry_audio() {
+fn recordings_take_the_clip_the_event_brings() {
     let routing = recordings_routing();
-    assert!(decoded_deliveries(&routing, &decoded(), 1, &Calls::default()).is_empty());
-    let record = DecodedRecord {
-        event: DecoderEvent::Call(analog_call()),
-        ..decoded()
+    let calls = Calls::default();
+    let (audio, _) = calls.store_clip(&[1, 2, 3]);
+    assert!(decoded_deliveries(&routing, &decoded(), 1, &calls).is_empty());
+    let clipped = VoiceCall {
+        audio: Some(audio),
+        ..analog_call()
     };
-    assert_eq!(
-        decoded_deliveries(&routing, &record, 1, &Calls::default()).len(),
-        1
-    );
-    let silent = DecodedRecord {
-        event: DecoderEvent::Call(VoiceCall {
-            audio: None,
-            encrypted: true,
-            ..call()
-        }),
-        ..decoded()
-    };
-    assert!(decoded_deliveries(&routing, &silent, 1, &Calls::default()).is_empty());
+    let wired = from_voice(DecoderEvent::Call(clipped.clone()));
+    let delivered = decoded_deliveries(&routing, &wired, 1, &calls);
+    assert_eq!(delivered.len(), 1);
+    assert!(delivered[0].message.audio.is_some());
+    let silent = from_voice(DecoderEvent::Call(VoiceCall {
+        audio: None,
+        encrypted: true,
+        ..call()
+    }));
+    assert!(decoded_deliveries(&routing, &silent, 1, &calls).is_empty());
 }
 
 #[test]
 fn a_call_is_named_by_time_mode_frequency_and_talkgroup() {
-    assert_eq!(call_stem(&analog_call()), "20261001T223100Z_AM_144.100MHz");
-    assert_eq!(call_stem(&call()), "20260815T100000Z_DMR_451.125MHz_TG91");
+    assert_eq!(stem_of(analog_call()), "20261001T223100Z_AM_144.100MHz");
+    assert_eq!(stem_of(call()), "20260815T100000Z_DMR_451.125MHz_TG91");
     assert_eq!(
-        call_stem(&VoiceCall {
+        stem_of(VoiceCall {
             group_call: Some(false),
             ..call()
         }),
@@ -393,13 +452,10 @@ async fn a_saved_call_lands_in_the_audio_library() {
     );
     let calls = Calls::default();
     let (audio, _) = calls.store_clip(&[1, 2, 3]);
-    let record = DecodedRecord {
-        event: DecoderEvent::Call(VoiceCall {
-            audio: Some(audio),
-            ..analog_call()
-        }),
-        ..decoded()
-    };
+    let record = from_voice(DecoderEvent::Call(VoiceCall {
+        audio: Some(audio),
+        ..analog_call()
+    }));
     let deliveries = decoded_deliveries(&recordings_routing(), &record, 1, &calls);
     let weak = Arc::downgrade(&engine);
 
@@ -427,14 +483,11 @@ async fn a_saved_call_lands_in_the_audio_library() {
 #[tokio::test]
 async fn a_call_whose_audio_was_lost_says_why_it_saved_nothing() {
     let engine = Engine::with_registry(sdrmm_device::DeviceRegistry::new(), None);
-    let record = DecodedRecord {
-        event: DecoderEvent::Call(VoiceCall {
-            audio: None,
-            audio_error: Some("audio stream lost 3 block(s)".to_owned()),
-            ..analog_call()
-        }),
-        ..decoded()
-    };
+    let record = from_voice(DecoderEvent::Call(VoiceCall {
+        audio: None,
+        audio_error: Some("audio stream lost 3 block(s)".to_owned()),
+        ..analog_call()
+    }));
     let deliveries = decoded_deliveries(&recordings_routing(), &record, 1, &Calls::default());
     let error = save_recording(&Arc::downgrade(&engine), &deliveries[0].message)
         .await
@@ -534,12 +587,7 @@ async fn an_absurd_retry_after_is_capped() {
 #[tokio::test]
 async fn discord_sends_metadata_and_wav_in_one_webhook_message() {
     let (base, captures) = server().await;
-    let message = call_message(
-        "chat",
-        &call_record(),
-        &call(),
-        Some(Bytes::from_static(b"RIFF-wave")),
-    );
+    let message = clip_message("chat", Bytes::from_static(b"RIFF-wave"));
     send_webhook(
         &Client::new(),
         &format!("{base}/api/webhooks/1/token?thread_id=5&wait=false"),
@@ -571,7 +619,7 @@ async fn discord_sends_metadata_and_wav_in_one_webhook_message() {
 #[tokio::test]
 async fn discord_sends_decoder_events_as_json() {
     let (base, captures) = server().await;
-    let message = decoded_message("chat", &decoded(), 1);
+    let message = message("chat", &decoded());
     send_webhook(
         &Client::new(),
         &format!("{base}/api/webhooks/1/token"),
@@ -606,7 +654,7 @@ async fn discord_request_errors_do_not_expose_the_webhook_url() {
     let address = listener.local_addr().expect("local address");
     drop(listener);
     let secret = "webhook-secret";
-    let message = decoded_message("chat", &decoded(), 1);
+    let message = message("chat", &decoded());
 
     let error = send_discord(
         &Client::new(),
@@ -624,12 +672,7 @@ async fn discord_request_errors_do_not_expose_the_webhook_url() {
 #[tokio::test]
 async fn matrix_creates_one_audio_event_after_uploading_the_wav() {
     let (base, captures) = server().await;
-    let message = call_message(
-        "chat",
-        &call_record(),
-        &call(),
-        Some(Bytes::from_static(b"RIFF-wave")),
-    );
+    let message = clip_message("chat", Bytes::from_static(b"RIFF-wave"));
     send_matrix(
         &Client::new(),
         MatrixTarget {
@@ -685,7 +728,7 @@ async fn matrix_creates_one_audio_event_after_uploading_the_wav() {
 async fn matrix_sends_one_text_event_without_audio() {
     let (base, captures) = server().await;
     let homeserver_url = format!("{base}/matrix");
-    let message = decoded_message("chat", &decoded(), 1);
+    let message = message("chat", &decoded());
     send_matrix(
         &Client::new(),
         MatrixTarget {
@@ -722,7 +765,7 @@ fn oversized_decoder_summaries_are_bounded_and_surface_truncation() {
         text: "x".repeat(MAX_MESSAGE_CHARS * 2),
     });
 
-    let message = decoded_message("chat", &record, 1);
+    let message = message("chat", &record);
 
     assert_eq!(message.body.chars().count(), MAX_MESSAGE_CHARS);
     assert!(message.body.ends_with("… [truncated]"));
@@ -750,12 +793,7 @@ async fn error_response_body_is_bounded_before_formatting() {
 #[tokio::test]
 async fn a_json_webhook_posts_the_structured_event_without_the_wav() {
     let (base, captures) = server().await;
-    let message = call_message(
-        "chat",
-        &call_record(),
-        &call(),
-        Some(Bytes::from_static(b"RIFF-wave")),
-    );
+    let message = clip_message("chat", Bytes::from_static(b"RIFF-wave"));
 
     send_webhook(
         &Client::new(),
@@ -796,7 +834,7 @@ async fn a_json_webhook_posts_the_structured_event_without_the_wav() {
 #[tokio::test]
 async fn a_json_webhook_carries_the_decoded_payload() {
     let (base, captures) = server().await;
-    let message = decoded_message("chat", &decoded(), 1);
+    let message = message("chat", &decoded());
 
     send_webhook(
         &Client::new(),
@@ -825,7 +863,7 @@ async fn a_json_webhook_error_does_not_expose_the_endpoint() {
     let address = listener.local_addr().expect("local address");
     drop(listener);
     let secret = "webhook-secret";
-    let message = decoded_message("chat", &decoded(), 1);
+    let message = message("chat", &decoded());
 
     let error = send_webhook(
         &Client::new(),
@@ -1127,7 +1165,7 @@ fn record_publish(log: &Broker, header: u8, body: &[u8]) -> Option<u16> {
 #[tokio::test]
 async fn mqtt_publishes_one_acknowledged_event_per_delivery() {
     let (broker_url, log) = broker().await;
-    let message = decoded_message("chat", &decoded(), 1);
+    let message = message("chat", &decoded());
 
     send_mqtt(
         MqttTarget {
@@ -1161,7 +1199,7 @@ async fn mqtt_publishes_one_acknowledged_event_per_delivery() {
 #[tokio::test]
 async fn mqtt_connects_anonymously_when_no_username_is_set() {
     let (broker_url, log) = broker().await;
-    let message = decoded_message("chat", &decoded(), 1);
+    let message = message("chat", &decoded());
 
     send_mqtt(
         MqttTarget {
@@ -1188,7 +1226,7 @@ async fn an_unreachable_broker_surfaces_the_failure() {
         .expect("test listener");
     let address = listener.local_addr().expect("local address");
     drop(listener);
-    let message = decoded_message("chat", &decoded(), 1);
+    let message = message("chat", &decoded());
 
     let error = send_mqtt(
         MqttTarget {
@@ -1267,6 +1305,16 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
         }),
         ..decoded()
     };
+    let mut plain = routing_for();
+    plain.bindings[0].target = EventOutputTarget::Webhook {
+        url: "https://example.com/hook".to_owned(),
+        format: WebhookFormat::Json,
+    };
+    let unkept = decoded_deliveries(&plain, &record, 1, &calls);
+    assert!(
+        unkept[0].message.audio.is_none(),
+        "a JSON hook keeps no clip"
+    );
     let deliveries = decoded_deliveries(&routing_for(), &record, 1, &calls);
     assert_eq!(deliveries.len(), 1);
     let attachment = deliveries[0].message.audio.as_ref().unwrap();
@@ -1282,7 +1330,7 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
 
 #[test]
 fn beast_listener_requires_an_event_wire_and_explicit_enable() {
-    let store = Store::open(None).unwrap();
+    let store = crate::Store::open(None).unwrap();
     let active = store.active_workspace().unwrap().unwrap();
     let beast = |enabled| {
         NodeBody::EventOutput(EventOutputNode {
@@ -1321,7 +1369,7 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
             None,
         )
         .unwrap();
-    let routing = resolve(&store).unwrap();
+    let routing = routing_over(&store);
     assert_eq!(routing.bindings.len(), 1);
     assert_eq!(routing.bindings[0].node, "wired");
 }
@@ -1349,13 +1397,13 @@ fn delivery_to(node: &str, target: EventOutputTarget, record: &DecodedRecord) ->
         node: node.to_owned(),
         target,
         event: "test".to_owned(),
-        message: decoded_message(node, record, 1),
+        message: message(node, record),
     }
 }
 
 #[test]
 fn an_influx_point_carries_tags_event_fields_and_the_receive_time() {
-    let message = decoded_message("influx", &decoded(), 1);
+    let message = message("influx", &decoded());
 
     let line = influx::line("influx", &message.facts);
 
@@ -1375,7 +1423,7 @@ fn an_influx_point_escapes_names_and_strings() {
         }),
         ..decoded()
     };
-    let message = decoded_message("a b,c=d", &record, 1);
+    let message = message("a b,c=d", &record);
 
     let line = influx::line("a b,c=d", &message.facts);
 
@@ -1537,7 +1585,7 @@ fn a_csv_row_quotes_text_and_defuses_formulas() {
         }),
         ..decoded()
     };
-    let message = decoded_message("log", &record, 1);
+    let message = message("log", &record);
 
     let row = csv::row("log", &message.facts);
 
@@ -1600,4 +1648,14 @@ async fn csv_refuses_a_path_and_a_missing_library() {
 
     assert!(escape.to_string().contains("plain name"), "{escape}");
     assert!(missing.to_string().contains("recordings"), "{missing}");
+}
+
+fn routing_over(store: &crate::Store) -> Routing {
+    let hub = crate::resolved::ResolvedHub::default();
+    hub.reload(
+        store,
+        &Engine::new(None),
+        &crate::problems::ProblemBoard::default(),
+    );
+    routing_of(&hub.current())
 }

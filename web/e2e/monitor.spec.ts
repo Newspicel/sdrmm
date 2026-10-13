@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { formatMhz } from "../src/components/format";
 import type { DecoderLogResponse, StateSnapshot, WorkspaceSnapshot } from "../src/lib/types";
+import { nodeUrl, radioNodeOf } from "./canvas";
 
 test("monitors IQ through one node and exports transmission audio", async ({ page }) => {
   test.setTimeout(60000);
@@ -28,7 +29,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
           id: nodeIds.monitor,
           kind: "spectrum_monitor",
           position: { x: 380, y: 0 },
-          data: { record_audio: true },
+          data: {},
         },
         {
           id: nodeIds.log,
@@ -126,7 +127,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     expect(device.channels).toHaveLength(0);
     expect(
       (
-        await page.request.patch(`/api/devicesets/${device.id}/device`, {
+        await page.request.patch(nodeUrl(await radioNodeOf(page.request, device.id), "device"), {
           data: { center_hz: (device.settings.center_hz ?? 100000000) + 1000 },
         })
       ).ok(),

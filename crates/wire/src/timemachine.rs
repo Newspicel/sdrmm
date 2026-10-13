@@ -43,16 +43,6 @@ pub enum TimeMachineAction {
     Disarm,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct TimeMachineRequest {
-    pub action: TimeMachineAction,
-    pub node: String,
-    #[serde(default)]
-    pub stream: u32,
-    #[serde(default)]
-    pub settings: TimeMachineNode,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct TimeMachineStatus {
     pub node: String,

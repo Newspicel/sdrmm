@@ -291,7 +291,7 @@ impl SpectrumMonitor {
                 break;
             };
             track.tried.push(kind.clone());
-            match Decoder::new(&kind, self.rate, &track.signal, self.settings.record_audio) {
+            match Decoder::new(&kind, self.rate, &track.signal, self.settings.keep_clips) {
                 Ok(decoder) => track.decoders.push(decoder),
                 Err(error) => track.error = Some(error.to_string()),
             }

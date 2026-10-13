@@ -50,8 +50,8 @@ describe("heatPixels", () => {
 });
 
 describe("installHeatLayer", () => {
-  it("adds an image source under the bearing rays", () => {
-    const layers = new Set(["df-rays"]);
+  it("adds an image source under the map's shapes and entities", () => {
+    const layers = new Set<string>([HEAT_BELOW]);
     const map = {
       getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
       getSource: () => undefined,

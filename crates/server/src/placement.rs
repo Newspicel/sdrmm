@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use sdrmm_engine::{Lane, Placeable};
 use sdrmm_wire::{
-    ChannelInfo, DeviceSet, NodeBody, PatchApplyReport, PatchGraph, PatchRefusal, ServerEvent,
-    StateScope, StateSnapshot, WorkspaceState,
+    ChannelInfo, DeviceSet, Feed, IQ_PORT, NodeBody, PatchApplyReport, PatchGraph, PatchRefusal,
+    ResolvedPatch, Role, ServerEvent, StateScope, StateSnapshot, WorkspaceState,
 };
 use tokio::{sync::broadcast::error::RecvError, time::Instant};
 
@@ -21,20 +21,32 @@ struct Carried {
 struct Slot {
     decoder: Placeable,
     carried: Option<Carried>,
+    fixed: bool,
 }
 
 pub(crate) struct Plan {
     slots: Vec<Slot>,
-    pub refused: Vec<PatchRefusal>,
+    refused: Vec<(bool, PatchRefusal)>,
 }
 
 impl Plan {
     fn decoders(&self) -> Vec<Placeable> {
-        self.slots.iter().map(|slot| slot.decoder.clone()).collect()
+        self.slots
+            .iter()
+            .filter(|slot| !slot.fixed)
+            .map(|slot| slot.decoder.clone())
+            .collect()
     }
 
     fn flexible_only(mut self) -> Self {
-        self.slots.retain(|slot| slot.decoder.lanes.len() > 1);
+        self.slots
+            .retain(|slot| !slot.fixed && slot.decoder.lanes.len() > 1);
+        self
+    }
+
+    fn only(mut self, fixed: bool) -> Self {
+        self.slots.retain(|slot| slot.fixed == fixed);
+        self.refused.retain(|(held, _)| *held == fixed);
         self
     }
 }
@@ -77,10 +89,55 @@ fn holds_channel(set: &DeviceSet, channel: &ChannelInfo) -> bool {
         || channel.network_export.is_some()
 }
 
+fn opens_radio(patch: &ResolvedPatch, feed: &Feed) -> bool {
+    patch
+        .node(&feed.source)
+        .is_some_and(|source| source.kind.role() == Role::OpensRadio)
+}
+
+fn radio_feeds<'a>(patch: &'a ResolvedPatch, node: &str) -> impl Iterator<Item = &'a Feed> {
+    patch
+        .feeds(node, IQ_PORT)
+        .iter()
+        .filter(|feed| opens_radio(patch, feed))
+}
+
+fn lanes_of<'a>(feeds: impl Iterator<Item = &'a Feed>) -> Vec<Lane> {
+    feeds
+        .filter_map(|feed| feed.tap.as_ref()?.lane())
+        .map(|(device_set, stream)| Lane { device_set, stream })
+        .collect()
+}
+
+fn wired_lanes(patch: &ResolvedPatch, node: &str) -> (Vec<Lane>, bool) {
+    let radio = lanes_of(radio_feeds(patch, node));
+    if !radio.is_empty() {
+        return (radio, false);
+    }
+    let fixed = lanes_of(
+        patch
+            .feeds(node, IQ_PORT)
+            .iter()
+            .filter(|feed| !opens_radio(patch, feed)),
+    );
+    (fixed.into_iter().take(1).collect(), true)
+}
+
+fn lane_center(state: &StateSnapshot, lane: Lane) -> Option<f64> {
+    state
+        .device_sets
+        .iter()
+        .find(|set| set.id == lane.device_set)?
+        .virtual_lanes
+        .iter()
+        .find(|held| held.stream == lane.stream)
+        .map(|held| held.center_hz)
+}
+
 pub(crate) fn plan(
     graph: &PatchGraph,
+    patch: &ResolvedPatch,
     state: &StateSnapshot,
-    bound: &[(String, u32)],
     saved: &WorkspaceState,
 ) -> Plan {
     let mut slots = Vec::new();
@@ -89,29 +146,25 @@ pub(crate) fn plan(
         let NodeBody::Channel(channel) = &node.body else {
             continue;
         };
-        let lanes: Vec<Lane> = graph
-            .lanes_of(&node.id)
-            .into_iter()
-            .filter_map(|(device_node, stream)| {
-                let (_, device_set) = bound.iter().find(|(held, _)| held == device_node)?;
-                Some(Lane {
-                    device_set: *device_set,
-                    stream,
-                })
-            })
-            .collect();
-        if lanes.is_empty() {
+        let (lanes, fixed) = wired_lanes(patch, &node.id);
+        let Some(&first) = lanes.first() else {
             continue;
-        }
+        };
         let live = carried_by(state, &node.id, &channel.channel_type);
+        let center_hz = fixed.then(|| lane_center(state, first)).flatten();
         let settings = live
             .map(|(_, _, channel)| channel.settings.clone())
-            .or_else(|| workspace::channel_settings(&node.id, &channel.channel_type, saved));
-        let Some(settings) = settings else {
-            refused.push(PatchRefusal {
-                node: node.id.clone(),
-                reason: format!("this build has no channel type {:?}", channel.channel_type),
+            .or_else(|| {
+                workspace::channel_settings(&node.id, &channel.channel_type, saved, center_hz)
             });
+        let Some(settings) = settings else {
+            refused.push((
+                fixed,
+                PatchRefusal {
+                    node: node.id.clone(),
+                    reason: format!("this build has no channel type {:?}", channel.channel_type),
+                },
+            ));
             continue;
         };
         slots.push(Slot {
@@ -123,6 +176,7 @@ pub(crate) fn plan(
                 pinned: live.is_some_and(|(_, set, channel)| holds_channel(set, channel)),
             },
             carried: live.map(|(carried, _, _)| carried),
+            fixed,
         });
     }
     Plan { slots, refused }
@@ -170,9 +224,11 @@ fn close(app: &AppState, slot: &Slot, carried: Carried, report: &mut PatchApplyR
     }
 }
 
-pub(crate) fn settle(app: &AppState, plan: &Plan, report: &mut PatchApplyReport) {
+fn settle(app: &AppState, plan: &Plan, report: &mut PatchApplyReport) {
     report.placement = None;
-    report.refused.extend(plan.refused.iter().cloned());
+    report
+        .refused
+        .extend(plan.refused.iter().map(|(_, refusal)| refusal.clone()));
     let allocation = app.engine.place_channels(&plan.decoders());
     let placements = &allocation.placements;
     let refused = report.refused.len();
@@ -183,7 +239,7 @@ pub(crate) fn settle(app: &AppState, plan: &Plan, report: &mut PatchApplyReport)
             "decoder allocation search stopped before proving optimality"
         );
     }
-    for slot in &plan.slots {
+    for slot in plan.slots.iter().filter(|slot| !slot.fixed) {
         let target = placements
             .iter()
             .find(|placement| placement.node == slot.decoder.node)
@@ -216,31 +272,25 @@ pub(crate) fn settle(app: &AppState, plan: &Plan, report: &mut PatchApplyReport)
     }
 }
 
-fn adopt_channels(app: &AppState, graph: &PatchGraph, report: &mut PatchApplyReport) {
-    let state = app.engine.snapshot();
-    for binding in workspace::bind(graph, &state) {
-        let Some(set) = state
-            .device_sets
-            .iter()
-            .find(|set| set.id == binding.device_set)
-        else {
+fn settle_fixed(app: &AppState, plan: &Plan, report: &mut PatchApplyReport) {
+    report
+        .refused
+        .extend(plan.refused.iter().map(|(_, refusal)| refusal.clone()));
+    for slot in &plan.slots {
+        let Some(&lane) = slot.decoder.lanes.first() else {
             continue;
         };
-        for (node, id) in binding.channels {
-            let Some(channel) = set.channels.iter().find(|channel| channel.id == id) else {
-                continue;
-            };
-            if channel.node.is_some()
-                || graph.lanes_of(&node).is_empty()
-                || carried_by(&state, &node, channel.settings.params.type_id()).is_some()
-            {
-                continue;
+        match slot.carried {
+            Some(carried) if carried.lane == lane => {}
+            Some(carried) => {
+                if let Some(created) = open(app, slot, lane, report)
+                    && !close(app, slot, carried, report)
+                {
+                    close(app, slot, created, report);
+                }
             }
-            if let Err(err) = app.engine.bind_channel_node(set.id, id, &node) {
-                report.refused.push(PatchRefusal {
-                    node,
-                    reason: err.to_string(),
-                });
+            None => {
+                open(app, slot, lane, report);
             }
         }
     }
@@ -252,30 +302,36 @@ pub(crate) fn settle_workspace(
     saved: &WorkspaceState,
     report: &mut PatchApplyReport,
 ) {
-    adopt_channels(app, graph, report);
     let state = app.engine.snapshot();
-    let bound = workspace::bind_devices(graph, &state);
-    let plan = plan(graph, &state, &bound, saved);
-    settle(app, &plan, report);
+    let patch = workspace::resolve(graph, &state);
+    settle(app, &plan(graph, &patch, &state, saved).only(false), report);
+}
+
+pub(crate) fn settle_lanes(
+    app: &AppState,
+    graph: &PatchGraph,
+    saved: &WorkspaceState,
+    report: &mut PatchApplyReport,
+) {
+    let state = app.engine.snapshot();
+    let patch = workspace::resolve(graph, &state);
+    settle_fixed(app, &plan(graph, &patch, &state, saved).only(true), report);
 }
 
 pub(crate) fn settle_active(app: &AppState) -> bool {
-    let active = match app.store.active_workspace() {
-        Ok(Some(active)) => active,
-        Ok(None) => return false,
-        Err(err) => {
-            tracing::warn!(%err, "could not read the active workspace");
-            return false;
-        }
+    let resolved = app.resolved.current();
+    let Some(workspace) = resolved.patch.workspace else {
+        return false;
     };
-    let graph = &active.snapshot.graph;
+    let graph = &resolved.graph;
     let flexible = graph.nodes.iter().any(|node| {
-        matches!(node.body, NodeBody::Channel(_)) && graph.lanes_of(&node.id).len() > 1
+        matches!(node.body, NodeBody::Channel(_))
+            && radio_feeds(&resolved.patch, &node.id).count() > 1
     });
     if !flexible {
         return false;
     }
-    let saved = match app.store.workspace_state(active.info.id) {
+    let saved = match app.store.workspace_state(workspace) {
         Ok(saved) => saved,
         Err(err) => {
             tracing::warn!(%err, "could not read the workspace to place its decoders");
@@ -283,8 +339,8 @@ pub(crate) fn settle_active(app: &AppState) -> bool {
         }
     };
     let state = app.engine.snapshot();
-    let bound = workspace::bind_devices(graph, &state);
-    let plan = plan(graph, &state, &bound, &saved).flexible_only();
+    let patch = workspace::resolve(graph, &state);
+    let plan = plan(graph, &patch, &state, &saved).flexible_only();
     let mut report = PatchApplyReport::default();
     settle(app, &plan, &mut report);
     for refusal in &report.refused {

@@ -3,15 +3,15 @@ import { isStale, type ProcessorState } from "../../lib/processors";
 import { clearAction, useRefusalStore } from "../../lib/refusals";
 import type {
   ArrayStatus,
-  PatchGraph,
   PatchNode,
   PatchNodeOf,
   ProcessorGate,
   ProcessorStatus,
+  ResolvedPatch,
 } from "../../lib/types";
-import { arrayOf } from "../binding";
 import { useWorkspaceContext } from "../context";
-import { arrayWiredLanes, patchNode } from "../graph";
+import { patchNode } from "../graph";
+import { arrayOf, wiredLaneCount } from "../lanes";
 import { type SettingsKind, type SettingsOf, settingsOf } from "../newNode";
 
 export const NO_ARRAY = "no array";
@@ -24,14 +24,14 @@ export function processorGate(status: ArrayStatus | undefined, node: string): Pr
 }
 
 export function processorSubtitle(
-  graph: PatchGraph,
+  resolved: ResolvedPatch | null,
   node: string,
   status: ArrayStatus | undefined,
   state: ProcessorState | undefined,
   now: number,
   periodMs: number,
 ): string {
-  const array = arrayOf(graph, node);
+  const array = arrayOf(resolved, node);
   if (array === null) {
     return NO_ARRAY;
   }
@@ -42,19 +42,19 @@ export function processorSubtitle(
   if (state !== undefined && isStale(state.receivedAt, now, periodMs)) {
     return STALE;
   }
-  const lanes = processorLanes(graph, array, status);
+  const lanes = processorLanes(resolved, array, status);
   return `${lanes} ${lanes === 1 ? "lane" : "lanes"}`;
 }
 
 export function processorLanes(
-  graph: PatchGraph,
+  resolved: ResolvedPatch | null,
   array: string | null,
   status: ArrayStatus | undefined,
 ): number {
   if (array === null) {
     return 0;
   }
-  return status?.lanes.length ?? arrayWiredLanes(graph, array);
+  return status?.lanes.length ?? wiredLaneCount(resolved, array);
 }
 
 export interface FaultRow {

@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, DscParams,
+    DecoderFamily, DscParams, EventKind,
 };
 use serde::Serialize;
 
@@ -44,7 +44,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("dsc".to_owned()),
+    emits: vec![EventKind::Dsc],
     ..ChannelDescriptor::default()
 });
 

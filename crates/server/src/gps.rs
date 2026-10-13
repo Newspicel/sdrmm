@@ -9,7 +9,7 @@ use std::{
 };
 
 use sdrmm_wire::{
-    NmeaDeviceInfo, NmeaDevicesResponse, NodeBody, PatchGraph, PositionFix, PositionSource,
+    NmeaDeviceInfo, NmeaDevicesResponse, NodeBody, PositionFix, PositionSource, ProblemSource,
     ServerEvent,
 };
 use tokio::{
@@ -19,11 +19,14 @@ use tokio::{
 };
 use tokio_serial::{SerialPortBuilderExt, SerialPortInfo, SerialPortType};
 
-use crate::{AppState, Store, workspace};
+use crate::{AppState, problems::ProblemBoard};
 
 mod gpsd;
 mod nmea;
 mod pose;
+mod routes;
+
+pub(crate) use routes::PositionRoutes;
 
 use gpsd::{GpsdOutcome, GpsdState};
 use nmea::NmeaState;
@@ -48,7 +51,7 @@ struct PositionState {
 #[derive(Default, PartialEq)]
 struct GpsConfiguration {
     sources: HashMap<String, PositionSource>,
-    routes: Vec<(String, String)>,
+    routes: Arc<PositionRoutes>,
 }
 
 struct SourceTask {
@@ -59,14 +62,14 @@ struct SourceTask {
 #[derive(Clone)]
 struct RouteState {
     engine: Arc<sdrmm_engine::Engine>,
-    store: Arc<Store>,
+    problems: Arc<ProblemBoard>,
 }
 
 impl From<&AppState> for RouteState {
     fn from(state: &AppState) -> Self {
         Self {
             engine: state.engine.clone(),
-            store: state.store.clone(),
+            problems: state.problems.clone(),
         }
     }
 }
@@ -75,6 +78,7 @@ pub(crate) struct GpsHub {
     latest: Arc<Mutex<HashMap<String, PositionState>>>,
     tasks: Mutex<HashMap<String, SourceTask>>,
     configuration: Mutex<GpsConfiguration>,
+    routes: Arc<Mutex<Arc<PositionRoutes>>>,
     route_signal: Option<SyncSender<RouteState>>,
     route_worker: Option<std::thread::JoinHandle<()>>,
     clear_before_route: Arc<AtomicBool>,
@@ -87,6 +91,8 @@ impl Default for GpsHub {
     fn default() -> Self {
         let latest = Arc::new(Mutex::new(HashMap::<String, PositionState>::new()));
         let route_latest = latest.clone();
+        let routes = Arc::new(Mutex::new(Arc::new(PositionRoutes::default())));
+        let route_table = routes.clone();
         let clear_before_route = Arc::new(AtomicBool::new(false));
         let route_clear = clear_before_route.clone();
         let (route_signal, route_rx) = std::sync::mpsc::sync_channel::<RouteState>(1);
@@ -97,12 +103,22 @@ impl Default for GpsHub {
                     if route_clear.swap(false, Ordering::AcqRel) {
                         clear_position_consumers(&state);
                     }
+                    let table = route_table
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
                     let positions = route_latest
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .clone();
                     for (node, current) in positions {
-                        route_position(&state, &node, current.fix);
+                        routes::push(
+                            &state.engine,
+                            &state.problems,
+                            &table,
+                            &node,
+                            current.fix.as_ref(),
+                        );
                     }
                 }
             }) {
@@ -116,6 +132,7 @@ impl Default for GpsHub {
             latest,
             tasks: Mutex::new(HashMap::new()),
             configuration: Mutex::new(GpsConfiguration::default()),
+            routes,
             route_signal: Some(route_signal),
             route_worker,
             clear_before_route,
@@ -149,49 +166,27 @@ impl GpsHub {
     }
 
     pub(crate) fn reconcile(self: &Arc<Self>, state: &AppState) {
-        let active = match state.store.active_workspace() {
-            Ok(active) => active,
-            Err(error) => {
-                tracing::warn!(%error, "could not reconcile GPS sources");
-                return;
-            }
-        };
-        let wanted = active
-            .as_ref()
-            .map(|active| {
-                active
-                    .snapshot
-                    .graph
-                    .nodes
-                    .iter()
-                    .filter_map(|node| match &node.body {
-                        NodeBody::Gps(gps) => {
-                            gps.source.clone().map(|source| (node.id.clone(), source))
-                        }
-                        _ => None,
-                    })
-                    .collect::<HashMap<_, _>>()
+        let resolved = state.resolved.current();
+        let wanted = resolved
+            .graph
+            .nodes
+            .iter()
+            .filter_map(|node| match &node.body {
+                NodeBody::Gps(gps) => gps.source.clone().map(|source| (node.id.clone(), source)),
+                _ => None,
             })
-            .unwrap_or_default();
-        let mut routes = active
-            .as_ref()
-            .map(|active| {
-                active
-                    .snapshot
-                    .graph
-                    .edges
-                    .iter()
-                    .filter(|edge| edge.from.port == "position" && edge.to.port == "position")
-                    .map(|edge| (edge.from.node.clone(), edge.to.node.clone()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        routes.sort();
-
+            .collect::<HashMap<_, _>>();
         let next = GpsConfiguration {
             sources: wanted.clone(),
-            routes,
+            routes: resolved.positions.clone(),
         };
+        *self
+            .routes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = resolved.positions.clone();
+        state.problems.retain(&state.engine, |node, source| {
+            source != ProblemSource::Position || resolved.positions.reaches(node)
+        });
         let (configuration_changed, changed_sources) = {
             let mut current = self
                 .configuration
@@ -362,10 +357,14 @@ impl GpsHub {
         self.queue_route(state);
     }
 
-    pub(crate) fn route_for(&self, engine: &Arc<sdrmm_engine::Engine>, store: &Arc<Store>) {
+    pub(crate) fn route_for(
+        &self,
+        engine: &Arc<sdrmm_engine::Engine>,
+        problems: &Arc<ProblemBoard>,
+    ) {
         self.send_route(RouteState {
             engine: engine.clone(),
-            store: store.clone(),
+            problems: problems.clone(),
         });
     }
 
@@ -416,84 +415,6 @@ fn position_event(node: &str, state: &PositionState) -> ServerEvent {
         fix: state.fix.clone(),
         error: state.error.clone(),
     }
-}
-
-fn route_position(state: &RouteState, source: &str, fix: Option<PositionFix>) {
-    let Ok(Some(active)) = state.store.active_workspace() else {
-        return;
-    };
-    let graph = &active.snapshot.graph;
-    let snapshot = state.engine.snapshot();
-    let bindings = workspace::bind(graph, &snapshot);
-    for target in graph.targets_of(source, "position") {
-        let Some(node) = graph.node(target) else {
-            continue;
-        };
-        match node.body {
-            NodeBody::Channel(_) => {
-                let channel = bindings.iter().find_map(|binding| {
-                    binding
-                        .channels
-                        .iter()
-                        .find(|(channel_node, _)| channel_node == target)
-                        .map(|(_, channel)| (binding.device_set, *channel))
-                });
-                if let Some((device_set, channel)) = channel
-                    && let Err(error) =
-                        state
-                            .engine
-                            .update_channel_position(device_set, channel, fix.clone())
-                {
-                    tracing::debug!(%error, node = target, "could not route GPS fix to channel");
-                }
-            }
-            NodeBody::Recorder(_) => {
-                let device_set = wired_device_set(graph, &bindings, target);
-                if let Some(device_set) = device_set
-                    && snapshot
-                        .device_sets
-                        .iter()
-                        .any(|set| set.id == device_set && set.recording.is_some())
-                    && let Err(error) = state
-                        .engine
-                        .update_recording_position(device_set, fix.clone())
-                {
-                    tracing::debug!(%error, node = target, "could not geotag recording");
-                }
-            }
-            NodeBody::TimeMachine(_) => {
-                let device_set = wired_device_set(graph, &bindings, target);
-                if let Some(device_set) = device_set
-                    && snapshot
-                        .device_sets
-                        .iter()
-                        .any(|set| set.id == device_set && set.time_machine.is_some())
-                    && let Err(error) = state
-                        .engine
-                        .update_time_machine_position(device_set, fix.clone())
-                {
-                    tracing::debug!(%error, node = target, "could not geotag held history");
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn wired_device_set(
-    graph: &PatchGraph,
-    bindings: &[workspace::DeviceBinding],
-    node: &str,
-) -> Option<u32> {
-    let device = graph
-        .edges
-        .iter()
-        .find(|edge| edge.to.node == node && sdrmm_wire::port_stream("iq", &edge.to.port).is_some())
-        .map(|edge| edge.from.node.as_str())?;
-    bindings
-        .iter()
-        .find(|binding| binding.node == device)
-        .map(|binding| binding.device_set)
 }
 
 fn clear_position_consumers(state: &RouteState) {

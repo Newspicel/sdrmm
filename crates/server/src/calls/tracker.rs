@@ -6,10 +6,11 @@ use std::{
 
 use sdrmm_dsp::{decim::RealDecimator, fir::design_lowpass};
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload};
-use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, StateScope};
+use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, EventOrigin};
 
+use super::CallBinding;
 use super::{Calls, DECIMATION, MAX_CALL_SAMPLES, NewCall, RETENTION, wav};
-use crate::trunking::{CallBinding, Gate};
+use sdrmm_wire::CallGate;
 
 const ANTIALIAS_TAPS: usize = 96;
 const IDLE_TIMEOUT: Duration = Duration::from_millis(900);
@@ -23,6 +24,7 @@ struct CallKey {
     device_set: u32,
     channel: u32,
     slot: Option<u8>,
+    keep_audio: bool,
 }
 
 impl CallKey {
@@ -32,6 +34,7 @@ impl CallKey {
             device_set: binding.device_set,
             channel: binding.channel,
             slot,
+            keep_audio: binding.keep_audio,
         }
     }
 
@@ -95,8 +98,8 @@ impl ActiveCall {
     }
 
     fn into_new_call(self, key: &CallKey) -> (NewCall, Option<axum::body::Bytes>) {
-        let audio =
-            (!self.encrypted() && !self.audio.samples.is_empty()).then(|| wav(&self.audio.samples));
+        let audio = (key.keep_audio && !self.encrypted() && !self.audio.samples.is_empty())
+            .then(|| wav(&self.audio.samples));
         let duration_ms = self
             .heard_at
             .duration_since(self.started_at)
@@ -193,7 +196,11 @@ impl Tracker {
     }
 
     pub(super) fn sources(&self) -> HashSet<(u32, u32)> {
-        self.bindings.keys().copied().collect()
+        self.bindings
+            .iter()
+            .filter(|(_, bound)| bound.iter().any(hears_audio))
+            .map(|(source, _)| *source)
+            .collect()
     }
 
     pub(super) fn rebind(&mut self, bindings: Bindings) {
@@ -215,10 +222,10 @@ impl Tracker {
     }
 
     pub(super) fn record(&mut self, record: &DecodedRecord) {
-        if record.origin.is_some() {
-            return;
-        }
         let DecoderEvent::Dv(frame) = &record.event else {
+            return;
+        };
+        let Some(origin) = &record.origin else {
             return;
         };
         let Some(bound) = self.bindings.get(&(record.device_set, record.channel)) else {
@@ -226,7 +233,7 @@ impl Tracker {
         };
         let keys: Vec<CallKey> = bound
             .iter()
-            .filter(|binding| binding.gate == Gate::Frames)
+            .filter(|binding| binding.gate == CallGate::Frames && binding.node == origin.node)
             .map(|binding| CallKey::of(binding, frame.slot))
             .collect();
         for key in keys {
@@ -275,10 +282,10 @@ impl Tracker {
         };
         let squelched: Vec<CallKey> = bound
             .iter()
-            .filter(|binding| binding.gate == Gate::Squelch)
+            .filter(|binding| binding.gate == CallGate::Squelch)
             .map(|binding| CallKey::of(binding, None))
             .collect();
-        let framed = bound.iter().any(|binding| binding.gate == Gate::Frames);
+        let framed = bound.iter().any(|binding| binding.gate == CallGate::Frames);
         for key in squelched {
             self.squelched_pcm(key, block);
         }
@@ -408,9 +415,12 @@ impl Tracker {
             return;
         };
         let (new, audio) = call.into_new_call(key);
-        let (call, evicted) = self.calls.push(new, audio, RETENTION);
+        let (call, _) = self.calls.push(new, audio, RETENTION);
         engine.publish_decoded(DecodedRecord {
-            origin: None,
+            origin: Some(EventOrigin {
+                node: call.node.clone(),
+                transmission: 0,
+            }),
             sinks: Vec::new(),
             callsign: None,
             device_set: key.device_set,
@@ -418,16 +428,18 @@ impl Tracker {
             at: call.ended_at.clone(),
             freq_hz: call.freq_hz,
             event: DecoderEvent::Call(call),
+            view: None,
         });
-        if evicted {
-            engine.emit_scope(StateScope::Calls);
-        }
     }
 
     #[cfg(test)]
     fn active(&self) -> usize {
         self.active.len()
     }
+}
+
+fn hears_audio(binding: &CallBinding) -> bool {
+    binding.keep_audio || binding.gate == CallGate::Squelch
 }
 
 fn same_call(current: &DvFrame, incoming: &DvFrame) -> bool {

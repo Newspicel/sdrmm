@@ -35,7 +35,7 @@ use crate::{
 use num_complex::Complex;
 use sdrmm_wire::{
     AeroChannel, ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, InmarsatAeroParams,
+    DecoderFamily, EventKind, InmarsatAeroParams,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -52,7 +52,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: INPUT_RATE,
     has_audio: false,
-    decoder_kind: Some("inmarsat_aero".to_owned()),
+    emits: vec![EventKind::InmarsatAero],
     ..ChannelDescriptor::default()
 });
 

@@ -40,11 +40,33 @@ export function noticeLine(notice: WorkspaceNotice, catalog: KindNames): NoticeL
       title: CLEARED_GPS_TITLE,
     };
   }
+  if (notice.kind === "dropped_wires" || notice.kind === "added_wires") {
+    const count = notice.data.wires.length;
+    const wires = count === 1 ? "wire" : "wires";
+    return {
+      id: notice.id,
+      text:
+        notice.kind === "added_wires"
+          ? `Added ${count} ${wires}`
+          : `Removed ${count} refused ${wires}`,
+      title: notice.data.wires
+        .map((wire) => `${wire.from.node} to ${wire.to.node}: ${wire.reason}`)
+        .join("\n"),
+    };
+  }
+  if (notice.kind === "dropped_filter_kinds") {
+    return {
+      id: notice.id,
+      text: `Unknown filter kinds removed: ${notice.data.kinds.join(", ")}`,
+      title: notice.data.node,
+    };
+  }
   const names = [...new Set(notice.data.nodes.map((node) => kindName(node.kind, catalog)))];
   const more = names.length > SHOWN_KINDS ? ` +${names.length - SHOWN_KINDS}` : "";
+  const verb = notice.kind === "added_nodes" ? "Added nodes" : "Removed old nodes";
   return {
     id: notice.id,
-    text: `Removed old nodes: ${names.slice(0, SHOWN_KINDS).join(", ")}${more}`,
+    text: `${verb}: ${names.slice(0, SHOWN_KINDS).join(", ")}${more}`,
     title: notice.data.nodes.map((node) => node.id).join(", "),
   };
 }

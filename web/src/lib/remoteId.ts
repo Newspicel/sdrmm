@@ -34,15 +34,6 @@ export const UA_TYPE_LABELS: Record<UaType, string> = {
   other: "Other",
 };
 
-export const UA_STATUS_LABELS: Record<RemoteIdLocation["status"], string> = {
-  undeclared: "-",
-  ground: "Ground",
-  airborne: "Airborne",
-  emergency: "Emergency",
-  system_failure: "RID failure",
-  reserved: "Reserved",
-};
-
 export interface LatLon {
   lat: number;
   lon: number;
@@ -133,27 +124,6 @@ export function withRemoteIdState(previous: RemoteIdFrame, next: RemoteIdFrame):
     ssid: next.ssid ?? previous.ssid ?? null,
     messages: [...next.messages, ...kept],
   };
-}
-
-export function remoteIdSummary(frame: RemoteIdFrame): string {
-  const parts = [remoteIdStation(frame), REMOTE_ID_TRANSPORT_LABELS[frame.transport]];
-  const position = remoteIdPosition(frame);
-  if (position !== null) {
-    parts.push(`${position.lat.toFixed(5)}, ${position.lon.toFixed(5)}`);
-  }
-  const height = remoteIdLocation(frame)?.height_m;
-  if (height != null) {
-    parts.push(`${height.toFixed(0)} m`);
-  }
-  const pilot = remoteIdPilot(frame);
-  if (pilot !== null) {
-    parts.push(`pilot ${pilot.lat.toFixed(5)}, ${pilot.lon.toFixed(5)}`);
-  }
-  const extra = remoteIdText(frame) ?? remoteIdOperator(frame);
-  if (extra !== null) {
-    parts.push(extra);
-  }
-  return parts.join(" · ");
 }
 
 export function distanceM(a: LatLon, b: LatLon): number {

@@ -1,5 +1,5 @@
 import type { PatchGraph, PatchNode, Position, Size } from "../lib/types";
-import { isResizable, NODE_SIZE, nodeOf } from "./graph";
+import { isResizable, nodeOf, nodeSize } from "./graph";
 
 export interface Geometry {
   position: Position;
@@ -14,7 +14,7 @@ export interface Placed {
 }
 
 function geometryOf(placed: Placed, node: PatchNode): Geometry {
-  const natural = NODE_SIZE[node.kind];
+  const natural = nodeSize(node.kind);
   const { width: w, height: h } = placed;
   const resized =
     isResizable(node.kind) && w != null && h != null && (w !== natural.w || h !== natural.h);

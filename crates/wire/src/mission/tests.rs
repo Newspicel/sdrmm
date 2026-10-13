@@ -21,7 +21,6 @@ fn hunt() -> Mission {
             status: None,
             clicks: true,
             position: None,
-            triangulations: Vec::new(),
         }),
     }
 }
@@ -95,7 +94,6 @@ fn mission_body_flattens_kind_and_data() {
             device_sets: vec![0, 1],
             center_hz: Some(433_920_000.0),
             position: Some(phone.clone()),
-            triangulations: vec!["tri1".to_owned()],
         }),
         MissionBody::Radar(RadarMission {
             array: None,

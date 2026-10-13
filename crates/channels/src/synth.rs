@@ -8,6 +8,8 @@ pub mod dab;
 mod dab_packet;
 mod dab_pad;
 pub mod datv;
+#[cfg(any(test, feature = "fixtures"))]
+pub mod decoder_fixtures;
 pub mod dect;
 pub mod drm;
 pub mod dv;

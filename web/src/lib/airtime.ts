@@ -1,4 +1,4 @@
-import type { IsmKind, IsmSurveyReport, WifiChannelLoad, WifiOccupancyReport } from "./types";
+import type { IsmKind, WifiChannelLoad } from "./types";
 
 export const ISM_KIND_LABELS: Record<IsmKind, string> = {
   wifi: "Wi-Fi",
@@ -18,22 +18,4 @@ export const WIFI_BAND_LABELS: Record<WifiChannelLoad["band"], string> = {
 
 export function percentOf(share: number): string {
   return `${(share * 100).toFixed(share < 0.1 ? 1 : 0)}%`;
-}
-
-export function wifiOccupancySummary(report: WifiOccupancyReport): string {
-  if (report.channels.length === 0) {
-    return "no Wi-Fi channel in view";
-  }
-  return report.channels
-    .map((channel) => `ch ${channel.number} ${percentOf(channel.busy)}`)
-    .join(" · ");
-}
-
-export function ismSurveySummary(report: IsmSurveyReport): string {
-  return [
-    `${percentOf(report.busy)} busy`,
-    ...report.kinds.map(
-      (load) => `${ISM_KIND_LABELS[load.kind]} ${load.bursts} · ${percentOf(load.airtime)}`,
-    ),
-  ].join(" · ");
 }

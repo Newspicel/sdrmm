@@ -4,6 +4,7 @@ import type {
   AgcSetting,
   Capabilities,
   Coherence,
+  DeviceInfo,
   DeviceRef,
   DeviceSet,
   DeviceSettings,
@@ -12,6 +13,14 @@ import type {
 } from "../../lib/types";
 import { forStream } from "../../lib/useDevicePatch";
 import { rxStreamCount, streamLabel } from "../graph";
+
+export function deviceRefOf(info: DeviceInfo): DeviceRef {
+  return {
+    backend: info.driver,
+    ...(info.serial == null ? {} : { serial: info.serial }),
+    ...(info.serial == null || info.key.startsWith(`${info.serial}@`) ? { key: info.key } : {}),
+  };
+}
 
 export function clippingSaid(set: DeviceSet): string | null {
   const lanes = set.clipping ?? [];

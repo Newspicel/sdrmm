@@ -7,7 +7,7 @@ async fn record_start_stop_produces_a_finalized_sigmf_pair() {
     let mut events = engine.subscribe_events();
     let ds = engine.create_device_set("virtual:band").unwrap();
 
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     wait_for_deviceset_event(&mut events, ds).await;
     let live = wait_for_recorded_samples(&engine, ds, 1).await;
     assert!(!live.file.is_empty());
@@ -41,7 +41,7 @@ async fn active_recording_persists_live_position_in_sigmf_metadata() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     wait_for_recorded_samples(&engine, ds, 1).await;
 
     engine
@@ -90,7 +90,7 @@ async fn recording_position_update_does_not_block_or_panic_during_stop() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     wait_for_recorded_samples(&engine, ds, 1).await;
 
     let (stopped_tx, stopped_rx) = std::sync::mpsc::channel();
@@ -128,8 +128,8 @@ async fn double_start_and_idle_stop_are_rejected() {
     let err = engine.stop_recording(ds).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
 
-    engine.start_recording(ds, 0).unwrap();
-    let err = engine.start_recording(ds, 0).unwrap_err();
+    engine.start_recording(ds, 0, None).unwrap();
+    let err = engine.start_recording(ds, 0, None).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
 
     engine.stop_recording(ds).unwrap();
@@ -142,7 +142,7 @@ async fn double_start_and_idle_stop_are_rejected() {
 async fn start_without_a_recordings_dir_is_rejected() {
     let engine = virtual_engine();
     let ds = engine.create_device_set("virtual:band").unwrap();
-    let err = engine.start_recording(ds, 0).unwrap_err();
+    let err = engine.start_recording(ds, 0, None).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
     engine.remove_device_set(ds).unwrap();
 }
@@ -152,7 +152,7 @@ async fn rate_patch_is_rejected_while_recording_center_retune_is_captured() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     let before = wait_for_recorded_samples(&engine, ds, 1).await;
 
     let err = engine
@@ -207,7 +207,7 @@ async fn device_fault_finalizes_the_recording() {
     let engine = Engine::with_registry(registry, Some(dir.path().to_path_buf()));
     let ds = engine.create_device_set("mock:ondemand").unwrap();
 
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     let live = wait_for_recorded_samples(&engine, ds, 1).await;
 
     let mut events = engine.subscribe_events();
@@ -246,7 +246,7 @@ async fn recording_growth_rides_the_hotplug_tick() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     wait_for_recorded_samples(&engine, ds, 1).await;
 
     let mut events = engine.subscribe_events();
@@ -264,7 +264,7 @@ async fn recording_growth_is_reported_between_bus_probes() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     wait_for_recorded_samples(&engine, ds, 1).await;
 
     let mut events = engine.subscribe_events();
@@ -305,7 +305,7 @@ async fn start_during_rate_patch_cannot_commit_a_wrong_rate_recording() {
     };
     entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
 
-    let err = engine.start_recording(ds, 0).unwrap_err();
+    let err = engine.start_recording(ds, 0, None).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
     assert!(err.to_string().contains("in flight"), "{err}");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
@@ -316,7 +316,7 @@ async fn start_during_rate_patch_cannot_commit_a_wrong_rate_recording() {
     assert_eq!(snap.device_sets[0].settings.sample_rate, Some(2_400_000.0));
     assert!(snap.device_sets[0].recording.is_none());
 
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     let finalized = engine.stop_recording(ds).unwrap();
     let reader = sdrmm_recorder::SigmfReader::open(&finalized.stem).unwrap();
     assert_eq!(reader.meta().global.sample_rate, Some(2_400_000.0));
@@ -328,7 +328,7 @@ async fn engine_drop_finalizes_a_live_recording() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     let live = wait_for_recorded_samples(&engine, ds, 1).await;
 
     drop(engine);
@@ -353,7 +353,7 @@ async fn shutdown_finalizes_recordings_emits_scopes_and_is_idempotent() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     let live = wait_for_recorded_samples(&engine, ds, 1).await;
 
     let mut events = engine.subscribe_events();
@@ -387,7 +387,7 @@ async fn writer_fault_surfaces_in_state_via_the_hotplug_tick() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     wait_for_recorded_samples(&engine, ds, 1).await;
 
     {
@@ -424,7 +424,7 @@ async fn writer_fault_surfaces_in_state_via_the_hotplug_tick() {
 #[tokio::test]
 async fn record_start_on_a_missing_set_is_not_found_even_without_a_recordings_dir() {
     let engine = virtual_engine();
-    let err = engine.start_recording(99, 0).unwrap_err();
+    let err = engine.start_recording(99, 0, None).unwrap_err();
     assert!(err.is_not_found(), "expected not found, got {err}");
 }
 
@@ -436,7 +436,7 @@ async fn record_start_io_failure_is_a_server_error_not_a_bad_request() {
     let engine = Engine::with_registry(registry, Some(blocker.path().join("recordings")));
     let ds = engine.create_device_set("virtual:band").unwrap();
 
-    let err = engine.start_recording(ds, 0).unwrap_err();
+    let err = engine.start_recording(ds, 0, None).unwrap_err();
     assert!(matches!(err, EngineError::RecordingIo(_)), "got {err}");
     assert!(!err.is_bad_request() && !err.is_not_found());
     engine.remove_device_set(ds).unwrap();

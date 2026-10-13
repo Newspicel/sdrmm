@@ -3,7 +3,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { clientEvents, resetEvents } from "../lib/diagnostics";
-import type { TargetCollection } from "../lib/map/layers";
 import {
   framePositionOnce,
   frameSignalOnce,
@@ -14,10 +13,9 @@ import {
   updatePositionSources,
   updateSignalSource,
 } from "../lib/map/sources";
-import { installTargetLayers } from "../lib/map/targets";
 import type { PositionSample } from "../lib/position";
+import { installSinkLayers } from "../sinks/mapLayers";
 import { MapLegend } from "./map/MapLegend";
-import { ZERO_COUNTS } from "./map/mapState";
 
 function sample(latitude: number, longitude: number, receivedAt: number): PositionSample {
   return {
@@ -90,15 +88,8 @@ describe("MapPanel auto framing", () => {
     const map = { fitBounds } as unknown as Pick<MapLibreMap, "fitBounds">;
     const targetFlag = { current: false };
     const positionFlag = { current: false };
-    const targets: TargetCollection = {
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [13.4, 52.5] },
-          properties: { id: "ABC123", label: "ABC123" },
-        },
-      ],
+    const targets = {
+      features: [{ geometry: { coordinates: [13.4, 52.5] as [number, number] } }],
     };
     const positions = positionCollection([
       { samples: [sample(48.1, 11.5, 1)], active: true },
@@ -168,47 +159,41 @@ describe("MapPanel failures", () => {
       addSource: vi.fn(),
       addLayer: vi.fn(),
     };
-    expect(installTargetLayers(map as unknown as MapLibreMap, "#000000", "#f8f4f0", ["adsb"])).toBe(
+    expect(installSinkLayers(map as unknown as MapLibreMap, "#000000", "#f8f4f0", true)).toBe(
       false,
     );
     expect(clientEvents().some((event) => event.message === "heading icons failed")).toBe(true);
-    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: "targets-adsb-dot" }));
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: "sink-entity-dot" }));
   });
 });
 
+function legend(overrides: Partial<Parameters<typeof MapLegend>[0]> = {}): string {
+  return renderToStaticMarkup(
+    createElement(MapLegend, {
+      groups: [],
+      positionCount: null,
+      signalCells: null,
+      heat: false,
+      heatRefused: null,
+      headings: true,
+      basemap: "online",
+      ...overrides,
+    }),
+  );
+}
+
 describe("MapLegend", () => {
-  const quiet = { bearings: 0, echoes: 0, tracks: 0, unplaced: [] };
-
-  function legend(overrides: Partial<Parameters<typeof MapLegend>[0]> = {}): string {
-    return renderToStaticMarkup(
-      createElement(MapLegend, {
-        kinds: [],
-        counts: ZERO_COUNTS,
-        positionCount: null,
-        satelliteCount: null,
-        signalCells: null,
-        overlay: quiet,
-        heat: false,
-        heatRefused: null,
-        headings: true,
-        basemap: "online",
-        ...overrides,
-      }),
-    );
-  }
-
-  it("shows overlay rows only when they hold something", () => {
+  it("shows rows only when they hold something", () => {
     expect(legend()).toBe(
       '<div class="pointer-events-none absolute top-2 left-2 flex flex-col items-start gap-1"></div>',
     );
     const html = legend({
-      overlay: { bearings: 3, echoes: 2, tracks: 1, unplaced: ["North DF", "Radar"] },
+      groups: [{ key: "a", label: "North · Aircraft", color: "#21b0b0", count: 3 }],
       heat: true,
     });
-    for (const row of ["Bearings", "Echoes", "Tracks", "Heat", "No position"]) {
+    for (const row of ["North · Aircraft", "Heat"]) {
       expect(html).toContain(row);
     }
-    expect(html).toMatch(/pointer-events-auto" title="North DF, Radar"/);
   });
 
   it("badges a blank basemap and missing headings", () => {

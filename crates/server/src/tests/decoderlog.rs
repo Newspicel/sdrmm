@@ -89,12 +89,15 @@ async fn decoder_log_clear_emits_the_decoder_log_scope() {
 
     let (status, _) = request(app, "DELETE", "/api/decoderlog?kind=adsb", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(matches!(
-        events.try_recv().expect("scope emitted"),
-        sdrmm_wire::ServerEvent::StateChanged {
-            scope: sdrmm_wire::StateScope::DecoderLog
-        }
-    ));
+    assert!(
+        std::iter::from_fn(|| events.try_recv().ok()).any(|event| matches!(
+            event,
+            sdrmm_wire::ServerEvent::StateChanged {
+                scope: sdrmm_wire::StateScope::DecoderLog
+            }
+        )),
+        "scope emitted"
+    );
 }
 
 #[tokio::test]

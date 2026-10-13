@@ -20,10 +20,9 @@ import {
   timeMachinePhase,
 } from "../../components/timeMachine";
 import type { PatchNode, PatchNodeOf, TimeMachineStatus } from "../../lib/types";
-import { iqSourceOf } from "../binding";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { deviceSetOf } from "../workspaceDevice";
+import { runningSetOf } from "../workspaceDevice";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 
 export function TimeMachineFace({ node }: { node: PatchNode }) {
@@ -35,16 +34,11 @@ export function TimeMachineFace({ node }: { node: PatchNode }) {
 
 function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
   const workspace = useWorkspaceContext();
-  const set = deviceSetOf(workspace, node.id);
-  const stream = iqSourceOf(workspace.graph, node.id, workspace.devices)?.stream ?? 0;
+  const set = runningSetOf(workspace, node.id);
   const seconds = node.data.history_seconds ?? DEFAULT_HISTORY_SECONDS;
   const phase = timeMachinePhase(set, node.id);
   const status = phase.kind === "armed" || phase.kind === "capturing" ? phase.status : null;
-  const control = useMutation(
-    timeMachineMutationOptions(set === null ? null : set.id, node.id, stream, {
-      history_seconds: seconds,
-    }),
-  );
+  const control = useMutation(timeMachineMutationOptions(node.id));
 
   const edit = (history_seconds: number) => {
     workspace.edit((snapshot) => ({

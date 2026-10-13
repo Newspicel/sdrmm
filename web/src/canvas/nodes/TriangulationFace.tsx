@@ -68,7 +68,7 @@ export function TriangulationFace({ node }: { node: PatchNode }) {
     return null;
   }
   const stations = fusion?.stations ?? [];
-  const sources = fusionSources(workspace.graph, node.id);
+  const sources = fusionSources(workspace.resolved, node.id);
   return (
     <NodeShell
       node={node}

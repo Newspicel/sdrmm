@@ -58,7 +58,7 @@ pub(crate) fn upgrade_snapshot(snapshot: &mut Value) -> Broken {
     broken
 }
 
-pub(crate) fn upgrade_export(export: &mut Value) -> Broken {
+pub(super) fn upgrade_export(export: &mut Value) -> Broken {
     let Some(snapshot) = export.get_mut("snapshot") else {
         return Broken::default();
     };
@@ -88,7 +88,7 @@ pub(super) fn break_old_snapshots(conn: &Connection) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn stored_layout(id: i64, json: Option<&str>) -> Option<Value> {
+pub(super) fn stored_layout(id: i64, json: Option<&str>) -> Option<Value> {
     let Some(json) = json else {
         tracing::warn!(workspace = id, "stored layout is not text, left as it is");
         return None;
@@ -143,6 +143,15 @@ pub(super) fn read_notices(
 }
 
 impl Store {
+    pub fn add_notices(
+        &self,
+        workspace: i64,
+        notices: &[WorkspaceNoticeKind],
+    ) -> Result<(), StoreError> {
+        let conn = self.lock();
+        insert_notices(&conn, workspace, notices)
+    }
+
     pub fn dismiss_notice(&self, workspace: i64, notice: i64) -> Result<(), StoreError> {
         let conn = self.lock();
         let deleted = conn.execute(

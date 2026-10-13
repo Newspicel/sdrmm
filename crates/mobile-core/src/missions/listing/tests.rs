@@ -16,7 +16,7 @@ pub(crate) fn listed(node: &str, controls: &[Wire], body: MissionBody) -> wire::
     }
 }
 
-pub(crate) fn hunt(node: &str, controls: &[Wire], triangulations: &[&str]) -> wire::Mission {
+pub(crate) fn hunt(node: &str, controls: &[Wire]) -> wire::Mission {
     listed(
         node,
         controls,
@@ -35,15 +35,11 @@ pub(crate) fn hunt(node: &str, controls: &[Wire], triangulations: &[&str]) -> wi
                 node: "gps1".to_owned(),
                 phone: Some("p0123456789abcdef".to_owned()),
             }),
-            triangulations: triangulations
-                .iter()
-                .map(|node| (*node).to_owned())
-                .collect(),
         }),
     )
 }
 
-pub(crate) fn df(node: &str, triangulations: &[&str]) -> wire::Mission {
+pub(crate) fn df(node: &str) -> wire::Mission {
     listed(
         node,
         &[Wire::Tune, Wire::Calibrate],
@@ -52,10 +48,6 @@ pub(crate) fn df(node: &str, triangulations: &[&str]) -> wire::Mission {
             device_sets: vec![1],
             center_hz: Some(433.92e6),
             position: None,
-            triangulations: triangulations
-                .iter()
-                .map(|node| (*node).to_owned())
-                .collect(),
         }),
     )
 }
@@ -139,7 +131,6 @@ fn hunt_sweep_controls_map_to_server_actions() {
     let listing = Listing::new(response(vec![hunt(
         "hunt1",
         &[Wire::Tune, Wire::StopHunt, Wire::StartSweep, Wire::Mark],
-        &[],
     )]));
     let entry = listing.find("hunt1").expect("listed");
     assert_eq!(entry.mission.kind, MissionKind::Hunt);
@@ -194,7 +185,6 @@ fn sweep_off_sends_stop_sweep() {
     let listing = Listing::new(response(vec![hunt(
         "hunt1",
         &[Wire::StopHunt, Wire::StopSweep],
-        &[],
     )]));
     let entry = listing.find("hunt1").expect("listed");
     assert_eq!(
@@ -232,7 +222,7 @@ fn a_triangulation_without_df_becomes_a_df_drive() {
 #[test]
 fn a_hunt_with_a_triangulation_still_yields_a_guidance_mission() {
     let listing = Listing::new(response(vec![
-        hunt("hunt1", &[Wire::StartHunt], &["tri1"]),
+        hunt("hunt1", &[Wire::StartHunt]),
         triangulation("tri1", &["hunt1"], true),
     ]));
     let kinds: Vec<(String, MissionKind)> = listing
@@ -252,7 +242,7 @@ fn a_hunt_with_a_triangulation_still_yields_a_guidance_mission() {
 #[test]
 fn clear_fusion_on_a_df_drive_targets_its_triangulation() {
     let listing = Listing::new(response(vec![
-        df("df1", &["tri1", "tri2"]),
+        df("df1"),
         triangulation("tri1", &["df1"], true),
         triangulation("tri2", &["df1"], true),
     ]));
@@ -277,7 +267,7 @@ fn clear_fusion_on_a_df_drive_targets_its_triangulation() {
         Ok(server("df1", MissionAction::Calibrate))
     );
     let unclearable = Listing::new(response(vec![
-        df("df1", &["tri1"]),
+        df("df1"),
         triangulation("tri1", &["df1"], false),
     ]));
     let entry = unclearable.find("df1").expect("listed");
@@ -293,7 +283,7 @@ fn clear_fusion_on_a_df_drive_targets_its_triangulation() {
             message: NOT_A_CONTROL.to_owned()
         })
     );
-    let lone = Listing::new(response(vec![df("df1", &[])]));
+    let lone = Listing::new(response(vec![df("df1")]));
     assert_eq!(
         lone.find("df1").expect("listed").mission.controls,
         [MissionControl::Tune, MissionControl::Calibrate]
@@ -303,7 +293,7 @@ fn clear_fusion_on_a_df_drive_targets_its_triangulation() {
 #[test]
 fn commands_outside_the_controls_are_refused() {
     let listing = Listing::new(response(vec![
-        hunt("hunt1", &[Wire::Tune], &[]),
+        hunt("hunt1", &[Wire::Tune]),
         survey("map1"),
         radar("pr1"),
     ]));
@@ -334,7 +324,7 @@ fn commands_outside_the_controls_are_refused() {
 
 #[test]
 fn blockers_are_the_first_problem_label_and_workspaces_carry_ids() {
-    let mut blocked = hunt("hunt1", &[], &[]);
+    let mut blocked = hunt("hunt1", &[]);
     blocked.ready = false;
     blocked.problems = vec![
         MissionProblem::PhoneOffline {
@@ -365,15 +355,15 @@ fn blockers_are_the_first_problem_label_and_workspaces_carry_ids() {
 
 #[test]
 fn a_mission_naming_this_phone_wants_its_pose() {
-    let listing = Listing::new(response(vec![hunt("hunt1", &[], &[]), df("df1", &[])]));
+    let listing = Listing::new(response(vec![hunt("hunt1", &[]), df("df1")]));
     assert!(listing.wants_phone("p0123456789abcdef"));
     assert!(!listing.wants_phone("pffffffffffffffff"));
 }
 
 #[test]
 fn an_acted_mission_replaces_its_listing_entry() {
-    let mut listing = Listing::new(response(vec![hunt("hunt1", &[Wire::StartHunt], &[])]));
-    listing.replace(hunt("hunt1", &[Wire::StopHunt], &[]));
+    let mut listing = Listing::new(response(vec![hunt("hunt1", &[Wire::StartHunt])]));
+    listing.replace(hunt("hunt1", &[Wire::StopHunt]));
     assert!(matches!(
         listing.find("hunt1").map(|entry| &entry.target),
         Some(Target::Hunt { running: true, .. })

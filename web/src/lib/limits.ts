@@ -27,6 +27,13 @@ export const POLARIMETER_LIMITS = limits.polarimeter;
 export const HUNT_LIMITS = limits.hunt;
 export const PRESENCE_LIMITS = limits.presence;
 export const ROTATOR_LIMITS = limits.rotator;
+export const MAX_NODES = limits.patch.nodes;
+export const MAX_EDGES = limits.patch.wires;
+export const MAX_STREAMS = limits.patch.streams;
+export const MAX_NAME_LEN = limits.name_len;
+export const MAX_FILTER_IDS = limits.filter.ids;
+export const MAX_FILTER_DURATION_MS = limits.filter.duration_ms;
+export const MAX_FILTER_TEXT_LEN = limits.filter.text_len;
 
 export function lowest(bounds: Bounds, step: number): number {
   return bounds.above === true ? bounds.min + step : bounds.min;

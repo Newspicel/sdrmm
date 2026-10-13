@@ -1,0 +1,92 @@
+{
+  "name": "d844cf33a4c32879",
+  "test": "faces read the resolved patch > names the controller wired into a decoder's control input",
+  "graph": {
+    "nodes": [
+      {
+        "id": "radio",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual"
+          }
+        }
+      },
+      {
+        "id": "nfm",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "channel",
+        "data": {
+          "channel_type": "nfm"
+        }
+      },
+      {
+        "id": "scan",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "scanner",
+        "data": {},
+        "label": "Airband"
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "radio",
+          "port": "iq"
+        },
+        "to": {
+          "node": "nfm",
+          "port": "iq"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "kraken5",
+          "label": "KrakenSDR"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "duplex": "rx_only"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [
+          {
+            "id": 3,
+            "node": "nfm",
+            "stream": 0,
+            "settings": {
+              "frequency_hz": 118000000,
+              "params": {
+                "type": "nfm",
+                "settings": {}
+              }
+            }
+          }
+        ],
+        "overruns": 0
+      }
+    ],
+    "revision": 0
+  }
+}

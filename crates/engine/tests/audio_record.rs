@@ -12,11 +12,28 @@ use sdrmm_device_virtual::{NFM_CARRIER_OFFSET_HZ, VirtualDriver};
 use sdrmm_engine::Engine;
 use sdrmm_recorder::read_audio_info;
 use sdrmm_wire::{
-    AdsbParams, AudioRecordingStatus, ChannelParams, ChannelSettings, DeviceSettings, NfmParams,
-    WfmParams,
+    AdsbParams, AudioRecordingStatus, AudioRoute, ChannelParams, ChannelSettings, DeviceSettings,
+    NfmParams, WfmParams,
 };
 
 const TEST_RATE: f64 = 2_400_000.0;
+const REC: &str = "rec";
+
+fn start(
+    engine: &Engine,
+    ds: u32,
+    ch: u32,
+) -> Result<AudioRecordingStatus, sdrmm_engine::EngineError> {
+    engine.start_audio_recording(REC, &AudioRoute::channel(ds, ch), false)
+}
+
+fn stop(
+    engine: &Engine,
+    ds: u32,
+    ch: u32,
+) -> Result<AudioRecordingStatus, sdrmm_engine::EngineError> {
+    engine.stop_audio_recording(REC, ds, ch)
+}
 
 fn engine(dir: &Path) -> Arc<Engine> {
     let mut registry = DeviceRegistry::new();
@@ -114,7 +131,7 @@ async fn a_channel_recording_lands_as_a_playable_wav_of_its_audio() {
     let ds = set_at_test_rate(&engine);
     let ch = nfm_channel(&engine, ds);
 
-    let started = engine.start_channel_recording(ds, ch).unwrap();
+    let started = start(&engine, ds, ch).unwrap();
     assert!(started.file.ends_with(".wav"));
     assert_eq!(started.channels, 1);
     started.started_at.parse::<jiff::Timestamp>().unwrap();
@@ -122,7 +139,7 @@ async fn a_channel_recording_lands_as_a_playable_wav_of_its_audio() {
     let live = wait_for_frames(&engine, ds, ch, 4_800).await;
     assert_eq!(live.file, started.file);
 
-    let final_status = engine.stop_channel_recording(ds, ch).unwrap();
+    let final_status = stop(&engine, ds, ch).unwrap();
     assert_eq!(final_status.error, None);
     assert!(final_status.frames >= live.frames);
     assert_eq!(final_status.bytes, final_status.frames * 2);
@@ -161,11 +178,11 @@ async fn a_recording_through_audio_fx_holds_the_processed_audio() {
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
 
-    let started = engine.start_route_recording(&route, false).unwrap();
-    assert!(engine.start_route_recording(&route, false).is_err());
+    let started = engine.start_audio_recording(REC, &route, false).unwrap();
+    assert!(engine.start_audio_recording(REC, &route, false).is_err());
     let live = wait_for_frames(&engine, ds, ch, 9_600).await;
     let stopping = Instant::now();
-    let done = engine.stop_route_recording(&route).unwrap();
+    let done = stop(&engine, ds, ch).unwrap();
     assert!(stopping.elapsed() < Duration::from_secs(2), "stopping hung");
     assert_eq!(done.error, None);
     assert!(done.frames >= live.frames);
@@ -189,8 +206,12 @@ async fn a_channel_records_raw_and_through_audio_fx_at_once() {
         fx: vec!["fx".to_owned()],
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
-    let raw = engine.start_channel_recording(ds, ch).unwrap();
-    let cleaned = engine.start_route_recording(&processed, false).unwrap();
+    let raw = engine
+        .start_audio_recording("raw", &AudioRoute::channel(ds, ch), false)
+        .unwrap();
+    let cleaned = engine
+        .start_audio_recording("clean", &processed, false)
+        .unwrap();
     assert_ne!(raw.file, cleaned.file);
     let statuses = engine
         .snapshot()
@@ -203,10 +224,16 @@ async fn a_channel_records_raw_and_through_audio_fx_at_once() {
         .find(|c| c.id == ch)
         .unwrap()
         .audio_recordings;
-    let routes: Vec<Vec<String>> = statuses.into_iter().map(|s| s.fx).collect();
-    assert_eq!(routes, vec![Vec::<String>::new(), vec!["fx".to_owned()]]);
-    engine.stop_route_recording(&processed).unwrap();
-    engine.stop_channel_recording(ds, ch).unwrap();
+    let routes: Vec<(String, Vec<String>)> = statuses.into_iter().map(|s| (s.node, s.fx)).collect();
+    assert_eq!(
+        routes,
+        vec![
+            ("clean".to_owned(), vec!["fx".to_owned()]),
+            ("raw".to_owned(), Vec::new())
+        ]
+    );
+    engine.stop_audio_recording("clean", ds, ch).unwrap();
+    engine.stop_audio_recording("raw", ds, ch).unwrap();
     assert!(live_status(&engine, ds, ch).is_none());
     engine.remove_device_set(ds).unwrap();
 }
@@ -221,7 +248,7 @@ async fn a_recording_through_an_unknown_audio_fx_is_refused_and_leaves_no_file()
         fx: vec!["ghost".to_owned()],
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
-    assert!(engine.start_route_recording(&route, false).is_err());
+    assert!(engine.start_audio_recording(REC, &route, false).is_err());
     assert!(live_status(&engine, ds, ch).is_none());
     let left = std::fs::read_dir(engine.audio_recordings_dir().unwrap())
         .map(|entries| entries.count())
@@ -246,10 +273,10 @@ async fn a_stereo_channel_records_two_channel_audio() {
         )
         .unwrap();
 
-    let started = engine.start_channel_recording(ds, ch).unwrap();
+    let started = start(&engine, ds, ch).unwrap();
     assert_eq!(started.channels, 2);
     wait_for_frames(&engine, ds, ch, 4_800).await;
-    let done = engine.stop_channel_recording(ds, ch).unwrap();
+    let done = stop(&engine, ds, ch).unwrap();
     assert_eq!(done.bytes, done.frames * 4, "two channels of 16-bit audio");
 
     let path = engine.audio_recordings_dir().unwrap().join(&started.file);
@@ -264,7 +291,7 @@ async fn a_rate_change_does_not_end_a_channel_recording() {
     let ds = set_at_test_rate(&engine);
     let ch = nfm_channel(&engine, ds);
 
-    engine.start_channel_recording(ds, ch).unwrap();
+    start(&engine, ds, ch).unwrap();
     let before = wait_for_frames(&engine, ds, ch, 2_400).await;
     engine
         .patch_device(
@@ -279,7 +306,7 @@ async fn a_rate_change_does_not_end_a_channel_recording() {
     assert_eq!(after.file, before.file, "the recording was restarted");
     assert_eq!(after.error, None);
 
-    let done = engine.stop_channel_recording(ds, ch).unwrap();
+    let done = stop(&engine, ds, ch).unwrap();
     assert!(done.frames > before.frames);
     engine.remove_device_set(ds).unwrap();
 }
@@ -291,7 +318,7 @@ async fn removing_the_channel_finalizes_its_recording() {
     let ds = set_at_test_rate(&engine);
     let ch = nfm_channel(&engine, ds);
 
-    let started = engine.start_channel_recording(ds, ch).unwrap();
+    let started = start(&engine, ds, ch).unwrap();
     wait_for_frames(&engine, ds, ch, 4_800).await;
     engine.remove_channel(ds, ch).unwrap();
 
@@ -299,7 +326,7 @@ async fn removing_the_channel_finalizes_its_recording() {
     let info = read_audio_info(&path).unwrap();
     assert!(info.frames > 0);
     assert!(
-        engine.stop_channel_recording(ds, ch).is_err(),
+        stop(&engine, ds, ch).is_err(),
         "the recording outlived its channel"
     );
     engine.remove_device_set(ds).unwrap();
@@ -312,7 +339,7 @@ async fn a_mode_change_to_a_silent_decoder_finishes_the_recording() {
     let ds = set_at_test_rate(&engine);
     let ch = nfm_channel(&engine, ds);
 
-    let started = engine.start_channel_recording(ds, ch).unwrap();
+    let started = start(&engine, ds, ch).unwrap();
     wait_for_frames(&engine, ds, ch, 4_800).await;
     engine
         .patch_channel(
@@ -335,13 +362,13 @@ async fn what_cannot_be_recorded_is_refused_rather_than_left_running_empty() {
     let ds = set_at_test_rate(&engine);
     let ch = nfm_channel(&engine, ds);
 
-    engine.start_channel_recording(ds, ch).unwrap();
+    start(&engine, ds, ch).unwrap();
     assert!(
-        engine.start_channel_recording(ds, ch).is_err(),
-        "a second recording of the same channel was accepted"
+        start(&engine, ds, ch).is_err(),
+        "a second recording of the same channel by one recorder was accepted"
     );
-    engine.stop_channel_recording(ds, ch).unwrap();
-    assert!(engine.stop_channel_recording(ds, ch).is_err());
+    stop(&engine, ds, ch).unwrap();
+    assert!(stop(&engine, ds, ch).is_err());
 
     let adsb = engine
         .add_channel(
@@ -350,14 +377,14 @@ async fn what_cannot_be_recorded_is_refused_rather_than_left_running_empty() {
             settings(ChannelParams::Adsb(AdsbParams::default()), 0.0),
         )
         .unwrap();
-    let refused = engine.start_channel_recording(ds, adsb).unwrap_err();
+    let refused = start(&engine, ds, adsb).unwrap_err();
     assert!(
         refused.to_string().contains("no audio"),
         "unexpected refusal: {refused}"
     );
 
-    assert!(engine.start_channel_recording(ds, 9_999).is_err());
-    assert!(engine.start_channel_recording(9_999, ch).is_err());
+    assert!(start(&engine, ds, 9_999).is_err());
+    assert!(start(&engine, 9_999, ch).is_err());
     engine.remove_device_set(ds).unwrap();
 }
 
@@ -370,7 +397,7 @@ async fn recording_without_a_recordings_directory_is_refused() {
     let ch = nfm_channel(&engine, ds);
 
     assert!(engine.audio_recordings_dir().is_none());
-    let err = engine.start_channel_recording(ds, ch).unwrap_err();
+    let err = start(&engine, ds, ch).unwrap_err();
     assert!(err.to_string().contains("recordings directory"), "{err}");
     engine.remove_device_set(ds).unwrap();
 }
@@ -390,13 +417,67 @@ async fn skipping_silence_pauses_while_the_squelch_is_shut() {
     let ch = engine.add_channel(ds, 0, shut).unwrap();
     let route = sdrmm_wire::AudioRoute::channel(ds, ch);
 
-    engine.start_route_recording(&route, true).unwrap();
+    engine.start_audio_recording(REC, &route, true).unwrap();
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(live_status(&engine, ds, ch).unwrap().frames, 0);
 
-    engine.set_route_skip_silence(&route, false).unwrap();
+    engine.set_audio_skip_silence(REC, ds, ch, false).unwrap();
     wait_for_frames(&engine, ds, ch, 4_800).await;
-    engine.stop_route_recording(&route).unwrap();
-    assert!(engine.set_route_skip_silence(&route, true).is_err());
+    stop(&engine, ds, ch).unwrap();
+    assert!(engine.set_audio_skip_silence(REC, ds, ch, true).is_err());
+    engine.remove_device_set(ds).unwrap();
+}
+
+fn frames_of(engine: &Engine, ds: u32, ch: u32, node: &str) -> u64 {
+    engine
+        .snapshot()
+        .device_sets
+        .into_iter()
+        .find(|s| s.id == ds)
+        .and_then(|set| set.channels.into_iter().find(|c| c.id == ch))
+        .and_then(|channel| {
+            channel
+                .audio_recordings
+                .into_iter()
+                .find(|status| status.node == node)
+        })
+        .map_or(0, |status| status.frames)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_recorders_on_one_route_each_own_a_file() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let engine = engine(dir.path());
+    let ds = set_at_test_rate(&engine);
+    let ch = nfm_channel(&engine, ds);
+    let route = AudioRoute::channel(ds, ch);
+
+    let first = engine.start_audio_recording("a", &route, false).unwrap();
+    let second = engine.start_audio_recording("b", &route, false).unwrap();
+    assert_eq!((first.node.as_str(), second.node.as_str()), ("a", "b"));
+    assert_ne!(first.file, second.file);
+    wait_for_frames(&engine, ds, ch, 4_800).await;
+
+    let done = engine.stop_audio_recording("a", ds, ch).unwrap();
+    assert_eq!(done.node, "a");
+    let left = frames_of(&engine, ds, ch, "b");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while frames_of(&engine, ds, ch, "b") < left + 4_800 {
+        assert!(Instant::now() < deadline, "the other recorder stopped too");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(engine.stop_audio_recording("a", ds, ch).is_err());
+    let other = engine.stop_audio_recording("b", ds, ch).unwrap();
+    assert_eq!(other.error, None);
+
+    let library = engine.audio_recordings_dir().unwrap();
+    assert_eq!(
+        read_audio_info(&library.join(&first.file)).unwrap().frames,
+        done.frames
+    );
+    assert_eq!(
+        read_audio_info(&library.join(&second.file)).unwrap().frames,
+        other.frames
+    );
     engine.remove_device_set(ds).unwrap();
 }

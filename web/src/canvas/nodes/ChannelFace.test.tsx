@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { useSatelliteStore } from "../../lib/satellite";
 import type { ChannelInfo, DeviceSet, PatchGraph } from "../../lib/types";
 import { renderFace } from "../../test/faceHarness";
 import { placed } from "../../test/fixtures";
@@ -72,4 +73,13 @@ describe("ChannelFace", () => {
     expect(html).not.toContain("Rejected");
     expect(html).not.toContain("Skipped");
   });
+
+  it("names no satellite that drives it without a wire", () => {
+    useSatelliteStore.setState({
+      byNode: { sat: { node: "sat", name: "NOAA 19", driving: ["ble"], visible: true } },
+    });
+    expect(face(0)).not.toContain("NOAA 19");
+  });
 });
+
+afterEach(() => useSatelliteStore.setState({ byNode: {} }));

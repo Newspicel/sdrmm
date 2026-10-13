@@ -1,5 +1,4 @@
-import { refMatches } from "../canvas/binding";
-import type { DeviceInfo, DeviceRef } from "../lib/types";
+import type { DeviceClaim, DeviceInfo } from "../lib/types";
 import type { Options } from "./controls";
 
 const NODE_OWNED_DRIVERS = ["recording", "siggen"];
@@ -30,9 +29,13 @@ export function visibleDevices(
 
 export function unclaimedDevices(
   devices: readonly DeviceInfo[],
-  claimed: readonly DeviceRef[],
+  claims: readonly DeviceClaim[],
+  claimant: string,
 ): readonly DeviceInfo[] {
-  return devices.filter((device) => !claimed.some((reference) => refMatches(reference, device)));
+  return devices.filter(
+    (device) =>
+      !claims.some((claim) => claim.device === deviceId(device) && claim.node !== claimant),
+  );
 }
 
 export function groupDevices(devices: readonly DeviceInfo[]): {

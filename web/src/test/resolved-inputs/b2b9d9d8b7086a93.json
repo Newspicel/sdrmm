@@ -1,0 +1,27 @@
+{
+  "name": "b2b9d9d8b7086a93",
+  "test": "propagation face > shows an empty model until spots arrive",
+  "graph": {
+    "nodes": [
+      {
+        "id": "prop",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "propagation",
+        "data": {
+          "half_life_minutes": 30,
+          "reflection_height_km": 300,
+          "show_paths": false,
+          "compare_forecast": true
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

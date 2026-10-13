@@ -13,8 +13,8 @@ import type {
   PolarimeterReading,
 } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { arrayOf } from "../binding";
 import { useWorkspaceContext } from "../context";
+import { arrayOf } from "../lanes";
 import { settingsOf } from "../newNode";
 import { OffsetChip, WidthChip } from "./BandRows";
 import { laneOptions } from "./beamformer";
@@ -50,7 +50,7 @@ type Edit = (next: Partial<PolarimeterParams>) => void;
 export function PolarimeterFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const state = useProcessorStore((store) => store.byNode[node.id]);
-  const array = arrayOf(workspace.graph, node.id);
+  const array = arrayOf(workspace.resolved, node.id);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
   const edit = useProcessorEdit(node as PatchNodeOf<"polarimeter">);
@@ -61,14 +61,14 @@ export function PolarimeterFace({ node }: { node: PatchNode }) {
   const reading = readingOf(state, "polarimeter");
   const period = settings?.report_ms ?? 0;
   const stale = state !== undefined && isStale(state.receivedAt, now, period);
-  const lanes = Math.max(processorLanes(workspace.graph, array, status), 2);
+  const lanes = Math.max(processorLanes(workspace.resolved, array, status), 2);
   const processor = processorStatusOf(status, node.id);
   return (
     <NodeShell
       node={node}
       title="Polarimeter"
       category="tool"
-      subtitle={processorSubtitle(workspace.graph, node.id, status, state, now, period)}
+      subtitle={processorSubtitle(workspace.resolved, node.id, status, state, now, period)}
     >
       <FaceBody>
         {settings === null ? (

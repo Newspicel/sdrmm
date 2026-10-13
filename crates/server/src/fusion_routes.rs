@@ -3,10 +3,16 @@ use std::{
     sync::{Arc, PoisonError},
 };
 
-use sdrmm_wire::{DecoderEvent, NodeBody, PatchGraph, PositionFix, ServerEvent};
+use sdrmm_wire::{DecoderEvent, NodeBody, POSITION_PORT, PositionFix, ServerEvent};
 use tokio::sync::broadcast::{self, error::RecvError};
 
-use crate::{AppState, decoded::Decoded, df_fusion, events::Routed};
+use crate::{
+    AppState,
+    decoded::Decoded,
+    df_fusion,
+    events::Routed,
+    resolved::{self, Resolved},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Guided {
@@ -21,9 +27,9 @@ pub(crate) struct Table {
 }
 
 impl Table {
-    pub(crate) fn from_graph(graph: &PatchGraph) -> Self {
+    pub(crate) fn of(resolved: &Resolved) -> Self {
         let mut table = Self::default();
-        for node in &graph.nodes {
+        for node in &resolved.graph.nodes {
             let guided = match node.body {
                 NodeBody::Triangulation(_) => {
                     table.triangulations.insert(node.id.clone());
@@ -32,10 +38,10 @@ impl Table {
                 NodeBody::Hunt(_) => Guided::Hunt(node.id.clone()),
                 _ => continue,
             };
-            if let Some(source) = graph.position_source(&node.id) {
+            if let Some(feed) = resolved.patch.first_feed(&node.id, POSITION_PORT) {
                 table
                     .guides
-                    .entry(source.to_owned())
+                    .entry(feed.source.clone())
                     .or_default()
                     .push(guided);
             }
@@ -61,13 +67,14 @@ fn table(state: &AppState) -> Arc<Table> {
         .clone()
 }
 
-pub(crate) fn reconcile(state: &AppState, graph: &PatchGraph) -> Vec<(String, String)> {
-    let table = Table::from_graph(graph);
+pub(crate) fn reconcile(state: &AppState, resolved: &Resolved) {
+    let table = Table::of(resolved);
     let now_s = df_fusion::now_s();
     for triangulation in &table.triangulations {
-        let fix = graph
-            .position_source(triangulation)
-            .and_then(|source| state.gps.fix(source));
+        let fix = resolved
+            .patch
+            .first_feed(triangulation, POSITION_PORT)
+            .and_then(|feed| state.gps.fix(&feed.source));
         df_fusion::guide(state, triangulation, fix, now_s);
     }
     *state
@@ -75,19 +82,12 @@ pub(crate) fn reconcile(state: &AppState, graph: &PatchGraph) -> Vec<(String, St
         .routes
         .lock()
         .unwrap_or_else(PoisonError::into_inner) = Arc::new(table);
-    Vec::new()
 }
 
 pub(crate) fn start(state: &AppState) {
-    match state.store.active_workspace() {
-        Ok(Some(active)) => {
-            reconcile(state, &active.snapshot.graph);
-        }
-        Ok(None) => {}
-        Err(error) => {
-            tracing::error!(%error, "could not read the active workspace for bearing routes")
-        }
-    }
+    resolved::follow(state, "bearing routes", |state| {
+        reconcile(state, &state.resolved.current());
+    });
     let records = state.decoded.subscribe();
     let positions = state.gps.subscribe();
     let routed = state.clone();

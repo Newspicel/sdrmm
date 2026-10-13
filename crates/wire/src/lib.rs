@@ -9,6 +9,7 @@ pub mod ble;
 pub mod callsign;
 pub use callsign::Callsign;
 pub mod channel;
+pub mod control;
 pub mod cps;
 pub mod decode;
 pub mod device;
@@ -30,10 +31,12 @@ pub mod lora;
 pub mod measurement;
 pub mod mission;
 pub mod network;
+pub mod node_action;
 pub mod patch;
 pub mod phone;
 pub mod position;
 pub mod presence;
+pub mod present;
 pub mod processor;
 pub mod propagation;
 pub mod radar;
@@ -44,6 +47,7 @@ pub mod rotator;
 pub mod sarsat;
 pub mod satellite;
 pub mod scan;
+pub mod sink;
 pub mod stanag;
 pub mod state;
 pub mod survey;
@@ -88,22 +92,27 @@ pub use ble::{
 };
 pub use channel::{
     AcarsParams, AdsbParams, AeroChannel, AisChannel, AisParams, AmParams, AprsMode, AprsParams,
-    AtvColor, AtvModulation, AtvParams, AtvStandard, BandMiss, ChannelDescriptor, ChannelInfo,
-    ChannelParams, ChannelSettings, CwSkimmerParams, DECT_CARRIER_SPACING_HZ, DEFAULT_FREQUENCY_HZ,
-    DabMode, DabParams, DabTransmissionMode, DatvCodeRate, DatvParams, DatvRollOff, DatvStandard,
-    DecoderFamily, DectBand, DectParams, DectSides, DectSpan, DmrParams, DmrSlots, DpmrParams,
-    DrmMode, DrmParams, DscParams, DstarParams, DvbtBandwidth, DvbtParams, DvbtStandard, EotParams,
-    ErmesParams, FlexParams, FreeDvMode, FreeDvParams, GnssParams, HfdlParams, IdentParams,
-    IlsComponent, IlsParams, InmarsatAeroParams, InmarsatStdcParams, IridiumParams, IridiumSpan,
-    M17Params, MAX_DATV_SYMBOL_RATE, MAX_IDENT_BANDWIDTH_HZ, MAX_IDENT_INTERVAL_MS,
-    MAX_IDENT_THRESHOLD_DB, MAX_NAVAID_REPORT_MS, MAX_SQUELCH_AUTO_MARGIN_DB, MAX_SUPERFRAME_CODE,
-    MIN_DATV_SYMBOL_RATE, MIN_IDENT_BANDWIDTH_HZ, MIN_IDENT_INTERVAL_MS, MIN_IDENT_THRESHOLD_DB,
-    MIN_NAVAID_REPORT_MS, MIN_SQUELCH_AUTO_MARGIN_DB, MorseParams, NavtexParams, NfmParams,
-    NfmScramblerMode, NfmToneMode, NxdnBandwidth, NxdnParams, P25Params, ParamLimit, PocsagBaud,
-    PocsagParams, PskBaud, PskParams, RETIRED_CHANNEL_TYPES, RadioClockParams, RadioClockStandard,
-    RttyParams, RttyStopBits, SelcallParams, SelcallSystem, Sideband, Squelch, SsbParams, SstvMode,
-    SstvModulation, SstvParams, TetraParams, Vdl2Params, VorParams, WfmParams, WsjtParams,
-    WsprParams, YsfParams, home_frequency_hz, param_limits, retired_channel_type,
+    AtvColor, AtvModulation, AtvParams, AtvStandard, BandMiss, CTCSS_TONES_HZ, CallGate,
+    ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings, CwSkimmerParams, DCS_CODES,
+    DECT_CARRIER_SPACING_HZ, DEEMPHASIS_US, DEFAULT_FREQUENCY_HZ, DabMode, DabParams,
+    DabTransmissionMode, DatvCodeRate, DatvParams, DatvRollOff, DatvStandard, DecoderFamily,
+    DectBand, DectParams, DectSides, DectSpan, DmrParams, DmrSlots, DpmrParams, DrmMode, DrmParams,
+    DscParams, DstarParams, DvbtBandwidth, DvbtParams, DvbtStandard, EotParams, ErmesParams,
+    FlexParams, FreeDvMode, FreeDvParams, GnssParams, HfdlParams, IdentParams, IlsComponent,
+    IlsParams, InmarsatAeroParams, InmarsatStdcParams, IridiumParams, IridiumSpan, M17Params,
+    MAX_DATV_SYMBOL_RATE, MAX_IDENT_BANDWIDTH_HZ, MAX_IDENT_INTERVAL_MS, MAX_IDENT_THRESHOLD_DB,
+    MAX_NAVAID_REPORT_MS, MAX_SQUELCH_AUTO_MARGIN_DB, MAX_SUPERFRAME_CODE, MIN_DATV_SYMBOL_RATE,
+    MIN_IDENT_BANDWIDTH_HZ, MIN_IDENT_INTERVAL_MS, MIN_IDENT_THRESHOLD_DB, MIN_NAVAID_REPORT_MS,
+    MIN_SQUELCH_AUTO_MARGIN_DB, MorseParams, NavtexParams, NfmParams, NfmScramblerMode,
+    NfmToneMode, NxdnBandwidth, NxdnParams, P25Params, ParamChoice, ParamLimit, ParamOption,
+    PocsagBaud, PocsagParams, PskBaud, PskParams, RETIRED_CHANNEL_TYPES, RTTY_BAUDS,
+    RTTY_SHIFTS_HZ, RadioClockParams, RadioClockStandard, RttyParams, RttyStopBits, SelcallParams,
+    SelcallSystem, SettingChoice, Sideband, Squelch, SsbParams, SstvMode, SstvModulation,
+    SstvParams, TetraParams, Vdl2Params, VorParams, WfmParams, WsjtParams, WsprParams, YsfParams,
+    home_frequency_hz, param_limits, retired_channel_type,
+};
+pub use control::{
+    ControlAck, ControlCommand, ControlVerb, DopplerSteer, SkyTrack, SweepJob, SweepStatus,
 };
 pub use cps::{
     ALL_CALL_NUMBER, Admit, Bandwidth, CODEPLUG_VERSION, ChannelKind, ChannelMode, Codeplug,
@@ -119,14 +128,15 @@ pub use cps::{
 };
 pub use decode::{
     AcarsMessage, AdsbMessage, AisMessage, AprsPacket, BroadcastData, BroadcastService,
-    BroadcastServiceKind, BroadcastStatus, BroadcastSystem, CwSkimmerSpot, DataLinkMessage,
-    DecodedRecord, DecoderEvent, DectArc, DectCapability, DectCipherState, DectFrame, DectIdentity,
-    DectSecurity, DectSide, DectUpdate, DectVoice, DvChannelDefinition, DvFrame, DvFrameKind,
-    DvMode, DvSlotActivity, DvTrunkProtocol, EotArming, EotBattery, EotMessage, EotReport,
-    EotStatus, ErmesMessage, FlexMessage, GnssFrame, HotCommand, HotRequest, IdentFeatures,
-    IdentReport, IdentSignal, IlsReading, Modulation, MorseText, NO_CHANNEL, NavtexMessage,
-    PagerPayload, PocsagMessage, PocsagPayload, ProtocolMatch, PskText, RadioClockFrame, RdsUpdate,
-    RttyText, ScramblerStatus, SelcallSequence, SstvPicture, SuperframeStatus, ToneSquelchStatus,
+    BroadcastServiceKind, BroadcastStatus, BroadcastSystem, Capability, CwSkimmerSpot,
+    DataLinkMessage, DecodedRecord, DecoderEvent, DectArc, DectCapability, DectCipherState,
+    DectFrame, DectIdentity, DectSecurity, DectSide, DectUpdate, DectVoice, DvChannelDefinition,
+    DvFrame, DvFrameKind, DvMode, DvSlotActivity, DvTrunkProtocol, EotArming, EotBattery,
+    EotMessage, EotReport, EotStatus, ErmesMessage, EventKind, EventKindEntry, FlexMessage,
+    GnssFrame, HotCommand, HotRequest, IdentFeatures, IdentReport, IdentSignal, IlsReading,
+    KindInfo, KindSet, Lifetime, Modulation, MorseText, NO_CHANNEL, NavtexMessage, PagerPayload,
+    PocsagMessage, PocsagPayload, ProtocolMatch, PskText, RadioClockFrame, RdsUpdate, RttyText,
+    ScramblerStatus, SelcallSequence, SstvPicture, SuperframeStatus, Symbol, ToneSquelchStatus,
     Vendor, VorReading, WsjtMessage, WsprSpot,
 };
 pub use device::{
@@ -146,8 +156,8 @@ pub use event_output::{
     csv_file_name, valid_csv_file, valid_sql_identifier,
 };
 pub use filter::{
-    EventFacet, EventFilterNode, EventKindFacets, FilterMode, MAX_FILTER_DURATION_MS,
-    MAX_FILTER_IDS, MAX_FILTER_KINDS, MAX_FILTER_TEXT_LEN, event_facets, facets_of,
+    EventFilterNode, FilterMode, MAX_FILTER_DURATION_MS, MAX_FILTER_IDS, MAX_FILTER_KINDS,
+    MAX_FILTER_TEXT_LEN,
 };
 pub use frame::{
     AudioFrame, FrameError, FrameHeader, FrameKind, FusionGridFrame, FusionGridOwned, HEADER_LEN,
@@ -158,7 +168,7 @@ pub use frame::{
 };
 pub use fusion::{
     BearingSource, DfBearing, DfEstimate, DfFusionState, DfOtherPeak, DfStation, FusionDecay,
-    NavMode, NavTarget, NavTargetKind, TriangulationParams,
+    NavGuide, NavMode, NavTarget, NavTargetKind, TriangulationParams,
 };
 pub use geo::LatLon;
 pub use gsm::{
@@ -166,9 +176,7 @@ pub use gsm::{
     GsmChannelType, GsmDedicated, GsmFrame, GsmHopping, GsmIdentity, GsmIdentityKind,
     GsmLapdmFrame, GsmLogicalChannel, GsmMessage, GsmParams, GsmProtocol, GsmSi, cipher_label,
 };
-pub use hunt::{
-    HuntAction, HuntRequest, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState,
-};
+pub use hunt::{HuntAction, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState};
 pub use ism::{
     ISM_BANDWIDTH_HZ, ISM_SAMPLE_RATE_HZ, IsmCoding, IsmIntegrity, IsmMessage, IsmModulation,
     IsmParams, UNKNOWN_MODEL,
@@ -192,26 +200,28 @@ pub use mission::{
     RadarMission, SurveyMission, SwitchWorkspaceRequest, TriangulationMission,
 };
 pub use network::{
-    ChannelNetworkExportRequest, MAX_NETWORK_ADDRESS_LEN, NetworkExportAction, NetworkExportNode,
-    NetworkExportRequest, NetworkExportSettings, NetworkExportStatus, NetworkSampleFormat,
-    NetworkTransport,
+    MAX_NETWORK_ADDRESS_LEN, NetworkExportAction, NetworkExportNode, NetworkExportSettings,
+    NetworkExportStatus, NetworkSampleFormat, NetworkTransport,
 };
+pub use node_action::{NetworkRadioRequest, NodeActed, NodeAction};
 pub use patch::{
-    ARRAY_LANE_PORT, ARRAY_PORT, AudioRecorderNode, BEAM_PORT, BeamformerNode, CONTROL_PORT,
-    ChannelNode, CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
-    DEFAULT_SIGNAL_MAP_OFFSET_HZ, DV_DECODER_KIND, DecoderLogNode, DeviceNode, DeviceRef, DfNode,
-    DmrChannelEntry, DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol, EVENTS_PORT,
-    HuntNode, MAX_DMR_CHANNEL_MAP, MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES,
-    MAX_DMR_SEARCH_CANDIDATES, MAX_DMR_SEARCH_RANGES, MAX_EDGES, MAX_NODES,
-    MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS, MIN_DMR_SEARCH_STEP_HZ,
-    NodeBody, NodeCategory, NodeTypeInfo, POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge,
-    PatchError, PatchGraph, PatchNode, PolarimeterNode, PortBacking, PortCondition, PortDirection,
-    PortRef, PortRepeat, PortSpec, PortType, Position, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT,
-    RADAR_TX_PORT, REFUSAL_ADSB, REFUSAL_ARRAY_LANE, REFUSAL_LANE_TAKEN, REFUSAL_ROTATOR,
-    REFUSAL_SHARED_CLOCK, REFUSAL_STEER, REFUSAL_TRIANGULATION, REFUSAL_UNNAMED_ARRAY, RackCell,
-    RackLayout, RackSlot, RecorderNode, RecordingNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode,
-    SignalGenNode, SignalMapNode, Size, SpatialSpectrumNode, StitchNode, TriangulationNode,
-    port_stream, siggen_key, stream_port,
+    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, BASEBAND_PORT,
+    BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
+    CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
+    DEFAULT_SIGNAL_MAP_OFFSET_HZ, DecoderLogNode, DeviceNode, DeviceRef, DfNode, DmrChannelEntry,
+    DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol, EVENTS_PORT, Face, FaceSize,
+    Feed, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_DMR_CHANNEL_MAP,
+    MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES, MAX_DMR_SEARCH_CANDIDATES, MAX_DMR_SEARCH_RANGES,
+    MAX_EDGES, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS,
+    MIN_DMR_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo,
+    POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode,
+    Payload, PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType, PortTypeInfo,
+    Position, ProblemSource, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT, REFUSALS,
+    RackCell, RackLayout, RackSlot, Reach, RecorderNode, RecordingNode, Refusal, RefusedEdge,
+    ResolveCtx, ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs,
+    STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalGenNode, SignalMapNode, Size,
+    SpatialSpectrumNode, StitchNode, Tap, TriangulationNode, UnboundReason, VIDEO_PORT,
+    channel_ports, port_stream, siggen_key, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;
@@ -251,9 +261,9 @@ pub use propagation::{
 pub use radar::{
     AdsbMatch, AdsbTruth, AoaState, CfarKind, CfarParams, CfarWindow, ClutterMethod, ClutterParams,
     DopplerWindow, GpuUse, Illuminator, PassiveRadarParams, RadarAoa, RadarAxes, RadarDetection,
-    RadarFix, RadarGeometry, RadarHealth, RadarProblem, RadarSite, RadarTrack, RadarTrackEvent,
-    RadarTrailPoint, RadarUpdate, ReferenceCleaning, ReferenceHealth, ReferenceMode,
-    SurveillanceSet, TrackChange, TrackState, TrackerParams,
+    RadarFix, RadarGeometry, RadarHealth, RadarProblem, RadarSite, RadarSites, RadarTrack,
+    RadarTrackEvent, RadarTrailPoint, RadarUpdate, ReferenceCleaning, ReferenceHealth,
+    ReferenceMode, SurveillanceSet, TrackChange, TrackState, TrackerParams,
 };
 pub use remote::{
     DEFAULT_REMOTE_APP, MAX_HEALTH_LABEL_CHARS, MAX_HEALTH_RADIOS, RadioHealth, RemoteState,
@@ -266,17 +276,17 @@ pub use remote_id::{
 };
 pub use rest::{
     AnnotationError, ApiError, ApplyTemplateRequest, AudioRecordingInfo, AudioRecordingsResponse,
-    AuthInfo, Bookmark, CapturedImage, CapturedImagesResponse, ChannelTypesResponse,
-    ClientsResponse, CreateBookmarkRequest, CreateChannelRequest, CreateDeviceSetRequest,
-    CreatePresetRequest, CreatedId, CreatedRowId, DecoderLogEntry, DecoderLogGroup,
-    DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount, DevicesResponse,
-    ErrorCode, EventAudio, EventImage, ExportFormat, LogGroupKey, LogScope, MAX_LOG_SOURCES,
-    MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS,
-    MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket, OccupancyReport, PRESET_SNAPSHOT_VERSION,
-    PatchChannelRequest, PlaybackAction, PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot,
-    RecordingAnnotation, RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload,
-    RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo,
-    TemplatesResponse, VoiceCall, VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
+    AuthInfo, Bookmark, CapturedImage, CapturedImagesQuery, CapturedImagesResponse,
+    ChannelTypesResponse, ClientsResponse, CreateBookmarkRequest, CreatePresetRequest,
+    CreatedRowId, DecoderLogEntry, DecoderLogGroup, DecoderLogGroupsResponse, DecoderLogQuery,
+    DecoderLogResponse, DeletedCount, DeviceClaim, DevicesResponse, ErrorCode, EventAudio,
+    EventImage, ExportFormat, LogGroupKey, LogScope, MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN,
+    MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES,
+    OccupancyBucket, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction,
+    PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
+    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
+    SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo, TemplatesResponse, VoiceCall,
+    WriteSerialRequest, WrittenSerial, device_claims,
 };
 pub use rotator::{
     DEFAULT_GS232_BAUD, DEFAULT_ROTATOR_TOLERANCE_DEG, DEFAULT_ROTCTLD_ADDRESS, FLIP_ELEVATION_DEG,
@@ -291,13 +301,17 @@ pub use sarsat::{
 pub use satellite::{
     CatalogSatellite, MAX_CATALOG_RESULTS, MAX_SATELLITE_HZ, MAX_SATELLITE_QUERY_LEN, MAX_TLE_LEN,
     MAX_TRANSMITTER_ID_LEN, PassPoint, SATELLITE_CATALOG_SOURCE, SATELLITE_CATALOG_URL,
-    SatelliteCatalogQuery, SatelliteCatalogResponse, SatelliteGround, SatelliteLook, SatelliteNode,
-    SatellitePass, SatelliteStatus, SkyPoint, TRANSMITTER_SOURCE, TRANSMITTER_URL, Transmitter,
-    TransmittersResponse,
+    SatelliteCatalogQuery, SatelliteCatalogResponse, SatelliteFix, SatelliteGround, SatelliteLook,
+    SatelliteNode, SatellitePass, SatelliteStatus, SkyPoint, TRANSMITTER_SOURCE, TRANSMITTER_URL,
+    Transmitter, TransmittersResponse,
 };
 pub use scan::{
-    MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanRequest,
-    ScanSettings, ScanState, ScannerStatus,
+    MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanSettings,
+    ScanState, ScannerStatus, WatchedLane,
+};
+pub use sink::{
+    Entity, EntityKey, PositionTrack, PropagationCell, PropagationPath, PropagationSummary,
+    PropagationView, SinkFeed, SinkUpdate, SurfaceRef,
 };
 pub use stanag::{
     MAX_STANAG_WINDOW_S, MIN_STANAG_WINDOW_S, STANAG_WINDOW_S, StanagInterleave, StanagModem,
@@ -316,8 +330,8 @@ pub use tetrapol::{
 };
 pub use timemachine::{
     DEFAULT_TIME_MACHINE_SECONDS, MAX_TIME_MACHINE_BYTES, MAX_TIME_MACHINE_SECONDS,
-    MIN_TIME_MACHINE_SECONDS, TimeMachineAction, TimeMachineNode, TimeMachineRequest,
-    TimeMachineStatus, history_capacity_samples,
+    MIN_TIME_MACHINE_SECONDS, TimeMachineAction, TimeMachineNode, TimeMachineStatus,
+    history_capacity_samples,
 };
 pub use tools::{
     ANTENNA_TOOL_ID, AntennaDesign, AntennaGeometry, AntennaGround, AntennaMaterial, AntennaModel,
@@ -347,8 +361,8 @@ pub use weather::{
     WefaxParams, WefaxPicture,
 };
 pub use workspace::{
-    CreateWorkspaceRequest, DroppedNode, MAX_NAME_LEN, MAX_REGION_ID_LEN, PatchApplyReport,
-    PatchBinding, PatchRefusal, PlacementCoverage, UpdateWorkspaceRequest,
+    CreateWorkspaceRequest, DroppedNode, MAX_NAME_LEN, MAX_REGION_ID_LEN, NoticeWire,
+    PatchApplyReport, PatchBinding, PatchRefusal, PlacementCoverage, UpdateWorkspaceRequest,
     WORKSPACE_EXPORT_VERSION, WORKSPACE_SNAPSHOT_VERSION, WorkspaceDetail, WorkspaceError,
     WorkspaceExport, WorkspaceHistory, WorkspaceInfo, WorkspaceNotice, WorkspaceNoticeKind,
     WorkspaceSettings, WorkspaceSnapshot, WorkspacesResponse,
@@ -357,8 +371,8 @@ pub use workspace_state::{
     WORKSPACE_STATE_VERSION, WorkspaceChannel, WorkspaceDevice, WorkspaceState, WorkspaceTrunk,
 };
 pub use ws::{
-    ClientCommand, ServerEvent, StateScope, StreamKind, SurfaceFit, SurfaceRefusal,
-    WS_BEARER_PROTOCOL_PREFIX, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
+    ClientCommand, PortActivity, ServerEvent, StateScope, StreamKind, StreamParams, SurfaceFit,
+    SurfaceRefusal, WS_BEARER_PROTOCOL_PREFIX, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
 };
 
 #[cfg(test)]
@@ -387,11 +401,10 @@ mod contract_tests {
 
     #[test]
     fn client_command_roundtrips() {
-        let cmd = ClientCommand::SubscribeSpectrum {
-            device_set: 1,
-            fps: 20,
-            bins: 1024,
-            stream: 2,
+        let cmd = ClientCommand::SubscribePort {
+            node: "scope".to_owned(),
+            port: "iq".to_owned(),
+            params: ws::StreamParams { fps: 20, bins: 512 },
         };
         let json = serde_json::to_string(&cmd).unwrap();
         let back: ClientCommand = serde_json::from_str(&json).unwrap();
@@ -401,23 +414,17 @@ mod contract_tests {
     #[test]
     fn stream_fields_default_to_zero_for_older_peers() {
         let cmd: ClientCommand = serde_json::from_str(
-            r#"{"type":"SubscribeSpectrum","data":{"device_set":1,"fps":20,"bins":1024}}"#,
+            r#"{"type":"SubscribePort","data":{"node":"spk","port":"audio"}}"#,
         )
         .unwrap();
         assert_eq!(
             cmd,
-            ClientCommand::SubscribeSpectrum {
-                device_set: 1,
-                fps: 20,
-                bins: 1024,
-                stream: 0,
+            ClientCommand::SubscribePort {
+                node: "spk".to_owned(),
+                port: "audio".to_owned(),
+                params: ws::StreamParams::default(),
             }
         );
-
-        let create: CreateChannelRequest =
-            serde_json::from_str(r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#)
-                .unwrap();
-        assert_eq!(create.stream, 0);
 
         let info: ChannelInfo =
             serde_json::from_str(r#"{"id":3,"settings":{"params":{"type":"nfm","settings":{}}}}"#)
@@ -802,6 +809,7 @@ mod contract_tests {
         );
 
         info.audio_recordings = vec![AudioRecordingStatus {
+            node: "rec".to_owned(),
             fx: vec!["fx".to_owned()],
             file: "ch_1_3_20260815T120000Z.wav".to_owned(),
             started_at: "2026-08-15T12:00:00Z".to_owned(),
@@ -813,6 +821,7 @@ mod contract_tests {
         let json = serde_json::to_value(&info).unwrap();
         assert_eq!(json["audio_recordings"][0]["frames"], 48_000);
         assert_eq!(json["audio_recordings"][0]["fx"][0], "fx");
+        assert_eq!(json["audio_recordings"][0]["node"], "rec");
         assert!(json["audio_recordings"][0].get("error").is_none());
         let back: ChannelInfo = serde_json::from_value(json).unwrap();
         assert_eq!(back, info);
@@ -966,8 +975,8 @@ mod contract_tests {
     }
 
     #[test]
-    fn decoded_event_shape() {
-        let ev = ServerEvent::Decoded(Box::new(decode::DecodedRecord {
+    fn records_reach_clients_only_through_sink_feeds() {
+        let record = decode::DecodedRecord {
             origin: None,
             sinks: Vec::new(),
             callsign: None,
@@ -982,14 +991,24 @@ mod contract_tests {
                 nmea: "!AIVDM,1,1,,B,test,0*00".to_owned(),
                 ..decode::AisMessage::default()
             }),
-        }));
-        let json = serde_json::to_value(&ev).unwrap();
-        assert_eq!(json["type"], "Decoded");
-        assert_eq!(json["data"]["channel"], 4);
-        assert_eq!(json["data"]["event"]["kind"], "ais");
-        assert_eq!(json["data"]["event"]["data"]["mmsi"], 211_234_560);
+            view: None,
+        };
+        let global = serde_json::json!({ "type": "Decoded", "data": record });
+        assert!(serde_json::from_value::<ServerEvent>(global).is_err());
+        let backlog = serde_json::json!({ "type": "DecodedBacklog", "data": { "records": [] } });
+        assert!(serde_json::from_value::<ServerEvent>(backlog).is_err());
+        let fed = ServerEvent::SinkUpdate {
+            node: "log".to_owned(),
+            update: Box::new(sink::SinkUpdate {
+                records: vec![record],
+                ..sink::SinkUpdate::default()
+            }),
+        };
+        let json = serde_json::to_value(&fed).unwrap();
+        assert_eq!(json["type"], "SinkUpdate");
+        assert_eq!(json["data"]["update"]["records"][0]["event"]["kind"], "ais");
         let back: ServerEvent = serde_json::from_value(json).unwrap();
-        assert_eq!(back, ev);
+        assert_eq!(back, fed);
 
         let lost = serde_json::to_value(ServerEvent::DecodedLost { count: 7 }).unwrap();
         assert_eq!(lost["type"], "DecodedLost");
@@ -1006,16 +1025,41 @@ mod contract_tests {
         });
         let back: ChannelDescriptor = serde_json::from_value(json.clone()).unwrap();
         assert!(back.has_audio);
-        assert_eq!(back.decoder_kind, None);
+        assert!(back.emits.is_empty());
+        assert_eq!(back.calls, None);
+        assert!(!back.has_events());
         assert!(!back.can_transmit);
 
         json["has_audio"] = serde_json::json!(false);
-        json["decoder_kind"] = serde_json::json!("adsb");
+        json["emits"] = serde_json::json!(["tone", "scrambler"]);
+        json["calls"] = serde_json::json!("squelch");
         json["can_transmit"] = serde_json::json!(true);
         let back: ChannelDescriptor = serde_json::from_value(json).unwrap();
         assert!(!back.has_audio);
-        assert_eq!(back.decoder_kind.as_deref(), Some("adsb"));
+        assert_eq!(back.emits, vec![EventKind::Tone, EventKind::Scrambler]);
+        assert_eq!(back.calls, Some(CallGate::Squelch));
+        assert!(back.has_events());
         assert!(back.can_transmit);
+    }
+
+    #[test]
+    fn channel_descriptor_emits_and_calls_round_trip() {
+        let descriptor = ChannelDescriptor {
+            type_id: "dmr".to_owned(),
+            emits: vec![EventKind::Dv],
+            calls: Some(CallGate::Frames),
+            ..ChannelDescriptor::default()
+        };
+        let json = serde_json::to_value(&descriptor).unwrap();
+        assert_eq!(json["emits"], serde_json::json!(["dv"]));
+        assert_eq!(json["calls"], "frames");
+        assert!(json.get("decoder_kind").is_none());
+        let back: ChannelDescriptor = serde_json::from_value(json).unwrap();
+        assert_eq!(back, descriptor);
+
+        let silent = serde_json::to_value(ChannelDescriptor::default()).unwrap();
+        assert_eq!(silent["emits"], serde_json::json!([]));
+        assert!(silent.get("calls").is_none());
     }
 
     pub(crate) fn sample_device_set() -> DeviceSet {
@@ -1153,6 +1197,7 @@ mod contract_tests {
         set.recording = Some(RecordingStatus {
             file: "rec-20260809-120000".to_owned(),
             stream: 0,
+            node: Some("recorder".to_owned()),
             started_at: "2026-08-09T12:00:00Z".to_owned(),
             samples: 2_400_000,
             bytes: 19_200_000,
@@ -1224,6 +1269,7 @@ mod contract_tests {
 
         info.baseband_recording = Some(RecordingStatus {
             file: "bb_1_3_20260815T120000Z".to_owned(),
+            node: None,
             stream: 0,
             started_at: "2026-08-15T12:00:00Z".to_owned(),
             samples: 48_000,
@@ -1295,20 +1341,14 @@ mod contract_tests {
     }
 
     #[test]
-    fn a_time_machine_request_defaults_its_stream_and_window() {
-        let request: TimeMachineRequest =
-            serde_json::from_str(r#"{"action":"capture","node":"history"}"#).unwrap();
-        assert_eq!(request.stream, 0);
-        assert_eq!(request.action, TimeMachineAction::Capture);
+    fn a_time_machine_node_defaults_its_window() {
+        let node: TimeMachineNode = serde_json::from_str("{}").unwrap();
+        assert_eq!(node.history_seconds, DEFAULT_TIME_MACHINE_SECONDS);
+        assert!(node.valid());
         assert_eq!(
-            request.settings.history_seconds,
-            DEFAULT_TIME_MACHINE_SECONDS
+            serde_json::to_value(TimeMachineAction::Capture).unwrap(),
+            "capture"
         );
-        assert!(request.settings.valid());
-
-        let json = serde_json::to_value(&request).unwrap();
-        assert_eq!(json["action"], "capture");
-        assert_eq!(json["settings"]["history_seconds"], 10);
     }
 
     #[test]
@@ -1325,7 +1365,8 @@ mod contract_tests {
                     stop_hz: 146_000_000.0,
                     step_hz: 12_500.0,
                 }],
-                ..scan::ScanSettings::for_channel(2)
+                node: Some("scan".to_owned()),
+                ..scan::ScanSettings::for_channel(0)
             },
             targets: 161,
             first_hz: 144_000_000.0,
@@ -1340,7 +1381,8 @@ mod contract_tests {
         let mut json = serde_json::to_value(&set).unwrap();
         assert_eq!(json["scanners"][0]["state"], "holding");
         assert_eq!(json["scanners"][0]["current_hz"], 145_500_000.0);
-        assert_eq!(json["scanners"][0]["settings"]["channel"], 2);
+        assert_eq!(json["scanners"][0]["settings"]["node"], "scan");
+        assert!(json["scanners"][0]["settings"].get("channel").is_none());
         assert!(json["scanners"][0].get("error").is_none());
         let back: DeviceSet = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(back, set);
@@ -1358,8 +1400,9 @@ mod contract_tests {
             settings,
             scan::ScanSettings {
                 frequencies: vec![162_550_000.0],
-                ..scan::ScanSettings::for_channel(3)
-            }
+                ..scan::ScanSettings::for_channel(0)
+            },
+            "the decoder comes from the control wire, never from the settings"
         );
         assert_eq!(settings.dwell_ms, 250);
         assert_eq!(settings.resume_ms, 1_500);
@@ -1367,17 +1410,11 @@ mod contract_tests {
         assert_eq!(settings.measure_bw_hz, None);
         assert!(settings.lockouts.is_empty());
         assert!(settings.priority.is_empty());
-        assert!(
-            serde_json::from_str::<scan::ScanSettings>(r#"{"frequencies":[162550000.0]}"#).is_err(),
-            "a scan without a decoder to feed is refused"
-        );
 
-        let json = serde_json::to_value(scan::ScanRequest {
-            action: scan::ScanAction::Start,
-            settings: Some(scan::ScanSettings::for_channel(3)),
-        })
-        .unwrap();
-        assert_eq!(json["action"], "start");
+        assert_eq!(
+            serde_json::to_value(scan::ScanAction::Start).unwrap(),
+            "start"
+        );
         assert_eq!(
             serde_json::to_value(scan::ScanAction::Stop).unwrap(),
             "stop"
@@ -1386,9 +1423,6 @@ mod contract_tests {
             serde_json::to_value(scan::ScanAction::Skip).unwrap(),
             "skip"
         );
-
-        let stop: scan::ScanRequest = serde_json::from_str(r#"{"action":"stop"}"#).unwrap();
-        assert_eq!(stop.settings, None);
     }
 
     #[test]
@@ -1464,7 +1498,10 @@ mod contract_tests {
             device_set: 3,
             status: Box::new(scan::ScannerStatus {
                 state: scan::ScanState::Scanning,
-                settings: scan::ScanSettings::for_channel(1),
+                settings: scan::ScanSettings {
+                    node: Some("scan".to_owned()),
+                    ..scan::ScanSettings::for_channel(0)
+                },
                 targets: 0,
                 first_hz: 446_000_000.0,
                 last_hz: 446_000_000.0,
@@ -1523,55 +1560,30 @@ mod contract_tests {
     }
 
     #[test]
-    fn audio_subscription_commands_roundtrip() {
-        for cmd in [
-            ClientCommand::SubscribeAudio {
-                device_set: 1,
-                channel: 2,
-                fx: vec!["fx".to_owned()],
-            },
-            ClientCommand::UnsubscribeAudio {
-                device_set: 1,
-                channel: 2,
-                fx: Vec::new(),
-            },
-        ] {
-            let json = serde_json::to_value(&cmd).unwrap();
-            assert_eq!(json["data"]["device_set"], 1);
-            assert_eq!(json["data"]["channel"], 2);
-            let back: ClientCommand = serde_json::from_value(json).unwrap();
-            assert_eq!(back, cmd);
-        }
-    }
-
-    #[test]
-    fn an_audio_subscription_without_fx_is_the_bare_channel() {
-        let json = r#"{"type":"SubscribeAudio","data":{"device_set":1,"channel":2}}"#;
-        let parsed: ClientCommand = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            parsed,
-            ClientCommand::SubscribeAudio {
-                device_set: 1,
-                channel: 2,
-                fx: Vec::new(),
-            }
-        );
-    }
-
-    #[test]
-    fn audio_stream_started_shape() {
-        let ev = ServerEvent::AudioStreamStarted {
+    fn a_port_stream_names_its_node_port_and_source() {
+        let ev = ServerEvent::PortStream {
             stream_id: 4,
-            device_set: 1,
-            channel: 2,
-            fx: vec!["fx".to_owned()],
+            node: "spk".to_owned(),
+            port: "audio".to_owned(),
+            source: "voice".to_owned(),
+            via: vec!["fx".to_owned()],
+            index: 0,
+            kind: StreamKind::Audio,
         };
         let json = serde_json::to_value(&ev).unwrap();
-        assert_eq!(json["type"], "AudioStreamStarted");
-        assert_eq!(json["data"]["stream_id"], 4);
-        assert_eq!(json["data"]["device_set"], 1);
-        assert_eq!(json["data"]["channel"], 2);
-        assert_eq!(json["data"]["fx"][0], "fx");
+        assert_eq!(json["type"], "PortStream");
+        assert_eq!(json["data"]["source"], "voice");
+        assert_eq!(json["data"]["via"], serde_json::json!(["fx"]));
+        assert!(json["data"].get("index").is_none());
+        assert_eq!(json["data"]["kind"], "audio");
+        let refused = ServerEvent::PortRefused {
+            node: "spk".to_owned(),
+            port: "audio".to_owned(),
+            reason: "Not wired".to_owned(),
+        };
+        let back: ServerEvent =
+            serde_json::from_value(serde_json::to_value(&refused).unwrap()).unwrap();
+        assert_eq!(back, refused);
     }
 
     #[test]

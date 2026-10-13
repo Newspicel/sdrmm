@@ -12,9 +12,10 @@ import {
 } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { workspaceExportUrl } from "../lib/api";
+import { MAX_NAME_LEN } from "../lib/limits";
 import { pickFile } from "../lib/pickFile";
 import type { WorkspaceInfo } from "../lib/types";
-import { MAX_NAME_LEN } from "./graph";
+
 import { WORKSPACE_FILE_ACCEPT } from "./workspaceExport";
 
 export function WorkspaceMenu({

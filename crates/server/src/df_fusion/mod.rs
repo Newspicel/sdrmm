@@ -697,15 +697,11 @@ pub(crate) fn start(state: &AppState) {
     if let Err(error) = spawned {
         tracing::error!(%error, "could not start the fusion thread");
     }
-    match state.store.active_workspace() {
-        Ok(Some(active)) => {
-            for (node, reason) in reconcile(state, &active.snapshot.graph) {
-                tracing::warn!(node, reason, "triangulation refused at startup");
-            }
+    crate::resolved::follow(state, "triangulation", |state| {
+        for (node, reason) in reconcile(state, &state.resolved.current().graph) {
+            tracing::warn!(node, reason, "triangulation refused");
         }
-        Ok(None) => {}
-        Err(error) => tracing::error!(%error, "could not read the active workspace for fusion"),
-    }
+    });
 }
 
 pub(crate) fn reconcile(state: &AppState, graph: &PatchGraph) -> Vec<(String, String)> {

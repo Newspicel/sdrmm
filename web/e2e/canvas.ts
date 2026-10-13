@@ -3,6 +3,7 @@ import type {
   DeviceRef,
   PatchEdge,
   PatchNode,
+  ResolvedState,
   StateSnapshot,
   WorkspaceSnapshot,
   WorkspacesResponse,
@@ -94,13 +95,31 @@ export async function deviceSetOf(request: APIRequestContext, device: DeviceRef)
   return set.id;
 }
 
+export async function radioNodeOf(request: APIRequestContext, deviceSet: number): Promise<string> {
+  const resolved: ResolvedState = await request
+    .get("/api/workspaces/active/resolved")
+    .then((r) => r.json());
+  const radio = resolved.patch.nodes.find(
+    (held) => held.runs.runs === "radio" && held.runs.device_set === deviceSet,
+  );
+  if (radio === undefined) {
+    throw new Error(`a node running device set ${deviceSet}`);
+  }
+  return radio.id;
+}
+
+export function nodeUrl(id: string, what: "channel" | "device" | "actions"): string {
+  return `/api/workspaces/active/nodes/${encodeURIComponent(id)}/${what}`;
+}
+
 export async function setExtra(
   request: APIRequestContext,
   deviceSet: number,
   name: string,
   value: number,
 ): Promise<void> {
-  const response = await request.patch(`/api/devicesets/${deviceSet}/device`, {
+  const radio = await radioNodeOf(request, deviceSet);
+  const response = await request.patch(nodeUrl(radio, "device"), {
     data: { extra: [{ name, value }] },
   });
   expect(response.ok(), await response.text()).toBe(true);

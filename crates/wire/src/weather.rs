@@ -1,6 +1,15 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::{EventKind, Symbol},
+    present::{
+        EventPayload, Field, FieldValue, LineStyle, Place, Presentation, Shape, Unit, bearing,
+        count, fields, lat_lon, number, picture_fields, picture_size, position, repaired, text,
+        text_of, trimmed,
+    },
+};
+
 fn default_true() -> bool {
     true
 }
@@ -365,7 +374,7 @@ impl AprsWeather {
     }
 }
 
-pub(crate) fn apt_summary(p: &AptImage) -> String {
+fn apt_summary(p: &AptImage) -> String {
     let mut parts = vec!["APT".to_owned()];
     if let (Some(a), Some(b)) = (p.channel_a, p.channel_b) {
         parts.push(format!("ch {}/{}", a.label(), b.label()));
@@ -378,7 +387,7 @@ pub(crate) fn apt_summary(p: &AptImage) -> String {
     parts.join(" · ")
 }
 
-pub(crate) fn lrpt_summary(p: &LrptImage) -> String {
+fn lrpt_summary(p: &LrptImage) -> String {
     let apids = p
         .apids
         .iter()
@@ -399,7 +408,7 @@ pub(crate) fn lrpt_summary(p: &LrptImage) -> String {
     parts.join(" · ")
 }
 
-pub(crate) fn wefax_summary(p: &WefaxPicture) -> String {
+fn wefax_summary(p: &WefaxPicture) -> String {
     let mut parts = vec![format!("IOC {} · {} LPM", p.ioc.value(), p.lpm.value())];
     parts.push(if p.complete {
         format!("{} lines in {} s", p.lines, p.duration_ms / 1_000)
@@ -409,7 +418,7 @@ pub(crate) fn wefax_summary(p: &WefaxPicture) -> String {
     parts.join(" · ")
 }
 
-pub(crate) fn radiosonde_summary(f: &RadiosondeFrame) -> String {
+fn radiosonde_summary(f: &RadiosondeFrame) -> String {
     let mut parts = vec![format!("{} {}", f.sonde.label(), f.serial)];
     if let Some(alt) = f.altitude_m {
         parts.push(format!("{alt:.0} m"));
@@ -424,6 +433,166 @@ pub(crate) fn radiosonde_summary(f: &RadiosondeFrame) -> String {
         parts.push(format!("{lat:.5}, {lon:.5}"));
     }
     parts.join(" · ")
+}
+
+impl EventPayload for AptImage {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            fields: picture_fields(
+                &[("Channels", apt_channels(self))],
+                self.lines,
+                self.complete,
+                self.duration_ms,
+            ),
+            ..Presentation::of(apt_summary(self))
+        }
+    }
+}
+
+fn apt_channels(p: &AptImage) -> Option<FieldValue> {
+    if p.channel_a.is_none() && p.channel_b.is_none() {
+        return None;
+    }
+    let label = |channel: Option<AvhrrChannel>| channel.map_or("?", AvhrrChannel::label);
+    text_of(format!(
+        "ch {} + {}",
+        label(p.channel_a),
+        label(p.channel_b)
+    ))
+}
+
+impl EventPayload for LrptImage {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let apids = self
+            .apids
+            .iter()
+            .map(u16::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        Presentation {
+            fields: picture_fields(
+                &[
+                    ("Mode", text_of(self.mode.label())),
+                    ("Size", picture_size(self.width, self.lines)),
+                    ("APIDs", text(Some(&apids))),
+                    ("Frames", count(Some(self.frames))),
+                    ("Frames repaired", count(Some(self.frames_corrected))),
+                    ("Frames failed", count(Some(self.frames_failed))),
+                    ("Packets lost", count(Some(self.packets_lost))),
+                ],
+                self.lines,
+                self.complete,
+                self.duration_ms,
+            ),
+            ..Presentation::of(lrpt_summary(self))
+        }
+    }
+}
+
+impl EventPayload for WefaxPicture {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            fields: picture_fields(
+                &[
+                    ("IOC", count(Some(self.ioc.value()))),
+                    ("LPM", count(Some(self.lpm.value()))),
+                    ("Size", picture_size(self.width, self.lines)),
+                ],
+                self.lines,
+                self.complete,
+                self.duration_ms,
+            ),
+            ..Presentation::of(wefax_summary(self))
+        }
+    }
+}
+
+impl EventPayload for RadiosondeFrame {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            entity: Some(self.serial.clone()),
+            place: lat_lon(self.lat, self.lon).map(|at| {
+                Place::at(at)
+                    .heading(bearing(self.heading_deg))
+                    .altitude(self.altitude_m.map(|metres| metres as f32))
+            }),
+            shapes: self
+                .forecast
+                .as_ref()
+                .map(SondeForecast::shapes)
+                .unwrap_or_default(),
+            fields: self.fields(),
+            ..Presentation::of(radiosonde_summary(self))
+        }
+    }
+}
+
+impl RadiosondeFrame {
+    fn fields(&self) -> Vec<Field> {
+        let mut shown = fields(&[
+            ("Serial", text(Some(&self.serial))),
+            ("Type", text_of(self.sonde.label())),
+            ("Frame", count(self.frame)),
+            ("Time", trimmed(self.time.as_deref()).map(FieldValue::Time)),
+            ("Position", position(self.lat, self.lon)),
+            ("Altitude", number(self.altitude_m, Unit::Metres, 0)),
+            ("Climb", number(self.climb_ms, Unit::MetresPerSecond, 1)),
+            ("Speed", number(self.speed_ms, Unit::MetresPerSecond, 1)),
+            ("Heading", number(self.heading_deg, Unit::Degrees, 0)),
+            ("Temperature", number(self.temperature_c, Unit::Celsius, 1)),
+            ("Humidity", number(self.humidity_pct, Unit::Percent, 0)),
+            ("Pressure", number(self.pressure_hpa, Unit::Hectopascal, 1)),
+            ("Satellites", count(self.satellites)),
+            ("Battery", number(self.battery_v, Unit::Volts, 2)),
+            ("Repaired", repaired(self.errors_corrected)),
+        ]);
+        shown.extend(
+            self.forecast
+                .as_ref()
+                .map(SondeForecast::fields)
+                .unwrap_or_default(),
+        );
+        shown
+    }
+}
+
+impl SondeForecast {
+    fn fields(&self) -> Vec<Field> {
+        let burst = if self.burst_seen {
+            "Burst"
+        } else {
+            "Burst est."
+        };
+        fields(&[
+            (burst, number(Some(self.burst_altitude_m), Unit::Metres, 0)),
+            (
+                "Landing",
+                position(Some(self.landing.lat), Some(self.landing.lon)),
+            ),
+            (
+                "Lands in",
+                number(Some(self.landing_in_s.max(0.0)), Unit::Seconds, 0),
+            ),
+        ])
+    }
+
+    fn shapes(&self) -> Vec<Shape> {
+        let path = (self.path.len() >= 2).then(|| Shape::Line {
+            points: self.path.clone(),
+            style: LineStyle::Forecast,
+        });
+        let burst = Shape::Pin {
+            at: self.burst,
+            symbol: Symbol::Dot,
+            label: "Burst".to_owned(),
+        };
+        let landing = Shape::Pin {
+            at: self.landing,
+            symbol: Symbol::Target,
+            label: "Landing".to_owned(),
+        };
+        path.into_iter().chain([burst, landing]).collect()
+    }
 }
 
 #[cfg(test)]
@@ -482,5 +651,139 @@ mod tests {
             weather.summary(),
             "12.5 °C · 80% · 1013.2 hPa · 220° 2.2 m/s"
         );
+    }
+
+    fn sonde(json: serde_json::Value) -> Presentation {
+        serde_json::from_value::<RadiosondeFrame>(json)
+            .unwrap()
+            .present(EventKind::Radiosonde)
+    }
+
+    #[test]
+    fn radiosonde_telemetry_comes_with_units() {
+        let view = sonde(serde_json::json!({
+            "sonde": "dfm", "serial": "D2150123", "frame": 4321, "lat": 48.1, "lon": 11.5,
+            "altitude_m": 12345.6, "climb_ms": -4.25, "speed_ms": 12.0, "heading_deg": 90.0,
+            "temperature_c": -51.2, "humidity_pct": 12.4, "pressure_hpa": 190.5,
+            "satellites": 9, "battery_v": 2.9, "errors_corrected": 3,
+            "time": "2026-10-12T12:34:56Z",
+        }));
+        assert_eq!(
+            view.labels(),
+            [
+                "Serial",
+                "Type",
+                "Frame",
+                "Time",
+                "Position",
+                "Altitude",
+                "Climb",
+                "Speed",
+                "Heading",
+                "Temperature",
+                "Humidity",
+                "Pressure",
+                "Satellites",
+                "Battery",
+                "Repaired"
+            ]
+        );
+        assert_eq!(view.field("Type"), text(Some("DFM")).as_ref());
+        assert_eq!(
+            view.field("Time"),
+            Some(&FieldValue::Time("2026-10-12T12:34:56Z".to_owned()))
+        );
+        assert_eq!(
+            view.field("Climb"),
+            number(Some(-4.25), Unit::MetresPerSecond, 1).as_ref()
+        );
+        assert_eq!(
+            view.field("Battery"),
+            number(Some(2.9_f32), Unit::Volts, 2).as_ref()
+        );
+        assert_eq!(view.field("Repaired"), repaired(3).as_ref());
+    }
+
+    #[test]
+    fn a_forecast_adds_burst_landing_and_time_to_land() {
+        let view = sonde(serde_json::json!({
+            "sonde": "rs41", "serial": "S1234567", "errors_corrected": 0,
+            "forecast": {
+                "burst": { "lat": 48.2, "lon": 11.4 }, "burst_altitude_m": 26000.0,
+                "burst_seen": false, "landing": { "lat": 48.1, "lon": 11.9 },
+                "landing_in_s": 5430.0,
+            },
+        }));
+        assert_eq!(
+            view.labels(),
+            ["Serial", "Type", "Burst est.", "Landing", "Lands in"]
+        );
+        assert_eq!(
+            view.field("Landing"),
+            position(Some(48.1), Some(11.9)).as_ref()
+        );
+        assert_eq!(
+            view.field("Lands in"),
+            number(Some(5430.0), Unit::Seconds, 0).as_ref()
+        );
+    }
+
+    #[test]
+    fn apt_names_its_avhrr_channels() {
+        let view = AptImage {
+            seq: 2,
+            lines: 900,
+            complete: false,
+            duration_ms: 450_000,
+            channel_a: Some(AvhrrChannel::Ch2),
+            channel_b: Some(AvhrrChannel::Ch4),
+        }
+        .present(EventKind::Apt);
+        assert_eq!(view.labels(), ["Channels", "Lines", "Complete", "Took"]);
+        assert_eq!(view.field("Channels"), text_of("ch 2 + 4").as_ref());
+        assert_eq!(
+            view.field("Took"),
+            number(Some(450.0), Unit::Seconds, 1).as_ref()
+        );
+        assert_eq!(view.entity, None);
+    }
+
+    #[test]
+    fn lrpt_shows_link_quality() {
+        let view = LrptImage {
+            seq: 1,
+            mode: LrptMode::Oqpsk80,
+            width: 1568,
+            lines: 400,
+            complete: true,
+            duration_ms: 1000,
+            apids: vec![64, 65],
+            frames: 500,
+            frames_corrected: 12,
+            frames_failed: 1,
+            packets_lost: 4,
+        }
+        .present(EventKind::Lrpt);
+        assert_eq!(view.field("Mode"), text_of("OQPSK 80k").as_ref());
+        assert_eq!(view.field("APIDs"), text_of("64, 65").as_ref());
+        assert_eq!(view.field("Frames repaired"), count(Some(12)).as_ref());
+        assert_eq!(view.field("Packets lost"), count(Some(4)).as_ref());
+    }
+
+    #[test]
+    fn wefax_shows_its_timing() {
+        let view = WefaxPicture {
+            seq: 1,
+            ioc: WefaxIoc::Ioc288,
+            lpm: WefaxLpm::Lpm60,
+            width: 904,
+            lines: 300,
+            complete: true,
+            duration_ms: 300_000,
+        }
+        .present(EventKind::Wefax);
+        assert_eq!(view.field("IOC"), count(Some(288)).as_ref());
+        assert_eq!(view.field("LPM"), count(Some(60)).as_ref());
+        assert_eq!(view.field("Size"), text_of("904 × 300").as_ref());
     }
 }

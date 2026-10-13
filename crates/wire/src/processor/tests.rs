@@ -19,6 +19,7 @@ macro_rules! table_rows {
             $node:ident,
             $name:literal,
             $summary:literal,
+            $face:expr,
             [$($port:tt)*]
         )),* $(,)?],
         probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?
@@ -76,9 +77,9 @@ fn the_table_names_every_processor_once() {
     assert_eq!(
         ports,
         [
-            r#"DfNode: array_in, events_out("True bearings")"#,
+            r#"DfNode: array_in, events_out("True bearings", Df), bearing_out("Live bearing to steer a beam")"#,
             r#"BeamformerNode: array_in, steer_in("A direction finder to steer at"), beam_out("The combined lane")"#,
-            r#"PassiveRadarNode: array_in, tx_in("GPS node fixed at the transmitter"), adsb_in("ADS-B decoder used as truth"), events_out("Track events")"#,
+            r#"PassiveRadarNode: array_in, tx_in("GPS node fixed at the transmitter"), adsb_in("ADS-B decoder used as truth"), events_out("Track events", Radar, RadarSites)"#,
             r#"StitchNode: array_in, wide_out("Every lane joined")"#,
             "SpatialSpectrumNode: array_in",
             "CorrelatorNode: array_in",

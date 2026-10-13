@@ -14,7 +14,7 @@ use picture::Picture;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
     AptImage, AptParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily,
+    DecoderFamily, EventKind,
 };
 use sync::{Acquisition, LineClock, SyncDetector};
 use track::Track;
@@ -41,7 +41,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
-    decoder_kind: Some("apt".to_owned()),
+    emits: vec![EventKind::Apt],
     ..ChannelDescriptor::default()
 });
 

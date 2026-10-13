@@ -1,79 +1,14 @@
 import { decoderLogExportUrl } from "../lib/api";
-import type { DecodedState } from "../lib/decoded";
 import type {
   Callsign,
   DecodedRecord,
-  DecoderEvent,
-  DecoderKind,
   DecoderLogEntry,
   DecoderLogFilter,
+  EventAudio,
+  Field,
+  Presentation,
 } from "../lib/types";
 import type { DownloadChoice } from "./DownloadMenu";
-import { eventStation, eventSummary, hasPosition, hex5 } from "./eventFacts";
-
-export { eventStation, eventSummary, hasPosition, hex5 };
-
-export const KIND_LABELS: Record<DecoderKind, string> = {
-  call: "Call",
-  transmission: "Transmission",
-  adsb: "ADS-B",
-  ais: "AIS",
-  aprs: "APRS",
-  pocsag: "POCSAG",
-  flex: "FLEX",
-  ermes: "ERMES",
-  eot: "End-of-Train",
-  ism: "ISM sensor",
-  sarsat: "406 MHz beacon",
-  tetrapol: "Tetrapol",
-  rds: "RDS",
-  rtty: "RTTY",
-  morse: "Morse",
-  cw_skimmer: "CW skimmer",
-  selcall: "Selcall",
-  navtex: "NAVTEX",
-  acars: "ACARS",
-  tone: "Tone",
-  scrambler: "Scrambler",
-  dv: "Digital voice",
-  ident: "Signal ID",
-  ft8: "FT8",
-  ft4: "FT4",
-  psk: "PSK",
-  wspr: "WSPR",
-  broadcast_data: "Broadcast data",
-  radio_clock: "Radio clock",
-  gnss: "GNSS lab",
-  sstv: "SSTV",
-  vor: "VOR",
-  ils: "ILS",
-  dsc: "DSC",
-  inmarsat_stdc: "Inmarsat STD-C",
-  inmarsat_aero: "Inmarsat Aero",
-  vdl2: "VDL Mode 2",
-  hfdl: "HFDL",
-  iridium: "Iridium",
-  dect: "DECT",
-  gsm: "GSM",
-  apt: "NOAA APT",
-  lrpt: "Meteor LRPT",
-  wefax: "WEFAX",
-  radiosonde: "Radiosonde",
-  lora: "LoRa",
-  remote_id: "Remote ID",
-  ble: "BLE",
-  wifi_occupancy: "Wi-Fi load",
-  ism_survey: "2.4 GHz",
-  noise_figure: "Noise figure",
-  per: "PER",
-  sid: "SID",
-  stanag: "STANAG",
-  df: "Bearing",
-  df_fix: "Fix",
-  radar: "Radar",
-};
-
-export const DECODER_KINDS = Object.keys(KIND_LABELS) as DecoderKind[];
 
 export const LIMIT_OPTIONS = [100, 500, 2000];
 
@@ -94,10 +29,10 @@ export interface LogRow {
   callsign: Callsign | null;
   summary: string;
   freqHz: number;
-  deviceSet: number;
-  channel: number;
+  source: string;
   live: boolean;
-  event: DecoderEvent;
+  fields: readonly Field[];
+  clip: EventAudio | null;
 }
 
 export const LOG_COLUMNS = [
@@ -181,17 +116,9 @@ export function writeColumnWidths(widths: ColumnWidths): void {
   } catch {}
 }
 
-export function kindLabel(kind: string): string {
-  return KIND_LABELS[kind as DecoderKind] ?? kind.toUpperCase();
-}
-
 export interface WireScope {
   sink: string;
   wired: boolean;
-}
-
-export function reachedSink(record: DecodedRecord, sink: string): boolean {
-  return (record.sinks ?? []).includes(sink);
 }
 
 export function toQuery(filter: LogFilter, wires: WireScope): DecoderLogFilter {
@@ -210,37 +137,31 @@ export function isFiltered(filter: LogFilter): boolean {
   return filter.q.trim() !== "";
 }
 
-export function matchesFilter(record: DecodedRecord, filter: LogFilter, sink: string): boolean {
-  if (!reachedSink(record, sink)) {
-    return false;
-  }
+const NO_VIEW: Presentation = { summary: "" };
+
+export function matchesFilter(record: DecodedRecord, filter: LogFilter): boolean {
   const q = filter.q.trim().toLowerCase();
   if (q === "") {
     return true;
   }
-  const station = eventStation(record.event);
+  const view = record.view ?? NO_VIEW;
   return (
-    eventSummary(record.event).toLowerCase().includes(q) ||
-    (station !== null && station.toLowerCase().includes(q))
+    view.summary.toLowerCase().includes(q) ||
+    (view.entity != null && view.entity.toLowerCase().includes(q))
   );
 }
 
 export function collectLive(
-  frames: DecodedState["frames"],
+  records: readonly DecodedRecord[],
   filter: LogFilter,
-  sink: string,
+  clearedAt: number,
   cap = LIVE_ROW_CAP,
 ): DecodedRecord[] {
-  const records: DecodedRecord[] = [];
-  for (const slice of Object.values(frames)) {
-    for (const record of slice ?? []) {
-      if (matchesFilter(record, filter, sink)) {
-        records.push(record);
-      }
-    }
-  }
-  records.sort((a, b) => timeMs(b.at) - timeMs(a.at));
-  return records.length > cap ? records.slice(0, cap) : records;
+  const kept = records.filter(
+    (record) => timeMs(record.at) > clearedAt && matchesFilter(record, filter),
+  );
+  kept.sort((a, b) => timeMs(b.at) - timeMs(a.at));
+  return kept.length > cap ? kept.slice(0, cap) : kept;
 }
 
 export function buildRows(
@@ -263,35 +184,55 @@ export function buildRows(
   return rows;
 }
 
+function rowOf(
+  at: string,
+  kind: string,
+  view: Presentation,
+  freqHz: number,
+  source: string,
+  callsign: Callsign | null,
+): Omit<LogRow, "key" | "live"> {
+  return {
+    at,
+    kind,
+    station: view.entity ?? null,
+    callsign,
+    summary: view.summary,
+    freqHz,
+    source,
+    fields: view.fields ?? [],
+    clip: view.clip ?? null,
+  };
+}
+
 export function storedRow(entry: DecoderLogEntry): LogRow {
+  const view = entry.view ?? { summary: entry.summary, entity: entry.station };
   return {
     key: `stored:${entry.id}`,
-    at: entry.at,
-    kind: entry.kind,
-    station: entry.station ?? null,
-    callsign: entry.callsign ?? null,
-    summary: entry.summary,
-    freqHz: entry.freq_hz,
-    deviceSet: entry.device_set,
-    channel: entry.channel,
     live: false,
-    event: entry.event,
+    ...rowOf(
+      entry.at,
+      entry.kind,
+      view,
+      entry.freq_hz,
+      entry.origin?.node ?? entry.node ?? "",
+      entry.callsign ?? null,
+    ),
   };
 }
 
 export function liveRow(record: DecodedRecord): LogRow {
   const row: LogRow = {
     key: "",
-    at: record.at,
-    kind: record.event.kind,
-    station: eventStation(record.event),
-    callsign: record.callsign ?? null,
-    summary: eventSummary(record.event),
-    freqHz: record.freq_hz,
-    deviceSet: record.device_set,
-    channel: record.channel,
     live: true,
-    event: record.event,
+    ...rowOf(
+      record.at,
+      record.event.kind,
+      record.view ?? NO_VIEW,
+      record.freq_hz,
+      record.origin?.node ?? "",
+      record.callsign ?? null,
+    ),
   };
   row.key = `live:${signature(row)}`;
   return row;
@@ -320,7 +261,7 @@ function frameWord(n: number): string {
 }
 
 function signature(row: LogRow): string {
-  return `${row.at}|${row.kind}|${row.deviceSet}|${row.channel}|${row.station ?? ""}|${row.summary}`;
+  return `${row.at}|${row.kind}|${row.source}|${row.station ?? ""}|${row.summary}`;
 }
 
 function timeMs(at: string): number {

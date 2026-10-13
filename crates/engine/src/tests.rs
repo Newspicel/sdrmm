@@ -28,6 +28,7 @@ mod front_end;
 mod hardware;
 mod hotplug;
 mod lanes;
+mod origin;
 mod placement;
 mod recording;
 mod scanning;

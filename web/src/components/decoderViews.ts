@@ -1,5 +1,4 @@
 import { BLE_BEACON_LABELS, BLE_PDU_LABELS, bleStation, bleVendor } from "../lib/ble";
-import type { StationOf } from "../lib/decoded";
 import { loraMessage, loraName, loraProtocol, loraStation } from "../lib/lora";
 import {
   distanceM,
@@ -13,14 +12,13 @@ import {
   UA_TYPE_LABELS,
   withRemoteIdState,
 } from "../lib/remoteId";
+import { type EntityOf, lastSeenMs } from "../lib/sinks";
 import type {
   AdsbMessage,
   AisMessage,
   AprsWeather,
   BleAdvert,
-  DecodedRecord,
   DecodedRecordOf,
-  DvFrame,
   IdentReport,
   IdentSignal,
   Modulation,
@@ -30,34 +28,12 @@ import type {
 } from "../lib/types";
 import { formatBaud, formatHz } from "./format";
 
-export interface DecoderScope {
-  deviceSet?: number;
-  channel?: number;
-}
-
-export function inScope(deviceSet: number, channel: number, scope: DecoderScope): boolean {
-  return (
-    (scope.deviceSet === undefined || scope.deviceSet === deviceSet) &&
-    (scope.channel === undefined || scope.channel === channel)
-  );
-}
-
-export function recordsInScope<K extends DecodedRecord["event"]["kind"]>(
-  records: readonly DecodedRecordOf<K>[],
-  scope: DecoderScope,
-): readonly DecodedRecordOf<K>[] {
-  if (scope.deviceSet === undefined && scope.channel === undefined) {
-    return records;
-  }
-  return records.filter((r) => inScope(r.device_set, r.channel, scope));
-}
-
 export function latestVorReadings(
   records: readonly DecodedRecordOf<"vor">[],
 ): DecodedRecordOf<"vor">[] {
   const latest = new Map<string, DecodedRecordOf<"vor">>();
   for (const record of records) {
-    const key = record.event.data.station ?? `${record.device_set}:${record.channel}`;
+    const key = record.event.data.station ?? record.origin?.node ?? "";
     const previous = latest.get(key);
     if (previous === undefined || Date.parse(record.at) > Date.parse(previous.at)) {
       latest.set(key, record);
@@ -89,7 +65,7 @@ export function dectStations(records: readonly DecodedRecordOf<"dect">[]): DectS
   const latest = new Map<string, DectStation>();
   for (const record of records) {
     const frame = record.event.data;
-    const key = frame.identity?.rfpi ?? `${record.device_set}:${record.channel}:${frame.side}`;
+    const key = frame.identity?.rfpi ?? `${record.origin?.node ?? ""}:${frame.side}`;
     const previous = latest.get(key);
     if (previous !== undefined && Date.parse(record.at) <= Date.parse(previous.at)) {
       continue;
@@ -462,16 +438,6 @@ function normalizeRadians(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
-export function stationsInScope<S extends { deviceSet: number; channel: number }>(
-  stations: readonly S[],
-  scope: DecoderScope,
-): readonly S[] {
-  if (scope.deviceSet === undefined && scope.channel === undefined) {
-    return stations;
-  }
-  return stations.filter((s) => inScope(s.deviceSet, s.channel, scope));
-}
-
 export const TARGET_STALE_MS = 30_000;
 
 export const TARGET_MAX_AGE_MS = 300_000;
@@ -502,30 +468,36 @@ export interface TargetRow {
   frames: number;
 }
 
-export function aircraftRow(station: StationOf<"adsb">, nowMs: number): TargetRow {
-  const m: AdsbMessage = station.event.data;
+export function aircraftRow(entity: EntityOf<"adsb">, nowMs: number): TargetRow {
+  const m: AdsbMessage = entity.event.data;
   return {
     id: m.icao.toUpperCase(),
     label: m.callsign?.trim() || "-",
     primary: m.on_ground === true ? "GND" : formatAltitudeFt(m.altitude_ft),
     secondary: joinFields(formatSpeedKt(m.ground_speed_kt), formatBearing(m.track_deg)),
     position: formatPosition(m.lat, m.lon),
-    ageMs: Math.max(0, nowMs - station.lastSeen),
-    frames: station.frames,
+    ageMs: Math.max(0, nowMs - lastSeenMs(entity)),
+    frames: entity.frames,
   };
 }
 
-export function shipRow(station: StationOf<"ais">, nowMs: number): TargetRow {
-  const m: AisMessage = station.event.data;
+export function shipRow(entity: EntityOf<"ais">, nowMs: number): TargetRow {
+  const m: AisMessage = entity.event.data;
   return {
     id: String(m.mmsi),
     label: m.name?.trim() || m.call_sign?.trim() || "-",
     primary: formatSpeedKt(m.sog_kt),
     secondary: joinFields(formatBearing(m.cog_deg), m.destination?.trim() ?? ""),
     position: formatPosition(m.lat, m.lon),
-    ageMs: Math.max(0, nowMs - station.lastSeen),
-    frames: station.frames,
+    ageMs: Math.max(0, nowMs - lastSeenMs(entity)),
+    frames: entity.frames,
   };
+}
+
+export function targetRow(entity: EntityOf<"adsb"> | EntityOf<"ais">, nowMs: number): TargetRow {
+  return entity.event.kind === "adsb"
+    ? aircraftRow(entity as EntityOf<"adsb">, nowMs)
+    : shipRow(entity as EntityOf<"ais">, nowMs);
 }
 
 export type TargetSort = "age" | "id";
@@ -745,88 +717,6 @@ function groupThousands(n: number): string {
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-const DV_MODE_LABELS: Record<DvFrame["mode"], string> = {
-  dmr: "DMR",
-  dstar: "D-STAR",
-  ysf: "YSF",
-  nxdn: "NXDN",
-  p25: "P25",
-  dpmr: "dPMR",
-  m17: "M17",
-  freedv: "FreeDV",
-  tetra: "TETRA",
-};
-
-export function dvMode(frame: Pick<DvFrame, "mode">): string {
-  return DV_MODE_LABELS[frame.mode];
-}
-
-export function callMode(mode: string): string {
-  return DV_MODE_LABELS[mode as DvFrame["mode"]] ?? mode.toUpperCase();
-}
-
-export function dvNetwork(frame: Pick<DvFrame, "mode" | "color_code" | "slot">): string {
-  const parts: string[] = [];
-  if (frame.slot != null) {
-    parts.push(`TS${frame.slot}`);
-  }
-  if (frame.color_code != null) {
-    if (frame.mode === "p25") {
-      parts.push(`NAC ${frame.color_code.toString(16).toUpperCase().padStart(3, "0")}`);
-    } else if (frame.mode === "nxdn" || frame.mode === "dpmr") {
-      parts.push(`RAN ${frame.color_code}`);
-    } else {
-      parts.push(`CC ${frame.color_code}`);
-    }
-  }
-  return parts.join(" ");
-}
-
-export function dvTrunking(
-  frame: Pick<DvFrame, "trunk_protocol" | "control_channel">,
-): string | undefined {
-  const names: Record<NonNullable<DvFrame["trunk_protocol"]>, string> = {
-    capacity_plus: "Capacity Plus",
-    hytera_xpt: "Hytera XPT",
-    tier_three: "Tier III",
-  };
-  const system = frame.trunk_protocol == null ? undefined : names[frame.trunk_protocol];
-  const role =
-    frame.control_channel == null
-      ? undefined
-      : frame.control_channel
-        ? "control channel"
-        : "traffic channel";
-  return [system, role].filter((part) => part !== undefined).join(" · ") || undefined;
-}
-
-export function dvChecksum(frame: Pick<DvFrame, "crc_verified">): string | undefined {
-  if (frame.crc_verified == null) {
-    return undefined;
-  }
-  return frame.crc_verified ? "verified" : "not verified: read on error correction alone";
-}
-
-export function dvParties(
-  frame: Pick<
-    DvFrame,
-    "source" | "destination" | "source_call" | "destination_call" | "group_call"
-  >,
-): string {
-  const to =
-    frame.destination_call ??
-    (frame.destination == null
-      ? null
-      : frame.group_call === false
-        ? String(frame.destination)
-        : `TG ${frame.destination}`);
-  const from = frame.source_call ?? (frame.source == null ? null : String(frame.source));
-  if (to != null && from != null) {
-    return `${to} ← ${from}`;
-  }
-  return to ?? from ?? "";
 }
 
 const MODULATION_LABELS: Record<Modulation, string> = {

@@ -129,8 +129,9 @@ Tune SSTV to the USB dial frequency. A picture takes from 36 seconds to four and
 Modes: Robot 36 and 72, Martin M1 and M2, Scottie S1, S2 and DX, PD50, PD90, PD120, PD180,
 Wraase SC2-180.
 
-Wire `video` to **Video** to watch a picture arrive. Finished pictures are kept as PNG on the
-server, even with no client open, for 24 hours, up to 512 pictures or 256 MB.
+Wire `video` to **Video** to watch a picture arrive. Finished pictures show in the Video node's
+gallery and are kept as PNG on the server for 24 hours, up to 512 pictures or 256 MB. Without a
+`video` wire nothing is kept.
 
 ## Weather satellites
 

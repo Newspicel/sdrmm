@@ -21,18 +21,14 @@ async fn nmea_device_catalog_is_available_over_http() {
 }
 
 #[tokio::test]
-async fn create_and_delete_device_set_over_http() {
+async fn a_device_node_opens_its_radio_and_removing_it_closes_the_radio() {
     let app = test_router();
-    create_virtual_set(&app).await;
-
-    let (status, _) = request(
-        app,
-        "POST",
-        "/api/devicesets",
-        Some(r#"{"device_id":"virtual:nope"}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    open_virtual_radio(&app).await;
+    let workspace = workspaces(&app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(&app, workspace).await.snapshot;
+    snapshot.graph.nodes.retain(|node| node.id != "radio:band");
+    put_workspace(&app, &snapshot).await;
+    assert!(get_state(&app).await.device_sets.is_empty());
 }
 
 #[tokio::test]
@@ -46,7 +42,7 @@ async fn a_serial_goes_only_to_a_closed_radio_that_can_keep_one() {
     let app = test_router();
     assert_eq!(write(&app, "virtual:band").await, StatusCode::BAD_REQUEST);
     assert_eq!(write(&app, "nothing:here").await, StatusCode::NOT_FOUND);
-    create_virtual_set(&app).await;
+    open_virtual_radio(&app).await;
     assert_eq!(write(&app, "virtual:band").await, StatusCode::CONFLICT);
 }
 
@@ -67,105 +63,110 @@ async fn channeltypes_lists_every_demod_exactly_once() {
 }
 
 #[tokio::test]
-async fn channel_create_patch_and_error_mapping_over_http() {
+async fn channel_settings_go_to_a_channel_node_and_open_only_where_it_is_wired() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
+    let workspace = workspaces(&app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(&app, workspace).await.snapshot;
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: "loose".to_string(),
+        body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
+            channel_type: "nfm".to_string(),
+            tuning_locked: false,
+        }),
+        position: sdrmm_wire::Position { x: 400.0, y: 600.0 },
+        size: None,
+        label: None,
+    });
+    put_workspace(&app, &snapshot).await;
+    let nfm = serde_json::json!({"settings": {"params": {"type": "nfm", "settings": {}}}});
+    for (node, wanted) in [
+        ("nobody", StatusCode::BAD_REQUEST),
+        ("scope", StatusCode::BAD_REQUEST),
+        ("loose", StatusCode::NO_CONTENT),
+    ] {
+        let (status, body) = patch_node_channel(&app, node, nfm.clone()).await;
+        assert_eq!(status, wanted, "{node}: {}", String::from_utf8_lossy(&body));
+    }
     let (status, _) = request(
         app.clone(),
         "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"tuning":"manual"}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100100000.0,"params":{"type":"nfm","settings":{}}}}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let ch = serde_json::from_slice::<CreatedId>(&body).expect("json").id;
-
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{ch}"),
-        Some(r#"{"settings":{"frequency_hz":99800000.0,"params":{"type":"am","settings":{"agc":false}}}}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
-
-    let snap = get_state(&app).await;
-    let channel = &snap.device_sets[0].channels[0];
-    assert_eq!(channel.settings.frequency_hz, 99_800_000.0);
-    assert_eq!(channel.settings.params.type_id(), "am");
-
-    let (status, body) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{ch}"),
-        Some(r#"{"settings":{"params":{"type":"zzz","settings":{}}}}"#),
+        "/api/workspaces/active/nodes/loose/channel",
+        Some(r#"{"params":{"type":"nfm"}}"#),
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    serde_json::from_slice::<ApiError>(&body).expect("ApiError body");
+    apply(&app, workspace).await;
+    assert!(
+        get_state(&app).await.device_sets[0].channels.is_empty(),
+        "an unwired node holds settings but opens nothing"
+    );
 
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{ch}"),
-        Some(r#"{"settings":{"frequency_hz":900000000.0,"params":{"type":"nfm","settings":{}}}}"#),
+    create_nfm_channel(&app, ds).await;
+    let channels = &get_state(&app).await.device_sets[0].channels;
+    assert_eq!(channels.len(), 1);
+    assert_eq!(channels[0].node.as_deref(), Some("tap-nfm"));
+}
+
+#[tokio::test]
+async fn channel_and_device_patches_by_node_and_their_error_mapping() {
+    let app = test_router();
+    let ds = open_virtual_radio(&app).await;
+    let (status, _) = patch_node_device(&app, "radio:band", r#"{"tuning":"manual"}"#).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = patch_node_device(&app, "scope", r#"{"tuning":"manual"}"#).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "a scope has no radio");
+
+    open_channel(
+        &app,
+        ds,
+        "tap-nfm",
+        serde_json::json!({"frequency_hz": 100_100_000.0, "params": {"type": "nfm", "settings": {}}}),
     )
     .await;
+    let retune = serde_json::json!({"settings": {"frequency_hz": 99_800_000.0, "params": {"type": "nfm", "settings": {}}}});
+    let (status, _) = patch_node_channel(&app, "tap-nfm", retune).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let snap = get_state(&app).await;
+    assert_eq!(
+        snap.device_sets[0].channels[0].settings.frequency_hz,
+        99_800_000.0
+    );
+
+    let other = serde_json::json!({"settings": {"params": {"type": "am", "settings": {}}}});
+    let (status, _) = patch_node_channel(&app, "tap-nfm", other).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "a type change is a retype");
+
+    let unknown = serde_json::json!({"settings": {"params": {"type": "zzz", "settings": {}}}});
+    let (status, body) = patch_node_channel(&app, "tap-nfm", unknown).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    serde_json::from_slice::<ApiError>(&body).expect("ApiError body");
+
+    let far = serde_json::json!({"settings": {"frequency_hz": 900_000_000.0, "params": {"type": "nfm", "settings": {}}}});
+    let (status, _) = patch_node_channel(&app, "tap-nfm", far).await;
     assert_eq!(
         status,
         StatusCode::NO_CONTENT,
         "a decoder may sit where the radio is not listening"
     );
-    let snap = get_state(&app).await;
-    assert!(snap.device_sets[0].channels[0].out_of_band.is_some());
-
-    let valid = r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#;
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/channels/999"),
-        Some(valid),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    let (status, _) = request(app, "PATCH", "/api/devicesets/999/channels/1", Some(valid)).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn opening_a_radio_that_is_already_open_conflicts() {
-    let app = test_router();
-    let ds = create_virtual_set(&app).await;
-
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        "/api/devicesets",
-        Some(r#"{"device_id":"virtual:band"}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    let err: ApiError = serde_json::from_slice(&body).expect("ApiError body");
-    assert!(err.error.contains("already open"), "{err:?}");
-
-    let (status, _) = request(app, "DELETE", &format!("/api/devicesets/{ds}"), None).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(
+        get_state(&app).await.device_sets[0].channels[0]
+            .out_of_band
+            .is_some()
+    );
 }
 
 #[tokio::test]
 async fn extractor_rejections_return_api_error_body() {
     let app = test_router();
 
-    let (status, body) = request(app.clone(), "POST", "/api/devicesets", Some("{not json")).await;
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/devices/network",
+        Some("{not json"),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let err: ApiError = serde_json::from_slice(&body).expect("ApiError body");
     assert_eq!(err.error, "invalid request body");
@@ -174,7 +175,7 @@ async fn extractor_rejections_return_api_error_body() {
     let (status, body) = request(
         app.clone(),
         "POST",
-        "/api/devicesets",
+        "/api/devices/network",
         Some(r#"{"nope":1}"#),
     )
     .await;
@@ -182,7 +183,7 @@ async fn extractor_rejections_return_api_error_body() {
     let err: ApiError = serde_json::from_slice(&body).expect("ApiError body");
     assert_eq!(err.error, "invalid request body");
 
-    let (status, body) = request(app, "DELETE", "/api/devicesets/abc", None).await;
+    let (status, body) = request(app, "DELETE", "/api/saved-radios/abc", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let err: ApiError = serde_json::from_slice(&body).expect("ApiError body");
     assert_eq!(err.error, "invalid path parameter");
@@ -191,18 +192,14 @@ async fn extractor_rejections_return_api_error_body() {
 #[tokio::test]
 async fn dab_transmission_modes_round_trip_over_http() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"dab","settings":{}}}}"#),
+    let ds = open_virtual_radio(&app).await;
+    open_channel(
+        &app,
+        ds,
+        "tap-dab",
+        serde_json::json!({"frequency_hz": 100_000_000.0, "params": {"type": "dab", "settings": {}}}),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    let ch = serde_json::from_slice::<CreatedId>(&body)
-        .expect("created channel")
-        .id;
     for (name, expected) in [
         ("i", sdrmm_wire::DabTransmissionMode::I),
         ("ii", sdrmm_wire::DabTransmissionMode::Ii),
@@ -213,7 +210,7 @@ async fn dab_transmission_modes_round_trip_over_http() {
         let (status, _) = request(
             app.clone(),
             "PATCH",
-            &format!("/api/devicesets/{ds}/channels/{ch}"),
+            "/api/workspaces/active/nodes/tap-dab/channel",
             Some(&body),
         )
         .await;
@@ -230,7 +227,7 @@ async fn dab_transmission_modes_round_trip_over_http() {
     let (status, _) = request(
         app,
         "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{ch}"),
+        "/api/workspaces/active/nodes/tap-dab/channel",
         Some(r#"{"settings":{"params":{"type":"dab","settings":{"transmission_mode":"v"}}}}"#),
     )
     .await;
@@ -253,26 +250,15 @@ async fn terrestrial_bandwidth_priority_and_service_round_trip_over_http() {
         .expect("IQ");
     writer.finalize().expect("recording");
     let app = recording_router(dir.path());
-    let body = serde_json::json!({
-        "device_id": format!("recording:{}", stem.file_name().expect("stem").display()),
-    })
-    .to_string();
-    let (status, body) = request(app.clone(), "POST", "/api/devicesets", Some(&body)).await;
-    assert_eq!(status, StatusCode::OK);
-    let ds = serde_json::from_slice::<CreatedId>(&body)
-        .expect("device")
-        .id;
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"dvbt","settings":{}}}}"#),
+    let device_id = format!("recording:{}", stem.file_name().expect("stem").display());
+    let ds = open_radio(&app, &device_id).await;
+    open_channel(
+        &app,
+        ds,
+        "tap-dvbt",
+        serde_json::json!({"frequency_hz": 100_000_000.0, "params": {"type": "dvbt", "settings": {}}}),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let ch = serde_json::from_slice::<CreatedId>(&body)
-        .expect("channel")
-        .id;
     for (standard, bandwidth) in [
         ("dvb_t", "mhz6"),
         ("dvb_t", "mhz7"),
@@ -288,7 +274,7 @@ async fn terrestrial_bandwidth_priority_and_service_round_trip_over_http() {
         let (status, _) = request(
             app.clone(),
             "PATCH",
-            &format!("/api/devicesets/{ds}/channels/{ch}"),
+            "/api/workspaces/active/nodes/tap-dvbt/channel",
             Some(&body),
         )
         .await;
@@ -303,7 +289,7 @@ async fn terrestrial_bandwidth_priority_and_service_round_trip_over_http() {
     let (status, _) = request(
         app,
         "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{ch}"),
+        "/api/workspaces/active/nodes/tap-dvbt/channel",
         Some(r#"{"settings":{"params":{"type":"dvbt","settings":{"bandwidth":"mhz9"}}}}"#),
     )
     .await;
@@ -313,19 +299,20 @@ async fn terrestrial_bandwidth_priority_and_service_round_trip_over_http() {
 #[tokio::test]
 async fn satellite_superframes_and_stream_selection_round_trip_over_http() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
-    let (status, body) = request(app.clone(), "POST", &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100000000.0,"params":{"type":"datv","settings":{"standard":"dvb_s2"}}}}"#)).await;
-    assert_eq!(status, StatusCode::OK);
-    let ch = serde_json::from_slice::<CreatedId>(&body)
-        .expect("created channel")
-        .id;
+    let ds = open_virtual_radio(&app).await;
+    open_channel(
+        &app,
+        ds,
+        "tap-datv",
+        serde_json::json!({"frequency_hz": 100_000_000.0, "params": {"type": "datv", "settings": {"standard": "dvb_s2"}}}),
+    )
+    .await;
     for enabled in [true, false] {
         let body = serde_json::json!({"settings":{"params":{"type":"datv","settings":{"standard":"dvb_s2","superframes":enabled,"program":42,"input_stream":7}}}}).to_string();
         let (status, _) = request(
             app.clone(),
             "PATCH",
-            &format!("/api/devicesets/{ds}/channels/{ch}"),
+            "/api/workspaces/active/nodes/tap-datv/channel",
             Some(&body),
         )
         .await;
@@ -345,25 +332,23 @@ async fn satellite_superframes_and_stream_selection_round_trip_over_http() {
 #[tokio::test]
 async fn two_clients_change_different_fields_of_one_channel() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
     let base = r#"{"frequency_hz":100100000.0,"params":{"type":"nfm","settings":{}}}"#;
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels"),
-        Some(&format!(r#"{{"settings":{base}}}"#)),
+    open_channel(
+        &app,
+        ds,
+        "tap-nfm",
+        serde_json::from_str(base).expect("json"),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    let ch = serde_json::from_slice::<CreatedId>(&body).expect("json").id;
-    let uri = format!("/api/devicesets/{ds}/channels/{ch}");
+    let uri = "/api/workspaces/active/nodes/tap-nfm/channel";
     let retuned = r#"{"frequency_hz":100200000.0,"params":{"type":"nfm","settings":{}}}"#;
     let squelched = r#"{"frequency_hz":100100000.0,"squelch":{"mode":"manual","level_db":-60.0},"params":{"type":"nfm","settings":{}}}"#;
     for settings in [retuned, squelched] {
         let (status, body) = request(
             app.clone(),
             "PATCH",
-            &uri,
+            uri,
             Some(&format!(r#"{{"base":{base},"settings":{settings}}}"#)),
         )
         .await;

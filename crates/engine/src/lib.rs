@@ -3,8 +3,8 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        Arc, Mutex, MutexGuard, PoisonError,
+        atomic::{AtomicU32, AtomicU64, Ordering},
         mpsc,
     },
     thread::JoinHandle,
@@ -19,9 +19,10 @@ use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_recorder::{data_path, meta_path};
 use sdrmm_wire::{
     AudioRecordingStatus, AudioRoute, BandMiss, Capabilities, ChannelInfo, ChannelSettings,
-    DecodedRecord, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus, DeviceSettings, HeldLane,
-    NetworkExportSettings, NetworkExportStatus, PositionFix, RecordingStatus, ServerEvent,
-    SettingsRefused, StateScope, StateSnapshot, StreamScope, TrunkSystemStatus, VirtualLane,
+    DecodedRecord, DecoderEvent, DeviceFault, DeviceInfo, DeviceSet, DeviceSetStatus,
+    DeviceSettings, EventOrigin, HeldLane, NetworkExportSettings, NetworkExportStatus, PositionFix,
+    RecordingStatus, ServerEvent, SettingsRefused, StateScope, StateSnapshot, StreamScope,
+    TrunkSystemStatus, VirtualLane,
 };
 use tokio::sync::broadcast;
 
@@ -85,7 +86,6 @@ use crate::{
     recording::RecordingShared,
     runtime::{
         CaptureRuntime, ChannelSinks, DecodedSink, DeviceRuntime, DspCommand, RawDecoded, RawImage,
-        RawPayload,
     },
     scanner::ScannerState,
     sinks::ChannelBasebandRecording,
@@ -271,6 +271,8 @@ pub enum EngineError {
     ProcessorNotFound(String),
     #[error("Tuned by {array}")]
     Held { array: String },
+    #[error("Watches another lane")]
+    OtherLane,
 }
 
 impl From<sdrmm_wire::ArrayFailure> for EngineError {
@@ -303,6 +305,7 @@ impl EngineError {
                 | Self::Recording(_)
                 | Self::NetworkExport(_)
                 | Self::Scan(_)
+                | Self::OtherLane
                 | Self::StreamOutOfRange { .. }
         )
     }
@@ -441,6 +444,7 @@ impl ChannelMedia {
 struct RecordingState {
     file: String,
     stream: u32,
+    node: Option<String>,
     started_at: String,
     stem: PathBuf,
     shared: Arc<RecordingShared>,
@@ -451,8 +455,15 @@ struct RecordingState {
     error_seen: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct AudioTake {
+    node: String,
+    channel: u32,
+}
+
 struct ChannelAudioRecording {
-    fx: Vec<String>,
+    node: String,
+    route: AudioRoute,
     file: String,
     stream: u32,
     started_at: String,
@@ -468,7 +479,8 @@ struct ChannelAudioRecording {
 impl ChannelAudioRecording {
     fn status(&self) -> AudioRecordingStatus {
         AudioRecordingStatus {
-            fx: self.fx.clone(),
+            node: self.node.clone(),
+            fx: self.route.fx.clone(),
             file: self.file.clone(),
             started_at: self.started_at.clone(),
             channels: self.channels,
@@ -479,6 +491,13 @@ impl ChannelAudioRecording {
     }
 
     fn join(self) {
+        if let Some(control) = &self.fx_control {
+            let _ = control.send(audio_fx::FxControl::Record(None));
+        }
+        self.finish();
+    }
+
+    fn finish(self) {
         let Self {
             tap,
             writer,
@@ -486,8 +505,7 @@ impl ChannelAudioRecording {
             ..
         } = self;
         drop(tap);
-        if let Some(control) = fx_control {
-            let _ = control.send(audio_fx::FxControl::StopRecording);
+        if fx_control.is_some() {
             let deadline = Instant::now() + FX_RECORDING_DRAIN;
             while !writer.is_finished() {
                 if Instant::now() >= deadline {
@@ -557,6 +575,7 @@ impl RecordingState {
         RecordingStatus {
             file: self.file.clone(),
             stream: self.stream,
+            node: self.node.clone(),
             started_at: self.started_at.clone(),
             samples: self.shared.samples(),
             bytes: self.shared.bytes(),
@@ -583,7 +602,7 @@ struct DeviceSetState {
     fault: Option<DeviceFault>,
     refused: Option<SettingsRefused>,
     recording: Option<RecordingState>,
-    audio_recordings: HashMap<AudioRoute, ChannelAudioRecording>,
+    audio_recordings: HashMap<AudioTake, ChannelAudioRecording>,
     baseband_recordings: HashMap<u32, ChannelBasebandRecording>,
     channel_exports: HashMap<u32, NetworkExportState>,
     network_export: Option<NetworkExportState>,
@@ -891,40 +910,58 @@ impl DeviceSetState {
         let mut statuses: Vec<AudioRecordingStatus> = self
             .audio_recordings
             .iter()
-            .filter(|(route, _)| route.channel == ch)
+            .filter(|(take, _)| take.channel == ch)
             .map(|(_, recording)| recording.status())
             .collect();
-        statuses.sort_by(|a, b| a.fx.cmp(&b.fx));
+        statuses.sort_by(|a, b| a.node.cmp(&b.node));
         statuses
     }
 
     fn take_audio_recordings(&mut self, ch: u32) -> Vec<ChannelAudioRecording> {
-        let routes: Vec<AudioRoute> = self
+        let takes: Vec<AudioTake> = self
             .audio_recordings
             .keys()
-            .filter(|route| route.channel == ch)
+            .filter(|take| take.channel == ch)
             .cloned()
             .collect();
-        routes
+        takes
             .iter()
-            .filter_map(|route| self.audio_recordings.remove(route))
+            .filter_map(|take| self.audio_recordings.remove(take))
             .collect()
     }
 
+    fn route_taps(&self, channel: u32, fx: &[String]) -> Vec<audio_recording::AudioRecorderTap> {
+        self.audio_recordings
+            .values()
+            .filter(|recording| recording.route.channel == channel && recording.route.fx == fx)
+            .map(|recording| recording.tap.clone())
+            .collect()
+    }
+
+    fn send_taps(
+        &self,
+        recording: &ChannelAudioRecording,
+        taps: Option<audio_recording::AudioTaps>,
+    ) -> bool {
+        match &recording.fx_control {
+            Some(control) => control.send(audio_fx::FxControl::Record(taps)).is_ok(),
+            None => {
+                self.send_dsp(
+                    recording.stream,
+                    DspCommand::SetChannelRecordings {
+                        id: recording.route.channel,
+                        taps,
+                    },
+                );
+                true
+            }
+        }
+    }
+
     fn rearm_audio_recording(&self, ch: u32, stream: u32) {
-        if let Some(recording) = self
-            .audio_recordings
-            .iter()
-            .find(|(route, _)| route.channel == ch && route.fx.is_empty())
-            .map(|(_, recording)| recording)
-        {
-            self.send_dsp(
-                stream,
-                DspCommand::StartChannelRecording {
-                    id: ch,
-                    tap: recording.tap.clone(),
-                },
-            );
+        let taps = audio_recording::AudioTaps::of(self.route_taps(ch, &[]));
+        if taps.is_some() {
+            self.send_dsp(stream, DspCommand::SetChannelRecordings { id: ch, taps });
         }
     }
 }
@@ -973,7 +1010,7 @@ pub struct Engine {
     decoded_tx_out: broadcast::Sender<DecodedRecord>,
     image_tx: broadcast::Sender<ImageCapture>,
     trunk_tx: mpsc::Sender<trunking::TrunkInput>,
-    trunk_active: AtomicBool,
+    trunk_nodes: Mutex<HashSet<String>>,
     trunk_status: Arc<Mutex<Vec<TrunkSystemStatus>>>,
     occupancy: Mutex<occupancy::Occupancy>,
     occupancy_sets: Mutex<HashSet<(u32, u32)>>,
@@ -1014,7 +1051,7 @@ impl Engine {
             decoded_tx_out,
             image_tx,
             trunk_tx,
-            trunk_active: AtomicBool::new(false),
+            trunk_nodes: Mutex::new(HashSet::new()),
             trunk_status: trunk_status.clone(),
             occupancy: Mutex::new(occupancy::Occupancy::new()),
             occupancy_sets: Mutex::new(HashSet::new()),
@@ -1031,8 +1068,7 @@ impl Engine {
     }
 
     pub fn configure_trunking(&self, systems: Vec<trunking::TrunkSystem>) {
-        self.trunk_active
-            .store(!systems.is_empty(), Ordering::Relaxed);
+        *self.trunk_nodes() = systems.iter().map(|system| system.node.clone()).collect();
         if self
             .trunk_tx
             .send(trunking::TrunkInput::Configure(systems))
@@ -1073,33 +1109,47 @@ impl Engine {
     }
 
     fn route_raw(&self, raw: RawDecoded) {
-        let event = match raw.payload {
-            RawPayload::Event(event) => event,
-            RawPayload::Broadcast(status) => {
-                self.emit(ServerEvent::BroadcastUpdate {
-                    device_set: raw.device_set,
-                    channel: raw.channel,
-                    status: Box::new(status),
-                });
-                return;
-            }
-        };
+        self.tell_face(raw.node.as_deref(), &raw.event);
+        let trunked = self.trunked(raw.node.as_deref());
         let record = DecodedRecord {
-            origin: None,
+            origin: raw.node.map(|node| EventOrigin {
+                node: node.to_string(),
+                transmission: 0,
+            }),
             sinks: Vec::new(),
+            view: None,
             callsign: None,
             device_set: raw.device_set,
             channel: raw.channel,
             at: format!("{:.9}", jiff::Timestamp::now()),
             freq_hz: raw.freq_hz,
-            event,
+            event: raw.event,
         };
-        if self.trunk_active.load(Ordering::Relaxed) {
+        if trunked {
             let _ = self
                 .trunk_tx
                 .send(trunking::TrunkInput::Record(Box::new(record.clone())));
         }
         let _ = self.decoded_tx_out.send(record);
+    }
+
+    fn tell_face(&self, node: Option<&str>, event: &DecoderEvent) {
+        if let (Some(node), DecoderEvent::Broadcast(status)) = (node, event) {
+            self.emit(ServerEvent::ChannelBroadcast {
+                node: node.to_owned(),
+                status: Box::new(status.clone()),
+            });
+        }
+    }
+
+    fn trunked(&self, node: Option<&str>) -> bool {
+        node.is_some_and(|node| self.trunk_nodes().contains(node))
+    }
+
+    fn trunk_nodes(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.trunk_nodes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     fn spawn_image_pump(self: &Arc<Self>, image_rx: mpsc::Receiver<RawImage>) {
@@ -1146,13 +1196,13 @@ impl Engine {
         self.decoded_dropped.load(Ordering::Relaxed)
     }
 
-    fn decoded_sink(&self, ds: u32, channel: u32) -> DecodedSink {
+    fn decoded_sink(&self, ds: u32, channel: u32, node: Option<&str>) -> DecodedSink {
         DecodedSink::new(
             self.decoded_tx.clone(),
             self.image_queue_tx.clone(),
             self.decoded_dropped.clone(),
-            ds,
-            channel,
+            node.map(Arc::from),
+            (ds, channel),
         )
     }
 
@@ -1445,7 +1495,14 @@ impl Engine {
     pub fn probe_devices(self: &Arc<Self>) -> Vec<DeviceInfo> {
         let attached = self.registry.probe_all();
         self.search_the_network();
-        self.lock_discovery().merge(attached)
+        let mut discovery = self.lock_discovery();
+        discovery.note(attached.clone());
+        discovery.merge(attached)
+    }
+
+    #[must_use]
+    pub fn attached_devices(&self) -> Vec<DeviceInfo> {
+        self.lock_discovery().seen()
     }
 
     fn lock_discovery(&self) -> std::sync::MutexGuard<'_, discovery::Discovery> {

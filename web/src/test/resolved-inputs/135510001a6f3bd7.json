@@ -1,0 +1,62 @@
+{
+  "name": "135510001a6f3bd7",
+  "test": "RecorderFace > offers Record only once a device's IQ is wired in",
+  "graph": {
+    "nodes": [
+      {
+        "id": "dev",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "ad936x",
+            "key": "192.168.1.10:30431"
+          }
+        }
+      },
+      {
+        "id": "rec",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "recorder",
+        "data": {
+          "recording": false
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "ad936x",
+          "key": "192.168.1.10:30431",
+          "label": "AntSDR AD9361"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "duplex": "rx_only"
+        },
+        "settings": {
+          "sample_rate": 8000000
+        },
+        "status": "running",
+        "channels": [],
+        "overruns": 0,
+        "recording": null
+      }
+    ],
+    "revision": 0
+  }
+}

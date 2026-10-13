@@ -21,15 +21,15 @@ pub(crate) async fn run(state: AppState) {
 
 async fn bind_new_radios(state: AppState) {
     let bound = tokio::task::spawn_blocking(move || {
-        let Some(id) = state.store.active_workspace_id()? else {
+        let resolved = state.resolved.current();
+        let Some(id) = resolved.patch.workspace else {
             return Ok(false);
         };
-        let graph = state.store.workspace(id)?.snapshot.graph;
-        if !waits_for_a_radio(&graph, &state.engine.snapshot()) {
+        if !waits_for_a_radio(&resolved.graph, &state.engine.snapshot()) {
             return Ok(false);
         }
         let _serialized = rest::lock_gate(&state.apply_gate);
-        rest::bring_up_active(&state, id).map(|report| report.opened > 0)
+        crate::apply::bring_up_active(&state, id).map(|report| report.opened > 0)
     })
     .await;
     match bound {

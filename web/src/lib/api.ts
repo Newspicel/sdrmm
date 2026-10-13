@@ -1,6 +1,5 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 import createClient from "openapi-fetch";
-import { migrateSnapshot } from "../canvas/graph";
 import type { paths } from "../generated/schema";
 import { getToken, rejectToken, withToken } from "./auth";
 import { authorKey } from "./presence";
@@ -14,7 +13,6 @@ import type {
   BandPlan,
   BandRegionsResponse,
   Bookmark,
-  CapturedImagesResponse,
   ChannelSettings,
   ChannelTypesResponse,
   CpsCodeplugDetail,
@@ -36,6 +34,7 @@ import type {
   DecoderLogResponse,
   DenoiseModel,
   DenoiseModelsResponse,
+  DeviceInfo,
   DeviceSettings,
   DevicesResponse,
   DfFusionState,
@@ -43,8 +42,6 @@ import type {
   DoctorReport,
   ErrorCode,
   ExportFormat,
-  HuntSettings,
-  HuntStatus,
   IonosondeReport,
   LicenseTextResponse,
   LogGroupKey,
@@ -53,20 +50,19 @@ import type {
   NanoVnaLibraryResponse,
   NanoVnaMeasurement,
   NanoVnaMeasurementInfo,
-  NetworkExportAction,
-  NetworkExportSettings,
-  NetworkExportStatus,
   NmeaDevicesResponse,
+  NodeActed,
+  NodeAction,
   OccupancyReport,
   PairingOffer,
   PatchApplyReport,
   PatchCatalog,
+  PatchGraph,
   Phone,
   PhoneAccess,
   PhoneAccessStatus,
   PhonesResponse,
-  PlaybackAction,
-  PlaybackStatus,
+  PortRef,
   PresetInfo,
   RadioIdent,
   RadioModelsResponse,
@@ -75,25 +71,22 @@ import type {
   RecordingInfo,
   RecordingsResponse,
   RemoteStatus,
+  ResolvedState,
   SatelliteCatalogResponse,
   SavedRadio,
   SaveNanoVnaMeasurementRequest,
   SaveRadioRequest,
   ScannerStatus,
-  ScanSettings,
   StateSnapshot,
   SurveyAction,
   SurveyGrid,
   TemplatesResponse,
-  TimeMachineAction,
-  TimeMachineNode,
-  TimeMachineStatus,
   ToolRequest,
   ToolResponse,
   ToolsResponse,
   TransmittersResponse,
   UpdateNanoVnaMeasurementRequest,
-  VoiceCallsResponse,
+  WireVerdict,
   WorkspaceDetail,
   WorkspaceExport,
   WorkspaceSnapshot,
@@ -130,8 +123,6 @@ export const BOOKMARKS_KEY = ["get", "/api/bookmarks"] as const;
 export const SAVED_RADIOS_KEY = ["get", "/api/saved-radios"] as const;
 export const RECORDINGS_KEY = ["get", "/api/recordings"] as const;
 export const AUDIO_RECORDINGS_KEY = ["get", "/api/audiorecordings"] as const;
-export const CALLS_KEY = ["get", "/api/calls"] as const;
-export const IMAGES_KEY = ["get", "/api/images"] as const;
 export const DECODER_LOG_KEY = ["get", "/api/decoderlog"] as const;
 export const TEMPLATES_KEY = ["get", "/api/templates"] as const;
 export const AUTH_KEY = ["get", "/api/auth"] as const;
@@ -143,6 +134,7 @@ export const ABOUT_KEY = ["get", "/api/about"] as const;
 export const REMOTE_KEY = ["get", "/api/remote"] as const;
 export const WORKSPACES_KEY = ["get", "/api/workspaces"] as const;
 export const PATCH_CATALOG_KEY = ["get", "/api/patch/catalog"] as const;
+export const RESOLVED_KEY = ["get", "/api/workspaces/active/resolved"] as const;
 export const BAND_REGIONS_KEY = ["get", "/api/bandplan/regions"] as const;
 export const TOOLS_KEY = ["get", "/api/tools"] as const;
 export const CPS_MODELS_KEY = ["get", "/api/cps/models"] as const;
@@ -165,22 +157,8 @@ export function stateQuery() {
   });
 }
 
-export function callsQuery() {
-  return queryOptions({
-    queryKey: CALLS_KEY,
-    queryFn: async (): Promise<VoiceCallsResponse> => unwrap(await client.GET("/api/calls")),
-  });
-}
-
 export function callAudioUrl(url: string): string {
   return withToken(url);
-}
-
-export function imagesQuery() {
-  return queryOptions({
-    queryKey: IMAGES_KEY,
-    queryFn: async (): Promise<CapturedImagesResponse> => unwrap(await client.GET("/api/images")),
-  });
 }
 
 export function capturedImageUrl(url: string): string {
@@ -254,26 +232,14 @@ export async function writeSerial(deviceId: string, serial: string): Promise<str
   return unwrap(await client.POST("/api/devices/serial", { body })).serial;
 }
 
-export async function createDeviceSet(deviceId: string): Promise<number> {
-  return unwrap(
-    await client.POST("/api/devicesets", {
-      body: { device_id: deviceId },
-    }),
-  ).id;
+export async function addNetworkRadio(address: string): Promise<DeviceInfo> {
+  return unwrap(await client.POST("/api/devices/network", { body: { address } }));
 }
 
-export async function deleteDeviceSet(ds: number): Promise<void> {
+export async function patchNodeDevice(node: string, settings: DeviceSettings): Promise<void> {
   unwrap(
-    await client.DELETE("/api/devicesets/{ds}", {
-      params: { path: { ds } },
-    }),
-  );
-}
-
-export async function patchDevice(ds: number, settings: DeviceSettings): Promise<void> {
-  unwrap(
-    await client.PATCH("/api/devicesets/{ds}/device", {
-      params: { path: { ds } },
+    await client.PATCH("/api/workspaces/active/nodes/{node}/device", {
+      params: { path: { node } },
       body: settings,
     }),
   );
@@ -287,33 +253,15 @@ export function channelTypesQuery() {
   });
 }
 
-export async function createChannel(ds: number, settings: ChannelSettings): Promise<number> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels", {
-      params: { path: { ds } },
-      body: { settings },
-    }),
-  ).id;
-}
-
-export async function patchChannel(
-  ds: number,
-  ch: number,
+export async function patchNodeChannel(
+  node: string,
   settings: ChannelSettings,
   base?: ChannelSettings,
 ): Promise<void> {
   unwrap(
-    await client.PATCH("/api/devicesets/{ds}/channels/{ch}", {
-      params: { path: { ds, ch } },
+    await client.PATCH("/api/workspaces/active/nodes/{node}/channel", {
+      params: { path: { node } },
       body: base === undefined ? { settings } : { settings, base },
-    }),
-  );
-}
-
-export async function deleteChannel(ds: number, ch: number): Promise<void> {
-  unwrap(
-    await client.DELETE("/api/devicesets/{ds}/channels/{ch}", {
-      params: { path: { ds, ch } },
     }),
   );
 }
@@ -459,64 +407,6 @@ export async function deleteAudioRecording(file: string): Promise<void> {
   );
 }
 
-export async function networkExportChannel(
-  ds: number,
-  ch: number,
-  action: NetworkExportAction,
-  node: string,
-  settings: NetworkExportSettings,
-): Promise<NetworkExportStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/network-export", {
-      params: { path: { ds, ch } },
-      body: { action, node, settings },
-    }),
-  );
-}
-
-export async function controlTimeMachine(
-  ds: number,
-  action: TimeMachineAction,
-  node: string,
-  stream: number,
-  settings: TimeMachineNode,
-): Promise<TimeMachineStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/time-machine", {
-      params: { path: { ds } },
-      body: { action, node, stream, settings },
-    }),
-  );
-}
-
-export async function networkExportDeviceSet(
-  ds: number,
-  action: NetworkExportAction,
-  node: string,
-  stream: number,
-  settings: NetworkExportSettings,
-): Promise<NetworkExportStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/network-export", {
-      params: { path: { ds } },
-      body: { action, node, stream, settings },
-    }),
-  );
-}
-
-export async function controlPlayback(
-  ds: number,
-  action: PlaybackAction,
-  positionSamples?: number,
-): Promise<PlaybackStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/playback", {
-      params: { path: { ds } },
-      body: { action, position_samples: positionSamples },
-    }),
-  );
-}
-
 export function recordingDownloadUrl(id: number, format: RecordingFormat): string {
   const path = `/api/recordings/${id}/download`;
   return withToken(format === "sigmf" ? path : `${path}?format=${format}`);
@@ -577,11 +467,11 @@ export function templatesQuery() {
   });
 }
 
-export async function applyTemplate(id: string, ds: number): Promise<void> {
+export async function applyTemplate(id: string, node: string): Promise<void> {
   unwrap(
     await client.POST("/api/templates/{id}/apply", {
       params: { path: { id } },
-      body: { device_set: ds },
+      body: { node },
     }),
   );
 }
@@ -609,29 +499,15 @@ export function workspacesQuery() {
   });
 }
 
-export async function putWorkspaceChannel(
-  id: number,
-  node: string,
-  settings: ChannelSettings,
-): Promise<void> {
-  unwrap(
-    await client.PUT("/api/workspaces/{id}/channels/{node}", {
-      params: { path: { id, node } },
-      body: settings,
-    }),
-  );
-}
-
 export function workspaceQuery(id: number | null) {
   return queryOptions({
     queryKey: [...WORKSPACES_KEY, id] as const,
     queryFn: async (): Promise<WorkspaceDetail> => {
-      const detail = unwrap(
+      return unwrap(
         await client.GET("/api/workspaces/{id}", {
           params: { path: { id: id ?? 0 } },
         }),
       );
-      return { ...detail, snapshot: migrateSnapshot(detail.snapshot) };
     },
     enabled: id !== null,
   });
@@ -649,13 +525,12 @@ export async function updateWorkspace(
   id: number,
   update: { revision: number; name?: string; snapshot?: WorkspaceSnapshot },
 ): Promise<WorkspaceDetail> {
-  const detail = unwrap(
+  return unwrap(
     await client.PUT("/api/workspaces/{id}", {
       params: { path: { id } },
       body: update,
     }),
   );
-  return { ...detail, snapshot: migrateSnapshot(detail.snapshot) };
 }
 
 export function workspaceExportUrl(id: number): string {
@@ -694,18 +569,30 @@ export async function applyWorkspace(id: number): Promise<PatchApplyReport> {
 }
 
 export async function stepWorkspace(id: number, step: "undo" | "redo"): Promise<WorkspaceDetail> {
-  const detail = unwrap(
+  return unwrap(
     step === "undo"
       ? await client.POST("/api/workspaces/{id}/undo", { params: { path: { id } } })
       : await client.POST("/api/workspaces/{id}/redo", { params: { path: { id } } }),
   );
-  return { ...detail, snapshot: migrateSnapshot(detail.snapshot) };
+}
+
+export async function wiringVerdicts(graph: PatchGraph, from: PortRef): Promise<WireVerdict[]> {
+  return unwrap(await client.POST("/api/patch/wiring", { body: { graph, from } }));
 }
 
 export function patchCatalogQuery() {
   return queryOptions({
     queryKey: PATCH_CATALOG_KEY,
     queryFn: async (): Promise<PatchCatalog> => unwrap(await client.GET("/api/patch/catalog")),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export function resolvedQuery() {
+  return queryOptions({
+    queryKey: RESOLVED_KEY,
+    queryFn: async (): Promise<ResolvedState> =>
+      unwrap(await client.GET("/api/workspaces/active/resolved")),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
@@ -890,75 +777,30 @@ export function diagnosticsQuery(enabled: boolean) {
   });
 }
 
-export interface DecoderRef {
-  deviceSet: number;
-  channel: number;
-}
-
-export async function startScan(
-  decoder: DecoderRef,
-  settings: ScanSettings,
-): Promise<ScannerStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/scanner", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "start", settings },
+export async function nodeAction(node: string, action: NodeAction): Promise<NodeActed> {
+  const acted = unwrap(
+    await client.POST("/api/workspaces/active/nodes/{node}/actions", {
+      params: { path: { node } },
+      body: action,
     }),
   );
+  const failed = acted.result === "controlled" ? acted.with.find((ack) => ack.error != null) : null;
+  if (failed?.error != null) {
+    throw new Error(failed.error);
+  }
+  return acted;
 }
 
-export async function stopScan(decoder: DecoderRef): Promise<ScannerStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/scanner", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "stop" },
-    }),
-  );
-}
-
-export async function skipScan(decoder: DecoderRef): Promise<ScannerStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/scanner", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "skip" },
-    }),
-  );
-}
-
-export async function startHunt(decoder: DecoderRef, settings: HuntSettings): Promise<HuntStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "start", settings },
-    }),
-  );
-}
-
-export async function stopHunt(decoder: DecoderRef): Promise<HuntStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "stop" },
-    }),
-  );
-}
-
-export async function sweepHunt(decoder: DecoderRef, settings: HuntSettings): Promise<HuntStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "sweep", settings },
-    }),
-  );
-}
-
-export async function markHunt(decoder: DecoderRef): Promise<void> {
-  unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "mark" },
-    }),
-  );
+export function scanStatusOf(acted: NodeActed): ScannerStatus | null {
+  if (acted.result !== "controlled") {
+    return null;
+  }
+  for (const ack of acted.with) {
+    if (ack.sweep?.job === "scan") {
+      return ack.sweep.status;
+    }
+  }
+  return null;
 }
 
 export function decoderLogQuery(filter: DecoderLogFilter) {
@@ -985,6 +827,14 @@ export async function clearDecoderLog(filter: DecoderLogFilter): Promise<number>
       params: { query: normalizeFilter(filter) },
     }),
   ).deleted;
+}
+
+export async function clearSink(node: string): Promise<void> {
+  unwrap(
+    await client.DELETE("/api/sinks/{node}", {
+      params: { path: { node } },
+    }),
+  );
 }
 
 export function decoderLogExportUrl(format: ExportFormat, filter: DecoderLogFilter): string {

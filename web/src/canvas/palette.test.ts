@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelDescriptor, NodeKind, PatchCatalog } from "../lib/types";
-import { catalogBody } from "../test/catalog";
+import type { ChannelDescriptor, PatchCatalog } from "../lib/types";
+import { catalogBody, catalogShape } from "../test/catalog";
 import {
   channelPicker,
   decoderGroups,
@@ -11,10 +11,13 @@ import {
 } from "./palette";
 
 const CATALOG: PatchCatalog = {
+  port_types: [],
+  event_kinds: [],
   nodes: [
     {
       kind: "device",
       default_body: catalogBody("device"),
+      ...catalogShape("device"),
       name: "Device",
       summary: "A radio",
       category: "source",
@@ -23,6 +26,7 @@ const CATALOG: PatchCatalog = {
     {
       kind: "gps",
       default_body: catalogBody("gps"),
+      ...catalogShape("gps"),
       name: "GPS position",
       category: "source",
       ports: [],
@@ -30,6 +34,7 @@ const CATALOG: PatchCatalog = {
     {
       kind: "channel",
       default_body: catalogBody("channel"),
+      ...catalogShape("channel"),
       name: "Channel",
       category: "channel",
       ports: [],
@@ -38,6 +43,7 @@ const CATALOG: PatchCatalog = {
     {
       kind: "scope",
       default_body: catalogBody("scope"),
+      ...catalogShape("scope"),
       name: "Scope",
       category: "output",
       ports: [],
@@ -45,6 +51,7 @@ const CATALOG: PatchCatalog = {
     {
       kind: "speaker",
       default_body: catalogBody("speaker"),
+      ...catalogShape("speaker"),
       name: "Speaker",
       category: "output",
       ports: [],
@@ -52,6 +59,7 @@ const CATALOG: PatchCatalog = {
     {
       kind: "event_output",
       default_body: catalogBody("event_output"),
+      ...catalogShape("event_output"),
       name: "Event output",
       category: "output",
       ports: [],
@@ -59,6 +67,7 @@ const CATALOG: PatchCatalog = {
     {
       kind: "scanner",
       default_body: catalogBody("scanner"),
+      ...catalogShape("scanner"),
       name: "Scanner",
       category: "tool",
       ports: [],
@@ -66,6 +75,7 @@ const CATALOG: PatchCatalog = {
     {
       kind: "hunt",
       default_body: catalogBody("hunt"),
+      ...catalogShape("hunt"),
       name: "Signal hunt",
       category: "tool",
       ports: [],
@@ -73,6 +83,7 @@ const CATALOG: PatchCatalog = {
     {
       kind: "triangulation",
       default_body: catalogBody("triangulation"),
+      ...catalogShape("triangulation"),
       name: "Triangulation",
       category: "tool",
       ports: [],
@@ -98,7 +109,7 @@ const TYPES: ChannelDescriptor[] = [
     bandwidth_hz: 2_000_000,
     input_rate_hz: 2_400_000,
     has_audio: false,
-    decoder_kind: "adsb",
+    emits: ["adsb"],
   },
 ];
 
@@ -131,7 +142,10 @@ describe("paletteGroups", () => {
   });
 
   it("drops a section the server describes nothing for", () => {
-    const groups = paletteGroups({ nodes: [CATALOG.nodes[0]!] }, TYPES);
+    const groups = paletteGroups(
+      { nodes: [CATALOG.nodes[0]!], port_types: [], event_kinds: [] },
+      TYPES,
+    );
     expect(groups.map((group) => group.id)).toEqual(["source"]);
   });
 });
@@ -217,7 +231,7 @@ describe("filterPalette", () => {
         .map((item) => item.kind),
     );
     for (const entry of CATALOG.nodes) {
-      expect(offered.has(entry.kind as NodeKind), `${entry.kind} is not in the palette`).toBe(true);
+      expect(offered.has(entry.kind), `${entry.kind} is not in the palette`).toBe(true);
     }
   });
 });

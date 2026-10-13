@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { SdrSocket } from "../ws";
-import { AudioEngine } from "./engine";
+import { AudioEngine, type AudioTap } from "./engine";
 import {
   createWebAudioSink,
   onOutputRerouted,
@@ -25,74 +25,53 @@ export interface ChannelAudio {
   trimmedMs?: number;
 }
 
-const NO_FX: readonly string[] = [];
-
 export const audioEngine = new AudioEngine(createWebAudioSink);
 onOutputStateChange((running) => audioEngine.setOutputRunning(running));
 onOutputRerouted(() => audioEngine.rerouteOutput());
 
-export function useChannelAudio(
-  socket: SdrSocket | null,
-  deviceSet: number,
-  channelId: number,
-  fx: readonly string[] = NO_FX,
-): ChannelAudio {
+function useTapValue<T>(tap: AudioTap, get: (tap: AudioTap) => T): T {
+  return useSyncExternalStore(audioEngine.subscribe, () => get(tap));
+}
+
+export function useChannelAudio(socket: SdrSocket | null, tap: AudioTap): ChannelAudio {
   useEffect(() => {
     if (socket) {
       audioEngine.attach(socket);
     }
   }, [socket]);
 
-  const playing = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.isPlaying(deviceSet, channelId, fx),
-  );
-  const pending = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.isPending(deviceSet, channelId, fx),
-  );
-  const suspended = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.isSuspended(deviceSet, channelId, fx),
-  );
-  const error = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.getError(deviceSet, channelId, fx),
-  );
-  const volume = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.getVolume(deviceSet, channelId, fx),
-  );
-  const lostFrames = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.getLostFrames(deviceSet, channelId, fx),
-  );
-  const underruns = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.getUnderruns(deviceSet, channelId, fx),
-  );
-
-  const bufferedMs = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.getBufferedMs(deviceSet, channelId, fx),
-  );
-  const trimmedMs = useSyncExternalStore(audioEngine.subscribe, () =>
-    audioEngine.getTrimmedMs(deviceSet, channelId, fx),
-  );
+  const { node, port, source } = tap;
+  const playing = useTapValue(tap, (at) => audioEngine.isPlaying(at));
+  const pending = useTapValue(tap, (at) => audioEngine.isPending(at));
+  const suspended = useTapValue(tap, (at) => audioEngine.isSuspended(at));
+  const error = useTapValue(tap, (at) => audioEngine.getError(at));
+  const volume = useTapValue(tap, (at) => audioEngine.getVolume(at));
+  const lostFrames = useTapValue(tap, (at) => audioEngine.getLostFrames(at));
+  const underruns = useTapValue(tap, (at) => audioEngine.getUnderruns(at));
+  const bufferedMs = useTapValue(tap, (at) => audioEngine.getBufferedMs(at));
+  const trimmedMs = useTapValue(tap, (at) => audioEngine.getTrimmedMs(at));
 
   const start = useCallback(() => {
     if (!socket) {
       return;
     }
     audioEngine.attach(socket);
-    audioEngine.start(deviceSet, channelId, fx);
-  }, [socket, deviceSet, channelId, fx]);
+    audioEngine.start({ node, port, source });
+  }, [socket, node, port, source]);
 
   const stop = useCallback(() => {
-    audioEngine.stop(deviceSet, channelId, fx);
-  }, [deviceSet, channelId, fx]);
+    audioEngine.stop({ node, port, source });
+  }, [node, port, source]);
 
   const dismissError = useCallback(() => {
-    audioEngine.clearError(deviceSet, channelId, fx);
-  }, [deviceSet, channelId, fx]);
+    audioEngine.clearError({ node, port, source });
+  }, [node, port, source]);
 
   const setVolume = useCallback(
     (v: number) => {
-      audioEngine.setVolume(deviceSet, channelId, v, fx);
+      audioEngine.setVolume({ node, port, source }, v);
     },
-    [deviceSet, channelId, fx],
+    [node, port, source],
   );
 
   return {

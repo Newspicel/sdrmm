@@ -1,6 +1,6 @@
 use sdrmm_wire::{
-    ChannelSettings, DeviceSettings, NodeBody, PatchGraph, ScanAction, ScanRequest, ScannerStatus,
-    StateSnapshot,
+    ChannelSettings, DeviceSettings, NodeAction, ResolvedPatch, ScanAction, ScannerStatus,
+    StateSnapshot, SweepStatus,
 };
 
 use super::{
@@ -10,18 +10,17 @@ use super::{
 use crate::{
     AppState,
     rest::{self, AppError},
-    workspace::{self, DeviceBinding},
+    workspace,
 };
-
-const CONTROL_PORT: &str = "control";
 
 pub(super) fn workspace_view(state: &AppState) -> Result<WorkspaceView, AppError> {
     let detail = canvas::active(state)?;
-    let running = workspace::bind(&detail.snapshot.graph, &state.engine.snapshot())
+    let patch = workspace::resolve(&detail.snapshot.graph, &state.engine.snapshot());
+    let running = patch
+        .radios()
         .into_iter()
-        .flat_map(|binding| {
-            std::iter::once(binding.node).chain(binding.channels.into_iter().map(|(node, _)| node))
-        })
+        .map(|(node, _)| node)
+        .chain(patch.channels().into_iter().map(|(node, _)| node))
         .collect();
     Ok(WorkspaceView { detail, running })
 }
@@ -31,27 +30,23 @@ pub(super) fn node_view(state: &AppState, id: &str) -> Result<NodeView, AppError
     let graph = &detail.snapshot.graph;
     let node = graph.node(id).ok_or_else(|| canvas::unknown(id))?.clone();
     let snapshot = state.engine.snapshot();
-    let bindings = workspace::bind(graph, &snapshot);
-    let radio = bindings
-        .iter()
-        .find(|binding| binding.node == id)
-        .and_then(|binding| set(&snapshot, binding.device_set).cloned());
-    let decoder = decoder_of(&bindings, id).and_then(|(ds, ch)| {
+    let patch = workspace::resolve(graph, &snapshot);
+    let radio = patch
+        .device_set(id)
+        .and_then(|device_set| set(&snapshot, device_set).cloned());
+    let decoder = decoder_of(&patch, id).and_then(|(ds, ch)| {
         set(&snapshot, ds)?
             .channels
             .iter()
             .find(|channel| channel.id == ch)
             .cloned()
     });
-    let scan = scan_target(graph, &node.body, id)
-        .and_then(|target| decoder_of(&bindings, target))
-        .and_then(|(ds, ch)| {
-            set(&snapshot, ds)?
-                .scanners
-                .iter()
-                .find(|scanner| scanner.settings.channel == ch)
-                .cloned()
-        });
+    let scan = snapshot
+        .device_sets
+        .iter()
+        .flat_map(|set| &set.scanners)
+        .find(|scanner| scanner.settings.node.as_deref() == Some(id))
+        .cloned();
     let saved = detail
         .state
         .channel(id)
@@ -65,29 +60,12 @@ pub(super) fn node_view(state: &AppState, id: &str) -> Result<NodeView, AppError
     })
 }
 
-pub(super) fn radio_of(state: &AppState, id: &str) -> Result<u32, AppError> {
-    let graph = canvas::active(state)?.snapshot.graph;
-    let node = graph.node(id).ok_or_else(|| canvas::unknown(id))?;
-    if !node.body.opens_device() {
-        return Err(AppError::bad_request(format!(
-            "{id} is a {} node, not a radio",
-            node.body.kind()
-        )));
-    }
-    workspace::bind_devices(&graph, &state.engine.snapshot())
-        .into_iter()
-        .find(|(node, _)| node == id)
-        .map(|(_, device_set)| device_set)
-        .ok_or_else(|| AppError::bad_request(format!("{id} has no radio open")))
-}
-
 pub(super) fn tune(
     state: &AppState,
     id: &str,
     settings: DeviceSettings,
 ) -> Result<DeviceSettings, AppError> {
-    let device_set = radio_of(state, id)?;
-    rest::patch_device_live(state, device_set, settings, Some(super::MCP_AUTHOR))?;
+    let device_set = rest::set_device(state, id, settings, Some(super::MCP_AUTHOR))?;
     set(&state.engine.snapshot(), device_set)
         .map(|set| set.settings.clone())
         .ok_or_else(|| AppError::bad_request(format!("{id} closed its radio")))
@@ -98,19 +76,7 @@ pub(super) fn set_channel(
     id: &str,
     settings: ChannelSettings,
 ) -> Result<bool, AppError> {
-    let detail = canvas::active(state)?;
-    let graph = &detail.snapshot.graph;
-    rest::check_channel_node(graph, id, &settings)?;
-    match decoder_of(&workspace::bind(graph, &state.engine.snapshot()), id) {
-        Some((ds, ch)) => {
-            rest::patch_channel_live(state, ds, ch, settings, Some(super::MCP_AUTHOR))?;
-            Ok(true)
-        }
-        None => {
-            rest::save_channel(state, detail.info.id, id, settings)?;
-            Ok(false)
-        }
-    }
+    rest::set_channel(state, id, settings, None, Some(super::MCP_AUTHOR))
 }
 
 pub(super) fn scan(
@@ -118,40 +84,24 @@ pub(super) fn scan(
     id: &str,
     action: ScanAction,
 ) -> Result<ScannerStatus, AppError> {
-    let graph = canvas::active(state)?.snapshot.graph;
-    let node = graph.node(id).ok_or_else(|| canvas::unknown(id))?;
-    let NodeBody::Scanner(scanner) = &node.body else {
-        return Err(AppError::bad_request(format!(
-            "{id} is a {} node, not a scanner",
-            node.body.kind()
-        )));
-    };
-    let target = scan_target(&graph, &node.body, id).ok_or_else(|| {
-        AppError::bad_request(format!("wire the control output of {id} to a decoder"))
-    })?;
-    let (ds, ch) = decoder_of(&workspace::bind(&graph, &state.engine.snapshot()), target)
-        .ok_or_else(|| AppError::bad_request(format!("{target} runs on no radio")))?;
-    let request = ScanRequest {
-        action,
-        settings: Some(scanner.settings.clone()),
-    };
-    rest::scan(&state.engine, ds, ch, request)
-}
-
-fn scan_target<'a>(graph: &'a PatchGraph, body: &NodeBody, id: &'a str) -> Option<&'a str> {
-    matches!(body, NodeBody::Scanner(_))
-        .then(|| graph.targets_of(id, CONTROL_PORT).next())
-        .flatten()
-}
-
-fn decoder_of(bindings: &[DeviceBinding], id: &str) -> Option<(u32, u32)> {
-    bindings.iter().find_map(|binding| {
-        binding
-            .channels
-            .iter()
-            .find(|(node, _)| node == id)
-            .map(|(_, channel)| (binding.device_set, *channel))
+    rest::controlled(rest::act(
+        state,
+        id,
+        NodeAction::Scan(action),
+        Some(super::MCP_AUTHOR),
+    )?)?
+    .into_iter()
+    .find_map(|ack| match ack.sweep.map(|sweep| *sweep) {
+        Some(SweepStatus::Scan(status)) => Some(status),
+        _ => None,
     })
+    .ok_or_else(|| AppError::bad_request(format!("{id} drives no scan")))
+}
+
+fn decoder_of(patch: &ResolvedPatch, id: &str) -> Option<(u32, u32)> {
+    patch
+        .channel(id)
+        .map(|addr| (addr.device_set, addr.channel))
 }
 
 fn set(snapshot: &StateSnapshot, device_set: u32) -> Option<&sdrmm_wire::DeviceSet> {

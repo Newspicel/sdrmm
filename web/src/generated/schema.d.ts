@@ -260,22 +260,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/calls": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_calls"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/calls/{id}/audio": {
         parameters: {
             query?: never;
@@ -676,6 +660,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/devices/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["add_network_radio"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/devices/serial": {
         parameters: {
             query?: never;
@@ -686,182 +686,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["write_serial"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_device_set"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_device_set"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels/{ch}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_channel"];
-        options?: never;
-        head?: never;
-        patch: operations["patch_channel"];
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels/{ch}/hunt": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["hunt_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels/{ch}/network-export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["network_export_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels/{ch}/scanner": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["scan_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/device": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["patch_device"];
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/network-export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["network_export_device_set"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/playback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["control_playback"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/time-machine": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["time_machine_device_set"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1118,6 +942,22 @@ export interface paths {
         get: operations["get_patch_catalog"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/patch/wiring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_patch_wiring"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1508,6 +1348,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sinks/{node}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["clear_sink"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/state": {
         parameters: {
             query?: never;
@@ -1684,22 +1540,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/workspaces/{id}/channels/{node}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["put_workspace_channel"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/workspaces/{id}/export": {
         parameters: {
             query?: never;
@@ -1758,6 +1598,70 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["undo_workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/active/nodes/{node}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["node_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/active/nodes/{node}/channel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["patch_node_channel"];
+        trace?: never;
+    };
+    "/api/workspaces/active/nodes/{node}/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["patch_node_device"];
+        trace?: never;
+    };
+    "/api/workspaces/active/resolved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_resolved"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2122,8 +2026,7 @@ export interface components {
             error: string;
         };
         ApplyTemplateRequest: {
-            /** Format: int32 */
-            device_set: number;
+            node: string;
         };
         /** @enum {string} */
         AprsMode: "afsk1200" | "g3ruh9600";
@@ -2433,6 +2336,15 @@ export interface components {
             /** @default together */
             tuning: components["schemas"]["ArrayTuningMode"];
         };
+        ArrayOffer: {
+            /** @enum {string} */
+            offer: "ready";
+            wires: components["schemas"]["LaneWire"][];
+        } | {
+            /** @enum {string} */
+            offer: "refused";
+            reason: string;
+        };
         ArrayOrientation: {
             /** Format: double */
             azimuth_deg: number;
@@ -2605,6 +2517,7 @@ export interface components {
             /** Format: int64 */
             frames: number;
             fx?: string[];
+            node: string;
             started_at: string;
         };
         AuthInfo: {
@@ -2857,6 +2770,15 @@ export interface components {
         };
         /** @enum {string} */
         BeamMode: "mrc" | "das" | "mvdr" | "lcmv" | "gsc" | "canceller" | "cma";
+        BearingRay: {
+            /** Format: float */
+            confidence: number;
+            from: components["schemas"]["LatLon"];
+            /** Format: float */
+            sigma_deg?: number | null;
+            /** Format: float */
+            true_deg: number;
+        };
         /** @enum {string} */
         BearingSource: "array" | "sweep" | "mark";
         BeastExportStatus: {
@@ -3075,6 +2997,8 @@ export interface components {
         };
         /** @enum {string} */
         BroadcastSystem: "dab" | "dab_plus" | "dvb_s" | "dvb_s2" | "dvb_t" | "dvb_t2" | "drm30" | "drm_plus";
+        /** @enum {string} */
+        CallGate: "frames" | "squelch";
         Callsign: {
             call: string;
             continent: string;
@@ -3124,6 +3048,8 @@ export interface components {
             /** Format: int32 */
             tx_streams?: number;
         };
+        /** @enum {string} */
+        Capability: "log" | "station" | "geo" | "bearing" | "spot" | "voice" | "duration" | "text" | "picture" | "clip";
         CapturedImage: {
             at: string;
             /** Format: int32 */
@@ -3142,6 +3068,8 @@ export interface components {
             /** Format: int32 */
             lines: number;
             mode: string;
+            node: string;
+            sinks?: string[];
             source: string;
             /** Format: int32 */
             width: number;
@@ -3230,6 +3158,12 @@ export interface components {
             /** Format: int64 */
             tx_hz: number;
         };
+        ChannelAddr: {
+            /** Format: int32 */
+            channel: number;
+            /** Format: int32 */
+            device_set: number;
+        };
         ChannelCapabilities: {
             antennas: string[];
             bandwidth_ranges: components["schemas"]["Range"][];
@@ -3256,9 +3190,11 @@ export interface components {
         ChannelDescriptor: {
             /** Format: double */
             bandwidth_hz: number;
+            calls?: components["schemas"]["CallGate"] | null;
             can_transmit?: boolean;
-            decoder_kind?: string | null;
+            choices?: components["schemas"]["ParamChoice"][];
             defaults?: components["schemas"]["ChannelSettings"] | null;
+            emits?: components["schemas"]["EventKind"][];
             family?: components["schemas"]["DecoderFamily"];
             has_audio?: boolean;
             has_video?: boolean;
@@ -3268,6 +3204,7 @@ export interface components {
             limits?: components["schemas"]["ParamLimit"][];
             name: string;
             needs_position?: boolean;
+            ports?: components["schemas"]["PortSpec"][];
             summary?: string;
             type_id: string;
         };
@@ -3312,11 +3249,6 @@ export interface components {
             /** @enum {string} */
             mode: "dmr";
         });
-        ChannelNetworkExportRequest: {
-            action: components["schemas"]["NetworkExportAction"];
-            node: string;
-            settings?: components["schemas"]["NetworkExportSettings"];
-        };
         ChannelNode: {
             channel_type: string;
             tuning_locked?: boolean;
@@ -3606,7 +3538,6 @@ export interface components {
             frequency_hz: number;
         };
         ChannelTypesResponse: {
-            facets?: components["schemas"]["EventKindFacets"][];
             types: components["schemas"]["ChannelDescriptor"][];
         };
         /** @enum {string} */
@@ -3622,102 +3553,6 @@ export interface components {
             };
             /** @enum {string} */
             type: "SubscribeDiagnostics";
-        } | {
-            data: {
-                /** Format: int32 */
-                bins: number;
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                fps: number;
-                /** Format: int32 */
-                stream?: number;
-            };
-            /** @enum {string} */
-            type: "SubscribeSpectrum";
-        } | {
-            data: {
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream?: number;
-            };
-            /** @enum {string} */
-            type: "UnsubscribeSpectrum";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                fx?: string[];
-            };
-            /** @enum {string} */
-            type: "SubscribeAudio";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                fx?: string[];
-            };
-            /** @enum {string} */
-            type: "UnsubscribeAudio";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "SubscribeVideo";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "UnsubscribeVideo";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "SubscribeIq";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "UnsubscribeIq";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "SubscribeSymbols";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "UnsubscribeSymbols";
         } | {
             data: {
                 error?: string | null;
@@ -3740,6 +3575,33 @@ export interface components {
             type: "UnsubscribeSurface";
         } | {
             data: {
+                node: string;
+                params?: components["schemas"]["StreamParams"];
+                port: string;
+            };
+            /** @enum {string} */
+            type: "SubscribePort";
+        } | {
+            data: {
+                node: string;
+                port: string;
+            };
+            /** @enum {string} */
+            type: "UnsubscribePort";
+        } | {
+            data: {
+                node: string;
+            };
+            /** @enum {string} */
+            type: "SubscribeSink";
+        } | {
+            data: {
+                node: string;
+            };
+            /** @enum {string} */
+            type: "UnsubscribeSink";
+        } | {
+            data: {
                 author: string;
                 name?: string;
             };
@@ -3753,6 +3615,13 @@ export interface components {
         ClientsResponse: {
             /** Format: int32 */
             clients: number;
+        };
+        ClipName: {
+            /** Format: double */
+            freq_hz?: number | null;
+            mode: string;
+            started_at?: string | null;
+            tag?: string | null;
         };
         /** @enum {string} */
         ClutterMethod: "eca_batch" | "eca_sliding" | "nlms" | "block_nlms" | "off";
@@ -3852,6 +3721,14 @@ export interface components {
         };
         /** @enum {string} */
         ContactKind: "private" | "group" | "all";
+        ControlAck: {
+            error?: string | null;
+            sweep?: components["schemas"]["SweepStatus"] | null;
+            target: string;
+            verb?: components["schemas"]["ControlVerb"] | null;
+        };
+        /** @enum {string} */
+        ControlVerb: "tune" | "doppler" | "sweep" | "point";
         ConversionIssue: {
             field?: string | null;
             item?: string | null;
@@ -4075,18 +3952,6 @@ export interface components {
             label: string;
             mode?: string | null;
         };
-        CreateChannelRequest: {
-            settings: components["schemas"]["ChannelSettings"];
-            /** Format: int32 */
-            stream?: number;
-        };
-        CreateDeviceSetRequest: {
-            device_id: string;
-        };
-        CreatedId: {
-            /** Format: int32 */
-            id: number;
-        };
         CreatedRowId: {
             /** Format: int64 */
             id: number;
@@ -4189,6 +4054,7 @@ export interface components {
             freq_hz: number;
             origin?: components["schemas"]["EventOrigin"] | null;
             sinks?: string[];
+            view?: components["schemas"]["Presentation"] | null;
         };
         DecoderEvent: {
             data: components["schemas"]["Transmission"];
@@ -4299,6 +4165,10 @@ export interface components {
             /** @enum {string} */
             kind: "broadcast_data";
         } | {
+            data: components["schemas"]["BroadcastStatus"];
+            /** @enum {string} */
+            kind: "broadcast";
+        } | {
             data: components["schemas"]["RadioClockFrame"];
             /** @enum {string} */
             kind: "radio_clock";
@@ -4354,6 +4224,18 @@ export interface components {
             data: components["schemas"]["RadarTrackEvent"];
             /** @enum {string} */
             kind: "radar";
+        } | {
+            data: components["schemas"]["RadarSites"];
+            /** @enum {string} */
+            kind: "radar_sites";
+        } | {
+            data: components["schemas"]["NavGuide"];
+            /** @enum {string} */
+            kind: "nav";
+        } | {
+            data: components["schemas"]["SatelliteFix"];
+            /** @enum {string} */
+            kind: "satellite";
         } | {
             data: components["schemas"]["DectFrame"];
             /** @enum {string} */
@@ -4438,6 +4320,7 @@ export interface components {
             origin?: components["schemas"]["EventOrigin"] | null;
             station?: string | null;
             summary: string;
+            view?: components["schemas"]["Presentation"] | null;
         };
         DecoderLogGroup: {
             /**
@@ -4612,6 +4495,10 @@ export interface components {
             /** Format: float */
             strength?: number;
         };
+        DeviceClaim: {
+            device: string;
+            node: string;
+        };
         /**
          * @description Why a device set stopped, for the times a reader can act on it rather than only read it.
          * @enum {string}
@@ -4698,6 +4585,7 @@ export interface components {
             tuning?: components["schemas"]["Tuning"] | null;
         };
         DevicesResponse: {
+            claims?: components["schemas"]["DeviceClaim"][];
             devices: components["schemas"]["DeviceInfo"][];
         };
         /** @enum {string} */
@@ -4773,7 +4661,6 @@ export interface components {
             center_hz?: number | null;
             device_sets?: number[];
             position?: components["schemas"]["PositionLink"] | null;
-            triangulations?: string[];
         };
         DfNode: {
             settings?: components["schemas"]["DfParams"];
@@ -5151,6 +5038,25 @@ export interface components {
         };
         /** @enum {string} */
         DvTrunkProtocol: "capacity_plus" | "hytera_xpt" | "tier_three";
+        Entity: {
+            event: components["schemas"]["DecoderEvent"];
+            first_seen: string;
+            /** Format: int32 */
+            frames: number;
+            /** Format: double */
+            freq_hz: number;
+            hue: components["schemas"]["Hue"];
+            key: components["schemas"]["EntityKey"];
+            last_seen: string;
+            symbol?: components["schemas"]["Symbol"] | null;
+            trail?: components["schemas"]["LatLon"][];
+            view: components["schemas"]["Presentation"];
+        };
+        EntityKey: {
+            id: string;
+            kind: components["schemas"]["EventKind"];
+            source: string;
+        };
         /** @enum {string} */
         EotArming: "normal" | "arming" | "armed";
         /** @enum {string} */
@@ -5226,14 +5132,12 @@ export interface components {
             media_type: string;
             url: string;
         };
-        /** @enum {string} */
-        EventFacet: "position" | "voice" | "duration";
         EventFilterNode: {
             contains?: string | null;
             emergency?: boolean | null;
             encrypted?: boolean | null;
             has_position?: boolean | null;
-            kinds?: string[];
+            kinds?: components["schemas"]["EventKind"][];
             /** Format: int32 */
             min_duration_ms?: number;
             mode?: components["schemas"]["FilterMode"];
@@ -5245,9 +5149,16 @@ export interface components {
             media_type: string;
             url: string;
         };
-        EventKindFacets: {
-            facets: components["schemas"]["EventFacet"][];
-            kind: string;
+        /** @enum {string} */
+        EventKind: "transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "noise_figure" | "per" | "sid" | "stanag";
+        EventKindEntry: {
+            caps: components["schemas"]["Capability"][];
+            hue: components["schemas"]["Hue"];
+            kind: components["schemas"]["EventKind"];
+            lifetime: components["schemas"]["Lifetime"];
+            name: string;
+            noun: string;
+            symbol?: components["schemas"]["Symbol"] | null;
         };
         EventOrigin: {
             node: string;
@@ -5353,6 +5264,61 @@ export interface components {
         ExtraValue: {
             name: string;
             value: unknown;
+        };
+        Face: {
+            dial?: boolean;
+            /** Format: int32 */
+            height?: number | null;
+            min?: components["schemas"]["FaceSize"] | null;
+            /** Format: int32 */
+            width: number;
+        };
+        FaceSize: {
+            /** Format: int32 */
+            height: number;
+            /** Format: int32 */
+            width: number;
+        };
+        Feed: {
+            drives?: components["schemas"]["ControlVerb"] | null;
+            payload: components["schemas"]["Payload"];
+            port: string;
+            source: string;
+            /** Format: int32 */
+            stream?: number | null;
+            tap?: components["schemas"]["Tap"] | null;
+            via?: string[];
+        };
+        Field: {
+            label: string;
+            value: components["schemas"]["FieldValue"];
+        };
+        FieldValue: {
+            /** @enum {string} */
+            type: "text";
+            value: string;
+        } | {
+            /** @enum {string} */
+            type: "number";
+            value: {
+                /** Format: int32 */
+                digits: number;
+                unit: components["schemas"]["Unit"];
+                /** Format: double */
+                value: number;
+            };
+        } | {
+            /** @enum {string} */
+            type: "flag";
+            value: boolean;
+        } | {
+            /** @enum {string} */
+            type: "time";
+            value: string;
+        } | {
+            /** @enum {string} */
+            type: "position";
+            value: components["schemas"]["LatLon"];
         };
         /** @enum {string} */
         FilterMode: "keep" | "drop";
@@ -5627,21 +5593,18 @@ export interface components {
             copies: number;
         };
         /** @enum {string} */
+        Hue: "accent" | "muted" | "blue" | "cyan" | "teal" | "green" | "amber" | "orange" | "violet" | "indigo" | "pink";
+        /** @enum {string} */
         HuntAction: "start" | "stop" | "sweep" | "mark";
         HuntMission: {
             clicks: boolean;
             position?: components["schemas"]["PositionLink"] | null;
             status?: components["schemas"]["HuntStatus"] | null;
             target?: components["schemas"]["ChannelTarget"] | null;
-            triangulations?: string[];
         };
         HuntNode: {
             clicks?: boolean;
             sweep?: components["schemas"]["HuntSweepParams"];
-        };
-        HuntRequest: {
-            action: components["schemas"]["HuntAction"];
-            settings?: components["schemas"]["HuntSettings"] | null;
         };
         HuntSettings: {
             /** Format: int32 */
@@ -5862,6 +5825,8 @@ export interface components {
             muf3000_mhz: number;
             name: string;
         };
+        /** @enum {string} */
+        IqOrigin: "radio" | "synthetic" | "derived";
         IridiumParams: {
             span?: components["schemas"]["IridiumSpan"];
         };
@@ -5962,6 +5927,9 @@ export interface components {
         IssueSeverity: "note" | "adjusted" | "dropped";
         /** @enum {string} */
         ItuRegion: "r1" | "r2" | "r3";
+        /** @enum {string} */
+        Keeps: "history" | "clips" | "pictures";
+        KindSet: ("transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "noise_figure" | "per" | "sid" | "stanag")[];
         LaneLevel: {
             /** Format: float */
             peak_db: number;
@@ -5974,6 +5942,10 @@ export interface components {
             /** Format: float */
             phase_deg: number;
         };
+        LaneWire: {
+            from: string;
+            to: string;
+        };
         LatLon: {
             /** Format: double */
             lat: number;
@@ -5984,6 +5956,20 @@ export interface components {
             id: string;
             text: string;
         };
+        Lifetime: {
+            /** @enum {string} */
+            type: "instant";
+        } | {
+            /** Format: int32 */
+            ttl_s: number;
+            /** @enum {string} */
+            type: "sighting";
+        } | {
+            /** @enum {string} */
+            type: "standing";
+        };
+        /** @enum {string} */
+        LineStyle: "track" | "forecast" | "route" | "footprint";
         /**
          * @description What a grouped decoder log keeps one row for.
          * @enum {string}
@@ -6503,6 +6489,8 @@ export interface components {
             /** Format: float */
             wpm: number;
         };
+        /** @enum {string} */
+        Multi: "one" | "many" | "many_lanes";
         NanoVnaAntenna: {
             created_at: string;
             /** Format: int64 */
@@ -6720,6 +6708,10 @@ export interface components {
             /** Format: int64 */
             stop_hz: number;
         };
+        NavGuide: {
+            from?: components["schemas"]["LatLon"] | null;
+            target?: components["schemas"]["NavTarget"] | null;
+        };
         /** @enum {string} */
         NavMode: "auto" | "direct" | "off";
         NavTarget: {
@@ -6754,13 +6746,6 @@ export interface components {
         /** @enum {string} */
         NetworkExportAction: "start" | "stop";
         NetworkExportNode: components["schemas"]["NetworkExportSettings"];
-        NetworkExportRequest: {
-            action: components["schemas"]["NetworkExportAction"];
-            node: string;
-            settings?: components["schemas"]["NetworkExportSettings"];
-            /** Format: int32 */
-            stream?: number;
-        };
         NetworkExportSettings: {
             /** @default 127.0.0.1:7355 */
             address: string;
@@ -6789,6 +6774,9 @@ export interface components {
             settings: components["schemas"]["NetworkExportSettings"];
             /** Format: int32 */
             stream: number;
+        };
+        NetworkRadioRequest: {
+            address: string;
         };
         /** @enum {string} */
         NetworkSampleFormat: "cf32_le" | "ci16_le" | "cu8";
@@ -6824,6 +6812,66 @@ export interface components {
         NmeaDevicesResponse: {
             devices: components["schemas"]["NmeaDeviceInfo"][];
         };
+        NodeActed: {
+            /** @enum {string} */
+            result: "controlled";
+            with: components["schemas"]["ControlAck"][];
+        } | {
+            /** @enum {string} */
+            result: "tuned";
+        } | {
+            /** @enum {string} */
+            result: "retyped";
+            with: {
+                dropped: components["schemas"]["NoticeWire"][];
+            };
+        } | {
+            /** @enum {string} */
+            result: "time_machine";
+            with: components["schemas"]["TimeMachineStatus"];
+        } | {
+            /** @enum {string} */
+            result: "playback";
+            with: components["schemas"]["PlaybackStatus"];
+        } | {
+            /** @enum {string} */
+            result: "network_export";
+            with: components["schemas"]["NetworkExportStatus"];
+        };
+        NodeAction: {
+            /** @enum {string} */
+            action: "tune";
+            with: {
+                /** Format: double */
+                freq_hz: number;
+            };
+        } | {
+            /** @enum {string} */
+            action: "retype";
+            with: {
+                channel_type: string;
+            };
+        } | {
+            /** @enum {string} */
+            action: "scan";
+            with: components["schemas"]["ScanAction"];
+        } | {
+            /** @enum {string} */
+            action: "hunt";
+            with: components["schemas"]["HuntAction"];
+        } | {
+            /** @enum {string} */
+            action: "time_machine";
+            with: components["schemas"]["TimeMachineAction"];
+        } | {
+            /** @enum {string} */
+            action: "playback";
+            with: components["schemas"]["PlaybackRequest"];
+        } | {
+            /** @enum {string} */
+            action: "network_export";
+            with: components["schemas"]["NetworkExportAction"];
+        };
         NodeBody: {
             data: components["schemas"]["DeviceNode"];
             /** @enum {string} */
@@ -6837,13 +6885,13 @@ export interface components {
             /** @enum {string} */
             kind: "signal_gen";
         } | {
-            data: components["schemas"]["ArrayNode"];
-            /** @enum {string} */
-            kind: "array";
-        } | {
             data: components["schemas"]["GpsNode"];
             /** @enum {string} */
             kind: "gps";
+        } | {
+            data: components["schemas"]["ArrayNode"];
+            /** @enum {string} */
+            kind: "array";
         } | {
             data: components["schemas"]["ChannelNode"];
             /** @enum {string} */
@@ -6876,17 +6924,13 @@ export interface components {
             /** @enum {string} */
             kind: "decoder_log";
         } | {
-            data: components["schemas"]["DmrTrunkNode"];
-            /** @enum {string} */
-            kind: "dmr_trunk";
-        } | {
             data: components["schemas"]["SpectrumMonitorNode"];
             /** @enum {string} */
             kind: "spectrum_monitor";
         } | {
-            data: components["schemas"]["EventOutputNode"];
+            data: components["schemas"]["DmrTrunkNode"];
             /** @enum {string} */
-            kind: "event_output";
+            kind: "dmr_trunk";
         } | {
             data: components["schemas"]["EventFilterNode"];
             /** @enum {string} */
@@ -6895,6 +6939,10 @@ export interface components {
             data: components["schemas"]["AudioFxNode"];
             /** @enum {string} */
             kind: "audio_fx";
+        } | {
+            data: components["schemas"]["EventOutputNode"];
+            /** @enum {string} */
+            kind: "event_output";
         } | {
             /** @enum {string} */
             kind: "video";
@@ -6972,13 +7020,22 @@ export interface components {
         };
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "tool" | "output";
+        /** @enum {string} */
+        NodeKind: "device" | "recording" | "signal_gen" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "dmr_trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "time_machine" | "network_export" | "export" | "scanner" | "hunt" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation";
+        NodeProblem: {
+            node: string;
+            source: components["schemas"]["ProblemSource"];
+            text: string;
+        };
         NodeTypeInfo: {
             category: components["schemas"]["NodeCategory"];
             default_body: components["schemas"]["NodeBody"];
-            kind: string;
+            face: components["schemas"]["Face"];
+            kind: components["schemas"]["NodeKind"];
             name: string;
             needs_channel_type?: boolean;
             ports: components["schemas"]["PortSpec"][];
+            role: components["schemas"]["Role"];
             summary?: string;
         };
         NoiseBlankerSettings: {
@@ -7018,6 +7075,11 @@ export interface components {
             freq_hz?: number;
             /** Format: double */
             width_hz?: number;
+        };
+        NoticeWire: {
+            from: components["schemas"]["PortRef"];
+            reason: string;
+            to: components["schemas"]["PortRef"];
         };
         /** @enum {string} */
         NxdnBandwidth: "narrow" | "wide";
@@ -7098,6 +7160,10 @@ export interface components {
             server_name: string;
             token: string;
         };
+        ParamChoice: {
+            name: string;
+            options: components["schemas"]["ParamOption"][];
+        };
         /** @description The range a numeric decoder setting is accepted in, named by its field in the params struct. */
         ParamLimit: {
             /** Format: double */
@@ -7107,6 +7173,11 @@ export interface components {
             name: string;
             /** Format: double */
             step?: number | null;
+        };
+        ParamOption: {
+            label: string;
+            title?: string | null;
+            value: unknown;
         };
         PassiveRadarNode: {
             settings?: components["schemas"]["PassiveRadarParams"];
@@ -7242,7 +7313,9 @@ export interface components {
             node: string;
         };
         PatchCatalog: {
+            event_kinds: components["schemas"]["EventKindEntry"][];
             nodes: components["schemas"]["NodeTypeInfo"][];
+            port_types: components["schemas"]["PortTypeInfo"][];
         };
         PatchChannelRequest: {
             base?: components["schemas"]["ChannelSettings"] | null;
@@ -7265,6 +7338,37 @@ export interface components {
         PatchRefusal: {
             node: string;
             reason: string;
+        };
+        Payload: {
+            origins: components["schemas"]["IqOrigin"][];
+            /** @enum {string} */
+            type: "iq";
+        } | {
+            /** @enum {string} */
+            type: "baseband";
+        } | {
+            /** @enum {string} */
+            type: "audio";
+        } | {
+            kinds: components["schemas"]["KindSet"];
+            /** @enum {string} */
+            type: "events";
+        } | {
+            /** @enum {string} */
+            type: "video";
+        } | {
+            /** @enum {string} */
+            type: "control";
+            verbs: components["schemas"]["ControlVerb"][];
+        } | {
+            /** @enum {string} */
+            type: "position";
+        } | {
+            /** @enum {string} */
+            type: "array";
+        } | {
+            /** @enum {string} */
+            type: "bearing";
         };
         Peer: {
             /** Format: int32 */
@@ -7371,6 +7475,13 @@ export interface components {
         };
         /** @enum {string} */
         PipelineStage: "capture" | "spectrum" | "channel";
+        Place: {
+            /** Format: float */
+            altitude_m?: number | null;
+            at: components["schemas"]["LatLon"];
+            /** Format: float */
+            heading_deg?: number | null;
+        };
         PlacementCoverage: {
             /** Format: int32 */
             heard: number;
@@ -7486,8 +7597,20 @@ export interface components {
             /** Format: float */
             v: number;
         };
-        /** @enum {string} */
-        PortCondition: "always" | "channel_has_audio" | "channel_has_events" | "channel_has_video" | "channel_needs_position" | "device_is_tx_capable";
+        PortActivity: {
+            /** Format: int64 */
+            delivered: number;
+            /** Format: int64 */
+            emitted: number;
+            /** Format: int64 */
+            ignored: number;
+            /** Format: int64 */
+            lost: number;
+            node: string;
+            port: string;
+            /** Format: int64 */
+            unrouted: number;
+        };
         /** @enum {string} */
         PortDirection: "in" | "out";
         /** @enum {string} */
@@ -7497,18 +7620,32 @@ export interface components {
             port: string;
         };
         /** @enum {string} */
-        PortRepeat: "once" | "per_rx_stream" | "per_tx_stream" | "per_lane";
+        PortRepeat: "once" | "per_rx_stream" | "per_lane";
         PortSpec: {
-            condition?: components["schemas"]["PortCondition"];
+            coherent?: boolean;
+            direct?: boolean;
             direction: components["schemas"]["PortDirection"];
-            multi: boolean;
+            exclusive?: boolean;
+            group?: string | null;
+            keeps?: components["schemas"]["Keeps"][];
+            multi: components["schemas"]["Multi"];
+            name: string;
+            note?: string | null;
+            payload: components["schemas"]["Payload"];
+            port_type: components["schemas"]["PortType"];
+            repeat?: components["schemas"]["PortRepeat"];
+            /** Format: int32 */
+            stream?: number | null;
+            takes?: string | null;
+        };
+        /** @enum {string} */
+        PortType: "iq" | "baseband" | "audio" | "events" | "video" | "control" | "position" | "array" | "bearing";
+        PortTypeInfo: {
+            hue: components["schemas"]["Hue"];
             name: string;
             note?: string | null;
             port_type: components["schemas"]["PortType"];
-            repeat?: components["schemas"]["PortRepeat"];
         };
-        /** @enum {string} */
-        PortType: "iq" | "baseband" | "audio" | "events" | "video" | "control" | "position" | "tx" | "array";
         Position: {
             /** Format: float */
             x: number;
@@ -7560,8 +7697,33 @@ export interface components {
             /** Format: int32 */
             update_interval_ms?: number;
         };
+        PositionTrack: {
+            fix?: components["schemas"]["PositionFix"] | null;
+            source: string;
+            trail?: components["schemas"]["LatLon"][];
+        };
         /** @enum {string} */
         Power: "min" | "low" | "mid" | "high" | "max";
+        Presentation: {
+            audio_error?: string | null;
+            bearing?: components["schemas"]["BearingRay"] | null;
+            callsign?: string | null;
+            clip?: components["schemas"]["EventAudio"] | null;
+            clip_name?: components["schemas"]["ClipName"] | null;
+            /** Format: int64 */
+            duration_ms?: number | null;
+            entity?: string | null;
+            fields?: components["schemas"]["Field"][];
+            gone?: boolean;
+            headline?: string | null;
+            label?: string | null;
+            place?: components["schemas"]["Place"] | null;
+            shapes?: components["schemas"]["Shape"][];
+            spot?: components["schemas"]["Spot"] | null;
+            summary: string;
+            text?: string | null;
+            voice?: components["schemas"]["VoiceFacts"] | null;
+        };
         PresetDevice: {
             channels: components["schemas"]["ChannelSettings"][];
             device_id: string;
@@ -7581,6 +7743,8 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        /** @enum {string} */
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder";
         /** @enum {string} */
         ProcessorGate: "sync" | "phase" | "gain" | "calibrating" | "retuning" | "tier" | "tuning_mode";
         ProcessorReading: {
@@ -7635,6 +7799,28 @@ export interface components {
             /** Format: int64 */
             truncated?: number;
         };
+        PropagationCell: {
+            /** Format: double */
+            best_freq_hz: number;
+            /** Format: float */
+            best_snr_db: number;
+            /** Format: int32 */
+            callsigns: number;
+            /** Format: int32 */
+            decodes: number;
+            key: string;
+            last_seen: string;
+            /** Format: double */
+            latitude: number;
+            /** Format: double */
+            longitude: number;
+            /** Format: double */
+            measured_muf3000_mhz?: number | null;
+            /** Format: double */
+            median_distance_km: number;
+            /** Format: double */
+            weight: number;
+        };
         PropagationNode: {
             /** @default true */
             compare_forecast: boolean;
@@ -7650,6 +7836,37 @@ export interface components {
             reflection_height_km: number;
             /** @default false */
             show_paths: boolean;
+        };
+        PropagationPath: {
+            /** Format: double */
+            freq_hz: number;
+            from: components["schemas"]["LatLon"];
+            key: string;
+            to: components["schemas"]["LatLon"];
+            /** Format: double */
+            weight: number;
+        };
+        PropagationSummary: {
+            /** Format: int32 */
+            bands: number;
+            /** Format: double */
+            best_freq_hz: number;
+            /** Format: double */
+            best_muf3000_mhz?: number | null;
+            /** Format: int32 */
+            callsigns: number;
+            /** Format: int32 */
+            decodes: number;
+            /** Format: double */
+            farthest_km: number;
+            /** Format: int32 */
+            grids: number;
+        };
+        PropagationView: {
+            cells: components["schemas"]["PropagationCell"][];
+            paths?: components["schemas"]["PropagationPath"][];
+            receiver?: components["schemas"]["LatLon"] | null;
+            summary: components["schemas"]["PropagationSummary"];
         };
         ProtocolMatch: {
             confirmed?: boolean;
@@ -7851,6 +8068,10 @@ export interface components {
             lat: number;
             /** Format: double */
             lon: number;
+        };
+        RadarSites: {
+            geometry?: components["schemas"]["RadarGeometry"] | null;
+            ranges_km?: number[];
         };
         RadarTrack: {
             /** Format: float */
@@ -8072,6 +8293,15 @@ export interface components {
             ta?: boolean | null;
             tp?: boolean | null;
         };
+        Reach: {
+            kinds?: components["schemas"]["KindSet"];
+            port: string;
+            sink: string;
+            /** Format: int32 */
+            stream?: number | null;
+            target_runs?: components["schemas"]["Runs"] | null;
+            via?: string[];
+        };
         RecorderNode: {
             /** @default false */
             recording: boolean;
@@ -8118,6 +8348,7 @@ export interface components {
             bytes: number;
             error?: string | null;
             file: string;
+            node?: string | null;
             /** Format: int64 */
             overruns: number;
             /** Format: int64 */
@@ -8292,6 +8523,53 @@ export interface components {
         RenamePhoneRequest: {
             name: string;
         };
+        ResolvedEdge: {
+            from: components["schemas"]["PortRef"];
+            retunes_source?: boolean;
+            to: components["schemas"]["PortRef"];
+        };
+        ResolvedNode: {
+            array_offer?: components["schemas"]["ArrayOffer"] | null;
+            id: string;
+            kind: components["schemas"]["NodeKind"];
+            label: string;
+            ports: components["schemas"]["ResolvedPort"][];
+            runs: components["schemas"]["Runs"];
+        };
+        ResolvedPatch: {
+            edges: components["schemas"]["ResolvedEdge"][];
+            /** Format: int64 */
+            epoch?: number;
+            nodes: components["schemas"]["ResolvedNode"][];
+            /** Format: int64 */
+            revision?: number;
+            /** Format: int64 */
+            workspace?: number | null;
+        };
+        ResolvedPort: components["schemas"]["PortSpec"] & {
+            feeds?: components["schemas"]["Feed"][];
+            ignored?: components["schemas"]["KindSet"];
+            kept?: components["schemas"]["Keeps"][];
+            reaches?: components["schemas"]["Reach"][];
+        };
+        ResolvedState: {
+            patch: components["schemas"]["ResolvedPatch"];
+            problems: components["schemas"]["NodeProblem"][];
+        };
+        Role: {
+            /** @enum {string} */
+            role: "opens_radio";
+        } | {
+            of: components["schemas"]["PortType"];
+            /** @enum {string} */
+            role: "pass";
+        } | {
+            /** @enum {string} */
+            role: "processor";
+        } | {
+            /** @enum {string} */
+            role: "plain";
+        };
         /** @enum {string} */
         RotatorAxes: "azimuth_elevation" | "azimuth";
         RotatorLink: {
@@ -8341,6 +8619,36 @@ export interface components {
         RttyText: {
             text: string;
         };
+        Runs: {
+            reason: components["schemas"]["UnboundReason"];
+            /** @enum {string} */
+            runs: "unbound";
+        } | {
+            /** Format: int32 */
+            device_set: number;
+            /** @enum {string} */
+            runs: "radio";
+        } | {
+            /** Format: int32 */
+            channel: number;
+            /** Format: int32 */
+            device_set: number;
+            /** @enum {string} */
+            runs: "channel";
+            /** Format: int32 */
+            stream: number;
+        } | {
+            control?: components["schemas"]["ChannelAddr"] | null;
+            followers: components["schemas"]["ChannelAddr"][];
+            /** @enum {string} */
+            runs: "trunk";
+        } | {
+            /** @enum {string} */
+            runs: "engine";
+        } | {
+            /** @enum {string} */
+            runs: "server";
+        };
         /** @enum {string} */
         SarsatBeacon: "epirb" | "elt" | "plb" | "ship_security" | "test" | "other";
         SarsatMessage: {
@@ -8373,6 +8681,17 @@ export interface components {
             fetched?: number;
             satellites: components["schemas"]["CatalogSatellite"][];
             source: string;
+        };
+        SatelliteFix: {
+            catalog?: string | null;
+            /** Format: double */
+            doppler_hz?: number | null;
+            ground?: components["schemas"]["SatelliteGround"] | null;
+            ground_track?: components["schemas"]["LatLon"][];
+            look?: components["schemas"]["SatelliteLook"] | null;
+            name?: string | null;
+            next_pass?: components["schemas"]["SatellitePass"] | null;
+            visible?: boolean;
         };
         SatelliteGround: {
             /** Format: double */
@@ -8416,6 +8735,8 @@ export interface components {
             doppler_hz?: number | null;
             /** Format: double */
             doppler_rate_hz_s?: number | null;
+            /** Format: double */
+            downlink_hz?: number | null;
             driving?: string[];
             error?: string | null;
             ground?: components["schemas"]["SatelliteGround"] | null;
@@ -8501,18 +8822,9 @@ export interface components {
             /** Format: double */
             stop_hz: number;
         };
-        ScanRequest: {
-            action: components["schemas"]["ScanAction"];
-            settings?: components["schemas"]["ScanSettings"] | null;
-        };
         /** @enum {string} */
         ScanRevert: "selected" | "last_called" | "last_used" | "primary" | "secondary";
         ScanSettings: {
-            /**
-             * Format: int32
-             * @description The decoder the scan feeds. It is parked on every hit, and the radio carrying it follows.
-             */
-            channel: number;
             /** Format: int32 */
             dwell_ms?: number;
             frequencies?: number[];
@@ -8536,6 +8848,7 @@ export interface components {
              */
             measure_bw_hz?: number | null;
             mode?: components["schemas"]["ScanMode"];
+            node?: string | null;
             priority?: number[];
             ranges?: components["schemas"]["ScanRange"][];
             /** Format: int32 */
@@ -8601,62 +8914,6 @@ export interface components {
             type: "StateChanged";
         } | {
             data: {
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream?: number;
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "StreamStarted";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                fx?: string[];
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "AudioStreamStarted";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "VideoStreamStarted";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "IqStreamStarted";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "SymbolStreamStarted";
-        } | {
-            data: {
                 kind: components["schemas"]["StreamKind"];
                 node: string;
                 /** Format: int32 */
@@ -8673,6 +8930,28 @@ export interface components {
             type: "SurfaceRefused";
         } | {
             data: {
+                /** Format: int32 */
+                index?: number;
+                kind: components["schemas"]["StreamKind"];
+                node: string;
+                port: string;
+                source: string;
+                /** Format: int32 */
+                stream_id: number;
+                via?: string[];
+            };
+            /** @enum {string} */
+            type: "PortStream";
+        } | {
+            data: {
+                node: string;
+                port: string;
+                reason: string;
+            };
+            /** @enum {string} */
+            type: "PortRefused";
+        } | {
+            data: {
                 kind: components["schemas"]["StreamKind"];
                 /** Format: int32 */
                 stream_id: number;
@@ -8680,26 +8959,12 @@ export interface components {
             /** @enum {string} */
             type: "StreamStopped";
         } | {
-            data: components["schemas"]["DecodedRecord"];
-            /** @enum {string} */
-            type: "Decoded";
-        } | {
-            data: {
-                records: components["schemas"]["DecodedRecord"][];
-            };
-            /** @enum {string} */
-            type: "DecodedBacklog";
-        } | {
             data: {
                 /** Format: int64 */
                 count: number;
             };
             /** @enum {string} */
             type: "DecodedLost";
-        } | {
-            data: components["schemas"]["CapturedImage"];
-            /** @enum {string} */
-            type: "ImageCaptured";
         } | {
             data: {
                 /** Format: int32 */
@@ -8727,14 +8992,11 @@ export interface components {
             type: "HuntUpdate";
         } | {
             data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
+                node: string;
                 status: components["schemas"]["BroadcastStatus"];
             };
             /** @enum {string} */
-            type: "BroadcastUpdate";
+            type: "ChannelBroadcast";
         } | {
             data: {
                 status: components["schemas"]["SatelliteStatus"];
@@ -8808,6 +9070,36 @@ export interface components {
             /** @enum {string} */
             type: "WorkspaceSwitched";
         } | {
+            data: components["schemas"]["ResolvedPatch"];
+            /** @enum {string} */
+            type: "PatchResolved";
+        } | {
+            data: {
+                problems: components["schemas"]["NodeProblem"][];
+            };
+            /** @enum {string} */
+            type: "NodeProblems";
+        } | {
+            data: {
+                ports: components["schemas"]["PortActivity"][];
+            };
+            /** @enum {string} */
+            type: "NodeActivity";
+        } | {
+            data: {
+                feed: components["schemas"]["SinkFeed"];
+                node: string;
+            };
+            /** @enum {string} */
+            type: "SinkSnapshot";
+        } | {
+            data: {
+                node: string;
+                update: components["schemas"]["SinkUpdate"];
+            };
+            /** @enum {string} */
+            type: "SinkUpdate";
+        } | {
             data: {
                 message: string;
             };
@@ -8823,6 +9115,45 @@ export interface components {
         SettingsRefused: {
             error: string;
             settings: string[];
+        };
+        Shape: {
+            /** Format: float */
+            bearing_deg: number;
+            faint: boolean;
+            from: components["schemas"]["LatLon"];
+            /** Format: float */
+            length_m: number;
+            /** @enum {string} */
+            shape: "ray";
+            /** Format: float */
+            sigma_deg?: number | null;
+        } | {
+            /** Format: float */
+            bearing_deg: number;
+            center: components["schemas"]["LatLon"];
+            /** Format: float */
+            major_m: number;
+            /** Format: float */
+            minor_m: number;
+            /** @enum {string} */
+            shape: "ellipse";
+        } | {
+            center: components["schemas"]["LatLon"];
+            /** Format: float */
+            radius_m: number;
+            /** @enum {string} */
+            shape: "circle";
+        } | {
+            points: components["schemas"]["LatLon"][];
+            /** @enum {string} */
+            shape: "line";
+            style: components["schemas"]["LineStyle"];
+        } | {
+            at: components["schemas"]["LatLon"];
+            label: string;
+            /** @enum {string} */
+            shape: "pin";
+            symbol: components["schemas"]["Symbol"];
         };
         /** @enum {string} */
         Sideband: "usb" | "lsb";
@@ -8866,6 +9197,27 @@ export interface components {
              * @default 0
              */
             offset_hz: number;
+        };
+        SinkFeed: {
+            entities: components["schemas"]["Entity"][];
+            /** Format: int64 */
+            lost: number;
+            pictures?: components["schemas"]["CapturedImage"][];
+            propagation?: components["schemas"]["PropagationView"] | null;
+            records: components["schemas"]["DecodedRecord"][];
+            surfaces: components["schemas"]["SurfaceRef"][];
+            tracks: components["schemas"]["PositionTrack"][];
+        };
+        SinkUpdate: {
+            /** Format: int64 */
+            lost: number;
+            pictures?: components["schemas"]["CapturedImage"][] | null;
+            propagation?: components["schemas"]["PropagationView"] | null;
+            records?: components["schemas"]["DecodedRecord"][];
+            removed?: components["schemas"]["EntityKey"][];
+            surfaces?: components["schemas"]["SurfaceRef"][] | null;
+            tracks?: components["schemas"]["PositionTrack"][] | null;
+            upserts?: components["schemas"]["Entity"][];
         };
         Size: {
             /** Format: float */
@@ -8966,12 +9318,18 @@ export interface components {
             disabled_protocols?: string[];
             /** Format: float */
             min_confidence?: number;
-            record_audio?: boolean;
             report_unidentified?: boolean;
             /** Format: double */
             start_hz?: number | null;
             /** Format: double */
             stop_hz?: number | null;
+        };
+        Spot: {
+            at: components["schemas"]["LatLon"];
+            callsign: string;
+            grid: string;
+            /** Format: float */
+            snr_db: number;
         };
         /**
          * @description How a channel gates what it decodes: not at all, above a level the operator set, or a margin
@@ -9077,9 +9435,6 @@ export interface components {
             scope: "decoder_log";
         } | {
             /** @enum {string} */
-            scope: "calls";
-        } | {
-            /** @enum {string} */
             scope: "images";
         } | {
             /** @enum {string} */
@@ -9161,6 +9516,12 @@ export interface components {
         };
         /** @enum {string} */
         StreamKind: "spectrum" | "audio" | "video" | "iq" | "symbols" | "range_doppler" | "spatial_spectrum" | "visibility" | "fusion_grid";
+        StreamParams: {
+            /** Format: int32 */
+            bins?: number;
+            /** Format: int32 */
+            fps?: number;
+        };
         StreamScope: {
             agc?: boolean;
             antenna?: boolean;
@@ -9196,6 +9557,10 @@ export interface components {
             cols: number;
             /** Format: int32 */
             rows: number;
+        };
+        SurfaceRef: {
+            kind: components["schemas"]["StreamKind"];
+            node: string;
         };
         /** @enum {string} */
         SurfaceRefusal: "no_surface" | "fit_not_positive" | "no_stream_ids";
@@ -9274,12 +9639,42 @@ export interface components {
         };
         /** @enum {string} */
         SweepState: "off" | "idle" | "sweeping" | "no_heading" | "short_span" | "low_contrast" | "poor_fit" | "heading_poor" | "too_fast" | "done";
+        SweepStatus: {
+            /** @enum {string} */
+            job: "scan";
+            status: components["schemas"]["ScannerStatus"];
+        } | {
+            /** @enum {string} */
+            job: "hunt";
+            status: components["schemas"]["HuntStatus"];
+        };
         SwitchWorkspaceRequest: {
             /** Format: int64 */
             workspace: number;
         };
         /** @enum {string} */
+        Symbol: "plane" | "ship" | "station" | "balloon" | "drone" | "beacon" | "node" | "person" | "vehicle" | "satellite" | "antenna" | "fix" | "target" | "echo" | "dot";
+        /** @enum {string} */
         SyncState: "idle" | "searching" | "locked" | "drifting" | "lost";
+        Tap: {
+            /** Format: int32 */
+            device_set: number;
+            /** Format: int32 */
+            stream: number;
+            /** @enum {string} */
+            tap: "lane";
+        } | {
+            /** Format: int32 */
+            channel: number;
+            /** Format: int32 */
+            device_set: number;
+            /** @enum {string} */
+            tap: "channel";
+        } | {
+            channels: components["schemas"]["ChannelAddr"][];
+            /** @enum {string} */
+            tap: "channels";
+        };
         TemplateInfo: {
             /** Format: double */
             center_hz: number;
@@ -9424,13 +9819,6 @@ export interface components {
              * @default 10
              */
             history_seconds: number;
-        };
-        TimeMachineRequest: {
-            action: components["schemas"]["TimeMachineAction"];
-            node: string;
-            settings?: components["schemas"]["TimeMachineNode"];
-            /** Format: int32 */
-            stream?: number;
         };
         TimeMachineStatus: {
             /** Format: int64 */
@@ -9700,6 +10088,10 @@ export interface components {
         UaType: "none" | "aeroplane" | "rotorcraft" | "gyroplane" | "hybrid_lift" | "ornithopter" | "glider" | "kite" | "free_balloon" | "captive_balloon" | "airship" | "parachute" | "rocket" | "tethered_aircraft" | "ground_obstacle" | "other";
         /** @enum {string} */
         UlaSide: "both" | "front" | "back";
+        /** @enum {string} */
+        UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running";
+        /** @enum {string} */
+        Unit: "none" | "hz" | "db" | "dbfs" | "degrees" | "feet" | "metres" | "kilometres" | "knots" | "metres_per_second" | "feet_per_minute" | "celsius" | "percent" | "hectopascal" | "seconds" | "baud" | "millimetres" | "volts" | "db_hz" | "kilometres_per_hour" | "watts_per_square_metre" | "chips" | "wpm" | "dbm" | "psi" | "lux" | "kelvin";
         UpdateNanoVnaMeasurementRequest: {
             label: string;
             note?: string;
@@ -9758,8 +10150,13 @@ export interface components {
             source?: number | null;
             started_at: string;
         };
-        VoiceCallsResponse: {
-            calls: components["schemas"]["VoiceCall"][];
+        VoiceFacts: {
+            /** Format: int32 */
+            destination?: number | null;
+            emergency?: boolean | null;
+            encrypted?: boolean | null;
+            /** Format: int32 */
+            source?: number | null;
         };
         VorParams: {
             /** Format: double */
@@ -9851,6 +10248,14 @@ export interface components {
         };
         /** @enum {string} */
         Winding: "clockwise" | "counter_clockwise";
+        WireVerdict: {
+            refusal?: string | null;
+            to: components["schemas"]["PortRef"];
+        };
+        WiringRequest: {
+            from: components["schemas"]["PortRef"];
+            graph: components["schemas"]["PatchGraph"];
+        };
         WorkspaceArray: {
             node: string;
             tune: components["schemas"]["ArrayTune"];
@@ -9908,6 +10313,31 @@ export interface components {
             };
             /** @enum {string} */
             kind: "cleared_gps";
+        } | {
+            data: {
+                kinds: string[];
+                node: string;
+            };
+            /** @enum {string} */
+            kind: "dropped_filter_kinds";
+        } | {
+            data: {
+                wires: components["schemas"]["NoticeWire"][];
+            };
+            /** @enum {string} */
+            kind: "dropped_wires";
+        } | {
+            data: {
+                wires: components["schemas"]["NoticeWire"][];
+            };
+            /** @enum {string} */
+            kind: "added_wires";
+        } | {
+            data: {
+                nodes: components["schemas"]["DroppedNode"][];
+            };
+            /** @enum {string} */
+            kind: "added_nodes";
         };
         WorkspaceSettings: {
             band_region?: string | null;
@@ -10646,26 +11076,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    list_calls: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Completed temporary voice calls */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VoiceCallsResponse"];
                 };
             };
         };
@@ -11752,6 +12162,48 @@ export interface operations {
             };
         };
     };
+    add_network_radio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkRadioRequest"];
+            };
+        };
+        responses: {
+            /** @description The network radio, known now but not opened. Name it in a Device node to open it */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceInfo"];
+                };
+            };
+            /** @description No radio answers at that address */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     write_serial: {
         parameters: {
             query?: never;
@@ -11794,643 +12246,6 @@ export interface operations {
             };
             /** @description Device open here or in another program */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    create_device_set: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateDeviceSetRequest"];
-            };
-        };
-        responses: {
-            /** @description Device set created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreatedId"];
-                };
-            };
-            /** @description Unusable device */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device already in use, here or by another program */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    delete_device_set: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Device set removed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid path parameter */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    create_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateChannelRequest"];
-            };
-        };
-        responses: {
-            /** @description Channel created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreatedId"];
-                };
-            };
-            /** @description Invalid channel settings */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    delete_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Channel removed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid path parameter */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or channel not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    patch_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PatchChannelRequest"];
-            };
-        };
-        responses: {
-            /** @description Settings applied. With a base, only the fields changed from it land, so another client's edit to other fields survives */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid channel settings */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or channel not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    hunt_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The decoder being hunted */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["HuntRequest"];
-            };
-        };
-        responses: {
-            /** @description Hunt status after `start`, `stop` or `sweep`. Readings arrive as the `HuntUpdate` WS event */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HuntStatus"];
-                };
-            };
-            /** @description `mark` sent one bearing event */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Set not running, scanning, already hunting, or not hunting */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or decoder not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description `No heading`, `No position`, `Not running` or `No hunt node` */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    network_export_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChannelNetworkExportRequest"];
-            };
-        };
-        responses: {
-            /** @description Live status after start or final counters after stop */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NetworkExportStatus"];
-                };
-            };
-            /** @description Invalid destination, inactive export, or conflicting owner */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or channel not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    scan_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The decoder the scan drives */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScanRequest"];
-            };
-        };
-        responses: {
-            /** @description Scanner status: the initial state after `start`, the final state after `stop`, the state after `skip` lets go of a held frequency. Live progress arrives as the `ScannerUpdate` WS event, not as one state change per step */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScannerStatus"];
-                };
-            };
-            /** @description Unusable scan settings, set not running, decoder already scanning or hunted, not scanning, or nothing held to skip */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or decoder not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    patch_device: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DeviceSettings"];
-            };
-        };
-        responses: {
-            /** @description Settings applied */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unsupported setting */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    network_export_device_set: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NetworkExportRequest"];
-            };
-        };
-        responses: {
-            /** @description Live status after start or final counters after stop */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NetworkExportStatus"];
-                };
-            };
-            /** @description Invalid destination, inactive export, or conflicting owner */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    control_playback: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PlaybackRequest"];
-            };
-        };
-        responses: {
-            /** @description The transport after the request */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PlaybackStatus"];
-                };
-            };
-            /** @description The set's device is a radio, not a recording */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    time_machine_device_set: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TimeMachineRequest"];
-            };
-        };
-        responses: {
-            /** @description History status after the action: `arm` starts the rolling buffer, `capture` writes the buffered past into a SigMF pair and keeps appending, `stop` finalizes that pair, `disarm` releases the buffer */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TimeMachineStatus"];
-                };
-            };
-            /** @description Cannot hold history: no recordings directory, set not running, a window that does not fit in memory, or an action the current state has nothing to do with */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12553,14 +12368,16 @@ export interface operations {
     };
     list_images: {
         parameters: {
-            query?: never;
+            query: {
+                sink: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Pictures captured from scanning modes */
+            /** @description Pictures kept for one Video node, newest first */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -13094,6 +12911,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PatchCatalog"];
+                };
+            };
+        };
+    };
+    post_patch_wiring: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WiringRequest"];
+            };
+        };
+        responses: {
+            /** @description For a wire dragged from `from`, every input of that port type in `graph` and why it would refuse the wire. Counts live radio clocks; the save stays the authority */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WireVerdict"][];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -14327,6 +14177,36 @@ export interface operations {
             };
         };
     };
+    clear_sink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Map, Readout, Decoder log or Propagation node */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the node held is gone; new records still arrive */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The node keeps no sink feed */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     get_state: {
         parameters: {
             query?: never;
@@ -14505,7 +14385,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Template or device set not found */
+            /** @description No such template or node */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14892,60 +14772,6 @@ export interface operations {
             };
         };
     };
-    put_workspace_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Workspace id */
-                id: number;
-                /** @description Channel node id */
-                node: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChannelSettings"];
-            };
-        };
-        responses: {
-            /** @description Settings held against the node until a radio carries it */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No such channel node, or settings of another channel type */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Workspace not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     export_workspace: {
         parameters: {
             query?: never;
@@ -15133,6 +14959,175 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    node_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Node of the active workspace */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeAction"];
+            };
+        };
+        responses: {
+            /** @description What the action did. A control action lists one ack per wired target; a failed target carries `error` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeActed"];
+                };
+            };
+            /** @description The node takes no such action, is locked, or is not wired */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No such node */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    patch_node_channel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel node of the active workspace */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchChannelRequest"];
+            };
+        };
+        responses: {
+            /** @description Settings applied to the running decoder, or held for the node until a radio carries it. With a base, only the fields changed from it land */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a channel node, or settings of another channel type */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    patch_node_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Radio node of the active workspace */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceSettings"];
+            };
+        };
+        responses: {
+            /** @description Settings applied to the node's radio */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a radio node, no radio open, or an unsupported setting */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No such node */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    get_resolved: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The active workspace as the server resolved it: concrete ports, what feeds each input, what each output reaches, where each node runs, and node problems */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolvedState"];
                 };
             };
         };

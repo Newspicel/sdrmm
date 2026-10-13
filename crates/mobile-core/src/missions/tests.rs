@@ -69,8 +69,8 @@ fn listed(missions: Vec<sdrmm_wire::mission::Mission>) -> Reducer {
 
 #[test]
 fn a_cut_listing_says_how_many_missions_are_missing() {
-    let mut reducer = listed(vec![hunt("hunt1", &[Wire::StartHunt], &[])]);
-    let mut cut = response(vec![hunt("hunt1", &[Wire::StartHunt], &[])]);
+    let mut reducer = listed(vec![hunt("hunt1", &[Wire::StartHunt])]);
+    let mut cut = response(vec![hunt("hunt1", &[Wire::StartHunt])]);
     cut.truncated = 3;
     let effects = reducer.handle(Input::Listing(Box::new(cut.clone())), T0);
     assert_eq!(notices(&effects), ["3 missions not listed"]);
@@ -199,10 +199,7 @@ fn opening_radar_subscribes_the_surface_and_closing_unsubscribes() {
 
 #[test]
 fn opening_df_seeds_from_state_and_subscribes_the_grid() {
-    let mut reducer = listed(vec![
-        df("df1", &["tri1"]),
-        triangulation("tri1", &["df1"], true),
-    ]);
+    let mut reducer = listed(vec![df("df1"), triangulation("tri1", &["df1"], true)]);
     let effects = reducer.handle(Input::Open("df1".to_owned()), T0);
     assert!(effects.contains(&Effect::Seed {
         mission: "df1".to_owned(),
@@ -244,7 +241,7 @@ fn df_state(effects: &[Effect]) -> Option<DfState> {
 
 #[test]
 fn opening_df_seeds_the_array_gate_until_the_array_speaks() {
-    let mut reducer = listed(vec![df("df1", &[])]);
+    let mut reducer = listed(vec![df("df1")]);
     let effects = reducer.handle(Input::Open("df1".to_owned()), T0);
     assert!(effects.contains(&Effect::Seed {
         mission: "df1".to_owned(),
@@ -276,7 +273,7 @@ fn opening_df_seeds_the_array_gate_until_the_array_speaks() {
 
 #[test]
 fn a_vanished_mission_is_closed_with_a_notice() {
-    let mut reducer = listed(vec![hunt("hunt1", &[Wire::StartHunt], &[]), survey("map1")]);
+    let mut reducer = listed(vec![hunt("hunt1", &[Wire::StartHunt]), survey("map1")]);
     reducer.handle(Input::Open("hunt1".to_owned()), T0);
     let effects = reducer.handle(Input::Listing(Box::new(response(vec![survey("map1")]))), T0);
     assert_eq!(notices(&effects), ["Mission gone"]);
@@ -460,7 +457,7 @@ fn radar_readings_refresh_and_go_stale_after_5_s() {
 
 #[test]
 fn hunt_updates_for_another_channel_are_ignored() {
-    let mut reducer = listed(vec![hunt("hunt1", &[Wire::StopHunt], &[])]);
+    let mut reducer = listed(vec![hunt("hunt1", &[Wire::StopHunt])]);
     let opened = reducer.handle(Input::Open("hunt1".to_owned()), T0);
     assert!(matches!(
         emitted(&opened).as_slice(),
@@ -497,10 +494,7 @@ fn hunt_updates_for_another_channel_are_ignored() {
 
 #[test]
 fn fusion_grids_become_heat_bands_at_most_once_a_second() {
-    let mut reducer = listed(vec![
-        df("df1", &["tri1"]),
-        triangulation("tri1", &["df1"], true),
-    ]);
+    let mut reducer = listed(vec![df("df1"), triangulation("tri1", &["df1"], true)]);
     reducer.handle(Input::Open("df1".to_owned()), T0);
     reducer.handle(
         event(ServerEvent::SurfaceStreamStarted {
@@ -527,10 +521,7 @@ fn fusion_grids_become_heat_bands_at_most_once_a_second() {
 
 #[test]
 fn a_refused_surface_is_told() {
-    let mut reducer = listed(vec![
-        df("df1", &["tri1"]),
-        triangulation("tri1", &["df1"], true),
-    ]);
+    let mut reducer = listed(vec![df("df1"), triangulation("tri1", &["df1"], true)]);
     reducer.handle(Input::Open("df1".to_owned()), T0);
     let refused = reducer.handle(
         event(ServerEvent::SurfaceRefused {
@@ -544,10 +535,7 @@ fn a_refused_surface_is_told() {
 
 #[test]
 fn a_surface_refused_again_on_retry_is_told_once() {
-    let mut reducer = listed(vec![
-        df("df1", &["tri1"]),
-        triangulation("tri1", &["df1"], true),
-    ]);
+    let mut reducer = listed(vec![df("df1"), triangulation("tri1", &["df1"], true)]);
     reducer.handle(Input::Open("df1".to_owned()), T0);
     let refusal = |reason| {
         event(ServerEvent::SurfaceRefused {
@@ -738,10 +726,7 @@ fn a_full_survey_grid_reaches_the_app_without_loss() {
 
 #[test]
 fn a_df_reading_projects_and_retargets_once() {
-    let mut reducer = listed(vec![
-        df("df1", &["tri1"]),
-        triangulation("tri1", &["df1"], true),
-    ]);
+    let mut reducer = listed(vec![df("df1"), triangulation("tri1", &["df1"], true)]);
     reducer.handle(Input::Open("df1".to_owned()), T0);
     reducer.handle(
         Input::Pose(Some(PoseSnapshot {
@@ -810,7 +795,7 @@ fn a_df_reading_projects_and_retargets_once() {
 
 #[test]
 fn pose_needed_follows_the_listing_and_phone_self() {
-    let mut reducer = listed(vec![df("df1", &[])]);
+    let mut reducer = listed(vec![df("df1")]);
     assert!(!reducer.pose_needed());
     reducer.handle(
         Input::PhoneSelf(Box::new(PhoneSelf {
@@ -829,18 +814,15 @@ fn pose_needed_follows_the_listing_and_phone_self() {
         T0,
     );
     assert!(reducer.pose_needed());
-    let wanted = listed(vec![hunt("hunt1", &[], &[])]);
+    let wanted = listed(vec![hunt("hunt1", &[])]);
     assert!(wanted.pose_needed());
 }
 
 #[test]
 fn acted_missions_update_the_listing_and_the_open_view() {
-    let mut reducer = listed(vec![hunt("hunt1", &[Wire::StartHunt], &[])]);
+    let mut reducer = listed(vec![hunt("hunt1", &[Wire::StartHunt])]);
     reducer.handle(Input::Open("hunt1".to_owned()), T0);
-    let effects = reducer.handle(
-        Input::Acted(Box::new(hunt("hunt1", &[Wire::StopHunt], &[]))),
-        T0,
-    );
+    let effects = reducer.handle(Input::Acted(Box::new(hunt("hunt1", &[Wire::StopHunt]))), T0);
     assert!(matches!(emitted(&effects)[0], CoreEvent::Missions { .. }));
     assert!(matches!(
         emitted(&effects)[1],
@@ -875,7 +857,7 @@ struct FakeApi {
 
 impl Api for FakeApi {
     fn missions(&self) -> BoxFuture<'_, Result<MissionsResponse, crate::link::rest::RestError>> {
-        Box::pin(async { Ok(response(vec![hunt("hunt1", &[Wire::StartHunt], &[])])) })
+        Box::pin(async { Ok(response(vec![hunt("hunt1", &[Wire::StartHunt])])) })
     }
 
     fn phone_self(&self) -> BoxFuture<'_, Result<PhoneSelf, crate::link::rest::RestError>> {
@@ -893,7 +875,7 @@ impl Api for FakeApi {
             .push((node, action));
         Box::pin(async {
             Ok(MissionActionResponse {
-                mission: hunt("hunt1", &[Wire::StopHunt], &[]),
+                mission: hunt("hunt1", &[Wire::StopHunt]),
             })
         })
     }
@@ -1011,7 +993,6 @@ fn the_hub_fetches_missions_when_live_and_publishes_its_state() {
     futures::executor::block_on(hub.apply(Input::Acted(Box::new(hunt(
         "hunt1",
         &[Wire::StopHunt, Wire::Mark],
-        &[],
     )))));
     let acted = hub.shared().find("hunt1").cloned().expect("listed");
     assert!(

@@ -10,34 +10,39 @@ import { leaveAuto } from "./autoOff";
 import type { DeviceSet, Tuning } from "./types";
 import { useDevicePatch } from "./useDevicePatch";
 
+export interface Radio {
+  node: string;
+  set: DeviceSet;
+}
+
 export function useRadioTune(): {
-  tuneRadio: (set: DeviceSet, stream: number, hz: number) => void;
-  setTuning: (set: DeviceSet, stream: number, tuning: Tuning) => void;
-  tuneAll: (set: DeviceSet, hz: number) => void;
-  setTuningAll: (set: DeviceSet, tuning: Tuning) => void;
+  tuneRadio: (radio: Radio, stream: number, hz: number) => void;
+  setTuning: (radio: Radio, stream: number, tuning: Tuning) => void;
+  tuneAll: (radio: Radio, hz: number) => void;
+  setTuningAll: (radio: Radio, tuning: Tuning) => void;
 } {
   const { applyPatch, cachedSettings } = useDevicePatch();
-  const fresh = (set: DeviceSet): DeviceSet => ({
+  const fresh = ({ node, set }: Radio): DeviceSet => ({
     ...set,
-    settings: cachedSettings(set.id) ?? set.settings,
+    settings: cachedSettings(node) ?? set.settings,
   });
-  const onAuto = (set: DeviceSet, stream: number): boolean => autoTuning(fresh(set), stream);
+  const onAuto = (radio: Radio, stream: number): boolean => autoTuning(fresh(radio), stream);
   return {
-    tuneRadio: (set, stream, hz) =>
-      leaveAuto(onAuto(set, stream), () =>
-        applyPatch(set.id, tuneDelta(set.capabilities, stream, hz)),
+    tuneRadio: (radio, stream, hz) =>
+      leaveAuto(onAuto(radio, stream), () =>
+        applyPatch(radio.node, tuneDelta(radio.set.capabilities, stream, hz)),
       ),
-    setTuning: (set, stream, tuning) =>
-      leaveAuto(tuning === "manual" && onAuto(set, stream), () =>
-        applyPatch(set.id, tuningDelta(set.capabilities, stream, tuning)),
+    setTuning: (radio, stream, tuning) =>
+      leaveAuto(tuning === "manual" && onAuto(radio, stream), () =>
+        applyPatch(radio.node, tuningDelta(radio.set.capabilities, stream, tuning)),
       ),
-    tuneAll: (set, hz) =>
-      leaveAuto(allAutoTuning(fresh(set)), () =>
-        applyPatch(set.id, tuneAllDelta(set.capabilities, hz)),
+    tuneAll: (radio, hz) =>
+      leaveAuto(allAutoTuning(fresh(radio)), () =>
+        applyPatch(radio.node, tuneAllDelta(radio.set.capabilities, hz)),
       ),
-    setTuningAll: (set, tuning) =>
-      leaveAuto(tuning === "manual" && allAutoTuning(fresh(set)), () =>
-        applyPatch(set.id, tuningAllDelta(set.capabilities, tuning)),
+    setTuningAll: (radio, tuning) =>
+      leaveAuto(tuning === "manual" && allAutoTuning(fresh(radio)), () =>
+        applyPatch(radio.node, tuningAllDelta(radio.set.capabilities, tuning)),
       ),
   };
 }

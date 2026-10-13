@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -14,6 +15,7 @@ SHA256 = "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e"
 FDK_VERSION = "2.0.3"
 FDK_SHA256 = "e25671cd96b10bad896aa42ab91a695a9e573395262baed4e4a2ff178d6a3a78"
 ROOT = Path(__file__).resolve().parents[1]
+LIBRARY_PATH = {"Darwin": "DYLD_LIBRARY_PATH", "Linux": "LD_LIBRARY_PATH"}
 
 
 def target_name():
@@ -27,6 +29,17 @@ def target_name():
 # and would delete the installed libraries between the build and the link that needs them.
 def install_prefix(target):
     return ROOT / ".media" / target
+
+
+def pin_cargo(prefix):
+    lines = ["[env]", f"FFMPEG_DIR = {json.dumps(str(prefix))}"]
+    library_path = LIBRARY_PATH.get(platform.system())
+    if library_path:
+        lines.append(f"{library_path} = {json.dumps(str(prefix / 'lib'))}")
+    config = "\n".join(lines) + "\n"
+    path = ROOT / ".media" / "cargo.toml"
+    if not path.exists() or path.read_text() != config:
+        path.write_text(config)
 
 
 def work_dir(target):
@@ -190,9 +203,12 @@ def main():
     if args.print_prefix:
         print(prefix)
         return
+    host = args.prefix is None and args.target == target_name()
     fingerprint = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     marker = prefix / "sdrmm-build.txt"
     if marker.exists() and marker.read_text() == fingerprint:
+        if host:
+            pin_cargo(prefix)
         print(prefix)
         return
     work = work_dir(args.target)
@@ -211,6 +227,8 @@ def main():
     if "windows-msvc" in args.target:
         move_import_libraries(prefix)
     marker.write_text(fingerprint)
+    if host:
+        pin_cargo(prefix)
     print(prefix)
 
 

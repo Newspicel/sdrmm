@@ -205,7 +205,7 @@ async fn an_out_of_range_stream_is_a_clean_bad_request_naming_the_count() {
     let err = engine.subscribe_spectrum(ds, 99).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
 
-    let err = engine.start_recording(ds, 4).unwrap_err();
+    let err = engine.start_recording(ds, 4, None).unwrap_err();
     assert!(err.is_bad_request(), "expected bad request, got {err}");
     assert!(err.to_string().contains("4 rx streams"), "unhelpful: {err}");
 
@@ -229,7 +229,7 @@ async fn a_recording_on_stream_2_captures_stream_2_and_says_so() {
     let engine = Engine::with_registry(registry, Some(dir.path().to_path_buf()));
     let ds = engine.create_device_set(QUAD).unwrap();
 
-    engine.start_recording(ds, 2).unwrap();
+    engine.start_recording(ds, 2, None).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let snapshot = engine.snapshot();
@@ -527,7 +527,7 @@ async fn a_recording_on_a_retuned_lane_stamps_that_lanes_centre() {
         )
         .unwrap();
 
-    engine.start_recording(ds, 1).unwrap();
+    engine.start_recording(ds, 1, None).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     while !engine.snapshot().device_sets[0]
         .recording

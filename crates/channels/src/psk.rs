@@ -10,8 +10,8 @@ use sdrmm_modem::{
     pulse::{self, Norm},
 };
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, PskBaud,
-    PskParams, PskText,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    PskBaud, PskParams, PskText,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -31,7 +31,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 650.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    decoder_kind: Some("psk".to_owned()),
+    emits: vec![EventKind::Psk],
     ..ChannelDescriptor::default()
 });
 

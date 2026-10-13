@@ -43,6 +43,8 @@ pub struct RecordingStatus {
     pub file: String,
     #[serde(default)]
     pub stream: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
     pub started_at: String,
     pub samples: u64,
     pub bytes: u64,
@@ -53,6 +55,7 @@ pub struct RecordingStatus {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AudioRecordingStatus {
+    pub node: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fx: Vec<String>,
     pub file: String,

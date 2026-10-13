@@ -1,0 +1,171 @@
+{
+  "name": "eaa8a6d1aa0c2a37",
+  "test": "ArrayFace > offers a tier choice only for several radios",
+  "graph": {
+    "nodes": [
+      {
+        "id": "kraken",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "kraken5"
+          }
+        }
+      },
+      {
+        "id": "rtl",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "rtlsdr",
+            "key": "rtl"
+          }
+        }
+      },
+      {
+        "id": "north",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        },
+        "label": "North"
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane"
+        }
+      },
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq2"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane2"
+        }
+      },
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq3"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane3"
+        }
+      },
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq4"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane4"
+        }
+      },
+      {
+        "from": {
+          "node": "rtl",
+          "port": "iq"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane5"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "kraken5",
+          "label": "KrakenSDR"
+        },
+        "capabilities": {
+          "freq_ranges": [
+            {
+              "min": 24000000,
+              "max": 1766000000
+            }
+          ],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "duplex": "rx_only",
+          "rx_streams": 5,
+          "coherence": "phase_coherent"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [],
+        "overruns": 0
+      },
+      {
+        "id": 2,
+        "device": {
+          "driver": "rtlsdr",
+          "key": "rtl",
+          "label": "RTL-SDR"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "duplex": "rx_only"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [],
+        "overruns": 0
+      }
+    ],
+    "revision": 0
+  }
+}

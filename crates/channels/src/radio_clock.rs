@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
     RadioClockFrame, RadioClockParams, RadioClockStandard,
 };
 
@@ -24,7 +24,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 200.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("radio_clock".to_owned()),
+    emits: vec![EventKind::RadioClock],
     ..ChannelDescriptor::default()
 });
 

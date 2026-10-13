@@ -215,6 +215,7 @@ mod tests {
         RecordingStatus {
             file: "/home/op/recordings/secret.sigmf-data".to_owned(),
             stream: 0,
+            node: None,
             started_at: "2026-09-29T10:00:00Z".to_owned(),
             samples: 1,
             bytes: 2,

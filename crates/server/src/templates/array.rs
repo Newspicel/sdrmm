@@ -1,21 +1,13 @@
 use sdrmm_wire::{
     ARRAY_LANE_PORT, ARRAY_PORT, ArrayNode, ArrayOrientation, DeviceNode, DfNode, EVENTS_PORT,
-    GpsNode, NodeBody, POSITION_PORT, PatchEdge, PatchGraph, PatchNode, PortRef, Position,
-    TemplateInfo, TriangulationNode,
+    GpsNode, IQ_PORT, NodeBody, POSITION_PORT, PatchEdge, PatchGraph, PatchNode, PortRef, Position,
+    TemplateInfo, TriangulationNode, stream_port,
 };
 
 const KRAKEN_LANES: u32 = 5;
 const CENTER_HZ: f64 = 433_920_000.0;
 const SAMPLE_RATE: f64 = 2_400_000.0;
 const COLUMN: f32 = 520.0;
-
-fn lane_port(base: &str, lane: u32) -> String {
-    if lane == 0 {
-        base.to_owned()
-    } else {
-        format!("{base}{}", lane + 1)
-    }
-}
 
 fn node(id: &str, body: NodeBody, x: f32, y: f32) -> PatchNode {
     PatchNode {
@@ -61,11 +53,11 @@ fn drive_patch(lanes: u32) -> PatchGraph {
         ),
         node("map", NodeBody::Map, COLUMN * 4.0, 0.0),
     ];
-    let mut edges = vec![wire(("dev", "iq"), ("scope", "iq"))];
+    let mut edges = vec![wire(("dev", IQ_PORT), ("scope", IQ_PORT))];
     edges.extend((0..lanes).map(|lane| {
         wire(
-            ("dev", &lane_port("iq", lane)),
-            ("array", &lane_port(ARRAY_LANE_PORT, lane)),
+            ("dev", &stream_port(IQ_PORT, lane)),
+            ("array", &stream_port(ARRAY_LANE_PORT, lane)),
         )
     }));
     edges.extend([

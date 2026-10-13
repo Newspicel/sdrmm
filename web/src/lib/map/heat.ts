@@ -1,10 +1,11 @@
 import type { ImageSource, Map as MapLibreMap } from "maplibre-gl";
 import { gridPixels } from "../../gl/surface";
+import { SINK_LAYERS } from "../../sinks/mapLayers";
 import type { FusionGridFrame } from "../frame";
 
 export const HEAT_SOURCE = "df-heat";
 export const HEAT_LAYER = "df-heat";
-export const HEAT_BELOW = "df-rays";
+export const HEAT_BELOW = SINK_LAYERS[0];
 export const HEAT_OPACITY = 0.75;
 
 const BLANK_PIXEL =

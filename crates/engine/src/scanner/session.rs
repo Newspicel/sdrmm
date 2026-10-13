@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use sdrmm_wire::{ChannelSettings, ScanSettings, ScannerStatus, ServerEvent, StateScope};
+use sdrmm_wire::{
+    ChannelSettings, ScanSettings, ScannerStatus, ServerEvent, StateScope, WatchedLane,
+};
 
 use super::{ScanPlan, spawn};
 use crate::{DeviceSetState, DeviceSetStatus, Engine, EngineError};
@@ -20,6 +22,13 @@ fn admits_a_scan(state: &DeviceSetState, ds: u32, channel: u32) -> Result<(), En
         return Err(EngineError::Scan(format!("device set {ds} is not running")));
     }
     Ok(())
+}
+
+pub(crate) fn watches(lane: Option<WatchedLane>, ds: u32, stream: u32) -> Result<(), EngineError> {
+    match lane {
+        Some(lane) if lane.device_set != ds || lane.stream != stream => Err(EngineError::OtherLane),
+        _ => Ok(()),
+    }
 }
 
 fn decoder_bandwidth_hz(settings: &ChannelSettings) -> f64 {
@@ -43,6 +52,7 @@ fn admit(
         .iter()
         .find(|c| c.id == settings.channel)
         .ok_or(EngineError::ChannelNotFound(settings.channel, ds))?;
+    watches(settings.lane, ds, decoder.stream)?;
     admits_a_scan(state, ds, settings.channel)?;
     settings.measure_bw_hz = Some(
         settings

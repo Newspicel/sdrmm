@@ -1,14 +1,7 @@
 import type { AudioRecordingStatus, ChannelInfo, PatchNode, PatchNodeOf } from "../../lib/types";
 
-function sameRoute(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((node, index) => node === b[index]);
-}
-
-export function recordingFor(
-  channel: ChannelInfo,
-  fx: readonly string[],
-): AudioRecordingStatus | null {
-  return (channel.audio_recordings ?? []).find((status) => sameRoute(status.fx ?? [], fx)) ?? null;
+export function ownRecording(channel: ChannelInfo, node: string): AudioRecordingStatus | null {
+  return (channel.audio_recordings ?? []).find((status) => status.node === node) ?? null;
 }
 
 export type RecorderNodeOf = PatchNodeOf<"recorder" | "audio_recorder" | "baseband_recorder">;

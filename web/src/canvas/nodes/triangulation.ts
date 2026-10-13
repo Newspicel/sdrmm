@@ -1,6 +1,7 @@
 import type { Options } from "../../components/controls";
 import type { FusionGridFrame } from "../../lib/frame";
 import { FUSION_LIMITS } from "../../lib/limits";
+import { feedSources } from "../../lib/resolved";
 import type {
   DfEstimate,
   DfFusionState,
@@ -9,8 +10,8 @@ import type {
   NavMode,
   NavTargetKind,
   PatchCatalog,
-  PatchGraph,
   PatchNode,
+  ResolvedPatch,
   TriangulationParams,
 } from "../../lib/types";
 import { defaultBody } from "../newNode";
@@ -21,8 +22,6 @@ export const NAV_TEXT: Record<NavTargetKind, string> = {
 };
 
 export const NO_SOURCES = "Wire direction finders in";
-
-const BEARING_KINDS: ReadonlySet<string> = new Set(["df", "hunt", "event_filter"]);
 
 export type DecayKind = FusionDecay["kind"];
 
@@ -67,18 +66,8 @@ export function insideBox(point: { x: number; y: number }, box: Box): boolean {
   return point.x >= 0 && point.x <= box.w && point.y >= 0 && point.y <= box.h;
 }
 
-export function fusionSources(graph: PatchGraph, node: string): number {
-  const sources = new Set<string>();
-  for (const edge of graph.edges ?? []) {
-    if (edge.to.node !== node || edge.to.port !== "events") {
-      continue;
-    }
-    const from = graph.nodes.find((candidate) => candidate.id === edge.from.node);
-    if (from !== undefined && BEARING_KINDS.has(from.kind)) {
-      sources.add(from.id);
-    }
-  }
-  return sources.size;
+export function fusionSources(resolved: ResolvedPatch | null, node: string): number {
+  return feedSources(resolved, node, "events").length;
 }
 
 export function estimateLabel(estimate: DfEstimate | null): string {

@@ -17,8 +17,8 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_modem::constellation::{Constellation, tables};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, DvFrame,
-    TetraParams,
+    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    DvFrame, EventKind, TetraParams,
 };
 
 use self::{
@@ -39,7 +39,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    decoder_kind: Some("dv".to_owned()),
+    emits: vec![EventKind::Dv],
+    calls: Some(CallGate::Frames),
     ..ChannelDescriptor::default()
 });
 

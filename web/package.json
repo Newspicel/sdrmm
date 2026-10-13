@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsgo --noEmit",
     "test": "vitest run",
+    "record:resolved": "node scripts/record-resolved.mjs",
     "e2e": "playwright test",
     "demo:record": "playwright test -c playwright.demo.config.ts",
     "lint": "node scripts/check-base-ui.mjs && node scripts/check-design-tokens.mjs && oxlint --type-aware",

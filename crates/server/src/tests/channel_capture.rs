@@ -4,24 +4,16 @@ use super::*;
 async fn channel_audio_record_list_download_and_delete_roundtrip_over_http() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let (app, engine) = recording_router_without_reconcilers(dir.path());
-    let ds = create_virtual_set(&app).await;
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let ch = serde_json::from_slice::<CreatedId>(&body).expect("json").id;
+    let ds = open_virtual_radio(&app).await;
+    let ch = create_nfm_channel(&app, ds).await;
 
     let live = engine
-        .start_channel_recording(ds, ch)
+        .start_audio_recording("rec", &sdrmm_wire::AudioRoute::channel(ds, ch), false)
         .expect("recording starts");
     assert!(live.file.ends_with(".wav"));
     wait_for_recorded_frames(&app, ds, ch, 4_800).await;
     let done = engine
-        .stop_channel_recording(ds, ch)
+        .stop_audio_recording("rec", ds, ch)
         .expect("recording stops");
     assert_eq!(done.file, live.file);
     assert!(done.frames > 0);
@@ -96,31 +88,20 @@ async fn an_audio_recording_name_cannot_reach_outside_its_directory() {
 #[tokio::test]
 async fn network_export_start_stream_and_stop_roundtrip_over_http() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
+    open_virtual_radio(&app).await;
     let receiver = UdpSocket::bind("127.0.0.1:0").expect("bind receiver");
     receiver
         .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("timeout");
     let address = receiver.local_addr().expect("address");
-    let start = serde_json::json!({
-        "action": "start",
-        "node": "network:test",
-        "stream": 0,
-        "settings": {
-            "transport": "udp",
-            "format": "cu8",
-            "address": address.to_string(),
-        },
-    });
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/network-export"),
-        Some(&start.to_string()),
+    draw(
+        &app,
+        "network:test",
+        exporter("cu8", &address.to_string()),
+        &[["radio:band", "iq", "network:test", "iq"]],
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let live: NetworkExportStatus = serde_json::from_slice(&body).expect("status");
+    let live = exported(&app, "network:test", "start").await;
     assert_eq!(live.node, "network:test");
     assert_eq!(live.settings.address, address.to_string());
 
@@ -129,27 +110,52 @@ async fn network_export_start_stream_and_stop_roundtrip_over_http() {
     assert!(received > 0);
     assert_eq!(received % 2, 0);
 
-    let stop = serde_json::json!({ "action": "stop", "node": "network:test" });
-    let (status, body) = request(
-        app,
-        "POST",
-        &format!("/api/devicesets/{ds}/network-export"),
-        Some(&stop.to_string()),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let done: NetworkExportStatus = serde_json::from_slice(&body).expect("status");
+    let done = exported(&app, "network:test", "stop").await;
     assert!(done.samples > 0);
     assert_eq!(done.bytes, done.samples * 2);
     assert!(done.packets > 0);
     assert_eq!(done.error, None);
 }
 
+fn exporter(format: &str, address: &str) -> sdrmm_wire::NodeBody {
+    sdrmm_wire::NodeBody::NetworkExport(
+        serde_json::from_value(serde_json::json!({
+            "transport": "udp", "format": format, "address": address,
+        }))
+        .expect("export settings"),
+    )
+}
+
+async fn exported(app: &Router, node: &str, action: &str) -> NetworkExportStatus {
+    let (status, body) = act_on(
+        app,
+        node,
+        serde_json::json!({"action": "network_export", "with": action}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let sdrmm_wire::NodeActed::NetworkExport(status) = serde_json::from_slice(&body).expect("json")
+    else {
+        panic!("an export reports its status");
+    };
+    status
+}
+
+async fn history(app: &Router, node: &str, action: &str) -> TimeMachineStatus {
+    let (status, body) = time_machine(app, node, action).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let sdrmm_wire::NodeActed::TimeMachine(status) = serde_json::from_slice(&body).expect("json")
+    else {
+        panic!("a time machine reports its status");
+    };
+    status
+}
+
 #[tokio::test]
 async fn channel_baseband_record_roundtrip_lands_in_the_recording_library() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let (app, engine) = recording_router_without_reconcilers(dir.path());
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
     let ch = create_nfm_channel(&app, ds).await;
 
     let live = engine
@@ -180,27 +186,21 @@ async fn channel_baseband_record_roundtrip_lands_in_the_recording_library() {
 #[tokio::test]
 async fn channel_network_export_streams_that_channels_baseband_over_http() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
-    let ch = create_nfm_channel(&app, ds).await;
+    let ds = open_virtual_radio(&app).await;
+    create_nfm_channel(&app, ds).await;
     let receiver = UdpSocket::bind("127.0.0.1:0").expect("bind receiver");
     receiver
         .set_read_timeout(Some(Duration::from_secs(10)))
         .expect("timeout");
     let address = receiver.local_addr().expect("address").to_string();
-    let start = serde_json::json!({
-        "action": "start",
-        "node": "baseband:test",
-        "settings": { "transport": "udp", "format": "cf32_le", "address": address },
-    });
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels/{ch}/network-export"),
-        Some(&start.to_string()),
+    draw(
+        &app,
+        "baseband:test",
+        exporter("cf32_le", &address),
+        &[["tap-nfm", "baseband", "baseband:test", "baseband"]],
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let live: NetworkExportStatus = serde_json::from_slice(&body).expect("status");
+    let live = exported(&app, "baseband:test", "start").await;
     assert_eq!(live.sample_rate, 48_000);
     assert_eq!(live.node, "baseband:test");
 
@@ -218,16 +218,7 @@ async fn channel_network_export_streams_that_channels_baseband_over_http() {
         Some("baseband:test")
     );
 
-    let stop = serde_json::json!({ "action": "stop", "node": "baseband:test" });
-    let (status, body) = request(
-        app,
-        "POST",
-        &format!("/api/devicesets/{ds}/channels/{ch}/network-export"),
-        Some(&stop.to_string()),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let done: NetworkExportStatus = serde_json::from_slice(&body).expect("status");
+    let done = exported(&app, "baseband:test", "stop").await;
     assert!(done.samples > 0);
     assert_eq!(done.error, None);
 }
@@ -236,17 +227,17 @@ async fn channel_network_export_streams_that_channels_baseband_over_http() {
 async fn the_time_machine_arms_captures_and_files_its_window_over_http() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let app = recording_router(dir.path());
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
     let node = "time_machine:test";
-
-    let (status, body) = time_machine(
+    draw(
         &app,
-        ds,
-        serde_json::json!({ "action": "arm", "node": node, "settings": { "history_seconds": 1 } }),
+        node,
+        sdrmm_wire::NodeBody::TimeMachine(sdrmm_wire::TimeMachineNode { history_seconds: 1 }),
+        &[["radio:band", "iq", node, "iq"]],
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let armed: TimeMachineStatus = serde_json::from_slice(&body).expect("status");
+
+    let armed = history(&app, node, "arm").await;
     assert_eq!(armed.history_seconds, 1);
     assert_eq!(armed.capacity_samples, 2_048_000);
     assert!(armed.capture.is_none());
@@ -270,24 +261,10 @@ async fn the_time_machine_arms_captures_and_files_its_window_over_http() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    let (status, body) = time_machine(
-        &app,
-        ds,
-        serde_json::json!({ "action": "capture", "node": node }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    let capturing: TimeMachineStatus = serde_json::from_slice(&body).expect("status");
+    let capturing = history(&app, node, "capture").await;
     let file = capturing.capture.expect("a capture is running").file;
 
-    let (status, body) = time_machine(
-        &app,
-        ds,
-        serde_json::json!({ "action": "stop", "node": node }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let stopped: TimeMachineStatus = serde_json::from_slice(&body).expect("status");
+    let stopped = history(&app, node, "stop").await;
     let written = stopped.capture.expect("the stop reports what it wrote");
     assert!(
         written.samples >= 1_024_000,
@@ -301,21 +278,10 @@ async fn the_time_machine_arms_captures_and_files_its_window_over_http() {
         .expect("the captured window is in the library");
     assert_eq!(entry.sample_rate, 2_048_000.0);
 
-    let (status, _) = time_machine(
-        &app,
-        ds,
-        serde_json::json!({ "action": "disarm", "node": node }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
+    history(&app, node, "disarm").await;
     assert!(get_state(&app).await.device_sets[0].time_machine.is_none());
 
-    let (status, body) = time_machine(
-        &app,
-        ds,
-        serde_json::json!({ "action": "capture", "node": node }),
-    )
-    .await;
+    let (status, body) = time_machine(&app, node, "capture").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(String::from_utf8_lossy(&body).contains("no time machine"));
 }

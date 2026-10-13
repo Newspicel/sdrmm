@@ -21,6 +21,8 @@ mod sbd;
 mod sensitivity;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::fixture;
 mod u3;
 mod voice;
 mod wideband;
@@ -31,7 +33,7 @@ use crate::acars::block as acars;
 use num_complex::Complex;
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, IridiumParams, IridiumSpan,
+    DecoderFamily, EventKind, IridiumParams, IridiumSpan,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -53,7 +55,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: CHANNEL_RATE,
     has_audio: false,
-    decoder_kind: Some("iridium".to_owned()),
+    emits: vec![EventKind::Iridium],
     ..ChannelDescriptor::default()
 });
 

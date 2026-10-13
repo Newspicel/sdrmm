@@ -16,8 +16,15 @@ fn run(monitor: &mut SpectrumMonitor, samples: &[Complex<f32>], start: u64) -> V
     output
 }
 
+fn keeping() -> SpectrumMonitorNode {
+    SpectrumMonitorNode {
+        keep_clips: true,
+        ..SpectrumMonitorNode::default()
+    }
+}
+
 fn monitor() -> SpectrumMonitor {
-    SpectrumMonitor::new(RATE, CENTER, SpectrumMonitorNode::default()).unwrap()
+    SpectrumMonitor::new(RATE, CENTER, keeping()).unwrap()
 }
 
 fn transmissions(output: &[MonitorOutput]) -> Vec<&Transmission> {
@@ -60,7 +67,7 @@ fn uncertain_noise_is_rejected_before_decoding_or_recording() {
         CENTER,
         SpectrumMonitorNode {
             min_confidence: 0.0,
-            ..Default::default()
+            ..keeping()
         },
     )
     .unwrap();
@@ -142,7 +149,7 @@ fn concurrent_am_and_fm_outside_identifier_span_have_separate_audio_events() {
         CENTER,
         SpectrumMonitorNode {
             min_confidence: 0.0,
-            ..Default::default()
+            ..keeping()
         },
     )
     .unwrap();
@@ -274,8 +281,7 @@ fn simplex_dmr_at_435_125_mhz_is_confirmed() {
     let mut iq = synth::dv::dmr::simplex_transmission(&call, RATE);
     synth::shift(&mut iq, 125_000.0, RATE);
     synth::add_noise(&mut iq, 84, 0.02);
-    let mut monitor =
-        SpectrumMonitor::new(RATE, 435_000_000.0, SpectrumMonitorNode::default()).unwrap();
+    let mut monitor = SpectrumMonitor::new(RATE, 435_000_000.0, keeping()).unwrap();
     let lead = noise(0.2, 87);
     let mut output = run(&mut monitor, &lead, 0);
     output.extend(run(&mut monitor, &iq, lead.len() as u64));
@@ -349,7 +355,7 @@ fn audio_can_be_disabled_without_disabling_events() {
         RATE,
         CENTER,
         SpectrumMonitorNode {
-            record_audio: false,
+            keep_clips: false,
             ..Default::default()
         },
     )
@@ -389,7 +395,7 @@ fn a_carrier_that_starts_modulating_is_reidentified_automatically() {
         CENTER,
         SpectrumMonitorNode {
             min_confidence: 0.0,
-            ..Default::default()
+            ..keeping()
         },
     )
     .unwrap();
@@ -439,7 +445,7 @@ fn a_short_final_window_is_examined_when_the_stream_finishes() {
         CENTER,
         SpectrumMonitorNode {
             min_confidence: 0.0,
-            ..Default::default()
+            ..keeping()
         },
     )
     .unwrap();
@@ -455,7 +461,7 @@ fn a_short_final_window_is_examined_when_the_stream_finishes() {
 #[test]
 fn continuous_audio_is_segmented_without_loss_or_buffer_overflow() {
     let rate = 48_000.0;
-    let mut monitor = SpectrumMonitor::new(rate, CENTER, SpectrumMonitorNode::default()).unwrap();
+    let mut monitor = SpectrumMonitor::new(rate, CENTER, keeping()).unwrap();
     let mut iq = crate::testutil::complex_noise(55, 0.002, 4800);
     for (i, sample) in iq.iter_mut().enumerate() {
         let t = i as f64 / rate;

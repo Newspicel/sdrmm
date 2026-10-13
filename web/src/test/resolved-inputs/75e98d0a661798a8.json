@@ -1,0 +1,27 @@
+{
+  "name": "75e98d0a661798a8",
+  "test": "EventOutputFace > shows the CSV file name",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "csv",
+            "file": "adsb"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

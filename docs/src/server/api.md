@@ -24,7 +24,7 @@ curl -H "Authorization: Bearer $SDRMM_TOKEN" http://receiver.local:8080/api/stat
 | Area | Routes |
 |---|---|
 | State and discovery | `/api/state`, `/api/devices`, `/api/saved-radios`, `/api/channeltypes`, `/api/clients`, `/api/patch/catalog` |
-| Live receiver | `/api/devicesets`: device settings, channels, scanner, hunt, playback, time machine, network export |
+| Nodes | `/api/workspaces/active/nodes/{node}`: `channel` and `device` settings, `actions` (tune, retype, scan, hunt, playback, time machine, network export); `/api/devices/network` adds a network radio |
 | Workspaces | `/api/workspaces`: activate, apply, undo, redo, export, import |
 | Saved setups | `/api/templates`, `/api/presets`, `/api/bookmarks` |
 | Data | `/api/decoderlog`, `/api/recordings`, `/api/audiorecordings`, `/api/calls`, `/api/images`, `/api/occupancy` |

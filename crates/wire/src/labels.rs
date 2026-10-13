@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(labels["cal"]["failed"], "Cal failed");
         assert_eq!(labels["gate"]["tuning_mode"], "Wrong tuning");
         assert_eq!(labels["failure"]["clock_drift"], "Clocks drift {ppm} ppm");
-        assert_eq!(labels["refusal"]["lane_taken"], "that lane is in {label}");
+        assert_eq!(labels["refusal"]["lane_taken"], "That lane is in {holder}");
         assert_eq!(labels["radar_problem"]["refused"], "{text}");
         assert_eq!(labels["phone"]["offline"], "phone offline");
         assert_eq!(labels["phone"]["not_paired"], "phone not paired");

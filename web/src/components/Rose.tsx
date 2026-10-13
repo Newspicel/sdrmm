@@ -196,7 +196,7 @@ function HeadingTick({ deg, centre, outer }: { deg: number; centre: number; oute
   return (
     <path
       d={`M${tip.x.toFixed(2)} ${tip.y.toFixed(2)} L${left.x.toFixed(2)} ${left.y.toFixed(2)} L${right.x.toFixed(2)} ${right.y.toFixed(2)} Z`}
-      className="fill-port-array"
+      className="fill-hue-indigo"
     >
       <title>Array forward</title>
     </path>

@@ -1,7 +1,6 @@
 import {
   Background,
   BackgroundVariant,
-  type Edge,
   type Node,
   ReactFlow,
   useEdgesState,
@@ -26,17 +25,15 @@ import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
 import { useClipboard } from "./clipboard";
 import { useWorkspaceContext } from "./context";
+import { toFlowEdges } from "./flowEdges";
 import { movedGeometry, withGeometry } from "./geometry";
 import {
-  edgeKey,
-  type GraphContext,
   isPinned,
   isResizable,
-  NODE_SIZE,
   nodeOf,
+  nodeSize,
   patchNode,
   pin,
-  portOf,
   removeEdge,
   sameGraph,
   unpin,
@@ -134,14 +131,14 @@ export function Canvas() {
   }, [publish, selectionKey]);
   usePeerDrags(setNodes);
 
-  const { handleNodesChange, handleEdgesChange, onBeforeDelete } = useGraphChanges(
+  const { handleNodesChange, handleEdgesChange } = useGraphChanges(
     workspace,
     onNodesChange,
     onEdgesChange,
     commitGeometry,
   );
 
-  const { isValidConnection, onConnect, onConnectEnd } = useConnections(workspace);
+  const { isValidConnection, onConnect, onConnectStart, onConnectEnd } = useConnections(workspace);
   useFitOnceMeasured();
   const { screenToFlowPosition } = useReactFlow();
 
@@ -205,8 +202,8 @@ export function Canvas() {
           commitGeometry();
         }}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
-        onBeforeDelete={onBeforeDelete}
         isValidConnection={isValidConnection}
         onPaneClick={() => {
           workspace.select(null);
@@ -449,7 +446,7 @@ function ContextMenu({
 
 function toFlowNodes(graph: PatchGraph): Node<FlowData>[] {
   return graph.nodes.map((node) => {
-    const size = (isResizable(node.kind) ? node.size : null) ?? NODE_SIZE[node.kind];
+    const size = (isResizable(node.kind) ? node.size : null) ?? nodeSize(node.kind);
     return {
       id: node.id,
       type: node.kind,
@@ -458,20 +455,6 @@ function toFlowNodes(graph: PatchGraph): Node<FlowData>[] {
       width: isResizable(node.kind) ? size.w : undefined,
       height: size.h,
       dragHandle: ".node-drag",
-    };
-  });
-}
-
-function toFlowEdges(graph: PatchGraph, context: GraphContext): Edge[] {
-  return (graph.edges ?? []).map((edge) => {
-    const carried = portOf(context, graph, edge.from, "out")?.port_type;
-    return {
-      id: edgeKey(edge),
-      source: edge.from.node,
-      sourceHandle: edge.from.port,
-      target: edge.to.node,
-      targetHandle: edge.to.port,
-      className: `wire-${carried}`,
     };
   });
 }

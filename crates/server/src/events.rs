@@ -1,98 +1,43 @@
-use std::collections::HashMap;
-
-use sdrmm_wire::{
-    DecodedRecord, DecoderEvent, EVENTS_PORT, EventFilterNode, NodeBody, PatchGraph,
-    RADAR_TRUTH_PORT, StateSnapshot,
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
 };
 
-const MAX_FILTER_DEPTH: usize = 16;
-const SINK_PORTS: [&str; 2] = [EVENTS_PORT, RADAR_TRUTH_PORT];
+use sdrmm_wire::{
+    DecodedRecord, EventFilterNode, EventKind, Keeps, KindSet, PatchGraph, Payload, PortType,
+    ResolvedNode, ResolvedPatch, Role, present::Presentation,
+};
 
-pub(crate) fn decoder_nodes(
-    graph: &PatchGraph,
-    state: &StateSnapshot,
-) -> HashMap<(u32, u32), String> {
-    let mut sources: HashMap<(u32, u32), String> = crate::workspace::bind(graph, state)
-        .into_iter()
-        .flat_map(|binding| {
-            let device_set = binding.device_set;
-            binding
-                .channels
-                .into_iter()
-                .map(move |(node, channel)| ((device_set, channel), node))
-        })
-        .collect();
-    for system in &state.trunk_systems {
-        for follower in &system.followers {
-            sources
-                .entry((follower.device_set, follower.channel))
-                .or_insert_with(|| system.node.clone());
-        }
-        if let Some(control) = &system.control {
-            sources
-                .entry((control.device_set, control.channel))
-                .or_insert_with(|| system.node.clone());
-        }
-    }
-    sources
-}
+mod stations;
+
+pub(crate) use stations::Stations;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct EventPath {
-    pub source: String,
+pub(crate) struct Route {
+    pub sink: String,
     pub filters: Vec<EventFilterNode>,
+    pub accepts: KindSet,
 }
 
-impl EventPath {
-    pub(crate) fn passes(&self, event: &DecoderEvent) -> bool {
-        self.filters.iter().all(|filter| filter.passes(event))
+impl Route {
+    fn passes(&self, kind: EventKind, view: &Presentation) -> bool {
+        self.filters.iter().all(|filter| filter.admits(kind, view))
     }
-}
-
-pub(crate) fn paths_into(graph: &PatchGraph, sink: &str) -> Vec<EventPath> {
-    let mut paths = Vec::new();
-    for port in SINK_PORTS {
-        walk(graph, (sink, port), &mut Vec::new(), &mut paths, 0);
-    }
-    paths
-}
-
-fn walk(
-    graph: &PatchGraph,
-    (node, port): (&str, &str),
-    filters: &mut Vec<EventFilterNode>,
-    paths: &mut Vec<EventPath>,
-    depth: usize,
-) {
-    if depth > MAX_FILTER_DEPTH {
-        return;
-    }
-    for source in graph.sources_of(node, port) {
-        match graph.node(source).map(|found| &found.body) {
-            Some(NodeBody::EventFilter(settings)) => {
-                filters.push(settings.clone());
-                walk(graph, (source, EVENTS_PORT), filters, paths, depth + 1);
-                filters.pop();
-            }
-            _ => paths.push(EventPath {
-                source: source.to_owned(),
-                filters: filters.clone(),
-            }),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Sink {
-    pub node: String,
-    pub paths: Vec<EventPath>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct Routes {
+pub(crate) struct EventRoutes {
     pub workspace: Option<i64>,
-    pub sinks: Vec<Sink>,
-    pub sources: HashMap<(u32, u32), String>,
+    by_source: HashMap<String, Vec<Route>>,
+    history: HashSet<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RouteOutcome {
+    Delivered,
+    Ignored,
+    Unrouted,
+    Unattributed,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -100,564 +45,131 @@ pub(crate) struct Routed {
     pub record: DecodedRecord,
     pub source: Option<String>,
     pub workspace: Option<i64>,
+    pub history: bool,
 }
 
 #[cfg(test)]
 impl Routed {
     pub(crate) fn unattributed(record: DecodedRecord) -> Self {
         Self {
+            source: record.origin.as_ref().map(|origin| origin.node.clone()),
             record,
-            source: None,
             workspace: None,
+            history: true,
         }
     }
 }
 
-impl Routes {
-    pub(crate) fn resolve(workspace: i64, graph: &PatchGraph, state: &StateSnapshot) -> Self {
-        let sinks = graph
+fn accepts(node: &ResolvedNode, port: &str) -> KindSet {
+    match node.input(port).map(|port| &port.spec.payload) {
+        Some(Payload::Events { kinds }) => *kinds,
+        _ => KindSet::EMPTY,
+    }
+}
+
+fn filters_on(via: &[String], graph: &PatchGraph) -> Vec<EventFilterNode> {
+    via.iter()
+        .filter_map(|id| graph.node(id)?.body.event_rule().cloned())
+        .collect()
+}
+
+impl EventRoutes {
+    pub(crate) fn resolve(patch: &ResolvedPatch, graph: &PatchGraph) -> Self {
+        let mut by_source: HashMap<String, Vec<Route>> = HashMap::new();
+        let mut history = HashSet::new();
+        let sinks = patch
             .nodes
             .iter()
-            .filter(|node| !matches!(node.body, NodeBody::EventFilter(_)))
-            .filter_map(|node| {
-                let paths = paths_into(graph, &node.id);
-                (!paths.is_empty()).then(|| Sink {
-                    node: node.id.clone(),
-                    paths,
-                })
-            })
-            .collect();
+            .filter(|node| !matches!(node.kind.role(), Role::Pass(_)));
+        for node in sinks {
+            for port in node
+                .inputs()
+                .filter(|port| port.spec.port_type == PortType::Events)
+            {
+                if port.spec.keeps.contains(&Keeps::History) {
+                    history.insert(node.id.clone());
+                }
+                for feed in &port.feeds {
+                    by_source
+                        .entry(feed.source.clone())
+                        .or_default()
+                        .push(Route {
+                            sink: node.id.clone(),
+                            filters: filters_on(&feed.via, graph),
+                            accepts: accepts(node, &port.spec.name),
+                        });
+                }
+            }
+        }
         Self {
-            workspace: Some(workspace),
-            sinks,
-            sources: decoder_nodes(graph, state),
+            workspace: patch.workspace,
+            by_source,
+            history,
         }
     }
 
-    pub(crate) fn route(&self, mut record: DecodedRecord) -> Routed {
-        let source = record
-            .origin
-            .as_ref()
-            .map(|origin| origin.node.clone())
-            .or_else(|| {
-                self.sources
-                    .get(&(record.device_set, record.channel))
-                    .cloned()
-            });
-        record.sinks = source
-            .as_deref()
-            .map_or_else(Vec::new, |source| self.reached(source, &record.event));
-        Routed {
-            record,
-            source,
-            workspace: self.workspace,
-        }
+    pub(crate) fn keeps_history(&self, sinks: &[String]) -> bool {
+        sinks.iter().any(|sink| self.history.contains(sink))
     }
 
-    fn reached(&self, source: &str, event: &DecoderEvent) -> Vec<String> {
-        self.sinks
+    pub(crate) fn routes_from(&self, source: &str) -> &[Route] {
+        self.by_source.get(source).map_or(&[], Vec::as_slice)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reaches(&self, source: &str, sink: &str) -> bool {
+        self.routes_from(source)
             .iter()
-            .filter(|sink| {
-                sink.paths
-                    .iter()
-                    .any(|path| path.source == source && path.passes(event))
-            })
-            .map(|sink| sink.node.clone())
-            .collect()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use sdrmm_wire::{
-        ChannelNode, PatchEdge, PatchNode, PortRef, Position, RttyText, TrunkControl,
-        TrunkFollower, TrunkSystemStatus,
-    };
-
-    use super::*;
-
-    fn node(id: &str, body: NodeBody) -> PatchNode {
-        PatchNode {
-            id: id.to_owned(),
-            body,
-            position: Position { x: 0.0, y: 0.0 },
-            size: None,
-            label: None,
-        }
+            .any(|route| route.sink == sink)
     }
 
-    fn channel(id: &str) -> PatchNode {
-        node(
-            id,
-            NodeBody::Channel(ChannelNode {
-                channel_type: "dmr".to_owned(),
-                tuning_locked: false,
-            }),
-        )
-    }
-
-    fn filter(id: &str, settings: EventFilterNode) -> PatchNode {
-        node(id, NodeBody::EventFilter(settings))
-    }
-
-    fn edge(from: &str, to: &str) -> PatchEdge {
-        PatchEdge {
-            from: PortRef {
-                node: from.to_owned(),
-                port: "events".to_owned(),
-            },
-            to: PortRef {
-                node: to.to_owned(),
-                port: "events".to_owned(),
-            },
-        }
-    }
-
-    fn only(kind: &str) -> EventFilterNode {
-        EventFilterNode {
-            kinds: vec![kind.to_owned()],
-            ..EventFilterNode::default()
-        }
-    }
-
-    fn rtty() -> DecoderEvent {
-        DecoderEvent::Rtty(RttyText {
-            text: "CQ".to_owned(),
+    pub(crate) fn admits(
+        &self,
+        source: &str,
+        sink: &str,
+        kind: EventKind,
+        view: &Presentation,
+    ) -> bool {
+        self.routes_from(source).iter().any(|route| {
+            route.sink == sink
+                && route.accepts.contains(kind)
+                && route.filters.iter().all(|filter| filter.admits(kind, view))
         })
     }
 
-    #[test]
-    fn a_direct_wire_carries_no_filter() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![edge("dmr", "chat")],
+    pub(crate) fn route(
+        &self,
+        record: &mut DecodedRecord,
+        stations: &mut Stations,
+    ) -> RouteOutcome {
+        let Some(source) = record.origin.as_ref().map(|origin| origin.node.clone()) else {
+            record.sinks.clear();
+            return RouteOutcome::Unattributed;
         };
-
-        let paths = paths_into(&graph, "chat");
-
-        assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].source, "dmr");
-        assert!(paths[0].filters.is_empty());
-        assert!(paths[0].passes(&rtty()));
-    }
-
-    #[test]
-    fn a_filter_in_the_middle_names_the_decoder_behind_it() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![edge("dmr", "only-calls"), edge("only-calls", "chat")],
-        };
-
-        let paths = paths_into(&graph, "chat");
-
-        assert_eq!(paths.len(), 1);
-        assert_eq!(
-            paths[0].source, "dmr",
-            "the decoder, not the filter, is the source"
-        );
-        assert!(!paths[0].passes(&rtty()));
-    }
-
-    #[test]
-    fn a_chain_of_filters_all_have_to_agree() {
-        let strict = EventFilterNode {
-            talkgroups: vec![505],
-            ..EventFilterNode::default()
-        };
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                filter("kind", only("call")),
-                filter("group", strict),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![
-                edge("dmr", "kind"),
-                edge("kind", "group"),
-                edge("group", "chat"),
-            ],
-        };
-
-        let paths = paths_into(&graph, "chat");
-
-        assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].filters.len(), 2);
-        assert!(!paths[0].passes(&rtty()));
-    }
-
-    #[test]
-    fn one_filter_can_serve_several_decoders() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                channel("p25"),
-                filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![
-                edge("dmr", "only-calls"),
-                edge("p25", "only-calls"),
-                edge("only-calls", "chat"),
-            ],
-        };
-
-        let mut sources: Vec<String> = paths_into(&graph, "chat")
-            .into_iter()
-            .map(|path| path.source)
-            .collect();
-        sources.sort();
-
-        assert_eq!(sources, vec!["dmr".to_owned(), "p25".to_owned()]);
-    }
-
-    #[test]
-    fn a_decoder_can_reach_one_sink_filtered_and_unfiltered() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![
-                edge("dmr", "only-calls"),
-                edge("only-calls", "chat"),
-                edge("dmr", "chat"),
-            ],
-        };
-
-        let paths = paths_into(&graph, "chat");
-
-        assert_eq!(paths.len(), 2);
-        assert!(paths.iter().any(|path| path.passes(&rtty())));
-        assert!(paths.iter().any(|path| !path.passes(&rtty())));
-    }
-
-    #[test]
-    fn a_trunk_system_owns_the_control_channel_it_opened_as_well_as_its_traffic() {
-        let graph = PatchGraph {
-            nodes: vec![node("trunk", NodeBody::DmrTrunk(Default::default()))],
-            edges: Vec::new(),
-        };
-        let state = StateSnapshot {
-            trunk_systems: vec![TrunkSystemStatus {
-                node: "trunk".to_owned(),
-                detected: None,
-                carriers: 1,
-                control: Some(TrunkControl {
-                    device_set: 1,
-                    channel: 9,
-                    freq_hz: 451_012_500,
-                }),
-                followers: vec![TrunkFollower {
-                    device_set: 1,
-                    channel: 10,
-                    logical_channel: Some(22),
-                    slot: 2,
-                    freq_hz: 451_125_000,
-                }],
-                problems: Vec::new(),
-                channel_map: Vec::new(),
-                probes: Vec::new(),
-                searching: 0,
-                candidates: 0,
-                other_control_hz: Vec::new(),
-                color_code: None,
-            }],
-            ..StateSnapshot::default()
-        };
-
-        let sources = decoder_nodes(&graph, &state);
-
-        assert_eq!(sources.get(&(1, 9)).map(String::as_str), Some("trunk"));
-        assert_eq!(sources.get(&(1, 10)).map(String::as_str), Some("trunk"));
-    }
-
-    #[test]
-    fn a_sink_with_nothing_wired_in_has_no_path() {
-        let graph = PatchGraph {
-            nodes: vec![node("chat", NodeBody::DecoderLog(Default::default()))],
-            edges: Vec::new(),
-        };
-        assert!(paths_into(&graph, "chat").is_empty());
-    }
-
-    #[test]
-    fn a_loop_that_slipped_past_validation_still_terminates() {
-        let graph = PatchGraph {
-            nodes: vec![
-                filter("a", EventFilterNode::default()),
-                filter("b", EventFilterNode::default()),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![edge("a", "b"), edge("b", "a"), edge("b", "chat")],
-        };
-
-        let paths = paths_into(&graph, "chat");
-
-        assert!(paths.len() <= MAX_FILTER_DEPTH + 1);
-    }
-
-    fn decoded(device_set: u32, channel: u32, event: DecoderEvent) -> DecodedRecord {
-        DecodedRecord {
-            origin: None,
-            device_set,
-            channel,
-            at: "2026-09-21T10:00:00Z".to_owned(),
-            freq_hz: 14_080_000.0,
-            event,
-            sinks: Vec::new(),
-            callsign: None,
+        let view = record.event.present();
+        let judged = stations.judged(&source, record, &view, Instant::now());
+        record.view = Some(view);
+        let kind = record.event.kind();
+        let mut sinks: Vec<String> = Vec::new();
+        let mut ignored = false;
+        for route in self.routes_from(&source) {
+            if sinks.contains(&route.sink) || !route.passes(kind, &judged) {
+                continue;
+            }
+            if route.accepts.contains(kind) {
+                sinks.push(route.sink.clone());
+            } else {
+                ignored = true;
+            }
         }
-    }
-
-    fn routes_over(graph: &PatchGraph) -> Routes {
-        Routes {
-            sources: HashMap::from([((1, 2), "dmr".to_owned())]),
-            ..Routes::resolve(7, graph, &StateSnapshot::default())
+        record.sinks = sinks;
+        match (record.sinks.is_empty(), ignored) {
+            (false, _) => RouteOutcome::Delivered,
+            (true, true) => RouteOutcome::Ignored,
+            (true, false) => RouteOutcome::Unrouted,
         }
-    }
-
-    #[test]
-    fn every_node_fed_by_an_events_wire_is_a_sink_but_a_filter_is_not() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-                node("export", NodeBody::Export),
-                node("idle", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![
-                edge("dmr", "only-calls"),
-                edge("only-calls", "chat"),
-                edge("dmr", "export"),
-            ],
-        };
-
-        let routes = routes_over(&graph);
-        let mut sinks: Vec<&str> = routes.sinks.iter().map(|sink| sink.node.as_str()).collect();
-        sinks.sort_unstable();
-
-        assert_eq!(sinks, vec!["chat", "export"]);
-        assert_eq!(routes.workspace, Some(7));
-    }
-
-    #[test]
-    fn a_routed_record_names_the_sinks_it_reached_after_every_filter() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-                node("export", NodeBody::Export),
-            ],
-            edges: vec![
-                edge("dmr", "only-calls"),
-                edge("only-calls", "chat"),
-                edge("dmr", "export"),
-            ],
-        };
-        let routes = routes_over(&graph);
-
-        let routed = routes.route(decoded(1, 2, rtty()));
-
-        assert_eq!(routed.source.as_deref(), Some("dmr"));
-        assert_eq!(routed.workspace, Some(7));
-        assert_eq!(routed.record.sinks, vec!["export".to_owned()]);
-    }
-
-    #[test]
-    fn a_drop_filter_on_the_wire_removes_what_it_names() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                filter(
-                    "no-cq",
-                    EventFilterNode {
-                        mode: sdrmm_wire::FilterMode::Drop,
-                        contains: Some("cq".to_owned()),
-                        ..EventFilterNode::default()
-                    },
-                ),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![edge("dmr", "no-cq"), edge("no-cq", "chat")],
-        };
-        let routes = routes_over(&graph);
-
-        assert!(routes.route(decoded(1, 2, rtty())).record.sinks.is_empty());
-        let other = DecoderEvent::Rtty(RttyText {
-            text: "73".to_owned(),
-        });
-        assert_eq!(
-            routes.route(decoded(1, 2, other)).record.sinks,
-            vec!["chat".to_owned()]
-        );
-    }
-
-    #[test]
-    fn a_record_from_an_unbound_channel_reaches_nothing() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![edge("dmr", "chat")],
-        };
-        let routes = routes_over(&graph);
-
-        let routed = routes.route(decoded(9, 9, rtty()));
-
-        assert_eq!(routed.source, None);
-        assert!(routed.record.sinks.is_empty());
-    }
-
-    fn adsb_channel(id: &str) -> PatchNode {
-        node(
-            id,
-            NodeBody::Channel(ChannelNode {
-                channel_type: "adsb".to_owned(),
-                tuning_locked: false,
-            }),
-        )
-    }
-
-    fn into_truth(from: &str) -> PatchEdge {
-        PatchEdge {
-            to: PortRef {
-                node: "radar".to_owned(),
-                port: sdrmm_wire::RADAR_TRUTH_PORT.to_owned(),
-            },
-            ..edge(from, "radar")
-        }
-    }
-
-    #[test]
-    fn only_decoders_wired_into_adsb_feed_truth() {
-        let graph = PatchGraph {
-            nodes: vec![
-                adsb_channel("wired"),
-                adsb_channel("filtered"),
-                adsb_channel("logged"),
-                filter("quiet", EventFilterNode::default()),
-                node(
-                    "radar",
-                    NodeBody::PassiveRadar(sdrmm_wire::PassiveRadarNode::default()),
-                ),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![
-                into_truth("wired"),
-                edge("filtered", "quiet"),
-                into_truth("quiet"),
-                edge("logged", "chat"),
-            ],
-        };
-        let routes = Routes {
-            sources: HashMap::from([
-                ((1, 1), "wired".to_owned()),
-                ((1, 2), "filtered".to_owned()),
-                ((1, 3), "logged".to_owned()),
-            ]),
-            ..Routes::resolve(7, &graph, &StateSnapshot::default())
-        };
-        let aircraft = || {
-            DecoderEvent::Adsb(sdrmm_wire::AdsbMessage {
-                icao: "3c6444".to_owned(),
-                ..sdrmm_wire::AdsbMessage::default()
-            })
-        };
-
-        assert_eq!(
-            routes.route(decoded(1, 1, aircraft())).record.sinks,
-            ["radar"]
-        );
-        assert_eq!(
-            routes.route(decoded(1, 2, aircraft())).record.sinks,
-            ["radar"],
-            "a filter between the decoder and adsb still counts"
-        );
-        assert_eq!(
-            routes.route(decoded(1, 3, aircraft())).record.sinks,
-            ["chat"],
-            "a decoder wired elsewhere feeds no truth"
-        );
-    }
-
-    #[test]
-    fn one_open_wire_is_enough_to_reach_a_sink_once() {
-        let graph = PatchGraph {
-            nodes: vec![
-                channel("dmr"),
-                filter("only-calls", only("call")),
-                node("chat", NodeBody::DecoderLog(Default::default())),
-            ],
-            edges: vec![
-                edge("dmr", "only-calls"),
-                edge("only-calls", "chat"),
-                edge("dmr", "chat"),
-            ],
-        };
-        let routes = routes_over(&graph);
-
-        assert_eq!(
-            routes.route(decoded(1, 2, rtty())).record.sinks,
-            vec!["chat".to_owned()]
-        );
     }
 }
 
 #[cfg(test)]
-mod monitor_tests {
-    use super::*;
-
-    #[test]
-    fn monitor_origin_routes_through_filters_without_claiming_a_manual_channel() {
-        let mut routes = Routes::default();
-        routes.sources.insert((1, 0), "manual".to_owned());
-        routes.sinks.push(Sink {
-            node: "export".to_owned(),
-            paths: vec![EventPath {
-                source: "monitor".to_owned(),
-                filters: vec![EventFilterNode {
-                    kinds: vec!["pocsag".to_owned()],
-                    ..Default::default()
-                }],
-            }],
-        });
-        let mut record = DecodedRecord {
-            origin: Some(sdrmm_wire::EventOrigin {
-                node: "monitor".to_owned(),
-                transmission: 7,
-            }),
-            device_set: 1,
-            channel: 0,
-            at: "2026-09-21T00:00:00Z".to_owned(),
-            freq_hz: 145_000_000.0,
-            event: DecoderEvent::Pocsag(sdrmm_wire::PocsagMessage {
-                address: 42,
-                function: 3,
-                baud: 1200,
-                payload: sdrmm_wire::PocsagPayload::Alpha,
-                text: "hello".to_owned(),
-                errors_corrected: 0,
-            }),
-            sinks: Vec::new(),
-            callsign: None,
-        };
-        let routed = routes.route(record.clone());
-        assert_eq!(routed.source.as_deref(), Some("monitor"));
-        assert_eq!(routed.record.sinks, ["export"]);
-        record.event = DecoderEvent::Rtty(sdrmm_wire::RttyText {
-            text: "blocked".to_owned(),
-        });
-        assert!(routes.route(record).record.sinks.is_empty());
-    }
-}
+mod tests;

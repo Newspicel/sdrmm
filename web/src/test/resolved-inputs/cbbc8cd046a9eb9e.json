@@ -1,0 +1,28 @@
+{
+  "name": "cbbc8cd046a9eb9e",
+  "test": "EventOutputFace > puts the service and its fields on chips",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "mqtt",
+            "broker_url": "mqtt://broker",
+            "topic": "sdr"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

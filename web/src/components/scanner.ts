@@ -129,10 +129,10 @@ export function stateLabel(status: ScannerStatus): string {
 
 export function liveStatus(
   set: DeviceSet | null,
-  channel: number | null,
+  node: string,
   pushed: ScannerStatus | undefined,
 ): ScannerStatus | null {
-  const listed = set?.scanners?.find((scanner) => scanner.settings.channel === channel);
+  const listed = set?.scanners?.find((scanner) => scanner.settings.node === node);
   if (listed === undefined) {
     return null;
   }

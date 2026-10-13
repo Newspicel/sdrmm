@@ -1,0 +1,163 @@
+{
+  "name": "0211f05e52a45101",
+  "test": "TriangulationFace > shows the estimate, guidance, stations and lost bearings",
+  "graph": {
+    "nodes": [
+      {
+        "id": "finder",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "df",
+        "data": {
+          "settings": {
+            "algorithm": "music",
+            "source_rule": "dominance",
+            "max_peaks": 2,
+            "smoothing": 0,
+            "forward_backward": false,
+            "elevation": false,
+            "ula_side": "both",
+            "offset_hz": 0,
+            "bandwidth_hz": 20000,
+            "report_ms": 500,
+            "carry_over": 0.5,
+            "squelch_db": 6,
+            "loading": 0.001,
+            "azimuth_step_deg": 1,
+            "yaw_gate_dps": 20
+          }
+        }
+      },
+      {
+        "id": "walk",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "hunt",
+        "data": {
+          "clicks": true,
+          "sweep": {
+            "beamwidth_deg": 60,
+            "front_back_db": 15,
+            "min_span_deg": 180,
+            "min_contrast_db": 6,
+            "mount_offset_deg": 0
+          }
+        }
+      },
+      {
+        "id": "filter",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "event_filter",
+        "data": {
+          "mode": "keep",
+          "kinds": [],
+          "stations": [],
+          "talkgroups": [],
+          "radios": [],
+          "min_duration_ms": 0
+        }
+      },
+      {
+        "id": "east",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "df",
+        "data": {
+          "settings": {
+            "algorithm": "music",
+            "source_rule": "dominance",
+            "max_peaks": 2,
+            "smoothing": 0,
+            "forward_backward": false,
+            "elevation": false,
+            "ula_side": "both",
+            "offset_hz": 0,
+            "bandwidth_hz": 20000,
+            "report_ms": 500,
+            "carry_over": 0.5,
+            "squelch_db": 6,
+            "loading": 0.001,
+            "azimuth_step_deg": 1,
+            "yaw_gate_dps": 20
+          }
+        }
+      },
+      {
+        "id": "tri",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "triangulation",
+        "data": {
+          "settings": {
+            "decay": {
+              "kind": "auto"
+            },
+            "extent_km": 12.8,
+            "nav": "auto",
+            "probe_km": 5,
+            "min_confidence": 0.05,
+            "max_emitters": 3,
+            "align": true
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "finder",
+          "port": "events"
+        },
+        "to": {
+          "node": "tri",
+          "port": "events"
+        }
+      },
+      {
+        "from": {
+          "node": "walk",
+          "port": "events"
+        },
+        "to": {
+          "node": "tri",
+          "port": "events"
+        }
+      },
+      {
+        "from": {
+          "node": "east",
+          "port": "events"
+        },
+        "to": {
+          "node": "filter",
+          "port": "events"
+        }
+      },
+      {
+        "from": {
+          "node": "filter",
+          "port": "events"
+        },
+        "to": {
+          "node": "tri",
+          "port": "events"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

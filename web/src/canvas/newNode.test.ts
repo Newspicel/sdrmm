@@ -1,16 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { NodeKind, PatchCatalog, PatchNodeOf } from "../lib/types";
+import type { PatchCatalog, PatchNodeOf } from "../lib/types";
 import { CATALOG } from "../test/catalog";
-import {
-  carriesSettings,
-  defaultBody,
-  huntSweepOf,
-  newNodeBody,
-  settingsOf,
-  startsOnItsOwn,
-} from "./newNode";
+import { carriesSettings, defaultBody, huntSweepOf, newNodeBody, settingsOf } from "./newNode";
 
-const KINDS = CATALOG.nodes.map((entry) => entry.kind as NodeKind);
+const KINDS = CATALOG.nodes.map((entry) => entry.kind);
 
 describe("newNodeBody", () => {
   it("takes every body from the catalog", () => {
@@ -18,7 +11,7 @@ describe("newNodeBody", () => {
       if (entry.kind === "channel") {
         continue;
       }
-      expect(newNodeBody(CATALOG, entry.kind as NodeKind)).toEqual(entry.default_body);
+      expect(newNodeBody(CATALOG, entry.kind)).toEqual(entry.default_body);
     }
   });
 
@@ -31,7 +24,7 @@ describe("newNodeBody", () => {
   });
 
   it("returns null for an unknown kind", () => {
-    const empty: PatchCatalog = { nodes: [] };
+    const empty: PatchCatalog = { nodes: [], port_types: [], event_kinds: [] };
     expect(newNodeBody(empty, "array")).toBeNull();
     expect(defaultBody(empty, "scope")).toBeNull();
   });
@@ -58,12 +51,7 @@ describe("newNodeBody", () => {
   it("knows which kinds carry no settings", () => {
     expect(carriesSettings(CATALOG, "scope")).toBe(false);
     expect(carriesSettings(CATALOG, "triangulation")).toBe(true);
-    expect(carriesSettings({ nodes: [] }, "df")).toBe(false);
-  });
-
-  it("starts only a signal generator on its own", () => {
-    expect(startsOnItsOwn("signal_gen")).toBe(true);
-    expect(startsOnItsOwn("device")).toBe(false);
+    expect(carriesSettings({ nodes: [], port_types: [], event_kinds: [] }, "df")).toBe(false);
   });
 });
 
@@ -94,6 +82,6 @@ describe("huntSweepOf", () => {
     expect(fallback?.beamwidth_deg).toBe(60);
     const mounted = { ...walk, data: { sweep: { ...fallback, mount_offset_deg: -90 } } };
     expect(huntSweepOf(mounted as PatchNodeOf<"hunt">, CATALOG)?.mount_offset_deg).toBe(-90);
-    expect(huntSweepOf(walk, { nodes: [] })).toBeNull();
+    expect(huntSweepOf(walk, { nodes: [], port_types: [], event_kinds: [] })).toBeNull();
   });
 });

@@ -1,0 +1,87 @@
+{
+  "name": "050aa5f49f60242e",
+  "test": "ChannelFace > names no satellite that drives it without a wire",
+  "graph": {
+    "nodes": [
+      {
+        "id": "radio",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "band"
+          }
+        }
+      },
+      {
+        "id": "ble",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "channel",
+        "data": {
+          "channel_type": "ble"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "radio",
+          "port": "iq"
+        },
+        "to": {
+          "node": "ble",
+          "port": "iq"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "band",
+          "label": "Test band"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "extra": [],
+          "duplex": "rx_only"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [
+          {
+            "id": 3,
+            "stream": 0,
+            "rejected": 0,
+            "skipped": 0,
+            "settings": {
+              "frequency_hz": 2426000000,
+              "params": {
+                "type": "ble",
+                "settings": {
+                  "link": "channel"
+                }
+              }
+            }
+          }
+        ],
+        "overruns": 0
+      }
+    ],
+    "revision": 0
+  }
+}

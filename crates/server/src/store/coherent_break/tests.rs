@@ -396,6 +396,7 @@ fn an_old_export_loses_the_settings_of_dropped_nodes() {
         json!([{ "node": "device", "settings": { "center_hz": 433_920_000.0 } }])
     );
     assert_eq!(export["state"]["channels"], json!([]));
+    export["version"] = json!(sdrmm_wire::WORKSPACE_EXPORT_VERSION);
     let read: sdrmm_wire::WorkspaceExport =
         crate::json::from_value(&export).expect("the upgraded export reads");
     read.validate().expect("and is valid");

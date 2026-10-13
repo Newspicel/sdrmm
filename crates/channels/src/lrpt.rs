@@ -16,8 +16,8 @@ use num_complex::Complex;
 use packet::Depacketizer;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, LrptImage,
-    LrptMode, LrptParams,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    LrptImage, LrptMode, LrptParams,
 };
 
 use crate::{
@@ -42,7 +42,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
-    decoder_kind: Some("lrpt".to_owned()),
+    emits: vec![EventKind::Lrpt],
     ..ChannelDescriptor::default()
 });
 

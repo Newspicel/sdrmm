@@ -10,7 +10,7 @@ use sdrmm_modem::{
 };
 use sdrmm_wire::{
     AdsbMessage, AdsbParams, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, PositionFix,
+    DecoderFamily, EventKind, PositionFix,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -77,7 +77,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    decoder_kind: Some("adsb".to_owned()),
+    emits: vec![EventKind::Adsb],
     needs_position: true,
     ..ChannelDescriptor::default()
 });

@@ -1,9 +1,12 @@
 use sdrmm_wire::{
-    ArrayTuneRequest, HuntMission, Mission, MissionAction, MissionBody, PatchGraph, SurveyAction,
+    HuntAction, HuntMission, Mission, MissionAction, MissionBody, NodeAction, SurveyAction,
 };
 
-use super::{MissionRefusal, hunt, mission};
-use crate::{AppState, array, df_fusion, placement, rest::AppError, workspace};
+use super::{MissionRefusal, mission};
+use crate::{
+    AppState, array, df_fusion,
+    rest::{self, AppError},
+};
 
 pub(crate) fn act(
     state: &AppState,
@@ -11,27 +14,28 @@ pub(crate) fn act(
     action: MissionAction,
     author: Option<&str>,
 ) -> Result<Mission, AppError> {
-    let (graph, mission) = current(state, node)?;
+    let mission = current(state, node)?;
     if !mission.controls.contains(&action.control()) {
         return Err(MissionRefusal::NotAControl.into());
     }
-    dispatch(state, &graph, &mission, action, author)?;
-    Ok(current(state, node)?.1)
+    dispatch(state, &mission, action, author)?;
+    current(state, node)
 }
 
-fn current(state: &AppState, node: &str) -> Result<(PatchGraph, Mission), AppError> {
-    Ok(mission(state, node)?.ok_or_else(|| MissionRefusal::NoMission(node.to_owned()))?)
+fn current(state: &AppState, node: &str) -> Result<Mission, AppError> {
+    Ok(mission(state, node)?
+        .ok_or_else(|| MissionRefusal::NoMission(node.to_owned()))?
+        .1)
 }
 
 fn dispatch(
     state: &AppState,
-    graph: &PatchGraph,
     mission: &Mission,
     action: MissionAction,
     author: Option<&str>,
 ) -> Result<(), AppError> {
     match &mission.body {
-        MissionBody::Hunt(hunt) => hunt_action(state, graph, (&mission.node, hunt), action, author),
+        MissionBody::Hunt(hunt) => hunt_action(state, (&mission.node, hunt), action, author),
         MissionBody::Df(df) => array_action(state, df.array.as_deref(), action),
         MissionBody::Radar(radar) => array_action(state, radar.array.as_deref(), action),
         MissionBody::Survey(_) => survey_action(state, &mission.node, action),
@@ -44,49 +48,33 @@ fn dispatch(
 
 fn hunt_action(
     state: &AppState,
-    graph: &PatchGraph,
     (node, hunt): (&str, &HuntMission),
     action: MissionAction,
     author: Option<&str>,
 ) -> Result<(), AppError> {
     let target = hunt.target.as_ref().ok_or(MissionRefusal::NotRunning)?;
-    let (ds, ch) = (target.device_set, target.channel);
-    let engine = &state.engine;
-    match action {
+    let action = match action {
         MissionAction::Tune { frequency_hz } => {
-            return tune_channel(state, (ds, ch), frequency_hz, author);
+            return tune(state, &target.channel_node, frequency_hz, author);
         }
-        MissionAction::StartHunt | MissionAction::StopSweep => {
-            engine.start_hunt(ds, hunt::settings(graph, node, ch))?;
-        }
-        MissionAction::StopHunt => {
-            engine.stop_hunt(ds, ch)?;
-        }
-        MissionAction::StartSweep => {
-            engine.sweep_hunt(ds, ch, Some(hunt::settings(graph, node, ch)))?;
-        }
-        MissionAction::Mark => {
-            engine.hunt_mark(ds, ch)?;
-        }
+        MissionAction::StartHunt | MissionAction::StopSweep => HuntAction::Start,
+        MissionAction::StopHunt => HuntAction::Stop,
+        MissionAction::StartSweep => HuntAction::Sweep,
+        MissionAction::Mark => HuntAction::Mark,
         _ => return Err(MissionRefusal::NotAControl.into()),
-    }
+    };
+    rest::controlled(rest::act(state, node, NodeAction::Hunt(action), None)?)?;
     Ok(())
 }
 
-fn tune_channel(
+fn tune(
     state: &AppState,
-    (ds, ch): (u32, u32),
+    node: &str,
     frequency_hz: f64,
     author: Option<&str>,
 ) -> Result<(), AppError> {
-    let frequency_hz = positive(frequency_hz)?;
-    let _serialized = crate::rest::lock_gate(&state.apply_gate);
-    let edit = workspace::begin_edit(state, ds, Some(ch), author);
-    state.engine.tune_channel(ds, ch, frequency_hz)?;
-    if let Some(edit) = edit {
-        workspace::finish_edit(state, edit);
-    }
-    placement::settle_active(state);
+    let freq_hz = positive(frequency_hz)?;
+    rest::act(state, node, NodeAction::Tune { freq_hz }, author)?;
     Ok(())
 }
 
@@ -97,14 +85,7 @@ fn array_action(
 ) -> Result<(), AppError> {
     let array = array.ok_or(MissionRefusal::NotRunning)?;
     match action {
-        MissionAction::Tune { frequency_hz } => array::tune(
-            state,
-            array,
-            ArrayTuneRequest {
-                center_hz: Some(positive(frequency_hz)?),
-                gain: None,
-            },
-        ),
+        MissionAction::Tune { frequency_hz } => tune(state, array, frequency_hz, None),
         MissionAction::Calibrate => array::calibrate(state, array),
         _ => Err(MissionRefusal::NotAControl.into()),
     }

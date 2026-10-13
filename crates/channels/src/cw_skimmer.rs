@@ -4,7 +4,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Ddc, Decimator, NoiseFloor, SpectrumAnalyzer, design_lowpass};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, CwSkimmerParams, CwSkimmerSpot,
-    DecoderEvent, DecoderFamily, MorseParams,
+    DecoderEvent, DecoderFamily, EventKind, MorseParams,
 };
 
 use crate::{
@@ -44,7 +44,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 24_000.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("cw_skimmer".to_owned()),
+    emits: vec![EventKind::CwSkimmer],
     ..ChannelDescriptor::default()
 });
 

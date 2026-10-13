@@ -15,21 +15,21 @@ function graph(wired: boolean): PatchGraph {
 }
 
 describe("spreadArrayEdit", () => {
-  it("spreads the wired array", () => {
-    const next = spreadArrayEdit(graph(true), "wide");
+  it("spreads the array feeding the stitch", () => {
+    const next = spreadArrayEdit(graph(true), "arr");
     const array = next === null ? undefined : nodeOf(next, "arr");
     expect(array?.kind === "array" ? array.data.tuning : null).toBe("spread");
-    expect(next === null ? true : needsSpread(next, "wide", null)).toBe(false);
+    expect(next === null ? true : needsSpread(next, "arr", null)).toBe(false);
   });
 
   it("returns null with no array", () => {
-    expect(spreadArrayEdit(graph(false), "wide")).toBeNull();
+    expect(spreadArrayEdit(graph(false), null)).toBeNull();
   });
 
   it("asks for spread while the array tunes lanes together or the gate says so", () => {
-    expect(needsSpread(graph(true), "wide", null)).toBe(true);
-    expect(needsSpread(graph(false), "wide", null)).toBe(false);
-    expect(needsSpread(graph(false), "wide", "tuning_mode")).toBe(true);
+    expect(needsSpread(graph(true), "arr", null)).toBe(true);
+    expect(needsSpread(graph(false), null, null)).toBe(false);
+    expect(needsSpread(graph(false), null, "tuning_mode")).toBe(true);
   });
 });
 

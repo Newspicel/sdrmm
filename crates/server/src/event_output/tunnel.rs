@@ -208,6 +208,7 @@ mod tests {
             at: "2026-09-16T00:00:00Z".to_owned(),
             freq_hz: 1e9,
             event: DecoderEvent::BroadcastData(data(0x86dd, bytes.clone())),
+            view: None,
         };
         outputs.push(std::slice::from_ref(&binding), &elsewhere);
         assert!(receiver.try_recv().is_err());

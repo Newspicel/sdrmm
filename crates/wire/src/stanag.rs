@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{EventPayload, Field, Presentation, Unit, fields, number, percent, text_of},
+};
+
 pub const STANAG_WINDOW_S: u8 = 2;
 pub const MIN_STANAG_WINDOW_S: u8 = 2;
 pub const MAX_STANAG_WINDOW_S: u8 = 12;
@@ -130,6 +135,29 @@ impl StanagReport {
     }
 }
 
+impl EventPayload for StanagReport {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            fields: stanag_fields(self),
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+fn stanag_fields(r: &StanagReport) -> Vec<Field> {
+    let Some(modem) = r.modem else {
+        return fields(&[("Modem", text_of("gone"))]);
+    };
+    fields(&[
+        ("Modem", text_of(modem.label())),
+        ("Rate", r.rate.and_then(|rate| text_of(rate.label()))),
+        ("Audio", number(Some(r.audio_hz), Unit::Hz, 0)),
+        ("Frequency", number(r.frequency_hz, Unit::Hz, 0)),
+        ("Bandwidth", number(Some(r.bandwidth_hz), Unit::Hz, 0)),
+        ("Confidence", percent(r.confidence)),
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,5 +212,38 @@ mod tests {
                 "ale_2g",
             ]
         );
+    }
+
+    #[test]
+    fn a_found_modem_lists_rate_carrier_and_confidence() {
+        let view = StanagReport {
+            modem: Some(StanagModem::Stanag4285),
+            confidence: 0.9,
+            audio_hz: 1800.0,
+            frequency_hz: Some(8_000_000.0),
+            bandwidth_hz: 2700.0,
+            rate: Some(StanagRate {
+                bps: 1200,
+                interleave: StanagInterleave::Long,
+                voice: false,
+            }),
+        }
+        .present(EventKind::Stanag);
+        assert_eq!(view.field("Rate"), text_of("1200 bit/s long").as_ref());
+        assert_eq!(
+            view.field("Audio"),
+            number(Some(1800.0_f32), Unit::Hz, 0).as_ref()
+        );
+        assert_eq!(view.field("Confidence"), percent(0.9).as_ref());
+        let gone = StanagReport {
+            modem: None,
+            confidence: 0.0,
+            audio_hz: 0.0,
+            frequency_hz: None,
+            bandwidth_hz: 0.0,
+            rate: None,
+        }
+        .present(EventKind::Stanag);
+        assert_eq!(gone.labels(), ["Modem"]);
     }
 }

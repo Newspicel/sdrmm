@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useRef } from "react";
 import { followOffset } from "../components/converter";
-import { patchDevice, STATE_KEY } from "./api";
+import { patchNodeDevice, STATE_KEY } from "./api";
 import { recordEvent } from "./diagnostics";
+import { cachedRadio } from "./nodeCache";
 import { toastError } from "./toasts";
 import type { DeviceSettings, StateSnapshot, StreamScope, StreamSettings } from "./types";
 
@@ -105,10 +106,6 @@ export function forStream(
   return resolved;
 }
 
-export function patchTargetExists(snapshot: StateSnapshot | undefined, ds: number): boolean {
-  return snapshot?.device_sets.some((d) => d.id === ds) ?? false;
-}
-
 function mergeByKey<T>(current: T[] | undefined, delta: T[], key: (item: T) => string): T[] {
   const merged = [...(current ?? [])];
   for (const item of delta) {
@@ -123,29 +120,29 @@ function mergeByKey<T>(current: T[] | undefined, delta: T[], key: (item: T) => s
 }
 
 export function createPatchQueue(
-  send: (ds: number, settings: DeviceSettings) => Promise<unknown>,
-): (ds: number, delta: DeviceSettings) => void {
-  const waiting = new Map<number, DeviceSettings>();
-  const inFlight = new Set<number>();
+  send: (node: string, settings: DeviceSettings) => Promise<unknown>,
+): (node: string, delta: DeviceSettings) => void {
+  const waiting = new Map<string, DeviceSettings>();
+  const inFlight = new Set<string>();
 
-  const run = (ds: number): void => {
-    const settings = waiting.get(ds);
+  const run = (node: string): void => {
+    const settings = waiting.get(node);
     if (settings === undefined) {
-      inFlight.delete(ds);
+      inFlight.delete(node);
       return;
     }
-    waiting.delete(ds);
-    inFlight.add(ds);
-    void send(ds, settings)
+    waiting.delete(node);
+    inFlight.add(node);
+    void send(node, settings)
       .catch(() => undefined)
-      .finally(() => run(ds));
+      .finally(() => run(node));
   };
 
-  return (ds: number, delta: DeviceSettings): void => {
-    const queued = waiting.get(ds);
-    waiting.set(ds, queued === undefined ? delta : mergeSettings(queued, delta));
-    if (!inFlight.has(ds)) {
-      run(ds);
+  return (node: string, delta: DeviceSettings): void => {
+    const queued = waiting.get(node);
+    waiting.set(node, queued === undefined ? delta : mergeSettings(queued, delta));
+    if (!inFlight.has(node)) {
+      run(node);
     }
   };
 }
@@ -155,12 +152,13 @@ export function refusedByRadio(error: unknown): error is Error {
 }
 
 export function useDevicePatch(): {
-  applyPatch: (ds: number, delta: DeviceSettings) => void;
-  cachedSettings: (ds: number) => DeviceSettings | undefined;
+  applyPatch: (node: string, delta: DeviceSettings) => void;
+  cachedSettings: (node: string) => DeviceSettings | undefined;
 } {
   const queryClient = useQueryClient();
   const patchMut = useMutation({
-    mutationFn: (v: { ds: number; settings: DeviceSettings }) => patchDevice(v.ds, v.settings),
+    mutationFn: (v: { node: string; settings: DeviceSettings }) =>
+      patchNodeDevice(v.node, v.settings),
     onError: (error) => {
       if (refusedByRadio(error)) {
         recordEvent("error", "device", error.message);
@@ -175,29 +173,31 @@ export function useDevicePatch(): {
   useLayoutEffect(() => {
     mutate.current = patchMut.mutateAsync;
   });
-  const queue = useRef<((ds: number, delta: DeviceSettings) => void) | null>(null);
-  queue.current ??= createPatchQueue((ds, settings) => mutate.current({ ds, settings }));
+  const queue = useRef<((node: string, delta: DeviceSettings) => void) | null>(null);
+  queue.current ??= createPatchQueue((node, settings) => mutate.current({ node, settings }));
 
-  const applyPatch = (ds: number, delta: DeviceSettings): void => {
+  const applyPatch = (node: string, delta: DeviceSettings): void => {
     void queryClient.cancelQueries({ queryKey: STATE_KEY });
-    const prev = queryClient.getQueryData<StateSnapshot>(STATE_KEY);
-    const current = prev?.device_sets.find((d) => d.id === ds);
-    if (!prev || current === undefined) {
+    const current = cachedRadio(queryClient, node);
+    if (current === undefined) {
       return;
     }
     const followed = followOffset(current.settings, delta);
-    queryClient.setQueryData<StateSnapshot>(STATE_KEY, {
-      ...prev,
-      device_sets: prev.device_sets.map((d) =>
-        d.id === ds ? { ...d, settings: mergeSettings(d.settings, followed) } : d,
-      ),
-    });
-    queue.current?.(ds, followed);
+    queryClient.setQueryData<StateSnapshot>(STATE_KEY, (prev) =>
+      prev === undefined
+        ? prev
+        : {
+            ...prev,
+            device_sets: prev.device_sets.map((d) =>
+              d.id === current.id ? { ...d, settings: mergeSettings(d.settings, followed) } : d,
+            ),
+          },
+    );
+    queue.current?.(node, followed);
   };
 
-  const cachedSettings = (ds: number): DeviceSettings | undefined =>
-    queryClient.getQueryData<StateSnapshot>(STATE_KEY)?.device_sets.find((d) => d.id === ds)
-      ?.settings;
+  const cachedSettings = (node: string): DeviceSettings | undefined =>
+    cachedRadio(queryClient, node)?.settings;
 
   return { applyPatch, cachedSettings };
 }

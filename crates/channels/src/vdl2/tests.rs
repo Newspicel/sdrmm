@@ -23,6 +23,13 @@ impl Noise {
     }
 }
 
+pub(crate) fn fixture() -> crate::fixtures::Fixture {
+    crate::fixtures::Fixture::new(
+        ChannelParams::Vdl2(Vdl2Params::default()),
+        padded(burst_iq(&[aoa_frame(), rr_frame()], RATE, 0.0, 0.5), 800),
+    )
+}
+
 fn aoa_frame() -> Vec<u8> {
     let mut f = Vec::new();
     f.extend(encode_address(

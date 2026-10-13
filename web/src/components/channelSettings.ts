@@ -4,9 +4,11 @@ import type {
   ChannelParams,
   ChannelSettings,
   NotchSettings,
+  ParamChoice,
   ParamLimit,
   Squelch,
 } from "../lib/types";
+import type { Options } from "./controls";
 
 export type ChannelTypeId = ChannelParams["type"];
 
@@ -68,6 +70,29 @@ export function nudgedSquelch(squelch: Squelch | undefined, deltaDb: number): Sq
     mode: "manual",
     level_db: Math.min(SQUELCH_RANGE_DB.max, Math.max(SQUELCH_RANGE_DB.min, level)),
   };
+}
+
+type Choice<V> = Extract<NonNullable<V>, string | number>;
+
+export function choiceOptions<V>(choices: readonly ParamChoice[], name: string): Options<V> {
+  const found = choices.find((choice) => choice.name === name);
+  return (found?.options ?? []).map((option) => ({
+    value: option.value as V,
+    label: option.label,
+    ...(option.title == null ? {} : { title: option.title }),
+  }));
+}
+
+export function choicesOf<S extends object, F extends keyof S & string>(
+  choices: readonly ParamChoice[],
+  _settings: S,
+  field: F,
+): Options<Choice<S[F]>> {
+  return choiceOptions(choices, field);
+}
+
+export function unsetAs<V, U extends string>(options: Options<V | null>, unset: U): Options<V | U> {
+  return options.map((option) => ({ ...option, value: option.value ?? unset }));
 }
 
 export interface NumberLimit {
@@ -157,10 +182,6 @@ export function audioChainActive(audio: AudioProcessing | undefined): boolean {
 
 export function channelHasAudio(descriptor: ChannelDescriptor | undefined): boolean {
   return descriptor?.has_audio ?? true;
-}
-
-export function channelDecoderKind(descriptor: ChannelDescriptor | undefined): string | null {
-  return descriptor?.decoder_kind ?? null;
 }
 
 export function channelHasVideo(descriptor: ChannelDescriptor | undefined): boolean {

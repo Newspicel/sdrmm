@@ -1,9 +1,16 @@
 use super::*;
 use crate::{
+    CallGate, EventKind,
     channel::ChannelSettings,
-    device::{DcArtifact, Duplex, StreamScope},
-    filter::MAX_FILTER_IDS,
+    filter::{EventFilterNode, MAX_FILTER_IDS},
+    network::NetworkExportNode,
 };
+
+fn ports_for(kind: &str) -> Vec<PortSpec> {
+    NodeKind::parse(kind)
+        .map(NodeKind::ports)
+        .unwrap_or_default()
+}
 
 fn node(id: &str, body: NodeBody) -> PatchNode {
     PatchNode {
@@ -38,31 +45,10 @@ fn edge(from: (&str, &str), to: (&str, &str)) -> PatchEdge {
     }
 }
 
-fn capabilities(duplex: Duplex, rx_streams: u32, tx_streams: u32) -> Capabilities {
-    Capabilities {
-        freq_ranges: Vec::new(),
-        sample_rates: Vec::new(),
-        sample_rate_ranges: Vec::new(),
-        gains: Vec::new(),
-        antennas: Vec::new(),
-        bandwidths: Vec::new(),
-        bandwidth_ranges: Vec::new(),
-        bandwidth_auto: false,
-        bias_tee: false,
-        agc: crate::device::Agc::None,
-        extra: Vec::new(),
-        ppm: false,
-        duplex,
-        rx_streams,
-        tx_streams,
-        per_stream: StreamScope::default(),
-        directional: None,
-        dc_artifact: DcArtifact::Operator,
-        hardware_sweep: false,
-        coherence: crate::device::Coherence::None,
-        noise_source: crate::device::NoiseSource::None,
-        retune_keeps_phase: false,
-        rx_inputs: Vec::new(),
+fn refused(from: (&str, &str), to: (&str, &str), refusal: Refusal) -> PatchError {
+    PatchError::Refused {
+        edge: Box::new(edge(from, to)),
+        refusal,
     }
 }
 
@@ -73,6 +59,8 @@ fn descriptors() -> Vec<ChannelDescriptor> {
             name: "NFM".to_owned(),
             bandwidth_hz: 12_500.0,
             input_rate_hz: 48_000.0,
+            emits: vec![EventKind::Tone, EventKind::Scrambler],
+            calls: Some(CallGate::Squelch),
             ..ChannelDescriptor::default()
         },
         ChannelDescriptor {
@@ -81,7 +69,7 @@ fn descriptors() -> Vec<ChannelDescriptor> {
             bandwidth_hz: 2_000_000.0,
             input_rate_hz: 2_000_000.0,
             has_audio: false,
-            decoder_kind: Some("adsb".to_owned()),
+            emits: vec![EventKind::Adsb],
             ..ChannelDescriptor::default()
         },
         ChannelDescriptor {
@@ -89,36 +77,44 @@ fn descriptors() -> Vec<ChannelDescriptor> {
             name: "DMR".to_owned(),
             bandwidth_hz: 12_500.0,
             input_rate_hz: 48_000.0,
-            decoder_kind: Some(DV_DECODER_KIND.to_owned()),
+            emits: vec![EventKind::Dv],
+            calls: Some(CallGate::Frames),
             ..ChannelDescriptor::default()
         },
     ]
 }
 
 #[test]
-fn a_channel_offers_events_when_it_decodes_or_carries_audio() {
-    let events = ports_for("channel")
-        .into_iter()
-        .find(|port| port.port_type == PortType::Events)
-        .expect("events port");
+fn a_channel_offers_events_when_it_emits_or_gates_calls() {
+    let events = |descriptor: &ChannelDescriptor| {
+        channel_ports(descriptor)
+            .into_iter()
+            .find(|port| port.port_type == PortType::Events)
+            .map(|port| port.payload.kinds())
+    };
     let analog = ChannelDescriptor {
-        type_id: "nfm".to_owned(),
-        has_audio: true,
+        type_id: "am".to_owned(),
+        calls: Some(CallGate::Squelch),
         ..ChannelDescriptor::default()
     };
     let silent = ChannelDescriptor {
         type_id: "scope".to_owned(),
-        has_audio: false,
+        has_audio: true,
         ..ChannelDescriptor::default()
     };
-    for descriptor in descriptors().iter().chain([&analog]) {
-        assert!(
-            events.applies_to(Some(PortBacking::Channel(descriptor))),
-            "{}",
-            descriptor.type_id
-        );
-    }
-    assert!(!events.applies_to(Some(PortBacking::Channel(&silent))));
+    let only = |kinds: &[EventKind]| kinds.iter().copied().collect::<crate::KindSet>();
+    let nfm = &descriptors()[0];
+    assert_eq!(
+        events(nfm),
+        Some(only(&[
+            EventKind::Tone,
+            EventKind::Scrambler,
+            EventKind::Call
+        ]))
+    );
+    assert_eq!(events(&descriptors()[1]), Some(only(&[EventKind::Adsb])));
+    assert_eq!(events(&analog), Some(only(&[EventKind::Call])));
+    assert_eq!(events(&silent), None);
 }
 
 #[test]
@@ -140,7 +136,7 @@ fn an_event_filter_passes_events_through_and_bounds_its_lists() {
         nodes: vec![node(
             "filter",
             NodeBody::EventFilter(EventFilterNode {
-                kinds: vec!["call".to_owned()],
+                kinds: vec![crate::EventKind::Call],
                 ..EventFilterNode::default()
             }),
         )],
@@ -504,7 +500,11 @@ fn a_network_sink_takes_a_radio_or_a_channel_but_not_both() {
             edge(("ch", "baseband"), ("net", "baseband")),
         ])
         .validate(),
-        Err(PatchError::MixedNetworkSource("net".to_owned()))
+        Err(refused(
+            ("ch", "baseband"),
+            ("net", "baseband"),
+            Refusal::Group
+        ))
     );
 }
 
@@ -649,10 +649,7 @@ fn a_single_input_takes_one_wire_and_an_output_fans_out() {
         .push(edge(("dev2", "iq"), ("scope", "iq")));
     assert_eq!(
         two_devices.validate(),
-        Err(PatchError::PortOccupied(PortRef {
-            node: "scope".to_owned(),
-            port: "iq".to_owned()
-        }))
+        Err(refused(("dev2", "iq"), ("scope", "iq"), Refusal::OneWire))
     );
 
     let mut fanned = workspace();
@@ -735,7 +732,13 @@ fn wire_allowed(from: &NodeTypeInfo, out: &PortSpec, to: &NodeTypeInfo, input: &
         nodes: vec![node("a", body(from)), node("b", body(to))],
         edges: vec![edge(("a", &out.name), ("b", &input.name))],
     };
-    !matches!(graph.validate(), Err(PatchError::Wire { .. }))
+    !matches!(
+        graph.validate(),
+        Err(PatchError::Refused {
+            refusal: Refusal::Takes { .. },
+            ..
+        })
+    )
 }
 
 #[test]
@@ -814,22 +817,13 @@ fn a_chain_of_filters_is_not_a_loop() {
 }
 
 #[test]
-fn the_reserved_transmit_input_can_take_no_wire() {
-    let catalog = PatchCatalog::build();
-    let ports = || catalog.nodes.iter().flat_map(|entry| &entry.ports);
-    let reserved = ports()
-        .find(|port| port.port_type == PortType::Tx)
-        .expect("the device node reserves a transmit input");
-    assert_eq!(reserved.direction, PortDirection::In);
+fn no_radio_offers_a_transmit_input() {
+    let ports = ports_for("device");
     assert!(
-        reserved.note.is_some(),
-        "a port that refuses everything says why"
+        ports
+            .iter()
+            .all(|port| port.direction == PortDirection::Out)
     );
-    assert!(
-        !ports().any(|port| port.port_type == PortType::Tx && port.direction == PortDirection::Out),
-        "nothing may emit transmit baseband before  gate exists"
-    );
-
     let mut retransmit = workspace();
     retransmit
         .nodes
@@ -837,38 +831,11 @@ fn the_reserved_transmit_input_can_take_no_wire() {
     retransmit.edges.push(edge(("dev", "iq"), ("dev2", "tx")));
     assert_eq!(
         retransmit.validate(),
-        Err(PatchError::TypeMismatch {
-            from: PortType::Iq,
-            to: PortType::Tx
-        })
+        Err(PatchError::UnknownPort(PortRef {
+            node: "dev2".to_owned(),
+            port: "tx".to_owned()
+        }))
     );
-}
-
-#[test]
-fn only_a_radio_that_can_transmit_shows_a_transmit_input() {
-    let transmit = ports_for("device")
-        .into_iter()
-        .find(|port| port.port_type == PortType::Tx)
-        .expect("the device kind can have a transmit input");
-
-    let named =
-        |port: &PortSpec, caps: &Capabilities| port.applies_to(Some(PortBacking::Device(caps)));
-    assert!(
-        !named(&transmit, &capabilities(Duplex::RxOnly, 1, 0)),
-        "a receiver"
-    );
-    assert!(
-        named(&transmit, &capabilities(Duplex::Half, 1, 1)),
-        "a transceiver"
-    );
-    assert!(!transmit.applies_to(None), "no radio bound");
-
-    for port in ports_for("device")
-        .into_iter()
-        .filter(|port| port.port_type != PortType::Tx)
-    {
-        assert!(port.applies_to(None), "{} is not conditional", port.name);
-    }
 }
 
 #[test]
@@ -952,10 +919,11 @@ fn a_scanner_owns_the_one_decoder_its_wire_runs_into() {
         .push(edge(("scan", "control"), ("ch2", "control")));
     assert_eq!(
         two_decoders.validate(),
-        Err(PatchError::PortOccupied(PortRef {
-            node: "scan".to_owned(),
-            port: "control".to_owned()
-        }))
+        Err(refused(
+            ("scan", "control"),
+            ("ch2", "control"),
+            Refusal::OneTarget
+        ))
     );
 
     let mut two_scanners = driven.clone();
@@ -967,10 +935,11 @@ fn a_scanner_owns_the_one_decoder_its_wire_runs_into() {
         .push(edge(("scan2", "control"), ("ch", "control")));
     assert_eq!(
         two_scanners.validate(),
-        Err(PatchError::PortOccupied(PortRef {
-            node: "ch".to_owned(),
-            port: "control".to_owned()
-        }))
+        Err(refused(
+            ("scan2", "control"),
+            ("ch", "control"),
+            Refusal::OneWire
+        ))
     );
 }
 
@@ -1091,45 +1060,32 @@ fn a_channel_takes_every_radio_that_may_carry_it() {
         .nodes
         .push(node("dev2", NodeBody::Device(DeviceNode::default())));
     graph.edges.push(edge(("dev2", "iq3"), ("ch", "iq")));
-    graph.validate().expect("two radios into one channel");
-    assert_eq!(graph.lanes_of("ch"), vec![("dev", 0), ("dev2", 2)]);
-    assert_eq!(graph.lanes_of("spk"), Vec::<(&str, u32)>::new());
-    let on_both: Vec<&str> = graph
-        .device_nodes()
-        .filter(|device| {
-            graph
-                .channels_of(&device.id)
-                .any(|(node, _)| node.id == "ch")
-        })
-        .map(|device| device.id.as_str())
+    let patch =
+        resolve::compile(&graph, &ResolveCtx::default()).expect("two radios into one channel");
+    let lanes: Vec<(&str, &str)> = patch
+        .feeds("ch", "iq")
+        .iter()
+        .map(|feed| (feed.source.as_str(), feed.port.as_str()))
         .collect();
-    assert_eq!(on_both, vec!["dev", "dev2"]);
+    assert_eq!(lanes, vec![("dev", "iq"), ("dev2", "iq3")]);
+    assert!(patch.feeds("spk", "iq").is_empty());
 }
 
 #[test]
-fn channels_of_walks_the_wires_in_stored_order() {
-    let mut graph = workspace();
-    graph.nodes.push(channel("ch2", "adsb"));
-    graph.edges.push(edge(("dev", "iq"), ("ch2", "iq")));
-    let bound: Vec<(&str, u32)> = graph
-        .channels_of("dev")
-        .map(|(n, stream)| (n.id.as_str(), stream))
-        .collect();
-    assert_eq!(bound, vec![("ch", 0), ("ch2", 0)]);
-    assert_eq!(graph.channels_of("scope").count(), 0);
-}
-
-#[test]
-fn channels_of_reports_the_stream_each_channel_taps() {
+fn a_decoder_feed_names_the_radio_stream_it_taps() {
     let mut graph = workspace();
     graph.nodes.push(channel("ch2", "adsb"));
     graph.edges.push(edge(("dev", "iq3"), ("ch2", "iq")));
-    graph.validate().expect("a stream-3 wire is valid");
-    let bound: Vec<(&str, u32)> = graph
-        .channels_of("dev")
-        .map(|(n, stream)| (n.id.as_str(), stream))
-        .collect();
-    assert_eq!(bound, vec![("ch", 0), ("ch2", 2)]);
+    let patch = resolve::compile(&graph, &ResolveCtx::default()).expect("a stream-3 wire is valid");
+    let taps = |id: &str| -> Vec<(String, String)> {
+        patch
+            .feeds(id, "iq")
+            .iter()
+            .map(|feed| (feed.source.clone(), feed.port.clone()))
+            .collect()
+    };
+    assert_eq!(taps("ch"), [("dev".to_owned(), "iq".to_owned())]);
+    assert_eq!(taps("ch2"), [("dev".to_owned(), "iq3".to_owned())]);
 }
 
 #[test]
@@ -1163,77 +1119,12 @@ fn a_name_outside_the_family_addresses_no_stream() {
 }
 
 #[test]
-fn ports_with_expands_a_repeating_port_per_stream() {
-    let device = NodeBody::Device(DeviceNode::default());
-    let names = |caps: &Capabilities| {
-        device
-            .ports_with(Some(PortBacking::Device(caps)))
+fn a_channels_ports_follow_what_its_type_produces() {
+    let names = |descriptor: &ChannelDescriptor| {
+        channel_ports(descriptor)
             .into_iter()
             .map(|port| port.name)
             .collect::<Vec<_>>()
-    };
-
-    assert_eq!(
-        names(&capabilities(Duplex::RxOnly, 4, 0)),
-        vec!["iq", "iq2", "iq3", "iq4"]
-    );
-    assert_eq!(
-        names(&capabilities(Duplex::Full, 2, 2)),
-        vec!["tx", "tx2", "iq", "iq2"]
-    );
-    assert_eq!(
-        names(&capabilities(Duplex::RxOnly, 1, 0)),
-        vec!["iq"],
-        "a single-stream radio keeps the table it always had"
-    );
-
-    let expanded = device.ports_with(Some(PortBacking::Device(&capabilities(Duplex::Full, 2, 2))));
-    for port in &expanded {
-        assert_eq!(port.repeat, PortRepeat::Once, "{}", port.name);
-    }
-    let iq2 = expanded.iter().find(|p| p.name == "iq2").unwrap();
-    assert_eq!(iq2.port_type, PortType::Iq);
-    assert_eq!(iq2.direction, PortDirection::Out);
-    assert!(iq2.multi, "each stream fans out on its own");
-    let tx2 = expanded.iter().find(|p| p.name == "tx2").unwrap();
-    assert_eq!(tx2.condition, PortCondition::DeviceIsTxCapable);
-    assert!(tx2.note.is_some(), "every reserved transmit port says why");
-}
-
-#[test]
-fn an_unbacked_node_expands_to_stream_zero_only() {
-    let device = NodeBody::Device(DeviceNode::default());
-    let names: Vec<String> = device
-        .ports_with(None)
-        .into_iter()
-        .map(|port| port.name)
-        .collect();
-    assert_eq!(names, vec!["iq"]);
-
-    let body = NodeBody::Channel(ChannelNode {
-        channel_type: "nfm".to_owned(),
-        tuning_locked: false,
-    });
-    let nfm = &descriptors()[0];
-    let names: Vec<String> = body
-        .ports_with(Some(PortBacking::Channel(nfm)))
-        .into_iter()
-        .map(|port| port.name)
-        .collect();
-    assert_eq!(names, vec!["iq", "control", "baseband", "audio", "events"]);
-}
-
-#[test]
-fn a_channels_outputs_follow_what_its_type_produces() {
-    let names = |descriptor: &ChannelDescriptor| {
-        NodeBody::Channel(ChannelNode {
-            channel_type: descriptor.type_id.clone(),
-            tuning_locked: false,
-        })
-        .ports_with(Some(PortBacking::Channel(descriptor)))
-        .into_iter()
-        .map(|port| port.name)
-        .collect::<Vec<_>>()
     };
     let atv = ChannelDescriptor {
         type_id: "atv".to_owned(),
@@ -1243,6 +1134,10 @@ fn a_channels_outputs_follow_what_its_type_produces() {
         ..ChannelDescriptor::default()
     };
     assert_eq!(names(&atv), vec!["iq", "control", "baseband", "video"]);
+    assert_eq!(
+        names(&descriptors()[0]),
+        vec!["iq", "control", "baseband", "audio", "events"]
+    );
     assert_eq!(
         names(&descriptors()[1]),
         vec!["iq", "control", "baseband", "events"]
@@ -1267,7 +1162,7 @@ fn a_channel_tap_cannot_be_wired_where_a_wideband_stream_belongs() {
         catalog
             .nodes
             .iter()
-            .find(|entry| entry.kind == kind)
+            .find(|entry| entry.kind.as_str() == kind)
             .map(|entry| entry.ports.clone())
             .unwrap_or_default()
     };
@@ -1299,22 +1194,6 @@ fn a_channel_tap_cannot_be_wired_where_a_wideband_stream_belongs() {
     let mut graph = workspace();
     graph.edges.push(edge(("ch", "baseband"), ("ch", "iq")));
     assert!(graph.validate().is_err());
-}
-
-#[test]
-fn a_zero_or_outsize_stream_count_is_clamped() {
-    let device = NodeBody::Device(DeviceNode::default());
-    let names = |caps: &Capabilities| {
-        device
-            .ports_with(Some(PortBacking::Device(caps)))
-            .into_iter()
-            .map(|port| port.name)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(names(&capabilities(Duplex::RxOnly, 0, 0)), vec!["iq"]);
-    let outsize = names(&capabilities(Duplex::RxOnly, 100, 0));
-    assert_eq!(outsize.len() as u32, MAX_STREAMS);
-    assert_eq!(outsize.last().map(String::as_str), Some("iq16"));
 }
 
 #[test]
@@ -1361,10 +1240,7 @@ fn arity_is_checked_per_resolved_stream_port() {
     crossed.edges.push(edge(("dev", "iq3"), ("scope", "iq")));
     assert_eq!(
         crossed.validate(),
-        Err(PatchError::PortOccupied(PortRef {
-            node: "scope".to_owned(),
-            port: "iq".to_owned()
-        }))
+        Err(refused(("dev", "iq3"), ("scope", "iq"), Refusal::OneWire))
     );
 
     let mut doubled = workspace();
@@ -1464,7 +1340,7 @@ fn the_catalog_describes_every_node_kind_once() {
     let channel = catalog
         .nodes
         .iter()
-        .find(|n| n.kind == "channel")
+        .find(|n| n.kind.as_str() == "channel")
         .expect("channel in the palette");
     assert!(channel.needs_channel_type);
     assert_eq!(
@@ -1472,8 +1348,8 @@ fn the_catalog_describes_every_node_kind_once() {
             .ports
             .iter()
             .find(|p| p.name == "audio")
-            .map(|p| p.condition),
-        Some(PortCondition::ChannelHasAudio)
+            .map(|p| p.payload.clone()),
+        Some(Payload::Audio)
     );
 
     let json = serde_json::to_value(&catalog).unwrap();
@@ -1481,16 +1357,14 @@ fn the_catalog_describes_every_node_kind_once() {
     assert_eq!(json["nodes"][0]["name"], "Device");
     assert_eq!(json["nodes"][0]["category"], "source");
     let ports = &json["nodes"][0]["ports"];
-    assert_eq!(ports[0]["port_type"], "tx");
-    assert_eq!(ports[0]["direction"], "in");
-    assert_eq!(ports[0]["condition"], "device_is_tx_capable");
-    assert_eq!(ports[0]["repeat"], "per_tx_stream");
-    assert!(ports[0]["note"].is_string(), "the reserved port says why");
-    assert_eq!(ports[1]["port_type"], "iq");
-    assert_eq!(ports[1]["direction"], "out");
-    assert_eq!(ports[1]["repeat"], "per_rx_stream");
+    assert_eq!(ports[0]["port_type"], "iq");
+    assert_eq!(ports[0]["direction"], "out");
+    assert_eq!(ports[0]["repeat"], "per_rx_stream");
+    assert_eq!(ports[0]["payload"]["type"], "iq");
+    assert_eq!(ports[0]["payload"]["origins"][0], "radio");
+    assert_eq!(ports[0]["multi"], "many");
     assert!(
-        ports[1].get("condition").is_none() && ports[1].get("note").is_none(),
+        ports[0].get("exclusive").is_none() && ports[0].get("note").is_none(),
         "the common case stays off the wire"
     );
     let decoder = json["nodes"]
@@ -1509,15 +1383,16 @@ fn the_catalog_describes_every_node_kind_once() {
 
     let back: PatchCatalog = serde_json::from_value(json).unwrap();
     assert_eq!(back, catalog);
-    let bare: PortSpec =
-        serde_json::from_str(r#"{"name":"iq","port_type":"iq","direction":"in","multi":false}"#)
-            .unwrap();
+    let bare: PortSpec = serde_json::from_str(
+        r#"{"name":"iq","port_type":"iq","direction":"in","multi":"one","payload":{"type":"iq","origins":["radio"]}}"#,
+    )
+    .unwrap();
     assert_eq!(bare.repeat, PortRepeat::Once);
 
     let gps = catalog
         .nodes
         .iter()
-        .find(|node| node.kind == "gps")
+        .find(|node| node.kind.as_str() == "gps")
         .expect("GPS source in the palette");
     assert_eq!(gps.ports[0].port_type, PortType::Position);
     let position = channel
@@ -1525,12 +1400,12 @@ fn the_catalog_describes_every_node_kind_once() {
         .iter()
         .find(|port| port.name == "position")
         .expect("position input");
-    assert_eq!(position.condition, PortCondition::ChannelNeedsPosition);
+    assert_eq!(position.multi, Multi::One);
 
     let signal_map = catalog
         .nodes
         .iter()
-        .find(|node| node.kind == "signal_map")
+        .find(|node| node.kind.as_str() == "signal_map")
         .expect("signal survey in the palette");
     assert_eq!(signal_map.category, NodeCategory::Output);
     assert_eq!(
@@ -1589,7 +1464,7 @@ fn propagation_takes_decoder_events_and_a_station_position() {
     let propagation = catalog
         .nodes
         .iter()
-        .find(|node| node.kind == "propagation")
+        .find(|node| node.kind.as_str() == "propagation")
         .expect("propagation map in the palette");
     assert_eq!(propagation.category, NodeCategory::Output);
     assert_eq!(
@@ -1821,7 +1696,7 @@ fn a_recording_and_a_generator_each_carry_one_iq_output() {
         NodeBody::Recording(RecordingNode::default()),
         NodeBody::SignalGen(SignalGenNode::default()),
     ] {
-        let ports = body.ports();
+        let ports = body.ports(None);
         assert_eq!(ports.len(), 1, "{}", body.kind());
         assert_eq!(ports[0].port_type, PortType::Iq);
         assert_eq!(ports[0].direction, PortDirection::Out);
@@ -1868,7 +1743,7 @@ fn the_catalog_offers_a_recording_and_a_generator_as_sources() {
         let entry = catalog
             .nodes
             .iter()
-            .find(|entry| entry.kind == kind)
+            .find(|entry| entry.kind.as_str() == kind)
             .unwrap_or_else(|| panic!("{kind} is in the catalog"));
         assert_eq!(entry.category, NodeCategory::Source);
         assert!(!entry.needs_channel_type);
@@ -1877,30 +1752,29 @@ fn the_catalog_offers_a_recording_and_a_generator_as_sources() {
 }
 
 #[test]
-fn channels_of_keeps_every_wired_stream_of_the_same_radio() {
+fn a_decoder_keeps_every_wired_stream_of_the_same_radio() {
     let mut graph = workspace();
     graph.edges.push(edge(("dev", "iq2"), ("ch", "iq")));
-    graph.validate().unwrap();
-    let lanes: Vec<_> = graph
-        .channels_of("dev")
-        .map(|(node, stream)| (node.id.as_str(), stream))
+    let patch = resolve::compile(&graph, &ResolveCtx::default()).expect("valid");
+    let lanes: Vec<&str> = patch
+        .feeds("ch", "iq")
+        .iter()
+        .map(|feed| feed.port.as_str())
         .collect();
-    assert_eq!(lanes, vec![("ch", 0), ("ch", 1)]);
+    assert_eq!(lanes, vec!["iq", "iq2"]);
 }
 
 #[test]
-fn spectrum_monitor_has_only_iq_input_and_event_output() {
+fn spectrum_monitor_takes_a_lane_and_hands_out_events() {
     let monitor = NodeBody::SpectrumMonitor(crate::SpectrumMonitorNode::default());
-    let ports = super::ports_for(monitor.kind());
+    let specs = monitor.ports(None);
+    let ports: Vec<(&str, PortDirection, Payload)> = specs
+        .iter()
+        .map(|port| (port.name.as_str(), port.direction, port.payload.clone()))
+        .collect();
     assert_eq!(ports.len(), 2);
-    assert_eq!(
-        (ports[0].name.as_str(), ports[0].direction),
-        ("iq", PortDirection::In)
-    );
-    assert_eq!(
-        (ports[1].name.as_str(), ports[1].direction),
-        ("events", PortDirection::Out)
-    );
+    assert_eq!((ports[0].0, ports[0].1), ("iq", PortDirection::In));
+    assert_eq!((ports[1].0, ports[1].1), ("events", PortDirection::Out));
     let mut graph = PatchGraph {
         nodes: vec![
             node("radio", NodeBody::Device(DeviceNode::default())),
@@ -1917,6 +1791,42 @@ fn spectrum_monitor_has_only_iq_input_and_event_output() {
         .edges
         .push(edge(("radio", "iq"), ("monitor", "control")));
     assert!(graph.validate().is_err());
+}
+
+#[test]
+fn a_spectrum_monitor_carries_the_kinds_of_the_protocols_it_decodes() {
+    let mut types = descriptors();
+    for descriptor in &mut types {
+        descriptor.identifiable = descriptor.type_id != "adsb";
+    }
+    let kinds = |monitor: crate::SpectrumMonitorNode| {
+        NodeBody::SpectrumMonitor(monitor)
+            .ports(Some(&types))
+            .into_iter()
+            .find(|port| port.port_type == PortType::Events)
+            .map(|port| port.payload.kinds())
+    };
+    let only = |kinds: &[EventKind]| kinds.iter().copied().collect::<crate::KindSet>();
+    assert_eq!(
+        kinds(crate::SpectrumMonitorNode::default()),
+        Some(only(&[
+            EventKind::Transmission,
+            EventKind::Tone,
+            EventKind::Scrambler,
+            EventKind::Dv,
+        ]))
+    );
+    assert_eq!(
+        kinds(crate::SpectrumMonitorNode {
+            disabled_protocols: vec!["dmr".to_owned()],
+            ..crate::SpectrumMonitorNode::default()
+        }),
+        Some(only(&[
+            EventKind::Transmission,
+            EventKind::Tone,
+            EventKind::Scrambler,
+        ]))
+    );
 }
 
 #[test]
@@ -1969,7 +1879,13 @@ fn a_satellite_drives_many_decoders_but_a_decoder_answers_to_one_controller() {
     };
     assert_eq!(graph.validate(), Ok(()));
     graph.edges.push(wire("scan", "voice"));
-    assert!(matches!(graph.validate(), Err(PatchError::PortOccupied(_))));
+    assert!(matches!(
+        graph.validate(),
+        Err(PatchError::Refused {
+            refusal: Refusal::OneWire,
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -1999,10 +1915,10 @@ fn a_rotator_follows_a_satellite_and_nothing_else() {
     };
     assert_eq!(graph.validate(), Ok(()));
     graph.edges = vec![edge(("scan", "control"), ("rot", "control"))];
-    assert!(matches!(
-        graph.validate(),
-        Err(PatchError::Wire { reason, .. }) if reason == crate::REFUSAL_ROTATOR
-    ));
+    assert_eq!(
+        graph.validate().map_err(|error| error.to_string()),
+        Err("Rotator takes pointing".to_owned())
+    );
 }
 
 #[test]
@@ -2101,3 +2017,4 @@ fn triangulation_without_data_loads_with_defaults() {
 }
 
 mod arrays;
+mod registry;

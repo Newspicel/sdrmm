@@ -4,8 +4,8 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, ToneCorrelator, design_lowpass};
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, SelcallParams,
-    SelcallSequence, SelcallSystem,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    SelcallParams, SelcallSequence, SelcallSystem,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -93,7 +93,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    decoder_kind: Some("selcall".to_owned()),
+    emits: vec![EventKind::Selcall],
     ..ChannelDescriptor::default()
 });
 

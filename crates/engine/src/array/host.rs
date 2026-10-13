@@ -591,6 +591,7 @@ fn publish(node: &str, sinks: &HostSinks, packet: &mut Packet) {
                 event: packet.event.clone(),
                 sinks: Vec::new(),
                 callsign: None,
+                view: None,
             };
             if sinks.decoded.send(record).is_err() {
                 tracing::debug!(node, "array event had no listener");

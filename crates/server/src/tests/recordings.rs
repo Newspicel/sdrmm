@@ -6,6 +6,7 @@ async fn playback_transport_pauses_seeks_and_stops() {
     let app = recording_router(dir.path());
     let rec = recorded(&app).await;
     let ds = playback_set(&app, &rec).await;
+    let node = radio_node(&rec.device_id);
 
     let reported = |app: &Router| {
         let app = app.clone();
@@ -25,15 +26,15 @@ async fn playback_transport_pauses_seeks_and_stops() {
     assert!(!initial.paused);
     assert_eq!(initial.total_samples, rec.samples);
 
-    let (status, body) = playback(&app, ds, r#"{"action":"pause"}"#).await;
+    let (status, body) = playback(&app, &node, r#"{"action":"pause"}"#).await;
     assert_eq!(status, StatusCode::OK);
-    let paused: sdrmm_wire::PlaybackStatus = serde_json::from_slice(&body).expect("json");
+    let paused = transport(&body);
     assert!(paused.paused);
     assert_eq!(reported(&app).await, paused);
 
     let (status, body) = playback(
         &app,
-        ds,
+        &node,
         &format!(
             r#"{{"action":"seek","position_samples":{}}}"#,
             rec.samples / 2
@@ -41,25 +42,33 @@ async fn playback_transport_pauses_seeks_and_stops() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let sought: sdrmm_wire::PlaybackStatus = serde_json::from_slice(&body).expect("json");
+    let sought = transport(&body);
     assert_eq!(sought.position_samples, rec.samples / 2);
     assert_eq!(reported(&app).await, sought);
 
-    let (status, body) = playback(&app, ds, r#"{"action":"stop"}"#).await;
+    let (status, body) = playback(&app, &node, r#"{"action":"stop"}"#).await;
     assert_eq!(status, StatusCode::OK);
-    let stopped: sdrmm_wire::PlaybackStatus = serde_json::from_slice(&body).expect("json");
+    let stopped = transport(&body);
     assert!(stopped.paused);
     assert_eq!(stopped.position_samples, 0);
 
-    let (status, _) = playback(&app, ds, r#"{"action":"play"}"#).await;
+    let (status, _) = playback(&app, &node, r#"{"action":"play"}"#).await;
     assert_eq!(status, StatusCode::OK);
     assert!(!reported(&app).await.paused);
+}
+
+fn transport(body: &[u8]) -> sdrmm_wire::PlaybackStatus {
+    let sdrmm_wire::NodeActed::Playback(status) = serde_json::from_slice(body).expect("json")
+    else {
+        panic!("a playback action reports the transport");
+    };
+    status
 }
 
 #[tokio::test]
 async fn a_radio_has_no_transport_to_drive() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
 
     let set = get_state(&app)
         .await
@@ -69,15 +78,14 @@ async fn a_radio_has_no_transport_to_drive() {
         .expect("set listed");
     assert_eq!(set.playback, None);
 
-    let (status, body) = playback(&app, ds, r#"{"action":"pause"}"#).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(
-        String::from_utf8_lossy(&body).contains("not a recording"),
-        "{}",
-        String::from_utf8_lossy(&body)
+    let (status, _) = playback(&app, "radio:band", r#"{"action":"pause"}"#).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a radio is not a recording"
     );
 
-    let (status, _) = playback(&app, 9_999, r#"{"action":"pause"}"#).await;
+    let (status, _) = playback(&app, "ghost", r#"{"action":"pause"}"#).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -223,7 +231,7 @@ async fn downloading_an_unknown_recording_or_format_fails_cleanly() {
 async fn record_start_stop_index_and_delete_roundtrip_over_http() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let app = recording_router(dir.path());
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
 
     let live: RecordingStatus = record(&app, ds, true).await.expect("recording started");
     assert!(!live.file.is_empty());
@@ -247,14 +255,7 @@ async fn record_start_stop_index_and_delete_roundtrip_over_http() {
     assert!(rec.duration_s > 0.0);
     assert_eq!(rec.device_id, format!("recording:{}", rec.file));
 
-    let (status, _) = request(
-        app.clone(),
-        "POST",
-        "/api/devicesets",
-        Some(&format!(r#"{{"device_id":"{}"}}"#, rec.device_id)),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
+    open_radio(&app, &rec.device_id).await;
 
     let (status, _) = request(
         app.clone(),
@@ -388,13 +389,12 @@ async fn annotation_error_mapping_over_http() {
 async fn a_rate_change_is_refused_while_the_recorder_is_switched_on() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let app = recording_router(dir.path());
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
     record(&app, ds, true).await.expect("recording started");
-    let (status, body) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"sample_rate":2400000.0}"#),
+    let (status, body) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"sample_rate":2400000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -405,7 +405,7 @@ async fn a_rate_change_is_refused_while_the_recorder_is_switched_on() {
 #[tokio::test]
 async fn recording_endpoints_without_a_recordings_dir() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
     assert!(
         record(&app, ds, true).await.is_none(),
         "recorded with nowhere to write"
@@ -900,14 +900,7 @@ async fn an_array_collection_is_one_library_entry_that_plays_every_lane() {
     assert_eq!(take.device_id, "recording:take");
     take.created_at.parse::<jiff::Timestamp>().expect("rfc3339");
 
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        "/api/devicesets",
-        Some(&format!(r#"{{"device_id":"{}"}}"#, take.device_id)),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    open_radio(&app, &take.device_id).await;
     let set = get_state(&app)
         .await
         .device_sets

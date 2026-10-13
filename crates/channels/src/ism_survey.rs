@@ -10,7 +10,7 @@ use sdrmm_dsp::{
 };
 use sdrmm_wire::{
     AIRTIME_REPORT_MS, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, IsmSurveyParams, IsmSurveyReport,
+    DecoderFamily, EventKind, IsmSurveyParams, IsmSurveyReport,
 };
 
 use self::{
@@ -38,7 +38,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * usable_half_hz(IsmSurveyParams::default().span),
     input_rate_hz: IsmSurveyParams::default().span.sample_rate_hz(),
     has_audio: false,
-    decoder_kind: Some("ism_survey".to_owned()),
+    emits: vec![EventKind::IsmSurvey],
     ..ChannelDescriptor::default()
 });
 

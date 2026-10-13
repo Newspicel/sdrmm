@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
 import type { BasemapKind } from "../../lib/map/basemap";
-import { type OverlayCounts, TRACK_COLOR } from "../../lib/map/df";
 import { HEAT_OPACITY } from "../../lib/map/heat";
-import { KIND_STYLE, type MapKind } from "../../lib/map/layers";
-import { SATELLITE_COLOR } from "../../lib/map/satellites";
 import { SIGNAL_GRADIENT } from "../../lib/map/signal";
 import { SIGNAL_MAX_DBFS, SIGNAL_MIN_DBFS } from "../../lib/signalSurvey";
 import { colormapGradient } from "../plotFrame";
-import type { Counts } from "./mapState";
+
+export interface LegendGroup {
+  key: string;
+  label: string;
+  color: string;
+  count: number;
+}
 
 const ROW = "flex items-center gap-2 font-mono text-3xs tabular-nums";
 const BADGE =
@@ -47,59 +50,40 @@ function Dot({ color, className }: { color?: string; className?: string }) {
 }
 
 export function MapLegend({
-  kinds,
-  counts,
+  groups,
   positionCount,
-  satelliteCount,
   signalCells,
-  overlay,
   heat,
   heatRefused,
   headings,
   basemap,
 }: {
-  kinds: readonly MapKind[];
-  counts: Counts;
+  groups: readonly LegendGroup[];
   positionCount: number | null;
-  satelliteCount: number | null;
   signalCells: number | null;
-  overlay: OverlayCounts;
   heat: boolean;
   heatRefused: string | null;
   headings: boolean;
   basemap: BasemapKind;
 }) {
-  const hasRows =
-    kinds.length > 0 ||
-    positionCount !== null ||
-    satelliteCount !== null ||
-    signalCells !== null ||
-    heat ||
-    overlay.bearings + overlay.echoes + overlay.tracks + overlay.unplaced.length > 0;
+  const hasRows = groups.length > 0 || positionCount !== null || signalCells !== null || heat;
   return (
     <div className="pointer-events-none absolute top-2 left-2 flex flex-col items-start gap-1">
       {hasRows && (
         <div className="flex flex-col gap-1 rounded-control border border-line bg-bg/85 px-2 py-1.5">
-          {kinds.map((kind) => (
+          {groups.map((group) => (
             <Row
-              key={kind}
-              swatch={<Dot color={KIND_STYLE[kind].color} />}
-              label={KIND_STYLE[kind].title}
-              value={counts[kind]}
+              key={group.key}
+              swatch={<Dot color={group.color} />}
+              label={group.label}
+              value={group.count}
             />
           ))}
-          {satelliteCount !== null && (
-            <Row
-              swatch={<Dot color={SATELLITE_COLOR} />}
-              label="Satellites"
-              value={satelliteCount}
-            />
-          )}
           {positionCount !== null && (
             <Row swatch={<Dot className="bg-accent" />} label="GPS trail" value={positionCount} />
           )}
           {signalCells !== null && <SignalRows cells={signalCells} />}
-          <OverlayRows overlay={overlay} heat={heat} />
+          {heat && <HeatRow />}
         </div>
       )}
       {basemap === "blank" && <div className={BADGE}>no basemap</div>}
@@ -129,38 +113,16 @@ function SignalRows({ cells }: { cells: number }) {
   );
 }
 
-function OverlayRows({ overlay, heat }: { overlay: OverlayCounts; heat: boolean }) {
+function HeatRow() {
   return (
-    <>
-      {overlay.bearings > 0 && (
-        <Row swatch={<Dot className="bg-accent" />} label="Bearings" value={overlay.bearings} />
-      )}
-      {overlay.echoes > 0 && (
-        <Row swatch={<Dot color={TRACK_COLOR} />} label="Echoes" value={overlay.echoes} />
-      )}
-      {overlay.tracks > 0 && (
-        <Row swatch={<Dot color={TRACK_COLOR} />} label="Tracks" value={overlay.tracks} />
-      )}
-      {heat && (
-        <Row
-          swatch={
-            <span
-              className="inline-block h-2 w-4 shrink-0 rounded-inset"
-              style={{ background: colormapGradient("inferno", "to right"), opacity: HEAT_OPACITY }}
-            />
-          }
-          label="Heat"
+    <Row
+      swatch={
+        <span
+          className="inline-block h-2 w-4 shrink-0 rounded-inset"
+          style={{ background: colormapGradient("inferno", "to right"), opacity: HEAT_OPACITY }}
         />
-      )}
-      {overlay.unplaced.length > 0 && (
-        <Row
-          swatch={<Dot className="bg-danger" />}
-          label="No position"
-          value={overlay.unplaced.length}
-          title={overlay.unplaced.join(", ")}
-          danger
-        />
-      )}
-    </>
+      }
+      label="Heat"
+    />
   );
 }

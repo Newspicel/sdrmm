@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { AudioProcessing, ChannelDescriptor, ChannelSettings } from "../lib/types";
+import type {
+  AudioProcessing,
+  ChannelDescriptor,
+  ChannelSettings,
+  ParamChoice,
+} from "../lib/types";
 import {
   AUDIO_LIMITS,
   audioChainActive,
-  channelDecoderKind,
   channelHasAudio,
   channelWidthHz,
+  choiceOptions,
+  choicesOf,
   clampOffsetHz,
   limitOf,
   mergeAudio,
@@ -20,6 +26,7 @@ import {
   squelchLevelDb,
   squelchMarginDb,
   squelchMode,
+  unsetAs,
   withNotchAdded,
   withNotchAt,
   withNotchRemoved,
@@ -178,27 +185,21 @@ describe("mergeChannelSettings", () => {
 describe("channelHasAudio", () => {
   it("suppresses audio controls for a data decoder", () => {
     expect(
-      channelHasAudio(descriptor({ type_id: "adsb", has_audio: false, decoder_kind: "adsb" })),
+      channelHasAudio(descriptor({ type_id: "adsb", has_audio: false, emits: ["adsb"] })),
     ).toBe(false);
   });
 
   it("keeps audio for a decoder that also demodulates sound", () => {
     expect(
-      channelHasAudio(descriptor({ type_id: "wfm", has_audio: true, decoder_kind: "rds" })),
+      channelHasAudio(
+        descriptor({ type_id: "wfm", has_audio: true, emits: ["rds"], calls: "squelch" }),
+      ),
     ).toBe(true);
   });
 
   it("assumes audio when the descriptor is unknown or predates the flag", () => {
     expect(channelHasAudio(undefined)).toBe(true);
     expect(channelHasAudio(descriptor({}))).toBe(true);
-  });
-});
-
-describe("channelDecoderKind", () => {
-  it("reports the emitted event kind, null for a plain demod", () => {
-    expect(channelDecoderKind(descriptor({ decoder_kind: "pocsag" }))).toBe("pocsag");
-    expect(channelDecoderKind(descriptor({}))).toBeNull();
-    expect(channelDecoderKind(undefined)).toBeNull();
   });
 });
 
@@ -443,5 +444,39 @@ describe("limitOf", () => {
       step: 0.5,
     });
     expect(scaledLimit({}, 1e-6)).toEqual({ min: undefined, max: undefined, step: undefined });
+  });
+});
+
+describe("choices", () => {
+  const choices: ParamChoice[] = [
+    {
+      name: "baud",
+      options: [
+        { value: "auto", label: "Auto" },
+        { value: "b512", label: "512", title: "Slow pagers" },
+      ],
+    },
+    {
+      name: "sonde",
+      options: [
+        { value: null, label: "Auto" },
+        { value: "dfm", label: "DFM" },
+      ],
+    },
+  ];
+
+  it("reads a setting's options by name and keeps titles", () => {
+    expect(choicesOf(choices, { baud: "auto" as const }, "baud")).toEqual([
+      { value: "auto", label: "Auto" },
+      { value: "b512", label: "512", title: "Slow pagers" },
+    ]);
+    expect(choiceOptions(choices, "missing")).toEqual([]);
+  });
+
+  it("names the unset option for optional settings", () => {
+    expect(unsetAs(choiceOptions<string | null>(choices, "sonde"), "auto")).toEqual([
+      { value: "auto", label: "Auto" },
+      { value: "dfm", label: "DFM" },
+    ]);
   });
 });

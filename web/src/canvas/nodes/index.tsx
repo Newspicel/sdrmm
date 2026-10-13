@@ -2,48 +2,44 @@ import type { Node, NodeProps } from "@xyflow/react";
 import type { ComponentType, CSSProperties } from "react";
 import type { NodeKind, PatchNode } from "../../lib/types";
 import type { FlowData } from "../Canvas";
-import { NODE_SIZE } from "../graph";
+import { nodeSize } from "../graph";
 import { ArrayFace } from "./ArrayFace";
 import { AudioFxFace } from "./AudioFxFace";
 import { BasebandScopeFace } from "./BasebandScopeFace";
 import { BeamformerFace } from "./BeamformerFace";
 import { ChannelFace } from "./ChannelFace";
 import { CorrelatorFace } from "./CorrelatorFace";
+import { DecoderLogFace } from "./DecoderLogFace";
 import { DeviceFace } from "./DeviceFace";
 import { DfFace } from "./DfFace";
 import { DmrTrunkFace } from "./DmrTrunkFace";
 import { EventFilterFace } from "./EventFilterFace";
 import { EventOutputFace } from "./EventOutputFace";
+import { ExportFace } from "./ExportFace";
 import { GpsFace } from "./GpsFace";
+import { HuntFace } from "./HuntFace";
+import { MapFace } from "./MapFace";
 import { NetworkExportFace } from "./NetworkExportFace";
 import { CanvasSurface } from "./NodeShell";
 import { PolarimeterFace } from "./PolarimeterFace";
 import { PropagationFace } from "./PropagationFace";
 import { RadarFace } from "./RadarFace";
+import { ReadoutFace } from "./ReadoutFace";
+import { AudioRecorderFace, BasebandRecorderFace, RecorderFace } from "./RecorderFaces";
 import { RecordingFace } from "./RecordingFace";
 import { RotatorFace } from "./RotatorFace";
 import { SatelliteFace } from "./SatelliteFace";
+import { ScannerFace } from "./ScannerFace";
 import { ScopeFace } from "./ScopeFace";
 import { SignalGenFace } from "./SignalGenFace";
 import { SignalMapFace } from "./SignalMapFace";
-import {
-  AudioRecorderFace,
-  BasebandRecorderFace,
-  DecoderLogFace,
-  ExportFace,
-  HuntFace,
-  MapFace,
-  ReadoutFace,
-  RecorderFace,
-  ScannerFace,
-  SpeakerFace,
-  VideoFace,
-} from "./SinkFaces";
 import { SpatialSpectrumFace } from "./SpatialSpectrumFace";
+import { SpeakerFace } from "./SpeakerFace";
 import { SpectrumMonitorFace } from "./SpectrumMonitorFace";
 import { StitchFace } from "./StitchFace";
 import { TimeMachineFace } from "./TimeMachineFace";
 import { TriangulationFace } from "./TriangulationFace";
+import { VideoFace } from "./VideoFace";
 
 type Face = ComponentType<{ node: PatchNode }>;
 
@@ -140,6 +136,6 @@ export const FACES: Record<NodeKind, Face> = {
 };
 
 export function faceSize(node: PatchNode): CSSProperties {
-  const size = NODE_SIZE[node.kind];
+  const size = nodeSize(node.kind);
   return { width: size.h === undefined ? size.w : "100%", height: "100%" };
 }

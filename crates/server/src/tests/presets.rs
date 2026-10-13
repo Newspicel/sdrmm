@@ -7,11 +7,10 @@ async fn preset_capture_apply_delete_roundtrip() {
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
 
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"center_hz":145500000.0,"sample_rate":2400000.0}"#),
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"center_hz":145500000.0,"sample_rate":2400000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -19,7 +18,7 @@ async fn preset_capture_apply_delete_roundtrip() {
     let (status, _) = request(
         app.clone(),
         "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{channel}"),
+        &format!("/api/workspaces/active/nodes/{}/channel", channel_at(&app, ds, channel).await),
         Some(r#"{"settings":{"frequency_hz":145525000.0,"squelch":{"mode":"manual","level_db":-70.0},"params":{"type":"nfm","settings":{}}}}"#),
     )
     .await;
@@ -45,11 +44,10 @@ async fn preset_capture_apply_delete_roundtrip() {
     assert_eq!(listed[0].name, "2m");
     assert_eq!(listed[0].devices, 1);
 
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"center_hz":100000000.0,"sample_rate":2048000.0}"#),
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"center_hz":100000000.0,"sample_rate":2048000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -71,11 +69,24 @@ async fn preset_capture_apply_delete_roundtrip() {
     let set = &get_state(&app).await.device_sets[0];
     assert_eq!(set.settings.center_hz, Some(145_500_000.0));
     assert_eq!(set.settings.sample_rate, Some(2_400_000.0));
-    assert_eq!(set.channels.len(), 1);
-    assert_eq!(set.channels[0].settings.frequency_hz, 145_525_000.0);
+    let node = format!("preset:{preset}:0:ch0");
+    let placed = set
+        .channels
+        .iter()
+        .find(|channel| channel.node.as_deref() == Some(node.as_str()))
+        .expect("the preset's decoder opened for its node");
+    assert_eq!(placed.settings.frequency_hz, 145_525_000.0);
     assert_eq!(
-        set.channels[0].settings.squelch,
+        placed.settings.squelch,
         sdrmm_wire::Squelch::Manual { level_db: -70.0 }
+    );
+    let graph = workspace_detail(&app, workspace).await.snapshot.graph;
+    assert!(
+        graph
+            .edges
+            .iter()
+            .any(|edge| edge.from.node == "device" && edge.to.node == node),
+        "the preset's decoder is wired to the radio's node"
     );
 
     let (status, _) = request(app.clone(), "POST", "/api/presets/999/apply", None).await;
@@ -125,11 +136,10 @@ async fn a_preset_carries_every_radio_the_workspace_draws() {
     assert_eq!(apply(&app, workspace).await.opened, 2);
 
     let tune = async |app: Router, ds: u32, hz: f64| {
-        let (status, _) = request(
-            app,
-            "PATCH",
-            &format!("/api/devicesets/{ds}/device"),
-            Some(&format!(r#"{{"center_hz":{hz}}}"#)),
+        let (status, _) = patch_node_device(
+            &app,
+            &radio_at(&app, ds).await,
+            &format!(r#"{{"center_hz":{hz}}}"#),
         )
         .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
@@ -206,36 +216,30 @@ async fn saving_a_preset_with_no_radio_open_is_refused() {
 }
 
 #[tokio::test]
-async fn apply_preset_replaces_channels_that_do_not_fit_the_preset_rate() {
+async fn a_preset_adds_its_decoders_as_nodes_and_opens_them() {
     let (app, store) = test_router_with_store();
     let workspace = put_active_workspace(&app, &virtual_snapshot("band", &[])).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
-    let (status, _) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100900000.0,"params":{"type":"nfm","settings":{}}}}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
 
     let preset = store
         .create_preset("lowrate", &preset_250k(vec![nfm_at(0.0)]))
         .expect("preset");
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/presets/{preset}/apply"),
-        None,
-    )
-    .await;
-    assert_eq!(
-        status,
-        StatusCode::NO_CONTENT,
-        "apply failed: {}",
-        String::from_utf8_lossy(&body)
-    );
+    for _ in 0..2 {
+        let (status, body) = request(
+            app.clone(),
+            "POST",
+            &format!("/api/presets/{preset}/apply"),
+            None,
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::NO_CONTENT,
+            "apply failed: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
 
     let snap = get_state(&app).await;
     let set = snap
@@ -244,24 +248,27 @@ async fn apply_preset_replaces_channels_that_do_not_fit_the_preset_rate() {
         .find(|s| s.id == ds)
         .expect("device set");
     assert_eq!(set.settings.sample_rate, Some(250_000.0));
-    assert_eq!(set.channels.len(), 1);
+    assert_eq!(set.channels.len(), 1, "applying twice keeps one decoder");
+    let node = format!("preset:{preset}:0:ch0");
+    assert_eq!(set.channels[0].node.as_deref(), Some(node.as_str()));
     assert_eq!(set.channels[0].settings.frequency_hz, 100_000_000.0);
+    let graph = workspace_detail(&app, workspace).await.snapshot.graph;
+    let added: Vec<&str> = graph
+        .nodes
+        .iter()
+        .map(|node| node.id.as_str())
+        .filter(|id| id.starts_with("preset:"))
+        .collect();
+    assert_eq!(added, vec![node.as_str()]);
 }
 
 #[tokio::test]
 async fn apply_preset_rejected_up_front_leaves_the_set_untouched() {
     let (app, store) = test_router_with_store();
-    let workspace = put_active_workspace(&app, &virtual_snapshot("band", &[])).await;
+    let workspace =
+        put_active_workspace(&app, &virtual_snapshot("band", &[("voice", "nfm", "iq")])).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
-    let (status, _) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"frequency_hz":100100000.0,"params":{"type":"nfm","settings":{}}}}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
 
     let preset = store
         .create_preset(
@@ -296,7 +303,14 @@ async fn apply_preset_rejected_up_front_leaves_the_set_untouched() {
         .expect("device set");
     assert_eq!(set.settings.sample_rate, Some(2_048_000.0));
     assert_eq!(set.channels.len(), 1);
-    assert_eq!(set.channels[0].settings.frequency_hz, 100_100_000.0);
+    assert_eq!(set.channels[0].node.as_deref(), Some("voice"));
+    let graph = workspace_detail(&app, workspace).await.snapshot.graph;
+    assert!(
+        !graph
+            .nodes
+            .iter()
+            .any(|node| node.id.starts_with("preset:"))
+    );
 }
 
 #[tokio::test]

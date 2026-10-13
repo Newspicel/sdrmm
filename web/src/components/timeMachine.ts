@@ -1,11 +1,6 @@
-import { controlTimeMachine } from "../lib/api";
+import { nodeAction } from "../lib/api";
 import { pushToast } from "../lib/toasts";
-import type {
-  DeviceSet,
-  TimeMachineAction,
-  TimeMachineNode,
-  TimeMachineStatus,
-} from "../lib/types";
+import type { DeviceSet, TimeMachineAction, TimeMachineStatus } from "../lib/types";
 
 export const MIN_HISTORY_SECONDS = 1;
 export const MAX_HISTORY_SECONDS = 120;
@@ -49,20 +44,13 @@ export function heldSeconds(status: TimeMachineStatus): number {
 }
 
 export function timeMachineMutationOptions(
-  deviceSet: number | null,
   node: string,
-  stream: number,
-  settings: TimeMachineNode,
-  request: typeof controlTimeMachine = controlTimeMachine,
+  request: typeof nodeAction = nodeAction,
   notify: (message: string) => void = pushToast,
 ) {
   return {
-    mutationFn: (action: TimeMachineAction) => {
-      if (deviceSet === null) {
-        return Promise.reject(new Error("Wire a running device's IQ into this sink first."));
-      }
-      return request(deviceSet, action, node, stream, settings);
-    },
+    mutationFn: (action: TimeMachineAction) =>
+      request(node, { action: "time_machine", with: action }),
     onError: (error: Error) => notify(error.message),
   };
 }

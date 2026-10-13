@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::decode::{EventKind, Symbol};
+use crate::geo::{LatLon, bearing_deg, destination, distance_m};
+use crate::present::{
+    EventPayload, Field, Place, Presentation, Shape, Unit, fields, lat_lon, number, position, text,
+    text_of,
+};
+
 pub use crate::array::LIGHT_SPEED_M_S;
 use crate::array::MAX_ARRAY_LANES;
 use crate::limits::RADAR_LIMITS as LIMITS;
@@ -770,6 +777,136 @@ pub struct RadarTrackEvent {
     pub lon: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icao: Option<String>,
+}
+
+impl EventPayload for RadarTrackEvent {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        Presentation {
+            entity: Some(format!("T{}", self.track_id)),
+            label: self.icao.clone(),
+            place: lat_lon(self.lat, self.lon).map(Place::at),
+            gone: self.change == TrackChange::Lost,
+            fields: self.fields(),
+            ..Presentation::of(format!(
+                "T{} {} {:.1} km {:+.0} m/s",
+                self.track_id,
+                self.change.as_str(),
+                self.range_km,
+                self.range_rate_mps
+            ))
+        }
+    }
+}
+
+impl RadarTrackEvent {
+    fn fields(&self) -> Vec<Field> {
+        fields(&[
+            ("Track", text_of(format!("T{}", self.track_id))),
+            ("Change", text_of(self.change.as_str())),
+            ("Range", number(Some(self.range_km), Unit::Kilometres, 2)),
+            (
+                "Range rate",
+                number(Some(self.range_rate_mps), Unit::MetresPerSecond, 0),
+            ),
+            ("Doppler", number(Some(self.doppler_hz), Unit::Hz, 1)),
+            ("SNR", number(Some(self.snr_db), Unit::Db, 1)),
+            ("Bearing", number(self.bearing_deg, Unit::Degrees, 1)),
+            ("Position", position(self.lat, self.lon)),
+            ("ICAO", text(self.icao.as_deref())),
+        ])
+    }
+}
+
+impl RadarSite {
+    #[must_use]
+    pub const fn at(&self) -> LatLon {
+        LatLon {
+            lat: self.lat,
+            lon: self.lon,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct RadarSites {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry: Option<RadarGeometry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ranges_km: Vec<f32>,
+}
+
+pub const RADAR_SITES_ENTITY: &str = "sites";
+
+#[must_use]
+pub fn bistatic_ring(receiver: LatLon, illuminator: LatLon, range_km: f32) -> Option<Shape> {
+    let range_m = f64::from(range_km) * 1_000.0;
+    if range_m.is_nan() || range_m <= 0.0 {
+        return None;
+    }
+    let baseline_m = distance_m(receiver, illuminator);
+    let axis = bearing_deg(receiver, illuminator);
+    Some(Shape::Ellipse {
+        center: destination(receiver, axis, baseline_m / 2.0),
+        major_m: ((baseline_m + range_m) / 2.0) as f32,
+        minor_m: ((range_m * (range_m + 2.0 * baseline_m)).sqrt() / 2.0) as f32,
+        bearing_deg: axis as f32,
+    })
+}
+
+impl EventPayload for RadarSites {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let Some(geometry) = &self.geometry else {
+            return Presentation {
+                entity: Some(RADAR_SITES_ENTITY.to_owned()),
+                gone: true,
+                ..Presentation::of("No radar geometry".to_owned())
+            };
+        };
+        let receiver = geometry.receiver.at();
+        let illuminator = geometry.transmitter.at();
+        let mut shapes = vec![
+            Shape::Pin {
+                at: receiver,
+                symbol: Symbol::Antenna,
+                label: "Receiver".to_owned(),
+            },
+            Shape::Pin {
+                at: illuminator,
+                symbol: Symbol::Antenna,
+                label: "Illuminator".to_owned(),
+            },
+        ];
+        shapes.extend(
+            self.ranges_km
+                .iter()
+                .filter_map(|range| bistatic_ring(receiver, illuminator, *range)),
+        );
+        Presentation {
+            entity: Some(RADAR_SITES_ENTITY.to_owned()),
+            place: Some(Place::at(receiver)),
+            shapes,
+            fields: fields(&[
+                ("Receiver", position(Some(receiver.lat), Some(receiver.lon))),
+                (
+                    "Illuminator",
+                    position(Some(illuminator.lat), Some(illuminator.lon)),
+                ),
+                (
+                    "Baseline",
+                    number(Some(geometry.baseline_km), Unit::Kilometres, 1),
+                ),
+                (
+                    "Echoes",
+                    number(Some(self.ranges_km.len() as f64), Unit::None, 0),
+                ),
+            ]),
+            ..Presentation::of(format!(
+                "{:.1} km baseline, {} echoes",
+                geometry.baseline_km,
+                self.ranges_km.len()
+            ))
+        }
+    }
 }
 
 #[cfg(test)]

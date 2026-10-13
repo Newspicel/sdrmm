@@ -1,7 +1,14 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{EventPayload, Place, Presentation, bearing, lat_lon},
+};
+
 use crate::ble::{BLUETOOTH_BAND_RATE_HZ, BLUETOOTH_CHANNEL_WIDTH_HZ, BLUETOOTH_RATE_HZ};
+
+mod fields;
 
 pub const WIDE_RATE_HZ: f64 = BLUETOOTH_BAND_RATE_HZ;
 pub const WIFI_CHANNEL_WIDTH_HZ: f64 = 20_000_000.0;
@@ -316,6 +323,50 @@ impl RemoteIdFrame {
         }));
         parts.join(" · ")
     }
+}
+
+impl EventPayload for RemoteIdFrame {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let location = self.location();
+        Presentation {
+            entity: Some(self.station()),
+            place: location.and_then(|location| {
+                lat_lon(location.lat, location.lon).map(|at| {
+                    Place::at(at)
+                        .heading(bearing(location.track_deg.map(f64::from)))
+                        .altitude(location.geodetic_altitude_m)
+                })
+            }),
+            fields: self.fields(),
+            ..Presentation::of(self.summary())
+        }
+    }
+
+    fn merge(&mut self, newer: &Self) {
+        let fresh: Vec<_> = newer.messages.iter().map(slot).collect();
+        let mut messages = newer.messages.clone();
+        messages.extend(
+            self.messages
+                .drain(..)
+                .filter(|message| !fresh.contains(&slot(message))),
+        );
+        *self = Self {
+            uas_id: newer.uas_id.clone().or_else(|| self.uas_id.take()),
+            ssid: newer.ssid.clone().or_else(|| self.ssid.take()),
+            messages,
+            ..newer.clone()
+        };
+    }
+}
+
+fn slot(message: &RemoteIdMessage) -> (std::mem::Discriminant<RemoteIdMessage>, u16) {
+    let detail = match message {
+        RemoteIdMessage::BasicId { id_type, .. } => *id_type as u16,
+        RemoteIdMessage::Authentication { page, .. } => u16::from(*page),
+        RemoteIdMessage::Unknown { message_type, .. } => u16::from(*message_type),
+        _ => 0,
+    };
+    (std::mem::discriminant(message), detail)
 }
 
 #[cfg(test)]

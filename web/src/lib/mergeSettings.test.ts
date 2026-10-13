@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { DeviceSettings, StateSnapshot } from "./types";
-import { forStream, mergeSettings, patchTargetExists } from "./useDevicePatch";
+import type { DeviceSettings } from "./types";
+import { forStream, mergeSettings } from "./useDevicePatch";
 
 function gain(stage: string, value_db: number) {
   return { stage, value_db };
@@ -126,30 +126,5 @@ describe("forStream", () => {
     expect(lane.center_hz).toBe(100_000_000);
     expect(lane.antenna).toBe("RX");
     expect(lane.gains).toEqual([gain("LNA", 16.0)]);
-  });
-});
-
-function snapshot(...ids: number[]): StateSnapshot {
-  return {
-    revision: 1,
-    device_sets: ids.map((id) => ({
-      id,
-      device: { driver: "virtual", key: "0", label: "Virtual" },
-      settings: {},
-      capabilities: { antennas: [], bandwidths: [], freq_ranges: [], gains: [], sample_rates: [] },
-      status: "running",
-      channels: [],
-    })),
-  };
-}
-
-describe("patchTargetExists", () => {
-  it("is true only for a set present in the snapshot", () => {
-    expect(patchTargetExists(snapshot(0, 3), 3)).toBe(true);
-    expect(patchTargetExists(snapshot(0, 3), 1)).toBe(false);
-  });
-
-  it("is false with no snapshot at all", () => {
-    expect(patchTargetExists(undefined, 0)).toBe(false);
   });
 });

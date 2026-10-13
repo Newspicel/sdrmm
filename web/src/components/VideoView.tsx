@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { VideoFrame } from "../lib/frame";
-import { videoHub } from "../lib/video";
+import { type VideoInput, videoHub } from "../lib/video";
 
 const DISPLAY_ASPECT = 4 / 3;
 
@@ -10,11 +10,6 @@ interface Geometry {
   width: number;
   height: number;
   aspect: number;
-}
-
-export interface VideoScope {
-  deviceSet: number;
-  channel: number;
 }
 
 export interface VideoSignal {
@@ -34,13 +29,14 @@ export function VideoView({
   scope,
   onSignal,
 }: {
-  scope: VideoScope;
+  scope: VideoInput;
   onSignal: (signal: VideoSignal | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [geometry, setGeometry] = useState<Geometry | null>(null);
   const [live, setLive] = useState(false);
   const report = useEffectEvent(onSignal);
+  const { node, port, source } = scope;
 
   useEffect(() => {
     report(geometry === null ? null : { width: geometry.width, height: geometry.height, live });
@@ -91,16 +87,17 @@ export function VideoView({
       stale = window.setTimeout(() => setLive(false), STALE_MS);
     };
 
-    const held = videoHub.latest(scope.deviceSet, scope.channel);
+    const input = { node, port, source };
+    const held = videoHub.latest(input);
     if (held !== null) {
       draw(held);
     }
-    const stop = videoHub.subscribe(scope.deviceSet, scope.channel, draw);
+    const stop = videoHub.subscribe(input, draw);
     return () => {
       stop();
       clearTimeout(stale);
     };
-  }, [scope.deviceSet, scope.channel]);
+  }, [node, port, source]);
 
   return (
     <div className="p-2">

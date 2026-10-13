@@ -38,7 +38,7 @@ async fn record_siggen(engine: &Engine, rate: f64, min_samples: u64) -> Finalize
             },
         )
         .unwrap();
-    engine.start_recording(ds, 0).unwrap();
+    engine.start_recording(ds, 0, None).unwrap();
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let snap = engine.snapshot();

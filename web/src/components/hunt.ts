@@ -1,14 +1,4 @@
-import type {
-  ChannelInfo,
-  DeviceSet,
-  HuntSettings,
-  HuntStatus,
-  HuntSweep,
-  HuntSweepParams,
-  SweepState,
-} from "../lib/types";
-
-export const HUNT_INTERVAL_MS = 50;
+import type { ChannelInfo, DeviceSet, HuntStatus, HuntSweep, SweepState } from "../lib/types";
 
 export interface HuntTarget {
   set: DeviceSet;
@@ -32,35 +22,27 @@ export const TUNED_AWAY: ShortText = {
 
 export function liveHunt(
   set: DeviceSet | null,
-  channel: number | null,
+  node: string,
   pushed: HuntStatus | undefined,
 ): HuntStatus | null {
-  const listed = set?.hunts?.find((hunt) => hunt.settings.channel === channel);
+  const listed = set?.hunts?.find((hunt) => hunt.settings.node === node);
   if (listed === undefined) {
     return null;
   }
   return pushed ?? listed;
 }
 
-export function huntRefusal(target: HuntTarget | null): ShortText | null {
+export function huntRefusal(target: HuntTarget | null, scanning: boolean): ShortText | null {
   if (target === null) {
     return null;
   }
-  if (target.set.scanners?.some((scanner) => scanner.settings.channel === target.channel.id)) {
+  if (scanning) {
     return SCANNING;
   }
   if (target.channel.out_of_band) {
     return TUNED_AWAY;
   }
   return null;
-}
-
-export function huntSettings(
-  channel: number,
-  node: string,
-  sweep: HuntSweepParams | undefined,
-): HuntSettings {
-  return { channel, interval_ms: HUNT_INTERVAL_MS, node, sweep };
 }
 
 export function huntedHz(status: HuntStatus | null, channel: ChannelInfo | null): number | null {

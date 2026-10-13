@@ -2,13 +2,14 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
+    channel::ChannelDescriptor,
     patch::{DeviceRef, NodeBody, PatchError, PatchGraph, PatchNode, Position, RackLayout},
     workspace_state::{WORKSPACE_STATE_VERSION, WorkspaceState},
 };
 
 pub const WORKSPACE_SNAPSHOT_VERSION: u32 = 4;
 
-pub const WORKSPACE_EXPORT_VERSION: u32 = 1;
+pub const WORKSPACE_EXPORT_VERSION: u32 = 2;
 
 pub const MAX_NAME_LEN: usize = 64;
 
@@ -107,10 +108,21 @@ impl WorkspaceSnapshot {
     }
 
     pub fn validate(&self) -> Result<(), WorkspaceError> {
+        self.check(None)
+    }
+
+    pub fn validate_against(&self, channels: &[ChannelDescriptor]) -> Result<(), WorkspaceError> {
+        self.check(Some(channels))
+    }
+
+    fn check(&self, channels: Option<&[ChannelDescriptor]>) -> Result<(), WorkspaceError> {
         if self.version != WORKSPACE_SNAPSHOT_VERSION {
             return Err(WorkspaceError::Version(self.version));
         }
-        self.graph.validate()?;
+        match channels {
+            Some(channels) => self.graph.validate_against(channels)?,
+            None => self.graph.validate()?,
+        }
         self.rack.validate(&self.graph)?;
         if let Some(region) = &self.settings.band_region
             && (region.is_empty() || region.len() > MAX_REGION_ID_LEN)
@@ -176,11 +188,11 @@ impl WorkspaceSnapshot {
             edges: vec![crate::patch::PatchEdge {
                 from: crate::patch::PortRef {
                     node: "device".to_owned(),
-                    port: "iq".to_owned(),
+                    port: crate::patch::IQ_PORT.to_owned(),
                 },
                 to: crate::patch::PortRef {
                     node: "scope".to_owned(),
-                    port: "iq".to_owned(),
+                    port: crate::patch::IQ_PORT.to_owned(),
                 },
             }],
         };
@@ -212,6 +224,9 @@ impl WorkspaceSnapshot {
             }
             let id = format!("{prefix}{}", node.id);
             mapped.push((node.id.clone(), id.clone()));
+            if self.graph.node(&id).is_some() {
+                continue;
+            }
             let body = match (&node.body, device) {
                 (NodeBody::Device(d), Some(want)) if d.device.is_none() => {
                     NodeBody::Device(crate::patch::DeviceNode {
@@ -330,10 +345,21 @@ pub struct DroppedNode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct NoticeWire {
+    pub from: crate::patch::PortRef,
+    pub to: crate::patch::PortRef,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum WorkspaceNoticeKind {
     DroppedNodes { nodes: Vec<DroppedNode> },
     ClearedGps { nodes: Vec<String> },
+    DroppedFilterKinds { node: String, kinds: Vec<String> },
+    DroppedWires { wires: Vec<NoticeWire> },
+    AddedWires { wires: Vec<NoticeWire> },
+    AddedNodes { nodes: Vec<DroppedNode> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -388,6 +414,11 @@ impl WorkspaceExport {
             return Err(WorkspaceError::Name);
         }
         self.snapshot.validate()
+    }
+
+    pub fn validate_against(&self, channels: &[ChannelDescriptor]) -> Result<(), WorkspaceError> {
+        self.validate()?;
+        self.snapshot.validate_against(channels)
     }
 
     pub fn forget_absent_nodes(&mut self) {
@@ -456,7 +487,24 @@ pub struct PatchRefusal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::patch::{ChannelNode, DeviceNode, PatchEdge, PortRef, RackCell, RackSlot};
+    use crate::patch::{
+        ChannelNode, DeviceNode, IQ_PORT, NodeKind, PatchEdge, PortRef, RackCell, RackSlot,
+        port_stream, resolve,
+    };
+
+    fn channels_on(graph: &PatchGraph, device: &str) -> Vec<(String, u32)> {
+        let patch = resolve::compile(graph, &resolve::ResolveCtx::default()).expect("compiles");
+        patch
+            .nodes_of(NodeKind::Channel)
+            .flat_map(|node| {
+                patch
+                    .feeds(&node.id, IQ_PORT)
+                    .iter()
+                    .filter(|feed| feed.source == device)
+                    .filter_map(|feed| Some((node.id.clone(), port_stream(IQ_PORT, &feed.port)?)))
+            })
+            .collect()
+    }
 
     fn node(id: &str, body: NodeBody) -> PatchNode {
         PatchNode {
@@ -517,10 +565,14 @@ mod tests {
         assert_eq!(snap.graph.nodes.len(), 3);
         assert!(snap.rack.slots.is_empty());
         assert_eq!(snap.graph.device_nodes().count(), 1);
-        assert_eq!(
-            snap.graph.targets_of("device", "iq").collect::<Vec<_>>(),
-            vec!["scope"]
-        );
+        let patch =
+            resolve::compile(&snap.graph, &resolve::ResolveCtx::default()).expect("compiles");
+        let reached: Vec<&str> = patch
+            .reaches("device", IQ_PORT)
+            .iter()
+            .map(|reach| reach.sink.as_str())
+            .collect();
+        assert_eq!(reached, vec!["scope"]);
     }
 
     #[test]
@@ -728,11 +780,8 @@ mod tests {
             "a merged patch lands under the workspace, not on it"
         );
         assert_eq!(
-            snap.graph
-                .channels_of("template:airband:dev")
-                .map(|(n, stream)| (n.id.as_str(), stream))
-                .collect::<Vec<_>>(),
-            vec![("template:airband:ch", 0)]
+            channels_on(&snap.graph, "template:airband:dev"),
+            vec![("template:airband:ch".to_owned(), 0)]
         );
     }
 
@@ -763,9 +812,9 @@ mod tests {
         snap.merge_patch(&template(), "template:marine:", Some(&rtlsdr()));
         assert!(snap.graph.node("template:marine:dev").is_none());
         assert_eq!(
-            snap.graph
-                .channels_of("template:airband:dev")
-                .map(|(n, _)| n.id.as_str())
+            channels_on(&snap.graph, "template:airband:dev")
+                .into_iter()
+                .map(|(id, _)| id)
                 .collect::<Vec<_>>(),
             vec!["template:airband:ch", "template:marine:ch"]
         );
@@ -777,12 +826,32 @@ mod tests {
             "the shared device survives its own template's re-apply"
         );
         assert_eq!(
-            snap.graph
-                .channels_of("template:airband:dev")
-                .map(|(n, _)| n.id.as_str())
+            channels_on(&snap.graph, "template:airband:dev")
+                .into_iter()
+                .map(|(id, _)| id)
                 .collect::<Vec<_>>(),
             vec!["template:airband:ch", "template:marine:ch"],
             "the other template's channel keeps its radio"
+        );
+    }
+
+    #[test]
+    fn re_applying_keeps_one_copy_of_a_device_node_the_user_wired() {
+        let mut snap = WorkspaceSnapshot::starter();
+        snap.merge_patch(&template(), "template:airband:", None);
+        snap.graph.edges.retain(|edge| edge.to.node != "scope");
+        snap.graph
+            .edges
+            .push(wire(("template:airband:dev", "iq"), ("scope", "iq")));
+        snap.merge_patch(&template(), "template:airband:", None);
+        snap.validate().expect("valid after the re-apply");
+        assert_eq!(
+            snap.graph
+                .nodes
+                .iter()
+                .filter(|node| node.id == "template:airband:dev")
+                .count(),
+            1
         );
     }
 
@@ -834,9 +903,9 @@ mod tests {
         assert_eq!(snap.graph.device_nodes().count(), 1, "one radio, one node");
         assert!(snap.graph.node("template:airband:dev").is_none());
         assert_eq!(
-            snap.graph
-                .channels_of("device")
-                .map(|(n, _)| n.id.as_str())
+            channels_on(&snap.graph, "device")
+                .into_iter()
+                .map(|(id, _)| id)
                 .collect::<Vec<_>>(),
             vec!["template:airband:ch"]
         );
