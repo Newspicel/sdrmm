@@ -20,7 +20,7 @@ pub use contract::*;
 pub use ports::*;
 pub use registry::*;
 pub use resolve::{
-    ArrayOffer, ChannelAddr, Feed, LaneWire, NodeProblem, ProblemSource, Reach, RefusedEdge,
+    ArrayOffer, ChannelAddr, Feed, Held, LaneWire, NodeProblem, ProblemSource, Reach, RefusedEdge,
     ResolveCtx, ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Runs, Tap,
     UnboundReason,
 };

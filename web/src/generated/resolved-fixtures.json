@@ -8672,6 +8672,10 @@
           }
         },
         {
+          "held": {
+            "by": "wire",
+            "node": "scan"
+          },
           "id": "nfm",
           "kind": "channel",
           "label": "Channel",

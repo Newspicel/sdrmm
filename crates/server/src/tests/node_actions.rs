@@ -66,6 +66,50 @@ async fn tuning_a_locked_channel_is_refused() {
 }
 
 #[tokio::test]
+async fn a_decoder_on_a_control_wire_is_tuned_only_by_that_wire() {
+    let app = test_router();
+    let mut snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: "scan".to_owned(),
+        body: NodeBody::Scanner(sdrmm_wire::ScannerNode::default()),
+        position: sdrmm_wire::Position { x: 800.0, y: 300.0 },
+        size: None,
+        label: None,
+    });
+    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: "scan".to_owned(),
+            port: "control".to_owned(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: "voice".to_owned(),
+            port: "control".to_owned(),
+        },
+    });
+    let workspace = put_active_workspace(&app, &snapshot).await;
+    apply(&app, workspace).await;
+    let state = get_state(&app).await;
+    let before = live_frequency(&state, "nfm");
+
+    let (status, body) = act(&app, "voice", tune(before + 5_000.0)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8_lossy(&body).contains("Tuned by Scanner"));
+
+    let mut settings = state.device_sets[0].channels[0].settings.clone();
+    settings.frequency_hz = before + 5_000.0;
+    let path = "/api/workspaces/active/nodes/voice/channel";
+    let body = serde_json::json!({ "settings": settings }).to_string();
+    let (status, _) = request(app.clone(), "PATCH", path, Some(&body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!((live_frequency(&get_state(&app).await, "nfm") - before).abs() < 1.0);
+
+    settings.frequency_hz = before;
+    let body = serde_json::json!({ "settings": settings }).to_string();
+    let (status, _) = request(app.clone(), "PATCH", path, Some(&body)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
 async fn tuning_a_locked_lane_is_refused() {
     let app = test_router();
     let mut snapshot = virtual_snapshot("band", &[]);

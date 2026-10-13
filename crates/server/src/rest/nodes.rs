@@ -12,8 +12,8 @@ use super::*;
             description = "Settings applied to the running decoder, or held for the node until a \
                            radio carries it. With a base, only the fields changed from it land",
         ),
-        (status = 400, description = "Not a channel node, or settings of another channel type",
-         body = ApiError),
+        (status = 400, description = "Not a channel node, settings of another channel type, or a \
+                                      new frequency for a held decoder", body = ApiError),
         (status = 422, description = "Malformed request body", body = ApiError),
     ),
 )]
@@ -44,7 +44,16 @@ pub(crate) fn set_channel(
     author: Option<&str>,
 ) -> Result<bool, AppError> {
     let _serialized = lock_gate(&state.apply_gate);
-    set_channel_locked(state, node, settings, base, author)
+    set_channel_locked(
+        state,
+        node,
+        settings,
+        base,
+        Tuner {
+            author,
+            actor: None,
+        },
+    )
 }
 
 fn set_channel_locked(
@@ -52,12 +61,15 @@ fn set_channel_locked(
     node: &str,
     settings: ChannelSettings,
     base: Option<&ChannelSettings>,
-    author: Option<&str>,
+    tuner: Tuner<'_>,
 ) -> Result<bool, AppError> {
     let active = active_workspace(&state.store)?;
     check_channel_node(&active.snapshot.graph, node, &settings)?;
     let live = state.engine.snapshot();
     let Some((set, channel)) = live_channel(&live, node) else {
+        if let Some(saved) = active.state.channel(node) {
+            may_retune(state, node, &saved.settings, &settings, tuner.actor)?;
+        }
         hold_channel(state, active.info.id, node, settings)?;
         return Ok(false);
     };
@@ -66,19 +78,38 @@ fn set_channel_locked(
             .map_err(|err| AppError::bad_request(format!("settings do not merge: {err}")))?,
         None => settings,
     };
-    patch_channel_locked(state, set, channel.id, settings, author)?;
+    may_retune(state, node, &channel.settings, &settings, tuner.actor)?;
+    patch_channel_locked(state, set, channel.id, settings, tuner.author)?;
     Ok(true)
+}
+
+fn may_retune(
+    state: &AppState,
+    node: &str,
+    current: &ChannelSettings,
+    next: &ChannelSettings,
+    actor: Option<&str>,
+) -> Result<(), AppError> {
+    if current.frequency_hz.to_bits() == next.frequency_hz.to_bits() {
+        return Ok(());
+    }
+    state
+        .resolved
+        .current()
+        .patch
+        .may_tune(node, actor)
+        .map_err(AppError::bad_request)
 }
 
 pub(crate) fn edit_channel(
     state: &AppState,
     node: &str,
     edit: impl FnOnce(ChannelSettings) -> ChannelSettings,
-    author: Option<&str>,
+    tuner: Tuner<'_>,
 ) -> Result<(), AppError> {
     let _serialized = lock_gate(&state.apply_gate);
     let current = channel_settings(state, node)?;
-    set_channel_locked(state, node, edit(current), None, author).map(drop)
+    set_channel_locked(state, node, edit(current), None, tuner).map(drop)
 }
 
 pub(crate) fn channel_settings(state: &AppState, node: &str) -> Result<ChannelSettings, AppError> {

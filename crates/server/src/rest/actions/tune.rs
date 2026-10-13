@@ -8,26 +8,36 @@ use crate::{AppState, array, resolved::Resolved, rest::AppError};
 
 const LOCKED: &str = "Tuning locked";
 
+#[derive(Clone, Copy)]
+pub(crate) struct Tuner<'a> {
+    pub author: Option<&'a str>,
+    pub actor: Option<&'a str>,
+}
+
 #[derive(Debug, PartialEq)]
 pub(super) enum Lane {
     Radio { node: String, set: u32, stream: u32 },
     Array { node: String, set: u32, stream: u32 },
 }
 
-pub(super) fn tune(
+pub(crate) fn tune(
     state: &AppState,
     node: &str,
     freq_hz: f64,
-    author: Option<&str>,
+    tuner: Tuner<'_>,
 ) -> Result<(), AppError> {
+    let author = tuner.author;
     if !freq_hz.is_finite() || freq_hz <= 0.0 {
         return Err(AppError::bad_request("A frequency has to be positive"));
     }
     let resolved = state.resolved.current();
     let body = &node_of(&resolved, node)?.body;
     match body {
-        NodeBody::Channel(channel) if channel.tuning_locked => Err(AppError::bad_request(LOCKED)),
         NodeBody::Channel(channel) => {
+            resolved
+                .patch
+                .may_tune(node, tuner.actor)
+                .map_err(AppError::bad_request)?;
             pull_lane(
                 state,
                 &resolved,
@@ -36,7 +46,7 @@ pub(super) fn tune(
                 freq_hz,
                 author,
             )?;
-            retune_channel(state, node, freq_hz, author)
+            retune_channel(state, node, freq_hz, tuner)
         }
         NodeBody::Array(_) => tune_array(state, node, freq_hz),
         body if body.opens_device() => {
@@ -223,13 +233,13 @@ fn retune_channel(
     state: &AppState,
     node: &str,
     freq_hz: f64,
-    author: Option<&str>,
+    tuner: Tuner<'_>,
 ) -> Result<(), AppError> {
     let edit = |current: ChannelSettings| ChannelSettings {
         frequency_hz: freq_hz,
         ..current
     };
-    crate::rest::edit_channel(state, node, edit, author)
+    crate::rest::edit_channel(state, node, edit, tuner)
 }
 
 #[cfg(test)]

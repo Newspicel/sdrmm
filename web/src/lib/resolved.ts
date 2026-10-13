@@ -171,6 +171,14 @@ export function controllerOf(patch: ResolvedPatch | null, node: string): string 
   return feed === undefined ? null : (resolvedNode(patch, feed.source)?.label ?? feed.source);
 }
 
+export function heldByOf(patch: ResolvedPatch | null, node: string): string | null {
+  const held = resolvedNode(patch, node)?.held;
+  if (held?.by !== "wire") {
+    return null;
+  }
+  return resolvedNode(patch, held.node)?.label ?? held.node;
+}
+
 export function tapChannels(tap: Tap | null | undefined): ChannelAddr[] {
   switch (tap?.tap) {
     case "channel":

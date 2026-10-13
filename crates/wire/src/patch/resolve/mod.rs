@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::{
-    NodeBody, NodeKind, PatchEdge, PatchError, PatchGraph, PatchNode, PortDirection, PortRef,
-    PortSpec, Role,
+    CONTROL_PORT, NodeBody, NodeKind, PatchEdge, PatchError, PatchGraph, PatchNode, PortDirection,
+    PortRef, PortSpec, Role,
 };
 use crate::{
     channel::ChannelDescriptor,
@@ -51,6 +51,15 @@ pub struct ResolvedNode {
     pub runs: Runs,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub array_offer: Option<ArrayOffer>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<Held>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "by", rename_all = "snake_case")]
+pub enum Held {
+    Hand,
+    Wire { node: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -342,16 +351,20 @@ fn assemble(net: &Net<'_>) -> ResolvedPatch {
         .nodes
         .iter()
         .zip(&net.ports)
-        .map(|(node, specs)| ResolvedNode {
-            id: node.id.clone(),
-            kind: node.body.kind(),
-            label: net.label(&node.id),
-            ports: specs
+        .map(|(node, specs)| {
+            let ports: Vec<ResolvedPort> = specs
                 .iter()
                 .map(|spec| feeds::resolve_port(net, &node.id, spec.clone()))
-                .collect(),
-            runs: initial_runs(&node.body),
-            array_offer: None,
+                .collect();
+            ResolvedNode {
+                id: node.id.clone(),
+                kind: node.body.kind(),
+                label: net.label(&node.id),
+                held: held(&node.body, &ports),
+                ports,
+                runs: initial_runs(&node.body),
+                array_offer: None,
+            }
         })
         .collect();
     ResolvedPatch {
@@ -367,6 +380,23 @@ fn assemble(net: &Net<'_>) -> ResolvedPatch {
             .collect(),
         ..ResolvedPatch::default()
     }
+}
+
+fn held(body: &NodeBody, ports: &[ResolvedPort]) -> Option<Held> {
+    let NodeBody::Channel(channel) = body else {
+        return None;
+    };
+    if channel.tuning_locked {
+        return Some(Held::Hand);
+    }
+    ports
+        .iter()
+        .filter(|port| port.spec.direction == PortDirection::In && port.spec.name == CONTROL_PORT)
+        .flat_map(|port| &port.feeds)
+        .next()
+        .map(|feed| Held::Wire {
+            node: feed.source.clone(),
+        })
 }
 
 fn initial_runs(body: &NodeBody) -> Runs {
@@ -502,6 +532,19 @@ impl ResolvedPatch {
                 _ => false,
             })
             .map(|node| node.id.as_str())
+    }
+
+    pub fn may_tune(&self, node: &str, actor: Option<&str>) -> Result<(), String> {
+        match self.node(node).and_then(|found| found.held.as_ref()) {
+            None => Ok(()),
+            Some(Held::Wire { node: by }) if actor == Some(by.as_str()) => Ok(()),
+            Some(Held::Hand) => Err("Tuning locked".to_owned()),
+            Some(Held::Wire { node: by }) => Err(format!(
+                "Tuned by {}",
+                self.node(by)
+                    .map_or(by.as_str(), |found| found.label.as_str())
+            )),
+        }
     }
 
     #[must_use]

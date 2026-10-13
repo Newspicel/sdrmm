@@ -1,4 +1,5 @@
-import type { PatchGraph, Runs, UnboundReason } from "../../lib/types";
+import { heldByOf, resolvedNode } from "../../lib/resolved";
+import type { ResolvedPatch, Runs, UnboundReason } from "../../lib/types";
 
 export interface Unbound {
   status: string | null;
@@ -24,14 +25,16 @@ export function unboundOf(runs: Runs | undefined): Unbound | null {
 }
 
 export function lockedChannels(
-  graph: PatchGraph,
+  resolved: ResolvedPatch | null,
   faces: ReadonlyMap<number, string>,
-): ReadonlySet<number> {
-  const locked = new Set<number>();
+): ReadonlyMap<number, string> {
+  const locked = new Map<number, string>();
   for (const [channel, id] of faces) {
-    const node = graph.nodes.find((candidate) => candidate.id === id);
-    if (node?.kind === "channel" && node.data.tuning_locked === true) {
-      locked.add(channel);
+    const by = heldByOf(resolved, id);
+    if (by !== null) {
+      locked.set(channel, `tuned by ${by}`);
+    } else if (resolvedNode(resolved, id)?.held?.by === "hand") {
+      locked.set(channel, "held, unlock it on its node to tune");
     }
   }
   return locked;

@@ -22,7 +22,7 @@ import { SignalRow } from "../../components/SignalRow";
 import { useBroadcast } from "../../lib/broadcast";
 import { heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, usePipelineHealth } from "../../lib/pipeline";
-import { controllerOf, runsOf, sweptBy } from "../../lib/resolved";
+import { controllerOf, heldByOf, runsOf, sweptBy } from "../../lib/resolved";
 import type { BandMiss, BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
@@ -116,7 +116,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
               dialId={dialId(node.id)}
               wheelTunes={workspace.selected === node.id}
               locked={locked}
-              heldBy={controller}
+              heldBy={heldByOf(workspace.resolved, node.id)}
               onTune={(frequency_hz) => onEdit({ frequency_hz })}
               onLock={(tuning_locked) => editNode({ tuning_locked })}
             />

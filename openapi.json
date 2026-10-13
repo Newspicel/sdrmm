@@ -4877,7 +4877,7 @@
             "description": "Settings applied to the running decoder, or held for the node until a radio carries it. With a base, only the fields changed from it land"
           },
           "400": {
-            "description": "Not a channel node, or settings of another channel type",
+            "description": "Not a channel node, settings of another channel type, or a new frequency for a held decoder",
             "content": {
               "application/json": {
                 "schema": {
@@ -20480,6 +20480,42 @@
           "ground"
         ]
       },
+      "Held": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "by"
+            ],
+            "properties": {
+              "by": {
+                "type": "string",
+                "enum": [
+                  "hand"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "node",
+              "by"
+            ],
+            "properties": {
+              "by": {
+                "type": "string",
+                "enum": [
+                  "wire"
+                ]
+              },
+              "node": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "HeldLane": {
         "type": "object",
         "required": [
@@ -31754,6 +31790,16 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/ArrayOffer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "held": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Held"
               },
               {
                 "type": "null"

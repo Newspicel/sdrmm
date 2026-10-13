@@ -210,7 +210,7 @@ pub use patch::{
     CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
     DEFAULT_SIGNAL_MAP_OFFSET_HZ, DecoderLogNode, DeviceNode, DeviceRef, DfNode, DmrChannelEntry,
     DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol, EVENTS_PORT, Face, FaceSize,
-    Feed, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_DMR_CHANNEL_MAP,
+    Feed, Held, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_DMR_CHANNEL_MAP,
     MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES, MAX_DMR_SEARCH_CANDIDATES, MAX_DMR_SEARCH_RANGES,
     MAX_EDGES, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS,
     MIN_DMR_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo,

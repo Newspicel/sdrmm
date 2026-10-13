@@ -273,7 +273,7 @@ function Spectrum({
       faces.set(channel, owner.node);
     }
   }
-  const locked = lockedChannels(workspace.graph, faces);
+  const locked = lockedChannels(workspace.resolved, faces);
   const heldChannel = (channel: number): boolean => owners.has(channel) || locked.has(channel);
   const { centerHeld, tuneCenter } = useLaneTune(node, set, source);
 
@@ -967,7 +967,7 @@ function Markers({
   spanHz: number;
   selected: number | null;
   owners: ReadonlyMap<number, TrunkChannelOwner>;
-  locked: ReadonlySet<number>;
+  locked: ReadonlyMap<number, string>;
   preview: { channel: number; offsetHz: number } | null;
   onSelect: (channel: number) => void;
   widthPx: number;
@@ -1031,7 +1031,7 @@ function Markers({
                       event.stopPropagation();
                       onSelect(channel.id);
                     }}
-                    aria-label={markerHint(channel, hz, owner, locked.has(channel.id))}
+                    aria-label={markerHint(channel, hz, owner, locked.get(channel.id))}
                   />
                 </Fragment>
               );
@@ -1049,7 +1049,7 @@ function Markers({
                   shown.channel,
                   shown.hz,
                   owners.get(shown.channel.id),
-                  locked.has(shown.channel.id),
+                  locked.get(shown.channel.id),
                 )}
                 className={stacked ? "group-hover:hidden" : ""}
               >
@@ -1063,7 +1063,7 @@ function Markers({
                     active={channel.id === selected}
                     channel={channel.id}
                     owned={held(channel.id)}
-                    title={markerHint(channel, hz, owners.get(channel.id), locked.has(channel.id))}
+                    title={markerHint(channel, hz, owners.get(channel.id), locked.get(channel.id))}
                     className="hidden group-hover:block"
                   >
                     {markerName(channel, owners.get(channel.id))}
@@ -1143,13 +1143,13 @@ function markerHint(
   channel: ChannelInfo,
   hz: number,
   owner: TrunkChannelOwner | undefined,
-  locked: boolean,
+  lock: string | undefined,
 ): string {
   if (owner !== undefined) {
     return `trunk ${owner.role} channel: ${formatMhz(hz)}; the system it belongs to tunes it`;
   }
-  if (locked) {
-    return `${channel.settings.params.type} channel: ${formatMhz(hz)}; held, unlock it on its node to tune`;
+  if (lock !== undefined) {
+    return `${channel.settings.params.type} channel: ${formatMhz(hz)}; ${lock}`;
   }
   return `${channel.settings.params.type} channel: ${formatMhz(hz)}`;
 }

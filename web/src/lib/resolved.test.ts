@@ -10,6 +10,7 @@ import {
   channelOwners,
   controlledChannel,
   feedsOf,
+  heldByOf,
   ignoredOf,
   inputsOf,
   observeResolved,
@@ -157,6 +158,17 @@ describe("resolved lookups", () => {
     expect(feedsOf(resolved, "nfm", "audio")).toEqual([]);
     expect(reachesOf(resolved, "nfm", "audio").map((reach) => reach.sink)).toEqual(["spk"]);
     expect(feedsOf(null, "nfm", "iq")).toEqual([]);
+  });
+
+  it("names the node a decoder is held by, never a hand lock", () => {
+    const resolved = resolvedPatch([
+      { ...resolvedNodeOf("nfm", "channel"), held: { by: "wire", node: "scan" } },
+      { ...resolvedNodeOf("am", "channel"), held: { by: "hand" } },
+      { ...resolvedNodeOf("scan", "scanner"), label: "Scanner" },
+    ]);
+    expect(heldByOf(resolved, "nfm")).toBe("Scanner");
+    expect(heldByOf(resolved, "am")).toBeNull();
+    expect(heldByOf(null, "nfm")).toBeNull();
   });
 
   it("names the kinds an input ignores", () => {

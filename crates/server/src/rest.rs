@@ -58,7 +58,7 @@ mod sinks;
 mod survey;
 mod workspaces;
 
-pub(crate) use actions::{act, controlled};
+pub(crate) use actions::{Tuner, act, controlled, tune_node};
 use audio_recordings::*;
 use cps::*;
 use decoderlog::*;

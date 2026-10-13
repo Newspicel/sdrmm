@@ -55,7 +55,11 @@ fn hunt_action(
     let target = hunt.target.as_ref().ok_or(MissionRefusal::NotRunning)?;
     let action = match action {
         MissionAction::Tune { frequency_hz } => {
-            return tune(state, &target.channel_node, frequency_hz, author);
+            let tuner = rest::Tuner {
+                author,
+                actor: Some(node),
+            };
+            return rest::tune_node(state, &target.channel_node, positive(frequency_hz)?, tuner);
         }
         MissionAction::StartHunt | MissionAction::StopSweep => HuntAction::Start,
         MissionAction::StopHunt => HuntAction::Stop,

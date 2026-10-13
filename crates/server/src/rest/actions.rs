@@ -6,6 +6,8 @@ mod capture;
 mod retype;
 mod tune;
 
+pub(crate) use tune::{Tuner, tune as tune_node};
+
 #[utoipa::path(
     post, path = "/api/workspaces/active/nodes/{node}/actions",
     params(("node" = String, Path, description = "Node of the active workspace")),
@@ -39,7 +41,11 @@ pub(crate) fn act(
 ) -> Result<NodeActed, AppError> {
     match action {
         NodeAction::Tune { freq_hz } => {
-            tune::tune(state, node, freq_hz, author).map(|()| NodeActed::Tuned)
+            let tuner = Tuner {
+                author,
+                actor: None,
+            };
+            tune_node(state, node, freq_hz, tuner).map(|()| NodeActed::Tuned)
         }
         NodeAction::Retype { channel_type } => retype::retype(state, node, &channel_type, author)
             .map(|dropped| NodeActed::Retyped { dropped }),

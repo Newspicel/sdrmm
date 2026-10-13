@@ -778,6 +778,44 @@ fn a_controller_sees_where_its_target_runs_and_a_target_who_sweeps_it() {
 }
 
 #[test]
+fn a_decoder_is_held_by_its_lock_or_by_the_node_on_its_control_input() {
+    let mut graph = PatchGraph {
+        nodes: vec![
+            channel("voice", "nfm"),
+            channel("free", "am"),
+            node("scan", NodeBody::Scanner(Default::default())),
+        ],
+        edges: vec![wire(("scan", "control"), ("voice", "control"))],
+    };
+    let patch = compiled(&graph);
+    let held = |patch: &ResolvedPatch, id: &str| patch.node(id).and_then(|node| node.held.clone());
+    assert_eq!(
+        held(&patch, "voice"),
+        Some(Held::Wire {
+            node: "scan".to_owned()
+        })
+    );
+    assert_eq!(held(&patch, "free"), None);
+    assert_eq!(held(&patch, "scan"), None);
+    assert_eq!(patch.may_tune("free", None), Ok(()));
+    assert_eq!(patch.may_tune("voice", Some("scan")), Ok(()));
+    assert_eq!(
+        patch.may_tune("voice", None),
+        Err("Tuned by Scanner".to_owned())
+    );
+
+    if let NodeBody::Channel(locked) = &mut graph.nodes[0].body {
+        locked.tuning_locked = true;
+    }
+    let patch = compiled(&graph);
+    assert_eq!(held(&patch, "voice"), Some(Held::Hand));
+    assert_eq!(
+        patch.may_tune("voice", Some("scan")),
+        Err("Tuning locked".to_owned())
+    );
+}
+
+#[test]
 fn a_coherent_radio_offers_the_wires_of_a_new_array() {
     let graph = PatchGraph {
         nodes: vec![radio("dev", "kraken")],

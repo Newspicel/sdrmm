@@ -5577,6 +5577,14 @@ export interface components {
         HeadingSource: "compass" | "course" | "fused" | "gnss" | "sensor";
         /** @enum {string} */
         HeightReference: "takeoff" | "ground";
+        Held: {
+            /** @enum {string} */
+            by: "hand";
+        } | {
+            /** @enum {string} */
+            by: "wire";
+            node: string;
+        };
         HeldLane: {
             array: string;
             /** Format: int32 */
@@ -8530,6 +8538,7 @@ export interface components {
         };
         ResolvedNode: {
             array_offer?: components["schemas"]["ArrayOffer"] | null;
+            held?: components["schemas"]["Held"] | null;
             id: string;
             kind: components["schemas"]["NodeKind"];
             label: string;
@@ -15040,7 +15049,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not a channel node, or settings of another channel type */
+            /** @description Not a channel node, settings of another channel type, or a new frequency for a held decoder */
             400: {
                 headers: {
                     [name: string]: unknown;
