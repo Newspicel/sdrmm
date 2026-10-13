@@ -343,14 +343,18 @@ impl SinkHub {
         let Some(sink) = sinks.get_mut(node) else {
             return false;
         };
-        let removed = sink.entities.retain(|_| false);
-        sink.pending.removed.extend(removed);
+        sink.entities.retain(|_| false);
         sink.records.clear();
-        sink.pending.records.clear();
-        sink.pending.upserts.clear();
+        sink.pending = Pending::default();
         if let Some(model) = sink.propagation.as_mut() {
             model.clear(now_ms());
+            model.changed = false;
         }
+        let snapshot = ServerEvent::SinkSnapshot {
+            node: node.to_owned(),
+            feed: Box::new(sink.feed()),
+        };
+        let _unwatched = sink.out.send(crate::ws::encode_event(&snapshot));
         true
     }
 

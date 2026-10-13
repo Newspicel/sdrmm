@@ -516,7 +516,7 @@ fn clearing_a_sink_drops_what_it_held() {
 }
 
 #[test]
-fn a_clear_also_drops_what_waited_for_the_flush() {
+fn a_clear_empties_every_watcher_and_drops_what_waited_for_the_flush() {
     let bench = Bench::over(two_decoders_one_map());
     let (_, mut updates) = bench.hub.subscribe("map").expect("map is a sink");
     bench.send(from("north", aircraft("3c6444", "DLH123")));
@@ -524,12 +524,16 @@ fn a_clear_also_drops_what_waited_for_the_flush() {
     bench.hub.clear("map");
     bench.hub.flush(&SurfaceHub::default());
 
-    let update = updates.try_recv().expect("the removal went out");
-    let event: ServerEvent = serde_json::from_str(update.as_str()).expect("update json");
-    let ServerEvent::SinkUpdate { update, .. } = event else {
-        panic!("a flush sends a sink update");
+    let sent = updates.try_recv().expect("the clear went out");
+    let event: ServerEvent = serde_json::from_str(sent.as_str()).expect("snapshot json");
+    let ServerEvent::SinkSnapshot { feed, .. } = event else {
+        panic!("a clear sends a fresh snapshot");
     };
-    assert!(update.records.is_empty() && update.upserts.is_empty());
+    assert!(feed.entities.is_empty() && feed.records.is_empty());
+    assert!(
+        matches!(updates.try_recv(), Err(TryRecvError::Empty)),
+        "nothing from before the clear follows it"
+    );
 }
 
 #[test]
