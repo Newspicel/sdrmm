@@ -8,8 +8,8 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 |---|---|
 | IQ | Decoders on a lane retune it unless the lane is locked |
 | Baseband |  |
-| Audio |  |
-| Events |  |
+| Audio | Live audio |
+| Events | Decoded events. Calls and transmissions bring their clip |
 | Video |  |
 | Control |  |
 | Position |  |
@@ -130,7 +130,7 @@ Ports follow the decoder the node runs.
 | `control` | in | Control | tune, doppler, sweep | one. a scanner, signal hunt or satellite drives this decoder; its radio follows |
 | `position` | in | Position |  | one |
 | `baseband` | out | Baseband |  | many |
-| `audio` | out | Audio | live | many |
+| `audio` | out | Audio |  | many |
 | `events` | out | Events | any kind | many. Decoded messages and calls. Analog calls need squelch |
 | `video` | out | Video |  | many |
 
@@ -154,7 +154,6 @@ Catches and decodes everything in view
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
 | `events` | out | Events | any kind | many |
-| `audio` | out | Audio | clips | many |
 
 ### DMR trunk system
 
@@ -164,7 +163,7 @@ Follows calls across a DMR trunk system
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one. the radio the control channel sits on; the system runs its own decoders |
 | `events` | out | Events | Digital voice, Call | many |
-| `audio` | out | Audio | live | many |
+| `audio` | out | Audio |  | many |
 
 ### Event filter
 
@@ -181,8 +180,8 @@ Filters, denoise and AGC
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | live | many |
-| `audio` | out | Audio | live | many |
+| `audio` | in | Audio |  | many |
+| `audio` | out | Audio |  | many |
 
 ### Scanner
 
@@ -313,7 +312,7 @@ Plays channel audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | live | many |
+| `audio` | in | Audio |  | many |
 
 ### Map
 
@@ -339,7 +338,7 @@ Where FT8, FT4 and WSPR signals came from
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | FT8, FT4, WSPR | many |
+| `events` | in | Events | FT8, FT4, WSPR | many, keeps history |
 | `position` | in | Position |  | one |
 
 ### Readout
@@ -356,8 +355,7 @@ Every decoded message in a table
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 57 kinds | many |
-| `audio` | in | Audio | live, clips | many |
+| `events` | in | Events | 57 kinds | many, keeps history, clips |
 
 ### Event output
 
@@ -373,7 +371,7 @@ ATV frames and decoded pictures
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `video` | in | Video |  | many |
+| `video` | in | Video |  | many, keeps pictures |
 
 ### Recorder
 
@@ -390,7 +388,7 @@ Records channel audio to WAV
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | live | many |
+| `audio` | in | Audio |  | many |
 
 ### Baseband recorder
 
@@ -424,7 +422,7 @@ Saves logged rows as CSV or JSON
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 57 kinds | many |
+| `events` | in | Events | 57 kinds | many, keeps history |
 
 ### Rotator
 

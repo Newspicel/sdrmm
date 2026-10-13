@@ -15,7 +15,7 @@ import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { runningSetOf } from "../workspaceDevice";
-import { type RecorderNodeOf, recordingFor, withRecording, withSkipSilence } from "./audioRecorder";
+import { ownRecording, type RecorderNodeOf, withRecording, withSkipSilence } from "./audioRecorder";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import { inputKey, useInputName } from "./sinkInputs";
 
@@ -185,7 +185,7 @@ function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
   const inputs = useInputs(node.id, "audio");
   const nameOf = useInputName();
   const recording = node.data?.recording ?? false;
-  const takes = inputs.map((input) => ({ input, status: recordingFor(input.channel, input.fx) }));
+  const takes = inputs.map((input) => ({ input, status: ownRecording(input.channel, node.id) }));
   const held = takes.flatMap(({ status }) => (status === null ? [] : [status]));
   return (
     <NodeShell node={node} title="Audio recorder" category="output">

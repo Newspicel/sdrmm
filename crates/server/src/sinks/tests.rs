@@ -231,18 +231,14 @@ fn removing_a_wire_drops_what_it_brought() {
 }
 
 #[test]
-fn a_clip_stays_only_where_an_audio_wire_brought_it() {
+fn a_clip_stays_only_in_a_sink_that_keeps_clips() {
     let graph = PatchGraph {
         nodes: vec![
             channel("dmr", "dmr"),
-            node("plain", NodeBody::DecoderLog(Default::default())),
+            node("plain", NodeBody::Readout),
             node("heard", NodeBody::DecoderLog(Default::default())),
         ],
-        edges: vec![
-            events("dmr", "plain"),
-            events("dmr", "heard"),
-            wire(("dmr", "audio"), ("heard", "audio")),
-        ],
+        edges: vec![events("dmr", "plain"), events("dmr", "heard")],
     };
     let bench = Bench::over(graph);
 

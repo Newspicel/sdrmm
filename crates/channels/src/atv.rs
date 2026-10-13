@@ -7,7 +7,7 @@ use sdrmm_modem::analog::{
     AngleKind, AngleParams, AngleRx,
 };
 use sdrmm_wire::{
-    AtvColor, AtvModulation, AtvParams, AtvStandard, CallGate, ChannelDescriptor, ChannelParams,
+    AtvColor, AtvModulation, AtvParams, AtvStandard, ChannelDescriptor, ChannelParams,
     ChannelSettings, DecoderFamily,
 };
 
@@ -60,7 +60,6 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
     has_video: true,
-    calls: Some(CallGate::Squelch),
     ..ChannelDescriptor::default()
 });
 

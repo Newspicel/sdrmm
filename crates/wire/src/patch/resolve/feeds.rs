@@ -3,7 +3,7 @@ use super::{
     Feed, Net, Reach, ResolvedPort,
 };
 use crate::{
-    decode::KindSet,
+    decode::{Capability, KindSet},
     patch::{Keeps, Payload},
 };
 
@@ -40,15 +40,27 @@ pub(super) fn resolve_port(net: &Net<'_>, node: &str, spec: PortSpec) -> Resolve
 
 fn kept_by(net: &Net<'_>, reaches: &[Reach]) -> Vec<Keeps> {
     let mut kept = Vec::new();
-    for keeps in reaches.iter().filter_map(|reach| {
-        net.spec(&reference(&reach.sink, &reach.port), PortDirection::In)?
-            .keeps
-    }) {
-        if !kept.contains(&keeps) {
-            kept.push(keeps);
+    for reach in reaches {
+        let Some(input) = net.spec(&reference(&reach.sink, &reach.port), PortDirection::In) else {
+            continue;
+        };
+        for keeps in input.keeps.iter().copied() {
+            if delivers_kept(reach, keeps) && !kept.contains(&keeps) {
+                kept.push(keeps);
+            }
         }
     }
     kept
+}
+
+fn delivers_kept(reach: &Reach, keeps: Keeps) -> bool {
+    match keeps {
+        Keeps::Clips => !reach
+            .kinds
+            .intersection(KindSet::with_cap(Capability::Clip))
+            .is_empty(),
+        Keeps::History | Keeps::Pictures => true,
+    }
 }
 
 pub(super) fn feeds_into(net: &Net<'_>, node: &str, spec: &PortSpec) -> Vec<Feed> {

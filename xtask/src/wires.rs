@@ -106,10 +106,10 @@ const fn way(direction: PortDirection) -> &'static str {
 fn carries(payload: &Payload) -> String {
     match payload {
         Payload::Iq { origins } => listed(origins.iter().map(snake)),
-        Payload::Audio { streams } => listed(streams.iter().map(snake)),
         Payload::Events { kinds } => kinds_of(*kinds),
         Payload::Control { verbs } => listed(verbs.iter().map(snake)),
         Payload::Baseband
+        | Payload::Audio
         | Payload::Video
         | Payload::Position
         | Payload::Array
@@ -138,11 +138,16 @@ fn wires(port: &PortSpec) -> String {
         PortRepeat::PerRxStream => ", one per lane",
         PortRepeat::PerLane => ", one per array lane",
     };
+    let keeps = if port.keeps.is_empty() {
+        String::new()
+    } else {
+        format!(", keeps {}", listed(port.keeps.iter().map(snake)))
+    };
     let note = port
         .note
         .as_deref()
         .map_or_else(String::new, |note| format!(". {note}"));
-    format!("{count}{repeat}{note}")
+    format!("{count}{repeat}{keeps}{note}")
 }
 
 fn listed<T: AsRef<str>>(items: impl Iterator<Item = T>) -> String {
@@ -185,5 +190,9 @@ mod tests {
             assert!(page.contains(&format!("`{}`", entry.kind.as_str())));
         }
         assert!(!page.contains('\u{2014}'), "no em dash");
+        assert!(
+            page.contains("keeps history, clips"),
+            "the decoder log keeps clips"
+        );
     }
 }

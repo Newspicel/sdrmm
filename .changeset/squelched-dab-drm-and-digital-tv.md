@@ -2,4 +2,4 @@
 bump: patch
 ---
 
-Squelched DAB, DRM and digital TV channels no longer log calls
+Broadcast channels (WFM, analog TV, DAB, DRM, digital TV) no longer log calls

@@ -210,7 +210,7 @@ pub(crate) fn route(patch: &ResolvedPatch, capture: &ImageCapture) -> Option<Rou
                 .and_then(|sink| sink.input(&reach.port))
                 .is_some_and(|port| {
                     port.spec.direction == PortDirection::In
-                        && port.spec.keeps == Some(Keeps::Pictures)
+                        && port.spec.keeps.contains(&Keeps::Pictures)
                 })
         })
         .map(|reach| reach.sink.clone())

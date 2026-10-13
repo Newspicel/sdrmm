@@ -62,7 +62,7 @@ struct Sink {
     tracks: BTreeMap<String, PositionTrack>,
     surfaces: Vec<SurfaceRef>,
     lost: u64,
-    clips_from: HashSet<String>,
+    keeps_clips: bool,
     positions_from: HashSet<String>,
     events_from: HashSet<String>,
     propagation: Option<Propagation>,
@@ -85,7 +85,7 @@ impl Sink {
             tracks: BTreeMap::new(),
             surfaces: Vec::new(),
             lost: 0,
-            clips_from: HashSet::new(),
+            keeps_clips: false,
             positions_from: HashSet::new(),
             events_from: HashSet::new(),
             propagation: None,
@@ -147,8 +147,7 @@ impl Sink {
 
     fn take(&mut self, record: DecodedRecord, now: Instant) -> u64 {
         let mut record = record;
-        let source = record.origin.as_ref().map(|origin| origin.node.as_str());
-        if !source.is_some_and(|source| self.clips_from.contains(source)) {
+        if !self.keeps_clips {
             strip_clip(&mut record);
         }
         let Some(view) = record.view.clone() else {
@@ -238,9 +237,12 @@ fn sources_on(node: &ResolvedNode, port_type: PortType) -> HashSet<String> {
         .collect()
 }
 
+fn keeps(node: &ResolvedNode, keeps: Keeps) -> bool {
+    node.inputs().any(|port| port.spec.keeps.contains(&keeps))
+}
+
 fn takes_pictures(node: &ResolvedNode) -> bool {
-    node.inputs()
-        .any(|port| port.spec.keeps == Some(Keeps::Pictures))
+    keeps(node, Keeps::Pictures)
 }
 
 fn is_sink(node: &ResolvedNode) -> bool {
@@ -293,7 +295,7 @@ impl SinkHub {
         for node in wanted {
             let sink = sinks.entry(node.id.clone()).or_insert_with(Sink::new);
             sink.takes_pictures = takes_pictures(node);
-            sink.clips_from = sources_on(node, PortType::Audio);
+            sink.keeps_clips = keeps(node, Keeps::Clips);
             sink.events_from = sources_on(node, PortType::Events);
             sink.positions_from = sources_on(node, PortType::Position);
             if follow_settings(sink, resolved, &node.id) {
@@ -533,12 +535,8 @@ fn prune(sink: &mut Sink, node: &str, resolved: &Resolved) {
             _ => false,
         }
     });
-    let clips_from = &sink.clips_from;
-    for record in &mut sink.records {
-        let source = record.origin.as_ref().map(|origin| origin.node.as_str());
-        if !source.is_some_and(|source| clips_from.contains(source)) {
-            strip_clip(record);
-        }
+    if !sink.keeps_clips {
+        sink.records.iter_mut().for_each(strip_clip);
     }
     let positions_from = &sink.positions_from;
     let before = sink.tracks.len();

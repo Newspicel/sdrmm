@@ -2517,10 +2517,9 @@ export interface components {
             /** Format: int64 */
             frames: number;
             fx?: string[];
+            node: string;
             started_at: string;
         };
-        /** @enum {string} */
-        AudioStream: "live" | "clips";
         AuthInfo: {
             login_url?: string | null;
             token_required: boolean;
@@ -7348,7 +7347,6 @@ export interface components {
             /** @enum {string} */
             type: "baseband";
         } | {
-            streams: components["schemas"]["AudioStream"][];
             /** @enum {string} */
             type: "audio";
         } | {
@@ -7629,7 +7627,7 @@ export interface components {
             direction: components["schemas"]["PortDirection"];
             exclusive?: boolean;
             group?: string | null;
-            keeps?: components["schemas"]["Keeps"] | null;
+            keeps?: components["schemas"]["Keeps"][];
             multi: components["schemas"]["Multi"];
             name: string;
             note?: string | null;
@@ -7746,7 +7744,7 @@ export interface components {
             version: number;
         };
         /** @enum {string} */
-        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls";
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder";
         /** @enum {string} */
         ProcessorGate: "sync" | "phase" | "gain" | "calibrating" | "retuning" | "tier" | "tuning_mode";
         ProcessorReading: {

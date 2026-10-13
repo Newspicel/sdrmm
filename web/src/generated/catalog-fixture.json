@@ -272,10 +272,7 @@
           "port_type": "audio",
           "direction": "out",
           "payload": {
-            "type": "audio",
-            "streams": [
-              "live"
-            ]
+            "type": "audio"
           },
           "multi": "many"
         },
@@ -460,13 +457,9 @@
           "port_type": "audio",
           "direction": "in",
           "payload": {
-            "type": "audio",
-            "streams": [
-              "live"
-            ]
+            "type": "audio"
           },
-          "multi": "many",
-          "takes": "live audio"
+          "multi": "many"
         }
       ],
       "needs_channel_type": false,
@@ -621,7 +614,9 @@
             ]
           },
           "multi": "many",
-          "keeps": "history",
+          "keeps": [
+            "history"
+          ],
           "takes": "grid spots"
         },
         {
@@ -826,23 +821,11 @@
             ]
           },
           "multi": "many",
-          "keeps": "history",
+          "keeps": [
+            "history",
+            "clips"
+          ],
           "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, Noise figure, PER, SID, STANAG"
-        },
-        {
-          "name": "audio",
-          "port_type": "audio",
-          "direction": "in",
-          "payload": {
-            "type": "audio",
-            "streams": [
-              "live",
-              "clips"
-            ]
-          },
-          "multi": "many",
-          "direct": true,
-          "keeps": "clips"
         }
       ],
       "needs_channel_type": false,
@@ -949,18 +932,6 @@
             ]
           },
           "multi": "many"
-        },
-        {
-          "name": "audio",
-          "port_type": "audio",
-          "direction": "out",
-          "payload": {
-            "type": "audio",
-            "streams": [
-              "clips"
-            ]
-          },
-          "multi": "many"
         }
       ],
       "needs_channel_type": false,
@@ -1023,10 +994,7 @@
           "port_type": "audio",
           "direction": "out",
           "payload": {
-            "type": "audio",
-            "streams": [
-              "live"
-            ]
+            "type": "audio"
           },
           "multi": "many"
         }
@@ -1235,23 +1203,16 @@
           "port_type": "audio",
           "direction": "in",
           "payload": {
-            "type": "audio",
-            "streams": [
-              "live"
-            ]
+            "type": "audio"
           },
-          "multi": "many",
-          "takes": "live audio"
+          "multi": "many"
         },
         {
           "name": "audio",
           "port_type": "audio",
           "direction": "out",
           "payload": {
-            "type": "audio",
-            "streams": [
-              "live"
-            ]
+            "type": "audio"
           },
           "multi": "many"
         }
@@ -1404,7 +1365,9 @@
             "type": "video"
           },
           "multi": "many",
-          "keeps": "pictures"
+          "keeps": [
+            "pictures"
+          ]
         }
       ],
       "needs_channel_type": false,
@@ -1475,13 +1438,9 @@
           "port_type": "audio",
           "direction": "in",
           "payload": {
-            "type": "audio",
-            "streams": [
-              "live"
-            ]
+            "type": "audio"
           },
-          "multi": "many",
-          "takes": "live audio"
+          "multi": "many"
         }
       ],
       "needs_channel_type": false,
@@ -1698,7 +1657,9 @@
             ]
           },
           "multi": "many",
-          "keeps": "history",
+          "keeps": [
+            "history"
+          ],
           "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, Noise figure, PER, SID, STANAG"
         }
       ],
@@ -2507,12 +2468,14 @@
     {
       "port_type": "audio",
       "name": "Audio",
-      "hue": "green"
+      "hue": "green",
+      "note": "Live audio"
     },
     {
       "port_type": "events",
       "name": "Events",
-      "hue": "amber"
+      "hue": "amber",
+      "note": "Decoded events. Calls and transmissions bring their clip"
     },
     {
       "port_type": "video",

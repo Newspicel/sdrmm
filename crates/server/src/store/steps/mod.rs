@@ -4,10 +4,11 @@ use serde_json::Value;
 
 use super::{StoreError, coherent_break};
 
-mod call_audio;
+mod clip_wires;
 mod filter_kinds;
 mod pictures;
 mod refused;
+mod silent_events;
 mod steer;
 mod tx;
 mod watched_lanes;
@@ -19,12 +20,13 @@ const STEPS: &[Step] = &[
     filter_kinds::drop_unknown_filter_kinds,
     steer::steer_from_bearing,
     tx::drop_tx_wires,
+    clip_wires::drop_clip_wires,
+    silent_events::drop_silent_event_wires,
     refused::drop_refused_edges,
 ];
 
 const ONCE: &[(&str, Step)] = &[
     ("step:wire_watched_lanes", watched_lanes::wire_watched_lanes),
-    ("step:wire_call_audio", call_audio::wire_call_audio),
     ("step:wire_pictures", pictures::wire_pictures),
 ];
 

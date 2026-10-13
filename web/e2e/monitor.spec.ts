@@ -47,10 +47,6 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
           to: { node: nodeIds.log, port: "events" },
         },
         {
-          from: { node: nodeIds.monitor, port: "audio" },
-          to: { node: nodeIds.log, port: "audio" },
-        },
-        {
           from: { node: nodeIds.monitor, port: "events" },
           to: { node: nodeIds.export, port: "events" },
         },
@@ -67,7 +63,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     await page.goto("/");
     const monitor = page.locator(`.react-flow__node[data-id="${nodeIds.monitor}"]`);
     const log = page.locator(`.react-flow__node[data-id="${nodeIds.log}"]`);
-    await expect(monitor.locator(".react-flow__handle")).toHaveCount(3);
+    await expect(monitor.locator(".react-flow__handle")).toHaveCount(2);
     await expect(monitor.locator("li")).toHaveCount(0);
     await expect(monitor).not.toContainText(/\d+ (active|recent)/);
     const confidenceInfo =

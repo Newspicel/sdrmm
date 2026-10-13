@@ -1349,7 +1349,7 @@ fn the_catalog_describes_every_node_kind_once() {
             .iter()
             .find(|p| p.name == "audio")
             .map(|p| p.payload.clone()),
-        Some(Payload::audio(&[AudioStream::Live]))
+        Some(Payload::Audio)
     );
 
     let json = serde_json::to_value(&catalog).unwrap();
@@ -1765,24 +1765,16 @@ fn a_decoder_keeps_every_wired_stream_of_the_same_radio() {
 }
 
 #[test]
-fn spectrum_monitor_takes_a_lane_and_hands_out_events_and_clips() {
+fn spectrum_monitor_takes_a_lane_and_hands_out_events() {
     let monitor = NodeBody::SpectrumMonitor(crate::SpectrumMonitorNode::default());
     let specs = monitor.ports(None);
     let ports: Vec<(&str, PortDirection, Payload)> = specs
         .iter()
         .map(|port| (port.name.as_str(), port.direction, port.payload.clone()))
         .collect();
-    assert_eq!(ports.len(), 3);
+    assert_eq!(ports.len(), 2);
     assert_eq!((ports[0].0, ports[0].1), ("iq", PortDirection::In));
     assert_eq!((ports[1].0, ports[1].1), ("events", PortDirection::Out));
-    assert_eq!(
-        (ports[2].0, ports[2].1, ports[2].2.clone()),
-        (
-            "audio",
-            PortDirection::Out,
-            Payload::audio(&[AudioStream::Clips])
-        )
-    );
     let mut graph = PatchGraph {
         nodes: vec![
             node("radio", NodeBody::Device(DeviceNode::default())),

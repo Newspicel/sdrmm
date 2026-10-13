@@ -108,13 +108,9 @@ impl PortType {
         match self {
             Self::Iq => Some("Decoders on a lane retune it unless the lane is locked"),
             Self::Bearing => Some("A live bearing that steers an array"),
-            Self::Baseband
-            | Self::Audio
-            | Self::Events
-            | Self::Video
-            | Self::Control
-            | Self::Position
-            | Self::Array => None,
+            Self::Audio => Some("Live audio"),
+            Self::Events => Some("Decoded events. Calls and transmissions bring their clip"),
+            Self::Baseband | Self::Video | Self::Control | Self::Position | Self::Array => None,
         }
     }
 
@@ -141,19 +137,12 @@ impl IqOrigin {
     pub const ALL: &'static [Self] = &[Self::Radio, Self::Synthetic, Self::Derived];
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum AudioStream {
-    Live,
-    Clips,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Payload {
     Iq { origins: Vec<IqOrigin> },
     Baseband,
-    Audio { streams: Vec<AudioStream> },
+    Audio,
     Events { kinds: KindSet },
     Video,
     Control { verbs: Vec<ControlVerb> },
@@ -193,13 +182,6 @@ impl Payload {
     }
 
     #[must_use]
-    pub fn audio(streams: &[AudioStream]) -> Self {
-        Self::Audio {
-            streams: streams.to_vec(),
-        }
-    }
-
-    #[must_use]
     pub fn events(accept: Accept) -> Self {
         Self::Events {
             kinds: accept.kinds(),
@@ -218,7 +200,7 @@ impl Payload {
         match self {
             Self::Iq { .. } => PortType::Iq,
             Self::Baseband => PortType::Baseband,
-            Self::Audio { .. } => PortType::Audio,
+            Self::Audio => PortType::Audio,
             Self::Events { .. } => PortType::Events,
             Self::Video => PortType::Video,
             Self::Control { .. } => PortType::Control,
@@ -242,9 +224,6 @@ impl Payload {
             (Self::Iq { origins }, Self::Iq { origins: offered }) => {
                 offered.iter().all(|origin| origins.contains(origin))
             }
-            (Self::Audio { streams }, Self::Audio { streams: offered }) => {
-                offered.iter().all(|stream| streams.contains(stream))
-            }
             (Self::Events { kinds }, Self::Events { kinds: offered }) => {
                 offered.is_empty() || !kinds.intersection(*offered).is_empty()
             }
@@ -262,17 +241,17 @@ impl Payload {
                 [IqOrigin::Radio] => Some("a radio lane".to_owned()),
                 _ => None,
             },
-            Self::Audio { streams } => match streams.as_slice() {
-                [AudioStream::Live] => Some("live audio".to_owned()),
-                [AudioStream::Clips] => Some("audio clips".to_owned()),
-                _ => None,
-            },
             Self::Events { kinds } => kinds_noun(*kinds),
             Self::Control { verbs } => match verbs.as_slice() {
                 [verb] => Some(verb.noun().to_owned()),
                 _ => None,
             },
-            Self::Baseband | Self::Video | Self::Position | Self::Array | Self::Bearing => None,
+            Self::Baseband
+            | Self::Audio
+            | Self::Video
+            | Self::Position
+            | Self::Array
+            | Self::Bearing => None,
         }
     }
 }
@@ -351,8 +330,8 @@ pub struct PortSpec {
     pub coherent: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub direct: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keeps: Option<Keeps>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keeps: Vec<Keeps>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -390,7 +369,7 @@ fn port(name: &str, direction: PortDirection, payload: Payload, multi: Multi) ->
         exclusive: false,
         coherent: false,
         direct: false,
-        keeps: None,
+        keeps: Vec::new(),
         group: None,
         note: None,
     }
@@ -446,11 +425,11 @@ impl PortSpec {
     }
 
     #[must_use]
-    pub fn keeps(self, keeps: Keeps) -> Self {
-        Self {
-            keeps: Some(keeps),
-            ..self
+    pub fn keeps(mut self, keeps: Keeps) -> Self {
+        if !self.keeps.contains(&keeps) {
+            self.keeps.push(keeps);
         }
+        self
     }
 
     #[must_use]

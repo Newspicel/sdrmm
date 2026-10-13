@@ -16,7 +16,7 @@ use super::{downconvert::Downconverter, dsp_block_len};
 use crate::{
     Doppler,
     audio::PcmBlock,
-    audio_recording::AudioRecorderTap,
+    audio_recording::AudioTaps,
     iq::IqBlock,
     network_export::NetworkExportTap,
     publishing::channel::{ChannelPublisher, IQ_WANTED, SYMBOLS_WANTED},
@@ -137,7 +137,7 @@ pub(crate) struct ChannelHost {
     filter: ChannelFilter,
     squelch: Squelch,
     squelched: bool,
-    audio_rec: Option<AudioRecorderTap>,
+    audio_rec: Option<AudioTaps>,
     rx: Box<dyn ChannelRx>,
     blanker: Option<NoiseBlanker>,
     outputs: ChannelOutputs,
@@ -471,8 +471,8 @@ impl ChannelHost {
             if let Some(tap) = self.baseband_rec.take() {
                 tap.publication_failed();
             }
-            if let Some(tap) = self.audio_rec.take() {
-                tap.publication_failed();
+            if let Some(taps) = &self.audio_rec {
+                taps.publication_failed();
             }
         }
     }
@@ -588,8 +588,8 @@ impl ChannelHost {
         self.rx.position_changed(fix);
     }
 
-    pub(super) fn set_audio_recording(&mut self, tap: Option<AudioRecorderTap>) {
-        self.audio_rec = tap;
+    pub(super) fn set_audio_recordings(&mut self, taps: Option<AudioTaps>) -> Option<AudioTaps> {
+        std::mem::replace(&mut self.audio_rec, taps)
     }
 
     pub(super) fn set_baseband_recording(&mut self, tap: Option<RecorderTap>) {

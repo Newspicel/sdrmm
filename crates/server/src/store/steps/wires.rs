@@ -46,13 +46,6 @@ pub(super) fn ends(edge: &Value) -> Option<(PortRef, PortRef)> {
     Some((end(edge, "from")?, end(edge, "to")?))
 }
 
-pub(super) fn has_wire(edges: &[Value], from: &PortRef, to: &PortRef) -> bool {
-    edges
-        .iter()
-        .filter_map(ends)
-        .any(|(start, finish)| start == *from && finish == *to)
-}
-
 pub(super) fn kinds_of(snapshot: &mut Value) -> HashMap<String, String> {
     graph_nodes(snapshot)
         .filter_map(|node| {

@@ -153,9 +153,6 @@ fn patch(channels: &[Channel]) -> PatchGraph {
         for sink in channel.sinks {
             edges.push(wire((&id, sink.port()), (sink.node(), sink.port())));
         }
-        if channel.sinks.contains(&Sink::Log) && makes_calls(channel) {
-            edges.push(wire((&id, AUDIO_PORT), (Sink::Log.node(), AUDIO_PORT)));
-        }
     }
 
     let used = ORDER
@@ -170,11 +167,6 @@ fn patch(channels: &[Channel]) -> PatchGraph {
         nodes.push(node(sink.node(), sink.body(), COLUMN * 2.0, y));
     }
     PatchGraph { nodes, edges }
-}
-
-fn makes_calls(channel: &Channel) -> bool {
-    sdrmm_channels::descriptor((channel.params)().type_id())
-        .is_some_and(|descriptor| descriptor.calls.is_some() && descriptor.has_audio)
 }
 
 fn acars() -> ChannelParams {

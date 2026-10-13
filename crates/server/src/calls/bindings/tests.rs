@@ -208,7 +208,7 @@ fn a_channel_whose_events_reach_no_call_sink_keeps_no_calls() {
 }
 
 #[test]
-fn a_wired_channel_keeps_call_audio_only_with_its_audio_wire() {
+fn a_channel_wired_only_to_a_readout_keeps_no_call_audio() {
     let bound = bound_for("dmr", sdrmm_wire::Squelch::Off, true);
     assert!(!bound.bindings[0].keep_audio);
 }
@@ -303,7 +303,8 @@ fn a_trunk_binds_each_follower_its_wire_asks_calls_of() {
             device_set: follower.device_set,
             channel: follower.channel,
             gate: CallGate::Frames,
-            keep_audio: false,
-        }])
+            keep_audio: true,
+        }]),
+        "the log keeps the clips its events bring"
     );
 }

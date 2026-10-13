@@ -146,7 +146,7 @@ mod tests {
             serde_json::from_str(r#"{"record_audio":true}"#).unwrap();
         assert!(
             !settings.keep_clips,
-            "clips follow the audio wire, not a setting"
+            "clips follow the events wire, not a setting"
         );
         assert!(
             serde_json::to_value(&settings)

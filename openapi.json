@@ -8532,6 +8532,7 @@
       "AudioRecordingStatus": {
         "type": "object",
         "required": [
+          "node",
           "file",
           "started_at",
           "channels",
@@ -8569,6 +8570,9 @@
               "type": "string"
             }
           },
+          "node": {
+            "type": "string"
+          },
           "started_at": {
             "type": "string"
           }
@@ -8587,13 +8591,6 @@
             }
           }
         }
-      },
-      "AudioStream": {
-        "type": "string",
-        "enum": [
-          "live",
-          "clips"
-        ]
       },
       "AuthInfo": {
         "type": "object",
@@ -27393,16 +27390,9 @@
           {
             "type": "object",
             "required": [
-              "streams",
               "type"
             ],
             "properties": {
-              "streams": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/AudioStream"
-                }
-              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -28333,14 +28323,10 @@
             ]
           },
           "keeps": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Keeps"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Keeps"
+            }
           },
           "multi": {
             "$ref": "#/components/schemas/Multi"
@@ -28853,7 +28839,8 @@
           "position",
           "monitor",
           "apply",
-          "calls"
+          "calls",
+          "recorder"
         ]
       },
       "ProcessorGate": {

@@ -47,7 +47,8 @@ the Device rate starts a new file. Removing the channel ends it.
 Closed squelch writes silence so timing stays intact; **Skip silence** pauses instead. Mode and rate changes do not stop it. The
 file stays playable even if the server stops mid-recording.
 
-Both recorders take several channels and write one file per wired input.
+Both recorders take several channels and write one file per wired channel. Each Audio recorder
+keeps its own files, even when another one records the same channel.
 
 ## Record each call
 
@@ -64,14 +65,15 @@ What makes a call:
 | Channel | A call is |
 |---|---|
 | Digital voice, DMR trunk | One call, from header to end |
-| AM, NFM, SSB and other audio | One squelch opening. Gaps under 1.5 s stay in the call |
+| AM, NFM, SSB, DECT | One squelch opening. Gaps under 1.5 s stay in the call |
 
 An analog channel with squelch off has no calls. Use the Audio recorder for continuous audio.
 Calls longer than 10 minutes continue in a new file. Encrypted calls have no audio to save.
 Several channels can share one Event output. Add an **Event filter** between them to skip short
 calls or keep certain talkgroups. A [Spectrum monitor](scanning.md#monitor-a-band) wired here
-saves its clips the same way. Call audio is kept only where an `audio` wire leads; a Decoder log
-plays it when its `audio` input is wired from the same channel.
+saves its clips the same way. A call brings its clip on the `events` wire. Clips are kept only
+when the events reach a Decoder log or an Event output that keeps them (Recordings, Matrix,
+Discord); the Decoder log plays them.
 
 ## Record an array
 

@@ -131,15 +131,13 @@ pub(super) async fn export_decoder_log(
 
 fn present(state: &AppState, sink: Option<&str>, entries: &mut [DecoderLogEntry]) {
     let resolved = state.resolved.current();
-    let clips = sink.map(|sink| resolved.patch.feeds(sink, sdrmm_wire::AUDIO_PORT));
+    let keeps_clips = sink.is_none_or(|sink| {
+        resolved
+            .patch
+            .takes_kept(sink, sdrmm_wire::EVENTS_PORT, sdrmm_wire::Keeps::Clips)
+    });
     for entry in entries {
-        let source = entry.origin.as_ref().map(|origin| origin.node.as_str());
-        let wired = match (&clips, source) {
-            (None, _) => true,
-            (Some(feeds), Some(source)) => feeds.iter().any(|feed| feed.source == source),
-            (Some(_), None) => false,
-        };
-        if !wired {
+        if !keeps_clips {
             entry.event.strip_clip();
         }
         let view = entry.event.present();

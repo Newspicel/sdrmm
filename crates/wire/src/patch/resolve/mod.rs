@@ -220,6 +220,7 @@ pub enum ProblemSource {
     Monitor,
     Apply,
     Calls,
+    Recorder,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -413,6 +414,13 @@ impl ResolvedPatch {
         self.node(node)
             .and_then(|found| found.output(port))
             .is_some_and(|found| found.kept.contains(&keeps))
+    }
+
+    #[must_use]
+    pub fn takes_kept(&self, node: &str, port: &str, keeps: Keeps) -> bool {
+        self.node(node)
+            .and_then(|found| found.input(port))
+            .is_some_and(|found| found.spec.keeps.contains(&keeps))
     }
 
     #[must_use]

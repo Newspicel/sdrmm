@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::{
-    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, AudioStream, BASEBAND_PORT,
-    BEAM_PORT, BEARING_PORT, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode, DmrTrunkNode,
-    EVENTS_PORT, EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory,
-    POSITION_PORT, Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RADAR_TRUTH_PORT,
-    RADAR_TX_PORT, RecorderNode, RecordingNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode,
-    SignalGenNode, SignalMapNode, TriangulationNode, VIDEO_PORT, input, output,
+    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, BASEBAND_PORT, BEAM_PORT,
+    BEARING_PORT, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode, DmrTrunkNode, EVENTS_PORT,
+    EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory, POSITION_PORT,
+    Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RADAR_TRUTH_PORT, RADAR_TX_PORT,
+    RecorderNode, RecordingNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalGenNode,
+    SignalMapNode, TriangulationNode, VIDEO_PORT, input, output,
 };
 use crate::{
     channel::ChannelDescriptor,
@@ -147,9 +147,6 @@ impl std::fmt::Display for NodeKind {
 const ANY_IQ: &[IqOrigin] = IqOrigin::ALL;
 const RADIO_IQ: &[IqOrigin] = &[IqOrigin::Radio];
 const DERIVED_IQ: &[IqOrigin] = &[IqOrigin::Derived];
-const LIVE: &[AudioStream] = &[AudioStream::Live];
-const CLIPS: &[AudioStream] = &[AudioStream::Clips];
-const LIVE_OR_CLIPS: &[AudioStream] = &[AudioStream::Live, AudioStream::Clips];
 const CHANNEL_VERBS: &[ControlVerb] =
     &[ControlVerb::Tune, ControlVerb::Doppler, ControlVerb::Sweep];
 const SWEEP: &[ControlVerb] = &[ControlVerb::Sweep];
@@ -171,7 +168,11 @@ fn position_in() -> PortSpec {
 }
 
 fn audio_in() -> PortSpec {
-    input(AUDIO_PORT, Payload::audio(LIVE)).many()
+    input(AUDIO_PORT, Payload::Audio).many()
+}
+
+fn audio_out() -> PortSpec {
+    output(AUDIO_PORT, Payload::Audio)
 }
 
 fn events_in(accept: Accept) -> PortSpec {
@@ -180,13 +181,6 @@ fn events_in(accept: Accept) -> PortSpec {
 
 fn history_in() -> PortSpec {
     events_in(Accept::Caps(&[Capability::Log])).keeps(Keeps::History)
-}
-
-fn clips_in() -> PortSpec {
-    input(AUDIO_PORT, Payload::audio(LIVE_OR_CLIPS))
-        .many()
-        .direct()
-        .keeps(Keeps::Clips)
 }
 
 fn events_out(accept: Accept) -> PortSpec {
@@ -393,7 +387,7 @@ macro_rules! node_registry {
                 ),
                 position_in(),
                 output(BASEBAND_PORT, Payload::Baseband),
-                output(AUDIO_PORT, Payload::audio(LIVE)),
+                audio_out(),
                 events_out(Accept::Any).noted("Decoded messages and calls. Analog calls need squelch"),
                 output(VIDEO_PORT, Payload::Video),
             ]),
@@ -434,15 +428,13 @@ macro_rules! node_registry {
             (DecoderLog(DecoderLogNode), "decoder_log", Output, "Decoder log",
                 "Every decoded message in a table", Role::Plain,
                 Face::sized(720, 380).min(360, 200), [
-                history_in(),
-                clips_in(),
+                history_in().keeps(Keeps::Clips),
             ]),
             (SpectrumMonitor(SpectrumMonitorNode), "spectrum_monitor", Tool,
                 "Spectrum monitor", "Catches and decodes everything in view", Role::Plain,
                 Face::fit(320), [
                 iq_in(),
                 events_out(Accept::Any),
-                output(AUDIO_PORT, Payload::audio(CLIPS)),
             ]),
             (DmrTrunk(DmrTrunkNode), "dmr_trunk", Tool, "DMR trunk system",
                 "Follows calls across a DMR trunk system", Role::Plain,
@@ -451,7 +443,7 @@ macro_rules! node_registry {
                     "the radio the control channel sits on; the system runs its own decoders",
                 ),
                 events_out(Accept::Kinds(&[EventKind::Dv, EventKind::Call])),
-                output(AUDIO_PORT, Payload::audio(LIVE)),
+                audio_out(),
             ]),
             (EventFilter(EventFilterNode), "event_filter", Tool, "Event filter",
                 "Passes only matching events", Role::Pass(P::Events), Face::fit(380), [
@@ -461,12 +453,11 @@ macro_rules! node_registry {
             (AudioFx(crate::AudioFxNode), "audio_fx", Tool, "Audio FX",
                 "Filters, denoise and AGC", Role::Pass(P::Audio), Face::fit(400), [
                 audio_in(),
-                output(AUDIO_PORT, Payload::audio(LIVE)),
+                audio_out(),
             ]),
             (EventOutput(EventOutputNode), "event_output", Output, "Event output",
                 "Sends events out, saves call audio", Role::Plain, Face::fit(420), [
                 events_in(Accept::Caps(&[Capability::Log])),
-                clips_in(),
             ]),
             (Video, "video", Output, "Video", "ATV frames and decoded pictures", Role::Plain,
                 Face::sized(380, 320).min(240, 200), [
@@ -630,8 +621,9 @@ impl NodeBody {
             }
             Self::EventOutput(node) => carrying_events(declared, node.target.accepts())
                 .into_iter()
-                .filter(|port| {
-                    node.target.carries_audio() || !matches!(port.payload, Payload::Audio { .. })
+                .map(|port| match port.port_type {
+                    P::Events if node.target.keeps_clips() => port.keeps(Keeps::Clips),
+                    _ => port,
                 })
                 .collect(),
             _ => declared,
@@ -674,7 +666,7 @@ fn narrow_channel(
         .into_iter()
         .filter(|port| match port.payload {
             Payload::Position => descriptor.needs_position,
-            Payload::Audio { .. } => descriptor.has_audio,
+            Payload::Audio => descriptor.has_audio,
             Payload::Video => descriptor.has_video,
             Payload::Events { .. } => !emitted.is_empty(),
             _ => true,

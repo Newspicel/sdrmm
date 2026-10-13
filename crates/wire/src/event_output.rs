@@ -176,7 +176,7 @@ impl EventOutputTarget {
     }
 
     #[must_use]
-    pub const fn carries_audio(&self) -> bool {
+    pub const fn keeps_clips(&self) -> bool {
         matches!(
             self,
             Self::Recordings

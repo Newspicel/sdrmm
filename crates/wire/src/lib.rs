@@ -205,8 +205,8 @@ pub use network::{
 };
 pub use node_action::{NetworkRadioRequest, NodeActed, NodeAction};
 pub use patch::{
-    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, AudioStream,
-    BASEBAND_PORT, BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
+    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, BASEBAND_PORT,
+    BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
     CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
     DEFAULT_SIGNAL_MAP_OFFSET_HZ, DecoderLogNode, DeviceNode, DeviceRef, DfNode, DmrChannelEntry,
     DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol, EVENTS_PORT, Face, FaceSize,
@@ -809,6 +809,7 @@ mod contract_tests {
         );
 
         info.audio_recordings = vec![AudioRecordingStatus {
+            node: "rec".to_owned(),
             fx: vec!["fx".to_owned()],
             file: "ch_1_3_20260815T120000Z.wav".to_owned(),
             started_at: "2026-08-15T12:00:00Z".to_owned(),
@@ -820,6 +821,7 @@ mod contract_tests {
         let json = serde_json::to_value(&info).unwrap();
         assert_eq!(json["audio_recordings"][0]["frames"], 48_000);
         assert_eq!(json["audio_recordings"][0]["fx"][0], "fx");
+        assert_eq!(json["audio_recordings"][0]["node"], "rec");
         assert!(json["audio_recordings"][0].get("error").is_none());
         let back: ChannelInfo = serde_json::from_value(json).unwrap();
         assert_eq!(back, info);

@@ -6,11 +6,10 @@ use sdrmm_wire::{
 };
 
 use crate::{
-    ChannelAudioRecording, DEFAULT_CENTER_HZ, Engine, EngineError, FinalizedRecording,
-    NetworkExportCommit, NetworkExportState, RecordingState, audio_fx::FxControl, audio_recording,
-    check_export_request, join_network_writer, join_recording_writer, network_export,
-    planning::descriptor_for, recording, remove_recording_files, runtime::DspCommand,
-    sample_rate_of,
+    AudioTake, ChannelAudioRecording, DEFAULT_CENTER_HZ, Engine, EngineError, FinalizedRecording,
+    NetworkExportCommit, NetworkExportState, RecordingState, audio_recording, check_export_request,
+    join_network_writer, join_recording_writer, network_export, planning::descriptor_for,
+    recording, remove_recording_files, runtime::DspCommand, sample_rate_of,
 };
 
 impl Engine {
@@ -173,59 +172,21 @@ impl Engine {
             .map(audio_recording::audio_dir)
     }
 
-    pub fn start_channel_recording(
+    pub fn start_audio_recording(
         &self,
-        ds: u32,
-        ch: u32,
-    ) -> Result<AudioRecordingStatus, EngineError> {
-        self.start_route_recording(&AudioRoute::channel(ds, ch), false)
-    }
-
-    pub fn start_route_recording(
-        &self,
+        node: &str,
         route: &AudioRoute,
         skip_silence: bool,
     ) -> Result<AudioRecordingStatus, EngineError> {
-        let (ds, ch) = (route.device_set, route.channel);
         if !route.fx.is_empty() {
             route.validate().map_err(EngineError::Recording)?;
         }
+        let take = AudioTake {
+            node: node.to_owned(),
+            channel: route.channel,
+        };
         loop {
-            let (stream, channels, device_rate, mode, freq_hz) = {
-                let inner = self.lock();
-                let state = inner
-                    .device_sets
-                    .get(&ds)
-                    .ok_or(EngineError::DeviceSetNotFound(ds))?;
-                let channel = state
-                    .channels
-                    .iter()
-                    .find(|c| c.id == ch)
-                    .ok_or(EngineError::ChannelNotFound(ch, ds))?;
-                if state.audio_recordings.contains_key(route) {
-                    return Err(EngineError::Recording(
-                        "this audio is already recording".to_string(),
-                    ));
-                }
-                if state.status != DeviceSetStatus::Running {
-                    return Err(EngineError::Recording(
-                        "device set is not running".to_string(),
-                    ));
-                }
-                if !descriptor_for(&channel.settings.params)?.has_audio {
-                    return Err(EngineError::Recording(format!(
-                        "`{}` channels produce no audio to record",
-                        channel.settings.params.type_id()
-                    )));
-                }
-                (
-                    channel.stream,
-                    sdrmm_channels::audio_channels(&channel.settings.params),
-                    sample_rate_of(&state.settings),
-                    channel.settings.params.type_id(),
-                    channel.settings.frequency_hz,
-                )
-            };
+            let source = self.audio_source(&take, route)?;
             let Some(dir) = self.audio_recordings_dir() else {
                 return Err(EngineError::Recording(
                     "no recordings directory configured".to_string(),
@@ -236,9 +197,9 @@ impl Engine {
             let started_at = jiff::Timestamp::now();
             let writer = audio_recording::create_writer(
                 &dir,
-                &sdrmm_recorder::audio_stem(started_at, mode, freq_hz),
+                &sdrmm_recorder::audio_stem(started_at, source.mode, source.freq_hz),
                 sdrmm_channels::AUDIO_RATE,
-                channels,
+                source.channels,
             )?;
             let path = writer.path().to_path_buf();
             let file = path
@@ -246,170 +207,177 @@ impl Engine {
                 .and_then(|name| name.to_str())
                 .unwrap_or_default()
                 .to_owned();
-            let (tap, blocks, shared) = audio_recording::create_tap(device_rate, skip_silence);
+            let (tap, blocks, shared) =
+                audio_recording::create_tap(source.device_rate, skip_silence);
             let thread = audio_recording::spawn_writer(writer, blocks, shared.clone())?;
             let fx_control = if route.fx.is_empty() {
                 None
             } else {
-                let attached = self
-                    .fx_hub()
-                    .recorder(route, || self.fx_source(route), tap.clone());
-                match attached {
+                match self.fx_hub().control(route, || self.fx_source(route)) {
                     Ok(control) => Some(control),
                     Err(error) => {
-                        drop(tap);
-                        if thread.join().is_err() {
-                            tracing::error!("audio recording writer thread panicked");
-                        }
-                        if let Err(e) = std::fs::remove_file(&path)
-                            && e.kind() != std::io::ErrorKind::NotFound
-                        {
-                            tracing::warn!(path = %path.display(), error = %e, "aborted audio recording left a file behind");
-                        }
+                        abandon_audio(tap, thread, &path);
                         return Err(error);
                     }
                 }
             };
-
-            let committed = {
-                let mut inner = self.lock();
-                match inner.device_sets.get_mut(&ds) {
-                    Some(state)
-                        if state.status == DeviceSetStatus::Running
-                            && !state.audio_recordings.contains_key(route)
-                            && state.channels.iter().any(|c| {
-                                c.id == ch
-                                    && c.stream == stream
-                                    && sdrmm_channels::audio_channels(&c.settings.params)
-                                        == channels
-                            }) =>
-                    {
-                        let via_fx = fx_control.is_some();
-                        let recording = ChannelAudioRecording {
-                            fx: route.fx.clone(),
-                            file,
-                            stream,
-                            started_at: started_at.to_string(),
-                            channels,
-                            tap: tap.clone(),
-                            shared,
-                            writer: thread,
-                            fx_control: fx_control.clone(),
-                            frames_seen: 0,
-                            error_seen: false,
-                        };
-                        let status = recording.status();
-                        state.audio_recordings.insert(route.clone(), recording);
-                        if !via_fx {
-                            state.send_dsp(
-                                stream,
-                                DspCommand::StartChannelRecording { id: ch, tap },
-                            );
-                        }
-                        inner.revision += 1;
-                        Ok(status)
-                    }
-                    _ => Err((tap, thread, path)),
-                }
+            let recording = ChannelAudioRecording {
+                node: take.node.clone(),
+                route: route.clone(),
+                file,
+                stream: source.stream,
+                started_at: started_at.to_string(),
+                channels: source.channels,
+                tap,
+                shared,
+                writer: thread,
+                fx_control,
+                frames_seen: 0,
+                error_seen: false,
             };
-            match committed {
+            match self.commit_audio(take.clone(), recording) {
                 Ok(status) => {
                     self.emit(ServerEvent::StateChanged {
-                        scope: StateScope::DeviceSet(ds),
+                        scope: StateScope::DeviceSet(route.device_set),
                     });
                     return Ok(status);
                 }
-                Err((tap, thread, path)) => {
-                    if let Some(control) = &fx_control {
-                        let _ = control.send(FxControl::StopRecording);
-                    }
-                    drop(tap);
-                    if thread.join().is_err() {
-                        tracing::error!("audio recording writer thread panicked");
-                    }
-                    if let Err(e) = std::fs::remove_file(&path)
-                        && e.kind() != std::io::ErrorKind::NotFound
-                    {
-                        tracing::warn!(path = %path.display(), error = %e, "aborted audio recording left a file behind");
-                    }
+                Err(recording) => {
+                    let ChannelAudioRecording { tap, writer, .. } = *recording;
+                    abandon_audio(tap, writer, &path);
                 }
             }
         }
     }
 
-    pub fn set_route_skip_silence(
+    fn audio_source(
         &self,
+        take: &AudioTake,
         route: &AudioRoute,
+    ) -> Result<AudioSource, EngineError> {
+        let (ds, ch) = (route.device_set, route.channel);
+        let inner = self.lock();
+        let state = inner
+            .device_sets
+            .get(&ds)
+            .ok_or(EngineError::DeviceSetNotFound(ds))?;
+        let channel = state
+            .channels
+            .iter()
+            .find(|c| c.id == ch)
+            .ok_or(EngineError::ChannelNotFound(ch, ds))?;
+        if state.audio_recordings.contains_key(take) {
+            return Err(EngineError::Recording(
+                "this recorder already records this channel".to_string(),
+            ));
+        }
+        if state.status != DeviceSetStatus::Running {
+            return Err(EngineError::Recording(
+                "device set is not running".to_string(),
+            ));
+        }
+        if !descriptor_for(&channel.settings.params)?.has_audio {
+            return Err(EngineError::Recording(format!(
+                "`{}` channels produce no audio to record",
+                channel.settings.params.type_id()
+            )));
+        }
+        Ok(AudioSource {
+            stream: channel.stream,
+            channels: sdrmm_channels::audio_channels(&channel.settings.params),
+            device_rate: sample_rate_of(&state.settings),
+            mode: channel.settings.params.type_id(),
+            freq_hz: channel.settings.frequency_hz,
+        })
+    }
+
+    fn commit_audio(
+        &self,
+        take: AudioTake,
+        recording: ChannelAudioRecording,
+    ) -> Result<AudioRecordingStatus, Box<ChannelAudioRecording>> {
+        let ds = recording.route.device_set;
+        let mut inner = self.lock();
+        let Some(state) = inner.device_sets.get_mut(&ds) else {
+            return Err(Box::new(recording));
+        };
+        let fits = state.status == DeviceSetStatus::Running
+            && !state.audio_recordings.contains_key(&take)
+            && state.channels.iter().any(|c| {
+                c.id == take.channel
+                    && c.stream == recording.stream
+                    && sdrmm_channels::audio_channels(&c.settings.params) == recording.channels
+            });
+        if !fits {
+            return Err(Box::new(recording));
+        }
+        let mut taps = state.route_taps(take.channel, &recording.route.fx);
+        taps.push(recording.tap.clone());
+        if !state.send_taps(&recording, audio_recording::AudioTaps::of(taps)) {
+            return Err(Box::new(recording));
+        }
+        let status = recording.status();
+        state.audio_recordings.insert(take, recording);
+        inner.revision += 1;
+        Ok(status)
+    }
+
+    pub fn set_audio_skip_silence(
+        &self,
+        node: &str,
+        ds: u32,
+        ch: u32,
         skip: bool,
     ) -> Result<(), EngineError> {
         let inner = self.lock();
         let recording = inner
             .device_sets
-            .get(&route.device_set)
-            .ok_or(EngineError::DeviceSetNotFound(route.device_set))?
+            .get(&ds)
+            .ok_or(EngineError::DeviceSetNotFound(ds))?
             .audio_recordings
-            .get(route)
-            .ok_or_else(|| EngineError::Recording("this audio is not recording".to_string()))?;
+            .get(&AudioTake {
+                node: node.to_owned(),
+                channel: ch,
+            })
+            .ok_or_else(not_recording)?;
         recording.shared.set_skip_silence(skip);
         Ok(())
     }
 
-    pub fn stop_channel_recording(
+    pub fn stop_audio_recording(
         &self,
+        node: &str,
         ds: u32,
         ch: u32,
     ) -> Result<AudioRecordingStatus, EngineError> {
-        self.stop_route_recording(&AudioRoute::channel(ds, ch))
-    }
-
-    pub fn stop_route_recording(
-        &self,
-        route: &AudioRoute,
-    ) -> Result<AudioRecordingStatus, EngineError> {
-        let (ds, ch) = (route.device_set, route.channel);
+        let take = AudioTake {
+            node: node.to_owned(),
+            channel: ch,
+        };
         let recording = {
             let mut inner = self.lock();
             let state = inner
                 .device_sets
                 .get_mut(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
-            let Some(recording) = state.audio_recordings.remove(route) else {
-                return Err(EngineError::Recording(
-                    "this audio is not recording".to_string(),
-                ));
-            };
-            if recording.fx_control.is_none() {
-                state.send_dsp(
-                    recording.stream,
-                    DspCommand::StopChannelRecording { id: ch },
-                );
-            }
+            let recording = state
+                .audio_recordings
+                .remove(&take)
+                .ok_or_else(not_recording)?;
+            let taps = state.route_taps(ch, &recording.route.fx);
+            state.send_taps(&recording, audio_recording::AudioTaps::of(taps));
             inner.revision += 1;
             recording
         };
-        let (fx, file, started_at, channels, shared) = (
-            recording.fx.clone(),
-            recording.file.clone(),
-            recording.started_at.clone(),
-            recording.channels,
-            recording.shared.clone(),
-        );
-        recording.join();
+        let status = recording.status();
+        recording.finish();
         self.emit(ServerEvent::StateChanged {
             scope: StateScope::DeviceSet(ds),
         });
         self.emit(ServerEvent::StateChanged {
             scope: StateScope::Recordings,
         });
-        Ok(AudioRecordingStatus {
-            fx,
-            file,
-            started_at,
-            channels,
-            frames: shared.frames(),
-            bytes: shared.bytes(),
-            error: shared.error(),
-        })
+        Ok(status)
     }
 
     pub fn start_network_export(
@@ -554,5 +522,33 @@ impl Engine {
             scope: StateScope::DeviceSet(ds),
         });
         Ok(status)
+    }
+}
+
+struct AudioSource {
+    stream: u32,
+    channels: u8,
+    device_rate: f64,
+    mode: &'static str,
+    freq_hz: f64,
+}
+
+fn not_recording() -> EngineError {
+    EngineError::Recording("this audio is not recording".to_string())
+}
+
+fn abandon_audio(
+    tap: audio_recording::AudioRecorderTap,
+    writer: std::thread::JoinHandle<()>,
+    path: &std::path::Path,
+) {
+    drop(tap);
+    if writer.join().is_err() {
+        tracing::error!("audio recording writer thread panicked");
+    }
+    if let Err(e) = std::fs::remove_file(path)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(path = %path.display(), error = %e, "aborted audio recording left a file behind");
     }
 }

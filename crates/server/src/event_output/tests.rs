@@ -330,7 +330,6 @@ fn routing_for() -> Routing {
         bindings: vec![Binding {
             node: "matched".to_owned(),
             target: discord_webhook(),
-            clips_from: Default::default(),
         }],
     }
 }
@@ -343,12 +342,10 @@ fn decoded_records_route_only_to_outputs_the_record_reached() {
             Binding {
                 node: "matched".to_owned(),
                 target: target.clone(),
-                clips_from: Default::default(),
             },
             Binding {
                 node: "other".to_owned(),
                 target,
-                clips_from: Default::default(),
             },
         ],
     };
@@ -382,7 +379,6 @@ fn recordings_routing() -> Routing {
         bindings: vec![Binding {
             node: "matched".to_owned(),
             target: EventOutputTarget::Recordings,
-            clips_from: ["voice".to_owned()].into(),
         }],
     }
 }
@@ -413,7 +409,7 @@ fn analog_call() -> VoiceCall {
 }
 
 #[test]
-fn recordings_take_a_clip_only_through_the_audio_wire() {
+fn recordings_take_the_clip_the_event_brings() {
     let routing = recordings_routing();
     let calls = Calls::default();
     let (audio, _) = calls.store_clip(&[1, 2, 3]);
@@ -426,11 +422,6 @@ fn recordings_take_a_clip_only_through_the_audio_wire() {
     let delivered = decoded_deliveries(&routing, &wired, 1, &calls);
     assert_eq!(delivered.len(), 1);
     assert!(delivered[0].message.audio.is_some());
-    let unwired = DecodedRecord {
-        event: DecoderEvent::Call(clipped),
-        ..decoded()
-    };
-    assert!(decoded_deliveries(&routing, &unwired, 1, &calls).is_empty());
     let silent = from_voice(DecoderEvent::Call(VoiceCall {
         audio: None,
         encrypted: true,
@@ -910,12 +901,10 @@ async fn delivery_outcomes_reach_the_output_status() {
         Binding {
             node: "good".to_owned(),
             target: good.clone(),
-            clips_from: Default::default(),
         },
         Binding {
             node: "bad".to_owned(),
             target: bad.clone(),
-            clips_from: Default::default(),
         },
     ]);
     let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
@@ -968,7 +957,6 @@ async fn notify_once(shell: Option<Arc<dyn NativeShell>>) -> status::Statuses {
     statuses.configure(&[Binding {
         node: "desk".to_owned(),
         target: EventOutputTarget::Desktop,
-        clips_from: Default::default(),
     }]);
     let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
     sender
@@ -1019,7 +1007,6 @@ fn a_full_delivery_queue_counts_the_dropped_event() {
     statuses.configure(&[Binding {
         node: "hook".to_owned(),
         target: target.clone(),
-        clips_from: Default::default(),
     }]);
     let (sender, _receiver) = mpsc::channel(1);
     enqueue(
@@ -1040,7 +1027,6 @@ fn a_changed_target_starts_a_fresh_status() {
     let binding = |url: &str| Binding {
         node: "hook".to_owned(),
         target: json_webhook(url.to_owned()),
-        clips_from: Default::default(),
     };
     statuses.configure(&[binding("http://a.test/")]);
     statuses.failed("hook", 2, "down".to_owned());
@@ -1319,11 +1305,17 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
         }),
         ..decoded()
     };
-    let unwired = decoded_deliveries(&routing_for(), &record, 1, &calls);
-    assert!(unwired[0].message.audio.is_none(), "no audio wire, no clip");
-    let mut routing = routing_for();
-    routing.bindings[0].clips_from.insert("monitor".to_owned());
-    let deliveries = decoded_deliveries(&routing, &record, 1, &calls);
+    let mut plain = routing_for();
+    plain.bindings[0].target = EventOutputTarget::Webhook {
+        url: "https://example.com/hook".to_owned(),
+        format: WebhookFormat::Json,
+    };
+    let unkept = decoded_deliveries(&plain, &record, 1, &calls);
+    assert!(
+        unkept[0].message.audio.is_none(),
+        "a JSON hook keeps no clip"
+    );
+    let deliveries = decoded_deliveries(&routing_for(), &record, 1, &calls);
     assert_eq!(deliveries.len(), 1);
     let attachment = deliveries[0].message.audio.as_ref().unwrap();
     assert_eq!(&attachment.bytes[..4], b"RIFF");

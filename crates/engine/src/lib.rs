@@ -455,8 +455,15 @@ struct RecordingState {
     error_seen: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct AudioTake {
+    node: String,
+    channel: u32,
+}
+
 struct ChannelAudioRecording {
-    fx: Vec<String>,
+    node: String,
+    route: AudioRoute,
     file: String,
     stream: u32,
     started_at: String,
@@ -472,7 +479,8 @@ struct ChannelAudioRecording {
 impl ChannelAudioRecording {
     fn status(&self) -> AudioRecordingStatus {
         AudioRecordingStatus {
-            fx: self.fx.clone(),
+            node: self.node.clone(),
+            fx: self.route.fx.clone(),
             file: self.file.clone(),
             started_at: self.started_at.clone(),
             channels: self.channels,
@@ -483,6 +491,13 @@ impl ChannelAudioRecording {
     }
 
     fn join(self) {
+        if let Some(control) = &self.fx_control {
+            let _ = control.send(audio_fx::FxControl::Record(None));
+        }
+        self.finish();
+    }
+
+    fn finish(self) {
         let Self {
             tap,
             writer,
@@ -490,8 +505,7 @@ impl ChannelAudioRecording {
             ..
         } = self;
         drop(tap);
-        if let Some(control) = fx_control {
-            let _ = control.send(audio_fx::FxControl::StopRecording);
+        if fx_control.is_some() {
             let deadline = Instant::now() + FX_RECORDING_DRAIN;
             while !writer.is_finished() {
                 if Instant::now() >= deadline {
@@ -588,7 +602,7 @@ struct DeviceSetState {
     fault: Option<DeviceFault>,
     refused: Option<SettingsRefused>,
     recording: Option<RecordingState>,
-    audio_recordings: HashMap<AudioRoute, ChannelAudioRecording>,
+    audio_recordings: HashMap<AudioTake, ChannelAudioRecording>,
     baseband_recordings: HashMap<u32, ChannelBasebandRecording>,
     channel_exports: HashMap<u32, NetworkExportState>,
     network_export: Option<NetworkExportState>,
@@ -896,40 +910,58 @@ impl DeviceSetState {
         let mut statuses: Vec<AudioRecordingStatus> = self
             .audio_recordings
             .iter()
-            .filter(|(route, _)| route.channel == ch)
+            .filter(|(take, _)| take.channel == ch)
             .map(|(_, recording)| recording.status())
             .collect();
-        statuses.sort_by(|a, b| a.fx.cmp(&b.fx));
+        statuses.sort_by(|a, b| a.node.cmp(&b.node));
         statuses
     }
 
     fn take_audio_recordings(&mut self, ch: u32) -> Vec<ChannelAudioRecording> {
-        let routes: Vec<AudioRoute> = self
+        let takes: Vec<AudioTake> = self
             .audio_recordings
             .keys()
-            .filter(|route| route.channel == ch)
+            .filter(|take| take.channel == ch)
             .cloned()
             .collect();
-        routes
+        takes
             .iter()
-            .filter_map(|route| self.audio_recordings.remove(route))
+            .filter_map(|take| self.audio_recordings.remove(take))
             .collect()
     }
 
+    fn route_taps(&self, channel: u32, fx: &[String]) -> Vec<audio_recording::AudioRecorderTap> {
+        self.audio_recordings
+            .values()
+            .filter(|recording| recording.route.channel == channel && recording.route.fx == fx)
+            .map(|recording| recording.tap.clone())
+            .collect()
+    }
+
+    fn send_taps(
+        &self,
+        recording: &ChannelAudioRecording,
+        taps: Option<audio_recording::AudioTaps>,
+    ) -> bool {
+        match &recording.fx_control {
+            Some(control) => control.send(audio_fx::FxControl::Record(taps)).is_ok(),
+            None => {
+                self.send_dsp(
+                    recording.stream,
+                    DspCommand::SetChannelRecordings {
+                        id: recording.route.channel,
+                        taps,
+                    },
+                );
+                true
+            }
+        }
+    }
+
     fn rearm_audio_recording(&self, ch: u32, stream: u32) {
-        if let Some(recording) = self
-            .audio_recordings
-            .iter()
-            .find(|(route, _)| route.channel == ch && route.fx.is_empty())
-            .map(|(_, recording)| recording)
-        {
-            self.send_dsp(
-                stream,
-                DspCommand::StartChannelRecording {
-                    id: ch,
-                    tap: recording.tap.clone(),
-                },
-            );
+        let taps = audio_recording::AudioTaps::of(self.route_taps(ch, &[]));
+        if taps.is_some() {
+            self.send_dsp(stream, DspCommand::SetChannelRecordings { id: ch, taps });
         }
     }
 }

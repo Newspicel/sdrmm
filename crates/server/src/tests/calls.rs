@@ -9,7 +9,7 @@ async fn missing_call_audio_is_refused() {
 }
 
 #[tokio::test]
-async fn a_plain_dmr_channel_with_its_audio_wired_records_calls_with_clips() {
+async fn a_plain_dmr_channel_wired_to_a_log_records_calls_with_clips() {
     const RATE: f64 = 240_000.0;
     let dir = tempfile::TempDir::new().expect("temp dir");
     let stem = dir.path().join("dmr");
@@ -47,16 +47,6 @@ async fn a_plain_dmr_channel_with_its_audio_wired_records_calls_with_clips() {
         to: sdrmm_wire::PortRef {
             node: "log".to_owned(),
             port: "events".to_owned(),
-        },
-    });
-    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
-        from: sdrmm_wire::PortRef {
-            node: "dmr".to_owned(),
-            port: "audio".to_owned(),
-        },
-        to: sdrmm_wire::PortRef {
-            node: "log".to_owned(),
-            port: "audio".to_owned(),
         },
     });
     let workspace = put_active_workspace(&app, &snapshot).await;

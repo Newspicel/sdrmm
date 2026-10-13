@@ -86,7 +86,7 @@ impl EventRoutes {
                 .inputs()
                 .filter(|port| port.spec.port_type == PortType::Events)
             {
-                if port.spec.keeps == Some(Keeps::History) {
+                if port.spec.keeps.contains(&Keeps::History) {
                     history.insert(node.id.clone());
                 }
                 for feed in &port.feeds {

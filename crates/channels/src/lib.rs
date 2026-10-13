@@ -1270,7 +1270,7 @@ mod tests {
                 "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv" | "tetra" => {
                     Some(CallGate::Frames)
                 }
-                "nfm" | "am" | "ssb" | "wfm" | "atv" | "dect" => Some(CallGate::Squelch),
+                "nfm" | "am" | "ssb" | "dect" => Some(CallGate::Squelch),
                 _ => None,
             };
             assert_eq!(d.calls, expected, "{}", d.type_id);

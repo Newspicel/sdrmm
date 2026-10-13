@@ -7745,7 +7745,9 @@
           "ports": [
             {
               "direction": "in",
-              "keeps": "history",
+              "keeps": [
+                "history"
+              ],
               "multi": "many",
               "name": "events",
               "payload": {
@@ -8748,9 +8750,6 @@
               "multi": "many",
               "name": "audio",
               "payload": {
-                "streams": [
-                  "live"
-                ],
                 "type": "audio"
               },
               "port_type": "audio"
@@ -9522,9 +9521,6 @@
               "multi": "many",
               "name": "audio",
               "payload": {
-                "streams": [
-                  "live"
-                ],
                 "type": "audio"
               },
               "port_type": "audio"
@@ -9684,7 +9680,9 @@
           "ports": [
             {
               "direction": "in",
-              "keeps": "pictures",
+              "keeps": [
+                "pictures"
+              ],
               "multi": "many",
               "name": "video",
               "payload": {
@@ -11039,18 +11037,6 @@
                 "type": "events"
               },
               "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "audio",
-              "payload": {
-                "streams": [
-                  "clips"
-                ],
-                "type": "audio"
-              },
-              "port_type": "audio"
             }
           ],
           "runs": {
@@ -11132,18 +11118,6 @@
                 "type": "events"
               },
               "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "audio",
-              "payload": {
-                "streams": [
-                  "clips"
-                ],
-                "type": "audio"
-              },
-              "port_type": "audio"
             }
           ],
           "runs": {

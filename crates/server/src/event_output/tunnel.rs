@@ -183,7 +183,6 @@ mod tests {
         let binding = Binding {
             node: "out".to_owned(),
             target: target.clone(),
-            clips_from: Default::default(),
         };
         let (sender, mut receiver) = mpsc::channel(1);
         let statuses = Statuses::default();

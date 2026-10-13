@@ -5,8 +5,8 @@ use std::{
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    AUDIO_PORT, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeKind, PatchGraph, ResolvedPatch,
-    StateScope, StateSnapshot,
+    AUDIO_PORT, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeKind, NodeProblem, PatchGraph,
+    ProblemSource, ResolvedPatch, StateScope, StateSnapshot,
 };
 
 use crate::{
@@ -24,9 +24,24 @@ pub(crate) struct Hooks {
     pub(crate) problems: Arc<ProblemBoard>,
 }
 
+const ONE_TAKE_PER_CHANNEL: &str = "Records each channel once";
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct AudioTake {
+    node: String,
+    device_set: u32,
+    channel: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WantedAudio {
+    route: AudioRoute,
+    skip_silence: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Target {
-    Audio(AudioRoute),
+    Audio(AudioTake),
     Iq { device_set: u32 },
     Baseband { device_set: u32, channel: u32 },
 }
@@ -54,12 +69,11 @@ impl Recorders {
         };
         let mut wanted_targets = HashSet::new();
         let (graph, patch) = (&resolved.graph, &resolved.patch);
-        self.audio(
-            &mut tick,
-            wanted_audio(graph, patch),
-            &snapshot,
-            &mut wanted_targets,
-        );
+        let (audio, doubled) = wanted_audio(graph, patch);
+        hooks
+            .problems
+            .replace(engine, ProblemSource::Recorder, &doubled);
+        self.audio(&mut tick, audio, &snapshot, &mut wanted_targets);
         self.baseband(
             &mut tick,
             wanted_baseband(graph, patch),
@@ -80,29 +94,40 @@ impl Recorders {
     fn audio(
         &mut self,
         tick: &mut Tick<'_>,
-        wanted: HashMap<AudioRoute, bool>,
+        wanted: HashMap<AudioTake, WantedAudio>,
         snapshot: &StateSnapshot,
         targets: &mut HashSet<Target>,
     ) {
         let current = running_audio(snapshot);
-        for route in current.iter().filter(|route| !wanted.contains_key(*route)) {
-            match tick.engine.stop_route_recording(route) {
+        for (take, fx) in &current {
+            if wanted.get(take).is_some_and(|want| want.route.fx == *fx) {
+                continue;
+            }
+            match tick
+                .engine
+                .stop_audio_recording(&take.node, take.device_set, take.channel)
+            {
                 Ok(_) => tick.finished = true,
-                Err(error) => tracing::warn!(?route, %error, "could not stop an audio recording"),
+                Err(error) => tracing::warn!(?take, %error, "could not stop an audio recording"),
             }
         }
-        for (route, &skip_silence) in &wanted {
-            if current.contains(route) {
-                if let Err(error) = tick.engine.set_route_skip_silence(route, skip_silence) {
-                    tracing::warn!(?route, %error, "could not set silence skipping");
+        for (take, want) in &wanted {
+            if current.get(take) == Some(&want.route.fx) {
+                if let Err(error) = tick.engine.set_audio_skip_silence(
+                    &take.node,
+                    take.device_set,
+                    take.channel,
+                    want.skip_silence,
+                ) {
+                    tracing::warn!(?take, %error, "could not set silence skipping");
                 }
                 continue;
             }
             let result = tick
                 .engine
-                .start_route_recording(route, skip_silence)
+                .start_audio_recording(&take.node, &want.route, want.skip_silence)
                 .map(|_| ());
-            self.outcome(Target::Audio(route.clone()), result);
+            self.outcome(Target::Audio(take.clone()), result);
         }
         targets.extend(wanted.into_keys().map(Target::Audio));
     }
@@ -241,44 +266,68 @@ fn switched_on(graph: &PatchGraph, kind: NodeKind) -> impl Iterator<Item = &sdrm
         .filter(move |node| node.body.kind() == kind && recording(&node.body))
 }
 
-fn running_audio(snapshot: &StateSnapshot) -> HashSet<AudioRoute> {
+fn running_audio(snapshot: &StateSnapshot) -> HashMap<AudioTake, Vec<String>> {
     snapshot
         .device_sets
         .iter()
         .flat_map(|set| {
             set.channels.iter().flat_map(move |channel| {
-                channel
-                    .audio_recordings
-                    .iter()
-                    .map(move |status| AudioRoute {
+                channel.audio_recordings.iter().map(move |status| {
+                    let take = AudioTake {
+                        node: status.node.clone(),
                         device_set: set.id,
                         channel: channel.id,
-                        fx: status.fx.clone(),
-                    })
+                    };
+                    (take, status.fx.clone())
+                })
             })
         })
         .collect()
 }
 
-fn wanted_audio(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<AudioRoute, bool> {
+fn wanted_audio(
+    graph: &PatchGraph,
+    patch: &ResolvedPatch,
+) -> (HashMap<AudioTake, WantedAudio>, Vec<NodeProblem>) {
     let mut wanted = HashMap::new();
+    let mut doubled = Vec::new();
     for node in switched_on(graph, NodeKind::AudioRecorder) {
-        let skip = skips_silence(&node.body);
+        let skip_silence = skips_silence(&node.body);
+        let mut twice = false;
         for feed in patch.feeds(&node.id, AUDIO_PORT) {
             for addr in feed.tap.iter().flat_map(sdrmm_wire::Tap::channels) {
+                let take = AudioTake {
+                    node: node.id.clone(),
+                    device_set: addr.device_set,
+                    channel: addr.channel,
+                };
+                if wanted.contains_key(&take) {
+                    twice = true;
+                    continue;
+                }
                 let route = AudioRoute {
                     device_set: addr.device_set,
                     channel: addr.channel,
                     fx: feed.via.clone(),
                 };
-                wanted
-                    .entry(route)
-                    .and_modify(|all: &mut bool| *all &= skip)
-                    .or_insert(skip);
+                wanted.insert(
+                    take,
+                    WantedAudio {
+                        route,
+                        skip_silence,
+                    },
+                );
             }
         }
+        if twice {
+            doubled.push(NodeProblem {
+                node: node.id.clone(),
+                source: ProblemSource::Recorder,
+                text: ONE_TAKE_PER_CHANNEL.to_owned(),
+            });
+        }
     }
-    wanted
+    (wanted, doubled)
 }
 
 fn running_baseband(snapshot: &StateSnapshot) -> HashSet<(u32, u32)> {
@@ -406,9 +455,20 @@ mod tests {
         })
     }
 
-    fn wanted(graph: &PatchGraph, engine: &Engine) -> HashMap<AudioRoute, bool> {
+    fn wanted(
+        graph: &PatchGraph,
+        engine: &Engine,
+    ) -> (HashMap<AudioTake, WantedAudio>, Vec<NodeProblem>) {
         let resolved = resolved(Some(graph.clone()), engine);
         wanted_audio(&resolved.graph, &resolved.patch)
+    }
+
+    fn take(node: &str, ds: u32, ch: u32) -> AudioTake {
+        AudioTake {
+            node: node.to_owned(),
+            device_set: ds,
+            channel: ch,
+        }
     }
 
     fn patch(recording: bool) -> PatchGraph {
@@ -473,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn silence_is_skipped_only_when_every_recorder_on_a_route_asks() {
+    fn each_recorder_on_a_route_owns_its_take_and_silence_choice() {
         let dir = tempfile::TempDir::new().expect("tempdir");
         let (engine, ds, ch) = radio(&dir);
         let route = AudioRoute::channel(ds, ch);
@@ -486,9 +546,39 @@ mod tests {
             }),
         ));
         graph.edges.push(audio("ch", "quiet"));
-        assert_eq!(wanted(&graph, &engine).get(&route), Some(&false));
-        graph.nodes.retain(|found| found.id != "audio");
-        assert_eq!(wanted(&graph, &engine).get(&route), Some(&true));
+        let (wanted, doubled) = wanted(&graph, &engine);
+        assert!(doubled.is_empty());
+        let skip = |node: &str| {
+            wanted
+                .get(&take(node, ds, ch))
+                .map(|want| (want.route.clone(), want.skip_silence))
+        };
+        assert_eq!(skip("audio"), Some((route.clone(), false)));
+        assert_eq!(skip("quiet"), Some((route, true)));
+        engine.remove_device_set(ds).expect("close");
+    }
+
+    #[test]
+    fn a_recorder_fed_one_channel_twice_records_it_once_and_says_so() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let (engine, ds, _) = radio(&dir);
+        let mut graph = patch(true);
+        graph.nodes.push(node(
+            "fx",
+            NodeBody::AudioFx(sdrmm_wire::AudioFxNode::default()),
+        ));
+        graph.edges.push(audio("ch", "fx"));
+        graph.edges.push(audio("fx", "audio"));
+        let (wanted, doubled) = wanted(&graph, &engine);
+        assert_eq!(wanted.len(), 1);
+        assert_eq!(
+            doubled,
+            vec![NodeProblem {
+                node: "audio".to_owned(),
+                source: ProblemSource::Recorder,
+                text: ONE_TAKE_PER_CHANNEL.to_owned(),
+            }]
+        );
         engine.remove_device_set(ds).expect("close");
     }
 
@@ -521,6 +611,17 @@ mod tests {
             running(&engine, ch).audio,
             1,
             "a second tick doubled a file"
+        );
+
+        let mut two = patch(true);
+        two.nodes
+            .push(node("other", NodeBody::AudioRecorder(audio_on(true))));
+        two.edges.push(audio("ch", "other"));
+        recorders.reconcile(&engine, &resolved(Some(two), &engine), &hooks);
+        assert_eq!(
+            running(&engine, ch).audio,
+            2,
+            "each recorder on the route owns a file"
         );
 
         recorders.reconcile(&engine, &resolved(Some(patch(false)), &engine), &hooks);

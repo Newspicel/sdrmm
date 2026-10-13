@@ -2,4 +2,4 @@
 bump: minor
 ---
 
-Call audio is kept only where an audio wire leads
+Calls bring their clip on the events wire, kept only where a log or an output that saves audio receives them. Audio wires carry live audio only

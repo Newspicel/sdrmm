@@ -1,5 +1,5 @@
 use sdrmm_wire::{
-    AUDIO_PORT, CallGate, ChannelAddr, EVENTS_PORT, EventKind, Keeps, NodeProblem, ProblemSource,
+    CallGate, ChannelAddr, EVENTS_PORT, EventKind, Keeps, NodeProblem, ProblemSource,
     ResolvedPatch, Runs, StateSnapshot,
 };
 
@@ -32,7 +32,7 @@ pub(crate) fn bindings(
         if !patch.delivers(&node.id, EVENTS_PORT, EventKind::Call) {
             continue;
         }
-        let keep_audio = patch.keeps(&node.id, AUDIO_PORT, Keeps::Clips);
+        let keep_audio = patch.keeps(&node.id, EVENTS_PORT, Keeps::Clips);
         let mut silent = false;
         for addr in addresses(&node.runs) {
             match gate_of(live, addr) {

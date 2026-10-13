@@ -237,25 +237,25 @@ fn an_event_output_takes_what_its_target_sends() {
 }
 
 #[test]
-fn only_an_event_output_that_sends_audio_takes_call_audio() {
-    let sends = |target: EventOutputTarget| {
+fn only_an_event_output_that_sends_audio_keeps_clips() {
+    let keeps = |target: EventOutputTarget| {
         NodeBody::EventOutput(crate::EventOutputNode { target })
             .ports(None)
             .iter()
-            .any(|port| port.name == "audio")
+            .any(|port| port.keeps.contains(&Keeps::Clips))
     };
     let webhook = |format| EventOutputTarget::Webhook {
         url: "https://example.com/hook".to_owned(),
         format,
     };
-    assert!(sends(EventOutputTarget::Recordings));
-    assert!(sends(webhook(WebhookFormat::Discord)));
-    assert!(!sends(webhook(WebhookFormat::Json)));
-    assert!(!sends(EventOutputTarget::Desktop));
+    assert!(keeps(EventOutputTarget::Recordings));
+    assert!(keeps(webhook(WebhookFormat::Discord)));
+    assert!(!keeps(webhook(WebhookFormat::Json)));
+    assert!(!keeps(EventOutputTarget::Desktop));
     let graph = PatchGraph {
         nodes: vec![
             channel("voice", "dmr"),
-            output("out", webhook(WebhookFormat::Json)),
+            output("out", EventOutputTarget::Recordings),
         ],
         edges: vec![events("voice", "out"), audio("voice", "out")],
     };
@@ -264,7 +264,8 @@ fn only_an_event_output_that_sends_audio_takes_call_audio() {
             .iter()
             .map(|(edge, _)| edge)
             .collect::<Vec<_>>(),
-        [&audio("voice", "out")]
+        [&audio("voice", "out")],
+        "clips ride on the events wire"
     );
 }
 
@@ -295,11 +296,19 @@ fn kept(patch: &ResolvedPatch, node: &str, port: &str) -> Vec<Keeps> {
         .unwrap_or_default()
 }
 
+fn only(kinds: &[EventKind]) -> NodeBody {
+    NodeBody::EventFilter(crate::filter::EventFilterNode {
+        kinds: kinds.to_vec(),
+        ..Default::default()
+    })
+}
+
 #[test]
 fn outputs_know_what_their_sinks_keep() {
     let graph = PatchGraph {
         nodes: vec![
             channel("voice", "dmr"),
+            channel("pager", "adsb"),
             channel("tv", "atv"),
             log("log"),
             node("vid", NodeBody::Video),
@@ -313,31 +322,40 @@ fn outputs_know_what_their_sinks_keep() {
         ],
         edges: vec![
             events("voice", "log"),
-            audio("voice", "log"),
             events("voice", "out"),
+            events("pager", "log"),
             wire(("tv", "video"), ("vid", "video")),
         ],
     };
     let (patch, refused) = draft(&graph);
     assert!(refused.is_empty());
-    assert_eq!(kept(&patch, "voice", "events"), [Keeps::History]);
-    assert_eq!(kept(&patch, "voice", "audio"), [Keeps::Clips]);
-    assert_eq!(kept(&patch, "tv", "video"), [Keeps::Pictures]);
-
-    let mut through_fx = graph;
-    through_fx.nodes.push(fx("fx"));
-    through_fx.edges = vec![audio("voice", "fx"), audio("fx", "out")];
     assert_eq!(
-        reasons(&through_fx),
-        [(
-            audio("fx", "out"),
-            "Wire it straight from the source".to_owned()
-        )]
+        kept(&patch, "voice", "events"),
+        [Keeps::History, Keeps::Clips]
     );
+    assert_eq!(kept(&patch, "pager", "events"), [Keeps::History]);
+    assert_eq!(kept(&patch, "tv", "video"), [Keeps::Pictures]);
+    assert!(patch.takes_kept("log", "events", Keeps::Clips));
+    assert!(!patch.takes_kept("log", "events", Keeps::Pictures));
 }
 
 #[test]
-fn trunks_and_monitors_hand_out_audio_and_scanners_watch_a_lane() {
+fn a_filter_that_drops_calls_keeps_no_clips() {
+    let graph = PatchGraph {
+        nodes: vec![
+            channel("voice", "dmr"),
+            node("keep", only(&[EventKind::Dv])),
+            log("log"),
+        ],
+        edges: vec![events("voice", "keep"), events("keep", "log")],
+    };
+    let (patch, refused) = draft(&graph);
+    assert!(refused.is_empty());
+    assert_eq!(kept(&patch, "voice", "events"), [Keeps::History]);
+}
+
+#[test]
+fn trunks_hand_out_audio_monitors_hand_out_clips_and_scanners_watch_a_lane() {
     let graph = PatchGraph {
         nodes: vec![
             radio("dev", "band"),
@@ -350,17 +368,19 @@ fn trunks_and_monitors_hand_out_audio_and_scanners_watch_a_lane() {
         edges: vec![
             wire(("dev", "iq"), ("scan", "iq")),
             audio("trunk", "spk"),
-            audio("monitor", "log"),
+            events("monitor", "log"),
             audio("monitor", "spk"),
         ],
     };
     assert_eq!(
-        reasons(&graph),
-        [(
-            audio("monitor", "spk"),
-            "Speaker takes live audio".to_owned()
-        )]
+        reasons(&graph)
+            .iter()
+            .map(|(edge, _)| edge)
+            .collect::<Vec<_>>(),
+        [&audio("monitor", "spk")],
+        "a monitor has no audio output"
     );
+    assert!(draft(&graph).0.keeps("monitor", "events", Keeps::Clips));
     assert_eq!(
         draft(&graph).0.feeds("scan", "iq")[0].source,
         "dev",

@@ -8,12 +8,12 @@ async fn channel_audio_record_list_download_and_delete_roundtrip_over_http() {
     let ch = create_nfm_channel(&app, ds).await;
 
     let live = engine
-        .start_channel_recording(ds, ch)
+        .start_audio_recording("rec", &sdrmm_wire::AudioRoute::channel(ds, ch), false)
         .expect("recording starts");
     assert!(live.file.ends_with(".wav"));
     wait_for_recorded_frames(&app, ds, ch, 4_800).await;
     let done = engine
-        .stop_channel_recording(ds, ch)
+        .stop_audio_recording("rec", ds, ch)
         .expect("recording stops");
     assert_eq!(done.file, live.file);
     assert!(done.frames > 0);

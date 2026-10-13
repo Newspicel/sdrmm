@@ -401,52 +401,40 @@ fn calling() -> Value {
     with_wires(
         json!([
             decoder("dmr", "dmr"),
-            decoder("pager", "pocsag"),
             at("trunk", "dmr_trunk", json!({})),
             at("loud", "spectrum_monitor", json!({ "record_audio": true })),
-            at(
-                "quiet",
-                "spectrum_monitor",
-                json!({ "record_audio": false })
-            ),
-            at("keep", "event_filter", json!({})),
             at("log", "decoder_log", json!({})),
-            at(
-                "hook",
-                "event_output",
-                json!({ "target": { "service": "webhook", "format": "json", "url": "" } }),
-            ),
             at(
                 "chat",
                 "event_output",
                 json!({ "target": { "service": "webhook", "format": "discord", "url": "" } }),
             ),
-            json!({ "id": "map", "kind": "map", "position": { "x": 0.0, "y": 0.0 } }),
+            json!({ "id": "spk", "kind": "speaker", "position": { "x": 0.0, "y": 0.0 } }),
         ]),
         json!([
-            wire(("dmr", "events"), ("keep", "events")),
-            wire(("keep", "events"), ("log", "events")),
-            wire(("pager", "events"), ("log", "events")),
-            wire(("trunk", "events"), ("hook", "events")),
-            wire(("trunk", "events"), ("chat", "events")),
+            wire(("dmr", "events"), ("log", "events")),
+            wire(("dmr", "audio"), ("log", "audio")),
+            wire(("loud", "audio"), ("log", "audio")),
+            wire(("trunk", "audio"), ("chat", "audio")),
             wire(("loud", "events"), ("log", "events")),
-            wire(("quiet", "events"), ("log", "events")),
-            wire(("dmr", "events"), ("map", "events")),
+            wire(("dmr", "audio"), ("spk", "audio")),
+            wire(("trunk", "audio"), ("spk", "audio")),
         ]),
     )
 }
 
+const RIDES: &str = "Clips ride on the events wire";
+
 #[test]
-fn call_audio_gets_a_wire_to_each_log_and_output_its_events_reach() {
-    let mut snapshot = calling();
-    let notices = call_audio::wire_call_audio(&mut snapshot);
+fn call_audio_wires_are_dropped_because_clips_ride_on_events() {
+    let (snapshot, notices) = twice_equals_once(calling());
     assert_eq!(
         notices,
-        vec![WorkspaceNoticeKind::AddedWires {
+        vec![WorkspaceNoticeKind::DroppedWires {
             wires: vec![
-                notice_wire(("dmr", "audio"), ("log", "audio"), "Keeps call audio"),
-                notice_wire(("trunk", "audio"), ("chat", "audio"), "Keeps call audio"),
-                notice_wire(("loud", "audio"), ("log", "audio"), "Keeps call audio"),
+                notice_wire(("dmr", "audio"), ("log", "audio"), RIDES),
+                notice_wire(("loud", "audio"), ("log", "audio"), RIDES),
+                notice_wire(("trunk", "audio"), ("chat", "audio"), RIDES),
             ]
         }]
     );
@@ -458,47 +446,49 @@ fn call_audio_gets_a_wire_to_each_log_and_output_its_events_reach() {
             .all(|node| node["data"].get("record_audio").is_none()),
         "the audio switch is gone"
     );
-    let mut again = snapshot.clone();
-    assert!(call_audio::wire_call_audio(&mut again).is_empty());
-    assert_eq!(again, snapshot);
-    assert_eq!(edge_count(&snapshot), 11);
-    parse_workspace_snapshot(&snapshot.to_string()).expect("the wired workspace loads");
+    assert_eq!(edge_count(&snapshot), 4, "live audio to the speaker stays");
+    parse_workspace_snapshot(&snapshot.to_string()).expect("the workspace loads");
 }
 
 #[test]
-fn an_import_wires_call_audio_once() {
-    let mut imported = json!({ "version": 1, "name": "Old", "snapshot": calling() });
-    let notices = upgrade_import(&mut imported);
-    assert!(notices.iter().any(|notice| matches!(
-        notice,
-        WorkspaceNoticeKind::AddedWires { wires } if wires.iter().all(|wire| wire.reason == "Keeps call audio")
-    )));
-    assert_eq!(edge_count(&imported["snapshot"]), 11);
+fn any_import_drops_call_audio_wires() {
+    for version in [1, sdrmm_wire::WORKSPACE_EXPORT_VERSION] {
+        let mut imported = json!({ "version": version, "name": "Old", "snapshot": calling() });
+        let notices = upgrade_import(&mut imported);
+        assert!(notices.iter().any(|notice| matches!(
+            notice,
+            WorkspaceNoticeKind::DroppedWires { wires } if wires.iter().all(|wire| wire.reason == RIDES)
+        )));
+        assert_eq!(edge_count(&imported["snapshot"]), 4);
+    }
 }
 
 #[test]
-fn a_current_export_keeps_the_audio_wire_the_user_removed() {
-    let trunk_to_log = || {
-        with_wires(
-            json!([
-                at("trunk", "dmr_trunk", json!({})),
-                at("log", "decoder_log", json!({})),
-            ]),
-            json!([wire(("trunk", "events"), ("log", "events"))]),
-        )
-    };
-    let mut current = json!({
-        "version": sdrmm_wire::WORKSPACE_EXPORT_VERSION,
-        "name": "New",
-        "snapshot": trunk_to_log(),
-    });
-    assert!(upgrade_import(&mut current).is_empty());
-    assert_eq!(edge_count(&current["snapshot"]), 1);
-
-    let mut old = json!({ "version": 1, "name": "Old", "snapshot": trunk_to_log() });
-    upgrade_import(&mut old);
-    assert_eq!(edge_count(&old["snapshot"]), 2);
-    assert_eq!(old["version"], sdrmm_wire::WORKSPACE_EXPORT_VERSION);
+fn wires_from_a_decoder_that_sends_no_events_are_dropped() {
+    let (snapshot, notices) = twice_equals_once(with_wires(
+        json!([
+            decoder("tv", "atv"),
+            decoder("fm", "wfm"),
+            at("log", "decoder_log", json!({})),
+            json!({ "id": "screen", "kind": "video", "position": { "x": 0.0, "y": 0.0 } }),
+        ]),
+        json!([
+            wire(("tv", "events"), ("log", "events")),
+            wire(("fm", "events"), ("log", "events")),
+            wire(("tv", "video"), ("screen", "video")),
+        ]),
+    ));
+    assert_eq!(
+        notices,
+        vec![WorkspaceNoticeKind::DroppedWires {
+            wires: vec![notice_wire(
+                ("tv", "events"),
+                ("log", "events"),
+                "Sends no events"
+            )]
+        }]
+    );
+    assert_eq!(edge_count(&snapshot), 2);
 }
 
 fn picturing() -> Value {

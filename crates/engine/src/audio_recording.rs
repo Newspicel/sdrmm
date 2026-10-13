@@ -86,6 +86,27 @@ impl AudioRecorderTap {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct AudioTaps(Arc<[AudioRecorderTap]>);
+
+impl AudioTaps {
+    pub(crate) fn of(taps: Vec<AudioRecorderTap>) -> Option<Self> {
+        (!taps.is_empty()).then(|| Self(taps.into()))
+    }
+
+    pub(crate) fn push(&self, block: &PcmBlock) {
+        for tap in self.0.iter() {
+            let _ = tap.push(block.clone());
+        }
+    }
+
+    pub(crate) fn publication_failed(&self) {
+        for tap in self.0.iter() {
+            tap.publication_failed();
+        }
+    }
+}
+
 pub(crate) fn create_tap(
     device_rate: f64,
     skip_silence: bool,

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AudioRecordingStatus, ChannelInfo, PatchNode } from "../../lib/types";
-import { recordingFor, withRecording, withSkipSilence } from "./audioRecorder";
+import { ownRecording, withRecording, withSkipSilence } from "./audioRecorder";
 
-const status = (file: string, fx?: string[]): AudioRecordingStatus => ({
+const status = (file: string, node: string): AudioRecordingStatus => ({
+  node,
   file,
-  fx,
   started_at: "2026-09-23T12:00:00Z",
   channels: 1,
   frames: 0,
@@ -17,18 +17,16 @@ const channel = (audio_recordings?: AudioRecordingStatus[]): ChannelInfo => ({
   audio_recordings,
 });
 
-describe("recordingFor", () => {
-  it("finds the recording of the route the recorder is wired through", () => {
-    const wired = channel([status("raw.wav"), status("clean.wav", ["a", "b"])]);
-    expect(recordingFor(wired, [])?.file).toBe("raw.wav");
-    expect(recordingFor(wired, ["a", "b"])?.file).toBe("clean.wav");
+describe("ownRecording", () => {
+  it("finds the file this recorder owns on a channel others record too", () => {
+    const wired = channel([status("mine.wav", "rec"), status("theirs.wav", "other")]);
+    expect(ownRecording(wired, "rec")?.file).toBe("mine.wav");
+    expect(ownRecording(wired, "other")?.file).toBe("theirs.wav");
   });
 
-  it("is null for a route nobody records, even through the same nodes in another order", () => {
-    const wired = channel([status("clean.wav", ["a", "b"])]);
-    expect(recordingFor(wired, ["b", "a"])).toBeNull();
-    expect(recordingFor(wired, [])).toBeNull();
-    expect(recordingFor(channel(), [])).toBeNull();
+  it("is null while this recorder records nothing there", () => {
+    expect(ownRecording(channel([status("theirs.wav", "other")]), "rec")).toBeNull();
+    expect(ownRecording(channel(), "rec")).toBeNull();
   });
 });
 
