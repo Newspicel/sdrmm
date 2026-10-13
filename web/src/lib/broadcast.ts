@@ -1,40 +1,24 @@
 import { create } from "zustand";
-import { decoderKey } from "./hunt";
 import type { BroadcastStatus, ServerEvent } from "./types";
 
-export interface ChannelBroadcast {
-  deviceSet: number;
-  channel: number;
-  status: BroadcastStatus;
-}
-
 interface BroadcastStore {
-  byChannel: Readonly<Record<string, ChannelBroadcast>>;
+  byNode: Readonly<Record<string, BroadcastStatus>>;
   observe: (event: ServerEvent) => void;
   reset: () => void;
 }
 
 export const useBroadcastStore = create<BroadcastStore>((set) => ({
-  byChannel: {},
+  byNode: {},
   observe: (event) => {
-    if (event.type !== "BroadcastUpdate") {
+    if (event.type !== "ChannelBroadcast") {
       return;
     }
-    const { device_set: deviceSet, channel, status } = event.data;
-    set((state) => ({
-      byChannel: {
-        ...state.byChannel,
-        [decoderKey(deviceSet, channel)]: { deviceSet, channel, status },
-      },
-    }));
+    const { node, status } = event.data;
+    set((state) => ({ byNode: { ...state.byNode, [node]: status } }));
   },
-  reset: () => set({ byChannel: {} }),
+  reset: () => set({ byNode: {} }),
 }));
 
-export function useBroadcast(deviceSet: number | undefined, channel: number | undefined) {
-  return useBroadcastStore((store) =>
-    deviceSet === undefined || channel === undefined
-      ? undefined
-      : store.byChannel[decoderKey(deviceSet, channel)],
-  );
+export function useBroadcast(node: string): BroadcastStatus | undefined {
+  return useBroadcastStore((store) => store.byNode[node]);
 }

@@ -1,0 +1,129 @@
+{
+  "name": "49833b6025e55447",
+  "test": "RadarFace > says no tx when the transmitter is unwired",
+  "graph": {
+    "nodes": [
+      {
+        "id": "arr",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      },
+      {
+        "id": "site",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "gps",
+        "data": {}
+      },
+      {
+        "id": "radar",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "passive_radar",
+        "data": {
+          "settings": {
+            "reference_element": 0,
+            "surveillance": {
+              "kind": "all_others"
+            },
+            "illuminator": {
+              "kind": "fm"
+            },
+            "offset_hz": 0,
+            "cpi_ms": 500,
+            "overlap": 0,
+            "max_range_km": 80,
+            "max_speed_mps": 400,
+            "window": "hann",
+            "reference": {
+              "kind": "cma",
+              "taps": 16,
+              "step": 0.001
+            },
+            "clutter": {
+              "method": "eca_batch",
+              "reach_km": 15,
+              "lead": 2,
+              "doppler_taps": 0,
+              "batch_ms": 50,
+              "taper": true,
+              "extension_ms": 25,
+              "step": 0.05,
+              "loading": 0.0001
+            },
+            "cfar": {
+              "kind": {
+                "kind": "ca"
+              },
+              "window": "range",
+              "pfa": 0.00001,
+              "guard_range": 2,
+              "train_range": 8,
+              "guard_doppler": 1,
+              "train_doppler": 4,
+              "min_doppler_hz": 5,
+              "min_range_km": 1,
+              "min_snr_db": 8
+            },
+            "tracker": {
+              "confirm_hits": 3,
+              "confirm_window": 5,
+              "coast_looks": 10,
+              "max_accel_mps2": 30,
+              "gate": 11.8,
+              "jerk": 5
+            },
+            "aoa": true,
+            "assumed_altitude_m": 8000,
+            "gpu": "auto"
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "arr",
+          "port": "array"
+        },
+        "to": {
+          "node": "radar",
+          "port": "array"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

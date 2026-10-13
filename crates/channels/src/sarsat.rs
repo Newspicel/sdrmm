@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, SyncDetector, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
     MAX_SARSAT_BANDWIDTH_HZ, MIN_SARSAT_BANDWIDTH_HZ, SarsatParams,
 };
 
@@ -34,7 +34,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: sdrmm_wire::SARSAT_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("sarsat".to_owned()),
+    emits: vec![EventKind::Sarsat],
     ..ChannelDescriptor::default()
 });
 

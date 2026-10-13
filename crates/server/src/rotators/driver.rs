@@ -8,7 +8,8 @@ use std::{
 };
 
 use sdrmm_engine::Engine;
-use sdrmm_wire::{RotatorMode, RotatorStatus, SatelliteStatus, ServerEvent, SkyPoint};
+use sdrmm_wire::{ControlCommand, RotatorMode, RotatorStatus, ServerEvent, SkyPoint, SkyTrack};
+use tokio::sync::watch;
 
 use super::{
     Connection, Follow,
@@ -16,10 +17,7 @@ use super::{
     locked,
     plan::{self, Mount, Plan},
 };
-use crate::{
-    AppState,
-    satellites::{SatelliteHub, unix_now},
-};
+use crate::{AppState, satellites::unix_now};
 
 const POLL: Duration = Duration::from_secs(1);
 const RETRY: Duration = Duration::from_secs(5);
@@ -48,7 +46,7 @@ pub(super) struct Driver {
     follow: Arc<Mutex<Follow>>,
     statuses: Arc<Mutex<HashMap<String, RotatorStatus>>>,
     engine: Weak<Engine>,
-    satellites: Weak<SatelliteHub>,
+    commands: watch::Receiver<Option<ControlCommand>>,
     sent: Option<SkyPoint>,
     stopped: bool,
     plan: Option<Plan>,
@@ -63,12 +61,12 @@ impl Driver {
         state: &AppState,
     ) -> Self {
         Self {
+            commands: state.control.follow(&node),
             node,
             connection,
             follow,
             statuses,
             engine: Arc::downgrade(&state.engine),
-            satellites: Arc::downgrade(&state.satellites),
             sent: None,
             stopped: false,
             plan: None,
@@ -113,7 +111,7 @@ impl Driver {
                 target: aim.map(|aim| aim.target),
                 awaiting_pass: aim.is_some_and(|aim| aim.awaiting_pass),
                 flipped: aim.is_some_and(|aim| aim.flipped),
-                error: (follow.settings.mode == RotatorMode::Track && follow.satellite.is_none())
+                error: (follow.settings.mode == RotatorMode::Track && !follow.wired)
                     .then(|| UNWIRED.to_owned()),
             });
             if !wait(woken, POLL) {
@@ -153,20 +151,19 @@ impl Driver {
     }
 
     fn track(&mut self, follow: &Follow, mount: Mount, position: SkyPoint) -> Option<Aim> {
-        let satellite = follow.satellite.as_deref()?;
-        let status = self.satellites.upgrade()?.status(satellite)?;
-        self.replan(&status, mount, position.azimuth_deg);
-        aim(
-            &status,
-            self.plan.as_ref(),
-            mount,
-            position,
-            unix_now() as i64,
-        )
+        if !follow.wired {
+            return None;
+        }
+        let sky = match &*self.commands.borrow() {
+            Some(ControlCommand::Point(sky)) => sky.clone(),
+            _ => return None,
+        };
+        self.replan(&sky, mount, position.azimuth_deg);
+        aim(&sky, self.plan.as_ref(), mount, position, unix_now() as i64)
     }
 
-    fn replan(&mut self, status: &SatelliteStatus, mount: Mount, from_deg: f64) {
-        let Some(pass) = status.next_pass else {
+    fn replan(&mut self, sky: &SkyTrack, mount: Mount, from_deg: f64) {
+        let Some(pass) = sky.next_pass else {
             self.plan = None;
             return;
         };
@@ -177,7 +174,7 @@ impl Driver {
         {
             return;
         }
-        self.plan = plan::plan(&status.pass_track, pass.max_at, mount, from_deg);
+        self.plan = plan::plan(&sky.pass_track, pass.max_at, mount, from_deg);
     }
 
     fn publish(&self, status: RotatorStatus) {
@@ -191,21 +188,21 @@ impl Driver {
 }
 
 pub(super) fn aim(
-    status: &SatelliteStatus,
+    track: &SkyTrack,
     plan: Option<&Plan>,
     mount: Mount,
     position: SkyPoint,
     now: i64,
 ) -> Option<Aim> {
-    let look = status.look?;
-    let (sky, at, awaiting_pass) = if status.visible {
+    let look = track.look;
+    let (sky, at, awaiting_pass) = if track.visible {
         let sky = SkyPoint {
             azimuth_deg: look.azimuth_deg,
             elevation_deg: look.elevation_deg.max(0.0),
         };
         (sky, now, false)
     } else {
-        let rise = status.pass_track.first()?;
+        let rise = track.pass_track.first()?;
         (rise.sky(), rise.at, true)
     };
     let (target, flipped) = plan::steer(sky, at, plan, mount, position.azimuth_deg);

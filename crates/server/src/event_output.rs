@@ -9,17 +9,17 @@ use rumqttc::{
 use sdrmm_engine::Engine;
 use sdrmm_recorder::{AUDIO_SUFFIX, audio_stem, save_unique};
 use sdrmm_wire::{
-    DecodedRecord, DecoderEvent, EventOutputTarget, NodeBody, ServerEvent, StateScope,
-    Transmission, VoiceCall, WebhookFormat,
+    DecodedRecord, EVENTS_PORT, EventOutputTarget, NodeBody, StateScope, WebhookFormat,
+    present::Presentation,
 };
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::{
     broadcast::{Receiver, error::RecvError},
-    mpsc,
+    mpsc, watch,
 };
 
-use crate::{NativeShell, Store, calls::Calls, decoded::Decoded};
+use crate::{NativeShell, calls::Calls, decoded::Decoded, resolved::Resolved};
 
 mod beast;
 mod csv;
@@ -112,16 +112,11 @@ impl OutputAudio {
 pub(crate) async fn run(
     decoded: Receiver<Decoded>,
     engine: std::sync::Weak<Engine>,
-    store: Arc<Store>,
+    mut patch: watch::Receiver<Arc<Resolved>>,
     calls: Arc<Calls>,
     shell: Option<Arc<dyn NativeShell>>,
 ) {
-    let Some(strong) = engine.upgrade() else {
-        return;
-    };
-    let mut events = strong.subscribe_events();
     let mut decoded = decoded;
-    drop(strong);
     let client = match Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
@@ -144,7 +139,7 @@ pub(crate) async fn run(
         delivery_rx,
         statuses.clone(),
     ));
-    let mut routing = load_routing(store.clone()).await;
+    let mut routing = routing_of(&patch.borrow_and_update());
     let mut tunnels = tunnel::Outputs::new(statuses.clone());
     let mut beasts = beast::Outputs::default();
     configure(&routing, &mut tunnels, &mut beasts, &statuses);
@@ -159,23 +154,12 @@ pub(crate) async fn run(
                     statuses.publish(&engine);
                 }
             },
-            event = events.recv() => match event {
-                Ok(ServerEvent::StateChanged {
-                    scope: StateScope::All
-                        | StateScope::Devices
-                        | StateScope::DeviceSet(_)
-                        | StateScope::Workspaces,
-                }) => {
-                    routing = load_routing(store.clone()).await;
-                    configure(&routing, &mut tunnels, &mut beasts, &statuses);
-                },
-                Ok(_) => {}
-                Err(RecvError::Lagged(count)) => {
-                    tracing::error!(count, "event output missed server events");
-                    routing = load_routing(store.clone()).await;
+            changed = patch.changed() => match changed {
+                Ok(()) => {
+                    routing = routing_of(&patch.borrow_and_update());
                     configure(&routing, &mut tunnels, &mut beasts, &statuses);
                 }
-                Err(RecvError::Closed) => break,
+                Err(_) => break,
             },
             record = decoded.recv(), if decoded_open => match record {
                 Ok(Decoded::Record(routed)) => {
@@ -236,105 +220,81 @@ fn decoded_deliveries(
             )
         })
         .filter(|binding| record.sinks.contains(&binding.node))
-        .filter(|binding| {
-            !matches!(binding.target, EventOutputTarget::Recordings) || carries_audio(&record.event)
-        })
-        .map(|binding| match &record.event {
-            DecoderEvent::Call(call) => Delivery {
+        .map(|binding| {
+            let view = view_of(record);
+            let clip = clip_of(binding, record, &view, calls);
+            Delivery {
                 node: binding.node.clone(),
                 target: binding.target.clone(),
-                event: format!("call {}", call.id),
-                message: call_message(
-                    &binding.node,
-                    record,
-                    call,
-                    call.audio
-                        .as_ref()
-                        .and_then(|audio| calls.event_audio(audio)),
-                ),
-            },
-            DecoderEvent::Transmission(transmission) => {
-                let mut message = decoded_message(&binding.node, record, sequence);
-                message.audio = transmission
-                    .audio
-                    .as_ref()
-                    .and_then(|audio| calls.event_audio(audio))
-                    .map(|bytes| OutputAudio {
-                        bytes,
-                        stem: transmission_stem(record, transmission),
-                        duration_ms: transmission.duration_ms,
-                    });
-                Delivery {
-                    node: binding.node.clone(),
-                    target: binding.target.clone(),
-                    event: format!("transmission {}", transmission.id),
-                    message,
-                }
+                event: event_label(record, &view),
+                message: decoded_message(&binding.node, record, sequence, view, clip),
             }
-            _ => Delivery {
-                node: binding.node.clone(),
-                target: binding.target.clone(),
-                event: format!("{} decode at {}", record.event.kind(), record.at),
-                message: decoded_message(&binding.node, record, sequence),
-            },
         })
+        .filter(recordable)
         .collect()
 }
 
-fn carries_audio(event: &DecoderEvent) -> bool {
-    match event {
-        DecoderEvent::Call(call) => call.audio.is_some() || call.audio_error.is_some(),
-        DecoderEvent::Transmission(transmission) => transmission.audio.is_some(),
-        _ => false,
+fn view_of(record: &DecodedRecord) -> Presentation {
+    record
+        .view
+        .clone()
+        .unwrap_or_else(|| record.event.present())
+}
+
+fn event_label(record: &DecodedRecord, view: &Presentation) -> String {
+    let kind = record.event.kind();
+    match (&view.clip, &view.entity) {
+        (Some(clip), _) => format!("{kind} {}", clip.url),
+        (None, Some(entity)) => format!("{kind} {entity} at {}", record.at),
+        (None, None) => format!("{kind} decode at {}", record.at),
     }
+}
+
+fn recordable(delivery: &Delivery) -> bool {
+    let message = &delivery.message;
+    !matches!(delivery.target, EventOutputTarget::Recordings)
+        || message.audio.is_some()
+        || message.audio_error.is_some()
+}
+
+fn clip_of(
+    binding: &Binding,
+    record: &DecodedRecord,
+    view: &Presentation,
+    calls: &Calls,
+) -> Option<OutputAudio> {
+    if !binding.target.keeps_clips() {
+        return None;
+    }
+    let bytes = calls.event_audio(view.clip.as_ref()?)?;
+    Some(OutputAudio {
+        bytes,
+        stem: clip_stem(record, view),
+        duration_ms: view.duration_ms.unwrap_or_default(),
+    })
 }
 
 fn started(at: &str) -> jiff::Timestamp {
     at.parse().unwrap_or(jiff::Timestamp::UNIX_EPOCH)
 }
 
-fn call_stem(call: &VoiceCall) -> String {
-    let mut stem = audio_stem(started(&call.started_at), &call.mode_label(), call.freq_hz);
-    if let Some(id) = call.destination {
-        let prefix = if call.group_call == Some(true) {
-            "TG"
-        } else {
-            "ID"
-        };
-        stem.push_str(&format!("_{prefix}{id}"));
+fn clip_stem(record: &DecodedRecord, view: &Presentation) -> String {
+    let name = view.clip_name.clone().unwrap_or_default();
+    let at = name.started_at.as_deref().unwrap_or(&record.at);
+    let mut stem = audio_stem(
+        started(at),
+        &name.mode,
+        name.freq_hz.unwrap_or(record.freq_hz),
+    );
+    if let Some(tag) = &name.tag {
+        stem.push('_');
+        stem.push_str(tag);
     }
     stem
 }
 
-fn transmission_stem(record: &DecodedRecord, transmission: &Transmission) -> String {
-    let mode = transmission
-        .decoder
-        .as_deref()
-        .unwrap_or(transmission.signal.modulation.label());
-    let at = transmission.started_at.as_deref().unwrap_or(&record.at);
-    audio_stem(started(at), mode, record.freq_hz)
-}
-
-async fn load_routing(store: Arc<Store>) -> Routing {
-    match tokio::task::spawn_blocking(move || resolve(&store)).await {
-        Ok(Ok(routing)) => routing,
-        Ok(Err(error)) => {
-            tracing::error!(%error, "could not resolve event outputs");
-            Routing::default()
-        }
-        Err(error) => {
-            tracing::error!(%error, "event output resolution panicked");
-            Routing::default()
-        }
-    }
-}
-
-fn resolve(store: &Store) -> Result<Routing, crate::StoreError> {
-    let Some(workspace) = store.active_workspace()? else {
-        return Ok(Routing::default());
-    };
-    let bindings = workspace
-        .snapshot
+fn routing_of(resolved: &Resolved) -> Routing {
+    let bindings = resolved
         .graph
         .nodes
         .iter()
@@ -342,12 +302,7 @@ fn resolve(store: &Store) -> Result<Routing, crate::StoreError> {
             let NodeBody::EventOutput(settings) = &node.body else {
                 return None;
             };
-            let connected = workspace
-                .snapshot
-                .graph
-                .edges
-                .iter()
-                .any(|edge| edge.to.node == node.id && edge.to.port == "events");
+            let connected = !resolved.patch.feeds(&node.id, EVENTS_PORT).is_empty();
             (settings.target.configured()
                 && (!matches!(settings.target, EventOutputTarget::Beast { .. }) || connected))
                 .then(|| Binding {
@@ -356,7 +311,7 @@ fn resolve(store: &Store) -> Result<Routing, crate::StoreError> {
                 })
         })
         .collect();
-    Ok(Routing { bindings })
+    Routing { bindings }
 }
 
 struct Senders {
@@ -830,11 +785,6 @@ fn mqtt_client_id(output_node: &str) -> String {
     id
 }
 
-fn call_transaction(output_node: &str, call: &VoiceCall) -> String {
-    let stamp = transaction_stamp(&call.ended_at);
-    format!("sdrmm-{output_node}-{stamp}-{}", call.id)
-}
-
 fn decoded_transaction(output_node: &str, record: &DecodedRecord, sequence: u64) -> String {
     let stamp = transaction_stamp(&record.at);
     format!(
@@ -860,57 +810,6 @@ fn set_query(url: &mut Url, name: &str, value: &str) {
     url.query_pairs_mut().extend_pairs(pairs);
 }
 
-fn call_parts(call: &VoiceCall) -> Vec<String> {
-    let mut parts = vec![format!("{} call", call.mode_label())];
-    if let Some(id) = call.destination {
-        parts.push(match call.group_call {
-            Some(true) => format!("talkgroup {id}"),
-            Some(false) => format!("radio {id}"),
-            None => format!("to {id}"),
-        });
-    }
-    if let Some(id) = call.source {
-        parts.push(format!("from {id}"));
-    }
-    if let Some(slot) = call.slot {
-        parts.push(format!("TS{slot}"));
-    }
-    if let Some(code) = call.color_code {
-        parts.push(format!("CC{code}"));
-    }
-    parts.push(format!("{:.1} s", call.duration_ms as f64 / 1_000.0));
-    parts.push(format!("{:.6} MHz", call.freq_hz / 1_000_000.0));
-    if call.emergency {
-        parts.push("emergency".to_owned());
-    }
-    if call.encrypted {
-        parts.push("encrypted".to_owned());
-    }
-    parts
-}
-
-fn format_call(call: &VoiceCall) -> String {
-    let mut text = call_parts(call).join(" · ");
-    if let Some(error) = &call.audio_error {
-        text.push_str(&format!("\nAudio: {error}"));
-    }
-    text
-}
-
-fn format_call_html(call: &VoiceCall) -> String {
-    let parts = call_parts(call);
-    let (mode, rest) = parts.split_at(1);
-    let mut html = format!("<strong>{}</strong>", escape_html(&mode[0]));
-    for part in rest {
-        html.push_str(" · ");
-        html.push_str(&escape_html(part));
-    }
-    if let Some(error) = &call.audio_error {
-        html.push_str(&format!("<br/><em>{}</em>", escape_html(error)));
-    }
-    html
-}
-
 fn escape_html(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for character in text.chars() {
@@ -926,16 +825,16 @@ fn escape_html(text: &str) -> String {
     escaped
 }
 
-fn format_decoded(record: &DecodedRecord) -> String {
-    let mut lines = vec![format!(
-        "{} decode",
-        record.event.kind().replace('_', " ").to_uppercase()
-    )];
-    let summary = record.event.summary();
-    if !summary.trim().is_empty() {
-        lines.push(summary);
+fn message_lines(record: &DecodedRecord, view: &Presentation) -> Vec<String> {
+    let mut lines = vec![
+        view.headline
+            .clone()
+            .unwrap_or_else(|| format!("{} decode", record.event.kind().name())),
+    ];
+    if !view.summary.trim().is_empty() {
+        lines.push(view.summary.clone());
     }
-    if let Some(station) = record.event.station() {
+    if let Some(station) = &view.entity {
         lines.push(format!("Station: {station}"));
     }
     lines.push(format!(
@@ -943,7 +842,22 @@ fn format_decoded(record: &DecodedRecord) -> String {
         record.freq_hz / 1_000_000.0
     ));
     lines.push(format!("Received: {}", record.at));
-    lines.join("\n")
+    if let Some(error) = &view.audio_error {
+        lines.push(format!("Audio: {error}"));
+    }
+    lines
+}
+
+fn format_html(lines: &[String]) -> String {
+    let (title, rest) = lines
+        .split_first()
+        .map_or(("", &[][..]), |(title, rest)| (title.as_str(), rest));
+    let mut html = format!("<strong>{}</strong>", escape_html(title));
+    for line in rest {
+        html.push_str("<br/>");
+        html.push_str(&escape_html(line));
+    }
+    html
 }
 
 fn event_payload(output_node: &str, record: &DecodedRecord, text: &str) -> serde_json::Value {
@@ -959,57 +873,50 @@ fn event_payload(output_node: &str, record: &DecodedRecord, text: &str) -> serde
     })
 }
 
-fn event_facts(record: &DecodedRecord, payload: &serde_json::Value) -> EventFacts {
+fn event_facts(
+    record: &DecodedRecord,
+    view: Presentation,
+    encoded: &serde_json::Value,
+) -> EventFacts {
     EventFacts {
         at: record.at.clone(),
-        kind: record.event.kind(),
+        kind: record.event.kind().as_str(),
         device_set: record.device_set,
         channel: record.channel,
         freq_hz: record.freq_hz,
-        station: record.event.station(),
-        summary: record.event.summary(),
-        record: payload
-            .get("record")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null),
+        station: view.entity,
+        summary: view.summary,
+        record: encoded.clone(),
     }
 }
 
-fn call_message(
+fn decoded_message(
     output_node: &str,
     record: &DecodedRecord,
-    call: &VoiceCall,
-    audio: Option<Bytes>,
+    sequence: u64,
+    view: Presentation,
+    audio: Option<OutputAudio>,
 ) -> OutputMessage {
-    let body = bounded_message(format_call(call));
+    let lines = message_lines(record, &view);
+    let body = bounded_message(lines.join("\n"));
     let payload = event_payload(output_node, record, &body);
+    let encoded = payload_record(&payload);
     OutputMessage {
-        facts: event_facts(record, &payload),
+        html: Some(bounded_message(format_html(&lines))),
         payload,
-        html: Some(bounded_message(format_call_html(call))),
         body,
-        transaction: call_transaction(output_node, call),
-        audio: audio.map(|bytes| OutputAudio {
-            bytes,
-            stem: call_stem(call),
-            duration_ms: call.duration_ms,
-        }),
-        audio_error: call.audio_error.clone(),
+        transaction: decoded_transaction(output_node, record, sequence),
+        audio,
+        audio_error: view.audio_error.clone(),
+        facts: event_facts(record, view, &encoded),
     }
 }
 
-fn decoded_message(output_node: &str, record: &DecodedRecord, sequence: u64) -> OutputMessage {
-    let body = bounded_message(format_decoded(record));
-    let payload = event_payload(output_node, record, &body);
-    OutputMessage {
-        facts: event_facts(record, &payload),
-        payload,
-        html: None,
-        body,
-        transaction: decoded_transaction(output_node, record, sequence),
-        audio: None,
-        audio_error: None,
-    }
+fn payload_record(payload: &serde_json::Value) -> serde_json::Value {
+    payload
+        .get("record")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null)
 }
 
 fn bounded_message(message: String) -> String {

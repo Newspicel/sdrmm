@@ -337,6 +337,7 @@ mod tests {
             at: "2026-09-22T00:00:00Z".to_owned(),
             freq_hz: 1_090_000_000.0,
             event: DecoderEvent::Adsb(message()),
+            view: None,
         };
         outputs.push(&record);
         assert!(

@@ -1,0 +1,26 @@
+{
+  "name": "2e3ea74db65cf410",
+  "test": "faces read the resolved patch > marks a node with the problems the server found",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "desktop"
+          }
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

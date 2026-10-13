@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { MAX_NAME_LEN } from "../../lib/limits";
 import type { PatchGraph, RecordingInfo } from "../../lib/types";
-import { MAX_NAME_LEN } from "../graph";
+
 import {
   checkUpload,
   claimedRecordings,
   findRecording,
   recordingChoices,
-  recordingDeviceId,
   recordingNodeFor,
   UPLOAD_ACCEPT,
 } from "./recordingNode";
@@ -15,7 +15,7 @@ function recording(file: string, overrides: Partial<RecordingInfo> = {}): Record
   return {
     id: file.length,
     file,
-    device_id: recordingDeviceId(file),
+    device_id: `recording:${file}`,
     device_label: "RTL-SDR 0",
     center_hz: 100e6,
     sample_rate: 2.048e6,
@@ -26,15 +26,6 @@ function recording(file: string, overrides: Partial<RecordingInfo> = {}): Record
     ...overrides,
   };
 }
-
-describe("recordingDeviceId", () => {
-  it("names a recording by its stem alone", () => {
-    expect(recordingDeviceId("2026-09-16T10-00-00_rtlsdr")).toBe(
-      "recording:2026-09-16T10-00-00_rtlsdr",
-    );
-  });
-});
-
 describe("claimedRecordings", () => {
   const graph = {
     nodes: [

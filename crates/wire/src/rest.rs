@@ -50,11 +50,6 @@ impl VoiceCall {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct VoiceCallsResponse {
-    pub calls: Vec<VoiceCall>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct EventImage {
     pub url: String,
@@ -64,6 +59,9 @@ pub struct EventImage {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct CapturedImage {
     pub id: u64,
+    pub node: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sinks: Vec<String>,
     pub device_set: u32,
     pub channel: u32,
     pub at: String,
@@ -80,6 +78,14 @@ pub struct CapturedImage {
     pub image_error: Option<String>,
 }
 
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema, utoipa::IntoParams,
+)]
+#[into_params(parameter_in = Query)]
+pub struct CapturedImagesQuery {
+    pub sink: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct CapturedImagesResponse {
     pub images: Vec<CapturedImage>,
@@ -88,11 +94,34 @@ pub struct CapturedImagesResponse {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DevicesResponse {
     pub devices: Vec<DeviceInfo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claims: Vec<DeviceClaim>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct CreateDeviceSetRequest {
-    pub device_id: String,
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DeviceClaim {
+    pub device: String,
+    pub node: String,
+}
+
+#[must_use]
+pub fn device_claims(graph: &crate::PatchGraph, devices: &[DeviceInfo]) -> Vec<DeviceClaim> {
+    let mut claims: Vec<DeviceClaim> = Vec::new();
+    for node in graph.device_nodes() {
+        let Some(reference) = node.body.device_ref(&node.id) else {
+            continue;
+        };
+        let free = devices.iter().find(|device| {
+            reference.matches(device) && !claims.iter().any(|claim| claim.device == device.id())
+        });
+        if let Some(device) = free {
+            claims.push(DeviceClaim {
+                device: device.id(),
+                node: node.id.clone(),
+            });
+        }
+    }
+    claims
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -108,13 +137,6 @@ pub struct WrittenSerial {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct CreateChannelRequest {
-    #[serde(default)]
-    pub stream: u32,
-    pub settings: ChannelSettings,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PatchChannelRequest {
     pub settings: ChannelSettings,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,8 +146,6 @@ pub struct PatchChannelRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelTypesResponse {
     pub types: Vec<ChannelDescriptor>,
-    #[serde(default)]
-    pub facets: Vec<crate::EventKindFacets>,
 }
 
 pub const PRESET_SNAPSHOT_VERSION: u32 = 2;
@@ -403,6 +423,8 @@ pub struct DecoderLogEntry {
     pub summary: String,
     pub event: DecoderEvent,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<crate::present::Presentation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callsign: Option<crate::Callsign>,
 }
 
@@ -612,9 +634,9 @@ pub struct TemplatesResponse {
     pub templates: Vec<TemplateInfo>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ApplyTemplateRequest {
-    pub device_set: u32,
+    pub node: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -634,11 +656,6 @@ pub struct ServerStatus {
     pub version: String,
     pub platform: String,
     pub uptime_secs: u64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct CreatedId {
-    pub id: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -683,6 +700,53 @@ mod tests {
             sources: sources.map(str::to_owned),
             ..DecoderLogQuery::default()
         }
+    }
+
+    #[test]
+    fn each_radio_is_claimed_once_by_the_first_node_naming_it() {
+        let device = |key: &str| DeviceInfo {
+            driver: "rtlsdr".to_owned(),
+            key: key.to_owned(),
+            label: key.to_owned(),
+            serial: None,
+            profile: None,
+        };
+        let radio = |id: &str, key: Option<&str>| crate::PatchNode {
+            id: id.to_owned(),
+            body: crate::NodeBody::Device(crate::DeviceNode {
+                device: Some(crate::DeviceRef {
+                    backend: "rtlsdr".to_owned(),
+                    serial: None,
+                    key: key.map(str::to_owned),
+                }),
+                ..crate::DeviceNode::default()
+            }),
+            position: crate::Position { x: 0.0, y: 0.0 },
+            size: None,
+            label: None,
+        };
+        let graph = crate::PatchGraph {
+            nodes: vec![
+                radio("a", Some("0")),
+                radio("b", Some("0")),
+                radio("c", None),
+            ],
+            edges: Vec::new(),
+        };
+        let claims = device_claims(&graph, &[device("0"), device("1")]);
+        assert_eq!(
+            claims,
+            [
+                DeviceClaim {
+                    device: "rtlsdr:0".to_owned(),
+                    node: "a".to_owned(),
+                },
+                DeviceClaim {
+                    device: "rtlsdr:1".to_owned(),
+                    node: "c".to_owned(),
+                },
+            ]
+        );
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import { registerMediaLatency } from "../mediaLatency";
+import { producerOf } from "../ports";
 import type { OpusPacketDecoder } from "./decoder";
 import { createOpusPacketDecoder } from "./decoder";
 import type { AudioSink, SinkFactory } from "./engine";
@@ -173,7 +174,7 @@ export const createWebAudioSink: SinkFactory = async (key, volume, onError, onRe
 
   let closed = false;
   let received = false;
-  const removeLatency = registerMediaLatency(key, () => {
+  const removeLatency = registerMediaLatency(producerOf(key), () => {
     if (!received || closed || context.state !== "running") return 0;
     const frames = lastReport.bufferedFrames ?? TARGET_FRAMES;
     return (

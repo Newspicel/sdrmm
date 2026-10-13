@@ -4,8 +4,8 @@ use std::{
 };
 
 use sdrmm_wire::{
-    GpsNode, PassPoint, PatchEdge, PatchNode, PortRef, Position, SatelliteLook, SatelliteNode,
-    SatellitePass, SatelliteStatus, SkyPoint,
+    GpsNode, PassPoint, PatchEdge, PatchGraph, PatchNode, PortRef, Position, SatelliteLook,
+    SatelliteNode, SatellitePass, SkyPoint, SkyTrack,
 };
 
 use super::{
@@ -34,6 +34,14 @@ fn control(from: &str, to: &str) -> PatchEdge {
             node: to.to_owned(),
             port: "control".to_owned(),
         },
+    }
+}
+
+fn resolved(graph: PatchGraph) -> Resolved {
+    Resolved {
+        patch: sdrmm_wire::patch::resolve::compile(&graph, &Default::default()).expect("compiles"),
+        graph: std::sync::Arc::new(graph),
+        ..Resolved::default()
     }
 }
 
@@ -72,22 +80,22 @@ fn only_linked_rotators_run_and_each_follows_its_wired_satellite() {
         ],
         edges: vec![control("sat", "dish")],
     };
-    let found = wanted(&graph);
+    let found = wanted(&resolved(graph));
     assert_eq!(found.len(), 2);
     assert_eq!(found[0].node, "dish");
-    assert_eq!(found[0].follow.satellite.as_deref(), Some("sat"));
-    assert_eq!(found[1].follow.satellite, None);
+    assert!(found[0].follow.wired);
+    assert!(!found[1].follow.wired);
 }
 
 #[test]
 fn a_visible_satellite_is_tracked_and_a_set_one_waits_at_its_rise() {
-    let mut status = SatelliteStatus {
-        look: Some(SatelliteLook {
+    let mut status = SkyTrack {
+        look: SatelliteLook {
             azimuth_deg: 120.0,
             elevation_deg: 35.0,
             range_km: 900.0,
             range_rate_km_s: -3.0,
-        }),
+        },
         visible: true,
         next_pass: Some(SatellitePass {
             aos: Some(100),
@@ -100,7 +108,6 @@ fn a_visible_satellite_is_tracked_and_a_set_one_waits_at_its_rise() {
             azimuth_deg: 310.0,
             elevation_deg: 0.0,
         }],
-        ..SatelliteStatus::default()
     };
     let here = sky(0.0, 0.0);
     assert_eq!(
@@ -122,10 +129,6 @@ fn a_visible_satellite_is_tracked_and_a_set_one_waits_at_its_rise() {
     );
     status.pass_track.clear();
     assert_eq!(aim(&status, None, PLAIN, here, 50), None);
-    assert_eq!(
-        aim(&SatelliteStatus::default(), None, PLAIN, here, 50),
-        None
-    );
 }
 
 #[test]
@@ -147,17 +150,19 @@ fn a_new_axis_setup_reconnects_but_a_new_mode_does_not() {
         nodes: vec![node("dish", NodeBody::Rotator(settings))],
         edges: Vec::new(),
     };
-    let before = wanted(&graph(settings.clone()))[0].connection.clone();
-    let parked = wanted(&graph(RotatorNode {
-        mode: sdrmm_wire::RotatorMode::Park,
-        ..settings.clone()
-    }))[0]
+    let before = wanted(&resolved(graph(settings.clone())))[0]
         .connection
         .clone();
-    let turntable = wanted(&graph(RotatorNode {
+    let parked = wanted(&resolved(graph(RotatorNode {
+        mode: sdrmm_wire::RotatorMode::Park,
+        ..settings.clone()
+    })))[0]
+        .connection
+        .clone();
+    let turntable = wanted(&resolved(graph(RotatorNode {
         axes: RotatorAxes::Azimuth,
         ..settings
-    }))[0]
+    })))[0]
         .connection
         .clone();
     assert_eq!(before, parked);

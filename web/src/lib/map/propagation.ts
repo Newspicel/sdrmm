@@ -3,8 +3,7 @@ import type {
   GeoJSONSource,
   Map as MapLibreMap,
 } from "maplibre-gl";
-import type { PropagationCell, PropagationPath } from "../propagation";
-import type { IonosondeStation } from "../types";
+import type { IonosondeStation, PropagationCell, PropagationPath } from "../types";
 import { unwrapTrail } from "./bounds";
 import { setSourceData } from "./sources";
 
@@ -87,8 +86,8 @@ export function cellCollection(cells: readonly PropagationCell[]): CellCollectio
         grid: cell.key,
         weight: cell.weight,
         decodes: cell.decodes,
-        muf: cell.measuredMuf3000Mhz ?? 0,
-        hasMuf: cell.measuredMuf3000Mhz !== null,
+        muf: cell.measured_muf3000_mhz ?? 0,
+        hasMuf: cell.measured_muf3000_mhz != null,
       },
     })),
   };
@@ -101,7 +100,9 @@ export function pathCollection(paths: readonly PropagationPath[]): PathCollectio
       type: "Feature",
       geometry: {
         type: "LineString",
-        coordinates: unwrapTrail(greatCircleLine(path.from, path.to)),
+        coordinates: unwrapTrail(
+          greatCircleLine([path.from.lat, path.from.lon], [path.to.lat, path.to.lon]),
+        ),
       },
       properties: { weight: path.weight },
     })),

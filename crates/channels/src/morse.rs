@@ -3,8 +3,8 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, Envelope, KeyingSlicer, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, MorseParams,
-    MorseText,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    MorseParams, MorseText,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -42,7 +42,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 400.0,
     input_rate_hz: 8_000.0,
     has_audio: false,
-    decoder_kind: Some("morse".to_owned()),
+    emits: vec![EventKind::Morse],
     ..ChannelDescriptor::default()
 });
 

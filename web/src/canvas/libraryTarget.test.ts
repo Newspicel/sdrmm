@@ -48,35 +48,16 @@ describe("libraryTarget", () => {
       kind: "device",
       node: "device:2",
       set: set(2),
-      locked: false,
     });
   });
 
-  it("takes a selected channel with the radio it is wired to", () => {
-    expect(libraryTarget(GRAPH, TWO, "channel:1")).toEqual({
-      kind: "channel",
-      node: "channel:1",
-      set: set(1),
-      locked: false,
-    });
+  it("takes a selected channel, wired or not, and leaves locks to the server", () => {
+    expect(libraryTarget(GRAPH, TWO, "channel:1")).toEqual({ kind: "channel", node: "channel:1" });
+    expect(libraryTarget(GRAPH, TWO, "channel:2")).toEqual({ kind: "channel", node: "channel:2" });
   });
 
-  it("keeps an unwired channel as a target without a radio", () => {
-    expect(libraryTarget(GRAPH, TWO, "channel:2")).toEqual({
-      kind: "channel",
-      node: "channel:2",
-      set: null,
-      locked: true,
-    });
-  });
-
-  it("falls back to the only device when nothing is selected", () => {
-    expect(libraryTarget(GRAPH, ONE, null)?.node).toBe("device:1");
-    expect(libraryTarget(GRAPH, ONE, "speaker:1")?.node).toBe("device:1");
-  });
-
-  it("has no target when several devices are drawn and none is selected", () => {
-    expect(libraryTarget(GRAPH, TWO, null)).toBeNull();
-    expect(libraryTarget(GRAPH, new Map(), null)).toBeNull();
+  it("acts on the selected node only, never on the only device", () => {
+    expect(libraryTarget(GRAPH, ONE, null)).toBeNull();
+    expect(libraryTarget(GRAPH, ONE, "speaker:1")).toBeNull();
   });
 });

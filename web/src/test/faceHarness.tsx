@@ -3,9 +3,18 @@ import { ReactFlowProvider } from "@xyflow/react";
 import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type Workspace, WorkspaceProvider } from "../canvas/context";
-import type { ChannelInfo, DeviceSet, PatchCatalog, PatchGraph, PatchNode } from "../lib/types";
+import type {
+  ChannelInfo,
+  DeviceSet,
+  NodeProblem,
+  PatchCatalog,
+  PatchGraph,
+  PatchNode,
+  ResolvedPatch,
+} from "../lib/types";
 import { SdrSocket } from "../lib/ws";
 import { CATALOG } from "./catalog";
+import { resolvedBy } from "./recorded";
 
 export interface FaceHarness {
   graph: PatchGraph;
@@ -13,6 +22,8 @@ export interface FaceHarness {
   channels?: ReadonlyMap<string, ChannelInfo>;
   owners?: ReadonlyMap<string, string>;
   catalog?: PatchCatalog;
+  resolved?: ResolvedPatch | null;
+  problems?: readonly NodeProblem[];
   selected?: string | null;
 }
 
@@ -20,6 +31,8 @@ const NO_DEVICES: ReadonlyMap<string, DeviceSet> = new Map();
 
 export function stubWorkspace(harness: FaceHarness): Workspace {
   const devices = harness.devices ?? NO_DEVICES;
+  const resolved =
+    harness.resolved === undefined ? resolvedBy(harness.graph, devices) : harness.resolved;
   return {
     socket: new SdrSocket(),
     graph: harness.graph,
@@ -28,16 +41,17 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     context: {
       catalog: harness.catalog ?? CATALOG,
       channelTypes: [],
-      facets: [],
+      resolved,
       bound: devices,
     },
+    resolved,
+    problems: harness.problems ?? [],
     deviceSets: [...devices.values()],
     trunks: [],
     devices,
     channels: harness.channels ?? new Map(),
     owners: harness.owners ?? new Map(),
     savedChannels: new Map(),
-    saveChannel: () => {},
     selected: harness.selected ?? null,
     select: () => {},
     expanded: null,

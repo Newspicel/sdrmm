@@ -4,9 +4,9 @@ use num_complex::Complex;
 use sdrmm_dsp::manifold::Geometry;
 use sdrmm_wire::processor::PROCESSOR_TYPE_IDS;
 use sdrmm_wire::{
-    ArrayElement, ArrayGeometry, BeamformerParams, DfParams, NodeBody, PassiveRadarParams,
-    PatchCatalog, PolarimeterParams, PortDirection, ProcessorParams, STEER_PORT, StitchParams,
-    Winding,
+    ArrayElement, ArrayGeometry, BeamformerParams, DfParams, NodeBody, NodeKind,
+    PassiveRadarParams, PatchCatalog, PolarimeterParams, PortDirection, ProcessorParams,
+    STEER_PORT, StitchParams, Winding,
 };
 
 use super::bench::{Bench, Sink, block};
@@ -47,7 +47,7 @@ fn processor_descriptors_are_unique_and_named() {
         if let Some(node) = catalog
             .nodes
             .iter()
-            .find(|node| node.kind == descriptor.type_id)
+            .find(|node| node.kind.as_str() == descriptor.type_id)
         {
             assert_eq!(node.name, descriptor.name);
         }
@@ -59,10 +59,10 @@ fn processor_descriptors_are_unique_and_named() {
 fn descriptor_lane_ports_match_the_wire_port_table() {
     for type_id in PROCESSOR_TYPE_IDS {
         let descriptor = processor_descriptor(type_id).expect("registered");
-        let body = NodeBody::default_for(type_id).expect("node body");
+        let body = NodeBody::default_for(NodeKind::parse(type_id).expect("node kind"));
         assert_eq!(descriptor.lane_ports, body.lane_outputs(), "{type_id}");
         let steered = body
-            .ports()
+            .ports(None)
             .iter()
             .any(|port| port.name == STEER_PORT && port.direction == PortDirection::In);
         assert_eq!(descriptor.steer_port.is_some(), steered, "{type_id}");
@@ -127,8 +127,8 @@ fn dedicated_processors_are_not_created_here() {
         .filter(|entry| entry.create.is_none())
     {
         let descriptor = entry.descriptor;
-        let Some(params) = NodeBody::default_for(descriptor.type_id)
-            .and_then(|body| body.processor_params())
+        let Some(params) = NodeKind::parse(descriptor.type_id)
+            .and_then(|kind| NodeBody::default_for(kind).processor_params())
             .filter(|params| (descriptor.execution)(params, &bench.ctx()) != Execution::Dedicated)
         else {
             continue;

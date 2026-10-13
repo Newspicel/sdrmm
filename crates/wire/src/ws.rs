@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    decode::DecodedRecord,
     position::PositionFix,
     presence::{Peer, Pointer},
     workspace::PatchApplyReport,
@@ -24,7 +23,6 @@ pub enum StateScope {
     Recordings,
     Clients,
     DecoderLog,
-    Calls,
     Images,
     Workspaces,
     Workspace(i64),
@@ -33,7 +31,7 @@ pub enum StateScope {
     Missions,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamKind {
     Spectrum,
@@ -74,6 +72,46 @@ impl SurfaceRefusal {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct StreamParams {
+    #[serde(default = "default_fps")]
+    pub fps: u16,
+    #[serde(default = "default_bins")]
+    pub bins: u16,
+}
+
+const fn default_fps() -> u16 {
+    25
+}
+
+const fn default_bins() -> u16 {
+    1024
+}
+
+const fn is_first(index: &u32) -> bool {
+    *index == 0
+}
+
+impl Default for StreamParams {
+    fn default() -> Self {
+        Self {
+            fps: default_fps(),
+            bins: default_bins(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PortActivity {
+    pub node: String,
+    pub port: String,
+    pub emitted: u64,
+    pub delivered: u64,
+    pub unrouted: u64,
+    pub ignored: u64,
+    pub lost: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", content = "data")]
 pub enum ServerEvent {
@@ -92,34 +130,6 @@ pub enum ServerEvent {
     StateChanged {
         scope: StateScope,
     },
-    StreamStarted {
-        stream_id: u16,
-        device_set: u32,
-        #[serde(default)]
-        stream: u32,
-    },
-    AudioStreamStarted {
-        stream_id: u16,
-        device_set: u32,
-        channel: u32,
-        #[serde(default)]
-        fx: Vec<String>,
-    },
-    VideoStreamStarted {
-        stream_id: u16,
-        device_set: u32,
-        channel: u32,
-    },
-    IqStreamStarted {
-        stream_id: u16,
-        device_set: u32,
-        channel: u32,
-    },
-    SymbolStreamStarted {
-        stream_id: u16,
-        device_set: u32,
-        channel: u32,
-    },
     SurfaceStreamStarted {
         stream_id: u16,
         node: String,
@@ -129,18 +139,29 @@ pub enum ServerEvent {
         node: String,
         reason: SurfaceRefusal,
     },
+    PortStream {
+        stream_id: u16,
+        node: String,
+        port: String,
+        source: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        via: Vec<String>,
+        #[serde(default, skip_serializing_if = "is_first")]
+        index: u32,
+        kind: StreamKind,
+    },
+    PortRefused {
+        node: String,
+        port: String,
+        reason: String,
+    },
     StreamStopped {
         stream_id: u16,
         kind: StreamKind,
     },
-    Decoded(Box<DecodedRecord>),
-    DecodedBacklog {
-        records: Vec<DecodedRecord>,
-    },
     DecodedLost {
         count: u64,
     },
-    ImageCaptured(Box<crate::rest::CapturedImage>),
     ChannelLevels {
         device_set: u32,
         levels: Vec<crate::state::ChannelLevel>,
@@ -155,9 +176,8 @@ pub enum ServerEvent {
         device_set: u32,
         status: Box<crate::hunt::HuntStatus>,
     },
-    BroadcastUpdate {
-        device_set: u32,
-        channel: u32,
+    ChannelBroadcast {
+        node: String,
         status: Box<crate::decode::BroadcastStatus>,
     },
     SatelliteUpdate {
@@ -202,6 +222,21 @@ pub enum ServerEvent {
         by: Option<String>,
         report: PatchApplyReport,
     },
+    PatchResolved(Box<crate::patch::ResolvedPatch>),
+    NodeProblems {
+        problems: Vec<crate::patch::NodeProblem>,
+    },
+    NodeActivity {
+        ports: Vec<PortActivity>,
+    },
+    SinkSnapshot {
+        node: String,
+        feed: Box<crate::sink::SinkFeed>,
+    },
+    SinkUpdate {
+        node: String,
+        update: Box<crate::sink::SinkUpdate>,
+    },
     Error {
         message: String,
     },
@@ -212,54 +247,6 @@ pub enum ServerEvent {
 pub enum ClientCommand {
     SubscribeDiagnostics {
         enabled: bool,
-    },
-    SubscribeSpectrum {
-        device_set: u32,
-        fps: u16,
-        bins: u16,
-        #[serde(default)]
-        stream: u32,
-    },
-    UnsubscribeSpectrum {
-        device_set: u32,
-        #[serde(default)]
-        stream: u32,
-    },
-    SubscribeAudio {
-        device_set: u32,
-        channel: u32,
-        #[serde(default)]
-        fx: Vec<String>,
-    },
-    UnsubscribeAudio {
-        device_set: u32,
-        channel: u32,
-        #[serde(default)]
-        fx: Vec<String>,
-    },
-    SubscribeVideo {
-        device_set: u32,
-        channel: u32,
-    },
-    UnsubscribeVideo {
-        device_set: u32,
-        channel: u32,
-    },
-    SubscribeIq {
-        device_set: u32,
-        channel: u32,
-    },
-    UnsubscribeIq {
-        device_set: u32,
-        channel: u32,
-    },
-    SubscribeSymbols {
-        device_set: u32,
-        channel: u32,
-    },
-    UnsubscribeSymbols {
-        device_set: u32,
-        channel: u32,
     },
     PublishPose {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -273,6 +260,22 @@ pub enum ClientCommand {
         fit: Option<SurfaceFit>,
     },
     UnsubscribeSurface {
+        node: String,
+    },
+    SubscribePort {
+        node: String,
+        port: String,
+        #[serde(default)]
+        params: StreamParams,
+    },
+    UnsubscribePort {
+        node: String,
+        port: String,
+    },
+    SubscribeSink {
+        node: String,
+    },
+    UnsubscribeSink {
         node: String,
     },
     Present {

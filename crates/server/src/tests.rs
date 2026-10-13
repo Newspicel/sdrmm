@@ -7,10 +7,10 @@ use axum::{
 use http_body_util::BodyExt;
 use sdrmm_wire::{
     AdsbMessage, ApiError, AprsPacket, Bookmark, CapturedImagesResponse, ChannelParams,
-    ChannelSettings, ChannelTypesResponse, CreatedId, CreatedRowId, DecodedRecord, DecoderEvent,
+    ChannelSettings, ChannelTypesResponse, CreatedRowId, DecodedRecord, DecoderEvent,
     DecoderLogEntry, DecoderLogResponse, DeletedCount, DeviceSettings, NetworkExportStatus,
     NfmParams, NmeaDevicesResponse, PresetInfo, PresetSnapshot, RecordingStatus,
-    RecordingsResponse, SavedRadio, StateSnapshot, TimeMachineStatus, VoiceCallsResponse,
+    RecordingsResponse, SavedRadio, StateSnapshot, TimeMachineStatus,
 };
 use tower::ServiceExt;
 
@@ -21,6 +21,7 @@ mod auth_mcp;
 mod calls;
 mod catalog;
 mod channel_capture;
+mod contracts;
 mod cps;
 mod decoderlog;
 mod devices;
@@ -28,6 +29,7 @@ mod diagnostics;
 mod fusion;
 mod mcp_canvas;
 mod nanovna;
+mod node_actions;
 mod openapi;
 mod phones;
 mod presets;
@@ -90,7 +92,7 @@ fn test_router_with_store() -> (Router, Arc<Store>) {
     (router, state.store.clone())
 }
 
-fn test_router_with_state() -> (Router, AppState) {
+pub(crate) fn test_router_with_state() -> (Router, AppState) {
     let store = Arc::new(Store::open(None).expect("in-memory store"));
     let state = state_over(store);
     let (router, background) = router_with_state(state.clone(), &ServerOptions::default());
@@ -257,16 +259,167 @@ async fn request_parts(
     (status, headers, bytes)
 }
 
-async fn create_virtual_set(app: &Router) -> u32 {
-    let (status, body) = request(
+fn radio_node(device_id: &str) -> String {
+    let key = device_id.split_once(':').map_or(device_id, |(_, key)| key);
+    format!("radio:{key}")
+}
+
+async fn open_radio(app: &Router, device_id: &str) -> u32 {
+    let (backend, key) = device_id
+        .split_once(':')
+        .expect("a device id is driver:key");
+    let node = radio_node(device_id);
+    let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(app, workspace).await.snapshot;
+    if snapshot.graph.node(&node).is_none() {
+        let body = if backend == sdrmm_wire::RECORDING_DRIVER_ID {
+            sdrmm_wire::NodeBody::Recording(sdrmm_wire::RecordingNode {
+                recording: Some(key.to_owned()),
+            })
+        } else {
+            sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
+                device: Some(sdrmm_wire::DeviceRef {
+                    backend: backend.to_owned(),
+                    serial: None,
+                    key: Some(key.to_owned()),
+                }),
+                ..sdrmm_wire::DeviceNode::default()
+            })
+        };
+        snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+            id: node,
+            body,
+            position: sdrmm_wire::Position { x: 0.0, y: 900.0 },
+            size: None,
+            label: None,
+        });
+        put_workspace(app, &snapshot).await;
+    }
+    let report = apply(app, workspace).await;
+    get_state(app)
+        .await
+        .device_sets
+        .iter()
+        .find(|set| set.device.id() == device_id)
+        .map(|set| set.id)
+        .unwrap_or_else(|| panic!("{device_id} did not open: {report:?}"))
+}
+
+async fn open_virtual_radio(app: &Router) -> u32 {
+    open_radio(app, "virtual:band").await
+}
+
+async fn open_channel(app: &Router, ds: u32, node: &str, settings: serde_json::Value) -> u32 {
+    let channel_type = settings["params"]["type"]
+        .as_str()
+        .expect("a channel type")
+        .to_owned();
+    draw_channel_node(app, ds, node, &channel_type).await;
+    let (status, body) =
+        patch_node_channel(app, node, serde_json::json!({ "settings": settings })).await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let report = apply(app, workspace).await;
+    get_state(app)
+        .await
+        .device_sets
+        .iter()
+        .find(|set| set.id == ds)
+        .and_then(|set| {
+            set.channels
+                .iter()
+                .find(|channel| channel.node.as_deref() == Some(node))
+        })
+        .map(|channel| channel.id)
+        .unwrap_or_else(|| panic!("{node} did not open: {report:?}"))
+}
+
+async fn draw(app: &Router, id: &str, body: sdrmm_wire::NodeBody, wires: &[[&str; 4]]) {
+    let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(app, workspace).await.snapshot;
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: id.to_owned(),
+        body,
+        position: sdrmm_wire::Position { x: 800.0, y: 600.0 },
+        size: None,
+        label: None,
+    });
+    for [from, out, to, input] in wires {
+        snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+            from: sdrmm_wire::PortRef {
+                node: (*from).to_owned(),
+                port: (*out).to_owned(),
+            },
+            to: sdrmm_wire::PortRef {
+                node: (*to).to_owned(),
+                port: (*input).to_owned(),
+            },
+        });
+    }
+    put_workspace(app, &snapshot).await;
+}
+
+async fn radio_at(app: &Router, ds: u32) -> String {
+    let (status, body) = request(app.clone(), "GET", "/api/workspaces/active/resolved", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let resolved: sdrmm_wire::ResolvedState = serde_json::from_slice(&body).expect("json");
+    resolved
+        .patch
+        .radios()
+        .into_iter()
+        .find(|(_, set)| *set == ds)
+        .map(|(node, _)| node)
+        .unwrap_or_else(|| panic!("no node runs device set {ds}"))
+}
+
+async fn channel_at(app: &Router, ds: u32, ch: u32) -> String {
+    get_state(app)
+        .await
+        .device_sets
+        .into_iter()
+        .find(|set| set.id == ds)
+        .and_then(|set| set.channels.into_iter().find(|channel| channel.id == ch))
+        .and_then(|channel| channel.node)
+        .unwrap_or_else(|| panic!("no node owns channel {ch} on device set {ds}"))
+}
+
+async fn patch_node_channel(
+    app: &Router,
+    node: &str,
+    body: serde_json::Value,
+) -> (StatusCode, Bytes) {
+    request(
+        app.clone(),
+        "PATCH",
+        &format!("/api/workspaces/active/nodes/{node}/channel"),
+        Some(&body.to_string()),
+    )
+    .await
+}
+
+async fn patch_node_device(app: &Router, node: &str, body: &str) -> (StatusCode, Bytes) {
+    request(
+        app.clone(),
+        "PATCH",
+        &format!("/api/workspaces/active/nodes/{node}/device"),
+        Some(body),
+    )
+    .await
+}
+
+async fn act_on(app: &Router, node: &str, action: serde_json::Value) -> (StatusCode, Bytes) {
+    request(
         app.clone(),
         "POST",
-        "/api/devicesets",
-        Some(r#"{"device_id":"virtual:band"}"#),
+        &format!("/api/workspaces/active/nodes/{node}/actions"),
+        Some(&action.to_string()),
     )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    serde_json::from_slice::<CreatedId>(&body).expect("json").id
+    .await
 }
 
 async fn get_state(app: &Router) -> StateSnapshot {
@@ -332,11 +485,15 @@ async fn record(app: &Router, ds: u32, on: bool) -> Option<sdrmm_wire::Recording
     assert_eq!(status, StatusCode::OK);
     let detail: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
     let mut snapshot = detail.snapshot;
-    let (radio, recorder) = (format!("radio:{ds}"), format!("iq:{ds}"));
-    snapshot
-        .graph
-        .nodes
-        .retain(|node| node.id != radio && node.id != recorder);
+    let recorder = format!("iq:{ds}");
+    let named = snapshot.graph.device_nodes().find_map(|node| {
+        node.body
+            .device_ref(&node.id)
+            .filter(|reference| reference.matches(&set.device))
+            .map(|_| node.id.clone())
+    });
+    let radio = named.clone().unwrap_or_else(|| format!("radio:{ds}"));
+    snapshot.graph.nodes.retain(|node| node.id != recorder);
     snapshot.graph.edges.retain(|edge| edge.to.node != recorder);
     let at = |id: &str, body| sdrmm_wire::PatchNode {
         id: id.to_owned(),
@@ -345,13 +502,15 @@ async fn record(app: &Router, ds: u32, on: bool) -> Option<sdrmm_wire::Recording
         size: None,
         label: None,
     };
-    snapshot.graph.nodes.push(at(
-        &radio,
-        sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
-            device: Some(device),
-            ..sdrmm_wire::DeviceNode::default()
-        }),
-    ));
+    if named.is_none() {
+        snapshot.graph.nodes.push(at(
+            &radio,
+            sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
+                device: Some(device),
+                ..sdrmm_wire::DeviceNode::default()
+            }),
+        ));
+    }
     snapshot.graph.nodes.push(at(
         &recorder,
         sdrmm_wire::NodeBody::Recorder(sdrmm_wire::RecorderNode { recording: on }),
@@ -434,29 +593,21 @@ async fn wait_for_recorded_samples(app: &Router, ds: u32, min: u64) {
 }
 
 async fn playback_set(app: &Router, rec: &sdrmm_wire::RecordingInfo) -> u32 {
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        "/api/devicesets",
-        Some(&format!(r#"{{"device_id":"{}"}}"#, rec.device_id)),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    serde_json::from_slice::<CreatedId>(&body).expect("json").id
+    open_radio(app, &rec.device_id).await
 }
 
-async fn playback(app: &Router, ds: u32, body: &str) -> (StatusCode, Bytes) {
-    request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/playback"),
-        Some(body),
+async fn playback(app: &Router, node: &str, body: &str) -> (StatusCode, Bytes) {
+    let request: serde_json::Value = serde_json::from_str(body).expect("json");
+    act_on(
+        app,
+        node,
+        serde_json::json!({"action": "playback", "with": request}),
     )
     .await
 }
 
 async fn recorded(app: &Router) -> sdrmm_wire::RecordingInfo {
-    let ds = create_virtual_set(app).await;
+    let ds = open_virtual_radio(app).await;
     record(app, ds, true).await.expect("recording started");
     wait_for_recorded_samples(app, ds, 1_024).await;
     record(app, ds, false).await;
@@ -505,16 +656,69 @@ async fn wait_for_recorded_frames(app: &Router, ds: u32, ch: u32, min: u64) {
     }
 }
 
+async fn draw_channel_node(app: &Router, ds: u32, id: &str, channel_type: &str) {
+    let radio = get_state(app)
+        .await
+        .device_sets
+        .into_iter()
+        .find(|set| set.id == ds)
+        .expect("the radio is open")
+        .device;
+    let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(app, workspace).await.snapshot;
+    if snapshot.graph.node(id).is_some() {
+        return;
+    }
+    let named = snapshot.graph.device_nodes().find_map(|node| {
+        node.body
+            .device_ref(&node.id)
+            .is_some_and(|reference| reference.matches(&radio))
+            .then(|| node.id.clone())
+    });
+    let device = named.unwrap_or_else(|| {
+        snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+            id: "tap-device".to_string(),
+            body: sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
+                device: Some(sdrmm_wire::DeviceRef::from_info(&radio)),
+                ..sdrmm_wire::DeviceNode::default()
+            }),
+            position: sdrmm_wire::Position { x: 0.0, y: 600.0 },
+            size: None,
+            label: None,
+        });
+        "tap-device".to_string()
+    });
+    snapshot.graph.nodes.push(sdrmm_wire::PatchNode {
+        id: id.to_string(),
+        body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
+            channel_type: channel_type.to_string(),
+            tuning_locked: false,
+        }),
+        position: sdrmm_wire::Position { x: 400.0, y: 600.0 },
+        size: None,
+        label: None,
+    });
+    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: device,
+            port: "iq".to_string(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: id.to_string(),
+            port: "iq".to_string(),
+        },
+    });
+    put_workspace(app, &snapshot).await;
+}
+
 async fn create_nfm_channel(app: &Router, ds: u32) -> u32 {
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/channels"),
-        Some(r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#),
+    open_channel(
+        app,
+        ds,
+        "tap-nfm",
+        serde_json::json!({"params": {"type": "nfm", "settings": {}}}),
     )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
-    serde_json::from_slice::<CreatedId>(&body).expect("json").id
+    .await
 }
 
 async fn wait_for_baseband_samples(app: &Router, ds: u32, ch: u32, min: u64) {
@@ -543,12 +747,11 @@ async fn wait_for_baseband_samples(app: &Router, ds: u32, ch: u32, min: u64) {
     }
 }
 
-async fn time_machine(app: &Router, ds: u32, body: serde_json::Value) -> (StatusCode, Bytes) {
-    request(
-        app.clone(),
-        "POST",
-        &format!("/api/devicesets/{ds}/time-machine"),
-        Some(&body.to_string()),
+async fn time_machine(app: &Router, node: &str, action: &str) -> (StatusCode, Bytes) {
+    act_on(
+        app,
+        node,
+        serde_json::json!({"action": "time_machine", "with": action}),
     )
     .await
 }
@@ -569,6 +772,7 @@ fn adsb_record(at: &str, device_set: u32, icao: &str, callsign: &str) -> Decoded
             raw: "8D3C6444".to_string(),
             ..AdsbMessage::default()
         }),
+        view: None,
     }
 }
 
@@ -587,6 +791,7 @@ fn awkward_record(at: &str) -> DecodedRecord {
             tnc2: "DL1ABC-9>APRS:hello, \"world\"".to_string(),
             ..AprsPacket::default()
         }),
+        view: None,
     }
 }
 

@@ -1,8 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { HuntFace } from "../canvas/nodes/HuntFace";
 import { HuntSweep, sweepNeedles } from "../canvas/nodes/HuntSweep";
-import { HuntFace } from "../canvas/nodes/SinkFaces";
 import type { ChannelInfo, DeviceSet, HuntStatus, PatchGraph } from "../lib/types";
 import { catalogBody } from "../test/catalog";
 import { renderFace } from "../test/faceHarness";
@@ -14,7 +14,6 @@ import {
   formatStrength,
   huntedHz,
   huntRefusal,
-  huntSettings,
   liveHunt,
   SCANNING,
   SWEEP_TEXT,
@@ -24,7 +23,7 @@ import {
 } from "./hunt";
 
 const HUNT: HuntStatus = {
-  settings: { channel: 9, interval_ms: 50 },
+  settings: { channel: 9, interval_ms: 50, node: "hunt" },
   freq_hz: 433_920_000,
   bw_hz: 12_500,
   level_db: -60,
@@ -60,15 +59,15 @@ function deviceSet(over: Partial<DeviceSet> = {}): DeviceSet {
 describe("liveHunt", () => {
   it("prefers the pushed reading over the one the state snapshot carried", () => {
     const set = deviceSet({ hunts: [HUNT] });
-    expect(liveHunt(set, 9, undefined)).toBe(HUNT);
+    expect(liveHunt(set, "hunt", undefined)).toBe(HUNT);
     const fresher = { ...HUNT, readings: 99 };
-    expect(liveHunt(set, 9, fresher)?.readings).toBe(99);
+    expect(liveHunt(set, "hunt", fresher)?.readings).toBe(99);
   });
 
-  it("reports nothing when the decoder is not hunted", () => {
-    expect(liveHunt(deviceSet({ hunts: [HUNT] }), 3, HUNT)).toBeNull();
-    expect(liveHunt(deviceSet(), 9, HUNT)).toBeNull();
-    expect(liveHunt(null, 9, HUNT)).toBeNull();
+  it("reports nothing when the node is not hunting", () => {
+    expect(liveHunt(deviceSet({ hunts: [HUNT] }), "other", HUNT)).toBeNull();
+    expect(liveHunt(deviceSet(), "hunt", HUNT)).toBeNull();
+    expect(liveHunt(null, "hunt", HUNT)).toBeNull();
   });
 });
 
@@ -80,51 +79,24 @@ const CHANNEL: ChannelInfo = {
 
 describe("huntRefusal", () => {
   it("names why a hunt cannot start in a word and explains it in the title", () => {
-    expect(huntRefusal(null)).toBeNull();
-    expect(huntRefusal({ set: deviceSet(), channel: CHANNEL })).toBeNull();
+    expect(huntRefusal(null, true)).toBeNull();
+    expect(huntRefusal({ set: deviceSet(), channel: CHANNEL }, false)).toBeNull();
     expect(
-      huntRefusal({
-        set: deviceSet(),
-        channel: { ...CHANNEL, out_of_band: { reason: "tuned_away" } },
-      }),
+      huntRefusal(
+        {
+          set: deviceSet(),
+          channel: { ...CHANNEL, out_of_band: { reason: "tuned_away" } },
+        },
+        false,
+      ),
     ).toBe(TUNED_AWAY);
-    const scan = {
-      state: "scanning",
-      settings: { channel: CHANNEL.id } as never,
-      targets: 1,
-      first_hz: 1,
-      last_hz: 1,
-      current_hz: 1,
-      sweeps: 0,
-      hits: 0,
-    } as never;
-    const scanning = deviceSet({ scanners: [scan] });
-    expect(huntRefusal({ set: scanning, channel: CHANNEL })).toBe(SCANNING);
-    expect(huntRefusal({ set: scanning, channel: { ...CHANNEL, id: 2 } })).toBeNull();
+    expect(huntRefusal({ set: deviceSet(), channel: CHANNEL }, true)).toBe(SCANNING);
     expect(SCANNING.label).toBe("Scanning");
     expect(TUNED_AWAY.label).toBe("Tuned away");
     for (const refusal of [SCANNING, TUNED_AWAY]) {
       expect(refusal.label.split(" ").length).toBeLessThanOrEqual(2);
       expect(refusal.title.length).toBeGreaterThan(refusal.label.length);
     }
-  });
-});
-
-describe("huntSettings", () => {
-  it("names the hunt node so sweep and mark bearings carry it", () => {
-    const sweep = {
-      beamwidth_deg: 60,
-      front_back_db: 15,
-      min_span_deg: 180,
-      min_contrast_db: 6,
-      mount_offset_deg: -90,
-    };
-    expect(huntSettings(9, "hunt-1", sweep)).toEqual({
-      channel: 9,
-      interval_ms: 50,
-      node: "hunt-1",
-      sweep,
-    });
   });
 });
 

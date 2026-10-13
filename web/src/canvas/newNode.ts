@@ -66,10 +66,6 @@ export function carriesSettings(catalog: PatchCatalog, kind: NodeKind): boolean 
   return body !== null && "data" in body;
 }
 
-export function startsOnItsOwn(kind: NodeKind): boolean {
-  return kind === "signal_gen";
-}
-
 export function huntSweepOf(
   node: PatchNodeOf<"hunt">,
   catalog: PatchCatalog,
@@ -84,5 +80,5 @@ export function huntSweepOf(
 export function defaultScannerSettings(catalog: PatchCatalog): ScanSettings {
   const body = defaultBody(catalog, "scanner");
   const settings = body?.kind === "scanner" ? body.data?.settings : undefined;
-  return settings ?? { channel: 0, ranges: [] };
+  return settings ?? { ranges: [] };
 }

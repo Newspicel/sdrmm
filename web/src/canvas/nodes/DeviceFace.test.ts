@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { agcTip } from "../../components/AgcAuto";
 import type { Capabilities, DeviceSet, PatchEdge, PatchGraph, PatchNode } from "../../lib/types";
 import { mergeSettings } from "../../lib/useDevicePatch";
+import { catalogBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
+import { resolvedBy } from "../../test/recorded";
 import { dialHold, heldLanes, laneHolds } from "./arrayNode";
 import { DeviceFace } from "./DeviceFace";
 import {
@@ -550,8 +552,13 @@ describe("arrays on a radio", () => {
   });
 
   function patch(edges: PatchEdge[]): PatchGraph {
-    const north = { id: "north", position: { x: 500, y: 0 }, kind: "array", label: "North" };
-    return { nodes: [radio, north as PatchNode], edges };
+    const north = {
+      id: "north",
+      position: { x: 500, y: 0 },
+      ...catalogBody("array"),
+      label: "North",
+    };
+    return { nodes: [radio, north], edges };
   }
 
   it("offers Make array for a multi-lane radio with a shared clock", () => {
@@ -566,7 +573,7 @@ describe("arrays on a radio", () => {
       graph: patch([]),
       devices: new Map([["kraken", loose]]),
     });
-    expect(noClock).toContain('title="Lanes share no clock"');
+    expect(noClock).toContain("lanes share no clock");
     const single = renderFace(DeviceFace, radio, {
       graph: patch([]),
       devices: new Map([["kraken", deviceSet({ device: bank.device })]]),
@@ -576,16 +583,18 @@ describe("arrays on a radio", () => {
 
   it("disables held lane dials and says which array tunes them", () => {
     const graph = patch(heldWires(5));
-    expect([...heldLanes(graph, "kraken")]).toEqual([
+    expect([...heldLanes(resolvedBy(graph), "kraken")]).toEqual([
       [0, "north"],
       [1, "north"],
       [2, "north"],
       [3, "north"],
       [4, "north"],
     ]);
-    const holds = laneHolds(graph, "kraken");
+    const holds = laneHolds(graph, resolvedBy(graph), "kraken");
     expect(dialHold(holds, 0, false)).toEqual({ array: "north", label: "North" });
-    expect(dialHold(laneHolds(patch(heldWires(1)), "kraken"), 1, true)).toBeNull();
+    expect(
+      dialHold(laneHolds(patch(heldWires(1)), resolvedBy(patch(heldWires(1))), "kraken"), 1, true),
+    ).toBeNull();
     const free = renderFace(DeviceFace, radio, {
       graph: patch([]),
       devices: new Map([["kraken", bank]]),

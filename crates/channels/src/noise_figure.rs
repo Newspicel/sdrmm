@@ -5,8 +5,8 @@ use std::{ops::Range, sync::LazyLock};
 use num_complex::Complex;
 use sdrmm_dsp::airtime::PowerFrames;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, MAX_ENR_DB,
-    MEASUREMENT_REPORT_MS, MIN_ENR_DB, NoiseFigureParams, NoiseFigureReport,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    MAX_ENR_DB, MEASUREMENT_REPORT_MS, MIN_ENR_DB, NoiseFigureParams, NoiseFigureReport,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -30,7 +30,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * MEASURED_HALF_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("noise_figure".to_owned()),
+    emits: vec![EventKind::NoiseFigure],
     ..ChannelDescriptor::default()
 });
 

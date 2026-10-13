@@ -1,7 +1,7 @@
 import { type Node, type Rect, useReactFlow, useStoreApi } from "@xyflow/react";
 import { useCallback } from "react";
 import type { NodeKind, PatchGraph, Position } from "../lib/types";
-import { NODE_SIZE } from "./graph";
+import { nodeSize } from "./graph";
 
 const ASSUMED_HEIGHT = 320;
 
@@ -10,7 +10,7 @@ const ASSUMED_HEIGHT = 320;
 const ASSUMED_CHANNEL_HEIGHT = 600;
 
 export function dropSize(kind: NodeKind): { w: number; h: number } {
-  const size = NODE_SIZE[kind];
+  const size = nodeSize(kind);
   if (size.h !== undefined) {
     return { w: size.w, h: size.h };
   }

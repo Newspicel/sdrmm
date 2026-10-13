@@ -1,0 +1,25 @@
+{
+  "name": "f137322ec5b28c0c",
+  "test": "SpectrumMonitorFace > shows the range in MHz",
+  "graph": {
+    "nodes": [
+      {
+        "id": "monitor",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "spectrum_monitor",
+        "data": {
+          "start_hz": 446000000,
+          "stop_hz": 446200000
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

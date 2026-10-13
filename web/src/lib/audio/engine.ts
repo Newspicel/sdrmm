@@ -1,8 +1,7 @@
 import type { AudioFrame } from "../frame";
 import type { Listener, Unsubscribe } from "../listeners";
-import type { ClientCommand, ServerEvent } from "../types";
+import { type PortHub, portHub, portKey, sourceKey } from "../ports";
 import { LossTracker } from "./loss";
-import { monitorKey } from "./monitor";
 import { MAX_GAP_FRAMES, SAMPLE_RATE, type WorkletReport } from "./worklet";
 
 export interface AudioSink {
@@ -22,17 +21,19 @@ export type SinkFactory = (
 ) => Promise<AudioSink>;
 
 export interface AudioSocket {
-  send(command: ClientCommand): void;
-  isConnected(): boolean;
-  on<K extends "audio" | "status" | "event">(kind: K, listener: Listener<K>): Unsubscribe;
+  on<K extends "audio" | "status">(kind: K, listener: Listener<K>): Unsubscribe;
+}
+
+export interface AudioTap {
+  readonly node: string;
+  readonly port: string;
+  readonly source: string;
 }
 
 interface ChannelEntry {
-  readonly deviceSet: number;
-  readonly channel: number;
-  readonly fx: readonly string[];
+  readonly tap: AudioTap;
   desired: boolean;
-  requested: boolean;
+  hold: (() => void) | null;
   streamId: number | null;
   sink: AudioSink | null;
   sinkReady: boolean;
@@ -51,30 +52,25 @@ interface ChannelEntry {
 
 const US_PER_FRAME = 1_000_000 / SAMPLE_RATE;
 
-const NO_FX: readonly string[] = [];
-
-function entryKey(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): string {
-  return monitorKey(deviceSet, channel, fx);
+export function tapKey(tap: AudioTap): string {
+  return sourceKey(tap.node, tap.port, tap.source);
 }
 
 function keyOf(entry: ChannelEntry): string {
-  return entryKey(entry.deviceSet, entry.channel, entry.fx);
-}
-
-function routeData(entry: ChannelEntry): { device_set: number; channel: number; fx?: string[] } {
-  const bare = { device_set: entry.deviceSet, channel: entry.channel };
-  return entry.fx.length === 0 ? bare : { ...bare, fx: [...entry.fx] };
+  return tapKey(entry.tap);
 }
 
 export class AudioEngine {
   private readonly entries = new Map<string, ChannelEntry>();
   private readonly storeListeners = new Set<() => void>();
-  private readonly pendingSubscribes: { key: string; generation: number }[] = [];
   private outputRunning = true;
   private socket: AudioSocket | null = null;
   private unsubscribes: Unsubscribe[] = [];
 
-  constructor(private readonly createSink: SinkFactory) {}
+  constructor(
+    private readonly createSink: SinkFactory,
+    private readonly ports: PortHub = portHub,
+  ) {}
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.storeListeners.add(listener);
@@ -88,9 +84,9 @@ export class AudioEngine {
     this.detach();
     this.socket = socket;
     this.unsubscribes = [
-      socket.on("event", this.handleEvent),
       socket.on("status", this.handleStatus),
       socket.on("audio", this.handleAudio),
+      this.ports.subscribe(this.followStreams),
     ];
   }
 
@@ -103,50 +99,46 @@ export class AudioEngine {
     }
     this.unsubscribes = [];
     this.socket = null;
-    for (const entry of this.entries.values()) {
-      entry.requested = false;
-    }
-    this.pendingSubscribes.length = 0;
     this.dropLiveStreams();
   }
 
-  isPlaying(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): boolean {
-    const entry = this.entries.get(entryKey(deviceSet, channel, fx));
+  isPlaying(tap: AudioTap): boolean {
+    const entry = this.entries.get(tapKey(tap));
     return entry !== undefined && entry.desired && entry.streamId !== null && this.outputRunning;
   }
 
-  isPending(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): boolean {
-    const entry = this.entries.get(entryKey(deviceSet, channel, fx));
+  isPending(tap: AudioTap): boolean {
+    const entry = this.entries.get(tapKey(tap));
     return entry !== undefined && entry.desired && entry.streamId === null && this.outputRunning;
   }
 
-  isSuspended(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): boolean {
-    const entry = this.entries.get(entryKey(deviceSet, channel, fx));
+  isSuspended(tap: AudioTap): boolean {
+    const entry = this.entries.get(tapKey(tap));
     return entry !== undefined && entry.desired && !this.outputRunning;
   }
 
-  getError(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): string | null {
-    return this.entries.get(entryKey(deviceSet, channel, fx))?.lastError ?? null;
+  getError(tap: AudioTap): string | null {
+    return this.entries.get(tapKey(tap))?.lastError ?? null;
   }
 
-  clearError(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): void {
-    const entry = this.entries.get(entryKey(deviceSet, channel, fx));
+  clearError(tap: AudioTap): void {
+    const entry = this.entries.get(tapKey(tap));
     if (entry && entry.lastError !== null) {
       entry.lastError = null;
       this.notify();
     }
   }
 
-  getVolume(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): number {
-    return this.entries.get(entryKey(deviceSet, channel, fx))?.volume ?? 1;
+  getVolume(tap: AudioTap): number {
+    return this.entries.get(tapKey(tap))?.volume ?? 1;
   }
 
-  getLostFrames(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): number {
-    return this.entries.get(entryKey(deviceSet, channel, fx))?.lost ?? 0;
+  getLostFrames(tap: AudioTap): number {
+    return this.entries.get(tapKey(tap))?.lost ?? 0;
   }
 
-  getUnderruns(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): number {
-    return this.entries.get(entryKey(deviceSet, channel, fx))?.underruns ?? 0;
+  getUnderruns(tap: AudioTap): number {
+    return this.entries.get(tapKey(tap))?.underruns ?? 0;
   }
 
   setOutputRunning(running: boolean): void {
@@ -157,8 +149,8 @@ export class AudioEngine {
     for (const entry of this.entries.values()) {
       if (!entry.desired) continue;
       if (running) {
-        if (!entry.requested) this.ensureSink(entry);
-      } else if (entry.requested || entry.sinkReady) {
+        if (entry.hold === null) this.ensureSink(entry);
+      } else if (entry.hold !== null || entry.sinkReady) {
         entry.generation += 1;
         this.releaseSubscription(entry);
         this.teardown(entry);
@@ -178,26 +170,8 @@ export class AudioEngine {
     this.notify();
   }
 
-  claimServerError(message: string): boolean {
-    const pending = this.pendingSubscribes.shift();
-    if (!pending) {
-      return false;
-    }
-    const entry = this.entries.get(pending.key);
-    if (entry && entry.generation === pending.generation) {
-      entry.lastError = message;
-      entry.desired = false;
-      entry.requested = false;
-      entry.generation += 1;
-      entry.streamId = null;
-      this.teardown(entry);
-      this.notify();
-    }
-    return true;
-  }
-
-  start(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): void {
-    const entry = this.ensureEntry(deviceSet, channel, fx);
+  start(tap: AudioTap): void {
+    const entry = this.ensureEntry(tap);
     if (entry.desired) {
       return;
     }
@@ -208,8 +182,8 @@ export class AudioEngine {
     this.ensureSink(entry);
   }
 
-  stop(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): void {
-    const entry = this.entries.get(entryKey(deviceSet, channel, fx));
+  stop(tap: AudioTap): void {
+    const entry = this.entries.get(tapKey(tap));
     if (!entry || !entry.desired) {
       return;
     }
@@ -222,78 +196,92 @@ export class AudioEngine {
 
   private releaseSubscription(entry: ChannelEntry): void {
     entry.streamId = null;
-    if (entry.requested) {
-      entry.requested = false;
-      this.socket?.send({
-        type: "UnsubscribeAudio",
-        data: routeData(entry),
-      });
-    }
+    entry.hold?.();
+    entry.hold = null;
   }
 
-  retain(live: Iterable<{ deviceSet: number; channel: number; fx?: readonly string[] }>): void {
-    const keep = new Set<string>();
-    for (const { deviceSet, channel, fx } of live) {
-      keep.add(entryKey(deviceSet, channel, fx));
-    }
-    for (const [key, entry] of this.entries) {
-      if (entry.desired && !keep.has(key)) {
-        this.stop(entry.deviceSet, entry.channel, entry.fx);
-      }
-    }
-  }
-
-  setVolume(
-    deviceSet: number,
-    channel: number,
-    volume: number,
-    fx: readonly string[] = NO_FX,
-  ): void {
-    const entry = this.ensureEntry(deviceSet, channel, fx);
+  setVolume(tap: AudioTap, volume: number): void {
+    const entry = this.ensureEntry(tap);
     entry.volume = Math.min(1, Math.max(0, volume));
     entry.sink?.setVolume(entry.volume);
     this.notify();
   }
 
-  private readonly handleEvent = (event: ServerEvent): void => {
-    switch (event.type) {
-      case "AudioStreamStarted": {
-        const key = entryKey(event.data.device_set, event.data.channel, event.data.fx ?? NO_FX);
-        const at = this.pendingSubscribes.findIndex((p) => p.key === key);
-        const pending = at >= 0 ? this.pendingSubscribes.splice(at, 1)[0] : undefined;
-        const entry = this.entries.get(key);
-        if (!entry || !entry.desired) {
-          break;
-        }
-        if (pending !== undefined && pending.generation !== entry.generation) {
-          break;
-        }
-        entry.streamId = event.data.stream_id;
+  private readonly followStreams = (): void => {
+    this.followSources();
+    let changed = false;
+    for (const entry of this.entries.values()) {
+      if (entry.hold === null) {
+        continue;
+      }
+      const { node, port, source } = entry.tap;
+      const stream = this.ports
+        .streamsOf(node, port)
+        .find((candidate) => candidate.kind === "audio" && candidate.source === source);
+      const streamId = stream?.streamId ?? null;
+      const refusal = streamId === null ? this.ports.refusalOf(node, port) : null;
+      if (refusal !== entry.lastError && (refusal !== null || streamId !== null)) {
+        entry.lastError = refusal;
+        changed = true;
+      }
+      if (streamId === entry.streamId) {
+        continue;
+      }
+      entry.streamId = streamId;
+      if (streamId !== null) {
         entry.sink?.reset();
         entry.loss.reset();
-        this.notify();
-        break;
       }
-      case "StreamStopped": {
-        if (event.data.kind !== "audio") {
-          break;
-        }
-        const entry = this.findByStream(event.data.stream_id);
-        if (!entry) {
-          break;
-        }
-        entry.desired = false;
-        entry.requested = false;
-        entry.generation += 1;
-        entry.streamId = null;
-        this.teardown(entry);
-        this.notify();
-        break;
-      }
-      default:
-        break;
+      changed = true;
+    }
+    if (changed) {
+      this.notify();
     }
   };
+
+  private followSources(): void {
+    const playing = new Map<string, AudioTap>();
+    for (const entry of this.entries.values()) {
+      if (entry.desired) {
+        playing.set(portKey(entry.tap.node, entry.tap.port), entry.tap);
+      }
+    }
+    const begun: AudioTap[] = [];
+    const left: AudioTap[] = [];
+    for (const { node, port } of playing.values()) {
+      const live = new Set(
+        this.ports
+          .streamsOf(node, port)
+          .filter((stream) => stream.kind === "audio")
+          .map((stream) => stream.source),
+      );
+      for (const source of live) {
+        if (!this.entries.has(sourceKey(node, port, source))) {
+          begun.push({ node, port, source });
+        }
+      }
+      if (live.size === 0) {
+        continue;
+      }
+      for (const { desired, tap } of this.entries.values()) {
+        if (
+          desired &&
+          tap.node === node &&
+          tap.port === port &&
+          !live.has(tap.source) &&
+          this.ports.hasEnded(node, port, tap.source)
+        ) {
+          left.push(tap);
+        }
+      }
+    }
+    for (const tap of begun) {
+      this.start(tap);
+    }
+    for (const tap of left) {
+      this.stop(tap);
+    }
+  }
 
   private readonly handleStatus = (connected: boolean): void => {
     if (connected) {
@@ -303,10 +291,6 @@ export class AudioEngine {
         }
       }
     } else {
-      for (const entry of this.entries.values()) {
-        entry.requested = false;
-      }
-      this.pendingSubscribes.length = 0;
       this.dropLiveStreams();
     }
   };
@@ -342,20 +326,14 @@ export class AudioEngine {
     }
   };
 
-  private ensureEntry(
-    deviceSet: number,
-    channel: number,
-    fx: readonly string[] = NO_FX,
-  ): ChannelEntry {
-    const key = entryKey(deviceSet, channel, fx);
+  private ensureEntry(tap: AudioTap): ChannelEntry {
+    const key = tapKey(tap);
     let entry = this.entries.get(key);
     if (!entry) {
       entry = {
-        deviceSet,
-        channel,
-        fx: [...fx],
+        tap: { node: tap.node, port: tap.port, source: tap.source },
         desired: false,
-        requested: false,
+        hold: null,
         streamId: null,
         sink: null,
         sinkReady: false,
@@ -444,38 +422,19 @@ export class AudioEngine {
   }
 
   private sendSubscribe(entry: ChannelEntry): void {
-    if (
-      !entry.desired ||
-      entry.requested ||
-      !entry.sinkReady ||
-      !this.outputRunning ||
-      !this.socket?.isConnected()
-    ) {
+    if (!entry.desired || entry.hold !== null || !entry.sinkReady || !this.outputRunning) {
       return;
     }
-    entry.requested = true;
-    this.pendingSubscribes.push({
-      key: keyOf(entry),
-      generation: entry.generation,
-    });
-    this.socket.send({
-      type: "SubscribeAudio",
-      data: routeData(entry),
-    });
+    entry.hold = this.ports.hold(entry.tap.node, entry.tap.port);
+    this.followStreams();
   }
 
-  getBufferedMs(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): number {
-    return (
-      ((this.entries.get(entryKey(deviceSet, channel, fx))?.bufferedFrames ?? 0) * 1000) /
-      SAMPLE_RATE
-    );
+  getBufferedMs(tap: AudioTap): number {
+    return ((this.entries.get(tapKey(tap))?.bufferedFrames ?? 0) * 1000) / SAMPLE_RATE;
   }
 
-  getTrimmedMs(deviceSet: number, channel: number, fx: readonly string[] = NO_FX): number {
-    return (
-      ((this.entries.get(entryKey(deviceSet, channel, fx))?.trimmedFrames ?? 0) * 1000) /
-      SAMPLE_RATE
-    );
+  getTrimmedMs(tap: AudioTap): number {
+    return ((this.entries.get(tapKey(tap))?.trimmedFrames ?? 0) * 1000) / SAMPLE_RATE;
   }
 
   private observe(entry: ChannelEntry, report: WorkletReport): void {
@@ -493,7 +452,7 @@ export class AudioEngine {
   private fail(entry: ChannelEntry, err: unknown): void {
     console.error(`audio ${keyOf(entry)} failed:`, err);
     entry.lastError = err instanceof Error ? err.message : String(err);
-    this.stop(entry.deviceSet, entry.channel, entry.fx);
+    this.stop(entry.tap);
     this.notify();
   }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { PatchGraph, ProcessorStatus } from "../../lib/types";
+import { catalogBody } from "../../test/catalog";
 import { arrayStatus, laneStatus, placed, radarUpdate } from "../../test/fixtures";
+import { resolvedBy } from "../../test/recorded";
 import {
   ageLabel,
   NO_ARRAY,
@@ -11,7 +13,7 @@ import {
 } from "./processorFace";
 
 const WIRED: PatchGraph = {
-  nodes: [placed("arr", { kind: "array" }), placed("df", { kind: "df" })],
+  nodes: [placed("arr", catalogBody("array")), placed("df", catalogBody("df"))],
   edges: [{ from: { node: "arr", port: "array" }, to: { node: "df", port: "array" } }],
 };
 
@@ -41,26 +43,32 @@ const FRESH = {
 
 describe("processorSubtitle", () => {
   it("says no array, the gate, stale or the lane count", () => {
-    expect(processorSubtitle(UNWIRED, "df", FIVE, FRESH, 10_000, 500)).toBe(NO_ARRAY);
+    expect(processorSubtitle(resolvedBy(UNWIRED), "df", FIVE, FRESH, 10_000, 500)).toBe(NO_ARRAY);
     const calibrating = { ...FIVE, processors: [gated("df", "calibrating")] };
-    expect(processorSubtitle(WIRED, "df", calibrating, FRESH, 10_000, 500)).toBe("calibrating");
+    expect(processorSubtitle(resolvedBy(WIRED), "df", calibrating, FRESH, 10_000, 500)).toBe(
+      "calibrating",
+    );
     const phase = { ...FIVE, processors: [gated("df", "phase")] };
-    expect(processorSubtitle(WIRED, "df", phase, FRESH, 10_000, 500)).toBe("needs cal");
-    expect(processorSubtitle(WIRED, "df", FIVE, FRESH, 12_001, 500)).toBe(STALE);
-    expect(processorSubtitle(WIRED, "df", FIVE, FRESH, 11_000, 500)).toBe("5 lanes");
-    expect(processorSubtitle(WIRED, "df", FIVE, undefined, 99_000, 500)).toBe("5 lanes");
+    expect(processorSubtitle(resolvedBy(WIRED), "df", phase, FRESH, 10_000, 500)).toBe("needs cal");
+    expect(processorSubtitle(resolvedBy(WIRED), "df", FIVE, FRESH, 12_001, 500)).toBe(STALE);
+    expect(processorSubtitle(resolvedBy(WIRED), "df", FIVE, FRESH, 11_000, 500)).toBe("5 lanes");
+    expect(processorSubtitle(resolvedBy(WIRED), "df", FIVE, undefined, 99_000, 500)).toBe(
+      "5 lanes",
+    );
   });
 
   it("counts wired lanes before the array reports", () => {
     const lanes: PatchGraph = {
-      nodes: [...WIRED.nodes, placed("radio", { kind: "device" })],
+      nodes: [...WIRED.nodes, placed("radio", { kind: "device", data: {} })],
       edges: [
         ...(WIRED.edges ?? []),
         { from: { node: "radio", port: "iq" }, to: { node: "arr", port: "lane" } },
         { from: { node: "radio", port: "iq2" }, to: { node: "arr", port: "lane2" } },
       ],
     };
-    expect(processorSubtitle(lanes, "df", undefined, undefined, 0, 500)).toBe("2 lanes");
+    expect(processorSubtitle(resolvedBy(lanes), "df", undefined, undefined, 0, 500)).toBe(
+      "2 lanes",
+    );
   });
 
   it("reads the gate from the array's processor list only", () => {

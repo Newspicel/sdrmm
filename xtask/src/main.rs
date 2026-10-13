@@ -34,9 +34,11 @@ mod linkage;
 mod mobile;
 mod nixhash;
 mod replay;
+mod resolved_fixtures;
 #[cfg(test)]
 mod site;
 mod units;
+mod wires;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "SDR-- workspace tasks")]
@@ -190,10 +192,11 @@ fn codegen(root: &Path) -> Result<()> {
     )
     .context("write binary frame fixtures")?;
     std::fs::write(
-        root.join("web/src/generated/patch-catalog.json"),
+        root.join("web/src/generated/catalog-fixture.json"),
         serde_json::to_string_pretty(&sdrmm_wire::PatchCatalog::build())?,
     )
-    .context("write patch catalog")?;
+    .context("write catalog test fixture")?;
+    resolved_fixtures::write(root)?;
     std::fs::write(
         root.join("web/src/generated/labels.json"),
         serde_json::to_string_pretty(&sdrmm_wire::labels::generated()?)?,
@@ -204,6 +207,11 @@ fn codegen(root: &Path) -> Result<()> {
         sdrmm_wire::limits::generated()?,
     )
     .context("write limits")?;
+    std::fs::write(
+        root.join("docs/src/wires.md"),
+        wires::page(&sdrmm_wire::PatchCatalog::build()),
+    )
+    .context("write the wires page")?;
     let frames = root.join("web/src/generated/frame.ts");
     std::fs::write(&frames, sdrmm_wire::typescript_frames()).context("write binary frame codec")?;
     let spec = sdrmm_server::openapi()
@@ -1563,443 +1571,18 @@ fn fixtures(root: &Path) -> Result<()> {
         "1 s of the virtual test band: the record/replay fixture",
     )?;
 
-    for fixture in decoder_fixtures() {
+    for recipe in sdrmm_channels::synth::decoder_fixtures::RECIPES {
         write_fixture(
             &dir,
-            &fixture.stem,
-            &fixture.iq,
-            fixture.rate,
+            recipe.stem,
+            &(recipe.iq)(),
+            recipe.rate,
             CENTER_HZ,
             "SDR-- reference modulator",
-            &fixture.note,
+            recipe.note,
         )?;
     }
     Ok(())
-}
-
-struct Fixture {
-    stem: String,
-    iq: Vec<Complex<f32>>,
-    rate: f64,
-    note: String,
-}
-
-fn aprs_burst() -> Vec<Complex<f32>> {
-    use sdrmm_channels::{AprsTx, ChannelCtx, ChannelTx, TxPayload, synth};
-    use sdrmm_wire::{AprsMode, AprsParams, ChannelParams, ChannelSettings};
-
-    let settings = ChannelSettings {
-        frequency_hz: 0.0,
-        squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Aprs(AprsParams {
-            mode: AprsMode::Afsk1200,
-            ..AprsParams::default()
-        }),
-        blanker: Default::default(),
-    };
-    let mut tx = AprsTx::new(
-        ChannelCtx {
-            input_rate: AprsTx::descriptor().input_rate_hz,
-        },
-        settings,
-    )
-    .expect("aprs modulator at its own channel rate");
-    tx.submit(TxPayload::Frame(AprsTx::ui_frame(
-        "DL1ABC-9",
-        "APRS",
-        &["WIDE1-1"],
-        "!5230.00N/01324.00E>SDR-- fixture",
-    )))
-    .expect("a ui frame is a payload the modulator carries");
-    synth::burst(&mut tx)
-}
-
-const NARROW: f64 = 240_000.0;
-const AUDIO: f64 = 48_000.0;
-
-fn at(mut iq: Vec<Complex<f32>>, offset: f64, rate: f64) -> Vec<Complex<f32>> {
-    sdrmm_channels::synth::shift(&mut iq, offset, rate);
-    iq
-}
-
-fn pagers_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::synth;
-
-    out.push(Fixture {
-        stem: "pocsag_1200_240k".to_string(),
-        iq: at(
-            synth::pocsag::transmission(
-                &[synth::pocsag::Page {
-                    address: 1_234_567,
-                    function: 3,
-                    text: "SDR-- FIXTURE".to_string(),
-                    numeric: false,
-                }],
-                1_200,
-                4_500.0,
-                NARROW,
-            ),
-            50_000.0,
-            NARROW,
-        ),
-        rate: NARROW,
-        note: "pocsag channel at +50 kHz -> address 1234567 \"SDR-- FIXTURE\"".to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "flex_1600_2_240k".to_string(),
-        iq: at(
-            synth::flex::transmission(
-                &synth::flex::Page {
-                    address: 1_234_567,
-                    text: "SDR-- FLEX FIXTURE".to_string(),
-                },
-                7,
-                83,
-                NARROW,
-            ),
-            30_000.0,
-            NARROW,
-        ),
-        rate: NARROW,
-        note: "flex channel at +30 kHz -> address 1234567 \"SDR-- FLEX FIXTURE\", cycle 7 frame 83"
-            .to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "ermes_alpha_240k".to_string(),
-        iq: at(
-            synth::ermes::transmission(
-                &synth::ermes::Page {
-                    local_address: 234_567,
-                    message_number: 3,
-                    text: "SDR-- ERMES FIXTURE".to_string(),
-                    urgent: true,
-                    alert: 5,
-                },
-                NARROW,
-            ),
-            -30_000.0,
-            NARROW,
-        ),
-        rate: NARROW,
-        note: "ermes channel at -30 kHz -> address 234567 \"SDR-- ERMES FIXTURE\", urgent alert 5"
-            .to_string(),
-    });
-}
-
-fn tone_and_packet_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::synth;
-
-    out.push(Fixture {
-        stem: "selcall_ccir1_48k".to_string(),
-        iq: at(
-            synth::selcall::transmission(sdrmm_wire::SelcallSystem::Ccir1, "12234", AUDIO)
-                .expect("CCIR-1 fixture code is valid"),
-            5_000.0,
-            AUDIO,
-        ),
-        rate: AUDIO,
-        note: "selcall CCIR-1 channel at +5 kHz -> 12234 (repeat marker expanded)".to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "selcall_zvei1_48k".to_string(),
-        iq: at(
-            synth::selcall::transmission(sdrmm_wire::SelcallSystem::Zvei1, "A11D0", AUDIO)
-                .expect("ZVEI-1 fixture code is valid"),
-            -5_000.0,
-            AUDIO,
-        ),
-        rate: AUDIO,
-        note: "selcall ZVEI-1 channel at -5 kHz -> A11D0 (group symbols and repeat marker)"
-            .to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "ais_position_240k".to_string(),
-        iq: at(
-            synth::ais::burst(
-                &synth::ais::position_payload(&synth::ais::PositionReport {
-                    mmsi: 211_234_560,
-                    lat: 53.5413,
-                    lon: 9.9846,
-                    sog_kt: 12.3,
-                    cog_deg: 178.4,
-                    heading_deg: 179,
-                    nav_status: 0,
-                }),
-                NARROW,
-            ),
-            25_000.0,
-            NARROW,
-        ),
-        rate: NARROW,
-        note: "ais channel at +25 kHz -> MMSI 211234560 at 53.5413, 9.9846".to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "aprs_afsk1200_240k".to_string(),
-        iq: at(
-            synth::resample(&aprs_burst(), AUDIO, NARROW),
-            -40_000.0,
-            NARROW,
-        ),
-        rate: NARROW,
-        note: "aprs channel at -40 kHz -> DL1ABC-9>APRS,WIDE1-1 at 52.5, 13.4".to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "rtty_45_170_48k".to_string(),
-        iq: at(
-            synth::rtty::transmission("CQ CQ DE DL1ABC K\r\n", 45.45, 170.0, 1.5, AUDIO),
-            5_000.0,
-            AUDIO,
-        ),
-        rate: AUDIO,
-        note: "rtty channel at +5 kHz (45.45 baud, 170 Hz) -> \"CQ CQ DE DL1ABC K\"".to_string(),
-    });
-}
-
-fn morse_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::synth;
-
-    out.push(Fixture {
-        stem: "morse_20wpm_48k".to_string(),
-        iq: at(
-            synth::morse::transmission("CQ DE DL1ABC K", 20.0, 0.0, AUDIO),
-            -5_000.0,
-            AUDIO,
-        ),
-        rate: AUDIO,
-        note: "morse channel at -5 kHz -> \"CQ DE DL1ABC K\" at 20 wpm".to_string(),
-    });
-
-    let first_cw = synth::morse::transmission("VVV CQ DE DL1AAA K", 18.0, -3_500.0, AUDIO);
-    let second_cw = synth::morse::transmission("VVV CQ DE G4BBB K", 27.0, 4_200.0, AUDIO);
-    let mut skimmer_iq =
-        vec![Complex::new(0.0, 0.0); first_cw.len().max(second_cw.len()) + AUDIO as usize * 4];
-    for (destination, source) in skimmer_iq.iter_mut().zip(first_cw) {
-        *destination += source * 0.55;
-    }
-    for (destination, source) in skimmer_iq.iter_mut().zip(second_cw) {
-        *destination += source * 0.35;
-    }
-    out.push(Fixture {
-        stem: "cw_skimmer_dual_48k".to_string(),
-        iq: skimmer_iq,
-        rate: AUDIO,
-        note: "cw_skimmer channel -> simultaneous DL1AAA at -3.5 kHz/18 wpm and G4BBB at +4.2 kHz/27 wpm"
-            .to_string(),
-    });
-}
-
-fn aviation_and_timing_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::synth;
-
-    const ADSB_RATE: f64 = 2_000_000.0;
-    let icao = 0x3C_6444;
-    out.push(Fixture {
-        stem: "adsb_squitters_2m".to_string(),
-        iq: synth::adsb::transmission(
-            &[
-                synth::adsb::squitter(icao, synth::adsb::me_identification("DLH123")),
-                synth::adsb::squitter(
-                    icao,
-                    synth::adsb::me_airborne_position(38_000, 52.2572, 3.9190, false),
-                ),
-                synth::adsb::squitter(
-                    icao,
-                    synth::adsb::me_airborne_position(38_000, 52.2657, 3.9184, true),
-                ),
-                synth::adsb::squitter(icao, synth::adsb::me_velocity(450.0, 275.0, -1_024)),
-            ],
-            500.0,
-            0.8,
-            ADSB_RATE,
-        ),
-        rate: ADSB_RATE,
-        note: "adsb channel at 0 Hz, device at 2 MS/s -> 3C6444/DLH123 at FL380".to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "dcf77_2026_2k".to_string(),
-        iq: synth::radio_clock::dcf77(),
-        rate: synth::radio_clock::RATE,
-        note: "radio_clock (DCF77) -> 2026-08-15 12:34 CET with valid parity".to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "gps_l1_ca_prn7_2m048".to_string(),
-        iq: synth::gnss::acquisition(7, 1_000.0, 317, 2),
-        rate: synth::gnss::RATE,
-        note: "gnss channel -> GPS L1 C/A PRN 7, +1000 Hz Doppler, code phase 158.3 chips"
-            .to_string(),
-    });
-}
-
-fn broadcast_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::synth;
-
-    const RDS_RATE: f64 = 960_000.0;
-    out.push(Fixture {
-        stem: "rds_station_960k".to_string(),
-        iq: at(
-            synth::rds::transmission(
-                &synth::rds::Station {
-                    pi: 0xD3C2,
-                    ps: "SDR-M4  ".to_string(),
-                    radiotext: "SDR-- reference fixture".to_string(),
-                    pty: 10,
-                    tp: true,
-                    ta: false,
-                    music: true,
-                    alt_freqs_hz: vec![89_800_000.0, 95_500_000.0],
-                },
-                8.0,
-                Some(1_000.0),
-                RDS_RATE,
-            ),
-            200_000.0,
-            RDS_RATE,
-        ),
-        rate: RDS_RATE,
-        note: "wfm channel at +200 kHz with rds on -> PI D3C2 \"SDR-M4\" + a 1 kHz tone"
-            .to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "navtex_518_48k".to_string(),
-        iq: at(
-            synth::navtex::transmission("ZCZC DA07\r\nGALE WARNING\r\nGERMAN BIGHT\r\nNNNN", AUDIO),
-            3_000.0,
-            AUDIO,
-        ),
-        rate: AUDIO,
-        note: "navtex channel at +3 kHz -> DA07 navigational warning, \"GALE WARNING\"".to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "acars_downlink_240k".to_string(),
-        iq: at(
-            synth::acars::transmission(
-                &synth::acars::Block {
-                    mode: '2',
-                    registration: ".D-AIBC",
-                    ack: '\x15',
-                    label: "H1",
-                    block_id: '3',
-                    seq_no: Some("M01A"),
-                    flight: Some("LH0400"),
-                    text: "SDR-- FIXTURE",
-                    more: false,
-                },
-                NARROW,
-            ),
-            -40_000.0,
-            NARROW,
-        ),
-        rate: NARROW,
-        note: "acars channel at -40 kHz -> D-AIBC / LH0400 [H1] \"SDR-- FIXTURE\"".to_string(),
-    });
-
-    out.push(Fixture {
-        stem: "ysf_callsigns_48k".to_string(),
-        iq: synth::dv::ysf::transmission_with_callsigns(
-            &synth::dv::ysf::Fich::default(),
-            &synth::dv::ysf::Call::default(),
-            AUDIO,
-        ),
-        rate: AUDIO,
-        note: "ysf channel at 0 Hz -> DL1ABC to ALL via DB0XYZ and DB0ABC".to_string(),
-    });
-}
-
-fn wideband_fixtures(out: &mut Vec<Fixture>) {
-    use sdrmm_channels::synth;
-
-    const DECT_RATE: f64 = 2_304_000.0;
-    out.push(Fixture {
-        stem: "dect_base_2m304".to_string(),
-        iq: synth::dect::dummy_bearer(
-            &synth::dect::Station {
-                rfpi: 0x0001_234D_5E6D,
-                carrier: 4,
-                slot: 2,
-                slot_pair: 2,
-                capabilities: synth::dect::capability_bits(&[17, 33, 36, 37, 38]),
-                ..synth::dect::Station::default()
-            },
-            60,
-        ),
-        rate: DECT_RATE,
-        note: "dect channel -> RFPI 01234D5E6D, carrier 4, standard authentication and ciphering"
-            .to_string(),
-    });
-
-    const DECT_CALL_FRAMES: usize = 100;
-    let base = synth::dect::tone(1_000.0, 0.3, DECT_CALL_FRAMES * 80);
-    let handset = synth::dect::tone(600.0, 0.3, DECT_CALL_FRAMES * 80);
-    let mut air = synth::dect::Air::carrier(DECT_CALL_FRAMES);
-    synth::dect::Call {
-        station: synth::dect::Station {
-            rfpi: 0x0001_234D_5E6D,
-            carrier: 4,
-            slot: 2,
-            ..synth::dect::Station::default()
-        },
-        pmid: 0x1_2345,
-        first_frame: 0,
-        base: &base,
-        handset: &handset,
-        grant_at: None,
-    }
-    .transmit(&mut air, DECT_CALL_FRAMES);
-    out.push(Fixture {
-        stem: "dect_call_2m304".to_string(),
-        iq: air.into_iq(),
-        rate: DECT_RATE,
-        note: "dect channel -> clear call on RFPI 01234D5E6D, 1 kHz from the base, 600 Hz from the handset"
-            .to_string(),
-    });
-
-    const ATV_RATE: f64 = 2_400_000.0;
-    let atv_params = sdrmm_wire::AtvParams::default();
-    out.push(Fixture {
-        stem: "atv_ccir625_2m4".to_string(),
-        iq: at(
-            synth::atv::bars(&synth::atv::AtvSource::new(&atv_params, ATV_RATE), 2),
-            200_000.0,
-            ATV_RATE,
-        ),
-        rate: ATV_RATE,
-        note: "atv channel at +200 kHz -> 625/25 AM, five vertical bars black to white".to_string(),
-    });
-
-    const SSTV_RATE: f64 = 48_000.0;
-    const SSTV_MODE: sdrmm_wire::SstvMode = sdrmm_wire::SstvMode::Robot36;
-    let sstv = synth::sstv::transmission(SSTV_MODE, &synth::sstv::bars(SSTV_MODE), 16_000.0);
-    out.push(Fixture {
-        stem: "sstv_robot36_48k".to_string(),
-        iq: at(
-            synth::resample(&sstv, 16_000.0, SSTV_RATE),
-            4_000.0,
-            SSTV_RATE,
-        ),
-        rate: SSTV_RATE,
-        note: "sstv channel at +4 kHz -> Robot 36, eight colour bars white to black".to_string(),
-    });
-}
-
-fn decoder_fixtures() -> Vec<Fixture> {
-    let mut out = Vec::new();
-    pagers_fixtures(&mut out);
-    tone_and_packet_fixtures(&mut out);
-    morse_fixtures(&mut out);
-    aviation_and_timing_fixtures(&mut out);
-    broadcast_fixtures(&mut out);
-    wideband_fixtures(&mut out);
-    out
 }
 
 fn write_fixture(

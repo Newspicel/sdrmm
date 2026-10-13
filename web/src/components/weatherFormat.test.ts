@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aprsWeatherFact, avhrrChannels, climbRate, metres, wind } from "./weatherFormat";
+import { climbRate, metres, wind } from "./weatherFormat";
 
 describe("weatherFormat", () => {
   it("signs climb rates", () => {
@@ -16,14 +16,5 @@ describe("weatherFormat", () => {
     expect(wind({ wind_speed_ms: 2, wind_dir_deg: 270 })).toBe("2.0 m/s from 270°");
     expect(wind({ wind_speed_ms: 2 })).toBe("2.0 m/s");
     expect(wind({ wind_dir_deg: 270 })).toBeUndefined();
-  });
-
-  it("pairs AVHRR channels", () => {
-    expect(avhrrChannels({ channel_a: "ch3a", channel_b: null })).toBe("ch 3A + ?");
-    expect(avhrrChannels({})).toBeNull();
-  });
-
-  it("is empty for a weather report without readings", () => {
-    expect(aprsWeatherFact({})).toBe("");
   });
 });

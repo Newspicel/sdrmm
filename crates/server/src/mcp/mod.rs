@@ -98,7 +98,7 @@ impl SdrMcp {
         let (node, report) = self
             .blocking(move |state| canvas::edit(state, change))
             .await?;
-        rest::reconcile_graph(self.state.clone()).await?;
+        rest::resolve_now(self.state.clone()).await?;
         structured(&Applied { node, report })
     }
 
@@ -170,7 +170,7 @@ impl SdrMcp {
                 rest::switch(state, args.workspace, Some(MCP_NAME.to_owned()))
             })
             .await?;
-        rest::reconcile_graph(self.state.clone()).await?;
+        rest::resolve_now(self.state.clone()).await?;
         structured(&Applied { node: None, report })
     }
 
@@ -335,7 +335,7 @@ impl SdrMcp {
         let stream = args.stream;
         let mut rx = self
             .blocking(move |state| {
-                let device_set = live::radio_of(state, &args.node)?;
+                let device_set = rest::radio_of(state, &args.node)?;
                 Ok(state.engine.subscribe_spectrum(device_set, stream)?)
             })
             .await?;
@@ -358,8 +358,8 @@ impl SdrMcp {
     }
 
     #[tool(
-        description = "Stored decodes, newest first: aircraft, ships, pagers, APRS, RDS and \
-                       more. `nodes` takes comma separated node ids.",
+        description = "Decodes kept by Decoder log, Export or Propagation nodes, newest first. \
+                       `nodes` takes comma separated node ids.",
         input_schema = input::<DecoderLogQuery>(),
         annotations(title = "Query decoder log", read_only_hint = true)
     )]

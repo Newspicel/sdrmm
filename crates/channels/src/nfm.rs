@@ -4,8 +4,8 @@ use num_complex::Complex;
 use sdrmm_dsp::{Compander, Decimator, Highpass, RealDecimator, design_lowpass};
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, NfmParams,
-    NfmScramblerMode, NfmToneMode, ScramblerStatus, ToneSquelchStatus,
+    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    EventKind, NfmParams, NfmScramblerMode, NfmToneMode, ScramblerStatus, ToneSquelchStatus,
 };
 
 use crate::{
@@ -34,7 +34,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: 48_000.0,
     has_audio: true,
-    decoder_kind: Some("tone".to_owned()),
+    emits: vec![EventKind::Tone, EventKind::Scrambler],
+    calls: Some(CallGate::Squelch),
     ..ChannelDescriptor::default()
 });
 

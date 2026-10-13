@@ -2,11 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { HuntSweep, HuntSweepChips } from "../canvas/nodes/HuntSweep";
 import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
-import { markHunt, STATE_KEY, startHunt, stopHunt, sweepHunt } from "../lib/api";
+import { nodeAction, STATE_KEY } from "../lib/api";
 import { type Clicker, startClicker } from "../lib/geiger";
-import { decoderKey, useHuntStore } from "../lib/hunt";
+import { useHuntStore } from "../lib/hunt";
 import { clearAction, failAction } from "../lib/refusals";
-import type { HuntStatus, HuntSweepParams } from "../lib/types";
+import type { HuntAction, HuntStatus, HuntSweepParams } from "../lib/types";
 import { Button } from "./BaseControls";
 import { BTN, BTN_DANGER, BTN_PRIMARY } from "./controls";
 import { Chips, ToggleChip } from "./face/Chips";
@@ -19,7 +19,6 @@ import {
   type HuntTarget,
   huntedHz,
   huntRefusal,
-  huntSettings,
   liveHunt,
   TREND_LABEL,
   type Trend,
@@ -35,6 +34,7 @@ export interface HuntPanelProps {
   node: string;
   target: HuntTarget | null;
   hint: string;
+  scanning: boolean;
   clicks: boolean;
   onClicks: (clicks: boolean) => void;
   positionWired: boolean;
@@ -61,39 +61,35 @@ function useClicks(running: boolean, clicks: boolean, strength: number): void {
   }, [strength]);
 }
 
-function decoderOf(hunted: HuntTarget) {
-  return { deviceSet: hunted.set.id, channel: hunted.channel.id };
-}
-
-function useHuntActions(node: string, sweep: HuntSweepParams | null) {
+function useHuntActions(node: string) {
   const queryClient = useQueryClient();
   const clearLive = useHuntStore((s) => s.clear);
   const invalidate = (): void => void queryClient.invalidateQueries({ queryKey: STATE_KEY });
-  const settings = (hunted: HuntTarget) =>
-    huntSettings(hunted.channel.id, node, sweep ?? undefined);
+  const hunt = (action: HuntAction) => (_target: HuntTarget) =>
+    nodeAction(node, { action: "hunt", with: action });
   const start = useMutation({
-    mutationFn: (hunted: HuntTarget) => startHunt(decoderOf(hunted), settings(hunted)),
+    mutationFn: hunt("start"),
     onSuccess: () => clearAction(node, HUNT_ACTION),
     onError: (error) => failAction(node, HUNT_ACTION, error),
     onSettled: invalidate,
   });
   const stop = useMutation({
-    mutationFn: (hunted: HuntTarget) => stopHunt(decoderOf(hunted)),
-    onSuccess: (_status, hunted) => {
+    mutationFn: hunt("stop"),
+    onSuccess: () => {
       clearAction(node, HUNT_ACTION);
-      clearLive(hunted.set.id, hunted.channel.id);
+      clearLive(node);
     },
     onError: (error) => failAction(node, HUNT_ACTION, error),
     onSettled: invalidate,
   });
   const turn = useMutation({
-    mutationFn: (hunted: HuntTarget) => sweepHunt(decoderOf(hunted), settings(hunted)),
+    mutationFn: hunt("sweep"),
     onSuccess: () => clearAction(node, SWEEP_ACTION),
     onError: (error) => failAction(node, SWEEP_ACTION, error),
     onSettled: invalidate,
   });
   const mark = useMutation({
-    mutationFn: (hunted: HuntTarget) => markHunt(decoderOf(hunted)),
+    mutationFn: hunt("mark"),
     onSuccess: () => clearAction(node, MARK_ACTION),
     onError: (error) => failAction(node, MARK_ACTION, error),
   });
@@ -105,19 +101,18 @@ export function HuntPanel({
   node,
   target,
   hint,
+  scanning,
   clicks,
   onClicks,
   positionWired,
   sweep,
   onSweep,
 }: HuntPanelProps) {
-  const pushed = useHuntStore((s) =>
-    target ? s.byDecoder[decoderKey(target.set.id, target.channel.id)] : undefined,
-  );
-  const status = liveHunt(target?.set ?? null, target?.channel.id ?? null, pushed);
+  const pushed = useHuntStore((s) => s.byNode[node]);
+  const status = liveHunt(target?.set ?? null, node, pushed);
   useClicks(status !== null, clicks, status?.strength ?? 0);
-  const actions = useHuntActions(node, sweep);
-  const refusal = huntRefusal(target);
+  const actions = useHuntActions(node);
+  const refusal = huntRefusal(target, scanning);
   const blocked = target === null || actions.busy || refusal !== null;
   return (
     <>

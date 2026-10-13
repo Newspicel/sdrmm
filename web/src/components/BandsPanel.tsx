@@ -17,7 +17,7 @@ export function BandsPanel({ target }: { target: TuneTarget | null }) {
   const [query, setQuery] = useState("");
 
   const hits = plan === null ? [] : searchPlan(plan, query, LIMIT);
-  const tunable = target !== null && !target.locked;
+  const tunable = target !== null;
 
   return (
     <Panel>

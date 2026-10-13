@@ -6,8 +6,8 @@ use sdrmm_dsp::{BitSync, Decimator, FmDemod, RealDecimator, design_lowpass};
 use sdrmm_modem::cpm::{CpmParams, Mapping};
 use sdrmm_modem::pulse::{self, Norm};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, NavtexMessage,
-    NavtexParams,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    NavtexMessage, NavtexParams,
 };
 
 use crate::{
@@ -99,7 +99,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 600.0,
     input_rate_hz: 8_000.0,
     has_audio: false,
-    decoder_kind: Some("navtex".to_owned()),
+    emits: vec![EventKind::Navtex],
     ..ChannelDescriptor::default()
 });
 

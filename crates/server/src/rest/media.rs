@@ -1,16 +1,6 @@
 use super::*;
 
 #[utoipa::path(
-    get, path = "/api/calls",
-    responses((status = 200, description = "Completed temporary voice calls", body = VoiceCallsResponse)),
-)]
-pub(super) async fn list_calls(State(state): State<AppState>) -> Json<VoiceCallsResponse> {
-    Json(VoiceCallsResponse {
-        calls: state.calls.list(),
-    })
-}
-
-#[utoipa::path(
     get, path = "/api/calls/{id}/audio",
     params(("id" = u64, Path, description = "Call id")),
     responses(
@@ -44,11 +34,15 @@ pub(crate) fn call_audio_path(id: u64) -> String {
 
 #[utoipa::path(
     get, path = "/api/images",
-    responses((status = 200, description = "Pictures captured from scanning modes", body = CapturedImagesResponse)),
+    params(CapturedImagesQuery),
+    responses((status = 200, description = "Pictures kept for one Video node, newest first", body = CapturedImagesResponse)),
 )]
-pub(super) async fn list_images(State(state): State<AppState>) -> Json<CapturedImagesResponse> {
+pub(super) async fn list_images(
+    State(state): State<AppState>,
+    Query(query): Query<CapturedImagesQuery>,
+) -> Json<CapturedImagesResponse> {
     Json(CapturedImagesResponse {
-        images: state.images.list(),
+        images: state.images.list(&query.sink),
     })
 }
 

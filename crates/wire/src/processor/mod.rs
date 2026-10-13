@@ -38,7 +38,12 @@ macro_rules! processors {
                     DfNode,
                     "Direction finder",
                     "Bearings from an array",
-                    [array_in, events_out("True bearings")]
+                    $crate::patch::Face::fit(400),
+                    [
+                        array_in,
+                        events_out("True bearings", Df),
+                        bearing_out("Live bearing to steer a beam")
+                    ]
                 ),
                 (
                     Beamformer,
@@ -48,6 +53,7 @@ macro_rules! processors {
                     BeamformerNode,
                     "Beamformer",
                     "Steer, null or combine an array",
+                    $crate::patch::Face::fit(400),
                     [
                         array_in,
                         steer_in("A direction finder to steer at"),
@@ -62,11 +68,12 @@ macro_rules! processors {
                     PassiveRadarNode,
                     "Passive radar",
                     "Aircraft echoes of FM, DAB or DVB-T",
+                    $crate::patch::Face::sized(560, 540).min(420, 380),
                     [
                         array_in,
                         tx_in("GPS node fixed at the transmitter"),
                         adsb_in("ADS-B decoder used as truth"),
-                        events_out("Track events")
+                        events_out("Track events", Radar, RadarSites)
                     ]
                 ),
                 (
@@ -77,6 +84,7 @@ macro_rules! processors {
                     StitchNode,
                     "Stitch",
                     "Spread lanes joined into one wide band",
+                    $crate::patch::Face::fit(360),
                     [array_in, wide_out("Every lane joined")]
                 ),
                 (
@@ -87,6 +95,7 @@ macro_rules! processors {
                     SpatialSpectrumNode,
                     "Spatial spectrum",
                     "Bearing over frequency",
+                    $crate::patch::Face::sized(560, 420).min(400, 300),
                     [array_in]
                 ),
                 (
@@ -97,6 +106,7 @@ macro_rules! processors {
                     CorrelatorNode,
                     "Correlator",
                     "Baseline visibilities",
+                    $crate::patch::Face::sized(520, 460).min(380, 340),
                     [array_in]
                 ),
                 (
@@ -107,6 +117,7 @@ macro_rules! processors {
                     PolarimeterNode,
                     "Polarimeter",
                     "Polarisation of two crossed antennas",
+                    $crate::patch::Face::fit(360),
                     [array_in, beam_out("Matched to the wave")]
                 ),
             ],
@@ -127,6 +138,7 @@ macro_rules! define_processor_enums {
             $node:ident,
             $name:literal,
             $summary:literal,
+            $face:expr,
             [$($port:tt)*]
         )),* $(,)?],
         probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?

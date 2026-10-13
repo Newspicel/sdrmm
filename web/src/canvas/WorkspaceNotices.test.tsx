@@ -92,6 +92,78 @@ describe("WorkspaceNotices", () => {
     expect(line.text).toBe("Removed old nodes: Direction finder");
   });
 
+  it("names the filter kinds it removed", () => {
+    const line = noticeLine(
+      {
+        id: 3,
+        at: "2026-09-28T12:00:00Z",
+        kind: "dropped_filter_kinds",
+        data: { node: "only", kinds: ["teletext", "fax"] },
+      },
+      CATALOG,
+    );
+    expect(line.text).toBe("Unknown filter kinds removed: teletext, fax");
+    expect(line.title).toBe("only");
+  });
+
+  it("lists the wires a contract refused with their reasons", () => {
+    const line = noticeLine(
+      {
+        id: 4,
+        at: "2026-10-12T12:00:00Z",
+        kind: "dropped_wires",
+        data: {
+          wires: [
+            {
+              from: { node: "pager", port: "events" },
+              to: { node: "map", port: "events" },
+              reason: "Map takes positions",
+            },
+          ],
+        },
+      },
+      CATALOG,
+    );
+    expect(line.text).toBe("Removed 1 refused wire");
+    expect(line.title).toBe("pager to map: Map takes positions");
+  });
+
+  it("lists the wires a step added", () => {
+    const line = noticeLine(
+      {
+        id: 5,
+        at: "2026-10-12T12:00:00Z",
+        kind: "added_wires",
+        data: {
+          wires: [
+            {
+              from: { node: "dev", port: "iq2" },
+              to: { node: "scan", port: "iq" },
+              reason: "The lane it watches",
+            },
+          ],
+        },
+      },
+      CATALOG,
+    );
+    expect(line.text).toBe("Added 1 wire");
+    expect(line.title).toBe("dev to scan: The lane it watches");
+  });
+
+  it("names the nodes a step added", () => {
+    const line = noticeLine(
+      {
+        id: 6,
+        at: "2026-10-12T12:00:00Z",
+        kind: "added_nodes",
+        data: { nodes: [{ id: "sstv-pictures", kind: "video" }] },
+      },
+      { nodes: [{ kind: "video", name: "Video" }] },
+    );
+    expect(line.text).toBe("Added nodes: Video");
+    expect(line.title).toBe("sstv-pictures");
+  });
+
   it("shows nothing without notices", () => {
     expect(
       renderToStaticMarkup(<NoticeList lines={[]} dismissing={null} onDismiss={() => undefined} />),

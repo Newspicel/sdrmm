@@ -1,0 +1,75 @@
+{
+  "name": "c378a851fc291cd7",
+  "test": "array processor faces > shows why a processor fails and what it dropped",
+  "graph": {
+    "nodes": [
+      {
+        "id": "arr",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      },
+      {
+        "id": "proc",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "polarimeter",
+        "data": {
+          "settings": {
+            "h_lane": 0,
+            "v_lane": 1,
+            "offset_hz": 0,
+            "bandwidth_hz": 20000,
+            "matched": true,
+            "report_ms": 250,
+            "average_ms": 500,
+            "crossfade_ms": 20,
+            "flip_hand": false
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "arr",
+          "port": "array"
+        },
+        "to": {
+          "node": "proc",
+          "port": "array"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

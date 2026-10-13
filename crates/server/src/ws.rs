@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     sync::{Arc, atomic},
     time::{Duration, Instant},
 };
@@ -16,20 +16,24 @@ use futures::{SinkExt, StreamExt};
 use sdrmm_dsp::{DbWindowSmoother, SpanFloor, adaptive_db_window, decimate_signal, quantize_db};
 use sdrmm_engine::{AudioPacket, Engine, IqBlock, SpectrumSnapshot, SymbolBlock, VideoPacket};
 use sdrmm_wire::{
-    API_PROTOCOL, AudioFrame, AudioRoute, ClientCommand, IqFrame, PositionFix,
-    SPECTRUM_SIGNAL_MARGIN_DB, ServerEvent, SpectrumFrame, StateScope, StreamKind, SymbolFrame,
-    VideoData, VideoFrame, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
+    API_PROTOCOL, AudioFrame, ClientCommand, IqFrame, PositionFix, SPECTRUM_SIGNAL_MARGIN_DB,
+    ServerEvent, SpectrumFrame, StateScope, StreamKind, SymbolFrame, VideoData, VideoFrame,
+    WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
     phone::{POSE_BURST, POSE_RATE_HZ},
 };
 use tokio::sync::{broadcast, watch};
 
 mod outbox;
 mod phone;
+mod ports;
 mod presence;
+mod sinks;
 mod surfaces;
 use outbox::Outbox;
 use phone::{PhoneLink, RateBudget, revoked};
+use ports::Ports;
 use presence::PeerLink;
+use sinks::Sinks;
 use surfaces::Surfaces;
 
 use crate::{
@@ -63,44 +67,13 @@ pub(crate) async fn handler(
         .on_upgrade(move |socket| handle_socket(socket, state, identity, fallback))
 }
 
-pub(crate) fn start_decoded_encoder(state: &AppState) {
-    let mut decoded_rx = state.decoded.subscribe();
-    let out = state.decoded_text.clone();
-    let tracks = state.tracks.clone();
-    let Ok(handle) = tokio::runtime::Handle::try_current() else {
-        tracing::warn!("no runtime in context: decoder frames will not reach clients");
-        return;
-    };
-    let _guard = handle.enter();
-    tokio::spawn(async move {
-        loop {
-            match decoded_rx.recv().await {
-                Ok(crate::decoded::Decoded::Record(routed)) => {
-                    tracks.observe(&routed.record);
-                    let _ = out.send(encode_event(&ServerEvent::Decoded(Box::new(routed.record))));
-                }
-                Ok(crate::decoded::Decoded::Lost(count)) => {
-                    let _ = out.send(encode_event(&ServerEvent::DecodedLost { count }));
-                }
-                Err(broadcast::error::RecvError::Lagged(count)) => {
-                    let _ = out.send(encode_event(&ServerEvent::DecodedLost { count }));
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            }
-        }
-    });
-}
-
 struct Session {
     engine: Arc<Engine>,
     state: AppState,
     out: Outbox,
-    spectra: HashMap<(u32, u32), (u16, tokio::task::JoinHandle<()>)>,
-    audio: HashMap<AudioRoute, (u16, tokio::task::JoinHandle<()>)>,
-    video: HashMap<(u32, u32), (u16, tokio::task::JoinHandle<()>)>,
-    iq: HashMap<(u32, u32), (u16, tokio::task::JoinHandle<()>)>,
-    symbols: HashMap<(u32, u32), (u16, tokio::task::JoinHandle<()>)>,
     surfaces: Surfaces,
+    sinks: Sinks,
+    ports: Ports,
     next_spectrum_id: u16,
     next_media_id: u16,
     diagnostics: Option<tokio::task::JoinHandle<()>>,
@@ -122,12 +95,9 @@ impl Session {
             engine,
             state,
             out,
-            spectra: HashMap::new(),
-            audio: HashMap::new(),
-            video: HashMap::new(),
-            iq: HashMap::new(),
-            symbols: HashMap::new(),
             surfaces: Surfaces::default(),
+            sinks: Sinks::default(),
+            ports: Ports::default(),
             next_spectrum_id: SPECTRUM_ID_BASE,
             next_media_id: MEDIA_ID_BASE,
             diagnostics: None,
@@ -140,13 +110,9 @@ impl Session {
 
     fn media_stream_id(&mut self) -> Option<u16> {
         let live: HashSet<u16> = self
-            .audio
-            .values()
-            .chain(self.symbols.values())
-            .chain(self.video.values())
-            .chain(self.iq.values())
-            .map(|(id, _)| *id)
-            .chain(self.surfaces.live_ids())
+            .surfaces
+            .live_ids()
+            .chain(self.ports.ids(false))
             .collect();
         alloc_stream_id(&mut self.next_media_id, MEDIA_ID_BASE..=u16::MAX, |id| {
             live.contains(&id)
@@ -179,67 +145,18 @@ impl Session {
                         Some(spawn_diagnostics(self.engine.clone(), self.out.clone()));
                 }
             }
-            ClientCommand::SubscribeSpectrum {
-                device_set,
-                fps,
-                bins,
-                stream,
-            } => self.subscribe_spectrum(device_set, fps, bins, stream).await,
-            ClientCommand::UnsubscribeSpectrum { device_set, stream } => {
-                self.unsubscribe_spectrum(device_set, stream).await;
-            }
-            ClientCommand::SubscribeAudio {
-                device_set,
-                channel,
-                fx,
-            } => {
-                self.subscribe_audio(AudioRoute {
-                    device_set,
-                    channel,
-                    fx,
-                })
-                .await;
-            }
-            ClientCommand::UnsubscribeAudio {
-                device_set,
-                channel,
-                fx,
-            } => {
-                self.unsubscribe_audio(AudioRoute {
-                    device_set,
-                    channel,
-                    fx,
-                })
-                .await;
-            }
-            ClientCommand::SubscribeVideo {
-                device_set,
-                channel,
-            } => self.subscribe_video(device_set, channel).await,
-            ClientCommand::UnsubscribeVideo {
-                device_set,
-                channel,
-            } => self.unsubscribe_video(device_set, channel).await,
-            ClientCommand::SubscribeIq {
-                device_set,
-                channel,
-            } => self.subscribe_iq(device_set, channel).await,
-            ClientCommand::UnsubscribeIq {
-                device_set,
-                channel,
-            } => self.unsubscribe_iq(device_set, channel).await,
-            ClientCommand::SubscribeSymbols {
-                device_set,
-                channel,
-            } => self.subscribe_symbols(device_set, channel).await,
-            ClientCommand::UnsubscribeSymbols {
-                device_set,
-                channel,
-            } => self.unsubscribe_symbols(device_set, channel).await,
             ClientCommand::SubscribeSurface { node, fit } => {
                 self.subscribe_surface(node, fit).await;
             }
             ClientCommand::UnsubscribeSurface { node } => self.unsubscribe_surface(&node).await,
+            ClientCommand::SubscribePort { node, port, params } => {
+                self.subscribe_port(node, port, params).await;
+            }
+            ClientCommand::UnsubscribePort { node, port } => {
+                self.unsubscribe_port(&node, &port).await;
+            }
+            ClientCommand::SubscribeSink { node } => self.subscribe_sink(node),
+            ClientCommand::UnsubscribeSink { node } => self.unsubscribe_sink(&node),
             ClientCommand::PublishPose { fix, error } => self.publish_pose(fix, error).await,
             ClientCommand::Present { author, name } => self.present(&author, &name).await,
             ClientCommand::Point(pointer) => self.point(pointer).await,
@@ -281,320 +198,9 @@ impl Session {
         if let Some(task) = self.diagnostics {
             task.abort();
         }
-        for (_, (_, task)) in self.spectra {
-            task.abort();
-        }
-        for (_, (_, task)) in self.audio {
-            task.abort();
-        }
-        for (_, (_, task)) in self.iq {
-            task.abort();
-        }
-        for (_, (_, task)) in self.video {
-            task.abort();
-        }
-        for (_, (_, task)) in self.symbols {
-            task.abort();
-        }
         self.surfaces.abort();
-    }
-
-    async fn subscribe_spectrum(&mut self, device_set: u32, fps: u16, bins: u16, stream: u32) {
-        let subscribe = {
-            let engine = self.engine.clone();
-            tokio::task::spawn_blocking(move || engine.subscribe_spectrum(device_set, stream)).await
-        };
-        match flatten_join(subscribe) {
-            Ok(rx) => {
-                if let Some((old_id, old)) = self.spectra.remove(&(device_set, stream)) {
-                    old.abort();
-                    let stopped = ServerEvent::StreamStopped {
-                        stream_id: old_id,
-                        kind: StreamKind::Spectrum,
-                    };
-                    let _ = self.out.send(text_event(&stopped)).await;
-                }
-                let live = |id: u16| self.spectra.values().any(|(sid, _)| *sid == id);
-                match alloc_stream_id(
-                    &mut self.next_spectrum_id,
-                    SPECTRUM_ID_BASE..=MEDIA_ID_BASE - 1,
-                    live,
-                ) {
-                    Some(stream_id) => {
-                        let started = ServerEvent::StreamStarted {
-                            stream_id,
-                            device_set,
-                            stream,
-                        };
-                        let _ = self.out.send(text_event(&started)).await;
-                        let task = spawn_spectrum(
-                            SpectrumLane {
-                                stream_id,
-                                device_set,
-                                stream,
-                            },
-                            fps,
-                            bins,
-                            rx,
-                            self.out.clone(),
-                            self.engine.clone(),
-                        );
-                        self.spectra.insert((device_set, stream), (stream_id, task));
-                    }
-                    None => {
-                        let err = ServerEvent::Error {
-                            message: "no free spectrum stream ids on this \
-                                      connection"
-                                .to_string(),
-                        };
-                        let _ = self.out.send(text_event(&err)).await;
-                    }
-                }
-            }
-            Err(message) => {
-                let _ = self
-                    .out
-                    .send(text_event(&ServerEvent::Error { message }))
-                    .await;
-            }
-        }
-    }
-
-    async fn unsubscribe_spectrum(&mut self, device_set: u32, stream: u32) {
-        if let Some((stream_id, task)) = self.spectra.remove(&(device_set, stream)) {
-            task.abort();
-            let stopped = ServerEvent::StreamStopped {
-                stream_id,
-                kind: StreamKind::Spectrum,
-            };
-            let _ = self.out.send(text_event(&stopped)).await;
-        }
-    }
-
-    async fn subscribe_audio(&mut self, route: AudioRoute) {
-        let subscribe = {
-            let engine = self.engine.clone();
-            let store = self.state.store.clone();
-            let route = route.clone();
-            tokio::task::spawn_blocking(move || {
-                if !route.fx.is_empty() {
-                    crate::audio_fx::sync(&engine, &store);
-                }
-                engine.subscribe_route_audio(&route)
-            })
-            .await
-        };
-        match flatten_join(subscribe) {
-            Ok(rx) => {
-                if let Some((old_id, old)) = self.audio.remove(&route) {
-                    old.abort();
-                    let stopped = ServerEvent::StreamStopped {
-                        stream_id: old_id,
-                        kind: StreamKind::Audio,
-                    };
-                    let _ = self.out.send(text_event(&stopped)).await;
-                }
-                match self.media_stream_id() {
-                    Some(stream_id) => {
-                        let started = ServerEvent::AudioStreamStarted {
-                            stream_id,
-                            device_set: route.device_set,
-                            channel: route.channel,
-                            fx: route.fx.clone(),
-                        };
-                        let _ = self.out.send(text_event(&started)).await;
-                        let task = spawn_audio(stream_id, rx, self.out.clone());
-                        self.audio.insert(route, (stream_id, task));
-                    }
-                    None => {
-                        let err = ServerEvent::Error {
-                            message: "no free media stream ids on this connection".to_string(),
-                        };
-                        let _ = self.out.send(text_event(&err)).await;
-                    }
-                }
-            }
-            Err(message) => {
-                let _ = self
-                    .out
-                    .send(text_event(&ServerEvent::Error { message }))
-                    .await;
-            }
-        }
-    }
-
-    async fn unsubscribe_audio(&mut self, route: AudioRoute) {
-        if let Some((stream_id, task)) = self.audio.remove(&route) {
-            task.abort();
-            let stopped = ServerEvent::StreamStopped {
-                stream_id,
-                kind: StreamKind::Audio,
-            };
-            let _ = self.out.send(text_event(&stopped)).await;
-        }
-    }
-
-    async fn subscribe_video(&mut self, device_set: u32, channel: u32) {
-        let subscribe = {
-            let engine = self.engine.clone();
-            tokio::task::spawn_blocking(move || engine.subscribe_video(device_set, channel)).await
-        };
-        match flatten_join(subscribe) {
-            Ok(rx) => {
-                if let Some((old_id, old)) = self.video.remove(&(device_set, channel)) {
-                    old.abort();
-                    let stopped = ServerEvent::StreamStopped {
-                        stream_id: old_id,
-                        kind: StreamKind::Video,
-                    };
-                    let _ = self.out.send(text_event(&stopped)).await;
-                }
-                match self.media_stream_id() {
-                    Some(stream_id) => {
-                        let started = ServerEvent::VideoStreamStarted {
-                            stream_id,
-                            device_set,
-                            channel,
-                        };
-                        let _ = self.out.send(text_event(&started)).await;
-                        let task = spawn_video(stream_id, rx, self.out.clone());
-                        self.video.insert((device_set, channel), (stream_id, task));
-                    }
-                    None => {
-                        let err = ServerEvent::Error {
-                            message: "no free media stream ids on this connection".to_string(),
-                        };
-                        let _ = self.out.send(text_event(&err)).await;
-                    }
-                }
-            }
-            Err(message) => {
-                let _ = self
-                    .out
-                    .send(text_event(&ServerEvent::Error { message }))
-                    .await;
-            }
-        }
-    }
-
-    async fn unsubscribe_video(&mut self, device_set: u32, channel: u32) {
-        if let Some((stream_id, task)) = self.video.remove(&(device_set, channel)) {
-            task.abort();
-            let stopped = ServerEvent::StreamStopped {
-                stream_id,
-                kind: StreamKind::Video,
-            };
-            let _ = self.out.send(text_event(&stopped)).await;
-        }
-    }
-
-    async fn subscribe_iq(&mut self, device_set: u32, channel: u32) {
-        let subscribe = {
-            let engine = self.engine.clone();
-            tokio::task::spawn_blocking(move || engine.subscribe_iq(device_set, channel)).await
-        };
-        match flatten_join(subscribe) {
-            Ok(rx) => {
-                if let Some((old_id, old)) = self.iq.remove(&(device_set, channel)) {
-                    old.abort();
-                    let stopped = ServerEvent::StreamStopped {
-                        stream_id: old_id,
-                        kind: StreamKind::Iq,
-                    };
-                    let _ = self.out.send(text_event(&stopped)).await;
-                }
-                match self.media_stream_id() {
-                    Some(stream_id) => {
-                        let started = ServerEvent::IqStreamStarted {
-                            stream_id,
-                            device_set,
-                            channel,
-                        };
-                        let _ = self.out.send(text_event(&started)).await;
-                        let task = spawn_iq(stream_id, rx, self.out.clone());
-                        self.iq.insert((device_set, channel), (stream_id, task));
-                    }
-                    None => {
-                        let err = ServerEvent::Error {
-                            message: "no free media stream ids on this connection".to_string(),
-                        };
-                        let _ = self.out.send(text_event(&err)).await;
-                    }
-                }
-            }
-            Err(message) => {
-                let _ = self
-                    .out
-                    .send(text_event(&ServerEvent::Error { message }))
-                    .await;
-            }
-        }
-    }
-
-    async fn unsubscribe_iq(&mut self, device_set: u32, channel: u32) {
-        if let Some((stream_id, task)) = self.iq.remove(&(device_set, channel)) {
-            task.abort();
-            let stopped = ServerEvent::StreamStopped {
-                stream_id,
-                kind: StreamKind::Iq,
-            };
-            let _ = self.out.send(text_event(&stopped)).await;
-        }
-    }
-
-    async fn subscribe_symbols(&mut self, device_set: u32, channel: u32) {
-        let subscribe = {
-            let engine = self.engine.clone();
-            tokio::task::spawn_blocking(move || engine.subscribe_symbols(device_set, channel)).await
-        };
-        match flatten_join(subscribe) {
-            Ok(rx) => {
-                if let Some((old_id, old)) = self.symbols.remove(&(device_set, channel)) {
-                    old.abort();
-                    let stopped = ServerEvent::StreamStopped {
-                        stream_id: old_id,
-                        kind: StreamKind::Symbols,
-                    };
-                    let _ = self.out.send(text_event(&stopped)).await;
-                }
-                match self.media_stream_id() {
-                    Some(stream_id) => {
-                        let started = ServerEvent::SymbolStreamStarted {
-                            stream_id,
-                            device_set,
-                            channel,
-                        };
-                        let _ = self.out.send(text_event(&started)).await;
-                        let task = spawn_symbols(stream_id, rx, self.out.clone());
-                        self.symbols
-                            .insert((device_set, channel), (stream_id, task));
-                    }
-                    None => {
-                        let err = ServerEvent::Error {
-                            message: "no free media stream ids on this connection".to_string(),
-                        };
-                        let _ = self.out.send(text_event(&err)).await;
-                    }
-                }
-            }
-            Err(message) => {
-                let _ = self
-                    .out
-                    .send(text_event(&ServerEvent::Error { message }))
-                    .await;
-            }
-        }
-    }
-
-    async fn unsubscribe_symbols(&mut self, device_set: u32, channel: u32) {
-        if let Some((stream_id, task)) = self.symbols.remove(&(device_set, channel)) {
-            task.abort();
-            let stopped = ServerEvent::StreamStopped {
-                stream_id,
-                kind: StreamKind::Symbols,
-            };
-            let _ = self.out.send(text_event(&stopped)).await;
-        }
+        self.sinks.abort();
+        self.ports.abort();
     }
 }
 
@@ -612,11 +218,9 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
 
     let event_rx = engine.subscribe_events();
     let position_rx = state.gps.subscribe();
-    let decoded_rx = (!for_phone).then(|| state.decoded_text.subscribe());
     greet(&state, &out_tx, &identity).await;
 
     let events = spawn_events(event_rx, out_tx.clone(), for_phone);
-    let decoded = decoded_rx.map(|rx| spawn_decoded(rx, out_tx.clone()));
     let positions = spawn_positions(position_rx, out_tx.clone());
 
     let peer = state.presence.connect();
@@ -628,6 +232,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
         PeerLink::new(peer, fallback),
     );
     let mut revocation: Option<watch::Receiver<bool>> = link.as_ref().map(PhoneLink::revoked);
+    let mut resolved = state.resolved.subscribe();
     let mut writer_done = false;
 
     let revoked_now = loop {
@@ -637,6 +242,10 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
                 break false;
             }
             () = revoked(&mut revocation) => break true,
+            Ok(()) = resolved.changed() => {
+                session.sync_ports().await;
+                continue;
+            }
             message = ws_rx.next() => message,
         };
         let Some(Ok(msg)) = msg else {
@@ -658,9 +267,6 @@ async fn handle_socket(socket: WebSocket, state: AppState, identity: Identity, f
     }
     session.abort_streams();
     events.abort();
-    if let Some(decoded) = decoded {
-        decoded.abort();
-    }
     positions.abort();
     drop(out_tx);
     if !writer_done
@@ -700,14 +306,6 @@ async fn greet(state: &AppState, out: &Outbox, identity: &Identity) {
     }
     for rotator in state.rotators.snapshot() {
         let _ = out.send(text_event(&rotator)).await;
-    }
-    let backlog = state.tracks.backlog();
-    if !backlog.is_empty() {
-        let _ = out
-            .send(text_event(&ServerEvent::DecodedBacklog {
-                records: backlog,
-            }))
-            .await;
     }
 }
 
@@ -763,30 +361,6 @@ fn spawn_events(
                         scope: StateScope::All,
                     };
                     if out_tx.send(text_event(&resync)).await.is_err() {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-            }
-        }
-    })
-}
-
-fn spawn_decoded(
-    mut decoded_rx: broadcast::Receiver<Utf8Bytes>,
-    out_tx: Outbox,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            match decoded_rx.recv().await {
-                Ok(text) => {
-                    if out_tx.send_decoded(Message::Text(text)).await.is_err() {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Lagged(missed)) => {
-                    let lost = ServerEvent::DecodedLost { count: missed };
-                    if out_tx.send(text_event(&lost)).await.is_err() {
                         break;
                     }
                 }
@@ -1159,7 +733,7 @@ fn text_event(ev: &ServerEvent) -> Message {
     Message::Text(encode_event(ev))
 }
 
-fn encode_event(ev: &ServerEvent) -> Utf8Bytes {
+pub(crate) fn encode_event(ev: &ServerEvent) -> Utf8Bytes {
     match serde_json::to_string(ev) {
         Ok(json) => json.into(),
         Err(_) => r#"{"type":"Error","data":{"message":"event serialization failed"}}"#.into(),

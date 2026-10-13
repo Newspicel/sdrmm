@@ -15,6 +15,7 @@ pub(super) struct Steering {
     pub(super) look: SatelliteLook,
     pub(super) doppler: Option<Doppler>,
     pub(super) uplink_hz: Option<f64>,
+    pub(super) downlink_hz: Option<f64>,
 }
 
 pub(super) fn observer(fix: &PositionFix) -> Observer {
@@ -52,6 +53,9 @@ pub(super) fn steer(
         uplink_hz: settings
             .uplink_hz
             .map(|wanted| uplink_hz(wanted, here.range_rate_km_s)),
+        downlink_hz: settings
+            .downlink_hz
+            .map(|wanted| downlink_hz(wanted, here.range_rate_km_s)),
     })
 }
 
@@ -165,6 +169,11 @@ mod tests {
         assert!(
             uplink < 145_990_000.0,
             "an approaching satellite is sent low: {uplink}"
+        );
+        let heard = rising.downlink_hz.expect("a downlink was set");
+        assert!(
+            (heard - (437_800_000.0 + up.shift_hz)).abs() < 1.0,
+            "an approaching satellite is heard high: {heard}"
         );
     }
 

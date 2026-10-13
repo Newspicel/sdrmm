@@ -4,7 +4,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
     BroadcastService, BroadcastServiceKind, ChannelDescriptor, ChannelParams, ChannelSettings,
-    DecoderFamily, DvbtParams,
+    DecoderFamily, DvbtParams, EventKind,
 };
 
 use super::frontend::Frontend;
@@ -29,7 +29,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE,
     has_audio: true,
     has_video: true,
-    decoder_kind: Some("broadcast_data".to_owned()),
+    emits: vec![EventKind::Broadcast],
     ..ChannelDescriptor::default()
 });
 

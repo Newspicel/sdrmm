@@ -91,6 +91,7 @@ export function ChannelControls({
         params={settings.params}
         broadcast={broadcast}
         limits={descriptor?.limits ?? []}
+        choices={descriptor?.choices ?? []}
         onParams={(params) => onEdit({ params })}
       />
       {audio && (

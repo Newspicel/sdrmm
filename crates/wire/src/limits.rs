@@ -90,6 +90,23 @@ pub struct Limits {
     pub hunt: HuntLimits,
     pub presence: PresenceLimits,
     pub rotator: RotatorLimits,
+    pub patch: PatchLimits,
+    pub name_len: usize,
+    pub filter: FilterLimits,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct PatchLimits {
+    pub nodes: usize,
+    pub wires: usize,
+    pub streams: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct FilterLimits {
+    pub ids: usize,
+    pub duration_ms: u32,
+    pub text_len: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -424,6 +441,17 @@ pub const LIMITS: Limits = Limits {
     hunt: HUNT_LIMITS,
     presence: PRESENCE_LIMITS,
     rotator: ROTATOR_LIMITS,
+    patch: PatchLimits {
+        nodes: crate::patch::MAX_NODES,
+        wires: crate::patch::MAX_EDGES,
+        streams: crate::patch::MAX_STREAMS,
+    },
+    name_len: crate::workspace::MAX_NAME_LEN,
+    filter: FilterLimits {
+        ids: crate::filter::MAX_FILTER_IDS,
+        duration_ms: crate::filter::MAX_FILTER_DURATION_MS,
+        text_len: crate::filter::MAX_FILTER_TEXT_LEN,
+    },
 };
 
 pub fn generated() -> Result<String, serde_json::Error> {

@@ -1,23 +1,20 @@
 import { formatHz } from "../../components/format";
+import { toastError } from "../../lib/toasts";
 import type { PatchNode } from "../../lib/types";
-import { useChannelPatch } from "../../lib/useChannelPatch";
 import { useWorkspaceContext } from "../context";
 import { decoderReplacements } from "../palette";
-import { deviceSetOf } from "../workspaceDevice";
 import { ChannelPicker } from "./ChannelPicker";
-import { swapDecoder } from "./decoderSwap";
+import { retypeNode } from "./decoderSwap";
 
 export function ReplaceDecoder({ node, onClose }: { node: PatchNode; onClose: () => void }) {
   const workspace = useWorkspaceContext();
-  const { applyEdit } = useChannelPatch();
   if (node.kind !== "channel") {
     return null;
   }
   const typeId = node.data.channel_type;
   const descriptor = workspace.context.channelTypes.find((type) => type.type_id === typeId);
-  const channel = workspace.channels.get(node.id) ?? null;
-  const set = deviceSetOf(workspace, node.id);
-  const settings = channel?.settings ?? workspace.savedChannels.get(node.id) ?? null;
+  const settings =
+    workspace.channels.get(node.id)?.settings ?? workspace.savedChannels.get(node.id) ?? null;
 
   return (
     <ChannelPicker
@@ -27,19 +24,7 @@ export function ReplaceDecoder({ node, onClose }: { node: PatchNode; onClose: ()
       }`}
       groups={decoderReplacements(workspace.context.channelTypes, typeId)}
       onChannel={(channelType) => {
-        const wanted = workspace.context.channelTypes.find((type) => type.type_id === channelType);
-        if (wanted !== undefined) {
-          swapDecoder({
-            context: workspace.context,
-            node,
-            descriptor: wanted,
-            live: channel === null || set === null ? null : { deviceSet: set.id, channel },
-            saved: settings,
-            applyEdit,
-            saveChannel: workspace.saveChannel,
-            edit: workspace.edit,
-          });
-        }
+        retypeNode(node.id, channelType).catch(toastError);
         onClose();
       }}
       onClose={onClose}

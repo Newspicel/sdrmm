@@ -1,4 +1,3 @@
-import { formatHz } from "../components/format";
 import type {
   LoraFrame,
   LorawanFrame,
@@ -121,21 +120,6 @@ export function loraName(frame: LoraFrame): string | null {
     default:
       return null;
   }
-}
-
-export function withLoraPosition(previous: LoraFrame, next: LoraFrame): LoraFrame {
-  if (loraPosition(next) !== null || loraPosition(previous) === null) {
-    return next;
-  }
-  return { ...next, decoded: previous.decoded };
-}
-
-export function loraSummary(frame: LoraFrame): string {
-  const parts = [`SF${frame.spreading_factor} ${formatHz(frame.bandwidth_hz)}`, loraMessage(frame)];
-  if (frame.integrity !== "crc_ok") {
-    parts.push(LORA_INTEGRITY_LABELS[frame.integrity]);
-  }
-  return parts.join(" · ");
 }
 
 export function loraMessage(frame: LoraFrame): string {

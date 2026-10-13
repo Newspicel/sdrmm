@@ -3,6 +3,7 @@ import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
 import { formatHz } from "../../components/format";
+import { useFeeds } from "../../lib/resolved";
 import type { PatchNode, TrunkSystemStatus } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -25,13 +26,11 @@ import { FaceBody, NodeShell } from "./NodeShell";
 
 export function DmrTrunkFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
+  const onIq = useFeeds(node.id, "iq").length > 0;
   if (node.kind !== "dmr_trunk") {
     return null;
   }
   const status = workspace.trunks.find((system) => system.node === node.id);
-  const onIq = (workspace.graph.edges ?? []).some(
-    (edge) => edge.to.node === node.id && edge.to.port === "iq",
-  );
   const awaiting = awaitingControlChannel(onIq, node.data.control_hz);
   const stalled = controlChannelStalled(onIq, node.data.control_hz, status?.carriers);
   const protocol = node.data.protocol ?? "auto";

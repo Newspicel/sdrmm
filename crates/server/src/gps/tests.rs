@@ -14,6 +14,7 @@ use super::{
 };
 
 mod pose;
+mod routes;
 
 #[test]
 fn parses_checked_gga_and_rmc_sentences() {
@@ -219,6 +220,7 @@ fn a_position_typed_in_stands_in_for_a_receiver_that_never_moves() {
         .expect("workspace");
     store.activate_workspace(workspace_id).expect("activate");
     let app = crate::AppState::new(Engine::new(None), Arc::new(store));
+    app.resolve_now();
     app.gps.reconcile(&app);
     let fix = app.gps.fix("roof").expect("a typed-in place is a fix");
     assert!((fix.latitude - 51.5).abs() < 1e-9);

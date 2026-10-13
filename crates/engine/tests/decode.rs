@@ -99,20 +99,21 @@ async fn broadcast_first(
     settings: ChannelSettings,
     want: impl Fn(&BroadcastStatus) -> bool,
 ) -> BroadcastStatus {
-    let mut rx = engine.subscribe_events();
+    let mut rx = engine.subscribe_decoded();
     let ds = engine.create_device_set(device_id).unwrap();
     let ch = engine.add_channel(ds, 0, settings).unwrap();
     let found = tokio::time::timeout(DECODE_TIMEOUT, async {
         loop {
             match rx.recv().await {
-                Ok(ServerEvent::BroadcastUpdate {
+                Ok(DecodedRecord {
                     device_set,
                     channel,
-                    status,
-                }) if device_set == ds && channel == ch && want(&status) => return *status,
+                    event: DecoderEvent::Broadcast(status),
+                    ..
+                }) if device_set == ds && channel == ch && want(&status) => return status,
                 Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    panic!("event stream closed")
+                    panic!("decoded stream closed")
                 }
             }
         }
@@ -2131,7 +2132,7 @@ async fn an_rs41_radiosonde_survives_the_ddc_and_reports_its_position() {
     let truth = synth::radiosonde::flight(SondeType::Rs41);
     assert_eq!(frame.sonde, SondeType::Rs41);
     assert_eq!(frame.serial, truth.serial);
-    assert!(DecoderEvent::Radiosonde(frame).position().is_some());
+    assert!(DecoderEvent::Radiosonde(frame).present().place.is_some());
 }
 
 #[tokio::test]

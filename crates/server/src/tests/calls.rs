@@ -1,20 +1,15 @@
 use super::*;
 
 #[tokio::test]
-async fn call_endpoints_list_completed_calls_and_reject_missing_audio() {
+async fn missing_call_audio_is_refused() {
     let app = test_router();
-    let (status, body) = request(app.clone(), "GET", "/api/calls", None).await;
-    assert_eq!(status, StatusCode::OK);
-    let listed: VoiceCallsResponse = serde_json::from_slice(&body).expect("json");
-    assert!(listed.calls.is_empty());
-
     let (status, body) = request(app, "GET", "/api/calls/99/audio", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     serde_json::from_slice::<ApiError>(&body).expect("ApiError body");
 }
 
 #[tokio::test]
-async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
+async fn a_plain_dmr_channel_wired_to_a_log_records_calls_with_clips() {
     const RATE: f64 = 240_000.0;
     let dir = tempfile::TempDir::new().expect("temp dir");
     let stem = dir.path().join("dmr");
@@ -59,9 +54,9 @@ async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
     settings.frequency_hz = 145_000_000.0;
     let (status, _) = request(
         app.clone(),
-        "PUT",
-        &format!("/api/workspaces/{workspace}/channels/dmr"),
-        Some(&serde_json::to_string(&settings).expect("settings serialize")),
+        "PATCH",
+        "/api/workspaces/active/nodes/dmr/channel",
+        Some(&serde_json::json!({"settings": settings}).to_string()),
     )
     .await;
     assert_eq!(status, 204);
@@ -69,10 +64,19 @@ async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
 
     let recorded = tokio::time::timeout(Duration::from_secs(60), async {
         loop {
-            let (status, body) = request(app.clone(), "GET", "/api/calls", None).await;
+            let (status, body) = request(
+                app.clone(),
+                "GET",
+                "/api/decoderlog?sink=log&kind=call",
+                None,
+            )
+            .await;
             assert_eq!(status, StatusCode::OK);
-            let listed: VoiceCallsResponse = serde_json::from_slice(&body).expect("json");
-            if let Some(call) = listed.calls.into_iter().next() {
+            let listed: sdrmm_wire::DecoderLogResponse =
+                serde_json::from_slice(&body).expect("json");
+            if let Some(sdrmm_wire::DecoderEvent::Call(call)) =
+                listed.entries.into_iter().next().map(|entry| entry.event)
+            {
                 return call;
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
@@ -95,7 +99,7 @@ async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
 #[tokio::test]
 async fn image_endpoints_list_captures_and_reject_a_missing_picture() {
     let app = test_router();
-    let (status, body) = request(app.clone(), "GET", "/api/images", None).await;
+    let (status, body) = request(app.clone(), "GET", "/api/images?sink=screen", None).await;
     assert_eq!(status, StatusCode::OK);
     let listed: CapturedImagesResponse = serde_json::from_slice(&body).expect("json");
     assert!(listed.images.is_empty());

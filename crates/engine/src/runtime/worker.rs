@@ -17,6 +17,7 @@ use super::{
     subbands::Subbands,
 };
 use crate::{
+    audio_recording::AudioTaps,
     capture_ring::CaptureConsumer,
     network_export::NetworkExportTap,
     publishing::{recording::RecordingPublisher, spectrum::SpectrumPublisher},
@@ -59,6 +60,7 @@ pub(super) enum Retired {
     Recording(Option<RecorderTap>, Option<RecordingPublisher>),
     Network(NetworkExportTap),
     History(TimeMachineTap),
+    AudioTaps(Option<AudioTaps>),
 }
 
 impl Retired {
@@ -70,6 +72,7 @@ impl Retired {
             Self::Recording(tap, publisher) => drop((tap, publisher)),
             Self::Network(tap) => drop(tap),
             Self::History(tap) => drop(tap),
+            Self::AudioTaps(taps) => drop(taps),
         }
     }
 }
@@ -313,15 +316,15 @@ fn drain_commands(
             DspCommand::StopRecording => {
                 retirement.retire(Retired::Recording(tap.take(), recording_publisher.take()));
             }
-            DspCommand::StartChannelRecording { id, tap: armed } => {
+            DspCommand::SetChannelRecordings { id, taps } => {
                 match channels.iter_mut().find(|(existing, _)| *existing == id) {
-                    Some((_, host)) => host.set_audio_recording(Some(armed)),
-                    None => tracing::debug!(id, "audio recording for a channel no longer hosted"),
-                }
-            }
-            DspCommand::StopChannelRecording { id } => {
-                if let Some((_, host)) = channels.iter_mut().find(|(existing, _)| *existing == id) {
-                    host.set_audio_recording(None);
+                    Some((_, host)) => {
+                        retirement.retire(Retired::AudioTaps(host.set_audio_recordings(taps)));
+                    }
+                    None => {
+                        tracing::debug!(id, "audio recording for a channel no longer hosted");
+                        retirement.retire(Retired::AudioTaps(taps));
+                    }
                 }
             }
             DspCommand::StartBasebandRecording { id, tap: armed } => {

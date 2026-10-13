@@ -1,0 +1,27 @@
+{
+  "name": "29a1a1cca6ffbb68",
+  "test": "GpsFace with a phone > shows offline and not paired in the header, not as a fault",
+  "graph": {
+    "nodes": [
+      {
+        "id": "gps1",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "gps",
+        "data": {
+          "source": {
+            "type": "phone",
+            "phone": "p0123456789abcdef"
+          }
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

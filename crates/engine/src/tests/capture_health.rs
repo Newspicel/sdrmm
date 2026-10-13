@@ -196,7 +196,9 @@ fn measure_pipeline(hardware: &[Hardware], seconds: u64) {
         .collect();
     if recording {
         for (ds, _) in &sets {
-            engine.start_recording(*ds, 0).expect("start IQ recording");
+            engine
+                .start_recording(*ds, 0, None)
+                .expect("start IQ recording");
         }
     }
     let mut peak_age = 0.0f64;

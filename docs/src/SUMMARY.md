@@ -7,6 +7,7 @@
 - [Install](getting-started/install.md)
 - [Your first receiver](getting-started/first-receiver.md)
 - [Nodes and wires](getting-started/workspace.md)
+- [Wires and what they carry](wires.md)
 - [Workspaces and presets](user-guide/workspaces.md)
 
 # Receive

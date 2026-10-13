@@ -1,0 +1,51 @@
+{
+  "name": "b88e999f77f1eac3",
+  "test": "HuntFace > offers a sweep and its settings only with a position wired",
+  "graph": {
+    "nodes": [
+      {
+        "id": "phone",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "gps",
+        "data": {}
+      },
+      {
+        "id": "walk",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "hunt",
+        "data": {
+          "clicks": true,
+          "sweep": {
+            "beamwidth_deg": 60,
+            "front_back_db": 15,
+            "min_span_deg": 180,
+            "min_contrast_db": 6,
+            "mount_offset_deg": 0
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "phone",
+          "port": "position"
+        },
+        "to": {
+          "node": "walk",
+          "port": "position"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

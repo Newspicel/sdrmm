@@ -142,7 +142,6 @@ mod tests {
                     node: "gps1".to_owned(),
                     phone: Some(testing::PHONE_ID.to_owned()),
                 }),
-                triangulations: Vec::new(),
             }),
         }
     }

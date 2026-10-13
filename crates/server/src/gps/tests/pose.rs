@@ -30,6 +30,7 @@ fn activate(app: &AppState, nodes: Vec<PatchNode>) {
         .create_workspace("field", &snapshot)
         .expect("workspace");
     app.store.activate_workspace(id).expect("activate");
+    app.resolve_now();
     app.gps.reconcile(app);
 }
 
@@ -170,6 +171,7 @@ fn an_unknown_phone_is_not_paired() {
     let (_socket, _) = app.phones.join(&phone);
     app.gps.phone_online(&app, &phone);
     assert_eq!(error_of(&app, "car").as_deref(), Some(WAITING));
+    app.resolve_now();
     app.gps.reconcile(&app);
     assert_eq!(error_of(&app, "car").as_deref(), Some(WAITING));
 }
@@ -184,6 +186,7 @@ fn going_offline_drops_the_old_coordinates() {
     app.gps
         .publish_pose(&app, &phone, Some(pose(52.52, 87.5)), None)
         .expect("pose");
+    app.resolve_now();
     app.gps.reconcile(&app);
     assert!(
         app.gps.fix("car").is_some(),

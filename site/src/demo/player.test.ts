@@ -3,12 +3,12 @@ import type { DemoSession } from "../../../web/e2e/demoSession";
 import { Player } from "./player";
 
 const SPECTRUM = {
-  type: "SubscribeSpectrum",
-  data: { device_set: 1, fps: 30, bins: 1024, stream: 0 },
+  type: "SubscribePort",
+  data: { node: "scope", port: "iq", params: { fps: 30, bins: 1024 } },
 };
 const STARTED = JSON.stringify({
-  type: "StreamStarted",
-  data: { device_set: 1, stream: 0, stream_id: 4 },
+  type: "PortStream",
+  data: { stream_id: 4, node: "scope", port: "iq", source: "dev", kind: "spectrum" },
 });
 
 function session(): DemoSession {
@@ -23,7 +23,7 @@ function session(): DemoSession {
     greeting: ['{"type":"Hello"}'],
     streams: [
       {
-        key: 'Spectrum:[["device_set",1],["stream",0]]',
+        key: 'Port:[["node","scope"],["port","iq"]]',
         started: STARTED,
         frames: [{ at: 100, binary: btoa(String.fromCharCode(...bytes)) }],
       },
@@ -78,7 +78,7 @@ describe("Player", () => {
     player.open();
     player.command(JSON.stringify(SPECTRUM));
     player.command(
-      JSON.stringify({ type: "UnsubscribeSpectrum", data: { device_set: 1, stream: 0 } }),
+      JSON.stringify({ type: "UnsubscribePort", data: { node: "scope", port: "iq" } }),
     );
     advance(200);
     expect(sent.some((data) => data instanceof ArrayBuffer)).toBe(false);

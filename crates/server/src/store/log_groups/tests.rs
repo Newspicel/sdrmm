@@ -45,6 +45,7 @@ fn heard(at: &str, freq_hz: f64, event: DecoderEvent) -> Routed {
         at: at.to_owned(),
         freq_hz,
         event,
+        view: None,
     })
 }
 

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { GridCanvas } from "../../components/GridCanvas";
 import { recordEvent } from "../../lib/diagnostics";
 import type { FusionGridFrame } from "../../lib/frame";
-import { STATION_COLOR } from "../../lib/map/df";
 import type { DfEstimate, DfStation } from "../../lib/types";
 import { useBoxSize } from "../../lib/useBoxSize";
 import { useSurface } from "../../lib/useSurface";
@@ -102,8 +101,7 @@ export function HeatMarks({
             cx={at.x}
             cy={at.y}
             r={STATION_R}
-            fill={STATION_COLOR}
-            className="stroke-plot-bg"
+            className="fill-hue-violet stroke-plot-bg"
           >
             <title>{station.station_id}</title>
           </circle>

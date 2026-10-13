@@ -8,7 +8,7 @@ use sdrmm_dsp::{
 use sdrmm_modem::wifi::channel::{self as plan, Channel, WifiBand as PlanBand};
 use sdrmm_wire::{
     AIRTIME_REPORT_MS, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent,
-    DecoderFamily, WifiBand, WifiChannelLoad, WifiOccupancyParams, WifiOccupancyReport,
+    DecoderFamily, EventKind, WifiBand, WifiChannelLoad, WifiOccupancyParams, WifiOccupancyReport,
 };
 
 use crate::{
@@ -28,7 +28,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * usable_half_hz(WifiOccupancyParams::default().span),
     input_rate_hz: WifiOccupancyParams::default().span.sample_rate_hz(),
     has_audio: false,
-    decoder_kind: Some("wifi_occupancy".to_owned()),
+    emits: vec![EventKind::WifiOccupancy],
     ..ChannelDescriptor::default()
 });
 

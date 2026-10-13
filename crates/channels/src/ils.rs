@@ -2,8 +2,8 @@ use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, IlsComponent,
-    IlsParams, IlsReading,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    IlsComponent, IlsParams, IlsReading,
 };
 
 use crate::{
@@ -21,7 +21,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("ils".to_owned()),
+    emits: vec![EventKind::Ils],
     ..ChannelDescriptor::default()
 });
 

@@ -108,6 +108,7 @@ fn hunt_graph(position: Option<PositionSource>) -> PatchGraph {
         ],
         edges: vec![
             wire(("radio", "iq"), (VOICE, "iq")),
+            wire(("radio", "iq"), (HUNT, "iq")),
             wire((HUNT, "control"), (VOICE, "control")),
         ],
     };
@@ -388,16 +389,29 @@ async fn an_unwired_hunt_says_so() {
     assert!(!unwired.ready);
     assert_eq!(
         unwired.problems,
-        vec![MissionProblem::Unwired {
-            port: "control".to_owned()
-        }]
+        vec![
+            MissionProblem::Unwired {
+                port: "control".to_owned()
+            },
+            MissionProblem::Unwired {
+                port: "iq".to_owned()
+            }
+        ]
     );
     assert!(unwired.controls.is_empty());
     assert!(hunt_of(unwired).target.is_none());
 
     let idle = find(&listed, "idle");
     assert!(!idle.ready);
-    assert_eq!(idle.problems, vec![MissionProblem::NotRunning]);
+    assert_eq!(
+        idle.problems,
+        vec![
+            MissionProblem::NotRunning,
+            MissionProblem::Unwired {
+                port: "iq".to_owned()
+            }
+        ]
+    );
     assert!(idle.controls.is_empty());
 }
 
@@ -424,21 +438,16 @@ async fn a_scanning_decoder_offers_no_hunt() {
     let (app, state, _) = bench(hunt_graph(Some(fixed()))).await;
     let (device_set, decoder) = voice(&state);
     let here = decoder.settings.frequency_hz;
-    let scan = serde_json::json!({
-        "action": "start",
-        "settings": { "channel": decoder.id, "frequencies": [here, here + 25_000.0] },
-    });
-    let (status, body) = call(
-        &app,
-        "POST",
-        &format!(
-            "/api/devicesets/{device_set}/channels/{}/scanner",
-            decoder.id
-        ),
-        Some(&scan.to_string()),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    state
+        .engine
+        .start_scan(
+            device_set,
+            sdrmm_wire::ScanSettings {
+                frequencies: vec![here, here + 25_000.0],
+                ..sdrmm_wire::ScanSettings::for_channel(decoder.id)
+            },
+        )
+        .expect("the decoder scans");
 
     let listed = listing(&app).await;
     let mission = find(&listed, HUNT);
@@ -481,6 +490,34 @@ async fn tuning_a_hunt_moves_its_decoder_and_records_history() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_hunt_cannot_tune_a_locked_decoder() {
+    let mut graph = hunt_graph(None);
+    for held in &mut graph.nodes {
+        if let NodeBody::Channel(channel) = &mut held.body {
+            channel.tuning_locked = true;
+        }
+    }
+    let (app, state, _) = bench(graph).await;
+    let (_, before) = voice(&state);
+    let wanted = before.settings.frequency_hz + 25_000.0;
+    let (status, body) = try_act(
+        &app,
+        HUNT,
+        &format!(r#"{{"action":"tune","frequency_hz":{wanted}}}"#),
+        None,
+    )
+    .await;
+    assert_eq!(
+        refusal(status, &body),
+        (StatusCode::BAD_REQUEST, "Tuning locked".to_owned())
+    );
+    assert_eq!(
+        voice(&state).1.settings.frequency_hz,
+        before.settings.frequency_hz
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_control_the_mission_lacks_is_refused() {
     let (app, state, _) = bench(hunt_graph(None)).await;
     for action in [r#"{"action":"stop_hunt"}"#, r#"{"action":"calibrate"}"#] {
@@ -513,7 +550,7 @@ async fn triangulation_lists_sources_and_clears() {
             node("h2", NodeBody::Hunt(HuntNode::default())),
             node(
                 "filter",
-                NodeBody::default_for("event_filter").expect("an event filter"),
+                NodeBody::default_for(sdrmm_wire::NodeKind::EventFilter),
             ),
             node("tri", NodeBody::Triangulation(TriangulationNode::default())),
             gps("car", fixed()),
@@ -544,9 +581,6 @@ async fn triangulation_lists_sources_and_clears() {
         })
     );
     assert!(body.state.is_some());
-    for hunt in ["h1", "h2"] {
-        assert_eq!(hunt_of(find(&listed, hunt)).triangulations, ["tri"]);
-    }
 
     let mut events = state.engine.subscribe_events();
     let cleared = act(&app, "tri", r#"{"action":"clear_fusion"}"#).await;
@@ -882,7 +916,6 @@ async fn df_and_radar_missions_use_the_array() {
     assert_eq!(body.device_sets, [device_set]);
     assert!(body.center_hz.is_some());
     assert_eq!(body.position, roof);
-    assert_eq!(body.triangulations, ["tri"]);
 
     let radar = find(&listed, "radar");
     let MissionBody::Radar(body) = &radar.body else {
@@ -970,13 +1003,26 @@ async fn hunt_with_a_position_wire_offers_sweep_and_mark() {
         ]
     );
     let (device_set, decoder) = voice(&state);
-    let received_ms = u64::try_from(jiff::Timestamp::now().as_millisecond()).expect("after 1970");
-    state
-        .engine
-        .hunt_pose(device_set, decoder.id, pose(135.0), received_ms)
-        .expect("the hunt takes poses");
     let mut records = state.engine.subscribe_decoded();
-    let marked = act(&app, HUNT, r#"{"action":"mark"}"#).await;
+    let marked = tokio::time::timeout(WAIT, async {
+        loop {
+            let received_ms =
+                u64::try_from(jiff::Timestamp::now().as_millisecond()).expect("after 1970");
+            state
+                .engine
+                .hunt_pose(device_set, decoder.id, pose(135.0), received_ms)
+                .expect("the hunt takes poses");
+            let (status, body) = try_act(&app, HUNT, r#"{"action":"mark"}"#, None).await;
+            if status == StatusCode::OK {
+                return serde_json::from_slice::<MissionActionResponse>(&body)
+                    .expect("mission")
+                    .mission;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("a mark lands once the patch settles");
     assert!(hunt_of(&marked).status.is_some());
     let bearing = tokio::time::timeout(WAIT, async {
         loop {

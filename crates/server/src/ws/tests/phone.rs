@@ -72,6 +72,7 @@ fn bind_gps(state: &AppState, node: &str, phone: &str) {
         .create_workspace("field", &snapshot)
         .expect("workspace");
     state.store.activate_workspace(id).expect("activate");
+    state.resolve_now();
     state.gps.reconcile(state);
 }
 
@@ -168,10 +169,18 @@ async fn a_phone_socket_gets_only_phone_events() {
             levels: Vec::new(),
             lanes: Vec::new(),
         },
-        ServerEvent::StreamStarted {
+        ServerEvent::PortStream {
             stream_id: 1,
-            device_set: 0,
-            stream: 0,
+            node: "scope".to_owned(),
+            port: "iq".to_owned(),
+            source: "radio".to_owned(),
+            via: Vec::new(),
+            index: 0,
+            kind: StreamKind::Spectrum,
+        },
+        ServerEvent::PatchResolved(Box::default()),
+        ServerEvent::NodeProblems {
+            problems: Vec::new(),
         },
     ];
     for event in dropped.iter().chain(&kept) {
@@ -189,9 +198,9 @@ async fn a_phone_socket_gets_only_phone_events() {
     let paired = pair_one(&state.phones);
     let mut ws = dial_phone(addr, &paired.token).await;
     hello(&mut ws).await;
-    let _ = state
-        .decoded_text
-        .send(r#"{"type":"DecodedLost","data":{"count":7}}"#.to_owned().into());
+    state
+        .engine
+        .emit_event(ServerEvent::DecodedLost { count: 7 });
     state.engine.emit_scope(StateScope::Devices);
     loop {
         match next_event(&mut ws).await {
@@ -212,10 +221,10 @@ async fn a_phone_command_outside_the_list_is_refused() {
     hello(&mut ws).await;
     send(
         &mut ws,
-        &ClientCommand::SubscribeAudio {
-            device_set: 0,
-            channel: 0,
-            fx: Vec::new(),
+        &ClientCommand::SubscribePort {
+            node: "spk".to_owned(),
+            port: "audio".to_owned(),
+            params: sdrmm_wire::StreamParams::default(),
         },
     )
     .await;

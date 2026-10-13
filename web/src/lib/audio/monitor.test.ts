@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { isWatched, monitorKey, publishAudio, resetAudioMonitor, watchAudio } from "./monitor";
+import { isWatched, publishAudio, resetAudioMonitor, watchAudio } from "./monitor";
 
 afterEach(() => {
   resetAudioMonitor();
@@ -64,20 +64,5 @@ describe("isWatched", () => {
     watchAudio("1:7", () => {});
     first();
     expect(isWatched("1:7")).toBe(true);
-  });
-});
-
-describe("monitorKey", () => {
-  it("matches the audio engine's own entry key", () => {
-    expect(monitorKey(1, 7)).toBe("1:7");
-  });
-});
-
-describe("monitorKey", () => {
-  it("is the bare channel without audio FX and a distinct key through them", () => {
-    expect(monitorKey(1, 7)).toBe("1:7");
-    expect(monitorKey(1, 7, [])).toBe("1:7");
-    expect(monitorKey(1, 7, ["a", "b"])).not.toBe(monitorKey(1, 7, ["b", "a"]));
-    expect(monitorKey(1, 7, ["a"])).not.toBe("1:7");
   });
 });

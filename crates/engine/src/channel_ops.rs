@@ -21,12 +21,17 @@ impl Engine {
             mut settings,
             sinks,
         } = rebuild;
-        let (mut built_rate, mut built_center) = {
+        let (mut built_rate, mut built_center, node) = {
             let inner = self.lock();
             let Some(state) = inner.device_sets.get(&ds) else {
                 return;
             };
-            (state.lane_rate(stream), state.lane_center(stream))
+            let node = state
+                .channels
+                .iter()
+                .find(|c| c.id == id)
+                .and_then(|c| c.node.clone());
+            (state.lane_rate(stream), state.lane_center(stream), node)
         };
         loop {
             let built = descriptor_for(&settings.params)
@@ -37,7 +42,7 @@ impl Engine {
                         built_center,
                         &settings,
                         sinks.clone(),
-                        self.decoded_sink(ds, id),
+                        self.decoded_sink(ds, id, node.as_deref()),
                     )
                     .map_err(EngineError::from)
                 });
@@ -166,7 +171,7 @@ impl Engine {
                     center_hz,
                     &settings,
                     sinks.clone(),
-                    self.decoded_sink(ds, id),
+                    self.decoded_sink(ds, id, node),
                 )
                 .map_err(EngineError::from)
             });
@@ -231,35 +236,6 @@ impl Engine {
         Ok(id)
     }
 
-    pub fn bind_channel_node(&self, ds: u32, ch: u32, node: &str) -> Result<(), EngineError> {
-        let mut inner = self.lock();
-        let state = inner
-            .device_sets
-            .get_mut(&ds)
-            .ok_or(EngineError::DeviceSetNotFound(ds))?;
-        let channel = state
-            .channels
-            .iter_mut()
-            .find(|channel| channel.id == ch)
-            .ok_or(EngineError::ChannelNotFound(ch, ds))?;
-        if channel.node.as_deref() == Some(node) {
-            return Ok(());
-        }
-        if channel.node.is_some() {
-            return Err(sdrmm_channels::ChannelError::InvalidSettings(
-                "channel already belongs to a node".to_owned(),
-            )
-            .into());
-        }
-        channel.node = Some(node.to_owned());
-        inner.revision += 1;
-        drop(inner);
-        self.emit(ServerEvent::StateChanged {
-            scope: StateScope::DeviceSet(ds),
-        });
-        Ok(())
-    }
-
     pub fn patch_channel(
         &self,
         ds: u32,
@@ -267,7 +243,7 @@ impl Engine {
         settings: ChannelSettings,
     ) -> Result<(), EngineError> {
         let descriptor = descriptor_for(&settings.params)?;
-        let (old, sinks, mut device_rate, mut center_hz) = {
+        let (old, sinks, mut device_rate, mut center_hz, node) = {
             let inner = self.lock();
             let state = inner
                 .device_sets
@@ -287,6 +263,7 @@ impl Engine {
                 handle.sinks.clone(),
                 state.lane_rate(info.stream),
                 state.lane_center(info.stream),
+                info.node.clone(),
             )
         };
         let mut need_host = old.frequency_hz != settings.frequency_hz
@@ -305,7 +282,7 @@ impl Engine {
                     center_hz,
                     &settings,
                     sinks.clone(),
-                    self.decoded_sink(ds, ch),
+                    self.decoded_sink(ds, ch, node.as_deref()),
                 ) {
                     Ok(host) => Some(host),
                     Err(e) => break Err(e.into()),

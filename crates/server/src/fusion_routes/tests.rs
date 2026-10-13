@@ -2,8 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use sdrmm_wire::{
     ChannelParams, ChannelSettings, DecodedRecord, DfBearing, DfFusionState, EventOrigin, GpsNode,
-    HuntSettings, NO_CHANNEL, NavTargetKind, PatchEdge, PatchNode, PortRef, Position,
-    PositionSource, WorkspaceSnapshot,
+    HuntSettings, NO_CHANNEL, NavTargetKind, NodeKind, PatchEdge, PatchGraph, PatchNode, PortRef,
+    Position, PositionSource, WorkspaceSnapshot,
     fusion::BearingSource,
     geo::{self, LatLon},
 };
@@ -20,7 +20,7 @@ const HOME: LatLon = LatLon {
 fn node(id: &str, kind: &str) -> PatchNode {
     PatchNode {
         id: id.to_owned(),
-        body: NodeBody::default_for(kind).expect("a known kind"),
+        body: NodeBody::default_for(NodeKind::parse(kind).expect("a known kind")),
         position: Position { x: 0.0, y: 0.0 },
         size: None,
         label: None,
@@ -124,6 +124,7 @@ fn record(origin: &str, bearing: DfBearing) -> DecodedRecord {
         event: DecoderEvent::Df(bearing),
         sinks: Vec::new(),
         callsign: None,
+        view: None,
     }
 }
 
@@ -375,7 +376,7 @@ async fn a_hunt_position_wire_feeds_hunt_poses() {
         .expect("sweeping hunt");
     assert!(engine.hunt_mark(set, channel).is_err(), "no pose yet");
 
-    reconcile(&state, &hunted);
+    reconcile(&state, &Resolved::of(hunted, &engine.snapshot()));
     let pose = sdrmm_wire::PositionFix {
         latitude: HOME.lat,
         longitude: HOME.lon,
@@ -399,6 +400,17 @@ async fn a_hunt_position_wire_feeds_hunt_poses() {
 #[tokio::test]
 async fn bearings_lost_before_routing_count_as_dropped() {
     let state = bench(graph());
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while ["tri", "blind"]
+        .iter()
+        .any(|node| state.fusion.state(node).is_none())
+    {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the triangulations were never configured"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     let mut events = state.engine.subscribe_events();
     state
         .decoded
@@ -430,7 +442,7 @@ async fn bearings_lost_before_routing_count_as_dropped() {
 
 #[test]
 fn the_table_names_triangulations_and_their_guides() {
-    let table = Table::from_graph(&graph());
+    let table = Table::of(&Resolved::of(graph(), &Default::default()));
     assert!(table.is_triangulation("tri") && table.is_triangulation("blind"));
     assert!(!table.is_triangulation("df"));
     assert_eq!(

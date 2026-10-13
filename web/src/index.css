@@ -33,14 +33,15 @@
   --color-plot-ref-3: #9085e9;
   --color-plot-ref-4: #d55181;
 
-  --color-port-iq: oklch(0.72 0.11 228);
-  --color-port-baseband: oklch(0.74 0.1 196);
-  --color-port-audio: oklch(0.74 0.12 158);
-  --color-port-events: oklch(0.78 0.11 85);
-  --color-port-video: oklch(0.76 0.12 35);
-  --color-port-control: oklch(0.76 0.1 300);
-  --color-port-tx: oklch(0.76 0.12 345);
-  --color-port-array: oklch(0.7 0.13 262);
+  --color-hue-blue: oklch(0.72 0.11 228);
+  --color-hue-cyan: oklch(0.74 0.1 196);
+  --color-hue-teal: oklch(0.75 0.11 175);
+  --color-hue-green: oklch(0.74 0.12 158);
+  --color-hue-amber: oklch(0.78 0.11 85);
+  --color-hue-orange: oklch(0.76 0.12 35);
+  --color-hue-violet: oklch(0.76 0.1 300);
+  --color-hue-pink: oklch(0.76 0.12 345);
+  --color-hue-indigo: oklch(0.7 0.13 262);
 
   --color-cat-source: oklch(0.72 0.1 228);
   --color-cat-channel: oklch(0.72 0.1 300);
@@ -110,13 +111,15 @@
     --color-plot-ink: oklch(0.24 0.012 240);
     --color-plot-ink-dim: oklch(0.52 0.012 240);
 
-    --color-port-iq: oklch(0.592 0.11 228);
-    --color-port-audio: oklch(0.583 0.12 158);
-    --color-port-events: oklch(0.599 0.11 85);
-    --color-port-video: oklch(0.61 0.12 35);
-    --color-port-control: oklch(0.606 0.1 300);
-    --color-port-tx: oklch(0.613 0.12 345);
-    --color-port-array: oklch(0.56 0.13 262);
+    --color-hue-blue: oklch(0.592 0.11 228);
+    --color-hue-cyan: oklch(0.6 0.1 196);
+    --color-hue-teal: oklch(0.6 0.11 175);
+    --color-hue-green: oklch(0.583 0.12 158);
+    --color-hue-amber: oklch(0.599 0.11 85);
+    --color-hue-orange: oklch(0.61 0.12 35);
+    --color-hue-violet: oklch(0.606 0.1 300);
+    --color-hue-pink: oklch(0.613 0.12 345);
+    --color-hue-indigo: oklch(0.56 0.13 262);
 
     --color-cat-source: oklch(0.594 0.07 228);
     --color-cat-channel: oklch(0.603 0.07 300);
@@ -225,28 +228,7 @@
   stroke-width: 2.25;
 }
 
-.wire-iq .react-flow__edge-path {
-  stroke: var(--color-port-iq);
-}
-
-.wire-audio .react-flow__edge-path {
-  stroke: var(--color-port-audio);
-}
-
-.wire-events .react-flow__edge-path {
-  stroke: var(--color-port-events);
-}
-
-.wire-video .react-flow__edge-path {
-  stroke: var(--color-port-video);
-}
-
-.wire-control .react-flow__edge-path {
-  stroke: var(--color-port-control);
-}
-
 .wire-array .react-flow__edge-path {
-  stroke: var(--color-port-array);
   stroke-width: 3.25;
 }
 

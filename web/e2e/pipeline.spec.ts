@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import type { WorkletReport } from "../src/lib/audio/worklet";
 import { decodeAudio } from "../src/lib/frame";
 import type { ChannelSettings, StateSnapshot, WorkspaceSnapshot } from "../src/lib/types";
+import { nodeUrl } from "./canvas";
 
 test.describe.configure({ retries: 2 });
 
@@ -209,7 +210,7 @@ for (const { fallback, delayOutput, wideband } of [
       const device = state.device_sets[0];
       const channel = device?.channels[0];
       if (!device || !channel) throw new Error("virtual channel was not created");
-      const channelUrl = `/api/devicesets/${device.id}/channels/${channel.id}`;
+      const channelUrl = nodeUrl(channel.node ?? "", "channel");
       const settings = {
         ...channel.settings,
         frequency_hz: (device.settings.center_hz ?? 100_000_000) + 300_000,

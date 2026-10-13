@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelDescriptor, EventKindFacets } from "../../lib/types";
+import { MAX_FILTER_IDS } from "../../lib/limits";
+import type { EventKind, Feed } from "../../lib/types";
+import { CATALOG } from "../../test/catalog";
 import {
-  facetsOf,
   filterSaid,
   formatIds,
   fromTriState,
-  kindsOffered,
-  MAX_FILTER_IDS,
+  offeredBy,
   parseIds,
   parseWords,
   predicatesFor,
@@ -15,12 +15,7 @@ import {
   toTriState,
 } from "./eventFilter";
 
-const FACETS: EventKindFacets[] = [
-  { kind: "adsb", facets: ["position"] },
-  { kind: "ais", facets: ["position"] },
-  { kind: "call", facets: ["voice", "duration"] },
-  { kind: "dv", facets: ["position", "voice"] },
-];
+const KINDS = CATALOG.event_kinds;
 
 describe("parseIds", () => {
   it("takes commas, spaces and newlines alike", () => {
@@ -60,63 +55,39 @@ describe("tri-state flags", () => {
   });
 });
 
-describe("kindsOffered", () => {
-  const descriptors = [
-    { type_id: "adsb", decoder_kind: "adsb" },
-    { type_id: "dmr", decoder_kind: "dv" },
-    { type_id: "pocsag", decoder_kind: "pocsag" },
-    { type_id: "am", decoder_kind: null, has_audio: true },
-    { type_id: "scope", decoder_kind: null, has_audio: false },
-  ] as ChannelDescriptor[];
+function feed(source: string, kinds: EventKind[]): Feed {
+  return { source, port: "events", payload: { type: "events", kinds } };
+}
 
-  it("offers only what the wired decoders emit", () => {
-    expect(kindsOffered([{ channelType: "adsb", trunk: false }], descriptors)).toEqual(["adsb"]);
-  });
-
-  it("adds calls for every channel that carries voice", () => {
-    expect(kindsOffered([{ channelType: "dmr", trunk: false }], descriptors)).toEqual([
+describe("offeredBy", () => {
+  it("offers what the server says each wire carries, each kind once", () => {
+    expect(offeredBy([feed("sat", ["satellite"]), feed("dmr", ["dv", "call"])])).toEqual([
       "call",
       "dv",
+      "satellite",
     ]);
-    expect(kindsOffered([{ channelType: "am", trunk: false }], descriptors)).toEqual(["call"]);
+    expect(offeredBy([feed("adsb", ["adsb"]), feed("adsb2", ["adsb"])])).toEqual(["adsb"]);
   });
 
-  it("treats a trunk system as digital voice", () => {
-    expect(kindsOffered([{ trunk: true }], descriptors)).toEqual(["call", "dv"]);
-  });
-
-  it("offers nothing for a channel that decodes and hears nothing", () => {
-    expect(kindsOffered([{ channelType: "scope", trunk: false }], descriptors)).toEqual([]);
-  });
-
-  it("lists each kind once across several wires", () => {
-    expect(
-      kindsOffered(
-        [
-          { channelType: "adsb", trunk: false },
-          { channelType: "adsb", trunk: false },
-          { channelType: "pocsag", trunk: false },
-        ],
-        descriptors,
-      ),
-    ).toEqual(["adsb", "pocsag"]);
+  it("offers nothing when nothing is wired", () => {
+    expect(offeredBy([])).toEqual([]);
   });
 });
 
 describe("predicatesFor", () => {
   it("offers an aircraft wire no talkgroups", () => {
-    const shown = predicatesFor(["adsb"], FACETS);
+    const shown = predicatesFor(["adsb"], KINDS);
     expect(shown).toEqual(["stations", "contains", "has_position"]);
     expect(shown).not.toContain("talkgroups");
     expect(shown).not.toContain("encrypted");
   });
 
   it("offers a pager wire neither talkgroups nor position", () => {
-    expect(predicatesFor(["pocsag"], FACETS)).toEqual(["stations", "contains"]);
+    expect(predicatesFor(["pocsag"], KINDS)).toEqual(["stations", "contains"]);
   });
 
   it("offers a call wire the voice predicates and a duration", () => {
-    expect(predicatesFor(["call"], FACETS)).toEqual([
+    expect(predicatesFor(["call"], KINDS)).toEqual([
       "stations",
       "contains",
       "talkgroups",
@@ -128,12 +99,12 @@ describe("predicatesFor", () => {
   });
 
   it("offers a raw voice wire no duration, since a frame has none", () => {
-    expect(predicatesFor(["dv"], FACETS)).not.toContain("min_duration_ms");
-    expect(predicatesFor(["dv"], FACETS)).toContain("talkgroups");
+    expect(predicatesFor(["dv"], KINDS)).not.toContain("min_duration_ms");
+    expect(predicatesFor(["dv"], KINDS)).toContain("talkgroups");
   });
 
   it("offers the union across a mixed wire", () => {
-    const shown = predicatesFor(["adsb", "call"], FACETS);
+    const shown = predicatesFor(["adsb", "call"], KINDS);
     expect(shown).toContain("has_position");
     expect(shown).toContain("talkgroups");
   });
@@ -141,11 +112,13 @@ describe("predicatesFor", () => {
 
 describe("stationLabel", () => {
   it("names what the wire actually carries", () => {
-    expect(stationLabel(["adsb"], FACETS)).toBe("Aircraft");
-    expect(stationLabel(["ais"], FACETS)).toBe("Vessels");
-    expect(stationLabel(["call", "dv"], FACETS)).toBe("Radios seen");
-    expect(stationLabel(["adsb", "pocsag"], FACETS)).toBe("Stations");
-    expect(stationLabel([], FACETS)).toBe("Stations");
+    expect(stationLabel(["adsb"], KINDS)).toBe("Aircraft");
+    expect(stationLabel(["ais"], KINDS)).toBe("Vessels");
+    expect(stationLabel(["call", "dv"], KINDS)).toBe("Radios seen");
+    expect(stationLabel(["adsb", "pocsag"], KINDS)).toBe("Stations");
+    expect(stationLabel(["acars", "adsb"], KINDS)).toBe("Aircraft");
+    expect(stationLabel(["rtty"], KINDS)).toBe("Stations");
+    expect(stationLabel([], KINDS)).toBe("Stations");
   });
 });
 
@@ -187,14 +160,7 @@ describe("filterSaid", () => {
   });
 });
 
-describe("facetsOf", () => {
-  it("reads the facets the server declared for a kind", () => {
-    expect(facetsOf("call", FACETS)).toEqual(["voice", "duration"]);
-    expect(facetsOf("pocsag", FACETS)).toEqual([]);
-  });
-});
-
-const titles = (kinds: string[]) => sectionsFor(kinds, FACETS).map((s) => s.title);
+const titles = (kinds: string[]) => sectionsFor(kinds, KINDS).map((s) => s.title);
 
 describe("sectionsFor", () => {
   it("gives an aircraft wire only the sections that apply", () => {
@@ -203,12 +169,12 @@ describe("sectionsFor", () => {
 
   it("gives a pager wire one section", () => {
     expect(titles(["pocsag"])).toEqual(["Any event"]);
-    expect(sectionsFor(["pocsag"], FACETS)[0]?.predicates).toEqual(["stations", "contains"]);
+    expect(sectionsFor(["pocsag"], KINDS)[0]?.predicates).toEqual(["stations", "contains"]);
   });
 
   it("gives a call wire the voice section", () => {
     expect(titles(["call"])).toEqual(["Any event", "Voice"]);
-    expect(sectionsFor(["call"], FACETS).at(-1)?.predicates).toEqual([
+    expect(sectionsFor(["call"], KINDS).at(-1)?.predicates).toEqual([
       "talkgroups",
       "radios",
       "encrypted",
@@ -224,16 +190,11 @@ describe("sectionsFor", () => {
   });
 
   it("names the kinds each section judges, and nothing more", () => {
-    const mixed = sectionsFor(["adsb", "call"], FACETS);
+    const mixed = sectionsFor(["adsb", "call"], KINDS);
     expect(mixed.map((s) => [s.title, s.applies])).toEqual([
       ["Any event", ["adsb", "call"]],
       ["Position", ["adsb"]],
       ["Voice", ["call"]],
     ]);
   });
-});
-
-it("offers automatically decoded kinds from a spectrum monitor", () => {
-  const offered = kindsOffered([{ monitor: true, trunk: false }], []);
-  expect(offered).toContain("transmission");
 });

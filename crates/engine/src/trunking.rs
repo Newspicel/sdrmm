@@ -477,7 +477,9 @@ impl Follower {
                 Some(control) => engine
                     .patch_channel(radio.device_set, control.channel, settings)
                     .map(|()| control.channel),
-                None => engine.add_channel(radio.device_set, radio.stream, settings),
+                None => {
+                    engine.add_channel_for(radio.device_set, radio.stream, settings, Some(&node))
+                }
             };
             match result {
                 Ok(channel) => {
@@ -624,7 +626,12 @@ impl Follower {
             blanker: Default::default(),
             params,
         };
-        match engine.add_channel(carrier.device_set, carrier.stream, settings) {
+        match engine.add_channel_for(
+            carrier.device_set,
+            carrier.stream,
+            settings,
+            Some(system_node),
+        ) {
             Ok(channel) => {
                 self.probes.insert(
                     (carrier.device_set, channel),
@@ -802,7 +809,12 @@ impl Follower {
             Some(follower) => engine
                 .patch_channel(carrier.device_set, follower.channel, settings)
                 .map(|()| follower.channel),
-            None => engine.add_channel(carrier.device_set, carrier.stream, settings),
+            None => engine.add_channel_for(
+                carrier.device_set,
+                carrier.stream,
+                settings,
+                Some(key.system_node()),
+            ),
         };
         match result {
             Ok(channel) => {
@@ -1269,6 +1281,7 @@ mod tests {
             at: "2026-08-14T10:00:00Z".to_owned(),
             freq_hz: 451_000_000.0,
             event: DecoderEvent::Dv(frame),
+            view: None,
         }
     }
 
@@ -1349,6 +1362,7 @@ mod tests {
         let set = engine.snapshot().device_sets.remove(0);
         assert_eq!(set.channels.len(), 2, "the follower was not created");
         let followed = &set.channels[1];
+        assert_eq!(followed.node.as_deref(), Some("trunk"));
         assert_eq!(followed.settings.frequency_hz, traffic as f64);
         assert_eq!(
             followed.settings.params,
@@ -1934,7 +1948,29 @@ mod tests {
                 .all(|probe| probe.freq_hz > center_hz as u64),
             "a search receiver landed on the control channel"
         );
-        assert_eq!(engine.snapshot().device_sets[0].channels.len(), 5);
+        let set = engine.snapshot().device_sets.remove(0);
+        assert_eq!(set.channels.len(), 5);
+        assert!(
+            set.channels[1..]
+                .iter()
+                .all(|channel| channel.node.as_deref() == Some("trunk")),
+            "a search receiver opened without its system node"
+        );
+    }
+
+    #[test]
+    fn the_control_channel_opens_for_the_system_node() {
+        let engine = engine();
+        let device_set = engine
+            .create_device_set("virtual:band")
+            .expect("virtual device");
+        let mut follower = follower(&engine, DmrTrunkProtocol::TierThree, (device_set, u32::MAX));
+        follower.controls.clear();
+        follower.reconcile();
+
+        let set = engine.snapshot().device_sets.remove(0);
+        assert_eq!(set.channels.len(), 1);
+        assert_eq!(set.channels[0].node.as_deref(), Some("trunk"));
     }
 
     #[test]

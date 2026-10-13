@@ -14,13 +14,12 @@ use tokio::sync::{
 use crate::{
     EngineError,
     audio::{self, AudioPacket, PcmBlock, PcmPayload},
-    audio_recording::AudioRecorderTap,
+    audio_recording::AudioTaps,
     denoise_models::DenoiseModels,
 };
 
 pub(crate) enum FxControl {
-    Record(AudioRecorderTap),
-    StopRecording,
+    Record(Option<AudioTaps>),
 }
 
 pub(crate) struct FxSource {
@@ -114,17 +113,12 @@ impl AudioFxHub {
             .ok_or_else(stopped)
     }
 
-    pub(crate) fn recorder(
+    pub(crate) fn control(
         &mut self,
         route: &AudioRoute,
         source: impl FnOnce() -> Result<FxSource, EngineError>,
-        tap: AudioRecorderTap,
     ) -> Result<mpsc::Sender<FxControl>, EngineError> {
-        let control = self.stream(route, source)?.control.clone();
-        control
-            .send(FxControl::Record(tap))
-            .map_err(|_| stopped())?;
-        Ok(control)
+        Ok(self.stream(route, source)?.control.clone())
     }
 
     fn stream(
@@ -250,7 +244,7 @@ struct Worker {
     pcm_tx: broadcast::Sender<PcmBlock>,
     audio_tx: broadcast::Sender<AudioPacket>,
     commands: mpsc::Receiver<FxControl>,
-    recorder: Option<AudioRecorderTap>,
+    recorder: Option<AudioTaps>,
     failed: bool,
 }
 
@@ -272,10 +266,8 @@ impl Worker {
             let Some(block) = self.process(block) else {
                 return;
             };
-            if let Some(recorder) = &self.recorder
-                && !recorder.push(block.clone())
-            {
-                self.recorder = None;
+            if let Some(recorder) = &self.recorder {
+                recorder.push(&block);
             }
             let _ = self.pcm_tx.send(block);
         }
@@ -284,8 +276,7 @@ impl Worker {
     fn follow_commands(&mut self) {
         while let Ok(command) = self.commands.try_recv() {
             match command {
-                FxControl::Record(tap) => self.recorder = Some(tap),
-                FxControl::StopRecording => self.recorder = None,
+                FxControl::Record(taps) => self.recorder = taps,
             }
         }
     }

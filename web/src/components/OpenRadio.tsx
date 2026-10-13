@@ -11,7 +11,7 @@ import {
   saveRadio,
 } from "../lib/api";
 import { pushToast } from "../lib/toasts";
-import type { DeviceInfo, DeviceRef } from "../lib/types";
+import type { DeviceInfo } from "../lib/types";
 import { Button, Form, Input } from "./BaseControls";
 import { BTN, BTN_QUIET, FIELD, ICON_BTN, LABEL } from "./controls";
 import {
@@ -199,18 +199,21 @@ export function DeviceChoices({
   onAddNetwork,
   busy = false,
   error = null,
-  claimed = [],
+  claimant,
 }: {
   onChoose: Choose;
   onAddNetwork: (deviceId: string) => void;
   busy?: boolean;
   error?: string | null;
-  claimed?: readonly DeviceRef[];
+  claimant?: string;
 }) {
   const devices = useQuery(devicesQuery());
   const [tab, setTab] = useState<SourceTab>("radios");
   const visible = visibleDevices(devices.data?.devices ?? []);
-  const found = unclaimedDevices(visible, claimed);
+  const found =
+    claimant === undefined
+      ? visible
+      : unclaimedDevices(visible, devices.data?.claims ?? [], claimant);
   const groups = groupDevices(found);
   const tabs = sourceTabs(groups);
   const shown = tabs.some((option) => option.value === tab) ? tab : "radios";

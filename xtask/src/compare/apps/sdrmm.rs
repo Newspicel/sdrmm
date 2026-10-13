@@ -54,21 +54,21 @@ fn open_workspace(base: &str, receivers: usize) -> Result<()> {
     };
     let created: CreatedRowId = parse(&send(base, "POST", "/api/workspaces", &request)?)?;
     let path = format!("/api/workspaces/{}", created.id);
-    for index in 0..receivers {
-        let node = workspace::channel(index);
-        send(
-            base,
-            "PUT",
-            &format!("{path}/channels/{node}"),
-            &workspace::settings(index),
-        )?;
-    }
     send(
         base,
         "POST",
         &format!("{path}/activate"),
         &serde_json::json!({}),
     )?;
+    for index in 0..receivers {
+        let node = workspace::channel(index);
+        send(
+            base,
+            "PATCH",
+            &format!("/api/workspaces/active/nodes/{node}/channel"),
+            &serde_json::json!({ "settings": workspace::settings(index) }),
+        )?;
+    }
     let report: PatchApplyReport = parse(&send(
         base,
         "POST",

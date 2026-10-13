@@ -2,7 +2,7 @@ use sdrmm_wire::PositionFix;
 
 use super::{ChannelHost, subbands::Subbands};
 use crate::{
-    audio_recording::AudioRecorderTap, network_export::NetworkExportTap,
+    audio_recording::AudioTaps, network_export::NetworkExportTap,
     publishing::recording::RecordingPublisher, recording::RecorderTap,
     time_machine::TimeMachineTap,
 };
@@ -41,12 +41,9 @@ pub(crate) enum DspCommand {
         publisher: RecordingPublisher,
     },
     StopRecording,
-    StartChannelRecording {
+    SetChannelRecordings {
         id: u32,
-        tap: AudioRecorderTap,
-    },
-    StopChannelRecording {
-        id: u32,
+        taps: Option<AudioTaps>,
     },
     StartBasebandRecording {
         id: u32,

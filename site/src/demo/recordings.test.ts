@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DemoSession } from "../../../web/e2e/demoSession";
-import type { StateSnapshot } from "../../../web/src/lib/types";
+import CATALOG from "../../../web/src/generated/catalog-fixture.json";
+import type { ResolvedState, StateSnapshot, WorkspaceDetail } from "../../../web/src/lib/types";
 import { SCENES } from "./scenes";
 
 const SESSIONS = import.meta.glob<DemoSession>("../../public/demo/*.json", {
@@ -16,14 +17,18 @@ function sessionOf(scene: string): DemoSession {
   return session;
 }
 
-function stateOf(session: DemoSession): StateSnapshot {
+function bodyOf<T>(session: DemoSession, path: RegExp): T {
   const response = session.responses.find(
-    (recorded) => recorded.method === "GET" && recorded.path === "/api/state",
+    (recorded) => recorded.method === "GET" && path.test(recorded.path),
   );
   if (response === undefined) {
-    throw new Error(`${session.scene} recorded no state`);
+    throw new Error(`${session.scene} recorded no ${path.source}`);
   }
-  return JSON.parse(response.body) as StateSnapshot;
+  return JSON.parse(response.body) as T;
+}
+
+function stateOf(session: DemoSession): StateSnapshot {
+  return bodyOf(session, /^\/api\/state$/);
 }
 
 describe("demo recordings", () => {
@@ -35,4 +40,21 @@ describe("demo recordings", () => {
       expect(miss === undefined || miss === null || typeof miss.reason === "string").toBe(true);
     }
   });
+
+  it.each(SCENES.map((scene) => scene.id))("%s serves the current node catalog", (scene) => {
+    expect(bodyOf(sessionOf(scene), /^\/api\/patch\/catalog$/)).toEqual(CATALOG);
+  });
+
+  it.each(SCENES.map((scene) => scene.id))(
+    "%s serves the resolved patch of its workspace",
+    (scene) => {
+      const session = sessionOf(scene);
+      const detail = bodyOf<WorkspaceDetail>(session, /^\/api\/workspaces\/\d+$/);
+      const resolved = bodyOf<ResolvedState>(session, /^\/api\/workspaces\/active\/resolved$/);
+      expect(resolved.patch.workspace).toBe(detail.id);
+      expect(resolved.patch.nodes.map((node) => node.id).toSorted()).toEqual(
+        detail.snapshot.graph.nodes.map((node) => node.id).toSorted(),
+      );
+    },
+  );
 });

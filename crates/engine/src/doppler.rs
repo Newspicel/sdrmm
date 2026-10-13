@@ -1,10 +1,6 @@
-use crate::{Engine, EngineError, runtime::DspCommand};
+pub use sdrmm_wire::DopplerSteer as Doppler;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Doppler {
-    pub shift_hz: f64,
-    pub rate_hz_s: f64,
-}
+use crate::{Engine, EngineError, runtime::DspCommand};
 
 impl Engine {
     pub fn steer_channel(&self, ds: u32, ch: u32, doppler: Doppler) -> Result<(), EngineError> {

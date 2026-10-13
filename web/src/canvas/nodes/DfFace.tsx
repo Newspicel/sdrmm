@@ -25,11 +25,12 @@ import type {
   PatchGraph,
   PatchNode,
   PatchNodeOf,
+  ResolvedPatch,
 } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { arrayOf } from "../binding";
 import { useWorkspaceContext } from "../context";
-import { arrayWiredLanes, nodeOf } from "../graph";
+import { nodeOf } from "../graph";
+import { arrayOf, wiredLaneCount } from "../lanes";
 import { settingsOf } from "../newNode";
 import { allowsStructured, isCollinear, isLevelLine } from "./arrayGeometry";
 import {
@@ -82,21 +83,25 @@ function structuredOk(shape: ArrayShape): boolean {
   return shape.geometry === null || allowsStructured(shape.geometry, shape.lanes);
 }
 
-function arrayShape(graph: PatchGraph, array: string | null): ArrayShape {
+function arrayShape(
+  graph: PatchGraph,
+  resolved: ResolvedPatch | null,
+  array: string | null,
+): ArrayShape {
   if (array === null) {
     return { geometry: null, lanes: 0 };
   }
   const node = nodeOf(graph, array);
   return {
     geometry: node?.kind === "array" ? node.data.geometry : null,
-    lanes: arrayWiredLanes(graph, array),
+    lanes: wiredLaneCount(resolved, array),
   };
 }
 
 export function DfFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const state = useProcessorStore((store) => store.byNode[node.id]);
-  const array = arrayOf(workspace.graph, node.id);
+  const array = arrayOf(workspace.resolved, node.id);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
   const [picked, setPicked] = useState<BearingFrame | null>(null);
@@ -118,7 +123,7 @@ export function DfFace({ node }: { node: PatchNode }) {
       node={node}
       title="Direction finder"
       category="tool"
-      subtitle={processorSubtitle(workspace.graph, node.id, status, state, now, reportMs)}
+      subtitle={processorSubtitle(workspace.resolved, node.id, status, state, now, reportMs)}
     >
       <FaceBody>
         <div className="flex flex-col items-center gap-2 p-2">
@@ -143,7 +148,11 @@ export function DfFace({ node }: { node: PatchNode }) {
         {settings === null ? (
           <FaceEmpty hint={NO_CATALOG} />
         ) : (
-          <DfChips settings={settings} edit={edit} shape={arrayShape(workspace.graph, array)} />
+          <DfChips
+            settings={settings}
+            edit={edit}
+            shape={arrayShape(workspace.graph, workspace.resolved, array)}
+          />
         )}
         <DfReadout reading={reading} frame={frame} age={ageLabel(state?.receivedAt, now)} />
         <ProcessorError status={processor} />
@@ -152,7 +161,7 @@ export function DfFace({ node }: { node: PatchNode }) {
             <DfMoreSettings
               settings={settings}
               edit={edit}
-              shape={arrayShape(workspace.graph, array)}
+              shape={arrayShape(workspace.graph, workspace.resolved, array)}
             />
           </FoldSection>
         )}

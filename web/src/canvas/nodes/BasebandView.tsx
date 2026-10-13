@@ -31,10 +31,8 @@ import { FULL_VIEW } from "../../components/spectrumView";
 import type { Palette } from "../../gl/colormap";
 import { SpectrumAnalyzer } from "../../lib/dsp/fft";
 import type { IqFrame, SymbolFrame } from "../../lib/frame";
-import { iqHub } from "../../lib/iq";
-import { symbolHub } from "../../lib/symbols";
+import { iqHub, symbolHub } from "../../lib/portTaps";
 import { token } from "../../lib/tokens";
-import type { ChannelInfo } from "../../lib/types";
 import { measurements } from "./basebandMeasure";
 import { drawPlot, GridBitmap, PLOT_FONT, prepareCanvas } from "./scopePlot";
 import {
@@ -75,26 +73,18 @@ const SYMBOL_VIEWS: readonly BasebandView[] = ["states", "quality", "drift"];
 const SCATTER_PAD = 12;
 const PLOT_INSET: PlotInset = { top: 10, bottom: 4 };
 
-export function BasebandView({
-  deviceSet,
-  channel,
-  colormap,
-}: {
-  deviceSet: number;
-  channel: ChannelInfo;
-  colormap: Palette;
-}) {
+const PORT = "baseband";
+
+export function BasebandView({ node, colormap }: { node: string; colormap: Palette }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [frame, setFrame] = useState<IqFrame | null>(() => iqHub.latest(deviceSet, channel.id));
+  const [frame, setFrame] = useState<IqFrame | null>(() => iqHub.latest(node, PORT));
   const frameRef = useRef<IqFrame | null>(frame);
   const [view, setView] = useState<BasebandView>("spectrum");
   const [eyeComponent, setEyeComponent] = useState<EyeComponent>("frequency");
   const [symbolRate, setSymbolRate] = useState(4800);
   const [decimate, setDecimate] = useState(true);
 
-  const [symbols, setSymbols] = useState<SymbolFrame | null>(() =>
-    symbolHub.latest(deviceSet, channel.id),
-  );
+  const [symbols, setSymbols] = useState<SymbolFrame | null>(() => symbolHub.latest(node, PORT));
   const symbolsRef = useRef<SymbolFrame | null>(symbols);
   const merRef = useRef(new Trend(TREND_POINTS));
   const marginRef = useRef(new Trend(TREND_POINTS));
@@ -123,7 +113,7 @@ export function BasebandView({
 
   useEffect(() => {
     let seen = 0;
-    return iqHub.subscribe(deviceSet, channel.id, (burst) => {
+    return iqHub.subscribe(node, PORT, (burst) => {
       frameRef.current = burst;
       const {
         view: mode,
@@ -158,14 +148,14 @@ export function BasebandView({
         setFrame(burst);
       }
     });
-  }, [deviceSet, channel.id]);
+  }, [node]);
 
   useEffect(() => {
     let seen = 0;
     merRef.current.clear();
     marginRef.current.clear();
     driftRef.current.clear();
-    return symbolHub.subscribe(deviceSet, channel.id, (block) => {
+    return symbolHub.subscribe(node, PORT, (block) => {
       symbolsRef.current = block;
       merRef.current.push(block.merDb);
       marginRef.current.push(block.margin);
@@ -184,7 +174,7 @@ export function BasebandView({
         setSymbols(block);
       }
     });
-  }, [deviceSet, channel.id]);
+  }, [node]);
 
   useEffect(() => {
     let raf = 0;

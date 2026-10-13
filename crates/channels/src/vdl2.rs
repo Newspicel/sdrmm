@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DataLinkMessage, DecoderEvent,
-    DecoderFamily, Vdl2Params,
+    DecoderFamily, EventKind, Vdl2Params,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -37,7 +37,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("vdl2".to_owned()),
+    emits: vec![EventKind::Vdl2],
     ..ChannelDescriptor::default()
 });
 
@@ -166,3 +166,5 @@ fn avlc_body(frame: &AvlcFrame, atn: Option<&Value>) -> (String, Value) {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::fixture;

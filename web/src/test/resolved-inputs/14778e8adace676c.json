@@ -1,0 +1,81 @@
+{
+  "name": "14778e8adace676c",
+  "test": "DfFace > shows what the processor lost and why it stopped",
+  "graph": {
+    "nodes": [
+      {
+        "id": "north",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      },
+      {
+        "id": "finder",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "df",
+        "data": {
+          "settings": {
+            "algorithm": "music",
+            "source_rule": "dominance",
+            "max_peaks": 2,
+            "smoothing": 0,
+            "forward_backward": false,
+            "elevation": false,
+            "ula_side": "both",
+            "offset_hz": 0,
+            "bandwidth_hz": 20000,
+            "report_ms": 500,
+            "carry_over": 0.5,
+            "squelch_db": 6,
+            "loading": 0.001,
+            "azimuth_step_deg": 1,
+            "yaw_gate_dps": 20
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "north",
+          "port": "array"
+        },
+        "to": {
+          "node": "finder",
+          "port": "array"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

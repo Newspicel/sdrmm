@@ -6,7 +6,7 @@ use std::{ops::Range, sync::LazyLock};
 use num_complex::Complex;
 use sdrmm_dsp::airtime::PowerFrames;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
     MAX_SID_REPORT_S, MAX_SID_THRESHOLD_DB, MIN_SID_REPORT_S, MIN_SID_THRESHOLD_DB, SidParams,
     SidReport, SidStationLevel,
 };
@@ -30,7 +30,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * USABLE_HALF_HZ,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("sid".to_owned()),
+    emits: vec![EventKind::Sid],
     ..ChannelDescriptor::default()
 });
 

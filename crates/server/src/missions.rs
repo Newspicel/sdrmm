@@ -1,16 +1,10 @@
-use std::sync::LazyLock;
-
 use sdrmm_wire::{
     ChannelInfo, DeviceSet, Mission, MissionBody, MissionControl, MissionProblem, MissionWorkspace,
-    MissionsResponse, NodeBody, PatchCatalog, PatchGraph, PatchNode, StateSnapshot,
-    mission::MAX_MISSIONS,
+    MissionsResponse, NodeBody, PatchGraph, PatchNode, StateSnapshot, mission::MAX_MISSIONS,
 };
 use sha2::{Digest, Sha256};
 
-use crate::{
-    AppState, StoreError,
-    workspace::{self, DeviceBinding},
-};
+use crate::{AppState, StoreError, resolved::Resolved};
 
 mod actions;
 mod coherent;
@@ -24,10 +18,6 @@ pub(crate) mod watch;
 mod tests;
 
 pub(crate) use actions::act;
-
-static CATALOG: LazyLock<PatchCatalog> = LazyLock::new(PatchCatalog::build);
-
-const TRIANGULATION: &str = "triangulation";
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum MissionRefusal {
@@ -49,33 +39,27 @@ struct Built {
 
 struct Scene<'a> {
     state: &'a AppState,
-    graph: &'a PatchGraph,
+    resolved: Resolved,
     live: StateSnapshot,
-    bindings: Vec<DeviceBinding>,
 }
 
 impl<'a> Scene<'a> {
-    fn new(state: &'a AppState, graph: &'a PatchGraph) -> Self {
+    fn new(state: &'a AppState, graph: &PatchGraph) -> Self {
         let live = state.engine.snapshot();
-        let bindings = workspace::bind(graph, &live);
         Self {
             state,
-            graph,
+            resolved: Resolved::of(graph.clone(), &live),
             live,
-            bindings,
         }
     }
 
     fn channel(&self, node: &str) -> Option<(&DeviceSet, &ChannelInfo)> {
-        let (device_set, id) = self.bindings.iter().find_map(|binding| {
-            binding
-                .channels
-                .iter()
-                .find(|(bound, _)| bound == node)
-                .map(|(_, id)| (binding.device_set, *id))
-        })?;
-        let set = self.set(device_set)?;
-        let info = set.channels.iter().find(|channel| channel.id == id)?;
+        let addr = self.resolved.patch.channel(node)?;
+        let set = self.set(addr.device_set)?;
+        let info = set
+            .channels
+            .iter()
+            .find(|channel| channel.id == addr.channel)?;
         Some((set, info))
     }
 
@@ -125,12 +109,7 @@ fn label(node: &PatchNode) -> String {
     {
         return label.to_owned();
     }
-    let kind = node.body.kind();
-    CATALOG
-        .nodes
-        .iter()
-        .find(|info| info.kind == kind)
-        .map_or_else(|| kind.to_owned(), |info| info.name.clone())
+    node.body.kind().name().to_owned()
 }
 
 pub(crate) fn missions(state: &AppState) -> Result<MissionsResponse, StoreError> {

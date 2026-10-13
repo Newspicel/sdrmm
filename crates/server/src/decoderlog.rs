@@ -41,12 +41,13 @@ pub(crate) async fn run(
     loop {
         tokio::select! {
             received = records.recv() => match received {
-                Ok(Decoded::Record(routed)) => {
+                Ok(Decoded::Record(routed)) if routed.history => {
                     batch.push(*routed);
                     if batch.len() >= BATCH_MAX {
                         unannounced |= flush(&store, &mut batch, &dropped).await;
                     }
                 }
+                Ok(Decoded::Record(_)) => {}
                 Ok(Decoded::Lost(count)) => {
                     dropped.fetch_add(count, Ordering::Relaxed);
                 }
@@ -191,6 +192,7 @@ mod tests {
                 raw: "8D3C6444".to_string(),
                 ..AdsbMessage::default()
             }),
+            view: None,
         }
     }
 
@@ -239,7 +241,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_written_row_carries_the_patch_node_behind_its_channel() {
+    async fn a_record_no_history_sink_keeps_writes_no_row() {
+        let store = Arc::new(Store::open(None).expect("store"));
+        let (tx, rx) = broadcast::channel(64);
+        let writer = spawn_writer_on(rx, Weak::new(), store.clone(), Arc::default());
+
+        let mut unkept = Routed::unattributed(record("3C6444"));
+        unkept.history = false;
+        tx.send(Decoded::Record(Box::new(unkept))).expect("send");
+        tx.send(loose(record("4CA2D4"))).expect("send");
+        wait_for_rows(&store, 1).await;
+        drop(tx);
+        writer.await.expect("writer exits cleanly");
+
+        let entries = store
+            .query_decoder_log(&DecoderLogQuery::default())
+            .expect("query")
+            .0;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].station.as_deref(), Some("4CA2D4"));
+    }
+
+    #[tokio::test]
+    async fn a_written_row_carries_the_node_that_decoded_it() {
         let mut registry = sdrmm_device::DeviceRegistry::new();
         registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
         let engine = Engine::with_registry(registry, None);
@@ -247,7 +271,7 @@ mod tests {
             .create_device_set("virtual:band")
             .expect("open the virtual radio");
         let channel = engine
-            .add_channel(
+            .add_channel_for(
                 set,
                 0,
                 ChannelSettings {
@@ -256,6 +280,7 @@ mod tests {
                     params: ChannelParams::default_for("adsb").expect("adsb is a channel type"),
                     blanker: Default::default(),
                 },
+                Some("channel:adsb"),
             )
             .expect("add channel");
 
@@ -299,16 +324,25 @@ mod tests {
         let id = store.create_workspace("bench", &snapshot).expect("create");
         store.activate_workspace(id).expect("activate");
 
-        let routes =
-            crate::decoded::resolve_routes(&store, &engine.snapshot()).expect("routes resolve");
-        let mut batch = vec![routes.route(DecodedRecord {
-            origin: None,
-            sinks: Vec::new(),
-            callsign: None,
+        let hub = crate::resolved::ResolvedHub::default();
+        hub.reload(&store, &engine, &crate::problems::ProblemBoard::default());
+        let routes = hub.current().events.clone();
+        let mut record = DecodedRecord {
+            origin: Some(sdrmm_wire::EventOrigin {
+                node: "channel:adsb".to_owned(),
+                transmission: 0,
+            }),
             device_set: set,
             channel,
             ..record("3C6444")
-        })];
+        };
+        routes.route(&mut record, &mut crate::events::Stations::default());
+        let mut batch = vec![Routed {
+            source: Some("channel:adsb".to_owned()),
+            record,
+            workspace: routes.workspace,
+            history: true,
+        }];
         flush(&store, &mut batch, &AtomicU64::new(0)).await;
 
         let entries = store
@@ -316,25 +350,6 @@ mod tests {
             .expect("query")
             .0;
         assert_eq!(entries[0].node.as_deref(), Some("channel:adsb"));
-
-        let mut orphan = vec![routes.route(DecodedRecord {
-            origin: None,
-            sinks: Vec::new(),
-            callsign: None,
-            device_set: set,
-            channel: channel + 99,
-            ..record("4CA2D4")
-        })];
-        flush(&store, &mut orphan, &AtomicU64::new(0)).await;
-        let entries = store
-            .query_decoder_log(&DecoderLogQuery::default())
-            .expect("query")
-            .0;
-        let orphaned = entries
-            .iter()
-            .find(|entry| entry.station.as_deref() == Some("4CA2D4"))
-            .expect("the orphan was written");
-        assert_eq!(orphaned.node, None);
     }
 
     #[tokio::test]

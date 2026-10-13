@@ -1,0 +1,26 @@
+{
+  "name": "d4e600e677b7eb90",
+  "test": "EventOutputFace > names a notification output",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "desktop"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

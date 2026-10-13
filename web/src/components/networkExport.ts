@@ -1,6 +1,6 @@
-import { networkExportChannel, networkExportDeviceSet } from "../lib/api";
+import { nodeAction } from "../lib/api";
 import { pushToast } from "../lib/toasts";
-import type { NetworkExportAction, NetworkExportSettings, NetworkExportStatus } from "../lib/types";
+import type { NetworkExportAction, NetworkExportStatus } from "../lib/types";
 
 export type NetworkExportControl =
   | { kind: "unavailable" }
@@ -8,24 +8,10 @@ export type NetworkExportControl =
   | { kind: "active"; status: NetworkExportStatus }
   | { kind: "busy"; owner: string };
 
-export type NetworkExportTarget =
-  | { kind: "device"; deviceSet: number; stream: number }
-  | { kind: "channel"; deviceSet: number; channel: number };
-
 export interface NetworkExportSource {
   running: boolean;
   active?: NetworkExportStatus | null;
 }
-
-export interface NetworkExportRequests {
-  device: typeof networkExportDeviceSet;
-  channel: typeof networkExportChannel;
-}
-
-const REQUESTS: NetworkExportRequests = {
-  device: networkExportDeviceSet,
-  channel: networkExportChannel,
-};
 
 export function deviceExportSource(
   set: { status: string; network_export?: NetworkExportStatus | null } | null,
@@ -59,23 +45,13 @@ export function deriveNetworkExportControl(
 }
 
 export function networkExportMutationOptions(
-  target: NetworkExportTarget | null,
   node: string,
-  settings: NetworkExportSettings,
-  requests: NetworkExportRequests = REQUESTS,
+  request: typeof nodeAction = nodeAction,
   notify: (message: string) => void = pushToast,
 ) {
   return {
-    mutationFn: (action: NetworkExportAction) => {
-      if (target === null) {
-        return Promise.reject(
-          new Error("Wire a running device's IQ or a channel's baseband into this sink first."),
-        );
-      }
-      return target.kind === "device"
-        ? requests.device(target.deviceSet, action, node, target.stream, settings)
-        : requests.channel(target.deviceSet, target.channel, action, node, settings);
-    },
+    mutationFn: (action: NetworkExportAction) =>
+      request(node, { action: "network_export", with: action }),
     onError: (error: Error) => notify(error.message),
   };
 }

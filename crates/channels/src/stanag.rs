@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, FirC, Nco, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
     MAX_STANAG_WINDOW_S, MIN_STANAG_WINDOW_S, StanagModem, StanagParams, StanagRate, StanagReport,
 };
 
@@ -39,7 +39,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: PASSBAND_HIGH_HZ - PASSBAND_LOW_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
-    decoder_kind: Some("stanag".to_owned()),
+    emits: vec![EventKind::Stanag],
     ..ChannelDescriptor::default()
 });
 

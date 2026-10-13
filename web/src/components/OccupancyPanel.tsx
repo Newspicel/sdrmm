@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import type { TuneTarget } from "../canvas/libraryTarget";
 import { occupancyQuery } from "../lib/api";
-import type { DeviceSet } from "../lib/types";
-import { useRadioTune } from "../lib/useRadioTune";
+import { useTuner } from "../lib/useTuner";
 import type { Options } from "./controls";
 import { List, ListRow, Panel, PanelHint, PanelToolbar, SearchField } from "./ListPanel";
 import {
@@ -26,8 +26,8 @@ const SORTS: Options<OccupancySort> = [
 
 const MIN_SAMPLES = 30;
 
-export function OccupancyPanel({ active }: { active: DeviceSet | null }) {
-  const { tuneRadio } = useRadioTune();
+export function OccupancyPanel({ target }: { target: TuneTarget | null }) {
+  const { tune, ready } = useTuner(target);
   const [sort, setSort] = useState<OccupancySort>("busiest");
   const [query, setQuery] = useState("");
   const report = useQuery(occupancyQuery(MIN_SAMPLES));
@@ -36,7 +36,7 @@ export function OccupancyPanel({ active }: { active: DeviceSet | null }) {
 
   return (
     <Panel>
-      {active === null && <PanelHint>Select a device node first.</PanelHint>}
+      {target === null && <PanelHint>Select a device or decoder first.</PanelHint>}
       <PanelToolbar>
         <Segmented label="Sort occupancy" value={sort} options={SORTS} onChange={setSort} />
         <SearchField
@@ -89,12 +89,8 @@ export function OccupancyPanel({ active }: { active: DeviceSet | null }) {
                     ? `${formatBucketHz(bucket.freq_hz)}, ${bucket.samples} observations`
                     : `${formatBucketHz(bucket.freq_hz)}, busiest around ${formatHour(peak)}, ${bucket.samples} observations`
                 }
-                disabled={active === null}
-                onSelect={() => {
-                  if (active !== null) {
-                    tuneRadio(active, 0, bucket.freq_hz);
-                  }
-                }}
+                disabled={!ready}
+                onSelect={() => tune(bucket.freq_hz)}
               />
             );
           })}

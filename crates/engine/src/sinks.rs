@@ -31,6 +31,7 @@ impl ChannelBasebandRecording {
         RecordingStatus {
             file: self.file.clone(),
             stream: self.stream,
+            node: None,
             started_at: self.started_at.clone(),
             samples: self.shared.samples(),
             bytes: self.shared.bytes(),
@@ -55,6 +56,7 @@ impl ChannelBasebandRecording {
         RecordingStatus {
             file,
             stream,
+            node: None,
             started_at,
             samples: shared.samples(),
             bytes: shared.bytes(),

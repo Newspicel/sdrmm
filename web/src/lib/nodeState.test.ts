@@ -1,9 +1,8 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it } from "vitest";
-import { arrayStatus, bearingRecord, radarUpdate } from "../test/fixtures";
+import { arrayStatus, radarUpdate } from "../test/fixtures";
 import { FUSION_KEY, WORKSPACES_KEY } from "./api";
 import { useArrayStore } from "./arrays";
-import { useBearingStore } from "./bearings";
 import { useFusionStore } from "./fusion";
 import { ListenerRegistry } from "./listeners";
 import { forgetNodes, resetNodeState } from "./nodeState";
@@ -21,10 +20,6 @@ function fill(node: string): void {
     data: { node, reading: { type: "passive_radar", reading: radarUpdate([]) } },
   });
   useArrayStore.getState().observe({ type: "ArrayUpdate", data: { status: arrayStatus(node) } });
-  useBearingStore.getState().observe({
-    type: "Decoded",
-    data: bearingRecord(node, {}, new Date().toISOString()),
-  });
   useFusionStore.getState().set(node, { samples: 1 });
   useSurveyStore.getState().seed({
     node,
@@ -46,7 +41,6 @@ function fixAt(node: string): void {
 const STORES = [
   () => useProcessorStore.getState().byNode,
   () => useArrayStore.getState().byNode,
-  () => useBearingStore.getState().byNode,
   () => useFusionStore.getState().byNode,
   () => useSurveyStore.getState().byNode,
   () => useRefusalStore.getState().byNode,

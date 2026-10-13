@@ -1,0 +1,70 @@
+{
+  "name": "65763560c84ad6ca",
+  "test": "DfFace > says when no array is wired",
+  "graph": {
+    "nodes": [
+      {
+        "id": "north",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      },
+      {
+        "id": "finder",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "df",
+        "data": {
+          "settings": {
+            "algorithm": "music",
+            "source_rule": "dominance",
+            "max_peaks": 2,
+            "smoothing": 0,
+            "forward_backward": false,
+            "elevation": false,
+            "ula_side": "both",
+            "offset_hz": 0,
+            "bandwidth_hz": 20000,
+            "report_ms": 500,
+            "carry_over": 0.5,
+            "squelch_db": 6,
+            "loading": 0.001,
+            "azimuth_step_deg": 1,
+            "yaw_gate_dps": 20
+          }
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

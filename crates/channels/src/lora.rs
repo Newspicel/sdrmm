@@ -11,8 +11,8 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, LoraFrame,
-    LoraParams,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    LoraFrame, LoraParams,
 };
 
 use self::phy::{Decoder, Frame, Layout};
@@ -34,7 +34,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
         bandwidth_hz: bandwidth,
         input_rate_hz: bandwidth * OVERSAMPLING,
         has_audio: false,
-        decoder_kind: Some("lora".to_owned()),
+        emits: vec![EventKind::Lora],
         ..ChannelDescriptor::default()
     }
 });

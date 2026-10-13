@@ -3,8 +3,8 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{FirC, design_lowpass, golay23_correct};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, DvFrame,
-    DvFrameKind, DvMode, FreeDvMode, FreeDvParams, Sideband,
+    CallGate, ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    DvFrame, DvFrameKind, DvMode, EventKind, FreeDvMode, FreeDvParams, Sideband,
 };
 
 use super::{
@@ -29,7 +29,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: HIGH_EDGE_HZ - LOW_EDGE_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
-    decoder_kind: Some("dv".to_owned()),
+    emits: vec![EventKind::Dv],
+    calls: Some(CallGate::Frames),
     ..ChannelDescriptor::default()
 });
 

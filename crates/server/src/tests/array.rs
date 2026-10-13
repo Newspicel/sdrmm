@@ -189,7 +189,10 @@ fn wired_array_reads_lanes_in_port_order() {
         ],
     };
     assert_eq!(
-        array::wired_array(&graph, ARRAY),
+        array::wired_array(
+            &crate::workspace::resolve(&graph, &Default::default()),
+            ARRAY
+        ),
         ArrayWiring::Lanes(vec![
             (RADIO.to_owned(), 2),
             (RADIO.to_owned(), 0),
@@ -199,18 +202,32 @@ fn wired_array_reads_lanes_in_port_order() {
 
     graph.edges.push(lane_wire(RADIO, 1, ARRAY, 4));
     assert_eq!(
-        array::wired_array(&graph, ARRAY),
+        array::wired_array(
+            &crate::workspace::resolve(&graph, &Default::default()),
+            ARRAY
+        ),
         ArrayWiring::Gap { lane: 3 }
     );
 
     graph.edges.push(lane_wire(RADIO, 2, ARRAY, 3));
+    let (_, refused) = sdrmm_wire::patch::resolve::compile_draft(&graph, &Default::default());
+    assert_eq!(refused.len(), 1, "a radio lane sits in one array lane");
     assert_eq!(
-        array::wired_array(&graph, ARRAY),
-        ArrayWiring::Duplicate { lane: 3 }
+        array::wired_array(
+            &crate::workspace::resolve(&graph, &Default::default()),
+            ARRAY
+        ),
+        ArrayWiring::Gap { lane: 3 }
     );
 
     graph.edges.clear();
-    assert_eq!(array::wired_array(&graph, ARRAY), ArrayWiring::Unwired);
+    assert_eq!(
+        array::wired_array(
+            &crate::workspace::resolve(&graph, &Default::default()),
+            ARRAY
+        ),
+        ArrayWiring::Unwired
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -300,6 +317,26 @@ async fn processors_bind_to_the_array_they_are_wired_from() {
     assert_eq!(array::processor_array(&state, "df2"), None);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn removing_a_processor_node_stops_it_without_an_apply() {
+    let (app, state) = test_router_with_state();
+    let mut graph = kraken_graph(ArrayNode::default());
+    graph
+        .nodes
+        .push(node("df", NodeBody::Df(DfNode::default())));
+    graph.edges.push(wire((ARRAY, "array"), ("df", "array")));
+    let report = put_and_apply(&app, graph.clone()).await;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    assert_eq!(array::processor_array(&state, "df").as_deref(), Some(ARRAY));
+
+    graph.nodes.retain(|node| node.id != "df");
+    graph.edges.retain(|edge| edge.to.node != "df");
+    put_workspace(&app, &snapshot(graph)).await;
+    assert_eq!(array::processor_array(&state, "df"), None);
+    let running = status_of(&state, ARRAY).map(|status| status.processors);
+    assert!(running.unwrap_or_default().is_empty());
+}
+
 fn beam_graph(listened: bool) -> PatchGraph {
     let mut graph = kraken_graph(ArrayNode::default());
     graph.nodes.extend([
@@ -342,8 +379,11 @@ async fn channels_on_a_lane_port_bind_to_that_processors_virtual_lane() {
     assert_eq!(voice[0].stream, lane.stream);
     assert_eq!(voice[0].settings.frequency_hz, lane.center_hz);
     assert_eq!(
-        crate::workspace::virtual_bound(&beam_graph(true), set),
-        vec![("voice".to_owned(), voice[0].id)]
+        crate::workspace::resolve(&beam_graph(true), &live).channel("voice"),
+        Some(sdrmm_wire::ChannelAddr {
+            device_set: set.id,
+            channel: voice[0].id
+        })
     );
 
     let again = put_and_apply(&app, beam_graph(true)).await;
@@ -744,7 +784,12 @@ async fn calibrate_and_tune_endpoints_reach_the_engine() {
 
     let graph = snapshot(kraken_graph(ArrayNode::default())).graph;
     let summary = wait_for("a settled calibration", || {
-        array::summary(&state, &graph, ARRAY).filter(|summary| summary.problem.is_none())
+        array::summary(
+            &state,
+            &crate::resolved::Resolved::of(graph.clone(), &state.engine.snapshot()),
+            ARRAY,
+        )
+        .filter(|summary| summary.problem.is_none())
     })
     .await;
     assert_eq!(
@@ -764,7 +809,12 @@ async fn calibrate_and_tune_endpoints_reach_the_engine() {
     let (status, body) = tune(&app, ARRAY, r#"{"gain":{"kind":"auto"}}"#).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert!(body.contains("Auto gain needs cal"), "{body}");
-    let off = array::summary(&state, &kraken_graph(settings), ARRAY).expect("an array");
+    let off = array::summary(
+        &state,
+        &crate::resolved::Resolved::of(kraken_graph(settings), &state.engine.snapshot()),
+        ARRAY,
+    )
+    .expect("an array");
     assert!(!off.can_calibrate);
     assert_eq!(off.center_hz, Some(433.92e6), "the tune survives the edit");
 }

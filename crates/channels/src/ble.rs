@@ -10,7 +10,7 @@ use num_complex::Complex;
 use sdrmm_modem::ble::{self as phy, Lane, Packet, Sink, band::Band};
 use sdrmm_wire::{
     BleAdi, BleAdvert, BleLink, BleParams, BlePhy, ChannelDescriptor, ChannelParams,
-    ChannelSettings, DecoderEvent, DecoderFamily,
+    ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
 };
 
 use self::{
@@ -33,7 +33,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: BleLink::default().bandwidth_hz(),
     input_rate_hz: BleLink::default().input_rate_hz(),
     has_audio: false,
-    decoder_kind: Some("ble".to_owned()),
+    emits: vec![EventKind::Ble],
     ..ChannelDescriptor::default()
 });
 

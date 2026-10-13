@@ -470,6 +470,7 @@ impl Store {
         migrate(&conn)?;
         audio_fx_lift::lift_audio_chains(&conn)?;
         coherent_break::break_old_snapshots(&conn)?;
+        steps::upgrade_stored(&conn)?;
         let server_id = ensure_server_id(&conn)?.into();
         let store = Self {
             conn: Mutex::new(conn),
@@ -760,16 +761,17 @@ impl Store {
             for routed in records {
                 let record = &routed.record;
                 let at = normalize_timestamp(&record.at)?;
+                let view = record.event.present();
                 stmt.execute(params![
                     at,
                     record.device_set,
                     record.channel,
                     routed.workspace,
                     routed.source,
-                    record.event.kind(),
+                    record.event.kind().as_str(),
                     record.freq_hz,
-                    record.event.station(),
-                    record.event.summary(),
+                    view.entity,
+                    view.summary,
                     serde_json::to_string(&record.event)?,
                     record
                         .origin
@@ -828,14 +830,51 @@ impl Store {
 
     pub fn delete_decoder_log(&self, filter: &DecoderLogQuery) -> Result<u64, StoreError> {
         let predicate = self.decoder_log_predicate(filter)?;
-        let deleted = self.lock().execute(
-            &format!(
-                "DELETE FROM decoder_log WHERE id IN (SELECT decoder_log.id FROM {}{})",
+        match &filter.sink {
+            Some(sink) => self.unmark_decoder_log(sink, &predicate),
+            None => {
+                let deleted = self.lock().execute(
+                    &format!(
+                        "DELETE FROM decoder_log WHERE id IN (SELECT decoder_log.id FROM {}{})",
+                        predicate.from, predicate.clause
+                    ),
+                    params_from_iter(&predicate.params),
+                )?;
+                Ok(deleted as u64)
+            }
+        }
+    }
+
+    fn unmark_decoder_log(
+        &self,
+        sink: &str,
+        predicate: &DecoderLogPredicate,
+    ) -> Result<u64, StoreError> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let ids: Vec<i64> = {
+            let mut stmt = tx.prepare(&format!(
+                "SELECT decoder_log.id FROM {}{}",
                 predicate.from, predicate.clause
-            ),
-            params_from_iter(&predicate.params),
-        )?;
-        Ok(deleted as u64)
+            ))?;
+            let rows = stmt.query_map(params_from_iter(&predicate.params), |row| row.get(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        let mut removed = 0;
+        {
+            let mut unmark =
+                tx.prepare_cached("DELETE FROM decoder_log_sinks WHERE sink = ?1 AND entry = ?2")?;
+            let mut orphan = tx.prepare_cached(
+                "DELETE FROM decoder_log WHERE id = ?1 AND NOT EXISTS \
+                 (SELECT 1 FROM decoder_log_sinks AS m WHERE m.entry = decoder_log.id)",
+            )?;
+            for id in ids {
+                removed += unmark.execute(params![sink, id])? as u64;
+                orphan.execute(params![id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(removed)
     }
 
     pub fn prune_decoder_log_before(&self, cutoff: &str) -> Result<u64, StoreError> {
@@ -896,8 +935,9 @@ impl Store {
         snapshot: &WorkspaceSnapshot,
     ) -> Result<i64, StoreError> {
         validate_name(name)?;
-        snapshot.validate()?;
-        let json = serde_json::to_string(snapshot)?;
+        let snapshot = settled(snapshot.clone());
+        snapshot.validate_against(sdrmm_channels::descriptor_table())?;
+        let json = serde_json::to_string(&snapshot)?;
         let now = now_rfc3339();
         let conn = self.lock();
         conn.execute(
@@ -923,8 +963,9 @@ impl Store {
         export: &WorkspaceExport,
         notices: &[WorkspaceNoticeKind],
     ) -> Result<i64, StoreError> {
-        export.validate()?;
         let mut document = export.clone();
+        document.snapshot.graph.settle_arrays();
+        document.validate_against(sdrmm_channels::descriptor_table())?;
         document.forget_absent_nodes();
         let json = serde_json::to_string(&document.snapshot)?;
         let now = now_rfc3339();
@@ -950,8 +991,9 @@ impl Store {
         req: &UpdateWorkspaceRequest,
         author: Option<&str>,
     ) -> Result<WorkspaceDetail, StoreError> {
-        if let Some(snapshot) = &req.snapshot {
-            snapshot.validate()?;
+        let settled = req.snapshot.clone().map(settled);
+        if let Some(snapshot) = &settled {
+            snapshot.validate_against(sdrmm_channels::descriptor_table())?;
         }
         if let Some(name) = &req.name {
             validate_name(name)?;
@@ -966,7 +1008,7 @@ impl Store {
             )
             .map_err(|err| name_taken(err, name))?;
         }
-        if let Some(ours) = &req.snapshot {
+        if let Some(ours) = &settled {
             let held = parse_workspace_snapshot(&held)?;
             let merged = rebase(&tx, id, req.revision, current, &held, ours)?;
             if merged != held {
@@ -1369,22 +1411,15 @@ fn rebase(
     let base = parse_workspace_snapshot(&base)?;
     let mut merged = crate::merge::merge_typed(&base, ours, held).map_err(|_| conflict())?;
     merged.drop_dangling();
-    merged.validate().map_err(|_| conflict())?;
+    merged
+        .validate_against(sdrmm_channels::descriptor_table())
+        .map_err(|_| conflict())?;
     Ok(merged)
 }
 
 fn parse_workspace_snapshot(json: &str) -> Result<WorkspaceSnapshot, serde_json::Error> {
     let mut value: serde_json::Value = serde_json::from_str(json)?;
-    drop_retired_channels(&mut value);
-    migrate_call_buffers(&mut value);
-    migrate_trunk_carriers(&mut value);
-    migrate_event_outputs(&mut value);
-    migrate_recording_devices(&mut value);
-    migrate_control_wires(&mut value);
-    migrate_device_locks(&mut value);
-    migrate_signal_finders(&mut value);
-    migrate_baseband_scopes(&mut value);
-    migrate_dataless_nodes(&mut value);
+    steps::upgrade(&mut value);
     let snapshot: WorkspaceSnapshot = crate::json::from_value(&value)?;
     if snapshot.version != WORKSPACE_SNAPSHOT_VERSION {
         return Err(serde::de::Error::custom(WorkspaceError::Version(
@@ -1516,6 +1551,11 @@ fn migrate_baseband_scopes(snapshot: &mut serde_json::Value) {
     }
 }
 
+fn settled(mut snapshot: WorkspaceSnapshot) -> WorkspaceSnapshot {
+    snapshot.graph.settle_arrays();
+    snapshot
+}
+
 fn migrate_dataless_nodes(snapshot: &mut serde_json::Value) {
     for node in snapshot
         .get_mut("graph")
@@ -1586,6 +1626,19 @@ fn migrate_device_locks(snapshot: &mut serde_json::Value) {
 
 fn node_kind(node: &serde_json::Value) -> Option<&str> {
     node.get("kind").and_then(serde_json::Value::as_str)
+}
+
+fn migrate_legacy(value: &mut serde_json::Value) {
+    drop_retired_channels(value);
+    migrate_call_buffers(value);
+    migrate_trunk_carriers(value);
+    migrate_event_outputs(value);
+    migrate_recording_devices(value);
+    migrate_control_wires(value);
+    migrate_device_locks(value);
+    migrate_signal_finders(value);
+    migrate_baseband_scopes(value);
+    migrate_dataless_nodes(value);
 }
 
 fn edge_end<'a>(edge: &'a serde_json::Value, end: &str) -> Option<(&'a str, &'a str)> {
@@ -1941,6 +1994,7 @@ fn read_log_entries(
             station: row.station,
             summary: row.summary,
             event: serde_json::from_str(&row.event)?,
+            view: None,
             callsign: None,
         });
     }
@@ -2149,10 +2203,11 @@ mod log_groups;
 mod nanovna;
 mod phones;
 mod remote;
+mod steps;
 
-pub(crate) use coherent_break::upgrade_export;
 pub(crate) use phones::{OfferFailure, OfferRow, PairWrite, PhoneRow};
 pub use remote::RemotePairing;
+pub(crate) use steps::upgrade_import;
 
 #[cfg(test)]
 mod tests;

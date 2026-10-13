@@ -2,6 +2,8 @@ import type { DemoSession, RecordedResponse } from "../../../web/e2e/demoSession
 import type {
   ChannelSettings,
   DeviceSettings,
+  NodeAction,
+  ResolvedState,
   StateSnapshot,
   WorkspaceDetail,
   WorkspaceInfo,
@@ -11,8 +13,9 @@ import type {
 
 const WORKSPACE = /^\/api\/workspaces\/(\d+)$/;
 const STEP = /^\/api\/workspaces\/(\d+)\/(undo|redo)$/;
-const DEVICE = /^\/api\/devicesets\/(\d+)\/device$/;
-const CHANNEL = /^\/api\/devicesets\/(\d+)\/channels\/(\d+)$/;
+const DEVICE = /^\/api\/workspaces\/active\/nodes\/([^/]+)\/device$/;
+const CHANNEL = /^\/api\/workspaces\/active\/nodes\/([^/]+)\/channel$/;
+const ACTION = /^\/api\/workspaces\/active\/nodes\/([^/]+)\/actions$/;
 
 interface History {
   past: WorkspaceSnapshot[];
@@ -25,6 +28,7 @@ export class DemoServer {
   private readonly histories = new Map<number, History>();
   private state: StateSnapshot | null = null;
   private list: WorkspacesResponse | null = null;
+  private resolved: ResolvedState | null = null;
 
   constructor(session: DemoSession) {
     for (const response of session.responses) {
@@ -36,6 +40,7 @@ export class DemoServer {
     }
     this.state = this.json<StateSnapshot>("GET /api/state");
     this.list = this.json<WorkspacesResponse>("GET /api/workspaces");
+    this.resolved = this.json<ResolvedState>("GET /api/workspaces/active/resolved");
   }
 
   handle(method: string, url: URL, body: string | null): Response {
@@ -70,14 +75,18 @@ export class DemoServer {
     }
     const device = DEVICE.exec(path);
     if (device !== null && method === "PATCH" && body !== null) {
-      this.patchDevice(Number(device[1]), JSON.parse(body) as DeviceSettings);
+      this.patchDevice(decodeURIComponent(device[1] ?? ""), JSON.parse(body) as DeviceSettings);
       return empty();
     }
     const channel = CHANNEL.exec(path);
     if (channel !== null && method === "PATCH" && body !== null) {
       const patch = JSON.parse(body) as { settings: ChannelSettings };
-      this.patchChannel(Number(channel[1]), Number(channel[2]), patch.settings);
+      this.patchChannel(decodeURIComponent(channel[1] ?? ""), patch.settings);
       return empty();
+    }
+    const action = ACTION.exec(path);
+    if (action !== null && method === "POST" && body !== null) {
+      return this.act(decodeURIComponent(action[1] ?? ""), JSON.parse(body) as NodeAction);
     }
     return null;
   }
@@ -147,23 +156,38 @@ export class DemoServer {
     return history;
   }
 
-  private patchDevice(ds: number, settings: DeviceSettings): void {
+  private radioSet(node: string): number | null {
+    const runs = this.resolved?.patch.nodes.find((held) => held.id === node)?.runs;
+    return runs?.runs === "radio" ? runs.device_set : null;
+  }
+
+  private patchDevice(node: string, settings: DeviceSettings): void {
+    const ds = this.radioSet(node);
     this.editState((set) =>
       set.id === ds ? { ...set, settings: { ...set.settings, ...settings } } : set,
     );
   }
 
-  private patchChannel(ds: number, ch: number, settings: ChannelSettings): void {
-    this.editState((set) =>
-      set.id === ds
-        ? {
-            ...set,
-            channels: set.channels.map((open) =>
-              open.id === ch ? { ...open, settings: { ...open.settings, ...settings } } : open,
-            ),
-          }
-        : set,
-    );
+  private patchChannel(node: string, settings: ChannelSettings): void {
+    this.editState((set) => ({
+      ...set,
+      channels: set.channels.map((open) =>
+        open.node === node ? { ...open, settings: { ...open.settings, ...settings } } : open,
+      ),
+    }));
+  }
+
+  private act(node: string, action: NodeAction): Response {
+    if (action.action !== "tune") {
+      return missing("POST");
+    }
+    const hz = action.with.freq_hz;
+    if (this.radioSet(node) === null) {
+      this.patchChannel(node, { frequency_hz: hz } as ChannelSettings);
+    } else {
+      this.patchDevice(node, { center_hz: hz });
+    }
+    return json({ result: "tuned" });
   }
 
   private editState(

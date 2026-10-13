@@ -7,8 +7,8 @@ import { STITCH_LIMITS } from "../../lib/limits";
 import { isStale, readingOf, useProcessorStore } from "../../lib/processors";
 import type { PatchNode, PatchNodeOf, StitchParams, StitchReading } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { arrayOf } from "../binding";
 import { useWorkspaceContext } from "../context";
+import { arrayOf } from "../lanes";
 import { settingsOf } from "../newNode";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { ProcessorFooter } from "./ProcessorFooter";
@@ -36,7 +36,7 @@ const LANE_HEADS = ["Lane", "MHz", "Eq", "Phase", "Coh"] as const;
 export function StitchFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const state = useProcessorStore((store) => store.byNode[node.id]);
-  const array = arrayOf(workspace.graph, node.id);
+  const array = arrayOf(workspace.resolved, node.id);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
   const edit = useProcessorEdit(node as PatchNodeOf<"stitch">);
@@ -47,10 +47,10 @@ export function StitchFace({ node }: { node: PatchNode }) {
   const reading = readingOf(state, "stitch");
   const stale = state !== undefined && isStale(state.receivedAt, now, STITCH_REPORT_MS);
   const processor = processorStatusOf(status, node.id);
-  const spread = needsSpread(workspace.graph, node.id, processorGate(status, node.id));
+  const spread = needsSpread(workspace.graph, array, processorGate(status, node.id));
   const spreadArray = () => {
     workspace.edit((snapshot) => {
-      const graph = spreadArrayEdit(snapshot.graph, node.id);
+      const graph = spreadArrayEdit(snapshot.graph, array);
       return graph === null ? snapshot : { ...snapshot, graph };
     });
     workspace.apply();
@@ -60,7 +60,14 @@ export function StitchFace({ node }: { node: PatchNode }) {
       node={node}
       title="Stitch"
       category="tool"
-      subtitle={processorSubtitle(workspace.graph, node.id, status, state, now, STITCH_REPORT_MS)}
+      subtitle={processorSubtitle(
+        workspace.resolved,
+        node.id,
+        status,
+        state,
+        now,
+        STITCH_REPORT_MS,
+      )}
     >
       <FaceBody>
         {settings === null ? (

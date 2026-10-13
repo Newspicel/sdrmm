@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { StateSnapshot, WorkspaceDetail } from "../src/lib/types";
-import { activate, addNode, dragWire, fitPatch } from "./canvas";
+import { activate, addNode, dragWire, fitPatch, nodeUrl, radioNodeOf } from "./canvas";
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -427,7 +427,6 @@ test.describe("the workspace", () => {
       map.locator('.react-flow__handle[data-handleid="events"]'),
     );
 
-    await expect(map.getByText("Aircraft")).toBeVisible();
     await expect(map.getByText(/no basemap/i)).toBeVisible();
     await expect
       .poll(async () => (await map.locator(".maplibregl-canvas").boundingBox())?.height ?? 0)
@@ -469,7 +468,7 @@ test.describe("the workspace", () => {
     await page.goto("/");
     await expect(page.locator('.react-flow__node[data-id="device"]')).toBeVisible();
 
-    const map = page.locator('.react-flow__node[data-id^="map:"]', { hasText: "Aircraft" });
+    const map = page.locator('.react-flow__node[data-id^="map:"]');
     await fitPatch(page);
     const attribution = map.locator(".maplibregl-ctrl-attrib");
 
@@ -490,7 +489,7 @@ test.describe("the workspace", () => {
     await page.goto("/");
     await expect(page.locator('.react-flow__node[data-id="device"]')).toBeVisible();
 
-    const map = page.locator('.react-flow__node[data-id^="map:"]', { hasText: "Aircraft" });
+    const map = page.locator('.react-flow__node[data-id^="map:"]');
     await fitPatch(page);
     await activate(map);
     await map.getByRole("button", { name: "Map settings" }).click();
@@ -695,7 +694,7 @@ test.describe("the workspace", () => {
     const moved = centerHz + 2_000_000;
 
     const author = await page.evaluate(() => localStorage.getItem("sdrmm.author") ?? "");
-    await page.request.patch(`/api/devicesets/${id}/device`, {
+    await page.request.patch(nodeUrl(await radioNodeOf(page.request, id), "device"), {
       data: { center_hz: moved },
       headers: { "x-sdrmm-author": author },
     });

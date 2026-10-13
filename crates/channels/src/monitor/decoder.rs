@@ -7,7 +7,7 @@ use sdrmm_wire::{
 
 use crate::{
     ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, audio_channels,
-    channel_filter, create, descriptor_of,
+    channel_filter, create, descriptor,
 };
 
 const MIN_ANALOG_SCORE: f32 = 0.7;
@@ -36,7 +36,7 @@ pub(super) fn choices(signal: &IdentSignal, settings: &SpectrumMonitorNode) -> V
     for candidate in &signal.candidates {
         if let Some(kind) = &candidate.type_id
             && kind != "ident"
-            && descriptor_of(kind).is_some()
+            && descriptor(kind).is_some_and(|found| found.identifiable)
             && (!analog_decoder(kind) || analog(signal) == Some(kind.as_str()))
             && !choices.contains(kind)
         {

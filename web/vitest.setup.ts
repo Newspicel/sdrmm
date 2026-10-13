@@ -1,5 +1,7 @@
 import { vi } from "vitest";
 import type { StateCreator, StoreApi } from "zustand/vanilla";
+import { loadCatalog } from "./src/lib/catalog";
+import { CATALOG } from "./src/test/catalog";
 
 function memoryStorage(): Storage {
   const items = new Map<string, string>();
@@ -43,3 +45,5 @@ vi.mock("zustand", async () => {
   }
   return { create, useStore: useLiveStore };
 });
+
+loadCatalog(CATALOG);

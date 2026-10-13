@@ -22,10 +22,20 @@ const DETAIL = {
   updated_at: "2026-01-01T00:00:00Z",
   snapshot: SNAPSHOT,
 };
+const RADIO = "radio";
+const CHANNEL = "voice";
 const STATE = {
   device_sets: [
-    { id: 0, settings: { center_hz: 100 }, channels: [{ id: 1, settings: { frequency_hz: 5 } }] },
+    {
+      id: 0,
+      settings: { center_hz: 100 },
+      channels: [{ id: 1, node: CHANNEL, settings: { frequency_hz: 5 } }],
+    },
   ],
+};
+const RESOLVED = {
+  patch: { nodes: [{ id: RADIO, runs: { runs: "radio", device_set: 0 } }] },
+  problems: [],
 };
 
 function server(): DemoServer {
@@ -39,6 +49,7 @@ function server(): DemoServer {
     events: [],
     responses: [
       recorded("/api/state", STATE),
+      recorded("/api/workspaces/active/resolved", RESOLVED),
       recorded("/api/workspaces", { workspaces: [{ ...DETAIL, snapshot: undefined }] }),
       recorded("/api/workspaces/2", DETAIL),
       recorded("/api/decoderlog?limit=500", { records: ["a"] }),
@@ -64,7 +75,7 @@ describe("DemoServer", () => {
   });
 
   it("answers an unrecorded GET with an API error", async () => {
-    const answer = await call(server(), "GET", "/api/calls");
+    const answer = await call(server(), "GET", "/api/images");
     expect(answer.status).toBe(404);
     expect(typeof answer.body.error).toBe("string");
   });
@@ -91,13 +102,26 @@ describe("DemoServer", () => {
 
   it("merges a retune into the state", async () => {
     const target = server();
-    await call(target, "PATCH", "/api/devicesets/0/device", { center_hz: 200 });
-    await call(target, "PATCH", "/api/devicesets/0/channels/1", {
+    await call(target, "PATCH", `/api/workspaces/active/nodes/${RADIO}/device`, {
+      center_hz: 200,
+    });
+    await call(target, "PATCH", `/api/workspaces/active/nodes/${CHANNEL}/channel`, {
       settings: { frequency_hz: 9 },
     });
     const state = await call(target, "GET", "/api/state");
     expect(state.body.device_sets[0].settings.center_hz).toBe(200);
     expect(state.body.device_sets[0].channels[0].settings.frequency_hz).toBe(9);
+  });
+
+  it("tunes a node by action", async () => {
+    const target = server();
+    const tuned = await call(target, "POST", `/api/workspaces/active/nodes/${CHANNEL}/actions`, {
+      action: "tune",
+      with: { freq_hz: 7 },
+    });
+    expect(tuned.body).toEqual({ result: "tuned" });
+    const state = await call(target, "GET", "/api/state");
+    expect(state.body.device_sets[0].channels[0].settings.frequency_hz).toBe(7);
   });
 
   it("accepts other writes without a body", async () => {

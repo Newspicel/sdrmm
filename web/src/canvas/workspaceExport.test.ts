@@ -25,7 +25,7 @@ describe("reading a workspace file", () => {
     expect(read).toEqual(document());
   });
 
-  it("lifts a layout written before the scanner drove a decoder", () => {
+  it("sends an older file as it was written, for the server to upgrade", () => {
     const older = document();
     older.snapshot.graph.nodes.push(
       { id: "nfm", kind: "channel", data: { channel_type: "nfm" }, position: { x: 0, y: 200 } },
@@ -41,7 +41,7 @@ describe("reading a workspace file", () => {
     expect(read.snapshot.graph.edges).toEqual([
       { from: { node: "dev", port: "iq" }, to: { node: "scope", port: "iq" } },
       { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
-      { from: { node: "scan", port: "control" }, to: { node: "nfm", port: "control" } },
+      { from: { node: "dev", port: "iq" }, to: { node: "scan", port: "iq" } },
     ]);
   });
 

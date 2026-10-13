@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{BitSync, Decimator, FmDemod, RealDecimator, SyncDetector, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
     MAX_PER_PAYLOAD_BYTES, MIN_PER_PAYLOAD_BYTES, PerBaud, PerParams,
 };
 
@@ -26,7 +26,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 2.0 * half_band_hz(PerBaud::Baud9600),
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("per".to_owned()),
+    emits: vec![EventKind::Per],
     ..ChannelDescriptor::default()
 });
 

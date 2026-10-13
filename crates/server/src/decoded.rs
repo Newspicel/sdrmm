@@ -1,13 +1,17 @@
 use std::sync::{Arc, Weak};
 
 use sdrmm_engine::Engine;
-use sdrmm_wire::{DecodedRecord, ServerEvent, StateScope, StateSnapshot};
-use tokio::sync::broadcast::{self, error::RecvError};
+use sdrmm_wire::DecodedRecord;
+use tokio::sync::{
+    broadcast::{self, error::RecvError},
+    watch,
+};
 
 use crate::{
-    Store,
-    events::{Routed, Routes},
+    activity::Activity,
+    events::{RouteOutcome, Routed, Stations},
     reference::Reference,
+    resolved::Resolved,
 };
 
 pub(crate) const FEED_CAP: usize = 4096;
@@ -24,39 +28,41 @@ pub(crate) fn feed() -> Feed {
     broadcast::channel(FEED_CAP).0
 }
 
-pub(crate) async fn run(
-    engine: Weak<Engine>,
-    store: Arc<Store>,
-    feed: Feed,
-    reference: Arc<Reference>,
-) {
+pub(crate) struct Router {
+    pub engine: Weak<Engine>,
+    pub resolved: watch::Receiver<Arc<Resolved>>,
+    pub feed: Feed,
+    pub reference: Arc<Reference>,
+    pub activity: Arc<Activity>,
+}
+
+pub(crate) async fn run(router: Router) {
+    let Router {
+        engine,
+        mut resolved,
+        feed,
+        reference,
+        activity,
+    } = router;
     let Some(strong) = engine.upgrade() else {
         return;
     };
-    let mut events = strong.subscribe_events();
     let mut records = strong.subscribe_decoded();
     drop(strong);
-    let mut routes = load_routes(store.clone(), engine.clone()).await;
+    let mut routes = resolved.borrow_and_update().clone();
+    let mut stations = Stations::default();
     loop {
         tokio::select! {
-            event = events.recv() => match event {
-                Ok(ServerEvent::StateChanged {
-                    scope: StateScope::All
-                        | StateScope::Devices
-                        | StateScope::DeviceSet(_)
-                        | StateScope::Workspaces,
-                }) => routes = load_routes(store.clone(), engine.clone()).await,
-                Ok(_) => {}
-                Err(RecvError::Lagged(count)) => {
-                    tracing::error!(count, "event routing missed server events");
-                    routes = load_routes(store.clone(), engine.clone()).await;
-                }
-                Err(RecvError::Closed) => break,
+            changed = resolved.changed() => match changed {
+                Ok(()) => routes = resolved.borrow_and_update().clone(),
+                Err(_) => break,
             },
             record = records.recv() => match record {
                 Ok(record) => {
-                    let record = with_callsign(record, &reference);
-                    let _ = feed.send(Decoded::Record(Box::new(routes.route(record))));
+                    let seen = (reference.as_ref(), activity.as_ref());
+                    if let Some(routed) = route(&routes, record, &mut stations, seen) {
+                        let _ = feed.send(Decoded::Record(Box::new(routed)));
+                    }
                 }
                 Err(RecvError::Lagged(count)) => {
                     tracing::error!(count, "decoded events lost before routing");
@@ -68,49 +74,35 @@ pub(crate) async fn run(
     }
 }
 
+fn route(
+    routes: &Resolved,
+    mut record: DecodedRecord,
+    stations: &mut Stations,
+    (reference, activity): (&Reference, &Activity),
+) -> Option<Routed> {
+    let outcome = routes.events.route(&mut record, stations);
+    let source = record.origin.as_ref().map(|origin| origin.node.clone());
+    activity.routed(source.as_deref(), outcome);
+    if outcome != RouteOutcome::Delivered {
+        return None;
+    }
+    Some(Routed {
+        history: routes.events.keeps_history(&record.sinks),
+        record: with_callsign(record, reference),
+        source,
+        workspace: routes.events.workspace,
+    })
+}
+
 fn with_callsign(mut record: DecodedRecord, reference: &Reference) -> DecodedRecord {
     if record.callsign.is_none() {
-        record.callsign = record
-            .event
-            .amateur_callsign()
-            .and_then(|call| reference.callsign(call));
+        let call = match &record.view {
+            Some(view) => view.callsign.clone(),
+            None => record.event.present().callsign,
+        };
+        record.callsign = call.and_then(|call| reference.callsign(&call));
     }
     record
-}
-
-pub(crate) fn resolve_routes(
-    store: &Store,
-    state: &StateSnapshot,
-) -> Result<Routes, crate::StoreError> {
-    let Some(workspace) = store.active_workspace()? else {
-        return Ok(Routes::default());
-    };
-    Ok(Routes::resolve(
-        workspace.info.id,
-        &workspace.snapshot.graph,
-        state,
-    ))
-}
-
-async fn load_routes(store: Arc<Store>, engine: Weak<Engine>) -> Routes {
-    let loaded = tokio::task::spawn_blocking(move || {
-        let state = engine
-            .upgrade()
-            .map_or_else(StateSnapshot::default, |engine| engine.snapshot());
-        resolve_routes(&store, &state)
-    })
-    .await;
-    match loaded {
-        Ok(Ok(routes)) => routes,
-        Ok(Err(error)) => {
-            tracing::error!(%error, "could not resolve event routes");
-            Routes::default()
-        }
-        Err(error) => {
-            tracing::error!(%error, "event route resolution panicked");
-            Routes::default()
-        }
-    }
 }
 
 #[cfg(test)]
@@ -125,6 +117,7 @@ mod tests {
     use tokio::time::{Duration, timeout};
 
     use super::*;
+    use crate::Store;
 
     fn node(id: &str, body: NodeBody) -> PatchNode {
         PatchNode {
@@ -166,7 +159,7 @@ mod tests {
             .create_device_set("virtual:band")
             .expect("open the virtual radio");
         let channel = engine
-            .add_channel(
+            .add_channel_for(
                 set,
                 0,
                 ChannelSettings {
@@ -175,6 +168,7 @@ mod tests {
                     params: ChannelParams::default_for("adsb").expect("adsb is a channel type"),
                     blanker: Default::default(),
                 },
+                Some("channel:adsb"),
             )
             .expect("add channel");
         let store = Arc::new(Store::open(None).expect("store"));
@@ -247,16 +241,23 @@ mod tests {
         let (engine, store, set, channel) = bench();
         let feed = feed();
         let mut out = feed.subscribe();
-        let router = tokio::spawn(run(
-            Arc::downgrade(&engine),
-            store.clone(),
+        let hub = crate::resolved::ResolvedHub::default();
+        hub.reload(&store, &engine, &crate::problems::ProblemBoard::default());
+        let activity = Arc::new(Activity::default());
+        let router = tokio::spawn(run(Router {
+            engine: Arc::downgrade(&engine),
+            resolved: hub.subscribe(),
             feed,
-            Arc::default(),
-        ));
+            reference: Arc::default(),
+            activity: activity.clone(),
+        }));
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let record = |callsign: &str| DecodedRecord {
-            origin: None,
+            origin: Some(sdrmm_wire::EventOrigin {
+                node: "channel:adsb".to_owned(),
+                transmission: 0,
+            }),
             device_set: set,
             channel,
             at: "2026-09-21T10:00:00Z".to_owned(),
@@ -264,31 +265,32 @@ mod tests {
             event: adsb("3C6444", callsign),
             sinks: Vec::new(),
             callsign: None,
+            view: None,
         };
         engine.publish_decoded(record("DLH123"));
         let routed = next(&mut out).await;
         assert_eq!(routed.source.as_deref(), Some("channel:adsb"));
         assert!(routed.workspace.is_some());
+        assert!(routed.record.view.is_some(), "the router stamps the view");
         let mut sinks = routed.record.sinks.clone();
         sinks.sort();
         assert_eq!(sinks, vec!["export".to_owned(), "log".to_owned()]);
 
+        engine.publish_decoded(DecodedRecord {
+            origin: None,
+            ..record("DLH123")
+        });
         engine.publish_decoded(record("TEST01"));
         let dropped = next(&mut out).await;
         assert_eq!(
             dropped.record.sinks,
             vec!["export".to_owned()],
-            "the drop filter keeps the test message away from the log only"
+            "the drop filter keeps the test message away from the log only, \
+             and the record without its node never left the router"
         );
-
-        engine.publish_decoded(DecodedRecord {
-            origin: None,
-            channel: channel + 99,
-            ..record("DLH123")
-        });
-        let unbound = next(&mut out).await;
-        assert_eq!(unbound.source, None);
-        assert!(unbound.record.sinks.is_empty());
+        assert_eq!(activity.unattributed_count(), 1);
+        let port = activity.port("channel:adsb", sdrmm_wire::EVENTS_PORT);
+        assert_eq!((port.emitted, port.delivered), (2, 2));
 
         router.abort();
     }
@@ -312,6 +314,7 @@ mod tests {
             event,
             sinks: Vec::new(),
             callsign: None,
+            view: None,
         };
         let spot = DecoderEvent::Wspr(WsprSpot {
             text: "DL1ABC JO62 37".to_owned(),

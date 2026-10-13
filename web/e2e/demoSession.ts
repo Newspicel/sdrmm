@@ -35,7 +35,7 @@ interface Command {
 }
 
 const SUBSCRIPTION = /^(?:Un)?[Ss]ubscribe([A-Za-z]+)$/;
-const VOLATILE = new Set(["fps", "bins"]);
+const VOLATILE = new Set(["fps", "bins", "params"]);
 
 export function subscriptionKey(command: Command): string | null {
   const kind = SUBSCRIPTION.exec(command.type)?.[1];

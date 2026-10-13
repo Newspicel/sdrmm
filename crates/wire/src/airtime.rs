@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    decode::EventKind,
+    present::{
+        EventPayload, Field, FieldValue, Presentation, Unit, count, fields, number, text_of,
+    },
+    units::hertz,
+};
+
 pub const AIRTIME_REPORT_MS: u32 = 1_000;
 pub const MIN_AIRTIME_MARGIN_DB: f32 = 3.0;
 pub const MAX_AIRTIME_MARGIN_DB: f32 = 30.0;
@@ -57,6 +65,17 @@ pub enum WifiBand {
     Ghz2_4,
     Ghz5,
     Ghz6,
+}
+
+impl WifiBand {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Ghz2_4 => "2.4 GHz",
+            Self::Ghz5 => "5 GHz",
+            Self::Ghz6 => "6 GHz",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -191,6 +210,82 @@ impl IsmSurveyReport {
     }
 }
 
+impl EventPayload for WifiOccupancyReport {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let mut shown: Vec<Field> = self.channels.iter().filter_map(channel_field).collect();
+        shown.extend(fields(&[("Measured", share(self.measured))]));
+        Presentation {
+            fields: shown,
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+fn share(fraction: f32) -> Option<FieldValue> {
+    let digits = if fraction < 0.1 { 1 } else { 0 };
+    number(Some(fraction * 100.0), Unit::Percent, digits)
+}
+
+fn channel_field(channel: &WifiChannelLoad) -> Option<Field> {
+    let mut parts = vec![format!("{:.0}% busy", channel.busy * 100.0)];
+    parts.extend(channel.level_dbfs.map(|level| format!("{level:.0} dBFS")));
+    parts.extend(
+        channel
+            .floor_dbfs
+            .map(|floor| format!("floor {floor:.0} dBFS")),
+    );
+    text_of(parts.join(" · ")).map(|value| Field {
+        label: format!("{} ch {}", channel.band.label(), channel.number),
+        value,
+    })
+}
+
+impl EventPayload for IsmSurveyReport {
+    fn present(&self, _kind: EventKind) -> Presentation {
+        let mut shown = fields(&[
+            (
+                "Window",
+                text_of(format!("{} to {}", hertz(self.low_hz), hertz(self.high_hz))),
+            ),
+            ("Busy", share(self.busy)),
+        ]);
+        shown.extend(self.kinds.iter().filter_map(kind_field));
+        shown.extend(fields(&[
+            ("Floor", number(self.floor_dbfs, Unit::Dbfs, 0)),
+            ("Measured", share(self.measured)),
+            (
+                "Dropped",
+                count(Some(self.dropped).filter(|dropped| *dropped > 0)),
+            ),
+        ]));
+        Presentation {
+            fields: shown,
+            ..Presentation::of(self.summary())
+        }
+    }
+}
+
+fn kind_field(load: &IsmKindLoad) -> Option<Field> {
+    let centres = load
+        .centres_mhz
+        .iter()
+        .map(f64::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let digits = if load.airtime < 0.1 { 1 } else { 0 };
+    text_of(format!(
+        "{} bursts · {:.*}% · {:.0} µs · {centres} MHz",
+        load.bursts,
+        digits,
+        load.airtime * 100.0,
+        load.mean_us
+    ))
+    .map(|value| Field {
+        label: load.kind.label().to_owned(),
+        value,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,5 +333,63 @@ mod tests {
             dropped: 0,
         };
         assert_eq!(survey.summary(), "42% busy · Bluetooth 12 · 0.4%");
+    }
+
+    #[test]
+    fn wifi_load_lists_each_channel() {
+        let report = WifiOccupancyReport {
+            window_ms: 1000,
+            measured: 0.05,
+            channels: vec![WifiChannelLoad {
+                band: WifiBand::Ghz2_4,
+                number: 6,
+                centre_hz: 2.437e9,
+                busy: 0.35,
+                level_dbfs: Some(-40.2),
+                peak_dbfs: None,
+                floor_dbfs: Some(-90.0),
+            }],
+        };
+        let view = report.present(EventKind::WifiOccupancy);
+        assert_eq!(view.labels(), ["2.4 GHz ch 6", "Measured"]);
+        assert_eq!(
+            view.field("2.4 GHz ch 6"),
+            text_of("35% busy · -40 dBFS · floor -90 dBFS").as_ref()
+        );
+        assert_eq!(
+            view.field("Measured"),
+            number(Some(0.05_f32 * 100.0), Unit::Percent, 1).as_ref()
+        );
+    }
+
+    #[test]
+    fn an_ism_survey_names_its_window_and_kinds() {
+        let report = IsmSurveyReport {
+            window_ms: 1000,
+            low_hz: 2.4e9,
+            high_hz: 2.48e9,
+            measured: 0.5,
+            busy: 0.2,
+            floor_dbfs: None,
+            kinds: vec![IsmKindLoad {
+                kind: IsmKind::Bluetooth,
+                bursts: 12,
+                airtime: 0.02,
+                mean_us: 380.0,
+                peak_dbfs: -30.0,
+                centres_mhz: vec![2402.0, 2480.0],
+            }],
+            dropped: 0,
+        };
+        let view = report.present(EventKind::IsmSurvey);
+        assert_eq!(
+            view.field("Window"),
+            text_of("2.4 GHz to 2.48 GHz").as_ref()
+        );
+        assert_eq!(
+            view.field("Bluetooth"),
+            text_of("12 bursts · 2.0% · 380 µs · 2402, 2480 MHz").as_ref()
+        );
+        assert_eq!(view.field("Dropped"), None);
     }
 }

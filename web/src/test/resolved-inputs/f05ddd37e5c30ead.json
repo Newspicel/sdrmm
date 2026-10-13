@@ -1,0 +1,105 @@
+{
+  "name": "f05ddd37e5c30ead",
+  "test": "RecordingFace > offers Make array for a playing collection and wires every lane",
+  "graph": {
+    "nodes": [
+      {
+        "id": "rec",
+        "kind": "recording",
+        "data": {
+          "recording": "take"
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": "arr",
+        "position": {
+          "x": 500,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "rec",
+          "port": "iq"
+        },
+        "to": {
+          "node": "arr",
+          "port": "lane"
+        }
+      },
+      {
+        "from": {
+          "node": "rec",
+          "port": "iq2"
+        },
+        "to": {
+          "node": "arr",
+          "port": "lane2"
+        }
+      },
+      {
+        "from": {
+          "node": "rec",
+          "port": "iq3"
+        },
+        "to": {
+          "node": "arr",
+          "port": "lane3"
+        }
+      },
+      {
+        "from": {
+          "node": "rec",
+          "port": "iq4"
+        },
+        "to": {
+          "node": "arr",
+          "port": "lane4"
+        }
+      },
+      {
+        "from": {
+          "node": "rec",
+          "port": "iq5"
+        },
+        "to": {
+          "node": "arr",
+          "port": "lane5"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

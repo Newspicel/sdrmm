@@ -1,0 +1,429 @@
+[
+  {
+    "kind": "device",
+    "data": {}
+  },
+  {
+    "kind": "recording",
+    "data": {}
+  },
+  {
+    "kind": "signal_gen",
+    "data": {
+      "running": true
+    }
+  },
+  {
+    "kind": "gps",
+    "data": {}
+  },
+  {
+    "kind": "array",
+    "data": {
+      "geometry": {
+        "kind": "uca",
+        "radius_m": 0.35,
+        "first_deg": 0.0,
+        "winding": "clockwise"
+      },
+      "orientation": {
+        "kind": "fixed",
+        "azimuth_deg": 0.0
+      },
+      "declared": "time_sync",
+      "tuning": "together",
+      "cal": {
+        "source": {
+          "kind": "noise"
+        },
+        "check_s": 60,
+        "equaliser": false,
+        "warm_start": true
+      }
+    }
+  },
+  {
+    "kind": "channel",
+    "data": {
+      "channel_type": "",
+      "tuning_locked": false
+    }
+  },
+  {
+    "kind": "scope"
+  },
+  {
+    "kind": "baseband_scope"
+  },
+  {
+    "kind": "speaker"
+  },
+  {
+    "kind": "map"
+  },
+  {
+    "kind": "signal_map",
+    "data": {
+      "offset_hz": 0,
+      "bandwidth_hz": 12500
+    }
+  },
+  {
+    "kind": "propagation",
+    "data": {
+      "half_life_minutes": 30,
+      "reflection_height_km": 300,
+      "show_paths": false,
+      "compare_forecast": true
+    }
+  },
+  {
+    "kind": "readout"
+  },
+  {
+    "kind": "decoder_log",
+    "data": {}
+  },
+  {
+    "kind": "spectrum_monitor",
+    "data": {
+      "min_confidence": 0.7,
+      "report_unidentified": true
+    }
+  },
+  {
+    "kind": "dmr_trunk",
+    "data": {
+      "protocol": "auto",
+      "discovery": {
+        "enabled": false,
+        "max_probes": 0
+      },
+      "ignore_crc": false
+    }
+  },
+  {
+    "kind": "event_filter",
+    "data": {
+      "mode": "keep",
+      "kinds": [],
+      "stations": [],
+      "talkgroups": [],
+      "radios": [],
+      "min_duration_ms": 0
+    }
+  },
+  {
+    "kind": "audio_fx",
+    "data": {
+      "settings": {
+        "click_removal": {
+          "enabled": false,
+          "threshold": 6.0
+        },
+        "filter": {
+          "enabled": false,
+          "low_hz": 300.0,
+          "high_hz": 3000.0
+        },
+        "notches": [],
+        "auto_notch": false,
+        "denoise": {
+          "enabled": false,
+          "mode": "spectral",
+          "model": "dpdfnet2_8khz",
+          "strength": 0.5
+        },
+        "agc": "off"
+      }
+    }
+  },
+  {
+    "kind": "event_output",
+    "data": {
+      "target": {
+        "service": "webhook",
+        "url": "",
+        "format": "json"
+      }
+    }
+  },
+  {
+    "kind": "video"
+  },
+  {
+    "kind": "recorder",
+    "data": {
+      "recording": false
+    }
+  },
+  {
+    "kind": "audio_recorder",
+    "data": {
+      "recording": false,
+      "skip_silence": false
+    }
+  },
+  {
+    "kind": "baseband_recorder",
+    "data": {
+      "recording": false
+    }
+  },
+  {
+    "kind": "time_machine",
+    "data": {
+      "history_seconds": 10
+    }
+  },
+  {
+    "kind": "network_export",
+    "data": {
+      "transport": "udp",
+      "format": "cf32_le",
+      "address": "127.0.0.1:7355"
+    }
+  },
+  {
+    "kind": "export"
+  },
+  {
+    "kind": "scanner",
+    "data": {
+      "settings": {
+        "mode": "targets",
+        "ranges": [
+          {
+            "start_hz": 145600000.0,
+            "stop_hz": 145800000.0,
+            "step_hz": 12500.0
+          }
+        ],
+        "frequencies": [],
+        "dwell_ms": 250,
+        "resume_ms": 1500,
+        "hold_ms": 5000,
+        "hardware_sweep": true,
+        "margin_db": 12.0
+      }
+    }
+  },
+  {
+    "kind": "hunt",
+    "data": {
+      "clicks": true,
+      "sweep": {
+        "beamwidth_deg": 60.0,
+        "front_back_db": 15.0,
+        "min_span_deg": 180.0,
+        "min_contrast_db": 6.0,
+        "mount_offset_deg": 0.0
+      }
+    }
+  },
+  {
+    "kind": "satellite",
+    "data": {
+      "tuning_locked": false
+    }
+  },
+  {
+    "kind": "rotator",
+    "data": {
+      "tolerance_deg": 2.0,
+      "axes": "azimuth_elevation",
+      "azimuth_max_deg": 360.0,
+      "flip": false,
+      "mode": "track",
+      "manual": {
+        "azimuth_deg": 0.0,
+        "elevation_deg": 0.0
+      },
+      "park": {
+        "azimuth_deg": 0.0,
+        "elevation_deg": 0.0
+      }
+    }
+  },
+  {
+    "kind": "df",
+    "data": {
+      "settings": {
+        "algorithm": "music",
+        "source_rule": "dominance",
+        "max_peaks": 2,
+        "smoothing": 0,
+        "forward_backward": false,
+        "elevation": false,
+        "ula_side": "both",
+        "offset_hz": 0.0,
+        "bandwidth_hz": 20000.0,
+        "report_ms": 500,
+        "carry_over": 0.5,
+        "squelch_db": 6.0,
+        "loading": 0.001,
+        "azimuth_step_deg": 1.0,
+        "yaw_gate_dps": 20.0
+      }
+    }
+  },
+  {
+    "kind": "beamformer",
+    "data": {
+      "settings": {
+        "mode": "mrc",
+        "steer": {
+          "kind": "wired"
+        },
+        "nulls_deg": [],
+        "auto_nulls": false,
+        "main_lane": 0,
+        "reference_lanes": [],
+        "taps": 1,
+        "adaptation": "nlms",
+        "step": 0.05,
+        "forget": 0.999,
+        "crossfade_ms": 20,
+        "update_ms": 200,
+        "carry_over": 0.7,
+        "loading": 0.1,
+        "noise": "measured",
+        "offset_hz": 0.0,
+        "bandwidth_hz": 200000.0,
+        "steer_timeout_ms": 5000
+      }
+    }
+  },
+  {
+    "kind": "passive_radar",
+    "data": {
+      "settings": {
+        "reference_element": 0,
+        "surveillance": {
+          "kind": "all_others"
+        },
+        "illuminator": {
+          "kind": "fm"
+        },
+        "offset_hz": 0.0,
+        "cpi_ms": 500,
+        "overlap": 0.0,
+        "max_range_km": 80.0,
+        "max_speed_mps": 400.0,
+        "window": "hann",
+        "reference": {
+          "kind": "cma",
+          "taps": 16,
+          "step": 0.001
+        },
+        "clutter": {
+          "method": "eca_batch",
+          "reach_km": 15.0,
+          "lead": 2,
+          "doppler_taps": 0,
+          "batch_ms": 50.0,
+          "taper": true,
+          "extension_ms": 25.0,
+          "step": 0.05,
+          "loading": 0.0001
+        },
+        "cfar": {
+          "kind": {
+            "kind": "ca"
+          },
+          "window": "range",
+          "pfa": 0.00001,
+          "guard_range": 2,
+          "train_range": 8,
+          "guard_doppler": 1,
+          "train_doppler": 4,
+          "min_doppler_hz": 5.0,
+          "min_range_km": 1.0,
+          "min_snr_db": 8.0
+        },
+        "tracker": {
+          "confirm_hits": 3,
+          "confirm_window": 5,
+          "coast_looks": 10,
+          "max_accel_mps2": 30.0,
+          "gate": 11.8,
+          "jerk": 5.0
+        },
+        "aoa": true,
+        "assumed_altitude_m": 8000.0,
+        "gpu": "auto"
+      }
+    }
+  },
+  {
+    "kind": "stitch",
+    "data": {
+      "settings": {
+        "blend": "snr",
+        "noise_equalise": true,
+        "flatten": true,
+        "spur_reject": true,
+        "match_phase": true
+      }
+    }
+  },
+  {
+    "kind": "spatial_spectrum",
+    "data": {
+      "settings": {
+        "bins": 1024,
+        "columns": 256,
+        "average_ms": 300,
+        "report_ms": 100,
+        "azimuth_step_deg": 2.0,
+        "method": "bartlett",
+        "span_db": 30.0,
+        "offset_hz": 0.0
+      }
+    }
+  },
+  {
+    "kind": "correlator",
+    "data": {
+      "settings": {
+        "bins": 1024,
+        "integrate_s": 1.0,
+        "offset_hz": 0.0,
+        "overlap": false,
+        "channels": 256
+      }
+    }
+  },
+  {
+    "kind": "polarimeter",
+    "data": {
+      "settings": {
+        "h_lane": 0,
+        "v_lane": 1,
+        "offset_hz": 0.0,
+        "bandwidth_hz": 20000.0,
+        "matched": true,
+        "report_ms": 250,
+        "average_ms": 500,
+        "crossfade_ms": 20,
+        "flip_hand": false
+      }
+    }
+  },
+  {
+    "kind": "triangulation",
+    "data": {
+      "settings": {
+        "decay": {
+          "kind": "auto"
+        },
+        "extent_km": 12.8,
+        "nav": "auto",
+        "probe_km": 5.0,
+        "min_confidence": 0.05,
+        "max_emitters": 3,
+        "align": true
+      }
+    }
+  }
+]

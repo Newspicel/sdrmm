@@ -1,9 +1,7 @@
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import { describeError, recordEvent } from "../diagnostics";
-import type { PositionSample } from "../position";
 import type { SurveyCell } from "../types";
 import { trailBounds, unwrapTrail } from "./bounds";
-import type { TargetCollection } from "./layers";
 
 interface PositionFeature {
   type: "Feature";
@@ -25,6 +23,16 @@ export interface PositionRouteCollection {
   }[];
 }
 
+export interface TrackPoint {
+  latitude: number;
+  longitude: number;
+  receivedAt: number;
+}
+
+export interface PointCollection {
+  features: readonly { geometry: { coordinates: [number, number] } }[];
+}
+
 export function setSourceData(
   source: Pick<GeoJSONSource, "setData"> | undefined,
   data: Parameters<GeoJSONSource["setData"]>[0],
@@ -38,7 +46,7 @@ export function setSourceData(
 }
 
 export function positionCollection(
-  tracks: readonly { samples: readonly PositionSample[]; active: boolean }[],
+  tracks: readonly { samples: readonly TrackPoint[]; active: boolean }[],
 ): {
   points: PositionCollection;
   route: PositionRouteCollection;
@@ -82,7 +90,7 @@ export function positionCollection(
 export function updatePositionSources(
   pointsSource: Pick<GeoJSONSource, "setData"> | undefined,
   routeSource: Pick<GeoJSONSource, "setData"> | undefined,
-  tracks: readonly { samples: readonly PositionSample[]; active: boolean }[],
+  tracks: readonly { samples: readonly TrackPoint[]; active: boolean }[],
 ): { points: PositionCollection; route: PositionRouteCollection } {
   const collection = positionCollection(tracks);
   setSourceData(pointsSource, collection.points);
@@ -121,7 +129,7 @@ export function updateSignalSource(
   return collection;
 }
 
-function frame(map: Pick<MapLibreMap, "fitBounds">, collection: TargetCollection): void {
+function frame(map: Pick<MapLibreMap, "fitBounds">, collection: PointCollection): void {
   let west = Number.POSITIVE_INFINITY;
   let south = Number.POSITIVE_INFINITY;
   let east = Number.NEGATIVE_INFINITY;
@@ -148,7 +156,7 @@ interface FrameFlag {
 
 export function frameTargetsOnce(
   map: Pick<MapLibreMap, "fitBounds">,
-  collection: TargetCollection,
+  collection: PointCollection,
   framed: FrameFlag,
 ): void {
   if (framed.current || collection.features.length === 0) {

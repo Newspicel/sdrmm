@@ -14,9 +14,8 @@ import { clearAction, failAction } from "../../lib/refusals";
 import type { ArrayNode, ArrayStatus, DeviceSet, PatchNode } from "../../lib/types";
 import { useArrayTune } from "../../lib/useArrayTune";
 import { useNow } from "../../lib/useNow";
-import { hasWire } from "../binding";
 import { useWorkspaceContext } from "../context";
-import { arrayWiredLanes } from "../graph";
+import { hasFeed, wiredLaneCount } from "../lanes";
 import { ALIASING, ALIASING_TITLE, aliasing } from "./ArrayGeometryEditor";
 import { ArrayLanes } from "./ArrayLanes";
 import { ArrayChips, ArraySettings, useArrayEdit } from "./ArraySettings";
@@ -57,10 +56,10 @@ export function ArrayFace({ node }: { node: PatchNode }) {
   if (node.kind !== "array") {
     return null;
   }
-  const graph = workspace.graph;
-  const lanes = arrayWiredLanes(graph, node.id);
-  const rows = arrayLaneRows(graph, workspace.devices, node.id, status);
-  const memberNodes = memberDevices(graph, node.id);
+  const { graph, resolved } = workspace;
+  const lanes = wiredLaneCount(resolved, node.id);
+  const rows = arrayLaneRows(graph, resolved, workspace.devices, node.id, status);
+  const memberNodes = memberDevices(resolved, node.id);
   const members = memberNodes.flatMap((member) => {
     const set = workspace.devices.get(member);
     return set === undefined ? [] : [set];
@@ -80,8 +79,8 @@ export function ArrayFace({ node }: { node: PatchNode }) {
           status={status}
           members={members}
           memberCount={memberNodes.length}
-          positionWired={hasWire(graph, node.id, "position")}
-          span={arraySpanHz(graph, workspace.devices, node.id, status)}
+          positionWired={hasFeed(resolved, node.id, "position")}
+          span={arraySpanHz(resolved, workspace.devices, node.id, status)}
           edit={edit}
         />
         {status !== undefined && (

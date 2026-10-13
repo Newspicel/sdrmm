@@ -6,8 +6,8 @@ use sdrmm_dsp::{Decimator, FmDemod, RealDecimator, design_lowpass};
 use sdrmm_modem::cpm::{CpmParams, Mapping};
 use sdrmm_modem::pulse::{self, Norm};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, RttyParams,
-    RttyText,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    RttyParams, RttyText,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -47,7 +47,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 1_000.0,
     input_rate_hz: 8_000.0,
     has_audio: false,
-    decoder_kind: Some("rtty".to_owned()),
+    emits: vec![EventKind::Rtty],
     ..ChannelDescriptor::default()
 });
 

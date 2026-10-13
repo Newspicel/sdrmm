@@ -6,7 +6,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{BitSync, Decimator, FmDemod, Nco, RealDecimator, SyncDetector, design_lowpass};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EotMessage,
-    EotParams, EotReport,
+    EotParams, EotReport, EventKind,
 };
 
 use crate::{ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, check_input_rate};
@@ -41,7 +41,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,
-    decoder_kind: Some("eot".to_owned()),
+    emits: vec![EventKind::Eot],
     ..ChannelDescriptor::default()
 });
 

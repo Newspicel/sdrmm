@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { TimeMachineAction, TimeMachineStatus } from "../lib/types";
+import type { NodeActed, NodeAction, TimeMachineStatus } from "../lib/types";
 import {
   heldSeconds,
   historyFill,
@@ -69,39 +69,32 @@ describe("the held window", () => {
 });
 
 describe("timeMachineMutationOptions", () => {
-  it("sends each action to the radio holding the buffer", async () => {
-    const seen: string[] = [];
-    const request = vi.fn(async (_ds: number, action: TimeMachineAction) => {
+  it("sends each action to the node, which the server resolves to its radio", async () => {
+    const seen: unknown[] = [];
+    const request = vi.fn(async (_node: string, action: NodeAction): Promise<NodeActed> => {
       seen.push(action);
-      return held;
+      return { result: "time_machine", with: held };
     });
-    const options = timeMachineMutationOptions(4, "history", 1, { history_seconds: 10 }, request);
+    const options = timeMachineMutationOptions("history", request);
 
     await options.mutationFn("arm");
-    await options.mutationFn("capture");
-    await options.mutationFn("stop");
     await options.mutationFn("disarm");
 
-    expect(seen).toEqual(["arm", "capture", "stop", "disarm"]);
-    expect(request).toHaveBeenLastCalledWith(4, "disarm", "history", 1, { history_seconds: 10 });
+    expect(seen).toEqual([
+      { action: "time_machine", with: "arm" },
+      { action: "time_machine", with: "disarm" },
+    ]);
+    expect(request).toHaveBeenLastCalledWith("history", {
+      action: "time_machine",
+      with: "disarm",
+    });
   });
 
-  it("refuses an action with no radio wired in, and reports failures", async () => {
+  it("reports the server's refusal", () => {
     const notify = vi.fn();
-    const request = vi.fn(async () => held);
-    const options = timeMachineMutationOptions(
-      null,
-      "history",
-      0,
-      { history_seconds: 10 },
-      request,
-      notify,
-    );
+    const options = timeMachineMutationOptions("history", vi.fn(), notify);
 
-    await expect(options.mutationFn("arm")).rejects.toThrow("Wire a running device's IQ");
-    expect(request).not.toHaveBeenCalled();
-
-    options.onError(new Error("that window does not fit in memory"));
-    expect(notify).toHaveBeenCalledWith("that window does not fit in memory");
+    options.onError(new Error("Wire a running radio's IQ into it"));
+    expect(notify).toHaveBeenCalledWith("Wire a running radio's IQ into it");
   });
 });

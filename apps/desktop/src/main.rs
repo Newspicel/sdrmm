@@ -11,6 +11,7 @@ use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
 mod browser;
+mod download;
 mod graphics;
 mod newer_db;
 mod reveal;
@@ -66,6 +67,7 @@ fn main() -> anyhow::Result<()> {
                 .title("SDR--")
                 .inner_size(1280.0, 800.0)
                 .on_new_window(browser::open_in_browser)
+                .on_download(download::handler())
                 .build()?;
 
             update::spawn(app.handle());

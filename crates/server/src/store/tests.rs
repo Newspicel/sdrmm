@@ -114,10 +114,7 @@ fn stored_signal_finders_keep_wiring_and_audio_preferences() {
         assert_eq!(node.position, sdrmm_wire::Position { x: 532.0, y: 128.5 });
         assert_eq!(
             node.body,
-            sdrmm_wire::NodeBody::SpectrumMonitor(sdrmm_wire::SpectrumMonitorNode {
-                record_audio: record.unwrap_or(true),
-                ..Default::default()
-            })
+            sdrmm_wire::NodeBody::SpectrumMonitor(sdrmm_wire::SpectrumMonitorNode::default())
         );
         let encoded = serde_json::to_value(&migrated).unwrap();
         assert_eq!(encoded["graph"]["edges"], value["graph"]["edges"]);
@@ -130,12 +127,16 @@ fn stored_signal_finders_keep_wiring_and_audio_preferences() {
 }
 
 #[test]
-fn signal_finder_migration_keeps_an_explicit_current_audio_setting() {
+fn a_signal_finder_keeps_no_audio_switch() {
     let mut value = signal_finder_snapshot();
     value["graph"]["nodes"][3]["data"]["record_audio"] = serde_json::json!(false);
     let migrated = parse_workspace_snapshot(&value.to_string()).unwrap();
     let encoded = serde_json::to_value(migrated).unwrap();
-    assert_eq!(encoded["graph"]["nodes"][3]["data"]["record_audio"], false);
+    assert!(
+        encoded["graph"]["nodes"][3]["data"]
+            .get("record_audio")
+            .is_none()
+    );
 }
 
 #[test]
@@ -473,6 +474,7 @@ fn record(at: &str, device_set: u32, event: DecoderEvent) -> DecodedRecord {
         at: at.to_string(),
         freq_hz: 1_090_000_000.0,
         event,
+        view: None,
     }
 }
 
@@ -485,6 +487,7 @@ fn bound(workspace: i64, node: &str, record: DecodedRecord) -> Routed {
         record,
         source: Some(node.to_owned()),
         workspace: Some(workspace),
+        history: true,
     }
 }
 
@@ -498,6 +501,7 @@ fn reaching(workspace: i64, sinks: &[&str], record: DecodedRecord) -> Routed {
         },
         source: Some("decoder".to_owned()),
         workspace: Some(workspace),
+        history: true,
     }
 }
 
@@ -1219,6 +1223,41 @@ fn deleting_and_pruning_rows_drops_their_sink_marks_too() {
 
     store.prune_decoder_log(0).expect("prune");
     assert_eq!(marks(), 0);
+}
+
+#[test]
+fn clearing_one_sink_keeps_the_rows_other_sinks_hold() {
+    let store = Store::open(None).expect("open");
+    let workspace = active(&store);
+    store
+        .insert_decoder_events(&[reaching(
+            workspace,
+            &["log", "export"],
+            record("2026-08-09T12:00:00Z", 0, adsb("3C6444", "DLH123")),
+        )])
+        .expect("insert");
+    let at = |sink: &str| {
+        query(
+            &store,
+            DecoderLogQuery {
+                sink: Some(sink.to_owned()),
+                ..DecoderLogQuery::default()
+            },
+        )
+        .1
+    };
+
+    let removed = store
+        .delete_decoder_log(&DecoderLogQuery {
+            sink: Some("log".to_owned()),
+            q: Some("DLH".to_owned()),
+            ..DecoderLogQuery::default()
+        })
+        .expect("delete");
+
+    assert_eq!(removed, 1);
+    assert_eq!(at("log"), 0);
+    assert_eq!(at("export"), 1);
 }
 
 #[test]

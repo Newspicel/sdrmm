@@ -1,0 +1,21 @@
+{
+  "name": "ea63a0aa6e832549",
+  "test": "video face > shows no gallery before a picture arrives",
+  "graph": {
+    "nodes": [
+      {
+        "id": "screen",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "video"
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

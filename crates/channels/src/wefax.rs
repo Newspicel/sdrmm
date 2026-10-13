@@ -12,8 +12,8 @@ use phasing::{Lock, Phasing, Scan};
 use picture::Picture;
 use sdrmm_dsp::{FirC, FmDemod, design_lowpass};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, WefaxIoc,
-    WefaxParams, WefaxPicture,
+    ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    WefaxIoc, WefaxParams, WefaxPicture,
 };
 use tones::{Signal, ToneDetector, ToneKind};
 use track::Track;
@@ -47,7 +47,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
     has_video: true,
-    decoder_kind: Some("wefax".to_owned()),
+    emits: vec![EventKind::Wefax],
     ..ChannelDescriptor::default()
 });
 

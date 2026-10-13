@@ -28,27 +28,20 @@ async fn templates_report_the_radios_that_can_run_them() {
 async fn a_template_the_radio_cannot_run_is_refused_before_anything_is_torn_down() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let app = recording_router(dir.path());
-    let ds = create_virtual_set(&app).await;
+    let ds = open_virtual_radio(&app).await;
     record(&app, ds, true).await.expect("recording started");
     wait_for_recorded_samples(&app, ds, 1).await;
     record(&app, ds, false).await;
 
     let rec = list_recordings(&app).await.remove(0);
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        "/api/devicesets",
-        Some(&format!(r#"{{"device_id":"{}"}}"#, rec.device_id)),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let playback = serde_json::from_slice::<CreatedId>(&body).expect("json").id;
+    let playback = open_radio(&app, &rec.device_id).await;
+    let node = radio_node(&rec.device_id);
 
     let (status, body) = request(
         app.clone(),
         "POST",
         "/api/templates/adsb/apply",
-        Some(&format!(r#"{{"device_set":{playback}}}"#)),
+        Some(&format!(r#"{{"node":"{node}"}}"#)),
     )
     .await;
     assert_eq!(
@@ -76,12 +69,12 @@ async fn templates_list_and_apply_over_http() {
     let listed: sdrmm_wire::TemplatesResponse = serde_json::from_slice(&body).expect("json");
     assert!(listed.templates.iter().any(|t| t.id == "fm-radio"));
 
-    let ds = create_virtual_set(&app).await;
+    open_virtual_radio(&app).await;
     let (status, body) = request(
         app.clone(),
         "POST",
         "/api/templates/fm-radio/apply",
-        Some(&format!(r#"{{"device_set":{ds}}}"#)),
+        Some(r#"{"node":"radio:band"}"#),
     )
     .await;
     assert_eq!(
@@ -104,12 +97,17 @@ async fn templates_list_and_apply_over_http() {
     );
     assert_eq!(set.channels.len(), 1);
     assert_eq!(set.channels[0].settings.params.type_id(), "wfm");
+    assert_eq!(
+        set.channels[0].node.as_deref(),
+        Some("template:fm-radio:ch0"),
+        "the decoder opened for the template's node"
+    );
 
     let (status, _) = request(
         app.clone(),
         "POST",
         "/api/templates/nope/apply",
-        Some(&format!(r#"{{"device_set":{ds}}}"#)),
+        Some(r#"{"node":"radio:band"}"#),
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -117,7 +115,7 @@ async fn templates_list_and_apply_over_http() {
         app,
         "POST",
         "/api/templates/fm-radio/apply",
-        Some(r#"{"device_set":999}"#),
+        Some(r#"{"node":"nobody"}"#),
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -130,12 +128,12 @@ async fn every_template_runs_on_the_signal_generator() {
 
     for template in listed.templates.iter().filter(|t| t.min_lanes <= 1) {
         let app = test_router();
-        let ds = create_virtual_set(&app).await;
+        open_virtual_radio(&app).await;
         let (status, body) = request(
             app.clone(),
             "POST",
             &format!("/api/templates/{}/apply", template.id),
-            Some(&format!(r#"{{"device_set":{ds}}}"#)),
+            Some(r#"{"node":"radio:band"}"#),
         )
         .await;
         assert_eq!(
@@ -165,7 +163,7 @@ async fn every_template_runs_on_the_signal_generator() {
 #[tokio::test]
 async fn applying_a_template_merges_its_patch_into_the_active_workspace() {
     let app = test_router();
-    let ds = create_virtual_set(&app).await;
+    open_virtual_radio(&app).await;
     let before = workspaces(&app).await;
     let active = before.active.expect("seeded workspace");
     let nodes_before = before.workspaces[0].nodes;
@@ -175,7 +173,7 @@ async fn applying_a_template_merges_its_patch_into_the_active_workspace() {
             app.clone(),
             "POST",
             "/api/templates/fm-radio/apply",
-            Some(&format!(r#"{{"device_set":{ds}}}"#)),
+            Some(r#"{"node":"radio:band"}"#),
         )
         .await;
         assert_eq!(
@@ -186,15 +184,7 @@ async fn applying_a_template_merges_its_patch_into_the_active_workspace() {
         );
     }
 
-    let (status, body) = request(
-        app.clone(),
-        "GET",
-        &format!("/api/workspaces/{active}"),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let detail: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
+    let detail = workspace_detail(&app, active).await;
     let (_, body) = request(app.clone(), "GET", "/api/templates", None).await;
     let listed: sdrmm_wire::TemplatesResponse = serde_json::from_slice(&body).expect("json");
     let template = listed
@@ -204,62 +194,86 @@ async fn applying_a_template_merges_its_patch_into_the_active_workspace() {
         .expect("template");
     let patch = template.patch.as_ref().expect("templates carry a patch");
 
-    let added = u32::try_from(patch.nodes.len()).unwrap();
+    let added = u32::try_from(patch.nodes.len() - patch.device_nodes().count()).unwrap();
     assert_eq!(
         u32::try_from(detail.snapshot.graph.nodes.len()).unwrap(),
         nodes_before + added
     );
-    let device = detail
-        .snapshot
-        .graph
-        .node("template:fm-radio:dev")
-        .expect("the template's receiver");
-    let sdrmm_wire::NodeBody::Device(bound) = &device.body else {
-        panic!("a receiver node")
-    };
-    assert_eq!(
-        bound.device.as_ref().map(|d| d.backend.as_str()),
-        Some("virtual"),
-        "the patch names the radio the template was applied to"
-    );
-    assert_eq!(
+    assert!(
         detail
             .snapshot
             .graph
-            .channels_of("template:fm-radio:dev")
-            .count(),
-        1
+            .node("template:fm-radio:dev")
+            .is_none(),
+        "the template lands on the radio node it was applied to"
     );
+    let patch = sdrmm_wire::patch::resolve::compile(&detail.snapshot.graph, &Default::default())
+        .expect("compiles");
+    let decoders = patch
+        .reaches("radio:band", "iq")
+        .iter()
+        .filter(|reach| {
+            patch
+                .node(&reach.sink)
+                .is_some_and(|node| node.kind == sdrmm_wire::NodeKind::Channel)
+        })
+        .count();
+    assert_eq!(decoders, 1);
     detail.snapshot.validate().expect("a valid workspace");
+}
+
+#[tokio::test]
+async fn a_template_wires_its_decoders_to_the_radios_own_node() {
+    let app = test_router();
+    let workspace = put_active_workspace(&app, &virtual_snapshot("band", &[])).await;
+    apply(&app, workspace).await;
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/templates/airband/apply",
+        Some(r#"{"node":"device"}"#),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let graph = workspace_detail(&app, workspace).await.snapshot.graph;
+    assert!(graph.node("template:airband:dev").is_none());
+    assert!(
+        graph
+            .edges
+            .iter()
+            .any(|edge| edge.from.node == "device" && edge.to.node == "template:airband:ch0")
+    );
+    let channels = &get_state(&app).await.device_sets[0].channels;
+    assert_eq!(channels.len(), 1);
+    assert_eq!(channels[0].node.as_deref(), Some("template:airband:ch0"));
+    assert_eq!(channels[0].settings.frequency_hz, 118_100_000.0);
 }
 
 #[tokio::test]
 async fn the_df_drive_wires_every_kraken_lane_into_one_array() {
     let app = test_router();
-    let band = create_virtual_set(&app).await;
+    open_virtual_radio(&app).await;
     let (status, _) = request(
         app.clone(),
         "POST",
         "/api/templates/df-drive/apply",
-        Some(&format!(r#"{{"device_set":{band}}}"#)),
+        Some(r#"{"node":"radio:band"}"#),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "one lane is refused");
 
-    let (status, body) = request(
-        app.clone(),
-        "POST",
-        "/api/devicesets",
-        Some(r#"{"device_id":"virtual:kraken5"}"#),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let kraken = serde_json::from_slice::<CreatedId>(&body).expect("json").id;
+    let kraken = open_radio(&app, "virtual:kraken5").await;
     let (status, body) = request(
         app.clone(),
         "POST",
         "/api/templates/df-drive/apply",
-        Some(&format!(r#"{{"device_set":{kraken}}}"#)),
+        Some(r#"{"node":"radio:kraken5"}"#),
     )
     .await;
     assert_eq!(
@@ -283,12 +297,15 @@ async fn the_df_drive_wires_every_kraken_lane_into_one_array() {
         .edges
         .iter()
         .filter(|edge| {
-            edge.from.node == "template:df-drive:dev" && edge.to.node == "template:df-drive:array"
+            edge.from.node == "radio:kraken5" && edge.to.node == "template:df-drive:array"
         })
         .count();
     assert_eq!(lanes, 5);
+    let patch = sdrmm_wire::patch::resolve::compile(graph, &Default::default()).expect("compiles");
     assert_eq!(
-        graph.array_of_processor("template:df-drive:df"),
+        patch
+            .first_feed("template:df-drive:df", "array")
+            .map(|feed| feed.source.as_str()),
         Some("template:df-drive:array")
     );
     detail.snapshot.validate().expect("a valid workspace");
@@ -344,7 +361,7 @@ async fn an_open_radio_the_driver_no_longer_lists_can_still_run_templates() {
     let state = AppState::new(Engine::with_registry(registry, None), store);
     let (app, background) = router_with_state(state, &ServerOptions::default());
     background.detach();
-    create_virtual_set(&app).await;
+    open_virtual_radio(&app).await;
 
     let (status, body) = request(app.clone(), "GET", "/api/templates", None).await;
     assert_eq!(status, StatusCode::OK);

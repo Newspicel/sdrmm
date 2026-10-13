@@ -9,12 +9,12 @@ use std::{
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
 use sdrmm_channels::{AUDIO_RATE, ChannelCtx, ChannelOutputs, ChannelRx};
-use sdrmm_wire::ChannelSettings;
+use sdrmm_wire::{ChannelSettings, DecoderEvent};
 
 use super::Publisher;
 use crate::{
     audio::{PcmBlock, PcmPayload},
-    audio_recording::AudioRecorderTap,
+    audio_recording::AudioTaps,
     iq::IqTap,
     recording::RecorderTap,
     runtime::{ChannelSinks, DecodedSink, dsp_block_len},
@@ -61,7 +61,7 @@ pub(crate) struct ChannelPacket {
     pub(crate) channels: u8,
     pub(crate) frequency: f64,
     pub(crate) video_position: u64,
-    pub(crate) recorder: Option<AudioRecorderTap>,
+    pub(crate) recorder: Option<AudioTaps>,
     pub(crate) baseband_recorder: Option<RecorderTap>,
 }
 
@@ -169,7 +169,7 @@ impl ChannelPublisher {
                     decoded.publish(packet.frequency, event);
                 }
                 if let Some(status) = packet.outputs.broadcast.take() {
-                    decoded.publish_broadcast(packet.frequency, status);
+                    decoded.publish(packet.frequency, DecoderEvent::Broadcast(status));
                 }
                 for image in packet.outputs.images.drain(..) {
                     decoded.publish_image(packet.frequency, image);
@@ -262,7 +262,7 @@ fn publish_audio(packet: &ChannelPacket, sinks: &ChannelSinks) {
         payload,
     };
     if let Some(recorder) = &packet.recorder {
-        let _ = recorder.push(block.clone());
+        recorder.push(&block);
     }
     let _ = sinks.pcm_tx.send(block);
 }
