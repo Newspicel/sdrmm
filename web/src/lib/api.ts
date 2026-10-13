@@ -14,9 +14,9 @@ import type {
   BandPlan,
   BandRegionsResponse,
   Bookmark,
-  CapturedImagesResponse,
   ChannelSettings,
   ChannelTypesResponse,
+  ControlAck,
   CpsCodeplugDetail,
   CpsCodeplugRequest,
   CpsConvertRequest,
@@ -43,8 +43,6 @@ import type {
   DoctorReport,
   ErrorCode,
   ExportFormat,
-  HuntSettings,
-  HuntStatus,
   IonosondeReport,
   LicenseTextResponse,
   LogGroupKey,
@@ -57,6 +55,7 @@ import type {
   NetworkExportSettings,
   NetworkExportStatus,
   NmeaDevicesResponse,
+  NodeAction,
   OccupancyReport,
   PairingOffer,
   PatchApplyReport,
@@ -83,7 +82,6 @@ import type {
   SaveNanoVnaMeasurementRequest,
   SaveRadioRequest,
   ScannerStatus,
-  ScanSettings,
   StateSnapshot,
   SurveyAction,
   SurveyGrid,
@@ -135,7 +133,6 @@ export const SAVED_RADIOS_KEY = ["get", "/api/saved-radios"] as const;
 export const RECORDINGS_KEY = ["get", "/api/recordings"] as const;
 export const AUDIO_RECORDINGS_KEY = ["get", "/api/audiorecordings"] as const;
 export const CALLS_KEY = ["get", "/api/calls"] as const;
-export const IMAGES_KEY = ["get", "/api/images"] as const;
 export const DECODER_LOG_KEY = ["get", "/api/decoderlog"] as const;
 export const TEMPLATES_KEY = ["get", "/api/templates"] as const;
 export const AUTH_KEY = ["get", "/api/auth"] as const;
@@ -179,13 +176,6 @@ export function callsQuery() {
 
 export function callAudioUrl(url: string): string {
   return withToken(url);
-}
-
-export function imagesQuery() {
-  return queryOptions({
-    queryKey: IMAGES_KEY,
-    queryFn: async (): Promise<CapturedImagesResponse> => unwrap(await client.GET("/api/images")),
-  });
 }
 
 export function capturedImageUrl(url: string): string {
@@ -899,75 +889,27 @@ export function diagnosticsQuery(enabled: boolean) {
   });
 }
 
-export interface DecoderRef {
-  deviceSet: number;
-  channel: number;
-}
-
-export async function startScan(
-  decoder: DecoderRef,
-  settings: ScanSettings,
-): Promise<ScannerStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/scanner", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "start", settings },
+export async function nodeAction(node: string, action: NodeAction): Promise<ControlAck[]> {
+  const acks = unwrap(
+    await client.POST("/api/workspaces/active/nodes/{node}/actions", {
+      params: { path: { node } },
+      body: action,
     }),
   );
+  const failed = acks.find((ack) => ack.error != null);
+  if (failed?.error != null) {
+    throw new Error(failed.error);
+  }
+  return acks;
 }
 
-export async function stopScan(decoder: DecoderRef): Promise<ScannerStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/scanner", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "stop" },
-    }),
-  );
-}
-
-export async function skipScan(decoder: DecoderRef): Promise<ScannerStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/scanner", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "skip" },
-    }),
-  );
-}
-
-export async function startHunt(decoder: DecoderRef, settings: HuntSettings): Promise<HuntStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "start", settings },
-    }),
-  );
-}
-
-export async function stopHunt(decoder: DecoderRef): Promise<HuntStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "stop" },
-    }),
-  );
-}
-
-export async function sweepHunt(decoder: DecoderRef, settings: HuntSettings): Promise<HuntStatus> {
-  return unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "sweep", settings },
-    }),
-  );
-}
-
-export async function markHunt(decoder: DecoderRef): Promise<void> {
-  unwrap(
-    await client.POST("/api/devicesets/{ds}/channels/{ch}/hunt", {
-      params: { path: { ds: decoder.deviceSet, ch: decoder.channel } },
-      body: { action: "mark" },
-    }),
-  );
+export function scanStatusOf(acks: readonly ControlAck[]): ScannerStatus | null {
+  for (const ack of acks) {
+    if (ack.sweep?.job === "scan") {
+      return ack.sweep.status;
+    }
+  }
+  return null;
 }
 
 export function decoderLogQuery(filter: DecoderLogFilter) {

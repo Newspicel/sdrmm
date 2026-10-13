@@ -10,6 +10,7 @@ use tokio_tungstenite::tungstenite;
 use super::*;
 
 mod phone;
+mod ports;
 mod presence;
 mod stress;
 
@@ -93,72 +94,200 @@ fn nfm_channel(offset_hz: f64) -> ChannelSettings {
     }
 }
 
-fn atv_channel() -> ChannelSettings {
-    ChannelSettings {
-        frequency_hz: 100_000_000.0,
-        squelch: sdrmm_wire::Squelch::Off,
-        params: ChannelParams::Atv(sdrmm_wire::AtvParams::default()),
-        blanker: Default::default(),
+fn node(id: &str, body: sdrmm_wire::NodeBody) -> sdrmm_wire::PatchNode {
+    sdrmm_wire::PatchNode {
+        id: id.to_owned(),
+        body,
+        position: sdrmm_wire::Position { x: 0.0, y: 0.0 },
+        size: None,
+        label: None,
+    }
+}
+
+fn of(id: &str, kind: sdrmm_wire::NodeKind) -> sdrmm_wire::PatchNode {
+    node(id, sdrmm_wire::NodeBody::default_for(kind))
+}
+
+fn wire(from: (&str, &str), to: (&str, &str)) -> sdrmm_wire::PatchEdge {
+    sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: from.0.to_owned(),
+            port: from.1.to_owned(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: to.0.to_owned(),
+            port: to.1.to_owned(),
+        },
+    }
+}
+
+fn radio_of(backend: &str, key: &str) -> sdrmm_wire::PatchNode {
+    node(
+        "radio",
+        sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
+            device: Some(sdrmm_wire::DeviceRef {
+                backend: backend.to_owned(),
+                serial: None,
+                key: Some(key.to_owned()),
+            }),
+            locked_streams: Vec::new(),
+            split_tuning: false,
+        }),
+    )
+}
+
+fn radio(key: &str) -> sdrmm_wire::PatchNode {
+    radio_of("virtual", key)
+}
+
+fn channel(id: &str, channel_type: &str) -> sdrmm_wire::PatchNode {
+    node(
+        id,
+        sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
+            channel_type: channel_type.to_owned(),
+            tuning_locked: false,
+        }),
+    )
+}
+
+fn graph(
+    nodes: Vec<sdrmm_wire::PatchNode>,
+    edges: Vec<sdrmm_wire::PatchEdge>,
+) -> sdrmm_wire::PatchGraph {
+    sdrmm_wire::PatchGraph { nodes, edges }
+}
+
+async fn apply(state: &AppState, id: i64) {
+    let state = state.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::apply::bring_up_active(&state, id).expect("applies");
+        state.resolve_now();
+    })
+    .await
+    .expect("apply task");
+}
+
+async fn workspace_on(state: &AppState, graph: sdrmm_wire::PatchGraph) -> i64 {
+    let snapshot = sdrmm_wire::WorkspaceSnapshot::new(graph, sdrmm_wire::RackLayout::default());
+    let id = state
+        .store
+        .create_workspace("ports", &snapshot)
+        .expect("workspace");
+    state.store.activate_workspace(id).expect("activate");
+    apply(state, id).await;
+    id
+}
+
+async fn bench_with(
+    engine: Arc<Engine>,
+    graph: sdrmm_wire::PatchGraph,
+) -> (WsClient, AppState, i64) {
+    let (addr, state) = serve_ws(engine).await;
+    let id = workspace_on(&state, graph).await;
+    (dial(addr).await, state, id)
+}
+
+async fn bench(graph: sdrmm_wire::PatchGraph) -> (WsClient, AppState, i64) {
+    bench_with(test_engine(), graph).await
+}
+
+async fn subscribe_with(
+    ws: &mut WsClient,
+    node: &str,
+    port: &str,
+    params: sdrmm_wire::StreamParams,
+) {
+    send(
+        ws,
+        &ClientCommand::SubscribePort {
+            node: node.to_owned(),
+            port: port.to_owned(),
+            params,
+        },
+    )
+    .await;
+}
+
+async fn subscribe_port(ws: &mut WsClient, node: &str, port: &str) {
+    subscribe_with(ws, node, port, sdrmm_wire::StreamParams::default()).await;
+}
+
+async fn unsubscribe_port(ws: &mut WsClient, node: &str, port: &str) {
+    send(
+        ws,
+        &ClientCommand::UnsubscribePort {
+            node: node.to_owned(),
+            port: port.to_owned(),
+        },
+    )
+    .await;
+}
+
+async fn next_port_event(ws: &mut WsClient) -> ServerEvent {
+    loop {
+        let event = next_event(ws).await;
+        if matches!(
+            event,
+            ServerEvent::PortStream { .. }
+                | ServerEvent::PortRefused { .. }
+                | ServerEvent::StreamStopped { .. }
+        ) {
+            return event;
+        }
+    }
+}
+
+async fn port_stream(ws: &mut WsClient) -> (u16, StreamKind, String) {
+    match next_port_event(ws).await {
+        ServerEvent::PortStream {
+            stream_id,
+            kind,
+            source,
+            ..
+        } => (stream_id, kind, source),
+        other => panic!("expected PortStream, got {other:?}"),
+    }
+}
+
+async fn stopped(ws: &mut WsClient) -> (u16, StreamKind) {
+    match next_port_event(ws).await {
+        ServerEvent::StreamStopped { stream_id, kind } => (stream_id, kind),
+        other => panic!("expected StreamStopped, got {other:?}"),
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn iq_lifecycle_shares_the_media_id_space_and_streams_baseband() {
-    let engine = test_engine();
-    let ds = engine
-        .create_device_set("virtual:band")
-        .expect("device set");
-    let voice = engine
-        .add_channel(ds, 0, nfm_channel(0.0))
-        .expect("nfm channel");
-    let mut ws = connect(engine).await;
-
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeAudio {
-            device_set: ds,
-            channel: voice,
-            fx: Vec::new(),
-        },
-    )
+async fn a_baseband_port_streams_iq_and_symbols_in_the_media_id_space() {
+    let (mut ws, _, _) = bench(graph(
+        vec![
+            radio("band"),
+            channel("voice", "nfm"),
+            of("scope", sdrmm_wire::NodeKind::BasebandScope),
+            of("spk", sdrmm_wire::NodeKind::Speaker),
+        ],
+        vec![
+            wire(("radio", "iq"), ("voice", "iq")),
+            wire(("voice", "baseband"), ("scope", "baseband")),
+            wire(("voice", "audio"), ("spk", "audio")),
+        ],
+    ))
     .await;
-    let audio_id = match next_event(&mut ws).await {
-        ServerEvent::AudioStreamStarted { stream_id, .. } => stream_id,
-        other => panic!("expected AudioStreamStarted, got {other:?}"),
-    };
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeIq {
-            device_set: ds,
-            channel: voice,
-        },
-    )
-    .await;
-    let iq_id = match next_event(&mut ws).await {
-        ServerEvent::IqStreamStarted {
-            stream_id,
-            device_set,
-            channel,
-        } => {
-            assert_eq!((device_set, channel), (ds, voice));
-            assert!(
-                stream_id >= MEDIA_ID_BASE,
-                "iq id {stream_id:#x} collides with the spectrum range"
-            );
-            stream_id
-        }
-        other => panic!("expected IqStreamStarted, got {other:?}"),
-    };
-    assert_ne!(
-        iq_id, audio_id,
-        "a live audio id must not be handed to a baseband stream"
-    );
+    subscribe_port(&mut ws, "spk", "audio").await;
+    let (audio_id, _, _) = port_stream(&mut ws).await;
+    subscribe_port(&mut ws, "scope", "baseband").await;
+    let mut ids = std::collections::HashMap::new();
+    for _ in 0..2 {
+        let (stream_id, kind, source) = port_stream(&mut ws).await;
+        assert_eq!(source, "voice");
+        assert!(
+            stream_id >= MEDIA_ID_BASE,
+            "{kind:?} id {stream_id:#x} collides with the spectrum range"
+        );
+        ids.insert(kind, stream_id);
+    }
+    let iq_id = ids[&StreamKind::Iq];
+    let symbols_id = ids[&StreamKind::Symbols];
+    assert!(iq_id != audio_id && symbols_id != audio_id && iq_id != symbols_id);
 
     loop {
         let (kind, stream_id) = next_frame_header(&mut ws).await;
@@ -168,215 +297,32 @@ async fn iq_lifecycle_shares_the_media_id_space_and_streams_baseband() {
         }
     }
 
-    send(
-        &mut ws,
-        &ClientCommand::UnsubscribeIq {
-            device_set: ds,
-            channel: voice,
-        },
-    )
-    .await;
-    match next_event(&mut ws).await {
-        ServerEvent::StreamStopped { stream_id, kind } => {
-            assert_eq!(stream_id, iq_id);
-            assert_eq!(kind, StreamKind::Iq);
-        }
-        other => panic!("expected StreamStopped, got {other:?}"),
-    }
+    unsubscribe_port(&mut ws, "scope", "baseband").await;
+    let gone = [stopped(&mut ws).await, stopped(&mut ws).await];
+    assert!(gone.contains(&(iq_id, StreamKind::Iq)));
+    assert!(gone.contains(&(symbols_id, StreamKind::Symbols)));
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn symbol_lifecycle_shares_the_media_id_space_with_the_other_streams() {
-    let engine = test_engine();
-    let ds = engine
-        .create_device_set("virtual:band")
-        .expect("device set");
-    let voice = engine
-        .add_channel(ds, 0, nfm_channel(0.0))
-        .expect("nfm channel");
-    let mut ws = connect(engine).await;
-
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeIq {
-            device_set: ds,
-            channel: voice,
-        },
-    )
+async fn a_video_port_streams_pictures_in_the_media_id_space() {
+    let (mut ws, _, _) = bench(graph(
+        vec![
+            radio("band"),
+            channel("picture", "atv"),
+            of("screen", sdrmm_wire::NodeKind::Video),
+        ],
+        vec![
+            wire(("radio", "iq"), ("picture", "iq")),
+            wire(("picture", "video"), ("screen", "video")),
+        ],
+    ))
     .await;
-    let iq_id = match next_event(&mut ws).await {
-        ServerEvent::IqStreamStarted { stream_id, .. } => stream_id,
-        other => panic!("expected IqStreamStarted, got {other:?}"),
-    };
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeSymbols {
-            device_set: ds,
-            channel: voice,
-        },
-    )
-    .await;
-    let symbol_id = match next_event(&mut ws).await {
-        ServerEvent::SymbolStreamStarted {
-            stream_id,
-            device_set,
-            channel,
-        } => {
-            assert_eq!((device_set, channel), (ds, voice));
-            assert!(
-                stream_id >= MEDIA_ID_BASE,
-                "symbol id {stream_id:#x} collides with the spectrum range"
-            );
-            stream_id
-        }
-        other => panic!("expected SymbolStreamStarted, got {other:?}"),
-    };
-    assert_ne!(
-        symbol_id, iq_id,
-        "a live baseband id must not be handed to a symbol stream"
-    );
-
-    send(
-        &mut ws,
-        &ClientCommand::UnsubscribeSymbols {
-            device_set: ds,
-            channel: voice,
-        },
-    )
-    .await;
-    match next_event(&mut ws).await {
-        ServerEvent::StreamStopped { stream_id, kind } => {
-            assert_eq!(stream_id, symbol_id);
-            assert_eq!(kind, StreamKind::Symbols);
-        }
-        other => panic!("expected StreamStopped, got {other:?}"),
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_symbol_subscription_to_a_channel_that_is_gone_is_refused_not_dropped() {
-    let engine = test_engine();
-    let ds = engine
-        .create_device_set("virtual:band")
-        .expect("device set");
-    let mut ws = connect(engine).await;
-
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeSymbols {
-            device_set: ds,
-            channel: 4_242,
-        },
-    )
-    .await;
-    match next_event(&mut ws).await {
-        ServerEvent::Error { message } => assert!(!message.is_empty()),
-        other => panic!("expected Error, got {other:?}"),
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn video_lifecycle_shares_the_media_id_space_and_refuses_silent_channels() {
-    let engine = test_engine();
-    let ds = engine
-        .create_device_set("virtual:band")
-        .expect("device set");
-    let voice = engine
-        .add_channel(ds, 0, nfm_channel(0.0))
-        .expect("nfm channel");
-    let picture = engine
-        .add_channel(ds, 0, atv_channel())
-        .expect("atv channel");
-    let mut ws = connect(engine).await;
-
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeAudio {
-            device_set: ds,
-            channel: voice,
-            fx: Vec::new(),
-        },
-    )
-    .await;
-    let audio_id = match next_event(&mut ws).await {
-        ServerEvent::AudioStreamStarted { stream_id, .. } => stream_id,
-        other => panic!("expected AudioStreamStarted, got {other:?}"),
-    };
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeVideo {
-            device_set: ds,
-            channel: picture,
-        },
-    )
-    .await;
-    let video_id = match next_event(&mut ws).await {
-        ServerEvent::VideoStreamStarted {
-            stream_id,
-            device_set,
-            channel,
-        } => {
-            assert!(
-                stream_id >= MEDIA_ID_BASE,
-                "video id {stream_id:#x} collides with the spectrum range"
-            );
-            assert_eq!((device_set, channel), (ds, picture));
-            stream_id
-        }
-        other => panic!("expected VideoStreamStarted, got {other:?}"),
-    };
-    assert_ne!(
-        video_id, audio_id,
-        "a live audio id must not be handed to a video stream"
-    );
-
-    send(
-        &mut ws,
-        &ClientCommand::UnsubscribeVideo {
-            device_set: ds,
-            channel: picture,
-        },
-    )
-    .await;
-    match next_event(&mut ws).await {
-        ServerEvent::StreamStopped { stream_id, kind } => {
-            assert_eq!(stream_id, video_id);
-            assert_eq!(kind, StreamKind::Video);
-        }
-        other => panic!("expected StreamStopped, got {other:?}"),
-    }
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeVideo {
-            device_set: ds,
-            channel: voice,
-        },
-    )
-    .await;
-    match next_event(&mut ws).await {
-        ServerEvent::Error { message } => {
-            assert!(message.contains("no video"), "unhelpful: {message}");
-        }
-        other => panic!("expected a refusal, got {other:?}"),
-    }
+    subscribe_port(&mut ws, "screen", "video").await;
+    let (video_id, kind, source) = port_stream(&mut ws).await;
+    assert_eq!((kind, source.as_str()), (StreamKind::Video, "picture"));
+    assert!(video_id >= MEDIA_ID_BASE);
+    unsubscribe_port(&mut ws, "screen", "video").await;
+    assert_eq!(stopped(&mut ws).await, (video_id, StreamKind::Video));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -416,42 +362,23 @@ async fn a_pose_from_a_browser_socket_is_refused() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn two_lanes_of_one_radio_stream_independently() {
-    let engine = test_engine();
-    let ds = engine
-        .create_device_set("virtual:array4")
-        .expect("the four-stream virtual array");
-    let mut ws = connect(engine).await;
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    let mut subscribe = async |stream: u32| {
-        send(
-            &mut ws,
-            &ClientCommand::SubscribeSpectrum {
-                device_set: ds,
-                fps: 30,
-                bins: 64,
-                stream,
-            },
-        )
-        .await;
-        loop {
-            if let ServerEvent::StreamStarted {
-                stream_id,
-                device_set,
-                stream: lane,
-            } = next_event(&mut ws).await
-            {
-                assert_eq!(device_set, ds);
-                assert_eq!(lane, stream);
-                return stream_id;
-            }
-        }
-    };
-    let lane0 = subscribe(0).await;
-    let lane2 = subscribe(2).await;
+    let (mut ws, _, _) = bench(graph(
+        vec![
+            radio("array4"),
+            of("first", sdrmm_wire::NodeKind::Scope),
+            of("third", sdrmm_wire::NodeKind::Scope),
+        ],
+        vec![
+            wire(("radio", "iq"), ("first", "iq")),
+            wire(("radio", "iq3"), ("third", "iq")),
+        ],
+    ))
+    .await;
+    let params = sdrmm_wire::StreamParams { fps: 30, bins: 64 };
+    subscribe_with(&mut ws, "first", "iq", params).await;
+    let (lane0, _, _) = port_stream(&mut ws).await;
+    subscribe_with(&mut ws, "third", "iq", params).await;
+    let (lane2, _, _) = port_stream(&mut ws).await;
     assert_ne!(lane0, lane2, "each lane needs an id of its own to demux on");
 
     let mut seen = std::collections::HashSet::new();
@@ -462,22 +389,8 @@ async fn two_lanes_of_one_radio_stream_independently() {
         seen.insert(stream_id);
     }
 
-    send(
-        &mut ws,
-        &ClientCommand::UnsubscribeSpectrum {
-            device_set: ds,
-            stream: 0,
-        },
-    )
-    .await;
-    loop {
-        if let ServerEvent::StreamStopped { stream_id, kind } = next_event(&mut ws).await {
-            assert_eq!(stream_id, lane0, "only the named lane stops");
-            assert_eq!(kind, StreamKind::Spectrum);
-            break;
-        }
-    }
-
+    unsubscribe_port(&mut ws, "first", "iq").await;
+    assert_eq!(stopped(&mut ws).await, (lane0, StreamKind::Spectrum));
     for _ in 0..8 {
         let (_, stream_id) = next_frame_header(&mut ws).await;
         if stream_id == lane2 {
@@ -489,177 +402,65 @@ async fn two_lanes_of_one_radio_stream_independently() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn spectrum_lifecycle_reports_kind_and_streams_frames() {
-    let engine = test_engine();
-    let ds = engine
-        .create_device_set("virtual:band")
-        .expect("device set");
-    let mut ws = connect(engine).await;
-
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    send(
+    let (mut ws, _, _) = bench(graph(
+        vec![radio("band"), of("scope", sdrmm_wire::NodeKind::Scope)],
+        vec![wire(("radio", "iq"), ("scope", "iq"))],
+    ))
+    .await;
+    subscribe_with(
         &mut ws,
-        &ClientCommand::SubscribeSpectrum {
-            device_set: ds,
-            fps: 30,
-            bins: 64,
-            stream: 0,
-        },
+        "scope",
+        "iq",
+        sdrmm_wire::StreamParams { fps: 30, bins: 64 },
     )
     .await;
-    let allocated = match next_event(&mut ws).await {
-        ServerEvent::StreamStarted {
-            stream_id,
-            device_set,
-            stream,
-        } => {
-            assert_eq!(device_set, ds);
-            assert_eq!(stream, 0);
-            stream_id
-        }
-        other => panic!("expected StreamStarted, got {other:?}"),
-    };
-    let (kind, stream_id) = next_frame_header(&mut ws).await;
-    assert_eq!(kind, sdrmm_wire::FrameKind::Spectrum as u8);
+    let (allocated, kind, source) = port_stream(&mut ws).await;
+    assert_eq!((kind, source.as_str()), (StreamKind::Spectrum, "radio"));
+    assert!(allocated < MEDIA_ID_BASE);
+    let (frame, stream_id) = next_frame_header(&mut ws).await;
+    assert_eq!(frame, sdrmm_wire::FrameKind::Spectrum as u8);
     assert_eq!(stream_id, allocated);
 
-    send(
-        &mut ws,
-        &ClientCommand::UnsubscribeSpectrum {
-            device_set: ds,
-            stream: 0,
-        },
-    )
-    .await;
-    match next_event(&mut ws).await {
-        ServerEvent::StreamStopped { stream_id, kind } => {
-            assert_eq!(stream_id, allocated);
-            assert_eq!(kind, StreamKind::Spectrum);
-        }
-        other => panic!("expected StreamStopped, got {other:?}"),
-    }
+    unsubscribe_port(&mut ws, "scope", "iq").await;
+    assert_eq!(stopped(&mut ws).await, (allocated, StreamKind::Spectrum));
 
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeSpectrum {
-            device_set: u32::from(MEDIA_ID_BASE),
-            fps: 30,
-            bins: 64,
-            stream: 0,
-        },
-    )
-    .await;
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Error { .. }
-    ));
+    subscribe_port(&mut ws, "radio", "iq8").await;
+    assert_eq!(
+        next_port_event(&mut ws).await,
+        ServerEvent::PortRefused {
+            node: "radio".to_owned(),
+            port: "iq8".to_owned(),
+            reason: "No such port".to_owned(),
+        }
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn spectrum_subscribe_routes_the_named_stream_to_the_engine() {
-    let engine = test_engine();
-    let ds = engine
-        .create_device_set("virtual:band")
-        .expect("device set");
-    let mut ws = connect(engine).await;
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeSpectrum {
-            device_set: ds,
-            fps: 30,
-            bins: 64,
-            stream: 7,
-        },
-    )
+async fn audio_ids_disjoint_from_spectrum_and_a_repeat_subscribe_replaces_the_stream() {
+    let (mut ws, _, _) = bench(graph(
+        vec![
+            radio("band"),
+            channel("voice", "nfm"),
+            of("spk", sdrmm_wire::NodeKind::Speaker),
+        ],
+        vec![
+            wire(("radio", "iq"), ("voice", "iq")),
+            wire(("voice", "audio"), ("spk", "audio")),
+        ],
+    ))
     .await;
-    match next_event(&mut ws).await {
-        ServerEvent::Error { message } => {
-            assert!(message.contains("rx streams"), "unhelpful: {message}");
-        }
-        other => panic!("expected an engine refusal, got {other:?}"),
-    }
-}
+    subscribe_port(&mut ws, "spk", "audio").await;
+    let (first_id, kind, _) = port_stream(&mut ws).await;
+    assert_eq!(kind, StreamKind::Audio);
+    assert!(first_id >= MEDIA_ID_BASE);
 
-#[tokio::test(flavor = "multi_thread")]
-async fn audio_ids_disjoint_from_spectrum_and_duplicate_subscribe_stops_old() {
-    let engine = test_engine();
-    let ds = engine
-        .create_device_set("virtual:band")
-        .expect("device set");
-    let ch = engine
-        .add_channel(ds, 0, nfm_channel(0.0))
-        .expect("channel");
-    let mut ws = connect(engine).await;
-
-    assert!(matches!(
-        next_event(&mut ws).await,
-        ServerEvent::Hello { .. }
-    ));
-
-    let subscribe = ClientCommand::SubscribeAudio {
-        device_set: ds,
-        channel: ch,
-        fx: Vec::new(),
-    };
-    send(&mut ws, &subscribe).await;
-    let first_id = match next_event(&mut ws).await {
-        ServerEvent::AudioStreamStarted {
-            stream_id,
-            device_set,
-            channel,
-            fx,
-        } => {
-            assert!(
-                stream_id >= MEDIA_ID_BASE,
-                "audio id {stream_id:#x} collides with spectrum range"
-            );
-            assert_eq!(device_set, ds);
-            assert_eq!(channel, ch);
-            assert!(fx.is_empty());
-            stream_id
-        }
-        other => panic!("expected AudioStreamStarted, got {other:?}"),
-    };
-
-    send(&mut ws, &subscribe).await;
-    match next_event(&mut ws).await {
-        ServerEvent::StreamStopped { stream_id, kind } => {
-            assert_eq!(stream_id, first_id);
-            assert_eq!(kind, StreamKind::Audio);
-        }
-        other => panic!("expected StreamStopped for the replaced stream, got {other:?}"),
-    }
-    let second_id = match next_event(&mut ws).await {
-        ServerEvent::AudioStreamStarted { stream_id, .. } => stream_id,
-        other => panic!("expected AudioStreamStarted, got {other:?}"),
-    };
+    subscribe_port(&mut ws, "spk", "audio").await;
+    assert_eq!(stopped(&mut ws).await, (first_id, StreamKind::Audio));
+    let (second_id, _, _) = port_stream(&mut ws).await;
     assert_ne!(second_id, first_id);
-    assert!(second_id >= MEDIA_ID_BASE);
 
-    send(
-        &mut ws,
-        &ClientCommand::UnsubscribeAudio {
-            device_set: ds,
-            channel: ch,
-            fx: Vec::new(),
-        },
-    )
-    .await;
-    match next_event(&mut ws).await {
-        ServerEvent::StreamStopped { stream_id, kind } => {
-            assert_eq!(stream_id, second_id);
-            assert_eq!(kind, StreamKind::Audio);
-        }
-        other => panic!("expected StreamStopped, got {other:?}"),
-    }
+    unsubscribe_port(&mut ws, "spk", "audio").await;
+    assert_eq!(stopped(&mut ws).await, (second_id, StreamKind::Audio));
 }
 
 #[test]
@@ -862,29 +663,31 @@ async fn wait_for(events: &mut broadcast::Receiver<ServerEvent>, scope: StateSco
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn spectrum_survives_a_reconnect_instead_of_stopping() {
+async fn spectrum_resumes_after_a_reconnect_without_a_resubscribe() {
     let die = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut registry = sdrmm_device::DeviceRegistry::new();
     registry.register(1, Box::new(FaultingDriver { die: die.clone() }));
     let engine = Engine::with_registry(registry, None);
-    let (addr, state) = serve_ws(engine).await;
-    let ds = state
-        .engine
-        .create_device_set("mock:faulting")
-        .expect("device set");
-
-    let mut ws = dial(addr).await;
-    send(
-        &mut ws,
-        &ClientCommand::SubscribeSpectrum {
-            device_set: ds,
-            fps: 30,
-            bins: 64,
-            stream: 0,
-        },
+    let (mut ws, state, _) = bench_with(
+        engine,
+        graph(
+            vec![
+                radio_of("mock", "faulting"),
+                of("scope", sdrmm_wire::NodeKind::Scope),
+            ],
+            vec![wire(("radio", "iq"), ("scope", "iq"))],
+        ),
     )
     .await;
-    assert_eq!(next_frame_header(&mut ws).await.1, ds as u16);
+    subscribe_with(
+        &mut ws,
+        "scope",
+        "iq",
+        sdrmm_wire::StreamParams { fps: 30, bins: 64 },
+    )
+    .await;
+    let (first, _, _) = port_stream(&mut ws).await;
+    assert_eq!(next_frame_header(&mut ws).await.1, first);
 
     die.store(true, std::sync::atomic::Ordering::SeqCst);
     let deadline = Instant::now() + WAIT;
@@ -901,6 +704,7 @@ async fn spectrum_survives_a_reconnect_instead_of_stopping() {
         sdrmm_wire::DeviceSetStatus::Running
     );
 
+    let mut live = first;
     let deadline = Instant::now() + WAIT;
     loop {
         let msg = timeout(WAIT, ws.next())
@@ -910,16 +714,18 @@ async fn spectrum_survives_a_reconnect_instead_of_stopping() {
             .expect("message");
         match msg {
             tungstenite::Message::Binary(bytes) => {
-                if bytes.first() == Some(&sdrmm_wire::PROTOCOL_VERSION) {
+                if bytes.first() == Some(&sdrmm_wire::PROTOCOL_VERSION)
+                    && u16::from_le_bytes([bytes[2], bytes[3]]) == live
+                {
                     break;
                 }
             }
             tungstenite::Message::Text(text) => {
-                let ev: ServerEvent = serde_json::from_str(&text).expect("event");
-                assert!(
-                    !matches!(ev, ServerEvent::StreamStopped { .. }),
-                    "the stream was torn down instead of following the reconnect"
-                );
+                if let ServerEvent::PortStream { stream_id, .. } =
+                    serde_json::from_str(&text).expect("event")
+                {
+                    live = stream_id;
+                }
             }
             _ => {}
         }

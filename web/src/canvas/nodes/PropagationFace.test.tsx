@@ -44,6 +44,7 @@ function render(view: PropagationView | null): string {
         records: [],
         tracks: [],
         surfaces: [],
+        pictures: [],
         propagation: view,
         lost: 0,
       },

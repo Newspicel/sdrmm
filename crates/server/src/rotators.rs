@@ -5,8 +5,7 @@ use std::{
 };
 
 use sdrmm_wire::{
-    CONTROL_PORT, NodeBody, NodeKind, RotatorAxes, RotatorLink, RotatorNode, RotatorStatus,
-    ServerEvent,
+    CONTROL_PORT, NodeBody, RotatorAxes, RotatorLink, RotatorNode, RotatorStatus, ServerEvent,
 };
 
 use crate::{AppState, resolved::Resolved};
@@ -21,7 +20,7 @@ use driver::Driver;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Follow {
-    satellite: Option<String>,
+    wired: bool,
     settings: RotatorNode,
 }
 
@@ -144,17 +143,7 @@ fn wanted(resolved: &Resolved) -> Vec<Wanted> {
                     axes: settings.axes,
                 },
                 follow: Follow {
-                    satellite: resolved
-                        .patch
-                        .feeds(&node.id, CONTROL_PORT)
-                        .iter()
-                        .find(|feed| {
-                            resolved
-                                .patch
-                                .node(&feed.source)
-                                .is_some_and(|source| source.kind == NodeKind::Satellite)
-                        })
-                        .map(|feed| feed.source.clone()),
+                    wired: !resolved.patch.feeds(&node.id, CONTROL_PORT).is_empty(),
                     settings: settings.clone(),
                 },
             }),

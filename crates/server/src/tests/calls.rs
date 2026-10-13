@@ -14,7 +14,7 @@ async fn call_endpoints_list_completed_calls_and_reject_missing_audio() {
 }
 
 #[tokio::test]
-async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
+async fn a_plain_dmr_channel_with_its_audio_wired_records_calls_with_clips() {
     const RATE: f64 = 240_000.0;
     let dir = tempfile::TempDir::new().expect("temp dir");
     let stem = dir.path().join("dmr");
@@ -52,6 +52,16 @@ async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
         to: sdrmm_wire::PortRef {
             node: "log".to_owned(),
             port: "events".to_owned(),
+        },
+    });
+    snapshot.graph.edges.push(sdrmm_wire::PatchEdge {
+        from: sdrmm_wire::PortRef {
+            node: "dmr".to_owned(),
+            port: "audio".to_owned(),
+        },
+        to: sdrmm_wire::PortRef {
+            node: "log".to_owned(),
+            port: "audio".to_owned(),
         },
     });
     let workspace = put_active_workspace(&app, &snapshot).await;
@@ -95,7 +105,7 @@ async fn a_plain_dmr_channel_records_every_call_without_any_trunk_system() {
 #[tokio::test]
 async fn image_endpoints_list_captures_and_reject_a_missing_picture() {
     let app = test_router();
-    let (status, body) = request(app.clone(), "GET", "/api/images", None).await;
+    let (status, body) = request(app.clone(), "GET", "/api/images?sink=screen", None).await;
     assert_eq!(status, StatusCode::OK);
     let listed: CapturedImagesResponse = serde_json::from_slice(&body).expect("json");
     assert!(listed.images.is_empty());

@@ -501,3 +501,78 @@ fn clearing_a_sink_drops_what_it_held() {
     assert!(feed.entities.is_empty() && feed.records.is_empty());
     assert!(!bench.hub.clear("nowhere"));
 }
+
+fn picture(sinks: &[&str]) -> CapturedImage {
+    CapturedImage {
+        id: 3,
+        node: "sstv".to_owned(),
+        sinks: sinks.iter().map(|sink| (*sink).to_owned()).collect(),
+        device_set: 1,
+        channel: 1,
+        at: "2026-09-21T10:00:00Z".to_owned(),
+        freq_hz: 14_230_000.0,
+        source: "sstv".to_owned(),
+        mode: "Martin M1".to_owned(),
+        width: 320,
+        height: 256,
+        lines: 256,
+        complete: true,
+        image: None,
+        image_error: None,
+    }
+}
+
+#[test]
+fn a_video_node_shows_the_pictures_its_wire_brought() {
+    let bench = Bench::over(PatchGraph {
+        nodes: vec![
+            channel("sstv", "sstv"),
+            node("screen", NodeBody::Video),
+            node("spare", NodeBody::Video),
+        ],
+        edges: vec![wire(("sstv", "video"), ("screen", "video"))],
+    });
+    bench.hub.picture(&picture(&["screen"]));
+    assert_eq!(bench.feed("screen").pictures.len(), 1);
+    assert!(bench.feed("spare").pictures.is_empty());
+
+    let late = Bench::over(PatchGraph {
+        nodes: vec![node("screen", NodeBody::Video)],
+        edges: Vec::new(),
+    });
+    late.hub.seed_pictures(|sink| {
+        if sink == "screen" {
+            vec![picture(&["screen"])]
+        } else {
+            Vec::new()
+        }
+    });
+    assert_eq!(
+        late.feed("screen").pictures.len(),
+        1,
+        "a late session gets the gallery"
+    );
+}
+
+#[test]
+fn a_picture_the_store_let_go_leaves_the_gallery() {
+    let bench = Bench::over(PatchGraph {
+        nodes: vec![channel("sstv", "sstv"), node("screen", NodeBody::Video)],
+        edges: vec![wire(("sstv", "video"), ("screen", "video"))],
+    });
+    bench.hub.picture(&picture(&["screen"]));
+    let (_, mut updates) = bench.hub.subscribe("screen").expect("video is a sink");
+    bench.hub.flush(&SurfaceHub::default());
+    let _shown = updates.try_recv().expect("the picture went out");
+
+    bench.hub.reload_pictures(|_| Vec::new());
+    bench.hub.flush(&SurfaceHub::default());
+
+    assert!(bench.feed("screen").pictures.is_empty());
+    let text = updates.try_recv().expect("the removal went out");
+    let event: ServerEvent = serde_json::from_str(text.as_str()).expect("update json");
+    let ServerEvent::SinkUpdate { update, .. } = event else {
+        panic!("a sink update");
+    };
+    assert_eq!(update.pictures, Some(Vec::new()));
+}

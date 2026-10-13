@@ -1,8 +1,9 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use sdrmm_engine::{Engine, TrunkSystem, trunking::TrunkRadio};
 use sdrmm_wire::{
-    CallGate, EVENTS_PORT, IQ_PORT, NodeBody, ResolvedPatch, ServerEvent, StateScope,
+    AUDIO_PORT, CallGate, EVENTS_PORT, EventKind, IQ_PORT, Keeps, NodeBody, ResolvedPatch,
+    ServerEvent, StateScope,
 };
 use tokio::sync::{broadcast::error::RecvError, watch};
 
@@ -18,11 +19,12 @@ pub(crate) struct CallBinding {
     pub device_set: u32,
     pub channel: u32,
     pub gate: CallGate,
+    pub keep_audio: bool,
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub(crate) struct CallPolicy {
-    pub trunk_systems: HashSet<String>,
+    pub trunk_systems: HashMap<String, bool>,
     pub channels: Vec<CallBinding>,
 }
 
@@ -98,7 +100,8 @@ fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> (Vec<TrunkSys
     let mut systems = Vec::new();
     let mut policy = CallPolicy::default();
     for node in &resolved.graph.nodes {
-        let sends_events = !patch.reaches(&node.id, EVENTS_PORT).is_empty();
+        let wants_calls = patch.delivers(&node.id, EVENTS_PORT, EventKind::Call);
+        let keep_audio = patch.keeps(&node.id, AUDIO_PORT, Keeps::Clips);
         match &node.body {
             NodeBody::DmrTrunk(settings) => {
                 systems.push(TrunkSystem {
@@ -109,11 +112,11 @@ fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> (Vec<TrunkSys
                     learned: learned_for(&saved, &node.id, &live_trunks),
                     radio: own_radio(patch, &node.id, settings),
                 });
-                if sends_events {
-                    policy.trunk_systems.insert(node.id.clone());
+                if wants_calls {
+                    policy.trunk_systems.insert(node.id.clone(), keep_audio);
                 }
             }
-            NodeBody::Channel(_) if sends_events => {
+            NodeBody::Channel(_) if wants_calls => {
                 let Some(addr) = patch.channel(&node.id) else {
                     continue;
                 };
@@ -125,6 +128,7 @@ fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> (Vec<TrunkSys
                     device_set: addr.device_set,
                     channel: addr.channel,
                     gate,
+                    keep_audio,
                 });
             }
             _ => {}
@@ -469,6 +473,47 @@ mod tests {
     fn an_open_squelch_has_no_calls_to_frame() {
         let policy = policy_for("am", sdrmm_wire::Squelch::Off, true);
         assert!(policy.channels.is_empty());
+    }
+
+    #[test]
+    fn a_channel_whose_events_reach_no_call_sink_keeps_no_calls() {
+        let store = Store::open(None).expect("in-memory store");
+        let mut registry = DeviceRegistry::new();
+        registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
+        let engine = Engine::with_registry(registry, None);
+        live_channel_workspace(
+            &store,
+            &engine,
+            channel_node("radio", "dmr"),
+            sdrmm_wire::Squelch::Off,
+            true,
+        );
+        let id = store.active_workspace_id().expect("id").expect("active");
+        let mut detail = store.workspace(id).expect("detail");
+        for node in &mut detail.snapshot.graph.nodes {
+            if node.id == "log" {
+                node.body = NodeBody::Map;
+            }
+        }
+        store
+            .update_workspace(
+                id,
+                &UpdateWorkspaceRequest {
+                    revision: detail.info.revision,
+                    name: None,
+                    snapshot: Some(detail.snapshot),
+                },
+                None,
+            )
+            .expect("a map instead of the readout");
+        let (_, policy) = resolved(&store, &engine);
+        assert!(policy.channels.is_empty(), "a map takes no calls");
+    }
+
+    #[test]
+    fn a_wired_channel_keeps_call_audio_only_with_its_audio_wire() {
+        let policy = policy_for("dmr", sdrmm_wire::Squelch::Off, true);
+        assert!(!policy.channels[0].keep_audio);
     }
 
     #[test]

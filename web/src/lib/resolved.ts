@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useWorkspaceContext } from "../canvas/context";
 import { opensDevice } from "../canvas/graph";
 import { RESOLVED_KEY } from "./api";
+import { streamSource } from "./ports";
 import type {
   ChannelAddr,
   ChannelInfo,
@@ -225,9 +226,14 @@ export function channelOwners(patch: ResolvedPatch | null): Map<string, string> 
 
 export interface Input {
   node: string;
+  source: string;
   deviceSet: number;
   channel: ChannelInfo;
   fx: string[];
+}
+
+function feedSource(feed: Feed, index: number): string {
+  return streamSource(feed.source, feed.via ?? [], index);
 }
 
 export function inputsOf(
@@ -237,28 +243,39 @@ export function inputsOf(
   port: string,
 ): Input[] {
   return feedsOf(patch, node, port).flatMap((feed) =>
-    tapChannels(feed.tap).flatMap((addr) => {
+    tapChannels(feed.tap).flatMap((addr, index) => {
       const channel = channelAt(sets, addr);
       return channel === undefined
         ? []
-        : [{ node: feed.source, deviceSet: addr.device_set, channel, fx: feed.via ?? [] }];
+        : [
+            {
+              node: feed.source,
+              source: feedSource(feed, index),
+              deviceSet: addr.device_set,
+              channel,
+              fx: feed.via ?? [],
+            },
+          ];
     }),
   );
 }
 
-export function speakerTaps(
+export function audioTaps(
   patch: ResolvedPatch | null,
-): { deviceSet: number; channel: number; fx: string[] }[] {
-  return (patch?.nodes ?? [])
-    .filter((node) => node.kind === "speaker")
-    .flatMap((node) => feedsOf(patch, node.id, "audio"))
-    .flatMap((feed) =>
-      tapChannels(feed.tap).map((addr) => ({
-        deviceSet: addr.device_set,
-        channel: addr.channel,
-        fx: feed.via ?? [],
-      })),
-    );
+): { node: string; port: string; source: string }[] {
+  return (patch?.nodes ?? []).flatMap((node) =>
+    node.ports
+      .filter((port) => port.direction === "in" && port.port_type === "audio")
+      .flatMap((port) =>
+        (port.feeds ?? []).flatMap((feed) =>
+          tapChannels(feed.tap).map((_, index) => ({
+            node: node.id,
+            port: port.name,
+            source: feedSource(feed, index),
+          })),
+        ),
+      ),
+  );
 }
 
 export function useInputs(node: string, port: string): Input[] {

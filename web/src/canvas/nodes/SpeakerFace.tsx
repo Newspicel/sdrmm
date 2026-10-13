@@ -7,7 +7,7 @@ import { GainMeter, MeterRow } from "../../components/face/Meter";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { Icon } from "../../components/Icon";
 import { Tip } from "../../components/Tip";
-import { monitorKey } from "../../lib/audio/monitor";
+import { tapKey } from "../../lib/audio/engine";
 import { resumeAudioOutput } from "../../lib/audio/sink";
 import { useChannelAudio } from "../../lib/audio/useChannelAudio";
 import { type Input, useInputs } from "../../lib/resolved";
@@ -25,7 +25,7 @@ import {
 
 export function SpeakerFace({ node }: { node: PatchNode }) {
   const inputs = useInputs(node.id, "audio");
-  const health = useSpeakerHealth(inputs, import.meta.env.DEV);
+  const health = useSpeakerHealth(node.id, inputs, import.meta.env.DEV);
   return (
     <NodeShell node={node} title="Speaker" category="output">
       <FaceBody>
@@ -35,6 +35,7 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
           inputs.map((input, index) => (
             <AudioInput
               key={inputKey(input)}
+              node={node.id}
               input={input}
               port={index === 0 ? "audio" : undefined}
             />
@@ -60,11 +61,12 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
   );
 }
 
-function AudioInput({ input, port }: { input: Input; port?: string }) {
+function AudioInput({ node, input, port }: { node: string; input: Input; port?: string }) {
   const workspace = useWorkspaceContext();
-  const audio = useChannelAudio(workspace.socket, input.deviceSet, input.channel.id, input.fx);
+  const tap = { node, port: "audio", source: input.source };
+  const audio = useChannelAudio(workspace.socket, tap);
   const active = audio.playing || audio.pending || audio.suspended;
-  const source = monitorKey(input.deviceSet, input.channel.id, input.fx);
+  const source = tapKey(tap);
   const peakDb = useAudioPeakDb(source, audio.playing);
   const name =
     workspace.graph.nodes.find((n) => n.id === input.node)?.label ??

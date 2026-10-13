@@ -10,10 +10,28 @@ import {
   updatedView,
   useSinkStore,
 } from "./sinks";
-import type { ClientCommand, DecoderEvent } from "./types";
+import type { CapturedImage, ClientCommand, DecoderEvent } from "./types";
 
 const PLANE: DecoderEvent = { kind: "adsb", data: { icao: "3c6444", df: 17, raw: "8d" } };
 const RTTY: DecoderEvent = { kind: "rtty", data: { text: "CQ" } };
+
+function picture(id: number): CapturedImage {
+  return {
+    id,
+    node: "sstv",
+    sinks: ["screen"],
+    device_set: 1,
+    channel: 2,
+    at: "2026-08-16T10:00:00Z",
+    freq_hz: 14_230_000,
+    source: "sstv",
+    mode: "Martin M1",
+    width: 320,
+    height: 256,
+    lines: 256,
+    complete: true,
+  };
+}
 
 function plane(source: string) {
   return sinkEntity(source, "adsb", "3C6444", PLANE, { summary: "DLH123" });
@@ -52,6 +70,13 @@ describe("sink feeds", () => {
     const tracked = updatedView(EMPTY_SINK, { tracks: [track], lost: 0 });
     expect(updatedView(tracked, { lost: 0 }).tracks).toEqual([track]);
     expect(updatedView(tracked, { tracks: [], lost: 0 }).tracks).toEqual([]);
+  });
+
+  it("replaces the gallery only when an update lists pictures", () => {
+    const shown = updatedView(EMPTY_SINK, { pictures: [picture(1), picture(2)], lost: 0 });
+    expect(shown.pictures.map((held) => held.id)).toEqual([2, 1]);
+    expect(updatedView(shown, { lost: 0 }).pictures).toBe(shown.pictures);
+    expect(updatedView(shown, { pictures: [picture(2)], lost: 0 }).pictures).toHaveLength(1);
   });
 
   it("caps its records", () => {

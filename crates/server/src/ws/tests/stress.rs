@@ -24,12 +24,12 @@ impl AudioClock {
     }
 }
 
-async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
-    send(
+async fn listen(mut socket: WsClient, channels: usize) {
+    subscribe_with(
         &mut socket,
-        &ClientCommand::SubscribeSpectrum {
-            device_set,
-            stream: 0,
+        "scope",
+        "iq",
+        sdrmm_wire::StreamParams {
             fps: 30,
             bins: 4096,
         },
@@ -40,17 +40,7 @@ async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
         &ClientCommand::SubscribeDiagnostics { enabled: true },
     )
     .await;
-    for &channel in channels {
-        send(
-            &mut socket,
-            &ClientCommand::SubscribeAudio {
-                device_set,
-                channel,
-                fx: Vec::new(),
-            },
-        )
-        .await;
-    }
+    subscribe_port(&mut socket, "spk", "audio").await;
     let mut audio = BTreeMap::<u16, AudioClock>::new();
     let mut spectra = 0;
     let mut diagnostics = 0;
@@ -60,7 +50,11 @@ async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
             match message {
                 tungstenite::Message::Text(text) => {
                     match serde_json::from_str::<ServerEvent>(&text).expect("event") {
-                        ServerEvent::AudioStreamStarted { stream_id, .. } => {
+                        ServerEvent::PortStream {
+                            stream_id,
+                            kind: StreamKind::Audio,
+                            ..
+                        } => {
                             assert!(audio.insert(stream_id, AudioClock::default()).is_none());
                         }
                         ServerEvent::PipelineHealth { queues, .. } => {
@@ -94,7 +88,7 @@ async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
                 tungstenite::Message::Close(_) => panic!("connection closed early"),
                 _ => {}
             }
-            if audio.len() == channels.len()
+            if audio.len() == channels
                 && audio.values().all(|clock| clock.packets >= 100)
                 && spectra >= 30
                 && diagnostics > 0
@@ -110,16 +104,27 @@ async fn listen(mut socket: WsClient, device_set: u32, channels: &[u32]) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn simultaneous_socket_listeners_keep_audio_continuous_during_retunes() {
+    let names: Vec<String> = (0..8).map(|index| format!("ch{index}")).collect();
+    let mut nodes = vec![
+        radio("band"),
+        of("scope", sdrmm_wire::NodeKind::Scope),
+        of("spk", sdrmm_wire::NodeKind::Speaker),
+    ];
+    let mut edges = vec![wire(("radio", "iq"), ("scope", "iq"))];
+    for name in &names {
+        nodes.push(channel(name, "nfm"));
+        edges.push(wire(("radio", "iq"), (name, "iq")));
+        edges.push(wire((name, "audio"), ("spk", "audio")));
+    }
     let engine = test_engine();
-    let ds = engine.create_device_set("virtual:band").expect("radio");
-    let channels: Vec<_> = (0..8)
-        .map(|index| {
-            engine
-                .add_channel(ds, 0, nfm_channel(index as f64 * 25_000.0))
-                .expect("channel")
-        })
+    let (address, state) = serve_ws(engine.clone()).await;
+    workspace_on(&state, graph(nodes, edges)).await;
+    let resolved = state.resolved.current();
+    let ds = resolved.patch.device_set("radio").expect("radio open");
+    let channels: Vec<u32> = names
+        .iter()
+        .map(|name| resolved.patch.channel(name).expect("channel open").channel)
         .collect();
-    let (address, _) = serve_ws(engine.clone()).await;
     let first = dial(address).await;
     let second = dial(address).await;
     let control = {
@@ -137,7 +142,10 @@ async fn simultaneous_socket_listeners_keep_audio_continuous_during_retunes() {
             }
         })
     };
-    tokio::join!(listen(first, ds, &channels), listen(second, ds, &channels));
+    tokio::join!(
+        listen(first, channels.len()),
+        listen(second, channels.len())
+    );
     control.await.expect("retune task");
     assert_eq!(engine.snapshot().device_sets[0].overruns, 0);
     engine.remove_device_set(ds).expect("remove radio");

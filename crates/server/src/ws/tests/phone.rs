@@ -169,10 +169,14 @@ async fn a_phone_socket_gets_only_phone_events() {
             levels: Vec::new(),
             lanes: Vec::new(),
         },
-        ServerEvent::StreamStarted {
+        ServerEvent::PortStream {
             stream_id: 1,
-            device_set: 0,
-            stream: 0,
+            node: "scope".to_owned(),
+            port: "iq".to_owned(),
+            source: "radio".to_owned(),
+            via: Vec::new(),
+            index: 0,
+            kind: StreamKind::Spectrum,
         },
         ServerEvent::PatchResolved(Box::default()),
         ServerEvent::NodeProblems {
@@ -217,10 +221,10 @@ async fn a_phone_command_outside_the_list_is_refused() {
     hello(&mut ws).await;
     send(
         &mut ws,
-        &ClientCommand::SubscribeAudio {
-            device_set: 0,
-            channel: 0,
-            fx: Vec::new(),
+        &ClientCommand::SubscribePort {
+            node: "spk".to_owned(),
+            port: "audio".to_owned(),
+            params: sdrmm_wire::StreamParams::default(),
         },
     )
     .await;

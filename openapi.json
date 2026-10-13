@@ -3214,9 +3214,19 @@
     "/api/images": {
       "get": {
         "operationId": "list_images",
+        "parameters": [
+          {
+            "name": "sink",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Pictures captured from scanning modes",
+            "description": "Pictures kept for one Video node, newest first",
             "content": {
               "application/json": {
                 "schema": {
@@ -5554,6 +5564,67 @@
           },
           "422": {
             "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/active/nodes/{node}/actions": {
+      "post": {
+        "operationId": "node_action",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "description": "Node of the active workspace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "One ack per wired target; a failed target carries `error`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ControlAck"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The node takes no such action or controls nothing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such node",
             "content": {
               "application/json": {
                 "schema": {
@@ -11152,6 +11223,7 @@
         "type": "object",
         "required": [
           "id",
+          "node",
           "device_set",
           "channel",
           "at",
@@ -11217,6 +11289,15 @@
           },
           "mode": {
             "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "sinks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "source": {
             "type": "string"
@@ -13153,368 +13234,6 @@
             "properties": {
               "data": {
                 "type": "object",
-                "required": [
-                  "device_set",
-                  "fps",
-                  "bins"
-                ],
-                "properties": {
-                  "bins": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "fps": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "stream": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "SubscribeSpectrum"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set"
-                ],
-                "properties": {
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "stream": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "UnsubscribeSpectrum"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "fx": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "SubscribeAudio"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "fx": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "UnsubscribeAudio"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "SubscribeVideo"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "UnsubscribeVideo"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "SubscribeIq"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "UnsubscribeIq"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "SubscribeSymbols"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "UnsubscribeSymbols"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
                 "properties": {
                   "error": {
                     "type": [
@@ -13600,6 +13319,69 @@
                 "type": "string",
                 "enum": [
                   "UnsubscribeSurface"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "node",
+                  "port"
+                ],
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "params": {
+                    "$ref": "#/components/schemas/StreamParams"
+                  },
+                  "port": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SubscribePort"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "node",
+                  "port"
+                ],
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "port": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "UnsubscribePort"
                 ]
               }
             }
@@ -13959,6 +13741,43 @@
           "group",
           "all"
         ]
+      },
+      "ControlAck": {
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sweep": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SweepStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "type": "string"
+          },
+          "verb": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ControlVerb"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
       },
       "ControlVerb": {
         "type": "string",
@@ -26351,6 +26170,46 @@
           }
         }
       },
+      "NodeAction": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "scan"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/ScanAction"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "hunt"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/HuntAction"
+              }
+            }
+          }
+        ]
+      },
       "NodeBody": {
         "oneOf": [
           {
@@ -33447,16 +33306,7 @@
       },
       "ScanSettings": {
         "type": "object",
-        "required": [
-          "channel"
-        ],
         "properties": {
-          "channel": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The decoder the scan feeds. It is parked on every hit, and the radio carrying it follows.",
-            "minimum": 0
-          },
           "dwell_ms": {
             "type": "integer",
             "format": "int32",
@@ -33501,6 +33351,12 @@
           },
           "mode": {
             "$ref": "#/components/schemas/ScanMode"
+          },
+          "node": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "priority": {
             "type": "array",
@@ -33840,211 +33696,6 @@
                 "type": "object",
                 "required": [
                   "stream_id",
-                  "device_set"
-                ],
-                "properties": {
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "stream": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "stream_id": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "StreamStarted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "stream_id",
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "fx": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "stream_id": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "AudioStreamStarted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "stream_id",
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "stream_id": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "VideoStreamStarted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "stream_id",
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "stream_id": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "IqStreamStarted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "stream_id",
-                  "device_set",
-                  "channel"
-                ],
-                "properties": {
-                  "channel": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "device_set": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  },
-                  "stream_id": {
-                    "type": "integer",
-                    "format": "int32",
-                    "minimum": 0
-                  }
-                }
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "SymbolStreamStarted"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "type": "object",
-                "required": [
-                  "stream_id",
                   "node",
                   "kind"
                 ],
@@ -34111,6 +33762,95 @@
                 "type": "object",
                 "required": [
                   "stream_id",
+                  "node",
+                  "port",
+                  "source",
+                  "kind"
+                ],
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "kind": {
+                    "$ref": "#/components/schemas/StreamKind"
+                  },
+                  "node": {
+                    "type": "string"
+                  },
+                  "port": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "stream_id": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "via": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "PortStream"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "node",
+                  "port",
+                  "reason"
+                ],
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "port": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "PortRefused"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "stream_id",
                   "kind"
                 ],
                 "properties": {
@@ -34156,24 +33896,6 @@
                 "type": "string",
                 "enum": [
                   "DecodedLost"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "type"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/CapturedImage"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "ImageCaptured"
                 ]
               }
             }
@@ -35156,7 +34878,10 @@
             "minimum": 0
           },
           "pictures": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/CapturedImage"
             }
@@ -35445,9 +35170,6 @@
             "format": "float",
             "maximum": 1,
             "minimum": 0
-          },
-          "record_audio": {
-            "type": "boolean"
           },
           "report_unidentified": {
             "type": "boolean"
@@ -36196,6 +35918,21 @@
           "fusion_grid"
         ]
       },
+      "StreamParams": {
+        "type": "object",
+        "properties": {
+          "bins": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "fps": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "StreamScope": {
         "type": "object",
         "properties": {
@@ -36637,6 +36374,46 @@
           "heading_poor",
           "too_fast",
           "done"
+        ]
+      },
+      "SweepStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "job"
+            ],
+            "properties": {
+              "job": {
+                "type": "string",
+                "enum": [
+                  "scan"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/ScannerStatus"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "status",
+              "job"
+            ],
+            "properties": {
+              "job": {
+                "type": "string",
+                "enum": [
+                  "hunt"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/HuntStatus"
+              }
+            }
+          }
         ]
       },
       "SwitchWorkspaceRequest": {
@@ -39172,6 +38949,35 @@
                 "type": "string",
                 "enum": [
                   "added_wires"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "nodes"
+                ],
+                "properties": {
+                  "nodes": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DroppedNode"
+                    }
+                  }
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "added_nodes"
                 ]
               }
             }

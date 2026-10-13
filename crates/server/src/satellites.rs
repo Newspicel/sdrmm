@@ -9,16 +9,17 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use sdrmm_engine::{Doppler, Engine};
+use sdrmm_engine::Engine;
 use sdrmm_orbit::{OrbitError, Satellite, Tle};
 use sdrmm_wire::{
-    CONTROL_PORT, DecodedRecord, DecoderEvent, EventOrigin, LatLon, NO_CHANNEL, NodeBody, NodeKind,
-    POSITION_PORT, PassPoint, SatelliteFix, SatelliteNode, SatellitePass, SatelliteStatus,
-    ServerEvent,
+    ControlAck, ControlCommand, ControlVerb, DecodedRecord, DecoderEvent, DopplerSteer,
+    EventOrigin, LatLon, NO_CHANNEL, NodeBody, POSITION_PORT, PassPoint, ResolvedPatch,
+    SatelliteFix, SatelliteNode, SatellitePass, SatelliteStatus, ServerEvent, SkyTrack,
 };
 
 use crate::{
     AppState,
+    control::{self, ControlBus},
     gps::GpsHub,
     resolved::{Resolved, ResolvedHub},
 };
@@ -39,7 +40,6 @@ struct Wiring {
     node: String,
     settings: SatelliteNode,
     position: Option<String>,
-    targets: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -85,10 +85,6 @@ impl SatelliteHub {
             .collect()
     }
 
-    pub(crate) fn status(&self, node: &str) -> Option<SatelliteStatus> {
-        locked(&self.statuses).get(node).cloned()
-    }
-
     pub(crate) fn reconcile(&self, state: &AppState) {
         let wirings = wirings(&state.resolved.current());
         let idle = wirings.is_empty();
@@ -114,11 +110,11 @@ impl SatelliteHub {
             engine: Arc::downgrade(&state.engine),
             gps: state.gps.clone(),
             resolved: state.resolved.clone(),
+            control: state.control.clone(),
             plan: self.plan.clone(),
             statuses: self.statuses.clone(),
             stop: self.stop.clone(),
             satellites: HashMap::new(),
-            steered: HashSet::new(),
             published_at: None,
         };
         match std::thread::Builder::new()
@@ -159,18 +155,6 @@ fn wirings(resolved: &Resolved) -> Vec<Wiring> {
                     .patch
                     .first_feed(&node.id, POSITION_PORT)
                     .map(|feed| feed.source.clone()),
-                targets: resolved
-                    .patch
-                    .reaches(&node.id, CONTROL_PORT)
-                    .iter()
-                    .filter(|reach| {
-                        resolved
-                            .patch
-                            .node(&reach.sink)
-                            .is_some_and(|sink| sink.kind == NodeKind::Channel)
-                    })
-                    .map(|reach| reach.sink.clone())
-                    .collect(),
             }),
             _ => None,
         })
@@ -196,11 +180,11 @@ struct Tracker {
     engine: Weak<Engine>,
     gps: Arc<GpsHub>,
     resolved: Arc<ResolvedHub>,
+    control: Arc<ControlBus>,
     plan: Arc<Mutex<Plan>>,
     statuses: Arc<Mutex<HashMap<String, SatelliteStatus>>>,
     stop: Arc<AtomicBool>,
     satellites: HashMap<String, Orbit>,
-    steered: HashSet<(u32, u32)>,
     published_at: Option<Instant>,
 }
 
@@ -243,7 +227,7 @@ impl Tracker {
         }
     }
 
-    fn tick(&mut self, engine: &Engine, wirings: &[Wiring], changed: bool) {
+    fn tick(&mut self, engine: &Arc<Engine>, wirings: &[Wiring], changed: bool) {
         let now = unix_now();
         let publish = changed
             || self
@@ -251,18 +235,23 @@ impl Tracker {
                 .is_none_or(|at| at.elapsed() >= PUBLISH_EVERY);
         self.satellites
             .retain(|node, _| wirings.iter().any(|wiring| wiring.node == *node));
-        let mut steered = HashSet::new();
+        let resolved = self.resolved.current();
         let mut statuses = HashMap::new();
         for wiring in wirings {
-            let status = self.follow(engine, wiring, now, &mut steered);
+            let (mut status, steering) = self.follow(wiring, now);
+            drive(
+                &self.control,
+                engine,
+                &resolved.patch,
+                (wiring, steering),
+                &mut status,
+            );
             statuses.insert(wiring.node.clone(), status);
         }
-        for &(ds, ch) in self.steered.difference(&steered) {
-            if let Err(error) = engine.steer_channel(ds, ch, Doppler::default()) {
-                tracing::debug!(%error, ds, ch, "could not release a Doppler correction");
-            }
-        }
-        self.steered = steered;
+        self.control
+            .release_all_but(engine, &resolved.patch, &|from: &str| {
+                wirings.iter().any(|wiring| wiring.node == from)
+            });
         *locked(&self.statuses) = statuses.clone();
         if publish {
             self.published_at = Some(Instant::now());
@@ -277,51 +266,37 @@ impl Tracker {
         }
     }
 
-    fn follow(
-        &mut self,
-        engine: &Engine,
-        wiring: &Wiring,
-        now: f64,
-        steered: &mut HashSet<(u32, u32)>,
-    ) -> SatelliteStatus {
+    fn follow(&mut self, wiring: &Wiring, now: f64) -> (SatelliteStatus, Option<track::Steering>) {
         let mut status = SatelliteStatus {
             node: wiring.node.clone(),
             ..SatelliteStatus::default()
         };
-        let Some(orbit) = orbit_of(&mut self.satellites, wiring) else {
-            status.error = Some("pick a satellite".to_owned());
-            return status;
-        };
-        let satellite = match &orbit.satellite {
-            Ok(satellite) => satellite,
+        match self.steer(wiring, now, &mut status) {
+            Ok(steering) => (status, Some(steering)),
             Err(error) => {
-                status.error = Some(error.clone());
-                return status;
+                status.error = Some(error);
+                (status, None)
             }
-        };
+        }
+    }
+
+    fn steer(
+        &mut self,
+        wiring: &Wiring,
+        now: f64,
+        status: &mut SatelliteStatus,
+    ) -> Result<track::Steering, String> {
+        let orbit = orbit_of(&mut self.satellites, wiring).ok_or("pick a satellite")?;
+        let satellite = orbit.satellite.as_ref().map_err(Clone::clone)?;
         status.name = satellite.tle.name.clone();
         status.catalog = Some(satellite.tle.catalog.clone());
         status.tle_age_days = Some(satellite.age_days(now));
-        if let Err(error) = place(&mut orbit.track, satellite, &mut status, now) {
-            status.error = Some(error.to_string());
-            return status;
-        }
-        let Some(source) = &wiring.position else {
-            status.error = Some("wire a position".to_owned());
-            return status;
-        };
-        let Some(fix) = self.gps.fix(source) else {
-            status.error = Some("waiting for a position fix".to_owned());
-            return status;
-        };
+        place(&mut orbit.track, satellite, status, now).map_err(|error| error.to_string())?;
+        let source = wiring.position.as_ref().ok_or("wire a position")?;
+        let fix = self.gps.fix(source).ok_or("waiting for a position fix")?;
         let observer = track::observer(&fix);
-        let steering = match track::steer(satellite, &observer, &wiring.settings, now) {
-            Ok(steering) => steering,
-            Err(error) => {
-                status.error = Some(error.to_string());
-                return status;
-            }
-        };
+        let steering = track::steer(satellite, &observer, &wiring.settings, now)
+            .map_err(|error| error.to_string())?;
         if orbit.passed_at.is_none_or(|at| at.elapsed() >= PASS_EVERY)
             || orbit
                 .pass
@@ -350,32 +325,52 @@ impl Tracker {
         status.uplink_hz = steering.uplink_hz;
         status.doppler_hz = steering.doppler.map(|doppler| doppler.shift_hz);
         status.doppler_rate_hz_s = steering.doppler.map(|doppler| doppler.rate_hz_s);
-        if wiring.targets.is_empty() {
-            return status;
+        Ok(steering)
+    }
+}
+
+fn drive(
+    control: &ControlBus,
+    engine: &Arc<Engine>,
+    patch: &ResolvedPatch,
+    (wiring, steering): (&Wiring, Option<track::Steering>),
+    status: &mut SatelliteStatus,
+) {
+    let node = wiring.node.as_str();
+    let Some(steering) = steering else {
+        control.deliver(engine, patch, node, &ControlCommand::Release);
+        return;
+    };
+    let sky = SkyTrack {
+        look: steering.look,
+        visible: status.visible,
+        next_pass: status.next_pass,
+        pass_track: status.pass_track.clone(),
+    };
+    let mut acks = control.deliver(engine, patch, node, &ControlCommand::Point(sky));
+    let doppler = match (wiring.settings.downlink_hz, steering.doppler) {
+        (Some(freq_hz), Some(doppler)) => {
+            acks.extend(control.deliver(engine, patch, node, &ControlCommand::Tune { freq_hz }));
+            doppler
         }
-        let (Some(downlink_hz), Some(doppler)) = (wiring.settings.downlink_hz, steering.doppler)
-        else {
-            status.error = Some("set a downlink frequency".to_owned());
-            return status;
-        };
-        let resolved = self.resolved.current();
-        for target in &wiring.targets {
-            let Some(addr) = resolved.patch.channel(target) else {
-                continue;
-            };
-            let (ds, ch) = (addr.device_set, addr.channel);
-            let driven = engine
-                .tune_channel(ds, ch, downlink_hz)
-                .and_then(|_| engine.steer_channel(ds, ch, doppler));
-            match driven {
-                Ok(()) => {
-                    steered.insert((ds, ch));
-                    status.driving.push(target.clone());
-                }
-                Err(error) => status.error = Some(format!("{target}: {error}")),
+        _ => {
+            if control::takes(patch, node, ControlVerb::Tune) {
+                status.error = Some("set a downlink frequency".to_owned());
             }
+            DopplerSteer::default()
         }
-        status
+    };
+    acks.extend(control.deliver(engine, patch, node, &ControlCommand::Doppler(doppler)));
+    take_acks(status, acks);
+}
+
+fn take_acks(status: &mut SatelliteStatus, acks: Vec<ControlAck>) {
+    for ack in acks {
+        match ack.error {
+            Some(error) => status.error = Some(format!("{}: {error}", ack.target)),
+            None if !status.driving.contains(&ack.target) => status.driving.push(ack.target),
+            None => {}
+        }
     }
 }
 
@@ -457,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn only_wired_decoders_and_the_wired_position_are_followed() {
+    fn only_the_wired_position_is_followed() {
         let channel = || {
             NodeBody::Channel(ChannelNode {
                 channel_type: "nfm".to_owned(),
@@ -484,6 +479,5 @@ mod tests {
         });
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].position.as_deref(), Some("gps"));
-        assert_eq!(found[0].targets, vec!["voice".to_owned()]);
     }
 }

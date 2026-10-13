@@ -1,11 +1,9 @@
 import type { SpectrumFrame } from "./frame";
 import type { Listener, Unsubscribe } from "./listeners";
-import type { ClientCommand, ServerEvent } from "./types";
+import { type PortHub, portHub, portKey } from "./ports";
 
 export interface SpectrumSocket {
-  send(command: ClientCommand): void;
-  isConnected(): boolean;
-  on<K extends "spectrum" | "status" | "event">(kind: K, listener: Listener<K>): Unsubscribe;
+  on<K extends "spectrum">(kind: K, listener: Listener<K>): Unsubscribe;
 }
 
 export const SPECTRUM_FPS = 30;
@@ -57,8 +55,8 @@ function resolveBins(desired: Iterable<number>): number {
 }
 
 export interface Lane {
-  deviceSet: number;
-  stream: number;
+  node: string;
+  port: string;
 }
 
 export interface RowMeta {
@@ -75,10 +73,6 @@ export interface SpectrumHistory {
   count: number;
   bins: number;
   meta: RowMeta[];
-}
-
-function laneKey(deviceSet: number, stream: number): string {
-  return `${deviceSet}:${stream}`;
 }
 
 class History {
@@ -136,22 +130,28 @@ class History {
 }
 
 interface Watched {
+  lane: Lane;
   listeners: Map<(frame: SpectrumFrame) => void, number>;
   history: History;
   release: number;
   bins: number;
+  hold: (() => void) | null;
 }
 
 export class SpectrumHub {
   private socket: SpectrumSocket | null = null;
   private unsubscribes: Unsubscribe[] = [];
   private readonly lanes = new Map<string, Watched>();
-  private readonly ids = new Map<number, string>();
   private hidden = false;
 
+  constructor(private readonly ports: PortHub = portHub) {}
+
   private readonly onFrame = (frame: SpectrumFrame): void => {
-    const key = this.ids.get(frame.streamId);
-    const lane = key === undefined ? undefined : this.lanes.get(key);
+    const stream = this.ports.streamOf(frame.streamId);
+    if (stream === undefined || stream.kind !== "spectrum") {
+      return;
+    }
+    const lane = this.lanes.get(portKey(stream.node, stream.port));
     if (lane === undefined) {
       return;
     }
@@ -161,40 +161,13 @@ export class SpectrumHub {
     }
   };
 
-  private readonly onEvent = (event: ServerEvent): void => {
-    if (event.type === "StreamStarted") {
-      const { stream_id, device_set, stream } = event.data;
-      this.ids.set(stream_id, laneKey(device_set, stream ?? 0));
-    } else if (event.type === "StreamStopped" && event.data.kind === "spectrum") {
-      this.ids.delete(event.data.stream_id);
-    }
-  };
-
-  private readonly onStatus = (connected: boolean): void => {
-    if (!connected) {
-      return;
-    }
-    this.ids.clear();
-    for (const lane of this.watched()) {
-      this.send(lane, true);
-    }
-  };
-
   attach(socket: SpectrumSocket): void {
     if (this.socket === socket) {
       return;
     }
     this.detach();
     this.socket = socket;
-    this.unsubscribes = [
-      socket.on("spectrum", this.onFrame),
-      socket.on("status", this.onStatus),
-      socket.on("event", this.onEvent),
-    ];
-    this.ids.clear();
-    for (const lane of this.watched()) {
-      this.send(lane, true);
-    }
+    this.unsubscribes = [socket.on("spectrum", this.onFrame)];
   }
 
   detach(): void {
@@ -206,31 +179,33 @@ export class SpectrumHub {
   }
 
   subscribe(
-    deviceSet: number,
-    stream: number,
+    node: string,
+    port: string,
     listener: (frame: SpectrumFrame) => void,
     bins: number = SPECTRUM_BINS,
   ): () => void {
-    const key = laneKey(deviceSet, stream);
+    const key = portKey(node, port);
     let lane = this.lanes.get(key);
     if (lane === undefined) {
       lane = {
+        lane: { node, port },
         listeners: new Map([[listener, bins]]),
         history: new History(),
         release: 0,
         bins: resolveBins([bins]),
+        hold: null,
       };
       this.lanes.set(key, lane);
-      this.send({ deviceSet, stream }, true);
-      return () => this.release(key, { deviceSet, stream }, listener);
+      this.send(lane);
+      return () => this.release(key, listener);
     }
     if (lane.release !== 0) {
       clearTimeout(lane.release);
       lane.release = 0;
     }
     lane.listeners.set(listener, bins);
-    this.refresh(key, { deviceSet, stream });
-    return () => this.release(key, { deviceSet, stream }, listener);
+    this.refresh(lane);
+    return () => this.release(key, listener);
   }
 
   setVisible(visible: boolean): void {
@@ -238,14 +213,14 @@ export class SpectrumHub {
       return;
     }
     this.hidden = !visible;
-    for (const lane of this.watched()) {
-      this.send(lane, true);
+    for (const lane of this.lanes.values()) {
+      this.send(lane);
     }
   }
 
-  history(deviceSet: number, stream: number): SpectrumHistory {
+  history(node: string, port: string): SpectrumHistory {
     return (
-      this.lanes.get(laneKey(deviceSet, stream))?.history.read() ?? {
+      this.lanes.get(portKey(node, port))?.history.read() ?? {
         rows: new Uint8Array(0),
         count: 0,
         bins: 0,
@@ -254,25 +229,22 @@ export class SpectrumHub {
     );
   }
 
-  latest(deviceSet: number, stream: number): SpectrumFrame | null {
-    return this.lanes.get(laneKey(deviceSet, stream))?.history.latest ?? null;
+  latest(node: string, port: string): SpectrumFrame | null {
+    return this.lanes.get(portKey(node, port))?.history.latest ?? null;
   }
 
   watched(): Lane[] {
-    return [...this.lanes.keys()].map((key) => {
-      const [deviceSet, stream] = key.split(":");
-      return { deviceSet: Number(deviceSet), stream: Number(stream) };
-    });
+    return [...this.lanes.values()].map((watched) => watched.lane);
   }
 
-  private release(key: string, lane: Lane, listener: (frame: SpectrumFrame) => void): void {
+  private release(key: string, listener: (frame: SpectrumFrame) => void): void {
     const watched = this.lanes.get(key);
     if (watched === undefined) {
       return;
     }
     watched.listeners.delete(listener);
     if (watched.listeners.size > 0) {
-      this.refresh(key, lane);
+      this.refresh(watched);
       return;
     }
     if (watched.release !== 0) {
@@ -280,40 +252,30 @@ export class SpectrumHub {
     }
     watched.release = setTimeout(() => {
       this.lanes.delete(key);
-      this.send(lane, false);
+      watched.hold?.();
+      watched.hold = null;
     }, RELEASE_GRACE_MS);
   }
 
-  private refresh(key: string, lane: Lane): void {
-    const watched = this.lanes.get(key);
-    if (watched === undefined) {
-      return;
-    }
+  private refresh(watched: Watched): void {
     const resolved = resolveBins(watched.listeners.values());
     if (resolved !== watched.bins) {
       watched.bins = resolved;
-      this.send(lane, true);
+      this.send(watched);
     }
   }
 
-  private send(lane: Lane, on: boolean): void {
-    const bins = this.lanes.get(laneKey(lane.deviceSet, lane.stream))?.bins ?? SPECTRUM_BINS;
-    this.socket?.send(
-      on
-        ? {
-            type: "SubscribeSpectrum",
-            data: {
-              device_set: lane.deviceSet,
-              fps: this.hidden ? SPECTRUM_HIDDEN_FPS : SPECTRUM_FPS,
-              bins,
-              stream: lane.stream,
-            },
-          }
-        : {
-            type: "UnsubscribeSpectrum",
-            data: { device_set: lane.deviceSet, stream: lane.stream },
-          },
-    );
+  private send(watched: Watched): void {
+    const params = {
+      fps: this.hidden ? SPECTRUM_HIDDEN_FPS : SPECTRUM_FPS,
+      bins: watched.bins,
+    };
+    const { node, port } = watched.lane;
+    if (watched.hold === null) {
+      watched.hold = this.ports.hold(node, port, params);
+    } else {
+      this.ports.tune(node, port, params);
+    }
   }
 }
 

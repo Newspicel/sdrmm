@@ -28,7 +28,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
           id: nodeIds.monitor,
           kind: "spectrum_monitor",
           position: { x: 380, y: 0 },
-          data: { record_audio: true },
+          data: {},
         },
         {
           id: nodeIds.log,
@@ -44,6 +44,10 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
         {
           from: { node: nodeIds.monitor, port: "events" },
           to: { node: nodeIds.log, port: "events" },
+        },
+        {
+          from: { node: nodeIds.monitor, port: "audio" },
+          to: { node: nodeIds.log, port: "audio" },
         },
         {
           from: { node: nodeIds.monitor, port: "events" },

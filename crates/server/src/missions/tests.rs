@@ -108,6 +108,7 @@ fn hunt_graph(position: Option<PositionSource>) -> PatchGraph {
         ],
         edges: vec![
             wire(("radio", "iq"), (VOICE, "iq")),
+            wire(("radio", "iq"), (HUNT, "iq")),
             wire((HUNT, "control"), (VOICE, "control")),
         ],
     };
@@ -388,16 +389,29 @@ async fn an_unwired_hunt_says_so() {
     assert!(!unwired.ready);
     assert_eq!(
         unwired.problems,
-        vec![MissionProblem::Unwired {
-            port: "control".to_owned()
-        }]
+        vec![
+            MissionProblem::Unwired {
+                port: "control".to_owned()
+            },
+            MissionProblem::Unwired {
+                port: "iq".to_owned()
+            }
+        ]
     );
     assert!(unwired.controls.is_empty());
     assert!(hunt_of(unwired).target.is_none());
 
     let idle = find(&listed, "idle");
     assert!(!idle.ready);
-    assert_eq!(idle.problems, vec![MissionProblem::NotRunning]);
+    assert_eq!(
+        idle.problems,
+        vec![
+            MissionProblem::NotRunning,
+            MissionProblem::Unwired {
+                port: "iq".to_owned()
+            }
+        ]
+    );
     assert!(idle.controls.is_empty());
 }
 

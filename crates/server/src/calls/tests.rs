@@ -27,6 +27,7 @@ fn binding(gate: CallGate) -> CallBinding {
         device_set: 1,
         channel: 2,
         gate,
+        keep_audio: true,
     }
 }
 

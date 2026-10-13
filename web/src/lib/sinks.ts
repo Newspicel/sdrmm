@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import type { Listener, Unsubscribe } from "./listeners";
 import type {
+  CapturedImage,
   ClientCommand,
   DecodedRecord,
   DecoderEventOf,
@@ -18,12 +19,14 @@ import type {
 } from "./types";
 
 export const SINK_RECORDS = 500;
+export const SINK_PICTURES = 64;
 
 export interface SinkView {
   entities: readonly Entity[];
   records: readonly DecodedRecord[];
   tracks: readonly PositionTrack[];
   surfaces: readonly SurfaceRef[];
+  pictures: readonly CapturedImage[];
   propagation: PropagationView | null;
   lost: number;
 }
@@ -44,6 +47,7 @@ export const EMPTY_SINK: SinkView = Object.freeze({
   records: [],
   tracks: [],
   surfaces: [],
+  pictures: [],
   propagation: null,
   lost: 0,
 });
@@ -58,6 +62,7 @@ export function snapshotView(feed: SinkFeed): SinkView {
     records: feed.records.toReversed().slice(0, SINK_RECORDS),
     tracks: feed.tracks,
     surfaces: feed.surfaces,
+    pictures: (feed.pictures ?? []).toReversed().slice(0, SINK_PICTURES),
     propagation: feed.propagation ?? null,
     lost: feed.lost,
   };
@@ -91,6 +96,10 @@ export function updatedView(view: SinkView, update: SinkUpdate): SinkView {
         : added.toReversed().concat(view.records).slice(0, SINK_RECORDS),
     tracks: update.tracks ?? view.tracks,
     surfaces: update.surfaces ?? view.surfaces,
+    pictures:
+      update.pictures == null
+        ? view.pictures
+        : update.pictures.toReversed().slice(0, SINK_PICTURES),
     propagation: update.propagation ?? view.propagation,
     lost: update.lost,
   };

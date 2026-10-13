@@ -8,7 +8,6 @@ import {
   CALLS_KEY,
   DECODER_LOG_KEY,
   DEVICES_KEY,
-  IMAGES_KEY,
   PHONES_KEY,
   PRESETS_KEY,
   RECORDINGS_KEY,
@@ -23,9 +22,10 @@ import { useBroadcastStore } from "./broadcast";
 import { recordEvent } from "./diagnostics";
 import { useFusionStore } from "./fusion";
 import { useHuntStore } from "./hunt";
-import { iqHub } from "./iq";
 import { useLevelStore } from "./levels";
 import { usePipelineHealth } from "./pipeline";
+import { portHub } from "./ports";
+import { iqHub, symbolHub } from "./portTaps";
 import { usePositionStore } from "./position";
 import { authorKey, savedName, usePresenceStore } from "./presence";
 import { useProcessorStore } from "./processors";
@@ -37,15 +37,8 @@ import { sinkHub } from "./sinks";
 import { spectrumHub } from "./spectrum";
 import { surfaceHub } from "./surface";
 import { useSurveyStore } from "./survey";
-import { symbolHub } from "./symbols";
 import { pushToast } from "./toasts";
-import type {
-  CapturedImage,
-  CapturedImagesResponse,
-  ServerEvent,
-  StateScope,
-  WorkspacesResponse,
-} from "./types";
+import type { ServerEvent, StateScope, WorkspacesResponse } from "./types";
 import { retryNodeState } from "./useNodeStateSync";
 import { videoHub } from "./video";
 import { SdrSocket } from "./ws";
@@ -60,9 +53,6 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
           break;
         case "StateChanged":
           invalidateScope(queryClient, event.data.scope);
-          break;
-        case "ImageCaptured":
-          appendImage(queryClient, event.data);
           break;
         case "PatchResolved":
         case "NodeProblems":
@@ -80,11 +70,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
           break;
         }
         case "Error":
-          if (audioEngine.claimServerError(event.data.message)) {
-            recordEvent("error", "socket", event.data.message);
-          } else {
-            pushToast(event.data.message);
-          }
+          pushToast(event.data.message);
           break;
         default:
           break;
@@ -130,6 +116,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", useSurveyStore.getState().observe);
     s.on("event", usePresenceStore.getState().observe);
     s.on("event", useActivityStore.getState().observe);
+    portHub.attach(s);
     spectrumHub.attach(s);
     iqHub.attach(s);
     symbolHub.attach(s);
@@ -150,6 +137,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.connect();
     return () => {
       document.removeEventListener("visibilitychange", followVisibility);
+      portHub.detach();
       spectrumHub.detach();
       iqHub.detach();
       symbolHub.detach();
@@ -171,14 +159,6 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
 
   return { socket, retrySocket };
 }
-const MAX_CACHED_IMAGES = 512;
-
-function appendImage(queryClient: QueryClient, image: CapturedImage) {
-  queryClient.setQueryData(IMAGES_KEY, (previous: CapturedImagesResponse | undefined) => ({
-    images: [image, ...(previous?.images ?? [])].slice(0, MAX_CACHED_IMAGES),
-  }));
-}
-
 export function invalidateScope(queryClient: QueryClient, scope: StateScope): void {
   switch (scope.scope) {
     case "all":
@@ -219,7 +199,6 @@ export function invalidateScope(queryClient: QueryClient, scope: StateScope): vo
       void queryClient.invalidateQueries({ queryKey: CALLS_KEY });
       break;
     case "images":
-      void queryClient.invalidateQueries({ queryKey: IMAGES_KEY });
       break;
     case "phones":
       void queryClient.invalidateQueries({ queryKey: PHONES_KEY });

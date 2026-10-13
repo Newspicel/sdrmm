@@ -33,7 +33,7 @@ pub(super) async fn scan_channel(
     Ok(Json(status))
 }
 
-pub(crate) fn scan(
+fn scan(
     engine: &std::sync::Arc<sdrmm_engine::Engine>,
     ds: u32,
     ch: u32,

@@ -77,14 +77,12 @@ async fn scanner_start_stop_and_error_mapping_over_http() {
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     let status_body: sdrmm_wire::ScannerStatus = serde_json::from_slice(&body).expect("json");
     assert_eq!(status_body.targets, 21);
-    assert_eq!(status_body.settings.channel, ch);
     assert!(
         status_body.settings.measure_bw_hz.is_some(),
         "the decoder's bandwidth is reported as the one measured"
     );
     let listed = get_state(&app).await.device_sets[0].scanners.clone();
     assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].settings.channel, ch);
 
     let (status, _) = request(
         app.clone(),
@@ -330,4 +328,36 @@ async fn hunt_mark_without_heading_is_409() {
     );
     let (status, _) = request(app, "POST", &hunt, Some(r#"{"action":"stop"}"#)).await;
     assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_node_action_names_a_node_of_the_active_workspace() {
+    let app = test_router();
+    let scan = Some(r#"{"action":"scan","with":"start"}"#);
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/workspaces/active/nodes/ghost/actions",
+        scan,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/workspaces/active/nodes/ghost/actions",
+        Some(r#"{"action":"fly"}"#),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
 }

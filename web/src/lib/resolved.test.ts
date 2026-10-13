@@ -5,6 +5,7 @@ import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../test/resolved";
 import { RESOLVED_KEY } from "./api";
 import {
   activePatch,
+  audioTaps,
   boundChannels,
   boundRadios,
   channelOwners,
@@ -15,7 +16,6 @@ import {
   observeResolved,
   radioOf,
   reachesOf,
-  speakerTaps,
   withPatch,
   withProblems,
 } from "./resolved";
@@ -170,14 +170,15 @@ describe("resolved lookups", () => {
     expect(ignoredOf(null, "map", "events")).toEqual([]);
   });
 
-  it("lists every channel a speaker plays, trunk followers included", () => {
-    expect(speakerTaps(patch())).toEqual([
-      { deviceSet: 1, channel: 4, fx: ["fx"] },
-      { deviceSet: 1, channel: 6, fx: [] },
-      { deviceSet: 1, channel: 99, fx: [] },
+  it("names every audio stream a port plays as the server does, trunk followers included", () => {
+    expect(audioTaps(patch())).toEqual([
+      { node: "spk", port: "audio", source: "nfm/fx" },
+      { node: "spk", port: "audio", source: "trunk" },
+      { node: "spk", port: "audio", source: "trunk#1" },
     ]);
-    expect(inputsOf(patch(), live, "spk", "audio").map((input) => input.channel.id)).toEqual([
-      4, 6,
+    expect(inputsOf(patch(), live, "spk", "audio").map((input) => input.source)).toEqual([
+      "nfm/fx",
+      "trunk",
     ]);
   });
 

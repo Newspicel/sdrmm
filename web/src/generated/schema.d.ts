@@ -1796,6 +1796,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/active/nodes/{node}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["node_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces/active/resolved": {
         parameters: {
             query?: never;
@@ -3205,6 +3221,8 @@ export interface components {
             /** Format: int32 */
             lines: number;
             mode: string;
+            node: string;
+            sinks?: string[];
             source: string;
             /** Format: int32 */
             width: number;
@@ -3695,102 +3713,6 @@ export interface components {
             type: "SubscribeDiagnostics";
         } | {
             data: {
-                /** Format: int32 */
-                bins: number;
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                fps: number;
-                /** Format: int32 */
-                stream?: number;
-            };
-            /** @enum {string} */
-            type: "SubscribeSpectrum";
-        } | {
-            data: {
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream?: number;
-            };
-            /** @enum {string} */
-            type: "UnsubscribeSpectrum";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                fx?: string[];
-            };
-            /** @enum {string} */
-            type: "SubscribeAudio";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                fx?: string[];
-            };
-            /** @enum {string} */
-            type: "UnsubscribeAudio";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "SubscribeVideo";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "UnsubscribeVideo";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "SubscribeIq";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "UnsubscribeIq";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "SubscribeSymbols";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-            };
-            /** @enum {string} */
-            type: "UnsubscribeSymbols";
-        } | {
-            data: {
                 error?: string | null;
                 fix?: components["schemas"]["PositionFix"] | null;
             };
@@ -3809,6 +3731,21 @@ export interface components {
             };
             /** @enum {string} */
             type: "UnsubscribeSurface";
+        } | {
+            data: {
+                node: string;
+                params?: components["schemas"]["StreamParams"];
+                port: string;
+            };
+            /** @enum {string} */
+            type: "SubscribePort";
+        } | {
+            data: {
+                node: string;
+                port: string;
+            };
+            /** @enum {string} */
+            type: "UnsubscribePort";
         } | {
             data: {
                 node: string;
@@ -3935,6 +3872,12 @@ export interface components {
         };
         /** @enum {string} */
         ContactKind: "private" | "group" | "all";
+        ControlAck: {
+            error?: string | null;
+            sweep?: components["schemas"]["SweepStatus"] | null;
+            target: string;
+            verb?: components["schemas"]["ControlVerb"] | null;
+        };
         /** @enum {string} */
         ControlVerb: "tune" | "doppler" | "sweep" | "point";
         ConversionIssue: {
@@ -7031,6 +6974,15 @@ export interface components {
         NmeaDevicesResponse: {
             devices: components["schemas"]["NmeaDeviceInfo"][];
         };
+        NodeAction: {
+            /** @enum {string} */
+            action: "scan";
+            with: components["schemas"]["ScanAction"];
+        } | {
+            /** @enum {string} */
+            action: "hunt";
+            with: components["schemas"]["HuntAction"];
+        };
         NodeBody: {
             data: components["schemas"]["DeviceNode"];
             /** @enum {string} */
@@ -8977,11 +8929,6 @@ export interface components {
         /** @enum {string} */
         ScanRevert: "selected" | "last_called" | "last_used" | "primary" | "secondary";
         ScanSettings: {
-            /**
-             * Format: int32
-             * @description The decoder the scan feeds. It is parked on every hit, and the radio carrying it follows.
-             */
-            channel: number;
             /** Format: int32 */
             dwell_ms?: number;
             frequencies?: number[];
@@ -9005,6 +8952,7 @@ export interface components {
              */
             measure_bw_hz?: number | null;
             mode?: components["schemas"]["ScanMode"];
+            node?: string | null;
             priority?: number[];
             ranges?: components["schemas"]["ScanRange"][];
             /** Format: int32 */
@@ -9070,62 +9018,6 @@ export interface components {
             type: "StateChanged";
         } | {
             data: {
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream?: number;
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "StreamStarted";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                fx?: string[];
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "AudioStreamStarted";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "VideoStreamStarted";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "IqStreamStarted";
-        } | {
-            data: {
-                /** Format: int32 */
-                channel: number;
-                /** Format: int32 */
-                device_set: number;
-                /** Format: int32 */
-                stream_id: number;
-            };
-            /** @enum {string} */
-            type: "SymbolStreamStarted";
-        } | {
-            data: {
                 kind: components["schemas"]["StreamKind"];
                 node: string;
                 /** Format: int32 */
@@ -9142,6 +9034,28 @@ export interface components {
             type: "SurfaceRefused";
         } | {
             data: {
+                /** Format: int32 */
+                index?: number;
+                kind: components["schemas"]["StreamKind"];
+                node: string;
+                port: string;
+                source: string;
+                /** Format: int32 */
+                stream_id: number;
+                via?: string[];
+            };
+            /** @enum {string} */
+            type: "PortStream";
+        } | {
+            data: {
+                node: string;
+                port: string;
+                reason: string;
+            };
+            /** @enum {string} */
+            type: "PortRefused";
+        } | {
+            data: {
                 kind: components["schemas"]["StreamKind"];
                 /** Format: int32 */
                 stream_id: number;
@@ -9155,10 +9069,6 @@ export interface components {
             };
             /** @enum {string} */
             type: "DecodedLost";
-        } | {
-            data: components["schemas"]["CapturedImage"];
-            /** @enum {string} */
-            type: "ImageCaptured";
         } | {
             data: {
                 /** Format: int32 */
@@ -9405,7 +9315,7 @@ export interface components {
         SinkUpdate: {
             /** Format: int64 */
             lost: number;
-            pictures?: components["schemas"]["CapturedImage"][];
+            pictures?: components["schemas"]["CapturedImage"][] | null;
             propagation?: components["schemas"]["PropagationView"] | null;
             records?: components["schemas"]["DecodedRecord"][];
             removed?: components["schemas"]["EntityKey"][];
@@ -9512,7 +9422,6 @@ export interface components {
             disabled_protocols?: string[];
             /** Format: float */
             min_confidence?: number;
-            record_audio?: boolean;
             report_unidentified?: boolean;
             /** Format: double */
             start_hz?: number | null;
@@ -9714,6 +9623,12 @@ export interface components {
         };
         /** @enum {string} */
         StreamKind: "spectrum" | "audio" | "video" | "iq" | "symbols" | "range_doppler" | "spatial_spectrum" | "visibility" | "fusion_grid";
+        StreamParams: {
+            /** Format: int32 */
+            bins?: number;
+            /** Format: int32 */
+            fps?: number;
+        };
         StreamScope: {
             agc?: boolean;
             antenna?: boolean;
@@ -9831,6 +9746,15 @@ export interface components {
         };
         /** @enum {string} */
         SweepState: "off" | "idle" | "sweeping" | "no_heading" | "short_span" | "low_contrast" | "poor_fit" | "heading_poor" | "too_fast" | "done";
+        SweepStatus: {
+            /** @enum {string} */
+            job: "scan";
+            status: components["schemas"]["ScannerStatus"];
+        } | {
+            /** @enum {string} */
+            job: "hunt";
+            status: components["schemas"]["HuntStatus"];
+        };
         SwitchWorkspaceRequest: {
             /** Format: int64 */
             workspace: number;
@@ -10523,6 +10447,12 @@ export interface components {
             };
             /** @enum {string} */
             kind: "added_wires";
+        } | {
+            data: {
+                nodes: components["schemas"]["DroppedNode"][];
+            };
+            /** @enum {string} */
+            kind: "added_nodes";
         };
         WorkspaceSettings: {
             band_region?: string | null;
@@ -13168,14 +13098,16 @@ export interface operations {
     };
     list_images: {
         parameters: {
-            query?: never;
+            query: {
+                sink: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Pictures captured from scanning modes */
+            /** @description Pictures kept for one Video node, newest first */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -15806,6 +15738,51 @@ export interface operations {
             };
             /** @description Nothing left to undo */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    node_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Node of the active workspace */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeAction"];
+            };
+        };
+        responses: {
+            /** @description One ack per wired target; a failed target carries `error` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControlAck"][];
+                };
+            };
+            /** @description The node takes no such action or controls nothing */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No such node */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

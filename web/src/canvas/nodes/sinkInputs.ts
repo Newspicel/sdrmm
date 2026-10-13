@@ -1,10 +1,9 @@
 import type { WireScope } from "../../components/decoderLog";
-import { monitorKey } from "../../lib/audio/monitor";
 import { feedSources, type Input } from "../../lib/resolved";
 import { useWorkspaceContext } from "../context";
 
 export function inputKey(input: Input): string {
-  return monitorKey(input.deviceSet, input.channel.id, input.fx);
+  return input.source;
 }
 
 export function useInputName(): (input: Input) => string {

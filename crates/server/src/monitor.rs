@@ -5,8 +5,8 @@ use std::{
 
 use sdrmm_engine::{Engine, monitor::MonitorHandle};
 use sdrmm_wire::{
-    DecodedRecord, DecoderEvent, DeviceSetStatus, EventOrigin, IQ_PORT, NodeBody, ProblemSource,
-    ServerEvent, SpectrumMonitorNode, StateScope,
+    AUDIO_PORT, DecodedRecord, DecoderEvent, DeviceSetStatus, EventOrigin, IQ_PORT, Keeps,
+    NodeBody, ProblemSource, ServerEvent, SpectrumMonitorNode, StateScope,
 };
 use tokio::sync::{broadcast::error::RecvError, watch};
 
@@ -106,7 +106,10 @@ fn desired(engine: &Engine, resolved: &Resolved) -> Vec<Binding> {
                     node: node.id.clone(),
                     device_set,
                     stream,
-                    settings: settings.clone(),
+                    settings: SpectrumMonitorNode {
+                        keep_clips: resolved.patch.keeps(&node.id, AUDIO_PORT, Keeps::Clips),
+                        ..settings.clone()
+                    },
                 })
         })
         .collect()
@@ -324,6 +327,37 @@ mod tests {
         bench.activate(&WorkspaceSnapshot::empty());
         bench.reconcile(&mut active);
         assert!(active.is_empty());
+    }
+
+    #[test]
+    fn the_monitor_keeps_clips_only_with_its_audio_wired() {
+        let bench = Bench::new();
+        bench.activate(&watching("iq"));
+        let mut active = HashMap::new();
+        bench.reconcile(&mut active);
+        assert!(!active["monitor"].binding.settings.keep_clips);
+
+        let mut wired = watching("iq");
+        wired.graph.nodes.push(PatchNode {
+            id: "log".to_owned(),
+            body: NodeBody::default_for(sdrmm_wire::NodeKind::DecoderLog),
+            position: Position { x: 200.0, y: 0.0 },
+            size: None,
+            label: None,
+        });
+        wired.graph.edges.push(PatchEdge {
+            from: PortRef {
+                node: "monitor".to_owned(),
+                port: AUDIO_PORT.to_owned(),
+            },
+            to: PortRef {
+                node: "log".to_owned(),
+                port: AUDIO_PORT.to_owned(),
+            },
+        });
+        bench.activate(&wired);
+        bench.reconcile(&mut active);
+        assert!(active["monitor"].binding.settings.keep_clips);
     }
 
     #[test]

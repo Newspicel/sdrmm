@@ -31,6 +31,7 @@ pub mod lora;
 pub mod measurement;
 pub mod mission;
 pub mod network;
+pub mod node_action;
 pub mod patch;
 pub mod phone;
 pub mod position;
@@ -109,6 +110,9 @@ pub use channel::{
     SelcallSystem, SettingChoice, Sideband, Squelch, SsbParams, SstvMode, SstvModulation,
     SstvParams, TetraParams, Vdl2Params, VorParams, WfmParams, WsjtParams, WsprParams, YsfParams,
     home_frequency_hz, param_limits, retired_channel_type,
+};
+pub use control::{
+    ControlAck, ControlCommand, ControlVerb, DopplerSteer, SkyTrack, SweepJob, SweepStatus,
 };
 pub use cps::{
     ALL_CALL_NUMBER, Admit, Bandwidth, CODEPLUG_VERSION, ChannelKind, ChannelMode, Codeplug,
@@ -202,6 +206,7 @@ pub use network::{
     NetworkExportRequest, NetworkExportSettings, NetworkExportStatus, NetworkSampleFormat,
     NetworkTransport,
 };
+pub use node_action::NodeAction;
 pub use patch::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, AudioStream, BASEBAND_PORT,
     BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
@@ -274,17 +279,18 @@ pub use remote_id::{
 };
 pub use rest::{
     AnnotationError, ApiError, ApplyTemplateRequest, AudioRecordingInfo, AudioRecordingsResponse,
-    AuthInfo, Bookmark, CapturedImage, CapturedImagesResponse, ChannelTypesResponse,
-    ClientsResponse, CreateBookmarkRequest, CreateChannelRequest, CreateDeviceSetRequest,
-    CreatePresetRequest, CreatedId, CreatedRowId, DecoderLogEntry, DecoderLogGroup,
-    DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount, DevicesResponse,
-    ErrorCode, EventAudio, EventImage, ExportFormat, LogGroupKey, LogScope, MAX_LOG_SOURCES,
-    MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS,
-    MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket, OccupancyReport, PRESET_SNAPSHOT_VERSION,
-    PatchChannelRequest, PlaybackAction, PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot,
-    RecordingAnnotation, RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload,
-    RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo,
-    TemplatesResponse, VoiceCall, VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
+    AuthInfo, Bookmark, CapturedImage, CapturedImagesQuery, CapturedImagesResponse,
+    ChannelTypesResponse, ClientsResponse, CreateBookmarkRequest, CreateChannelRequest,
+    CreateDeviceSetRequest, CreatePresetRequest, CreatedId, CreatedRowId, DecoderLogEntry,
+    DecoderLogGroup, DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount,
+    DevicesResponse, ErrorCode, EventAudio, EventImage, ExportFormat, LogGroupKey, LogScope,
+    MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN,
+    MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket, OccupancyReport,
+    PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction, PlaybackRequest, PresetDevice,
+    PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery, RecordingFormat,
+    RecordingInfo, RecordingUpload, RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus,
+    TemplateInfo, TemplatesResponse, VoiceCall, VoiceCallsResponse, WriteSerialRequest,
+    WrittenSerial,
 };
 pub use rotator::{
     DEFAULT_GS232_BAUD, DEFAULT_ROTATOR_TOLERANCE_DEG, DEFAULT_ROTCTLD_ADDRESS, FLIP_ELEVATION_DEG,
@@ -305,7 +311,7 @@ pub use satellite::{
 };
 pub use scan::{
     MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanRequest,
-    ScanSettings, ScanState, ScannerStatus,
+    ScanSettings, ScanState, ScannerStatus, WatchedLane,
 };
 pub use sink::{
     Entity, EntityKey, PositionTrack, PropagationCell, PropagationPath, PropagationSummary,
@@ -369,8 +375,8 @@ pub use workspace_state::{
     WORKSPACE_STATE_VERSION, WorkspaceChannel, WorkspaceDevice, WorkspaceState, WorkspaceTrunk,
 };
 pub use ws::{
-    ClientCommand, PortActivity, ServerEvent, StateScope, StreamKind, SurfaceFit, SurfaceRefusal,
-    WS_BEARER_PROTOCOL_PREFIX, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
+    ClientCommand, PortActivity, ServerEvent, StateScope, StreamKind, StreamParams, SurfaceFit,
+    SurfaceRefusal, WS_BEARER_PROTOCOL_PREFIX, WS_CLOSE_REVOKED, WS_SUBPROTOCOL,
 };
 
 #[cfg(test)]
@@ -399,11 +405,10 @@ mod contract_tests {
 
     #[test]
     fn client_command_roundtrips() {
-        let cmd = ClientCommand::SubscribeSpectrum {
-            device_set: 1,
-            fps: 20,
-            bins: 1024,
-            stream: 2,
+        let cmd = ClientCommand::SubscribePort {
+            node: "scope".to_owned(),
+            port: "iq".to_owned(),
+            params: ws::StreamParams { fps: 20, bins: 512 },
         };
         let json = serde_json::to_string(&cmd).unwrap();
         let back: ClientCommand = serde_json::from_str(&json).unwrap();
@@ -413,16 +418,15 @@ mod contract_tests {
     #[test]
     fn stream_fields_default_to_zero_for_older_peers() {
         let cmd: ClientCommand = serde_json::from_str(
-            r#"{"type":"SubscribeSpectrum","data":{"device_set":1,"fps":20,"bins":1024}}"#,
+            r#"{"type":"SubscribePort","data":{"node":"spk","port":"audio"}}"#,
         )
         .unwrap();
         assert_eq!(
             cmd,
-            ClientCommand::SubscribeSpectrum {
-                device_set: 1,
-                fps: 20,
-                bins: 1024,
-                stream: 0,
+            ClientCommand::SubscribePort {
+                node: "spk".to_owned(),
+                port: "audio".to_owned(),
+                params: ws::StreamParams::default(),
             }
         );
 
@@ -1380,7 +1384,8 @@ mod contract_tests {
                     stop_hz: 146_000_000.0,
                     step_hz: 12_500.0,
                 }],
-                ..scan::ScanSettings::for_channel(2)
+                node: Some("scan".to_owned()),
+                ..scan::ScanSettings::for_channel(0)
             },
             targets: 161,
             first_hz: 144_000_000.0,
@@ -1395,7 +1400,8 @@ mod contract_tests {
         let mut json = serde_json::to_value(&set).unwrap();
         assert_eq!(json["scanners"][0]["state"], "holding");
         assert_eq!(json["scanners"][0]["current_hz"], 145_500_000.0);
-        assert_eq!(json["scanners"][0]["settings"]["channel"], 2);
+        assert_eq!(json["scanners"][0]["settings"]["node"], "scan");
+        assert!(json["scanners"][0]["settings"].get("channel").is_none());
         assert!(json["scanners"][0].get("error").is_none());
         let back: DeviceSet = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(back, set);
@@ -1413,8 +1419,9 @@ mod contract_tests {
             settings,
             scan::ScanSettings {
                 frequencies: vec![162_550_000.0],
-                ..scan::ScanSettings::for_channel(3)
-            }
+                ..scan::ScanSettings::for_channel(0)
+            },
+            "the decoder comes from the control wire, never from the settings"
         );
         assert_eq!(settings.dwell_ms, 250);
         assert_eq!(settings.resume_ms, 1_500);
@@ -1422,10 +1429,6 @@ mod contract_tests {
         assert_eq!(settings.measure_bw_hz, None);
         assert!(settings.lockouts.is_empty());
         assert!(settings.priority.is_empty());
-        assert!(
-            serde_json::from_str::<scan::ScanSettings>(r#"{"frequencies":[162550000.0]}"#).is_err(),
-            "a scan without a decoder to feed is refused"
-        );
 
         let json = serde_json::to_value(scan::ScanRequest {
             action: scan::ScanAction::Start,
@@ -1519,7 +1522,10 @@ mod contract_tests {
             device_set: 3,
             status: Box::new(scan::ScannerStatus {
                 state: scan::ScanState::Scanning,
-                settings: scan::ScanSettings::for_channel(1),
+                settings: scan::ScanSettings {
+                    node: Some("scan".to_owned()),
+                    ..scan::ScanSettings::for_channel(0)
+                },
                 targets: 0,
                 first_hz: 446_000_000.0,
                 last_hz: 446_000_000.0,
@@ -1578,55 +1584,30 @@ mod contract_tests {
     }
 
     #[test]
-    fn audio_subscription_commands_roundtrip() {
-        for cmd in [
-            ClientCommand::SubscribeAudio {
-                device_set: 1,
-                channel: 2,
-                fx: vec!["fx".to_owned()],
-            },
-            ClientCommand::UnsubscribeAudio {
-                device_set: 1,
-                channel: 2,
-                fx: Vec::new(),
-            },
-        ] {
-            let json = serde_json::to_value(&cmd).unwrap();
-            assert_eq!(json["data"]["device_set"], 1);
-            assert_eq!(json["data"]["channel"], 2);
-            let back: ClientCommand = serde_json::from_value(json).unwrap();
-            assert_eq!(back, cmd);
-        }
-    }
-
-    #[test]
-    fn an_audio_subscription_without_fx_is_the_bare_channel() {
-        let json = r#"{"type":"SubscribeAudio","data":{"device_set":1,"channel":2}}"#;
-        let parsed: ClientCommand = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            parsed,
-            ClientCommand::SubscribeAudio {
-                device_set: 1,
-                channel: 2,
-                fx: Vec::new(),
-            }
-        );
-    }
-
-    #[test]
-    fn audio_stream_started_shape() {
-        let ev = ServerEvent::AudioStreamStarted {
+    fn a_port_stream_names_its_node_port_and_source() {
+        let ev = ServerEvent::PortStream {
             stream_id: 4,
-            device_set: 1,
-            channel: 2,
-            fx: vec!["fx".to_owned()],
+            node: "spk".to_owned(),
+            port: "audio".to_owned(),
+            source: "voice".to_owned(),
+            via: vec!["fx".to_owned()],
+            index: 0,
+            kind: StreamKind::Audio,
         };
         let json = serde_json::to_value(&ev).unwrap();
-        assert_eq!(json["type"], "AudioStreamStarted");
-        assert_eq!(json["data"]["stream_id"], 4);
-        assert_eq!(json["data"]["device_set"], 1);
-        assert_eq!(json["data"]["channel"], 2);
-        assert_eq!(json["data"]["fx"][0], "fx");
+        assert_eq!(json["type"], "PortStream");
+        assert_eq!(json["data"]["source"], "voice");
+        assert_eq!(json["data"]["via"], serde_json::json!(["fx"]));
+        assert!(json["data"].get("index").is_none());
+        assert_eq!(json["data"]["kind"], "audio");
+        let refused = ServerEvent::PortRefused {
+            node: "spk".to_owned(),
+            port: "audio".to_owned(),
+            reason: "Not wired".to_owned(),
+        };
+        let back: ServerEvent =
+            serde_json::from_value(serde_json::to_value(&refused).unwrap()).unwrap();
+        assert_eq!(back, refused);
     }
 
     #[test]

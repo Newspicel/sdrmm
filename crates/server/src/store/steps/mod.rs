@@ -4,7 +4,9 @@ use serde_json::Value;
 
 use super::{StoreError, coherent_break};
 
+mod call_audio;
 mod filter_kinds;
+mod pictures;
 mod refused;
 mod steer;
 mod tx;
@@ -20,7 +22,11 @@ const STEPS: &[Step] = &[
     refused::drop_refused_edges,
 ];
 
-const ONCE: &[(&str, Step)] = &[("step:wire_watched_lanes", watched_lanes::wire_watched_lanes)];
+const ONCE: &[(&str, Step)] = &[
+    ("step:wire_watched_lanes", watched_lanes::wire_watched_lanes),
+    ("step:wire_call_audio", call_audio::wire_call_audio),
+    ("step:wire_pictures", pictures::wire_pictures),
+];
 
 pub(super) fn run(snapshot: &mut Value) -> Vec<WorkspaceNoticeKind> {
     STEPS.iter().flat_map(|step| step(snapshot)).collect()

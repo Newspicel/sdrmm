@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     channel::ChannelDescriptor,
-    decode::KindSet,
+    decode::{EventKind, KindSet},
     device::{Capabilities, Coherence},
     patch::{Keeps, Payload},
     state::StateSnapshot,
@@ -354,6 +354,20 @@ impl ResolvedPatch {
         self.node(node)
             .and_then(|found| found.output(port))
             .map_or(&[], |found| found.reaches.as_slice())
+    }
+
+    #[must_use]
+    pub fn keeps(&self, node: &str, port: &str, keeps: Keeps) -> bool {
+        self.node(node)
+            .and_then(|found| found.output(port))
+            .is_some_and(|found| found.kept.contains(&keeps))
+    }
+
+    #[must_use]
+    pub fn delivers(&self, node: &str, port: &str, kind: EventKind) -> bool {
+        self.reaches(node, port)
+            .iter()
+            .any(|reach| reach.kinds.contains(kind))
     }
 
     #[must_use]

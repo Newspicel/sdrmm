@@ -359,6 +359,7 @@ pub enum WorkspaceNoticeKind {
     DroppedFilterKinds { node: String, kinds: Vec<String> },
     DroppedWires { wires: Vec<NoticeWire> },
     AddedWires { wires: Vec<NoticeWire> },
+    AddedNodes { nodes: Vec<DroppedNode> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

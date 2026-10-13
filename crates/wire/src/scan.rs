@@ -24,10 +24,20 @@ pub enum ScanMode {
     All,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WatchedLane {
+    pub device_set: u32,
+    pub stream: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScanSettings {
-    /// The decoder the scan feeds. It is parked on every hit, and the radio carrying it follows.
+    #[serde(skip)]
     pub channel: u32,
+    #[serde(skip)]
+    pub lane: Option<WatchedLane>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
     #[serde(default)]
     pub mode: ScanMode,
     #[serde(default)]
@@ -80,6 +90,8 @@ impl ScanSettings {
     pub fn for_channel(channel: u32) -> Self {
         Self {
             channel,
+            lane: None,
+            node: None,
             mode: ScanMode::default(),
             ranges: Vec::new(),
             frequencies: Vec::new(),

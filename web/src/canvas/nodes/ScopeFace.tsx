@@ -152,7 +152,12 @@ export function ScopeFace({ node }: { node: PatchNode }) {
   return (
     <NodeShell node={node} title="Scope" category="output">
       <FaceBody scroll={false}>
-        <Spectrum key={`${set?.id ?? "none"}:${source?.stream ?? 0}`} set={set} source={source} />
+        <Spectrum
+          key={`${set?.id ?? "none"}:${source?.stream ?? 0}`}
+          node={node.id}
+          set={set}
+          source={source}
+        />
       </FaceBody>
     </NodeShell>
   );
@@ -181,7 +186,17 @@ function useLaneTune(set: DeviceSet | null, source: IqLane | null) {
   return { centerHeld, tuneCenter };
 }
 
-function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | null }) {
+const SCOPE_PORT = "iq";
+
+function Spectrum({
+  node,
+  set,
+  source,
+}: {
+  node: string;
+  set: DeviceSet | null;
+  source: IqLane | null;
+}) {
   const workspace = useWorkspaceContext();
   const stream = source?.stream ?? 0;
   const setId = set?.id ?? null;
@@ -201,7 +216,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
   const traceRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WaterfallView | null>(null);
   const [seedFrame] = useState<SpectrumFrame | null>(() =>
-    setId === null ? null : spectrumHub.latest(setId, stream),
+    setId === null ? null : spectrumHub.latest(node, SCOPE_PORT),
   );
   const frameRef = useRef<SpectrumFrame | null>(seedFrame);
   const gestureRef = useRef<Gesture | null>(null);
@@ -424,7 +439,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     if (setId === null) {
       return;
     }
-    const past = spectrumHub.history(setId, stream);
+    const past = spectrumHub.history(node, SCOPE_PORT);
     if (past.count > 0) {
       rendererRef.current?.seed(
         seedRows(past, frameRef.current, rangeRef.current),
@@ -458,7 +473,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
         if (action.kind === "shift") {
           rendererRef.current?.shiftRows(action.delta);
         } else {
-          const rows = spectrumHub.history(setId, stream);
+          const rows = spectrumHub.history(node, SCOPE_PORT);
           if (rows.count > 0) {
             rendererRef.current?.seed(
               alignHistory(rows, { centerHz: frame.centerHz, spanHz: frame.spanHz }, held),
@@ -481,8 +496,8 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
         setMeta(metaOf(frame));
       }
     };
-    return spectrumHub.subscribe(setId, stream, listener, SPECTRUM_MAX_BINS);
-  }, [setId, stream]);
+    return spectrumHub.subscribe(node, SCOPE_PORT, listener, SPECTRUM_MAX_BINS);
+  }, [setId, node]);
 
   useEffect(() => {
     let raf = 0;
@@ -568,7 +583,7 @@ function Spectrum({ set, source }: { set: DeviceSet | null; source: IqLane | nul
     if (setId === null) {
       return;
     }
-    const past = spectrumHub.history(setId, stream);
+    const past = spectrumHub.history(node, SCOPE_PORT);
     if (past.count === 0) {
       return;
     }

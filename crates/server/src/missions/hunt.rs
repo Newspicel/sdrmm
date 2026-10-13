@@ -1,6 +1,6 @@
 use sdrmm_wire::{
-    CONTROL_PORT, ChannelInfo, ChannelTarget, HuntMission, HuntNode, HuntSettings, HuntStatus,
-    MissionBody, MissionControl, MissionProblem, NodeBody, PatchGraph, SweepState,
+    CONTROL_PORT, ChannelInfo, ChannelTarget, HuntMission, HuntNode, HuntStatus, IQ_PORT,
+    MissionBody, MissionControl, MissionProblem, SweepState,
 };
 
 use super::{Built, Scene, TRIANGULATION, graph};
@@ -44,24 +44,17 @@ pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built 
             mission.target = Some(target(set.id, info, channel_node));
         }
     }
+    if scene.resolved.patch.first_feed(node, IQ_PORT).is_none() {
+        problems.push(MissionProblem::Unwired {
+            port: IQ_PORT.to_owned(),
+        });
+    }
     problems.extend(phone);
     let controls = controls(&mission, scanning);
     Built {
         body: MissionBody::Hunt(mission),
         problems,
         controls,
-    }
-}
-
-pub(super) fn settings(graph: &PatchGraph, node: &str, channel: u32) -> HuntSettings {
-    let sweep = match graph.node(node).map(|patch| &patch.body) {
-        Some(NodeBody::Hunt(hunt)) => hunt.sweep,
-        _ => HuntNode::default().sweep,
-    };
-    HuntSettings {
-        node: Some(node.to_owned()),
-        sweep,
-        ..HuntSettings::for_channel(channel)
     }
 }
 

@@ -406,6 +406,7 @@ mod tests {
                 address,
                 enabled: true,
             },
+            clips_from: Default::default(),
         }]);
         assert!(!outputs.entries["busy"].status.borrow().listening);
         assert!(

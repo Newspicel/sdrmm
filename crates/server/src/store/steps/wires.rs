@@ -1,5 +1,10 @@
-use sdrmm_wire::{NoticeWire, PortRef, WorkspaceNoticeKind};
+use std::collections::HashMap;
+
+use sdrmm_wire::{EVENTS_PORT, NodeKind, NoticeWire, PortRef, WorkspaceNoticeKind};
 use serde_json::Value;
+
+use super::graph_nodes;
+use crate::store::node_kind;
 
 pub(super) fn graph_edges(snapshot: &mut Value) -> Option<&mut Vec<Value>> {
     snapshot.get_mut("graph")?.get_mut("edges")?.as_array_mut()
@@ -35,4 +40,56 @@ pub(super) fn drop_where(
     } else {
         vec![WorkspaceNoticeKind::DroppedWires { wires: dropped }]
     }
+}
+
+pub(super) fn ends(edge: &Value) -> Option<(PortRef, PortRef)> {
+    Some((end(edge, "from")?, end(edge, "to")?))
+}
+
+pub(super) fn has_wire(edges: &[Value], from: &PortRef, to: &PortRef) -> bool {
+    edges
+        .iter()
+        .filter_map(ends)
+        .any(|(start, finish)| start == *from && finish == *to)
+}
+
+pub(super) fn kinds_of(snapshot: &mut Value) -> HashMap<String, String> {
+    graph_nodes(snapshot)
+        .filter_map(|node| {
+            Some((
+                node.get("id")?.as_str()?.to_owned(),
+                node_kind(node)?.to_owned(),
+            ))
+        })
+        .collect()
+}
+
+pub(super) fn event_sinks(
+    edges: &[Value],
+    kinds: &HashMap<String, String>,
+    source: &str,
+    wanted: &[NodeKind],
+) -> Vec<String> {
+    let kind_of = |node: &str| kinds.get(node).and_then(|kind| NodeKind::parse(kind));
+    let mut frontier = vec![source.to_owned()];
+    let mut seen = vec![source.to_owned()];
+    let mut sinks = Vec::new();
+    while let Some(node) = frontier.pop() {
+        for (from, to) in edges.iter().filter_map(ends) {
+            if from.node != node || from.port != EVENTS_PORT || to.port != EVENTS_PORT {
+                continue;
+            }
+            match kind_of(&to.node) {
+                Some(NodeKind::EventFilter) if !seen.contains(&to.node) => {
+                    seen.push(to.node.clone());
+                    frontier.push(to.node);
+                }
+                Some(kind) if wanted.contains(&kind) && !sinks.contains(&to.node) => {
+                    sinks.push(to.node);
+                }
+                _ => {}
+            }
+        }
+    }
+    sinks
 }

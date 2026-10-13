@@ -28,6 +28,7 @@ mod auth;
 mod bandplan;
 mod calibration;
 mod calls;
+mod control;
 pub(crate) mod cps;
 mod decoded;
 mod decoderlog;
@@ -112,6 +113,7 @@ pub(crate) struct AppState {
     pub(crate) resolved: Arc<resolved::ResolvedHub>,
     pub(crate) problems: Arc<problems::ProblemBoard>,
     pub(crate) presence: Arc<presence::Presence>,
+    pub(crate) control: Arc<control::ControlBus>,
     pub(crate) satellites: Arc<satellites::SatelliteHub>,
     pub(crate) rotators: Arc<rotators::RotatorHub>,
     pub(crate) reference: Arc<reference::Reference>,
@@ -160,6 +162,7 @@ impl AppState {
             resolved: Arc::default(),
             problems: Arc::default(),
             presence: Arc::default(),
+            control: Arc::default(),
             satellites: Arc::new(satellites::SatelliteHub::default()),
             rotators: Arc::default(),
             reference: Arc::default(),
@@ -315,6 +318,11 @@ fn start_runtime(state: &AppState, health: health::Reporter) -> Background {
         state.satellites.reconcile(state)
     });
     resolved::follow(state, "rotators", |state| state.rotators.reconcile(state));
+    resolved::follow(state, "control", |state| {
+        state
+            .control
+            .settle(&state.engine, &state.resolved.current().patch);
+    });
     audio_fx::follow(state);
     array::start_pump(state);
     radar::start(state);
@@ -422,9 +430,8 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
         })
     };
     let images = {
-        let engine = Arc::downgrade(&state.engine);
-        let images = state.images.clone();
-        spawn_task("sdrmm-images", move || images::run(engine, images))
+        let state = state.clone();
+        spawn_task("sdrmm-images", move || images::run(state))
     };
     let event_output = {
         let engine = Arc::downgrade(&state.engine);

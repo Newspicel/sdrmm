@@ -64,6 +64,8 @@ impl HuntSweepParams {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct HuntSettings {
     pub channel: u32,
+    #[serde(skip)]
+    pub lane: Option<crate::scan::WatchedLane>,
     #[serde(default = "default_interval_ms")]
     pub interval_ms: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -81,6 +83,7 @@ impl HuntSettings {
     pub fn for_channel(channel: u32) -> Self {
         Self {
             channel,
+            lane: None,
             interval_ms: default_interval_ms(),
             node: None,
             sweep: HuntSweepParams::default(),

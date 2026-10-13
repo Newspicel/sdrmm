@@ -283,6 +283,7 @@ fn routing_for() -> Routing {
         bindings: vec![Binding {
             node: "matched".to_owned(),
             target: discord_webhook(),
+            clips_from: Default::default(),
         }],
     }
 }
@@ -295,10 +296,12 @@ fn decoded_records_route_only_to_outputs_the_record_reached() {
             Binding {
                 node: "matched".to_owned(),
                 target: target.clone(),
+                clips_from: Default::default(),
             },
             Binding {
                 node: "other".to_owned(),
                 target,
+                clips_from: Default::default(),
             },
         ],
     };
@@ -332,7 +335,19 @@ fn recordings_routing() -> Routing {
         bindings: vec![Binding {
             node: "matched".to_owned(),
             target: EventOutputTarget::Recordings,
+            clips_from: ["voice".to_owned()].into(),
         }],
+    }
+}
+
+fn from_voice(event: DecoderEvent) -> DecodedRecord {
+    DecodedRecord {
+        origin: Some(sdrmm_wire::EventOrigin {
+            node: "voice".to_owned(),
+            transmission: 0,
+        }),
+        event,
+        ..decoded()
     }
 }
 
@@ -351,26 +366,30 @@ fn analog_call() -> VoiceCall {
 }
 
 #[test]
-fn recordings_take_only_events_that_carry_audio() {
+fn recordings_take_a_clip_only_through_the_audio_wire() {
     let routing = recordings_routing();
-    assert!(decoded_deliveries(&routing, &decoded(), 1, &Calls::default()).is_empty());
-    let record = DecodedRecord {
-        event: DecoderEvent::Call(analog_call()),
+    let calls = Calls::default();
+    let (audio, _) = calls.store_clip(&[1, 2, 3]);
+    assert!(decoded_deliveries(&routing, &decoded(), 1, &calls).is_empty());
+    let clipped = VoiceCall {
+        audio: Some(audio),
+        ..analog_call()
+    };
+    let wired = from_voice(DecoderEvent::Call(clipped.clone()));
+    let delivered = decoded_deliveries(&routing, &wired, 1, &calls);
+    assert_eq!(delivered.len(), 1);
+    assert!(delivered[0].message.audio.is_some());
+    let unwired = DecodedRecord {
+        event: DecoderEvent::Call(clipped),
         ..decoded()
     };
-    assert_eq!(
-        decoded_deliveries(&routing, &record, 1, &Calls::default()).len(),
-        1
-    );
-    let silent = DecodedRecord {
-        event: DecoderEvent::Call(VoiceCall {
-            audio: None,
-            encrypted: true,
-            ..call()
-        }),
-        ..decoded()
-    };
-    assert!(decoded_deliveries(&routing, &silent, 1, &Calls::default()).is_empty());
+    assert!(decoded_deliveries(&routing, &unwired, 1, &calls).is_empty());
+    let silent = from_voice(DecoderEvent::Call(VoiceCall {
+        audio: None,
+        encrypted: true,
+        ..call()
+    }));
+    assert!(decoded_deliveries(&routing, &silent, 1, &calls).is_empty());
 }
 
 #[test]
@@ -395,13 +414,10 @@ async fn a_saved_call_lands_in_the_audio_library() {
     );
     let calls = Calls::default();
     let (audio, _) = calls.store_clip(&[1, 2, 3]);
-    let record = DecodedRecord {
-        event: DecoderEvent::Call(VoiceCall {
-            audio: Some(audio),
-            ..analog_call()
-        }),
-        ..decoded()
-    };
+    let record = from_voice(DecoderEvent::Call(VoiceCall {
+        audio: Some(audio),
+        ..analog_call()
+    }));
     let deliveries = decoded_deliveries(&recordings_routing(), &record, 1, &calls);
     let weak = Arc::downgrade(&engine);
 
@@ -429,14 +445,11 @@ async fn a_saved_call_lands_in_the_audio_library() {
 #[tokio::test]
 async fn a_call_whose_audio_was_lost_says_why_it_saved_nothing() {
     let engine = Engine::with_registry(sdrmm_device::DeviceRegistry::new(), None);
-    let record = DecodedRecord {
-        event: DecoderEvent::Call(VoiceCall {
-            audio: None,
-            audio_error: Some("audio stream lost 3 block(s)".to_owned()),
-            ..analog_call()
-        }),
-        ..decoded()
-    };
+    let record = from_voice(DecoderEvent::Call(VoiceCall {
+        audio: None,
+        audio_error: Some("audio stream lost 3 block(s)".to_owned()),
+        ..analog_call()
+    }));
     let deliveries = decoded_deliveries(&recordings_routing(), &record, 1, &Calls::default());
     let error = save_recording(&Arc::downgrade(&engine), &deliveries[0].message)
         .await
@@ -865,10 +878,12 @@ async fn delivery_outcomes_reach_the_output_status() {
         Binding {
             node: "good".to_owned(),
             target: good.clone(),
+            clips_from: Default::default(),
         },
         Binding {
             node: "bad".to_owned(),
             target: bad.clone(),
+            clips_from: Default::default(),
         },
     ]);
     let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
@@ -921,6 +936,7 @@ async fn notify_once(shell: Option<Arc<dyn NativeShell>>) -> status::Statuses {
     statuses.configure(&[Binding {
         node: "desk".to_owned(),
         target: EventOutputTarget::Desktop,
+        clips_from: Default::default(),
     }]);
     let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
     sender
@@ -971,6 +987,7 @@ fn a_full_delivery_queue_counts_the_dropped_event() {
     statuses.configure(&[Binding {
         node: "hook".to_owned(),
         target: target.clone(),
+        clips_from: Default::default(),
     }]);
     let (sender, _receiver) = mpsc::channel(1);
     enqueue(
@@ -991,6 +1008,7 @@ fn a_changed_target_starts_a_fresh_status() {
     let binding = |url: &str| Binding {
         node: "hook".to_owned(),
         target: json_webhook(url.to_owned()),
+        clips_from: Default::default(),
     };
     statuses.configure(&[binding("http://a.test/")]);
     statuses.failed("hook", 2, "down".to_owned());
@@ -1269,7 +1287,11 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
         }),
         ..decoded()
     };
-    let deliveries = decoded_deliveries(&routing_for(), &record, 1, &calls);
+    let unwired = decoded_deliveries(&routing_for(), &record, 1, &calls);
+    assert!(unwired[0].message.audio.is_none(), "no audio wire, no clip");
+    let mut routing = routing_for();
+    routing.bindings[0].clips_from.insert("monitor".to_owned());
+    let deliveries = decoded_deliveries(&routing, &record, 1, &calls);
     assert_eq!(deliveries.len(), 1);
     let attachment = deliveries[0].message.audio.as_ref().unwrap();
     assert_eq!(&attachment.bytes[..4], b"RIFF");

@@ -64,6 +64,9 @@ pub struct EventImage {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct CapturedImage {
     pub id: u64,
+    pub node: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sinks: Vec<String>,
     pub device_set: u32,
     pub channel: u32,
     pub at: String,
@@ -78,6 +81,14 @@ pub struct CapturedImage {
     pub image: Option<EventImage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_error: Option<String>,
+}
+
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema, utoipa::IntoParams,
+)]
+#[into_params(parameter_in = Query)]
+pub struct CapturedImagesQuery {
+    pub sink: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

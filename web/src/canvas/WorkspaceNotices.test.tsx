@@ -150,6 +150,20 @@ describe("WorkspaceNotices", () => {
     expect(line.title).toBe("dev to scan: The lane it watches");
   });
 
+  it("names the nodes a step added", () => {
+    const line = noticeLine(
+      {
+        id: 6,
+        at: "2026-10-12T12:00:00Z",
+        kind: "added_nodes",
+        data: { nodes: [{ id: "sstv-pictures", kind: "video" }] },
+      },
+      { nodes: [{ kind: "video", name: "Video" }] },
+    );
+    expect(line.text).toBe("Added nodes: Video");
+    expect(line.title).toBe("sstv-pictures");
+  });
+
   it("shows nothing without notices", () => {
     expect(
       renderToStaticMarkup(<NoticeList lines={[]} dismissing={null} onDismiss={() => undefined} />),

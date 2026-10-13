@@ -137,7 +137,6 @@ async fn mcp_scans_through_the_scanner_node() {
     let scanner = add(
         &app,
         json!({ "kind": "scanner", "data": { "settings": {
-            "channel": 0,
             "ranges": [{ "start_hz": 99_000_000.0, "stop_hz": 101_000_000.0, "step_hz": 100_000.0 }],
             "margin_db": 200.0,
             "hardware_sweep": false,
@@ -160,6 +159,14 @@ async fn mcp_scans_through_the_scanner_node() {
         (&decoder, "control"),
     )
     .await;
+    let blind = mcp_call(&app, "scan", json!({ "node": scanner, "action": "start" })).await;
+    assert!(
+        blind["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("lane")),
+        "{blind}"
+    );
+    wire(&app, "connect", (&radio, "iq"), (&scanner, "iq")).await;
     let started = answer(&app, "scan", json!({ "node": scanner, "action": "start" })).await;
     assert_eq!(started["targets"], 21, "{started}");
     let viewed = answer(&app, "get_node", json!({ "node": scanner })).await;

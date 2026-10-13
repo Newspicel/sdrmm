@@ -51,8 +51,8 @@ Both recorders take several channels and write one file per wired input.
 
 ## Record each call
 
-Wire a channel's `events` to an **Event output** set to **Recordings**. Every call becomes its own
-WAV in the audio library, named by start time (UTC), mode, and frequency:
+Wire a channel's `events` and `audio` to an **Event output** set to **Recordings**. Every call
+becomes its own WAV in the audio library, named by start time (UTC), mode, and frequency:
 
 ```text
 20261001T223105Z_NFM_144.200MHz.wav
@@ -70,7 +70,8 @@ An analog channel with squelch off has no calls. Use the Audio recorder for cont
 Calls longer than 10 minutes continue in a new file. Encrypted calls have no audio to save.
 Several channels can share one Event output. Add an **Event filter** between them to skip short
 calls or keep certain talkgroups. A [Spectrum monitor](scanning.md#monitor-a-band) wired here
-saves its clips the same way.
+saves its clips the same way. Call audio is kept only where an `audio` wire leads; a Decoder log
+plays it when its `audio` input is wired from the same channel.
 
 ## Record an array
 

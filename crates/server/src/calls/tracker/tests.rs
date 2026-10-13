@@ -6,6 +6,10 @@ use super::*;
 const MS: usize = 48;
 
 fn framed(node: &str) -> Bindings {
+    framed_keeping(node, true)
+}
+
+fn framed_keeping(node: &str, keep_audio: bool) -> Bindings {
     HashMap::from([(
         (1, 2),
         vec![CallBinding {
@@ -13,6 +17,7 @@ fn framed(node: &str) -> Bindings {
             device_set: 1,
             channel: 2,
             gate: CallGate::Frames,
+            keep_audio,
         }],
     )])
 }
@@ -104,6 +109,7 @@ fn analog() -> Analog {
             device_set,
             channel,
             gate: CallGate::Squelch,
+            keep_audio: true,
         }],
     )]));
     Analog {
@@ -170,6 +176,23 @@ fn a_framed_call_keeps_its_audio() {
     assert_eq!(listed[0].destination, Some(91));
     let audio = calls.audio(listed[0].id).expect("audio");
     assert!(audio.len() > 44 && audio.len() <= 44 + 800 * 2);
+}
+
+#[test]
+fn a_call_without_its_audio_wire_keeps_no_clip_and_hears_no_audio() {
+    let engine = Engine::with_registry(DeviceRegistry::new(), None);
+    let calls = Arc::new(Calls::default());
+    let mut tracker = Tracker::new(calls.clone(), Arc::downgrade(&engine));
+    tracker.rebind(framed_keeping("dmr", false));
+    assert!(tracker.sources().is_empty(), "no audio wire, no PCM tap");
+    tracker.record(&record(DvFrameKind::Header, 1));
+    tracker.pcm(1, 2, &samples(100 * MS));
+    tracker.record(&record(DvFrameKind::Terminator, 1));
+
+    let listed = calls.list();
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].audio.is_none());
+    assert!(calls.audio(listed[0].id).is_none());
 }
 
 #[test]
@@ -258,6 +281,7 @@ fn a_call_at_the_length_limit_continues_in_a_new_call() {
         device_set: analog.device_set,
         channel: analog.channel,
         slot: None,
+        keep_audio: true,
     };
     let call = analog.tracker.active.get_mut(&key).expect("open call");
     call.audio.samples.resize(MAX_CALL_SAMPLES - 10, 0);

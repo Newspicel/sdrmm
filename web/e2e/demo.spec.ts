@@ -15,11 +15,7 @@ const LEAD_MS = 3_000;
 const RECORDED = ["rds", "adsb", "ais", "pocsag", "ft8"];
 
 const STARTED: Record<string, string> = {
-  StreamStarted: "Spectrum",
-  AudioStreamStarted: "Audio",
-  VideoStreamStarted: "Video",
-  IqStreamStarted: "Iq",
-  SymbolStreamStarted: "Symbols",
+  PortStream: "Port",
   SurfaceStreamStarted: "Surface",
 };
 const GREETING = new Set(["Hello", "DecodedBacklog"]);
@@ -132,7 +128,10 @@ class Tape {
         command.type === `Subscribe${kind}` &&
         Object.entries(command.data).every(
           ([name, value]) =>
-            name === "fps" || name === "bins" || (event.data?.[name] ?? 0) === (value ?? 0),
+            name === "fps" ||
+            name === "bins" ||
+            name === "params" ||
+            (event.data?.[name] ?? 0) === (value ?? 0),
         ),
     );
     return matching.at(-1) ?? null;

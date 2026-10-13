@@ -87,7 +87,6 @@
   {
     "kind": "spectrum_monitor",
     "data": {
-      "record_audio": true,
       "min_confidence": 0.7,
       "report_unidentified": true
     }
@@ -192,7 +191,6 @@
     "kind": "scanner",
     "data": {
       "settings": {
-        "channel": 0,
         "mode": "targets",
         "ranges": [
           {

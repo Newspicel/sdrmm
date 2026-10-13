@@ -75,10 +75,12 @@ fn starters_and_templates_pass_without_a_notice() {
     let mut starter =
         serde_json::to_value(WorkspaceSnapshot::starter()).expect("the starter encodes");
     assert!(quiet(&mut starter));
-    for template in crate::templates::all() {
-        let mut snapshot = json!({ "graph": template.patch });
-        assert!(quiet(&mut snapshot), "{}", template.id);
-    }
+    let noisy: Vec<String> = crate::templates::all()
+        .iter()
+        .filter(|template| !quiet(&mut json!({ "graph": template.patch })))
+        .map(|template| template.id.clone())
+        .collect();
+    assert!(noisy.is_empty(), "{noisy:?}");
 }
 
 #[test]
@@ -393,4 +395,131 @@ fn an_old_stored_workspace_reports_its_refused_wires_at_startup() {
         }]
     );
     assert_eq!(detail.snapshot.graph.edges.len(), 1);
+}
+
+fn calling() -> Value {
+    with_wires(
+        json!([
+            decoder("dmr", "dmr"),
+            decoder("pager", "pocsag"),
+            at("trunk", "dmr_trunk", json!({})),
+            at("loud", "spectrum_monitor", json!({ "record_audio": true })),
+            at(
+                "quiet",
+                "spectrum_monitor",
+                json!({ "record_audio": false })
+            ),
+            at("keep", "event_filter", json!({})),
+            at("log", "decoder_log", json!({})),
+            at(
+                "hook",
+                "event_output",
+                json!({ "target": { "service": "webhook", "format": "json", "url": "" } }),
+            ),
+            json!({ "id": "map", "kind": "map", "position": { "x": 0.0, "y": 0.0 } }),
+        ]),
+        json!([
+            wire(("dmr", "events"), ("keep", "events")),
+            wire(("keep", "events"), ("log", "events")),
+            wire(("pager", "events"), ("log", "events")),
+            wire(("trunk", "events"), ("hook", "events")),
+            wire(("trunk", "audio"), ("hook", "audio")),
+            wire(("loud", "events"), ("log", "events")),
+            wire(("quiet", "events"), ("log", "events")),
+            wire(("dmr", "events"), ("map", "events")),
+        ]),
+    )
+}
+
+#[test]
+fn call_audio_gets_a_wire_to_each_log_and_output_its_events_reach() {
+    let mut snapshot = calling();
+    let notices = call_audio::wire_call_audio(&mut snapshot);
+    assert_eq!(
+        notices,
+        vec![WorkspaceNoticeKind::AddedWires {
+            wires: vec![
+                notice_wire(("dmr", "audio"), ("log", "audio"), "Keeps call audio"),
+                notice_wire(("loud", "audio"), ("log", "audio"), "Keeps call audio"),
+            ]
+        }]
+    );
+    assert!(
+        snapshot["graph"]["nodes"]
+            .as_array()
+            .expect("nodes")
+            .iter()
+            .all(|node| node["data"].get("record_audio").is_none()),
+        "the audio switch is gone"
+    );
+    let mut again = snapshot.clone();
+    assert!(call_audio::wire_call_audio(&mut again).is_empty());
+    assert_eq!(again, snapshot);
+    assert_eq!(edge_count(&snapshot), 10);
+    parse_workspace_snapshot(&snapshot.to_string()).expect("the wired workspace loads");
+}
+
+#[test]
+fn an_import_wires_call_audio_once() {
+    let mut imported = json!({ "version": 1, "name": "Old", "snapshot": calling() });
+    let notices = upgrade_import(&mut imported);
+    assert!(notices.iter().any(|notice| matches!(
+        notice,
+        WorkspaceNoticeKind::AddedWires { wires } if wires.iter().all(|wire| wire.reason == "Keeps call audio")
+    )));
+    assert_eq!(edge_count(&imported["snapshot"]), 10);
+}
+
+fn picturing() -> Value {
+    with_wires(
+        json!([
+            decoder("sstv", "sstv"),
+            decoder("seen", "sstv"),
+            at("readout", "readout", Value::Null),
+            json!({ "id": "screen", "kind": "video", "position": { "x": 0.0, "y": 0.0 } }),
+        ]),
+        json!([
+            wire(("sstv", "events"), ("readout", "events")),
+            wire(("seen", "events"), ("readout", "events")),
+            wire(("seen", "video"), ("screen", "video")),
+        ]),
+    )
+}
+
+#[test]
+fn a_picture_channel_shown_in_a_readout_gets_one_video_node_once() {
+    let mut snapshot = picturing();
+    let notices = pictures::wire_pictures(&mut snapshot);
+    assert_eq!(
+        notices,
+        vec![
+            WorkspaceNoticeKind::AddedNodes {
+                nodes: vec![sdrmm_wire::DroppedNode {
+                    id: "sstv-pictures".to_owned(),
+                    kind: "video".to_owned(),
+                    label: None,
+                }]
+            },
+            WorkspaceNoticeKind::AddedWires {
+                wires: vec![notice_wire(
+                    ("sstv", "video"),
+                    ("sstv-pictures", "video"),
+                    "Keeps its pictures"
+                )]
+            },
+        ]
+    );
+    let mut again = snapshot.clone();
+    assert!(pictures::wire_pictures(&mut again).is_empty());
+    assert_eq!(again, snapshot);
+    let parsed = parse_workspace_snapshot(&snapshot.to_string()).expect("loads");
+    assert_eq!(
+        parsed
+            .graph
+            .nodes
+            .iter()
+            .filter(|node| node.body.kind() == sdrmm_wire::NodeKind::Video)
+            .count(),
+        2
+    );
 }

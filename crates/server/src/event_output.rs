@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use axum::body::Bytes;
 use reqwest::{Client, Response, Url, multipart};
@@ -9,7 +9,7 @@ use rumqttc::{
 use sdrmm_engine::Engine;
 use sdrmm_recorder::{AUDIO_SUFFIX, audio_stem, save_unique};
 use sdrmm_wire::{
-    DecodedRecord, DecoderEvent, EVENTS_PORT, EventOutputTarget, NodeBody, StateScope,
+    AUDIO_PORT, DecodedRecord, DecoderEvent, EVENTS_PORT, EventOutputTarget, NodeBody, StateScope,
     Transmission, VoiceCall, WebhookFormat, present::Presentation,
 };
 use serde::Deserialize;
@@ -47,6 +47,7 @@ const MQTTS_PORT: u16 = 8_883;
 struct Binding {
     node: String,
     target: EventOutputTarget,
+    clips_from: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -220,34 +221,21 @@ fn decoded_deliveries(
             )
         })
         .filter(|binding| record.sinks.contains(&binding.node))
-        .filter(|binding| {
-            !matches!(binding.target, EventOutputTarget::Recordings) || carries_audio(&record.event)
-        })
-        .map(|binding| match &record.event {
+        .map(|binding| (binding, clip_of(binding, record, calls)))
+        .map(|(binding, clip)| match &record.event {
             DecoderEvent::Call(call) => Delivery {
                 node: binding.node.clone(),
                 target: binding.target.clone(),
                 event: format!("call {}", call.id),
-                message: call_message(
-                    &binding.node,
-                    record,
-                    call,
-                    call.audio
-                        .as_ref()
-                        .and_then(|audio| calls.event_audio(audio)),
-                ),
+                message: call_message(&binding.node, record, call, clip),
             },
             DecoderEvent::Transmission(transmission) => {
                 let mut message = decoded_message(&binding.node, record, sequence);
-                message.audio = transmission
-                    .audio
-                    .as_ref()
-                    .and_then(|audio| calls.event_audio(audio))
-                    .map(|bytes| OutputAudio {
-                        bytes,
-                        stem: transmission_stem(record, transmission),
-                        duration_ms: transmission.duration_ms,
-                    });
+                message.audio = clip.map(|bytes| OutputAudio {
+                    bytes,
+                    stem: transmission_stem(record, transmission),
+                    duration_ms: transmission.duration_ms,
+                });
                 Delivery {
                     node: binding.node.clone(),
                     target: binding.target.clone(),
@@ -262,15 +250,37 @@ fn decoded_deliveries(
                 message: decoded_message(&binding.node, record, sequence),
             },
         })
+        .filter(|delivery| recordable(&routing.bindings, record, delivery))
         .collect()
 }
 
-fn carries_audio(event: &DecoderEvent) -> bool {
-    match event {
-        DecoderEvent::Call(call) => call.audio.is_some() || call.audio_error.is_some(),
-        DecoderEvent::Transmission(transmission) => transmission.audio.is_some(),
-        _ => false,
+fn wired_for_clips(binding: &Binding, record: &DecodedRecord) -> bool {
+    record
+        .origin
+        .as_ref()
+        .is_some_and(|source| binding.clips_from.contains(&source.node))
+}
+
+fn recordable(bindings: &[Binding], record: &DecodedRecord, delivery: &Delivery) -> bool {
+    if !matches!(delivery.target, EventOutputTarget::Recordings) {
+        return true;
     }
+    let wired = bindings
+        .iter()
+        .any(|binding| binding.node == delivery.node && wired_for_clips(binding, record));
+    let message = &delivery.message;
+    wired && (message.audio.is_some() || message.audio_error.is_some())
+}
+
+fn clip_of(binding: &Binding, record: &DecodedRecord, calls: &Calls) -> Option<Bytes> {
+    if !wired_for_clips(binding, record) {
+        return None;
+    }
+    let clip = match &record.view {
+        Some(view) => view.clip.clone(),
+        None => record.event.present().clip,
+    }?;
+    calls.event_audio(&clip)
 }
 
 fn started(at: &str) -> jiff::Timestamp {
@@ -314,6 +324,12 @@ fn routing_of(resolved: &Resolved) -> Routing {
                 .then(|| Binding {
                     node: node.id.clone(),
                     target: settings.target.clone(),
+                    clips_from: resolved
+                        .patch
+                        .feeds(&node.id, AUDIO_PORT)
+                        .iter()
+                        .map(|feed| feed.source.clone())
+                        .collect(),
                 })
         })
         .collect();

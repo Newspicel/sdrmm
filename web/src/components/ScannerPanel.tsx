@@ -1,13 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
-import { STATE_KEY, skipScan, startScan, stopScan } from "../lib/api";
-import { decoderKey, useScannerStore } from "../lib/scanner";
+import { nodeAction, STATE_KEY, scanStatusOf } from "../lib/api";
+import { useScannerStore } from "../lib/scanner";
 import { pushToast } from "../lib/toasts";
 import type {
   BandPlan,
   ChannelInfo,
+  ControlAck,
   DeviceSet,
+  ScanAction,
   ScanMode,
   ScannerStatus,
   ScanRange,
@@ -46,12 +48,14 @@ const SCAN_MODES = [
 ] as const;
 
 export function ScannerPanel({
+  node,
   active,
   channel,
   hint,
   settings,
   onSettings,
 }: {
+  node: string;
   active: DeviceSet | null;
   channel: ChannelInfo | null;
   hint: string;
@@ -60,32 +64,34 @@ export function ScannerPanel({
 }) {
   const queryClient = useQueryClient();
   const { plan } = useBandPlan();
-  const pushed = useScannerStore((s) =>
-    active && channel ? s.byDecoder[decoderKey(active.id, channel.id)] : undefined,
-  );
+  const pushed = useScannerStore((s) => s.byNode[node]);
   const clearLive = useScannerStore((s) => s.clear);
-  const status = liveStatus(active, channel?.id ?? null, pushed);
+  const status = liveStatus(active, node, pushed);
   const invalidate = (): void => void queryClient.invalidateQueries({ queryKey: STATE_KEY });
-  const keepLockouts = (finished: ScannerStatus): void =>
-    onSettings({ ...settings, lockouts: finished.settings.lockouts ?? [] });
+  const keepLockouts = (acks: ControlAck[]): void => {
+    const finished = scanStatusOf(acks);
+    if (finished !== null) {
+      onSettings({ ...settings, lockouts: finished.settings.lockouts ?? [] });
+    }
+  };
+  const scan = (action: ScanAction) => () => nodeAction(node, { action: "scan", with: action });
 
   const startMut = useMutation({
-    mutationFn: (target: { deviceSet: number; channel: number }) =>
-      startScan(target, { ...settings, channel: target.channel }),
+    mutationFn: scan("start"),
     onError: (e) => pushToast(e.message),
     onSettled: invalidate,
   });
   const stopMut = useMutation({
-    mutationFn: stopScan,
-    onSuccess: (finished, decoder) => {
-      keepLockouts(finished);
-      clearLive(decoder.deviceSet, decoder.channel);
+    mutationFn: scan("stop"),
+    onSuccess: (acks) => {
+      keepLockouts(acks);
+      clearLive(node);
     },
     onError: (e) => pushToast(e.message),
     onSettled: invalidate,
   });
   const skipMut = useMutation({
-    mutationFn: skipScan,
+    mutationFn: scan("skip"),
     onSuccess: keepLockouts,
     onError: (e) => pushToast(e.message),
     onSettled: invalidate,
@@ -93,8 +99,7 @@ export function ScannerPanel({
 
   const problem = rangeProblem(settings);
   const busy = startMut.isPending || stopMut.isPending || skipMut.isPending;
-  const decoder =
-    active !== null && channel !== null ? { deviceSet: active.id, channel: channel.id } : null;
+  const decoder = active !== null && channel !== null;
   return (
     <>
       <FaceBody title={active === null ? hint : undefined}>
@@ -136,14 +141,14 @@ export function ScannerPanel({
             </FaceStats>
           )
         )}
-        {status !== null && decoder !== null ? (
+        {status !== null && decoder ? (
           <>
             <Button
               type="button"
               className={BTN}
               disabled={busy || status.state !== "holding"}
               title="Leave this frequency and lock it out"
-              onClick={() => skipMut.mutate(decoder)}
+              onClick={() => skipMut.mutate()}
             >
               Skip
             </Button>
@@ -151,7 +156,7 @@ export function ScannerPanel({
               type="button"
               className={status.state === "done" ? BTN : BTN_DANGER}
               disabled={busy}
-              onClick={() => stopMut.mutate(decoder)}
+              onClick={() => stopMut.mutate()}
             >
               {status.state === "done" ? "Close" : "Stop scan"}
             </Button>
@@ -173,8 +178,8 @@ export function ScannerPanel({
             <Button
               type="button"
               className={BTN_PRIMARY}
-              disabled={decoder === null || busy || problem !== null}
-              onClick={() => decoder !== null && startMut.mutate(decoder)}
+              disabled={!decoder || busy || problem !== null}
+              onClick={() => startMut.mutate()}
             >
               Start scan
             </Button>

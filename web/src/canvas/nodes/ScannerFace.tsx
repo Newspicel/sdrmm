@@ -30,6 +30,7 @@ function ScannerNodeFace({ node }: { node: PatchNodeOf<"scanner"> }) {
   return (
     <NodeShell node={node} title="Scanner" category="tool">
       <ScannerPanel
+        node={node.id}
         active={decoder?.set ?? null}
         channel={decoder?.channel ?? null}
         hint="Wire this node's control out to a decoder"

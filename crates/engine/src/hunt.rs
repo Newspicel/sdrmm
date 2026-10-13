@@ -289,12 +289,14 @@ fn admits_a_hunt(
             "the device set is not running".to_string(),
         ));
     }
-    state
+    let decoder = state
         .channels
         .iter()
         .find(|channel| channel.id == settings.channel)
         .map(Decoder::of)
-        .ok_or(EngineError::ChannelNotFound(settings.channel, ds))
+        .ok_or(EngineError::ChannelNotFound(settings.channel, ds))?;
+    crate::scanner::session::watches(settings.lane, ds, decoder.stream)?;
+    Ok(decoder)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

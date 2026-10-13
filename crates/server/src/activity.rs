@@ -48,6 +48,18 @@ impl Activity {
         }
     }
 
+    pub(crate) fn produced(&self, node: &str, port: &str, delivered: bool) {
+        let mut counts = self.lock();
+        counts.changed = true;
+        let activity = port_of(&mut counts, node, port);
+        activity.emitted += 1;
+        if delivered {
+            activity.delivered += 1;
+        } else {
+            activity.unrouted += 1;
+        }
+    }
+
     pub(crate) fn lost(&self, node: &str, port: &str, count: u64) {
         if count == 0 {
             return;

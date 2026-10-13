@@ -26,37 +26,29 @@ import {
 import { supports, templatesHint } from "./templates";
 
 const SETTINGS: ScanSettings = {
-  channel: 1,
   ranges: [{ start_hz: 145_600_000, stop_hz: 145_800_000, step_hz: 12_500 }],
 };
 
 describe("rangeProblem", () => {
   it("accepts a forward range or a channel list", () => {
     expect(rangeProblem(SETTINGS)).toBeNull();
-    expect(rangeProblem({ channel: 1, ranges: [], frequencies: [227_360_000] })).toBeNull();
+    expect(rangeProblem({ ranges: [], frequencies: [227_360_000] })).toBeNull();
   });
 
   it("names the reversed line when there is more than one", () => {
     const reversed = { start_hz: 2, stop_hz: 1, step_hz: 1 };
-    expect(rangeProblem({ channel: 1, ranges: [reversed] })).toMatch(/^the stop frequency/);
-    expect(rangeProblem({ channel: 1, ranges: [...(SETTINGS.ranges ?? []), reversed] })).toMatch(
-      /^range 2: /,
-    );
-    expect(rangeProblem({ channel: 1, ranges: [] })).toMatch(/add a range/);
+    expect(rangeProblem({ ranges: [reversed] })).toMatch(/^the stop frequency/);
+    expect(rangeProblem({ ranges: [...(SETTINGS.ranges ?? []), reversed] })).toMatch(/^range 2: /);
+    expect(rangeProblem({ ranges: [] })).toMatch(/add a range/);
   });
 });
 
 describe("targetCount", () => {
   it("counts inclusively, matching the server's expansion, plus listed channels", () => {
-    expect(
-      targetCount({ channel: 1, ranges: [{ start_hz: 100, stop_hz: 200, step_hz: 50 }] }),
-    ).toBe(3);
-    expect(
-      targetCount({ channel: 1, ranges: [{ start_hz: 100, stop_hz: 249, step_hz: 50 }] }),
-    ).toBe(3);
+    expect(targetCount({ ranges: [{ start_hz: 100, stop_hz: 200, step_hz: 50 }] })).toBe(3);
+    expect(targetCount({ ranges: [{ start_hz: 100, stop_hz: 249, step_hz: 50 }] })).toBe(3);
     expect(
       targetCount({
-        channel: 1,
         ranges: [{ start_hz: 100, stop_hz: 200, step_hz: 50 }],
         frequencies: [300, 400],
       }),
@@ -151,7 +143,7 @@ describe("frequency lists", () => {
 const STATUS: ScannerStatus = {
   state: "scanning",
   settings: {
-    channel: 1,
+    node: "scan",
     ranges: [],
     frequencies: [],
     dwell_ms: 250,
@@ -187,15 +179,15 @@ function deviceSet(overrides: Partial<DeviceSet> = {}): DeviceSet {
 describe("liveStatus", () => {
   it("prefers the pushed update but falls back to the snapshot", () => {
     const set = deviceSet({ scanners: [STATUS] });
-    expect(liveStatus(set, 1, undefined)).toBe(STATUS);
+    expect(liveStatus(set, "scan", undefined)).toBe(STATUS);
     const pushed = { ...STATUS, current_hz: 146_000_000 };
-    expect(liveStatus(set, 1, pushed)).toBe(pushed);
+    expect(liveStatus(set, "scan", pushed)).toBe(pushed);
   });
 
-  it("reports nothing when the decoder is not scanning", () => {
-    expect(liveStatus(deviceSet({ scanners: [STATUS] }), 2, STATUS)).toBeNull();
-    expect(liveStatus(deviceSet(), 1, STATUS)).toBeNull();
-    expect(liveStatus(null, 1, STATUS)).toBeNull();
+  it("reports nothing when the node is not scanning", () => {
+    expect(liveStatus(deviceSet({ scanners: [STATUS] }), "other", STATUS)).toBeNull();
+    expect(liveStatus(deviceSet(), "scan", STATUS)).toBeNull();
+    expect(liveStatus(null, "scan", STATUS)).toBeNull();
   });
 });
 

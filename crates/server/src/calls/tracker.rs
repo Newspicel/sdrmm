@@ -24,6 +24,7 @@ struct CallKey {
     device_set: u32,
     channel: u32,
     slot: Option<u8>,
+    keep_audio: bool,
 }
 
 impl CallKey {
@@ -33,6 +34,7 @@ impl CallKey {
             device_set: binding.device_set,
             channel: binding.channel,
             slot,
+            keep_audio: binding.keep_audio,
         }
     }
 
@@ -96,8 +98,8 @@ impl ActiveCall {
     }
 
     fn into_new_call(self, key: &CallKey) -> (NewCall, Option<axum::body::Bytes>) {
-        let audio =
-            (!self.encrypted() && !self.audio.samples.is_empty()).then(|| wav(&self.audio.samples));
+        let audio = (key.keep_audio && !self.encrypted() && !self.audio.samples.is_empty())
+            .then(|| wav(&self.audio.samples));
         let duration_ms = self
             .heard_at
             .duration_since(self.started_at)
@@ -194,7 +196,11 @@ impl Tracker {
     }
 
     pub(super) fn sources(&self) -> HashSet<(u32, u32)> {
-        self.bindings.keys().copied().collect()
+        self.bindings
+            .iter()
+            .filter(|(_, bound)| bound.iter().any(hears_audio))
+            .map(|(source, _)| *source)
+            .collect()
     }
 
     pub(super) fn rebind(&mut self, bindings: Bindings) {
@@ -433,6 +439,10 @@ impl Tracker {
     fn active(&self) -> usize {
         self.active.len()
     }
+}
+
+fn hears_audio(binding: &CallBinding) -> bool {
+    binding.keep_audio || binding.gate == CallGate::Squelch
 }
 
 fn same_call(current: &DvFrame, incoming: &DvFrame) -> bool {

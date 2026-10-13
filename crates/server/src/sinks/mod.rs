@@ -6,9 +6,9 @@ use std::{
 
 use axum::extract::ws::Utf8Bytes;
 use sdrmm_wire::{
-    DecodedRecord, DecoderLogQuery, EVENTS_PORT, EntityKey, NodeBody, NodeCategory, PortType,
-    PositionFix, PositionTrack, PropagationView, ResolvedNode, ServerEvent, SinkFeed, SinkUpdate,
-    StreamKind, SurfaceRef,
+    CapturedImage, DecodedRecord, DecoderLogQuery, EVENTS_PORT, EntityKey, Keeps, NodeBody,
+    NodeCategory, PortType, PositionFix, PositionTrack, PropagationView, ResolvedNode, ServerEvent,
+    SinkFeed, SinkUpdate, StreamKind, SurfaceRef,
 };
 use tokio::{
     sync::{
@@ -27,6 +27,7 @@ use entities::{Entities, push_trail};
 use propagation::{Heard, Propagation, heard_of};
 
 pub(crate) const RECORDS_PER_SINK: usize = 500;
+pub(crate) const PICTURES_PER_SINK: usize = 64;
 pub(crate) const UPDATE_EVERY: Duration = Duration::from_millis(500);
 pub(crate) const AGE_OUT_EVERY: Duration = Duration::from_secs(15);
 pub(crate) const PROPAGATION_EVERY: Duration = Duration::from_secs(2);
@@ -47,6 +48,7 @@ struct Pending {
     upserts: BTreeSet<EntityKey>,
     removed: BTreeSet<EntityKey>,
     records: Vec<DecodedRecord>,
+    pictures: bool,
     tracks: bool,
     surfaces: bool,
     lost: bool,
@@ -55,6 +57,8 @@ struct Pending {
 struct Sink {
     entities: Entities,
     records: VecDeque<DecodedRecord>,
+    pictures: VecDeque<CapturedImage>,
+    takes_pictures: bool,
     tracks: BTreeMap<String, PositionTrack>,
     surfaces: Vec<SurfaceRef>,
     lost: u64,
@@ -76,6 +80,8 @@ impl Sink {
         Self {
             entities: Entities::default(),
             records: VecDeque::new(),
+            pictures: VecDeque::new(),
+            takes_pictures: false,
             tracks: BTreeMap::new(),
             surfaces: Vec::new(),
             lost: 0,
@@ -95,7 +101,7 @@ impl Sink {
             records: self.records.iter().cloned().collect(),
             tracks: self.tracks.values().cloned().collect(),
             surfaces: self.surfaces.clone(),
-            pictures: Vec::new(),
+            pictures: self.pictures.iter().cloned().collect(),
             propagation: self.propagation.as_ref().map(|model| model.view(now_ms())),
             lost: self.lost,
         }
@@ -130,7 +136,9 @@ impl Sink {
                 .tracks
                 .then(|| self.tracks.values().cloned().collect()),
             surfaces: pending.surfaces.then(|| self.surfaces.clone()),
-            pictures: Vec::new(),
+            pictures: pending
+                .pictures
+                .then(|| self.pictures.iter().cloned().collect()),
             propagation,
             lost: self.lost,
         };
@@ -166,6 +174,24 @@ impl Sink {
             self.pending.records.remove(0);
         }
         self.count_lost(change.evicted)
+    }
+
+    fn show(&mut self, image: &CapturedImage) {
+        if self.pictures.len() == PICTURES_PER_SINK {
+            self.pictures.pop_front();
+        }
+        self.pictures.push_back(image.clone());
+        self.pending.pictures = true;
+    }
+
+    fn hold_pictures(&mut self, mut held: Vec<CapturedImage>) {
+        held.truncate(PICTURES_PER_SINK);
+        held.reverse();
+        let held: VecDeque<CapturedImage> = held.into();
+        if held != self.pictures {
+            self.pictures = held;
+            self.pending.pictures = true;
+        }
     }
 
     fn count_lost(&mut self, count: u64) -> u64 {
@@ -212,11 +238,17 @@ fn sources_on(node: &ResolvedNode, port_type: PortType) -> HashSet<String> {
         .collect()
 }
 
-fn shows_events(node: &ResolvedNode) -> bool {
+fn takes_pictures(node: &ResolvedNode) -> bool {
+    node.inputs()
+        .any(|port| port.spec.keeps == Some(Keeps::Pictures))
+}
+
+fn is_sink(node: &ResolvedNode) -> bool {
     node.kind.category() == NodeCategory::Output
-        && node
-            .inputs()
-            .any(|port| port.spec.port_type == PortType::Events)
+        && (takes_pictures(node)
+            || node
+                .inputs()
+                .any(|port| port.spec.port_type == PortType::Events))
 }
 
 pub(crate) struct SinkHub {
@@ -254,12 +286,13 @@ impl SinkHub {
             .patch
             .nodes
             .iter()
-            .filter(|node| shows_events(node))
+            .filter(|node| is_sink(node))
             .collect();
         sinks.retain(|id, _| wanted.iter().any(|node| &node.id == id));
         let mut seeded = Vec::new();
         for node in wanted {
             let sink = sinks.entry(node.id.clone()).or_insert_with(Sink::new);
+            sink.takes_pictures = takes_pictures(node);
             sink.clips_from = sources_on(node, PortType::Audio);
             sink.events_from = sources_on(node, PortType::Events);
             sink.positions_from = sources_on(node, PortType::Position);
@@ -283,7 +316,7 @@ impl SinkHub {
             .patch
             .nodes
             .iter()
-            .filter(|node| !shows_events(node))
+            .filter(|node| !is_sink(node))
             .map(|node| node.id.clone())
             .collect();
         self.rewired
@@ -328,6 +361,31 @@ impl SinkHub {
             })
             .filter(|(_, lost)| *lost > 0)
             .collect()
+    }
+
+    pub(crate) fn picture(&self, image: &CapturedImage) {
+        let mut sinks = self.lock();
+        for id in &image.sinks {
+            if let Some(sink) = sinks.get_mut(id) {
+                sink.show(image);
+            }
+        }
+    }
+
+    pub(crate) fn seed_pictures(&self, stored: impl Fn(&str) -> Vec<CapturedImage>) {
+        for (node, sink) in self.lock().iter_mut() {
+            if sink.takes_pictures && sink.pictures.is_empty() {
+                sink.hold_pictures(stored(node));
+            }
+        }
+    }
+
+    pub(crate) fn reload_pictures(&self, stored: impl Fn(&str) -> Vec<CapturedImage>) {
+        for (node, sink) in self.lock().iter_mut() {
+            if sink.takes_pictures {
+                sink.hold_pictures(stored(node));
+            }
+        }
     }
 
     pub(crate) fn position(&self, source: &str, fix: Option<&PositionFix>) {
@@ -548,6 +606,7 @@ fn rewire(state: &AppState, resolved: &Arc<Resolved>) {
         let state = state.clone();
         tokio::task::spawn_blocking(move || seed(&state, &node));
     }
+    state.sinks.seed_pictures(|node| state.images.list(node));
 }
 
 fn seed(state: &AppState, node: &str) {

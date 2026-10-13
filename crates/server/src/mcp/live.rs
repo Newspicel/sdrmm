@@ -1,6 +1,6 @@
 use sdrmm_wire::{
-    CONTROL_PORT, ChannelSettings, DeviceSettings, NodeBody, ResolvedPatch, ScanAction,
-    ScanRequest, ScannerStatus, StateSnapshot,
+    ChannelSettings, DeviceSettings, NodeAction, ResolvedPatch, ScanAction, ScannerStatus,
+    StateSnapshot, SweepStatus,
 };
 
 use super::{
@@ -41,15 +41,12 @@ pub(super) fn node_view(state: &AppState, id: &str) -> Result<NodeView, AppError
             .find(|channel| channel.id == ch)
             .cloned()
     });
-    let scan = scan_target(&patch, &node.body, id)
-        .and_then(|target| decoder_of(&patch, &target))
-        .and_then(|(ds, ch)| {
-            set(&snapshot, ds)?
-                .scanners
-                .iter()
-                .find(|scanner| scanner.settings.channel == ch)
-                .cloned()
-        });
+    let scan = snapshot
+        .device_sets
+        .iter()
+        .flat_map(|set| &set.scanners)
+        .find(|scanner| scanner.settings.node.as_deref() == Some(id))
+        .cloned();
     let saved = detail
         .state
         .channel(id)
@@ -114,32 +111,13 @@ pub(super) fn scan(
     id: &str,
     action: ScanAction,
 ) -> Result<ScannerStatus, AppError> {
-    let graph = canvas::active(state)?.snapshot.graph;
-    let node = graph.node(id).ok_or_else(|| canvas::unknown(id))?;
-    let NodeBody::Scanner(scanner) = &node.body else {
-        return Err(AppError::bad_request(format!(
-            "{id} is a {} node, not a scanner",
-            node.body.kind()
-        )));
-    };
-    let patch = workspace::resolve(&graph, &state.engine.snapshot());
-    let target = scan_target(&patch, &node.body, id).ok_or_else(|| {
-        AppError::bad_request(format!("wire the control output of {id} to a decoder"))
-    })?;
-    let (ds, ch) = decoder_of(&patch, &target)
-        .ok_or_else(|| AppError::bad_request(format!("{target} runs on no radio")))?;
-    let request = ScanRequest {
-        action,
-        settings: Some(scanner.settings.clone()),
-    };
-    rest::scan(&state.engine, ds, ch, request)
-}
-
-fn scan_target(patch: &ResolvedPatch, body: &NodeBody, id: &str) -> Option<String> {
-    matches!(body, NodeBody::Scanner(_))
-        .then(|| patch.reaches(id, CONTROL_PORT).first())
-        .flatten()
-        .map(|reach| reach.sink.clone())
+    rest::succeeded(rest::act(state, id, NodeAction::Scan(action))?)?
+        .into_iter()
+        .find_map(|ack| match ack.sweep.map(|sweep| *sweep) {
+            Some(SweepStatus::Scan(status)) => Some(status),
+            _ => None,
+        })
+        .ok_or_else(|| AppError::bad_request(format!("{id} drives no scan")))
 }
 
 fn decoder_of(patch: &ResolvedPatch, id: &str) -> Option<(u32, u32)> {

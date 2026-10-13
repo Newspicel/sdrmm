@@ -271,6 +271,8 @@ pub enum EngineError {
     ProcessorNotFound(String),
     #[error("Tuned by {array}")]
     Held { array: String },
+    #[error("Watches another lane")]
+    OtherLane,
 }
 
 impl From<sdrmm_wire::ArrayFailure> for EngineError {
@@ -303,6 +305,7 @@ impl EngineError {
                 | Self::Recording(_)
                 | Self::NetworkExport(_)
                 | Self::Scan(_)
+                | Self::OtherLane
                 | Self::StreamOutOfRange { .. }
         )
     }

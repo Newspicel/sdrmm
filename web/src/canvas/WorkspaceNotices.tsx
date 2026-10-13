@@ -63,9 +63,10 @@ export function noticeLine(notice: WorkspaceNotice, catalog: KindNames): NoticeL
   }
   const names = [...new Set(notice.data.nodes.map((node) => kindName(node.kind, catalog)))];
   const more = names.length > SHOWN_KINDS ? ` +${names.length - SHOWN_KINDS}` : "";
+  const verb = notice.kind === "added_nodes" ? "Added nodes" : "Removed old nodes";
   return {
     id: notice.id,
-    text: `Removed old nodes: ${names.slice(0, SHOWN_KINDS).join(", ")}${more}`,
+    text: `${verb}: ${names.slice(0, SHOWN_KINDS).join(", ")}${more}`,
     title: notice.data.nodes.map((node) => node.id).join(", "),
   };
 }

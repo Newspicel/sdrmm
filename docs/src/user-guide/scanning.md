@@ -18,7 +18,9 @@ Tuned by hand, the radio stays put and the scan skips targets outside its window
 keeps its settings, lockouts and priority frequencies.
 
 1. Add a channel in the mode you want to hear and wire it to a Speaker.
-2. Add **Scanner** and wire its `control` to the channel's `control`.
+2. Add **Scanner**, wire its `control` to the channel's `control` and the channel's Device `iq` to
+   its `iq`. A scanner watching another lane than its channel is refused. Removing the `control`
+   wire stops the scan.
 3. Pick a **Band**, or set each range's **From**, **To** and **Step**. **Add range** adds another.
 4. Pick what to **Find** and press **Start scan**.
 
@@ -101,10 +103,10 @@ every 30 seconds. Open an event in the log to play the audio.
 
 | Setting | Does |
 |---|---|
-| Clips | Attaches an 8 kHz WAV clip. On by default. |
 | Min | Skips weaker guesses. Default 70%, 0 accepts everything. |
 
-Clips stay for up to 24 hours. To keep them, also wire `events` to an
+Wire the monitor's `audio` to the Decoder log to attach an 8 kHz WAV clip to each transmission.
+Clips stay for up to 24 hours. To keep them, also wire `events` and `audio` to an
 [Event output set to Recordings](recording.md#record-each-call).
 
 Limits: 32 signals at once, three decoders at a time per signal, two seconds of IQ kept for late
@@ -113,7 +115,7 @@ decoders. Anything dropped is reported. Pictures and video are not decoded here.
 ## Hunt a transmitter
 
 **Signal hunt** reads one channel's signal strength fast enough to walk with. Wire its `control`
-to the channel's `control` and press **Start hunt**. Retune the channel to retune the hunt.
+to the channel's `control`, the channel's Device `iq` to its `iq`, and press **Start hunt**. Retune the channel to retune the hunt.
 With **Clicks** on, Geiger clicks speed up as the signal gets stronger.
 
 ### Sweep for a bearing

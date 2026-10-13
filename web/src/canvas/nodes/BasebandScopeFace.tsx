@@ -20,8 +20,7 @@ export function BasebandScopeFace({ node }: { node: PatchNode }) {
         ) : (
           <BasebandView
             key={`${tap.deviceSet}:${tap.channel.id}`}
-            deviceSet={tap.deviceSet}
-            channel={tap.channel}
+            node={node.id}
             colormap={palette}
           />
         )}

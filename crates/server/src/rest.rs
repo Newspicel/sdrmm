@@ -15,13 +15,13 @@ use sdrmm_recorder::{
 use sdrmm_tools::ToolError;
 use sdrmm_wire::{
     AboutResponse, ApiError, ApplyTemplateRequest, AudioRecordingInfo, AudioRecordingsResponse,
-    AuthInfo, BandPlan, BandRegionMatch, BandRegionsResponse, Bookmark, CapturedImagesResponse,
-    ChannelNetworkExportRequest, ChannelSettings, ChannelTypesResponse, ClientCommand,
-    ClientsResponse, CreateBookmarkRequest, CreateChannelRequest, CreateDeviceSetRequest,
-    CreatePresetRequest, CreateWorkspaceRequest, CreatedId, CreatedRowId, DecoderLogEntry,
-    DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount, DeviceInfo,
-    DeviceSettings, DevicesResponse, DfFusionState, DiagnosticsReport, DoctorReport, ErrorCode,
-    ExportFormat, HuntAction, HuntRequest, HuntSettings, HuntStatus, IonosondeReport,
+    AuthInfo, BandPlan, BandRegionMatch, BandRegionsResponse, Bookmark, CapturedImagesQuery,
+    CapturedImagesResponse, ChannelNetworkExportRequest, ChannelSettings, ChannelTypesResponse,
+    ClientCommand, ClientsResponse, CreateBookmarkRequest, CreateChannelRequest,
+    CreateDeviceSetRequest, CreatePresetRequest, CreateWorkspaceRequest, CreatedId, CreatedRowId,
+    DecoderLogEntry, DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount,
+    DeviceInfo, DeviceSettings, DevicesResponse, DfFusionState, DiagnosticsReport, DoctorReport,
+    ErrorCode, ExportFormat, HuntAction, HuntRequest, HuntSettings, HuntStatus, IonosondeReport,
     LicenseTextResponse, LocateQuery, LogGroupKey, MAX_RECORDING_UPLOAD_BYTES,
     MAX_SATELLITE_QUERY_LEN, NetworkExportAction, NetworkExportRequest, NetworkExportStatus,
     NmeaDevicesResponse, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport,
@@ -38,6 +38,7 @@ use sdrmm_wire::{
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
+mod actions;
 mod arrays;
 mod audio_recordings;
 mod capture;
@@ -62,6 +63,7 @@ mod sinks;
 mod survey;
 mod workspaces;
 
+pub(crate) use actions::{act, succeeded};
 use audio_recordings::*;
 use capture::*;
 use cps::*;
@@ -75,7 +77,6 @@ use presets::*;
 use recordings::*;
 use remote::*;
 use satellites::*;
-pub(crate) use scanning::scan;
 use scanning::*;
 use workspaces::*;
 pub(crate) use workspaces::{
@@ -491,6 +492,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(apply_workspace))
         .routes(routes!(put_workspace_channel))
         .routes(routes!(get_resolved))
+        .routes(routes!(actions::node_action))
         .routes(routes!(undo_workspace))
         .routes(routes!(redo_workspace))
         .routes(routes!(get_patch_catalog))

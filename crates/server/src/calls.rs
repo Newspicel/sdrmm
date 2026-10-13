@@ -306,9 +306,9 @@ fn ticker(period: Duration) -> tokio::time::Interval {
 fn resolve_bindings(engine: &Engine, policy: &CallPolicy) -> Bindings {
     let mut resolved = Bindings::new();
     for system in engine.trunk_systems() {
-        if !policy.trunk_systems.contains(&system.node) {
+        let Some(&keep_audio) = policy.trunk_systems.get(&system.node) else {
             continue;
-        }
+        };
         for follower in system.followers {
             resolved
                 .entry((follower.device_set, follower.channel))
@@ -318,6 +318,7 @@ fn resolve_bindings(engine: &Engine, policy: &CallPolicy) -> Bindings {
                     device_set: follower.device_set,
                     channel: follower.channel,
                     gate: CallGate::Frames,
+                    keep_audio,
                 });
         }
     }

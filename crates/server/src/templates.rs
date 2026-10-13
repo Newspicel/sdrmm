@@ -152,6 +152,9 @@ fn patch(channels: &[Channel]) -> PatchGraph {
         for sink in channel.sinks {
             edges.push(wire((&id, sink.port()), (sink.node(), sink.port())));
         }
+        if channel.sinks.contains(&Sink::Log) && makes_calls(channel) {
+            edges.push(wire((&id, "audio"), (Sink::Log.node(), "audio")));
+        }
     }
 
     let used = ORDER
@@ -166,6 +169,11 @@ fn patch(channels: &[Channel]) -> PatchGraph {
         nodes.push(node(sink.node(), sink.body(), COLUMN * 2.0, y));
     }
     PatchGraph { nodes, edges }
+}
+
+fn makes_calls(channel: &Channel) -> bool {
+    sdrmm_channels::descriptor((channel.params)().type_id())
+        .is_some_and(|descriptor| descriptor.calls.is_some() && descriptor.has_audio)
 }
 
 fn acars() -> ChannelParams {
@@ -1031,12 +1039,13 @@ mod tests {
             }
             for (index, channel) in entry.channels.iter().enumerate() {
                 let id = format!("ch{index}");
-                let wired: Vec<&str> = patch
+                let mut wired: Vec<&str> = patch
                     .edges
                     .iter()
                     .filter(|edge| edge.from.node == id)
                     .map(|edge| edge.to.node.as_str())
                     .collect();
+                wired.dedup();
                 let wanted: Vec<&str> = channel.sinks.iter().map(|sink| sink.node()).collect();
                 assert_eq!(wired, wanted, "{}: {id}", entry.id);
             }

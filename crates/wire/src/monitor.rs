@@ -5,8 +5,8 @@ use crate::{EventAudio, IdentSignal};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SpectrumMonitorNode {
-    #[serde(default = "enabled")]
-    pub record_audio: bool,
+    #[serde(skip)]
+    pub keep_clips: bool,
     #[serde(default = "default_min_confidence")]
     #[schema(minimum = 0, maximum = 1)]
     pub min_confidence: f32,
@@ -31,7 +31,7 @@ const fn enabled() -> bool {
 impl Default for SpectrumMonitorNode {
     fn default() -> Self {
         Self {
-            record_audio: true,
+            keep_clips: false,
             min_confidence: default_min_confidence(),
             disabled_protocols: Vec::new(),
             report_unidentified: true,
@@ -143,8 +143,17 @@ mod tests {
     #[test]
     fn old_settings_receive_the_confidence_default() {
         let settings: SpectrumMonitorNode =
-            serde_json::from_str(r#"{"record_audio":false}"#).unwrap();
-        assert!(!settings.record_audio);
+            serde_json::from_str(r#"{"record_audio":true}"#).unwrap();
+        assert!(
+            !settings.keep_clips,
+            "clips follow the audio wire, not a setting"
+        );
+        assert!(
+            serde_json::to_value(&settings)
+                .unwrap()
+                .get("record_audio")
+                .is_none()
+        );
         assert_eq!(settings.min_confidence, 0.7);
         assert!(settings.disabled_protocols.is_empty());
         assert!(settings.report_unidentified);

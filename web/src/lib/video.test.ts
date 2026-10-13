@@ -1,23 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ListenerRegistry } from "./listeners";
 import { registerMediaLatency } from "./mediaLatency";
+import { PortHub } from "./ports";
 import type { ClientCommand } from "./types";
-import { VideoHub, type VideoSocket } from "./video";
+import { VideoHub, type VideoInput } from "./video";
 
 function fakeSocket() {
   const sent: ClientCommand[] = [];
   const registry = new ListenerRegistry();
-  const socket: VideoSocket = {
-    send: (command) => sent.push(command),
-    on: (kind, listener) => registry.on(kind, listener),
+  const socket = {
+    send: (command: ClientCommand) => sent.push(command),
+    on: registry.on.bind(registry),
   };
   return {
     socket,
     sent,
-    started: (streamId: number, deviceSet: number, channel: number) =>
+    started: (streamId: number, source: string, node = "video") =>
       registry.emit("event", {
-        type: "VideoStreamStarted",
-        data: { stream_id: streamId, device_set: deviceSet, channel },
+        type: "PortStream",
+        data: { stream_id: streamId, node, port: "video", source, kind: "video" },
       }),
     stopped: (streamId: number) =>
       registry.emit("event", {
@@ -39,8 +40,19 @@ function fakeSocket() {
   };
 }
 
-const subscribes = (sent: ClientCommand[]) => sent.filter((c) => c.type === "SubscribeVideo");
-const unsubscribes = (sent: ClientCommand[]) => sent.filter((c) => c.type === "UnsubscribeVideo");
+function bench() {
+  const fake = fakeSocket();
+  const ports = new PortHub();
+  ports.attach(fake.socket);
+  const hub = new VideoHub(ports);
+  hub.attach(fake.socket);
+  return { fake, hub };
+}
+
+const input = (source: string, node = "video"): VideoInput => ({ node, port: "video", source });
+
+const subscribes = (sent: ClientCommand[]) => sent.filter((c) => c.type === "SubscribePort");
+const unsubscribes = (sent: ClientCommand[]) => sent.filter((c) => c.type === "UnsubscribePort");
 
 const waitOutGrace = () => vi.advanceTimersByTime(60_000);
 
@@ -53,14 +65,12 @@ describe("VideoHub", () => {
     vi.useRealTimers();
   });
 
-  it("paces pictures against the matching audio output and cancels stopped pictures", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    const remove = registerMediaLatency("1:2", () => 80);
-    hub.attach(fake.socket);
+  it("paces pictures against the audio of the same producer and cancels stopped pictures", () => {
+    const { fake, hub } = bench();
+    const remove = registerMediaLatency("atv", () => 80);
     const shown: number[] = [];
-    hub.subscribe(1, 2, (frame) => shown.push(frame.width));
-    fake.started(0x8000, 1, 2);
+    hub.subscribe(input("atv"), (frame) => shown.push(frame.width));
+    fake.started(0x8000, "atv");
     fake.push(0x8000, 160);
     expect(shown).toEqual([]);
     vi.advanceTimersByTime(79);
@@ -75,15 +85,11 @@ describe("VideoHub", () => {
     hub.detach();
   });
 
-  it("subscribes once for many watchers of one channel and stops on the last one", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    hub.attach(fake.socket);
-
-    const first = hub.subscribe(1, 2, () => {});
-    const second = hub.subscribe(1, 2, () => {});
+  it("asks for the port once for every watcher and lets go after the last", () => {
+    const { fake, hub } = bench();
+    const first = hub.subscribe(input("atv"), () => {});
+    const second = hub.subscribe(input("sstv"), () => {});
     expect(subscribes(fake.sent)).toHaveLength(1);
-
     first();
     waitOutGrace();
     expect(unsubscribes(fake.sent)).toHaveLength(0);
@@ -92,114 +98,73 @@ describe("VideoHub", () => {
     expect(unsubscribes(fake.sent)).toHaveLength(1);
   });
 
-  it("remounting inside the grace keeps the stream instead of replacing it", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    hub.attach(fake.socket);
-
-    const stop = hub.subscribe(1, 2, () => {});
+  it("remounting inside the grace keeps the stream", () => {
+    const { fake, hub } = bench();
+    const stop = hub.subscribe(input("atv"), () => {});
     stop();
     vi.advanceTimersByTime(100);
-    hub.subscribe(1, 2, () => {});
+    hub.subscribe(input("atv"), () => {});
     waitOutGrace();
-
     expect(subscribes(fake.sent)).toHaveLength(1);
     expect(unsubscribes(fake.sent)).toHaveLength(0);
   });
 
-  it("routes frames by the id the server allocated, and to that channel only", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    hub.attach(fake.socket);
-
+  it("routes each picture to the input its stream names", () => {
+    const { fake, hub } = bench();
     const one: number[] = [];
     const two: number[] = [];
-    hub.subscribe(1, 7, (frame) => one.push(frame.width));
-    hub.subscribe(1, 8, (frame) => two.push(frame.width));
-    fake.started(0x8000, 1, 7);
-    fake.started(0x8001, 1, 8);
-
+    hub.subscribe(input("atv"), (frame) => one.push(frame.width));
+    hub.subscribe(input("sstv"), (frame) => two.push(frame.width));
+    fake.started(0x8000, "atv");
+    fake.started(0x8001, "sstv");
     fake.push(0x8000, 104);
     fake.push(0x8001, 164);
     fake.push(0x9999, 8);
-
     expect(one).toEqual([104]);
     expect(two).toEqual([164]);
   });
 
   it("keeps the last picture so a remounted face is not blank", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    hub.attach(fake.socket);
-    hub.subscribe(1, 2, () => {});
-    fake.started(0x8000, 1, 2);
-
-    expect(hub.latest(1, 2)).toBeNull();
+    const { fake, hub } = bench();
+    hub.subscribe(input("atv"), () => {});
+    fake.started(0x8000, "atv");
+    expect(hub.latest(input("atv"))).toBeNull();
     fake.push(0x8000, 104, 576);
-    expect(hub.latest(1, 2)?.height).toBe(576);
-    expect(hub.latest(9, 9)).toBeNull();
+    expect(hub.latest(input("atv"))?.height).toBe(576);
+    expect(hub.latest(input("other"))).toBeNull();
   });
 
-  it("re-subscribes everything still watched after a reconnect", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    hub.attach(fake.socket);
-    hub.subscribe(1, 2, () => {});
-    hub.subscribe(3, 4, () => {});
-    expect(subscribes(fake.sent)).toHaveLength(2);
-
-    fake.started(0x8000, 1, 2);
-    fake.reconnect();
+  it("asks again after a reconnect and drops the old ids", () => {
+    const { fake, hub } = bench();
     const after: number[] = [];
-    hub.subscribe(1, 2, (frame) => after.push(frame.width));
+    hub.subscribe(input("atv"), (frame) => after.push(frame.width));
+    fake.started(0x8000, "atv");
+    fake.reconnect();
     fake.push(0x8000);
     expect(after).toEqual([]);
-
-    expect(subscribes(fake.sent)).toHaveLength(4);
-    fake.started(0x8000, 1, 2);
+    expect(subscribes(fake.sent)).toHaveLength(2);
+    fake.started(0x8000, "atv");
     fake.push(0x8000);
     expect(after).toHaveLength(1);
   });
 
-  it("forgets an id the server says has stopped", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    hub.attach(fake.socket);
-    const seen: number[] = [];
-    hub.subscribe(1, 2, (frame) => seen.push(frame.width));
-    fake.started(0x8000, 1, 2);
-    fake.push(0x8000);
-    fake.stopped(0x8000);
-    fake.push(0x8000);
-    expect(seen).toHaveLength(1);
-  });
-
   it("detaches from the socket it leaves", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    hub.attach(fake.socket);
+    const { fake, hub } = bench();
     expect(fake.attached()).toBe(true);
     hub.detach();
     expect(fake.attached()).toBe(false);
   });
 
-  it("stops sending while the page is hidden and resumes when it shows", () => {
-    const fake = fakeSocket();
-    const hub = new VideoHub();
-    hub.attach(fake.socket);
-    hub.subscribe(1, 7, () => {});
+  it("lets go while the page is hidden and asks again when it shows", () => {
+    const { fake, hub } = bench();
+    hub.subscribe(input("atv"), () => {});
     fake.sent.length = 0;
-
     hub.setVisible(false);
-    fake.reconnect();
-    hub.subscribe(1, 8, () => {});
-    expect(fake.sent).toEqual([{ type: "UnsubscribeVideo", data: { device_set: 1, channel: 7 } }]);
-
+    expect(fake.sent).toEqual([
+      { type: "UnsubscribePort", data: { node: "video", port: "video" } },
+    ]);
     fake.sent.length = 0;
     hub.setVisible(true);
-    expect(fake.sent).toEqual([
-      { type: "SubscribeVideo", data: { device_set: 1, channel: 7 } },
-      { type: "SubscribeVideo", data: { device_set: 1, channel: 8 } },
-    ]);
+    expect(fake.sent).toEqual([{ type: "SubscribePort", data: { node: "video", port: "video" } }]);
   });
 });

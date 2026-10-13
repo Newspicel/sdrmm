@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import type { AudioTap } from "../../lib/audio/engine";
 import { watchAudio } from "../../lib/audio/monitor";
 import { audioEngine } from "../../lib/audio/useChannelAudio";
 import type { Input } from "../../lib/resolved";
@@ -44,33 +45,39 @@ export interface SpeakerHealth {
   suspended: boolean;
 }
 
-type Reading = (deviceSet: number, channel: number, fx: readonly string[]) => number;
-
-function total(inputs: readonly Input[], read: Reading): () => number {
-  return () =>
-    inputs.reduce((sum, input) => sum + read(input.deviceSet, input.channel.id, input.fx), 0);
+function tapsOf(node: string, inputs: readonly Input[]): AudioTap[] {
+  return inputs.map((input) => ({ node, port: "audio", source: input.source }));
 }
 
-export function useSpeakerHealth(inputs: readonly Input[], dev: boolean): SpeakerHealth {
+function total(taps: readonly AudioTap[], read: (tap: AudioTap) => number): () => number {
+  return () => taps.reduce((sum, tap) => sum + read(tap), 0);
+}
+
+export function useSpeakerHealth(
+  node: string,
+  inputs: readonly Input[],
+  dev: boolean,
+): SpeakerHealth {
   const subscribe = audioEngine.subscribe;
+  const taps = tapsOf(node, inputs);
   const lostFrames = useSyncExternalStore(
     subscribe,
-    total(inputs, (d, c, fx) => audioEngine.getLostFrames(d, c, fx)),
+    total(taps, (tap) => audioEngine.getLostFrames(tap)),
   );
   const underruns = useSyncExternalStore(
     subscribe,
-    total(inputs, (d, c, fx) => audioEngine.getUnderruns(d, c, fx)),
+    total(taps, (tap) => audioEngine.getUnderruns(tap)),
   );
   const bufferedMs = useSyncExternalStore(
     subscribe,
-    total(inputs, (d, c, fx) => audioEngine.getBufferedMs(d, c, fx)),
+    total(taps, (tap) => audioEngine.getBufferedMs(tap)),
   );
   const trimmedMs = useSyncExternalStore(
     subscribe,
-    total(inputs, (d, c, fx) => audioEngine.getTrimmedMs(d, c, fx)),
+    total(taps, (tap) => audioEngine.getTrimmedMs(tap)),
   );
   const suspended = useSyncExternalStore(subscribe, () =>
-    inputs.some((input) => audioEngine.isSuspended(input.deviceSet, input.channel.id, input.fx)),
+    taps.some((tap) => audioEngine.isSuspended(tap)),
   );
   return {
     bufferedMs: dev ? bufferedMs : 0,

@@ -24,7 +24,7 @@ import { devicesQuery } from "../../lib/api";
 import { useBroadcast } from "../../lib/broadcast";
 import { heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, usePipelineHealth } from "../../lib/pipeline";
-import { controllerOf } from "../../lib/resolved";
+import { controllerOf, feedsOf } from "../../lib/resolved";
 import { trackedBy, useSatelliteStore } from "../../lib/satellite";
 import type { BandMiss, BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
@@ -90,10 +90,12 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const locked = node.data.tuning_locked ?? false;
   const scanned =
     channel !== null &&
-    (set?.scanners?.some(
-      (scanner) => scanner.error == null && scanner.settings.channel === channel.id,
-    ) ??
-      false);
+    feedsOf(workspace.resolved, node.id, "control").some(
+      (feed) =>
+        set?.scanners?.some(
+          (scanner) => scanner.error == null && scanner.settings.node === feed.source,
+        ) ?? false,
+    );
   const controller = controllerOf(workspace.resolved, node.id);
   const editNode = (next: Partial<ChannelNodeData>): void =>
     workspace.edit((snapshot) => ({

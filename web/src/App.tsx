@@ -28,11 +28,11 @@ import { loadCatalog, useCatalogStore } from "./lib/catalog";
 import { useRefusalStore } from "./lib/refusals";
 import {
   activePatch,
+  audioTaps,
   boundChannels,
   boundRadios,
   channelOwners,
   radioOf,
-  speakerTaps,
 } from "./lib/resolved";
 import { closeToast, pushToast } from "./lib/toasts";
 import type { NodeProblem, PatchApplyReport, PatchGraph, WorkspaceSettings } from "./lib/types";
@@ -123,7 +123,7 @@ export function App() {
   const channels = useMemo(() => boundChannels(resolved, deviceSets), [resolved, deviceSets]);
   const owners = useMemo(() => channelOwners(resolved), [resolved]);
 
-  const reachable = useMemo(() => speakerTaps(resolved), [resolved]);
+  const reachable = useMemo(() => audioTaps(resolved), [resolved]);
   useEffect(() => {
     if (state.data !== undefined && resolved !== null) {
       audioEngine.retain(reachable);

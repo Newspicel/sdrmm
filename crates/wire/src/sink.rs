@@ -116,8 +116,8 @@ pub struct SinkUpdate {
     pub tracks: Option<Vec<PositionTrack>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surfaces: Option<Vec<SurfaceRef>>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub pictures: Vec<CapturedImage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pictures: Option<Vec<CapturedImage>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub propagation: Option<PropagationView>,
     pub lost: u64,
@@ -131,7 +131,7 @@ impl SinkUpdate {
             && self.records.is_empty()
             && self.tracks.is_none()
             && self.surfaces.is_none()
-            && self.pictures.is_empty()
+            && self.pictures.is_none()
             && self.propagation.is_none()
     }
 }
