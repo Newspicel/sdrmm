@@ -17,14 +17,13 @@ import {
   channelExportSource,
   deriveNetworkExportControl,
   deviceExportSource,
-  type NetworkExportTarget,
   networkExportControlsLocked,
   networkExportMutationOptions,
 } from "../../components/networkExport";
 import type { NetworkExportStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { basebandSourceOf, iqSourceOf } from "../lanes";
+import { basebandSourceOf, hasFeed } from "../lanes";
 import { deviceSetOf } from "../workspaceDevice";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 
@@ -50,18 +49,13 @@ export function NetworkExportFace({ node }: { node: PatchNode }) {
 function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }) {
   const workspace = useWorkspaceContext();
   const set = deviceSetOf(workspace, node.id);
-  const radio = iqSourceOf(workspace.resolved, node.id);
   const channel = basebandSourceOf(workspace.resolved, workspace.deviceSets, node.id);
   const owner =
     channel === null
       ? set
       : ([...workspace.devices.values()].find((bound) => bound.id === channel.deviceSet) ?? null);
-  const target: NetworkExportTarget | null =
-    channel !== null
-      ? { kind: "channel", deviceSet: channel.deviceSet, channel: channel.channel.id }
-      : set !== null && radio !== null
-        ? { kind: "device", deviceSet: set.id, stream: radio.stream }
-        : null;
+  const wired =
+    hasFeed(workspace.resolved, node.id, "iq") || hasFeed(workspace.resolved, node.id, "baseband");
   const control = deriveNetworkExportControl(
     channel === null ? deviceExportSource(set) : channelExportSource(owner, channel.channel),
     node.id,
@@ -81,7 +75,7 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
       ),
     }));
   };
-  const exportIq = useMutation(networkExportMutationOptions(target, node.id, settings));
+  const exportIq = useMutation(networkExportMutationOptions(node.id));
   const locked = networkExportControlsLocked(control, exportIq.isPending);
   const rtlTcp = node.data.transport === "rtl_tcp";
 
@@ -132,7 +126,7 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
             }}
           />
         </Chips>
-        {target === null ? (
+        {!wired ? (
           <FaceEmpty hint="Wire a device's IQ or a channel's baseband in" />
         ) : control.kind === "active" ? (
           <>

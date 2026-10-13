@@ -676,6 +676,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/devices/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["add_network_radio"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/devices/serial": {
         parameters: {
             query?: never;
@@ -686,182 +702,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["write_serial"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_device_set"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_device_set"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels/{ch}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_channel"];
-        options?: never;
-        head?: never;
-        patch: operations["patch_channel"];
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels/{ch}/hunt": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["hunt_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels/{ch}/network-export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["network_export_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/channels/{ch}/scanner": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["scan_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/device": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["patch_device"];
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/network-export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["network_export_device_set"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/playback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["control_playback"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/devicesets/{ds}/time-machine": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["time_machine_device_set"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1716,22 +1556,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/workspaces/{id}/channels/{node}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["put_workspace_channel"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/workspaces/{id}/export": {
         parameters: {
             query?: never;
@@ -1810,6 +1634,38 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/active/nodes/{node}/channel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["patch_node_channel"];
+        trace?: never;
+    };
+    "/api/workspaces/active/nodes/{node}/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["patch_node_device"];
         trace?: never;
     };
     "/api/workspaces/active/resolved": {
@@ -2186,8 +2042,7 @@ export interface components {
             error: string;
         };
         ApplyTemplateRequest: {
-            /** Format: int32 */
-            device_set: number;
+            node: string;
         };
         /** @enum {string} */
         AprsMode: "afsk1200" | "g3ruh9600";
@@ -3402,11 +3257,6 @@ export interface components {
             /** @enum {string} */
             mode: "dmr";
         });
-        ChannelNetworkExportRequest: {
-            action: components["schemas"]["NetworkExportAction"];
-            node: string;
-            settings?: components["schemas"]["NetworkExportSettings"];
-        };
         ChannelNode: {
             channel_type: string;
             tuning_locked?: boolean;
@@ -4102,19 +3952,6 @@ export interface components {
             group?: string | null;
             label: string;
             mode?: string | null;
-        };
-        CreateChannelRequest: {
-            node: string;
-            settings: components["schemas"]["ChannelSettings"];
-            /** Format: int32 */
-            stream?: number;
-        };
-        CreateDeviceSetRequest: {
-            device_id: string;
-        };
-        CreatedId: {
-            /** Format: int32 */
-            id: number;
         };
         CreatedRowId: {
             /** Format: int64 */
@@ -5764,10 +5601,6 @@ export interface components {
             clicks?: boolean;
             sweep?: components["schemas"]["HuntSweepParams"];
         };
-        HuntRequest: {
-            action: components["schemas"]["HuntAction"];
-            settings?: components["schemas"]["HuntSettings"] | null;
-        };
         HuntSettings: {
             /** Format: int32 */
             channel: number;
@@ -6904,13 +6737,6 @@ export interface components {
         /** @enum {string} */
         NetworkExportAction: "start" | "stop";
         NetworkExportNode: components["schemas"]["NetworkExportSettings"];
-        NetworkExportRequest: {
-            action: components["schemas"]["NetworkExportAction"];
-            node: string;
-            settings?: components["schemas"]["NetworkExportSettings"];
-            /** Format: int32 */
-            stream?: number;
-        };
         NetworkExportSettings: {
             /** @default 127.0.0.1:7355 */
             address: string;
@@ -6939,6 +6765,9 @@ export interface components {
             settings: components["schemas"]["NetworkExportSettings"];
             /** Format: int32 */
             stream: number;
+        };
+        NetworkRadioRequest: {
+            address: string;
         };
         /** @enum {string} */
         NetworkSampleFormat: "cf32_le" | "ci16_le" | "cu8";
@@ -6974,7 +6803,46 @@ export interface components {
         NmeaDevicesResponse: {
             devices: components["schemas"]["NmeaDeviceInfo"][];
         };
+        NodeActed: {
+            /** @enum {string} */
+            result: "controlled";
+            with: components["schemas"]["ControlAck"][];
+        } | {
+            /** @enum {string} */
+            result: "tuned";
+        } | {
+            /** @enum {string} */
+            result: "retyped";
+            with: {
+                dropped: components["schemas"]["NoticeWire"][];
+            };
+        } | {
+            /** @enum {string} */
+            result: "time_machine";
+            with: components["schemas"]["TimeMachineStatus"];
+        } | {
+            /** @enum {string} */
+            result: "playback";
+            with: components["schemas"]["PlaybackStatus"];
+        } | {
+            /** @enum {string} */
+            result: "network_export";
+            with: components["schemas"]["NetworkExportStatus"];
+        };
         NodeAction: {
+            /** @enum {string} */
+            action: "tune";
+            with: {
+                /** Format: double */
+                freq_hz: number;
+            };
+        } | {
+            /** @enum {string} */
+            action: "retype";
+            with: {
+                channel_type: string;
+            };
+        } | {
             /** @enum {string} */
             action: "scan";
             with: components["schemas"]["ScanAction"];
@@ -6982,6 +6850,18 @@ export interface components {
             /** @enum {string} */
             action: "hunt";
             with: components["schemas"]["HuntAction"];
+        } | {
+            /** @enum {string} */
+            action: "time_machine";
+            with: components["schemas"]["TimeMachineAction"];
+        } | {
+            /** @enum {string} */
+            action: "playback";
+            with: components["schemas"]["PlaybackRequest"];
+        } | {
+            /** @enum {string} */
+            action: "network_export";
+            with: components["schemas"]["NetworkExportAction"];
         };
         NodeBody: {
             data: components["schemas"]["DeviceNode"];
@@ -8922,10 +8802,6 @@ export interface components {
             /** Format: double */
             stop_hz: number;
         };
-        ScanRequest: {
-            action: components["schemas"]["ScanAction"];
-            settings?: components["schemas"]["ScanSettings"] | null;
-        };
         /** @enum {string} */
         ScanRevert: "selected" | "last_called" | "last_used" | "primary" | "secondary";
         ScanSettings: {
@@ -9926,13 +9802,6 @@ export interface components {
              * @default 10
              */
             history_seconds: number;
-        };
-        TimeMachineRequest: {
-            action: components["schemas"]["TimeMachineAction"];
-            node: string;
-            settings?: components["schemas"]["TimeMachineNode"];
-            /** Format: int32 */
-            stream?: number;
         };
         TimeMachineStatus: {
             /** Format: int64 */
@@ -12297,6 +12166,48 @@ export interface operations {
             };
         };
     };
+    add_network_radio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkRadioRequest"];
+            };
+        };
+        responses: {
+            /** @description The network radio, known now but not opened. Name it in a Device node to open it */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceInfo"];
+                };
+            };
+            /** @description No radio answers at that address */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     write_serial: {
         parameters: {
             query?: never;
@@ -12339,643 +12250,6 @@ export interface operations {
             };
             /** @description Device open here or in another program */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    create_device_set: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateDeviceSetRequest"];
-            };
-        };
-        responses: {
-            /** @description Device set created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreatedId"];
-                };
-            };
-            /** @description Unusable device */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device already in use, here or by another program */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    delete_device_set: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Device set removed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid path parameter */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    create_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateChannelRequest"];
-            };
-        };
-        responses: {
-            /** @description Channel created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreatedId"];
-                };
-            };
-            /** @description Invalid channel settings, or `node` is not a free channel node wired to this lane */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    delete_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Channel removed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid path parameter */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or channel not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    patch_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PatchChannelRequest"];
-            };
-        };
-        responses: {
-            /** @description Settings applied. With a base, only the fields changed from it land, so another client's edit to other fields survives */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid channel settings */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or channel not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    hunt_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The decoder being hunted */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["HuntRequest"];
-            };
-        };
-        responses: {
-            /** @description Hunt status after `start`, `stop` or `sweep`. Readings arrive as the `HuntUpdate` WS event */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HuntStatus"];
-                };
-            };
-            /** @description `mark` sent one bearing event */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Set not running, scanning, already hunting, or not hunting */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or decoder not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description `No heading`, `No position`, `Not running` or `No hunt node` */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    network_export_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChannelNetworkExportRequest"];
-            };
-        };
-        responses: {
-            /** @description Live status after start or final counters after stop */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NetworkExportStatus"];
-                };
-            };
-            /** @description Invalid destination, inactive export, or conflicting owner */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or channel not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    scan_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The decoder the scan drives */
-                ch: number;
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScanRequest"];
-            };
-        };
-        responses: {
-            /** @description Scanner status: the initial state after `start`, the final state after `stop`, the state after `skip` lets go of a held frequency. Live progress arrives as the `ScannerUpdate` WS event, not as one state change per step */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScannerStatus"];
-                };
-            };
-            /** @description Unusable scan settings, set not running, decoder already scanning or hunted, not scanning, or nothing held to skip */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set or decoder not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    patch_device: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DeviceSettings"];
-            };
-        };
-        responses: {
-            /** @description Settings applied */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unsupported setting */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    network_export_device_set: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NetworkExportRequest"];
-            };
-        };
-        responses: {
-            /** @description Live status after start or final counters after stop */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NetworkExportStatus"];
-                };
-            };
-            /** @description Invalid destination, inactive export, or conflicting owner */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    control_playback: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PlaybackRequest"];
-            };
-        };
-        responses: {
-            /** @description The transport after the request */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PlaybackStatus"];
-                };
-            };
-            /** @description The set's device is a radio, not a recording */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    time_machine_device_set: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Device set id */
-                ds: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TimeMachineRequest"];
-            };
-        };
-        responses: {
-            /** @description History status after the action: `arm` starts the rolling buffer, `capture` writes the buffered past into a SigMF pair and keeps appending, `stop` finalizes that pair, `disarm` releases the buffer */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TimeMachineStatus"];
-                };
-            };
-            /** @description Cannot hold history: no recordings directory, set not running, a window that does not fit in memory, or an action the current state has nothing to do with */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Device set not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15115,7 +14389,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Template or device set not found */
+            /** @description No such template or node */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15502,60 +14776,6 @@ export interface operations {
             };
         };
     };
-    put_workspace_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Workspace id */
-                id: number;
-                /** @description Channel node id */
-                node: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChannelSettings"];
-            };
-        };
-        responses: {
-            /** @description Settings held against the node until a radio carries it */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description No such channel node, or settings of another channel type */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Workspace not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     export_workspace: {
         parameters: {
             query?: never;
@@ -15763,16 +14983,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description One ack per wired target; a failed target carries `error` */
+            /** @description What the action did. A control action lists one ack per wired target; a failed target carries `error` */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ControlAck"][];
+                    "application/json": components["schemas"]["NodeActed"];
                 };
             };
-            /** @description The node takes no such action or controls nothing */
+            /** @description The node takes no such action, is locked, or is not wired */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -15783,6 +15003,110 @@ export interface operations {
             };
             /** @description No such node */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    patch_node_channel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel node of the active workspace */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchChannelRequest"];
+            };
+        };
+        responses: {
+            /** @description Settings applied to the running decoder, or held for the node until a radio carries it. With a base, only the fields changed from it land */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a channel node, or settings of another channel type */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    patch_node_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Radio node of the active workspace */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceSettings"];
+            };
+        };
+        responses: {
+            /** @description Settings applied to the node's radio */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a radio node, no radio open, or an unsupported setting */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No such node */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

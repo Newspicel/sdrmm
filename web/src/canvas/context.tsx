@@ -28,7 +28,6 @@ export interface Workspace {
   channels: ReadonlyMap<string, ChannelInfo>;
   owners: ReadonlyMap<string, string>;
   savedChannels: ReadonlyMap<string, ChannelSettings>;
-  saveChannel: (node: string, settings: ChannelSettings) => void;
   selected: string | null;
   select: (node: string | null) => void;
   expanded: string | null;

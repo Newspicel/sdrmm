@@ -31,17 +31,9 @@ const TABS = [
 export function Library({ onOpenTool }: { onOpenTool: (id: string) => void }) {
   const workspace = useWorkspaceContext();
   const placeNode = useNodePlacement();
-  const selected =
+  const active =
     workspace.selected === null ? null : (workspace.devices.get(workspace.selected) ?? null);
-  const drawn = [...workspace.devices.values()];
-  const only = drawn.length === 1 ? (drawn[0] ?? null) : null;
-  const active = selected ?? only;
-  const target = libraryTarget(
-    workspace.graph,
-    workspace.devices,
-    workspace.resolved,
-    workspace.selected,
-  );
+  const target = libraryTarget(workspace.graph, workspace.devices, workspace.selected);
 
   const openRecording = (recording: RecordingInfo): void => {
     const id = newNodeId("recording", nodeIds(workspace.graph));
@@ -66,7 +58,11 @@ export function Library({ onOpenTool }: { onOpenTool: (id: string) => void }) {
         ))}
       </Tabs.List>
       <Tabs.Panel value="templates" className="max-h-[28rem] overflow-y-auto">
-        <TemplatesPanel active={active} onApplied={() => workspace.apply()} />
+        <TemplatesPanel
+          node={active === null ? null : workspace.selected}
+          active={active}
+          onApplied={() => workspace.apply()}
+        />
       </Tabs.Panel>
       <Tabs.Panel value="presets" className="max-h-[28rem] overflow-y-auto">
         <PresetsPanel />
@@ -78,7 +74,7 @@ export function Library({ onOpenTool }: { onOpenTool: (id: string) => void }) {
         <BandsPanel target={target} />
       </Tabs.Panel>
       <Tabs.Panel value="occupancy" className="max-h-[28rem] overflow-y-auto">
-        <OccupancyPanel active={active} />
+        <OccupancyPanel target={target} />
       </Tabs.Panel>
       <Tabs.Panel value="recordings" className="max-h-[28rem] overflow-y-auto">
         <RecordingsPanel onOpen={openRecording} />

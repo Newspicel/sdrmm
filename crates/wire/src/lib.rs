@@ -176,9 +176,7 @@ pub use gsm::{
     GsmChannelType, GsmDedicated, GsmFrame, GsmHopping, GsmIdentity, GsmIdentityKind,
     GsmLapdmFrame, GsmLogicalChannel, GsmMessage, GsmParams, GsmProtocol, GsmSi, cipher_label,
 };
-pub use hunt::{
-    HuntAction, HuntRequest, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState,
-};
+pub use hunt::{HuntAction, HuntSettings, HuntStatus, HuntSweep, HuntSweepParams, SweepState};
 pub use ism::{
     ISM_BANDWIDTH_HZ, ISM_SAMPLE_RATE_HZ, IsmCoding, IsmIntegrity, IsmMessage, IsmModulation,
     IsmParams, UNKNOWN_MODEL,
@@ -202,11 +200,10 @@ pub use mission::{
     RadarMission, SurveyMission, SwitchWorkspaceRequest, TriangulationMission,
 };
 pub use network::{
-    ChannelNetworkExportRequest, MAX_NETWORK_ADDRESS_LEN, NetworkExportAction, NetworkExportNode,
-    NetworkExportRequest, NetworkExportSettings, NetworkExportStatus, NetworkSampleFormat,
-    NetworkTransport,
+    MAX_NETWORK_ADDRESS_LEN, NetworkExportAction, NetworkExportNode, NetworkExportSettings,
+    NetworkExportStatus, NetworkSampleFormat, NetworkTransport,
 };
-pub use node_action::NodeAction;
+pub use node_action::{NetworkRadioRequest, NodeActed, NodeAction};
 pub use patch::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, AudioStream, BASEBAND_PORT,
     BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
@@ -280,17 +277,16 @@ pub use remote_id::{
 pub use rest::{
     AnnotationError, ApiError, ApplyTemplateRequest, AudioRecordingInfo, AudioRecordingsResponse,
     AuthInfo, Bookmark, CapturedImage, CapturedImagesQuery, CapturedImagesResponse,
-    ChannelTypesResponse, ClientsResponse, CreateBookmarkRequest, CreateChannelRequest,
-    CreateDeviceSetRequest, CreatePresetRequest, CreatedId, CreatedRowId, DecoderLogEntry,
-    DecoderLogGroup, DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount,
-    DevicesResponse, ErrorCode, EventAudio, EventImage, ExportFormat, LogGroupKey, LogScope,
-    MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN,
-    MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket, OccupancyReport,
-    PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction, PlaybackRequest, PresetDevice,
-    PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery, RecordingFormat,
-    RecordingInfo, RecordingUpload, RecordingsResponse, SaveRadioRequest, SavedRadio, ServerStatus,
-    TemplateInfo, TemplatesResponse, VoiceCall, VoiceCallsResponse, WriteSerialRequest,
-    WrittenSerial,
+    ChannelTypesResponse, ClientsResponse, CreateBookmarkRequest, CreatePresetRequest,
+    CreatedRowId, DecoderLogEntry, DecoderLogGroup, DecoderLogGroupsResponse, DecoderLogQuery,
+    DecoderLogResponse, DeletedCount, DevicesResponse, ErrorCode, EventAudio, EventImage,
+    ExportFormat, LogGroupKey, LogScope, MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN,
+    MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES,
+    OccupancyBucket, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction,
+    PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
+    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
+    SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo, TemplatesResponse, VoiceCall,
+    VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
 };
 pub use rotator::{
     DEFAULT_GS232_BAUD, DEFAULT_ROTATOR_TOLERANCE_DEG, DEFAULT_ROTCTLD_ADDRESS, FLIP_ELEVATION_DEG,
@@ -310,8 +306,8 @@ pub use satellite::{
     Transmitter, TransmittersResponse,
 };
 pub use scan::{
-    MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanRequest,
-    ScanSettings, ScanState, ScannerStatus, WatchedLane,
+    MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanSettings,
+    ScanState, ScannerStatus, WatchedLane,
 };
 pub use sink::{
     Entity, EntityKey, PositionTrack, PropagationCell, PropagationPath, PropagationSummary,
@@ -334,8 +330,8 @@ pub use tetrapol::{
 };
 pub use timemachine::{
     DEFAULT_TIME_MACHINE_SECONDS, MAX_TIME_MACHINE_BYTES, MAX_TIME_MACHINE_SECONDS,
-    MIN_TIME_MACHINE_SECONDS, TimeMachineAction, TimeMachineNode, TimeMachineRequest,
-    TimeMachineStatus, history_capacity_samples,
+    MIN_TIME_MACHINE_SECONDS, TimeMachineAction, TimeMachineNode, TimeMachineStatus,
+    history_capacity_samples,
 };
 pub use tools::{
     ANTENNA_TOOL_ID, AntennaDesign, AntennaGeometry, AntennaGround, AntennaMaterial, AntennaModel,
@@ -428,19 +424,6 @@ mod contract_tests {
                 port: "audio".to_owned(),
                 params: ws::StreamParams::default(),
             }
-        );
-
-        let create: CreateChannelRequest = serde_json::from_str(
-            r#"{"node":"voice","settings":{"params":{"type":"nfm","settings":{}}}}"#,
-        )
-        .unwrap();
-        assert_eq!(create.stream, 0);
-        assert!(
-            serde_json::from_str::<CreateChannelRequest>(
-                r#"{"settings":{"params":{"type":"nfm","settings":{}}}}"#
-            )
-            .is_err(),
-            "a channel is always opened for a node"
         );
 
         let info: ChannelInfo =
@@ -1354,20 +1337,14 @@ mod contract_tests {
     }
 
     #[test]
-    fn a_time_machine_request_defaults_its_stream_and_window() {
-        let request: TimeMachineRequest =
-            serde_json::from_str(r#"{"action":"capture","node":"history"}"#).unwrap();
-        assert_eq!(request.stream, 0);
-        assert_eq!(request.action, TimeMachineAction::Capture);
+    fn a_time_machine_node_defaults_its_window() {
+        let node: TimeMachineNode = serde_json::from_str("{}").unwrap();
+        assert_eq!(node.history_seconds, DEFAULT_TIME_MACHINE_SECONDS);
+        assert!(node.valid());
         assert_eq!(
-            request.settings.history_seconds,
-            DEFAULT_TIME_MACHINE_SECONDS
+            serde_json::to_value(TimeMachineAction::Capture).unwrap(),
+            "capture"
         );
-        assert!(request.settings.valid());
-
-        let json = serde_json::to_value(&request).unwrap();
-        assert_eq!(json["action"], "capture");
-        assert_eq!(json["settings"]["history_seconds"], 10);
     }
 
     #[test]
@@ -1430,12 +1407,10 @@ mod contract_tests {
         assert!(settings.lockouts.is_empty());
         assert!(settings.priority.is_empty());
 
-        let json = serde_json::to_value(scan::ScanRequest {
-            action: scan::ScanAction::Start,
-            settings: Some(scan::ScanSettings::for_channel(3)),
-        })
-        .unwrap();
-        assert_eq!(json["action"], "start");
+        assert_eq!(
+            serde_json::to_value(scan::ScanAction::Start).unwrap(),
+            "start"
+        );
         assert_eq!(
             serde_json::to_value(scan::ScanAction::Stop).unwrap(),
             "stop"
@@ -1444,9 +1419,6 @@ mod contract_tests {
             serde_json::to_value(scan::ScanAction::Skip).unwrap(),
             "skip"
         );
-
-        let stop: scan::ScanRequest = serde_json::from_str(r#"{"action":"stop"}"#).unwrap();
-        assert_eq!(stop.settings, None);
     }
 
     #[test]

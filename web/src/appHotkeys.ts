@@ -1,32 +1,98 @@
-import { type GraphContext, isPinned, pin, tuningLocked, unpin } from "./canvas/graph";
-import { nextAnalogMode, swapDecoder } from "./canvas/nodes/decoderSwap";
-import { useHotkeys } from "./canvas/useHotkeys";
+import { isPinned, pin, unpin } from "./canvas/graph";
+import { nextAnalogMode, retypeNode } from "./canvas/nodes/decoderSwap";
+import { type HotkeyActions, useHotkeys } from "./canvas/useHotkeys";
 import type { WorkspaceStore } from "./canvas/useWorkspace";
 import type { View } from "./canvas/WorkspaceBar";
 import { DEFAULT_SQUELCH_DB, nudgedSquelch, SQUELCH_OFF } from "./components/channelSettings";
-import { TUNE_STEPS_HZ, tuningRange } from "./components/dial";
+import { TUNE_STEPS_HZ } from "./components/dial";
 import { dialId } from "./components/FrequencyDial";
-import type { ChannelInfo, DeviceSet, PatchGraph, PatchNode } from "./lib/types";
-import type { useChannelPatch } from "./lib/useChannelPatch";
-import { forStream, type useDevicePatch } from "./lib/useDevicePatch";
-import type { useRadioTune } from "./lib/useRadioTune";
+import { pushToast, toastError } from "./lib/toasts";
+import type { ChannelInfo, ChannelSettings, DeviceSet, PatchGraph, PatchNode } from "./lib/types";
+import type { ChannelEdit } from "./lib/useChannelPatch";
+import { forStream } from "./lib/useDevicePatch";
 
-export interface AppHotkeys {
+export const PICK_A_RADIO = "Select a radio or decoder";
+export const PICK_A_DECODER = "Select a decoder";
+
+export function nodeFrequencyHz(
+  selected: string | null,
+  devices: ReadonlyMap<string, DeviceSet>,
+  channels: ReadonlyMap<string, ChannelInfo>,
+  saved: ReadonlyMap<string, ChannelSettings>,
+): number | null {
+  if (selected === null) {
+    return null;
+  }
+  const set = devices.get(selected);
+  if (set !== undefined) {
+    return forStream(set.settings, 0, set.capabilities.per_stream).center_hz ?? null;
+  }
+  return (channels.get(selected)?.settings ?? saved.get(selected))?.frequency_hz ?? null;
+}
+
+export interface NodeHotkeys {
+  selectedNode: PatchNode | null;
+  selectedHz: number | null;
+  stepHz: number;
+  tuneNode: (node: string, hz: number) => void;
+  applyEdit: (node: string, edit: ChannelEdit) => void;
+  retype?: typeof retypeNode;
+  notify?: (message: string) => void;
+}
+
+export function nodeHotkeys(
+  b: NodeHotkeys,
+): Pick<HotkeyActions, "tune" | "cycleMode" | "adjustSquelch" | "toggleSquelch"> {
+  const notify = b.notify ?? ((message: string) => pushToast(message, "info"));
+  const decoder = (): PatchNode | null => {
+    if (b.selectedNode?.kind === "channel") {
+      return b.selectedNode;
+    }
+    notify(PICK_A_DECODER);
+    return null;
+  };
+  return {
+    tune: (steps) => {
+      if (b.selectedNode === null || b.selectedHz === null) {
+        notify(PICK_A_RADIO);
+        return;
+      }
+      b.tuneNode(b.selectedNode.id, b.selectedHz + steps * b.stepHz);
+    },
+    cycleMode: (direction) => {
+      const node = decoder();
+      if (node?.kind === "channel") {
+        const wanted = nextAnalogMode(node.data.channel_type, direction);
+        (b.retype ?? retypeNode)(node.id, wanted).catch(toastError);
+      }
+    },
+    adjustSquelch: (deltaDb) => {
+      const node = decoder();
+      if (node !== null) {
+        b.applyEdit(node.id, (current) => ({ squelch: nudgedSquelch(current.squelch, deltaDb) }));
+      }
+    },
+    toggleSquelch: () => {
+      const node = decoder();
+      if (node !== null) {
+        b.applyEdit(node.id, (current) => ({
+          squelch:
+            current.squelch?.mode === "off" || current.squelch === undefined
+              ? { mode: "manual", level_db: DEFAULT_SQUELCH_DB }
+              : SQUELCH_OFF,
+        }));
+      }
+    },
+  };
+}
+
+export interface AppHotkeys extends NodeHotkeys {
   selected: string | null;
   setSelected: (id: string | null) => void;
-  selectedSet: DeviceSet | null;
-  selectedChannel: ChannelInfo | null;
-  selectedNode: PatchNode | null;
-  selectedDevice: string | null;
   channelNodes: readonly PatchNode[];
   graph: PatchGraph;
-  context: GraphContext;
-  stepHz: number;
   setStepHz: (hz: number) => void;
   workspace: WorkspaceStore;
-  tuneRadio: ReturnType<typeof useRadioTune>["tuneRadio"];
-  cachedSettings: ReturnType<typeof useDevicePatch>["cachedSettings"];
-  applyEdit: ReturnType<typeof useChannelPatch>["applyEdit"];
   setView: (update: (current: View) => View) => void;
   setExpanded: (update: (current: string | null) => string | null) => void;
   setShowHelp: (show: boolean) => void;
@@ -34,74 +100,16 @@ export interface AppHotkeys {
 
 export function useAppHotkeys(b: AppHotkeys) {
   useHotkeys({
-    tune: (steps) => {
-      if (
-        b.selectedSet === null ||
-        b.selectedDevice === null ||
-        tuningLocked(b.graph, b.selectedDevice)
-      ) {
-        return;
-      }
-      const { capabilities } = b.selectedSet;
-      const range = tuningRange(capabilities);
-      const cached = b.cachedSettings(b.selectedSet.id);
-      const current =
-        cached === undefined ? 0 : (forStream(cached, 0, capabilities.per_stream).center_hz ?? 0);
-      const wanted = current + steps * b.stepHz;
-      b.tuneRadio(b.selectedSet, 0, Math.min(range.max, Math.max(range.min, wanted)));
-    },
+    ...nodeHotkeys(b),
     stepBy: (direction) => {
       const at = TUNE_STEPS_HZ.indexOf(b.stepHz as (typeof TUNE_STEPS_HZ)[number]);
       const next = Math.min(TUNE_STEPS_HZ.length - 1, Math.max(0, at + direction));
       b.setStepHz(TUNE_STEPS_HZ[next] ?? b.stepHz);
     },
     focusDial: () => {
-      if (b.selectedDevice !== null) {
-        document.getElementById(dialId(b.selectedDevice))?.focus();
+      if (b.selected !== null) {
+        document.getElementById(dialId(b.selected))?.focus();
       }
-    },
-    cycleMode: (direction) => {
-      const node = b.selectedNode;
-      if (node === null || node.kind !== "channel") {
-        return;
-      }
-      const wanted = nextAnalogMode(node.data.channel_type, direction);
-      const descriptor = b.context.channelTypes.find((type) => type.type_id === wanted);
-      if (descriptor === undefined) {
-        return;
-      }
-      swapDecoder({
-        context: b.context,
-        node,
-        descriptor,
-        live:
-          b.selectedSet === null || b.selectedChannel === null
-            ? null
-            : { deviceSet: b.selectedSet.id, channel: b.selectedChannel },
-        saved: b.workspace.savedChannels.get(node.id) ?? null,
-        applyEdit: b.applyEdit,
-        saveChannel: b.workspace.saveChannel,
-        edit: b.workspace.save,
-      });
-    },
-    adjustSquelch: (deltaDb) => {
-      if (b.selectedSet === null || b.selectedChannel === null) {
-        return;
-      }
-      b.applyEdit(b.selectedSet.id, b.selectedChannel.id, (current) => ({
-        squelch: nudgedSquelch(current.squelch, deltaDb),
-      }));
-    },
-    toggleSquelch: () => {
-      if (b.selectedSet === null || b.selectedChannel === null) {
-        return;
-      }
-      b.applyEdit(b.selectedSet.id, b.selectedChannel.id, (current) => ({
-        squelch:
-          current.squelch?.mode === "off" || current.squelch === undefined
-            ? { mode: "manual", level_db: DEFAULT_SQUELCH_DB }
-            : SQUELCH_OFF,
-      }));
     },
     selectChannel: (direction) => {
       if (b.channelNodes.length === 0) {

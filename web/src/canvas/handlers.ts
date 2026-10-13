@@ -6,7 +6,6 @@ import {
   type IsValidConnection,
   type Node,
   type NodeChange,
-  type OnBeforeDelete,
   type OnConnectStart,
 } from "@xyflow/react";
 import { useCallback } from "react";
@@ -18,7 +17,7 @@ import { useWiringStore, wireRefusal } from "../lib/wiring";
 import type { FlowData } from "./Canvas";
 import type { Workspace } from "./context";
 import { addEdge, type GraphContext, portOf, removeEdge } from "./graph";
-import { closeEngineObjects, dropNodes } from "./remove";
+import { dropNodes } from "./remove";
 
 export function useGraphChanges(
   workspace: Workspace,
@@ -67,23 +66,7 @@ export function useGraphChanges(
     [onEdgesChange, workspace],
   );
 
-  const onBeforeDelete: OnBeforeDelete<Node<FlowData>> = useCallback(
-    async ({ nodes: doomed, edges: cut }) => {
-      try {
-        await closeEngineObjects(
-          workspace,
-          doomed.map((node) => node.id),
-        );
-      } catch (error) {
-        toastError(error);
-        return false;
-      }
-      return { nodes: doomed, edges: cut };
-    },
-    [workspace],
-  );
-
-  return { handleNodesChange, handleEdgesChange, onBeforeDelete };
+  return { handleNodesChange, handleEdgesChange };
 }
 
 export function refusalOf(

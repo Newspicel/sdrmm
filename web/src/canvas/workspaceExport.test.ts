@@ -25,7 +25,7 @@ describe("reading a workspace file", () => {
     expect(read).toEqual(document());
   });
 
-  it("keeps the lane an older scanner watches", () => {
+  it("sends an older file as it was written, for the server to upgrade", () => {
     const older = document();
     older.snapshot.graph.nodes.push(
       { id: "nfm", kind: "channel", data: { channel_type: "nfm" }, position: { x: 0, y: 200 } },

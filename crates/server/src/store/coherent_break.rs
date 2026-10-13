@@ -143,6 +143,15 @@ pub(super) fn read_notices(
 }
 
 impl Store {
+    pub fn add_notices(
+        &self,
+        workspace: i64,
+        notices: &[WorkspaceNoticeKind],
+    ) -> Result<(), StoreError> {
+        let conn = self.lock();
+        insert_notices(&conn, workspace, notices)
+    }
+
     pub fn dismiss_notice(&self, workspace: i64, notice: i64) -> Result<(), StoreError> {
         let conn = self.lock();
         let deleted = conn.execute(

@@ -1,6 +1,5 @@
 import { agcDelta, agcGainDb, laneAgc } from "../canvas/nodes/deviceNode";
-import type { DeviceSet } from "../lib/types";
-import { useDevicePatch } from "../lib/useDevicePatch";
+import type { DeviceSet, DeviceSettings } from "../lib/types";
 import { Button } from "./BaseControls";
 import { agcStageIndex, formatGain } from "./capabilities";
 import { TOGGLE_QUIET } from "./controls";
@@ -56,14 +55,15 @@ export function AgcAuto({
   port,
   advised,
   heldBy,
+  onPatch,
 }: {
   set: DeviceSet;
   stream: number;
   port?: string;
   advised: boolean;
   heldBy?: string;
+  onPatch: (delta: DeviceSettings) => void;
 }) {
-  const { applyPatch } = useDevicePatch();
   const agc = laneAgc(set, stream);
   return (
     <AutoToggle
@@ -72,7 +72,7 @@ export function AgcAuto({
       title={heldBy === undefined ? agcTip(set, stream, advised) : `Set on ${heldBy}`}
       warn={agc.on && advised}
       disabled={heldBy !== undefined}
-      onChange={(on) => applyPatch(set.id, agcDelta(set.capabilities, stream, { ...agc, on }))}
+      onChange={(on) => onPatch(agcDelta(set.capabilities, stream, { ...agc, on }))}
     />
   );
 }

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pause, Play, RotateCcw, Square } from "lucide-react";
 import { useEffect, useState } from "react";
-import { controlPlayback, STATE_KEY } from "../lib/api";
+import { nodeAction, STATE_KEY } from "../lib/api";
 import { toastError } from "../lib/toasts";
 import type { DeviceSet, PlaybackAction, PlaybackStatus } from "../lib/types";
 import { useDevicePatch } from "../lib/useDevicePatch";
@@ -19,14 +19,25 @@ import { Slider } from "./Slider";
 
 const TICK_MS = 200;
 
-export function PlaybackTransport({ set, status }: { set: DeviceSet; status: PlaybackStatus }) {
+export function PlaybackTransport({
+  node,
+  set,
+  status,
+}: {
+  node: string;
+  set: DeviceSet;
+  status: PlaybackStatus;
+}) {
   const queryClient = useQueryClient();
   const { applyPatch } = useDevicePatch();
   const [scrub, setScrub] = useState<number | null>(null);
 
   const drive = useMutation({
     mutationFn: ({ action, position }: { action: PlaybackAction; position?: number }) =>
-      controlPlayback(set.id, action, position),
+      nodeAction(node, {
+        action: "playback",
+        with: position === undefined ? { action } : { action, position_samples: position },
+      }),
     onError: (error: Error) => toastError(error),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: STATE_KEY }),
   });
@@ -70,7 +81,7 @@ export function PlaybackTransport({ set, status }: { set: DeviceSet; status: Pla
               ? "At the end: turn looping on, or stop and play again"
               : "Plays once, then holds silent"
         }
-        onClick={() => applyPatch(set.id, { extra: [{ name: LOOP_SETTING, value: !looping }] })}
+        onClick={() => applyPatch(node, { extra: [{ name: LOOP_SETTING, value: !looping }] })}
       >
         <Icon glyph={RotateCcw} />
       </Button>

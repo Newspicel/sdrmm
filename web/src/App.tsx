@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAppHotkeys } from "./appHotkeys";
+import { nodeFrequencyHz, useAppHotkeys } from "./appHotkeys";
 import { applyToasts, notConnectedToast } from "./canvas/applyToasts";
 import { Canvas } from "./canvas/Canvas";
 import { WorkspaceProvider } from "./canvas/context";
@@ -26,20 +26,12 @@ import { channelTypesQuery, patchCatalogQuery, resolvedQuery, stateQuery } from 
 import { audioEngine } from "./lib/audio/useChannelAudio";
 import { loadCatalog, useCatalogStore } from "./lib/catalog";
 import { useRefusalStore } from "./lib/refusals";
-import {
-  activePatch,
-  audioTaps,
-  boundChannels,
-  boundRadios,
-  channelOwners,
-  radioOf,
-} from "./lib/resolved";
+import { activePatch, audioTaps, boundChannels, boundRadios, channelOwners } from "./lib/resolved";
 import { closeToast, pushToast } from "./lib/toasts";
 import type { NodeProblem, PatchApplyReport, PatchGraph, WorkspaceSettings } from "./lib/types";
 import { useChannelPatch } from "./lib/useChannelPatch";
-import { useDevicePatch } from "./lib/useDevicePatch";
 import { useNodeStateSync } from "./lib/useNodeStateSync";
-import { useRadioTune } from "./lib/useRadioTune";
+import { useNodeTune } from "./lib/useNodeTune";
 import { useSdrSocket } from "./lib/useSdrSocket";
 import { ToolsDialog } from "./tools/ToolsDialog";
 
@@ -69,9 +61,8 @@ export function App() {
   const [selected, setSelected] = useScopedState<string | null>(activeId, null);
   const [expanded, setExpanded] = useScopedState<string | null>(activeId, null);
   const applied = useSwitchStore((held) => held.report);
-  const { cachedSettings } = useDevicePatch();
-  const { tuneRadio } = useRadioTune();
   const { applyEdit } = useChannelPatch();
+  const tuneNode = useNodeTune();
   const deviceSets = useMemo(() => state.data?.device_sets ?? [], [state.data?.device_sets]);
   const trunks = useMemo(() => state.data?.trunk_systems ?? [], [state.data?.trunk_systems]);
   const resolved = useMemo(
@@ -141,27 +132,21 @@ export function App() {
   );
 
   const selectedNode = graph.nodes.find((node) => node.id === selected) ?? null;
-  const selectedChannel = selected === null ? null : (channels.get(selected) ?? null);
-  const selectedDevice = selected === null ? null : radioOf(resolved, selected);
-  const selectedSet = selectedDevice === null ? null : (devices.get(selectedDevice) ?? null);
+  const selectedHz = nodeFrequencyHz(selected, devices, channels, workspace.savedChannels);
 
   const channelNodes = graph.nodes.filter((node) => node.kind === "channel");
 
   useAppHotkeys({
     selected,
     setSelected,
-    selectedSet,
-    selectedChannel,
     selectedNode,
-    selectedDevice,
+    selectedHz,
     channelNodes,
     graph,
-    context,
     stepHz,
     setStepHz,
     workspace,
-    tuneRadio,
-    cachedSettings,
+    tuneNode,
     applyEdit,
     setView,
     setExpanded,
@@ -187,7 +172,6 @@ export function App() {
               channels,
               owners,
               savedChannels: workspace.savedChannels,
-              saveChannel: workspace.saveChannel,
               selected,
               select: setSelected,
               expanded,

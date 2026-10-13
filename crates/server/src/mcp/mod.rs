@@ -335,7 +335,7 @@ impl SdrMcp {
         let stream = args.stream;
         let mut rx = self
             .blocking(move |state| {
-                let device_set = live::radio_of(state, &args.node)?;
+                let device_set = rest::radio_of(state, &args.node)?;
                 Ok(state.engine.subscribe_spectrum(device_set, stream)?)
             })
             .await?;

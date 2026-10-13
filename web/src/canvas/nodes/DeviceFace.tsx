@@ -3,7 +3,6 @@ import { Link2, Radar } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../../components/BaseControls";
 import { BTN_PRIMARY, BTN_QUIET_DANGER, BTN_SM, ICON_BTN } from "../../components/controls";
-import { deviceId } from "../../components/devices";
 import { inTuningRange, isTunable, tuningRange } from "../../components/dial";
 import { dialId, FrequencyDial } from "../../components/FrequencyDial";
 import { FaceFault } from "../../components/face/Fault";
@@ -16,13 +15,12 @@ import { RadioSettings } from "../../components/RadioSettings";
 import { Tip } from "../../components/Tip";
 import { TuneTo } from "../../components/TuneTo";
 import { TuningLock } from "../../components/TuningLock";
-import { createDeviceSet, devicesQuery, STATE_KEY, stateQuery } from "../../lib/api";
+import { addNetworkRadio, devicesQuery, STATE_KEY } from "../../lib/api";
 import { toastError } from "../../lib/toasts";
 import type { DeviceInfo, DeviceRef, DeviceSet, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useRadioTune } from "../../lib/useRadioTune";
 import { useWorkspaceContext } from "../context";
 import { patchNode, rxStreamCount, streamPort } from "../graph";
-import { releaseRadio } from "../remove";
 import { dialHold, type LaneHold, laneHolds } from "./arrayNode";
 import {
   allAutoTuning,
@@ -51,15 +49,23 @@ import { SourceHealth } from "./SourceHealth";
 
 type DeviceNodeData = PatchNodeOf<"device">["data"];
 
-function AutoTuning({ set, stream }: { set: DeviceSet; stream: number | "all" }) {
+function AutoTuning({
+  node,
+  set,
+  stream,
+}: {
+  node: string;
+  set: DeviceSet;
+  stream: number | "all";
+}) {
   const { setTuning, setTuningAll } = useRadioTune();
   const auto = stream === "all" ? allAutoTuning(set) : autoTuning(set, stream);
   const flip = (): void => {
     const next = auto ? "manual" : "auto";
     if (stream === "all") {
-      setTuningAll(set, next);
+      setTuningAll({ node, set }, next);
     } else {
-      setTuning(set, stream, next);
+      setTuning({ node, set }, stream, next);
     }
   };
   return (
@@ -203,7 +209,7 @@ function LaneDial({
   const active = useFaceActive();
   const range = tuningRange(set.capabilities);
   const held = !isTunable(range) || locked || hold !== null;
-  const tune = (hz: number): void => tuneRadio(set, dial.stream, hz);
+  const tune = (hz: number): void => tuneRadio({ node, set }, dial.stream, hz);
   return (
     <div
       className="flex h-7 items-center gap-2"
@@ -254,7 +260,7 @@ function Tuner(props: TunerProps) {
       onLink={(linked) => {
         onSplit(!linked);
         if (linked && dial !== undefined) {
-          tuneAll(set, dial.hz);
+          tuneAll({ node, set }, dial.hz);
         }
       }}
     />
@@ -267,7 +273,7 @@ function Tuner(props: TunerProps) {
           {hold === null ? (
             <>
               {link}
-              <AutoTuning set={set} stream="all" />
+              <AutoTuning node={node} set={set} stream="all" />
               <TuningLock locked={locked} held="Tuning locked" free="Lock tuning" onLock={lock} />
             </>
           ) : (
@@ -289,11 +295,11 @@ function Tuner(props: TunerProps) {
         locked={locked}
         hold={hold}
         onLock={lock}
-        onTune={(hz) => (merged ? tuneAll(set, hz) : tuneRadio(set, 0, hz))}
+        onTune={(hz) => (merged ? tuneAll({ node, set }, hz) : tuneRadio({ node, set }, 0, hz))}
         tools={
           <>
             {link}
-            <AutoTuning set={set} stream={merged ? "all" : 0} />
+            <AutoTuning node={node} set={set} stream={merged ? "all" : 0} />
           </>
         }
       />
@@ -348,13 +354,6 @@ export function DeviceFace({ node }: { node: PatchNode }) {
     reference !== null &&
     (attached.data?.devices ?? []).some((device) => refMatches(reference, device));
 
-  const open = useMutation({
-    mutationFn: createDeviceSet,
-    onSuccess: () => workspace.apply(),
-    onError: (error: Error) => toastError(error),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: STATE_KEY }),
-  });
-
   const editNode = (next: Partial<DeviceNodeData>): void =>
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -365,34 +364,16 @@ export function DeviceFace({ node }: { node: PatchNode }) {
 
   const nameRadio = (chosen: DeviceRef | null): void => editNode({ device: chosen });
 
-  const forget = useMutation({
-    mutationFn: () => releaseRadio(workspace, node.id, () => nameRadio(null)),
-    onError: (error: Error) => toastError(error),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: STATE_KEY }),
-  });
+  const forget = (): void => nameRadio(null);
 
   const bind = (device: DeviceInfo): void => {
-    const chosen = deviceRefOf(device);
-    nameRadio(chosen);
-    if (workspace.deviceSets.some((candidate) => refMatches(chosen, candidate.device))) {
-      workspace.apply();
-    } else {
-      open.mutate(deviceId(device));
-    }
+    nameRadio(deviceRefOf(device));
+    workspace.apply();
   };
 
   const openNetwork = useMutation({
-    mutationFn: async (id: string): Promise<DeviceInfo | null> => {
-      const created = await createDeviceSet(id);
-      const state = await queryClient.fetchQuery(stateQuery());
-      return state.device_sets.find((candidate) => candidate.id === created)?.device ?? null;
-    },
-    onSuccess: (device) => {
-      if (device !== null) {
-        nameRadio(deviceRefOf(device));
-      }
-      workspace.apply();
-    },
+    mutationFn: addNetworkRadio,
+    onSuccess: bind,
     onError: (error: Error) => toastError(error),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: STATE_KEY }),
   });
@@ -405,8 +386,8 @@ export function DeviceFace({ node }: { node: PatchNode }) {
             <DeviceChoices
               onChoose={bind}
               onAddNetwork={(id) => openNetwork.mutate(id)}
-              busy={open.isPending || openNetwork.isPending}
-              error={open.error?.message ?? openNetwork.error?.message ?? null}
+              busy={openNetwork.isPending}
+              error={openNetwork.error?.message ?? null}
               claimed={claimedDevices(workspace.graph, node.id)}
             />
           </div>
@@ -431,8 +412,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
             type="button"
             className={BTN_QUIET_DANGER}
             title="Free this node so you can pick a different radio"
-            onClick={() => forget.mutate()}
-            disabled={forget.isPending}
+            onClick={forget}
           >
             Forget radio
           </Button>
@@ -470,6 +450,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
     >
       <FaceBody>
         <RadioSettings
+          node={node.id}
           active={set}
           className="p-2"
           advised={new Set(holds.keys())}
@@ -518,10 +499,9 @@ export function DeviceFace({ node }: { node: PatchNode }) {
           type="button"
           className={BTN_QUIET_DANGER}
           title="Close this radio and free the node: the device is released and the wires stay drawn"
-          onClick={() => forget.mutate()}
-          disabled={forget.isPending}
+          onClick={forget}
         >
-          {forget.isPending ? "Closing…" : "Forget radio"}
+          Forget radio
         </Button>
       </FaceFooter>
     </NodeShell>

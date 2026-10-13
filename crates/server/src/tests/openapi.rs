@@ -9,21 +9,18 @@ fn openapi_registers_paths_and_ws_schemas() {
         "/api/devices",
         "/api/devices/serial",
         "/api/channeltypes",
-        "/api/devicesets",
-        "/api/devicesets/{ds}/device",
-        "/api/devicesets/{ds}/channels/{ch}",
+        "/api/devices/network",
+        "/api/workspaces/active/nodes/{node}/channel",
+        "/api/workspaces/active/nodes/{node}/device",
+        "/api/workspaces/active/nodes/{node}/actions",
         "/api/presets",
         "/api/presets/{id}",
         "/api/presets/{id}/apply",
         "/api/bookmarks",
         "/api/bookmarks/{id}",
-        "/api/devicesets/{ds}/channels/{ch}/network-export",
-        "/api/devicesets/{ds}/time-machine",
         "/api/audiorecordings",
         "/api/audiorecordings/{file}",
         "/api/audiorecordings/{file}/download",
-        "/api/devicesets/{ds}/network-export",
-        "/api/devicesets/{ds}/playback",
         "/api/recordings",
         "/api/recordings/{id}",
         "/api/recordings/{id}/download",
@@ -52,6 +49,10 @@ fn openapi_registers_paths_and_ws_schemas() {
     ] {
         assert!(spec.contains(path), "missing path {path}");
     }
+    assert!(
+        !spec.contains("/api/devicesets"),
+        "nothing mutates a device set by address"
+    );
     assert!(spec.contains("ServerEvent"), "ServerEvent schema missing");
     assert!(
         spec.contains("ClientCommand"),
@@ -70,9 +71,9 @@ fn openapi_registers_paths_and_ws_schemas() {
         "RecordingInfo",
         "RecordingAnnotation",
         "NetworkExportStatus",
-        "ChannelNetworkExportRequest",
+        "NodeAction",
+        "NodeActed",
         "TimeMachineStatus",
-        "TimeMachineRequest",
         "RecordingInfo",
         "DecoderLogEntry",
         "DecoderLogResponse",

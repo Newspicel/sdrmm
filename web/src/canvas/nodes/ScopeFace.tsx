@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Fragment,
   type ReactNode,
@@ -60,28 +60,20 @@ import {
 } from "../../components/videoAverage";
 import type { Rgb } from "../../gl/colormap";
 import { attachWaterfall, GRAPHICS_HELP, type WaterfallView } from "../../gl/waterfall";
-import { bookmarksQuery } from "../../lib/api";
+import { bookmarksQuery, nodeAction, STATE_KEY } from "../../lib/api";
 import type { SpectrumFrame } from "../../lib/frame";
 import { heardHz, type SetLevels, useLevelStore } from "../../lib/levels";
 import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
 import { channelNodesOn } from "../../lib/resolved";
 import { SPECTRUM_MAX_BINS, spectrumHub } from "../../lib/spectrum";
+import { toastError } from "../../lib/toasts";
 import type { Bookmark, ChannelInfo, ChannelParams, DeviceSet, PatchNode } from "../../lib/types";
-import { useArrayTune } from "../../lib/useArrayTune";
 import { useBandPlan } from "../../lib/useBandPlan";
 import { useChannelPatch } from "../../lib/useChannelPatch";
-import { useRadioTune } from "../../lib/useRadioTune";
+import { useNodeTune } from "../../lib/useNodeTune";
 import { useWorkspaceContext } from "../context";
-import {
-  addEdge,
-  addNode,
-  newNodeId,
-  nodeIds,
-  patchNode,
-  streamPort,
-  tuningLocked,
-} from "../graph";
-import { type IqLane, iqSourceOf, laneTuneTarget } from "../lanes";
+import { addEdge, addNode, newNodeId, nodeIds, streamPort } from "../graph";
+import { type IqLane, iqSourceOf } from "../lanes";
 import { channelPicker } from "../palette";
 import { useNodePlacement } from "../placement";
 import { deviceSetOf } from "../workspaceDevice";
@@ -163,24 +155,13 @@ export function ScopeFace({ node }: { node: PatchNode }) {
   );
 }
 
-function useLaneTune(set: DeviceSet | null, source: IqLane | null) {
-  const workspace = useWorkspaceContext();
-  const { tuneRadio } = useRadioTune();
-  const { tuneArray } = useArrayTune();
+function useLaneTune(node: string, set: DeviceSet | null, source: IqLane | null) {
+  const tuneNode = useNodeTune();
   const stream = source?.stream ?? 0;
-  const aim = source === null ? null : laneTuneTarget(source);
-  const tunedArray = aim?.kind === "array" ? aim.node : null;
-  const onAuto = tunedArray === null && set !== null && autoTuning(set, stream);
-  const centerHeld =
-    onAuto ||
-    (tunedArray === null &&
-      source !== null &&
-      tuningLocked(workspace.graph, source.source, stream));
+  const centerHeld = source?.virtual === undefined && set !== null && autoTuning(set, stream);
   const tuneCenter = (hz: number): void => {
-    if (tunedArray !== null) {
-      tuneArray(tunedArray, hz);
-    } else if (set !== null && !centerHeld) {
-      tuneRadio(set, stream, hz);
+    if (!centerHeld) {
+      tuneNode(node, hz);
     }
   };
   return { centerHeld, tuneCenter };
@@ -206,6 +187,8 @@ function Spectrum({
     [set?.channels, stream],
   );
   const { applyEdit } = useChannelPatch();
+  const tuneNode = useNodeTune();
+  const queryClient = useQueryClient();
   const active = useFaceActive();
   const placeNode = useNodePlacement();
   const { plan, ruler: bandRuler, setRuler } = useBandPlan();
@@ -293,7 +276,7 @@ function Spectrum({
   }
   const locked = lockedChannels(workspace.graph, faces);
   const heldChannel = (channel: number): boolean => owners.has(channel) || locked.has(channel);
-  const { centerHeld, tuneCenter } = useLaneTune(set, source);
+  const { centerHeld, tuneCenter } = useLaneTune(node, set, source);
 
   const workspaceChannel = [...faces].find(([, id]) => id === workspace.selected)?.[0] ?? null;
   const selectedChannel =
@@ -310,38 +293,29 @@ function Spectrum({
   };
 
   const tuneChannel = (channel: number, frequencyHz: number): void => {
-    if (setId === null || heldChannel(channel)) {
-      return;
+    const face = faces.get(channel);
+    if (face !== undefined && !heldChannel(channel)) {
+      tuneNode(face, frequencyHz);
     }
-    applyEdit(setId, channel, { frequency_hz: frequencyHz });
   };
 
   const tuneToBand = (hz: number, suggested: ChannelParams | null): void => {
-    const params = suggested === null ? {} : { params: suggested };
-    if (setId === null || tunableChannel === null) {
+    const face = tunableChannel === null ? undefined : faces.get(tunableChannel);
+    if (face === undefined) {
       tuneCenter(hz);
       return;
     }
     if (meta === null || Math.abs(hz - meta.centerHz) >= meta.spanHz / 2) {
       tuneCenter(hz);
     }
-    applyEdit(setId, tunableChannel, { frequency_hz: Math.round(hz), ...params });
-    const face = faces.get(tunableChannel);
-    if (suggested === null || face === undefined) {
+    if (suggested === null) {
+      applyEdit(face, { frequency_hz: Math.round(hz) });
       return;
     }
-    workspace.edit((current) => ({
-      ...current,
-      graph: patchNode(current.graph, face, (drawn) =>
-        drawn.kind === "channel"
-          ? {
-              ...drawn,
-              kind: "channel" as const,
-              data: { channel_type: suggested.type },
-            }
-          : drawn,
-      ),
-    }));
+    void nodeAction(face, { action: "retype", with: { channel_type: suggested.type } })
+      .then(() => queryClient.refetchQueries({ queryKey: STATE_KEY }))
+      .then(() => applyEdit(face, { frequency_hz: Math.round(hz), params: suggested }))
+      .catch(toastError);
   };
 
   const tuneTo = (pick: ScopePick): void => {
@@ -395,10 +369,10 @@ function Spectrum({
     if (setId === null) {
       return;
     }
-    for (const [channel, face] of faces) {
+    for (const face of faces.values()) {
       const frequencyHz = takeCreationTune(face);
       if (frequencyHz !== undefined) {
-        editRef.current(setId, channel, { frequency_hz: frequencyHz });
+        editRef.current(face, { frequency_hz: frequencyHz });
       }
     }
   });

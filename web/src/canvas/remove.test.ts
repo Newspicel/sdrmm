@@ -1,23 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useProcessorStore } from "../lib/processors";
-import type {
-  ChannelInfo,
-  DeviceSet,
-  PatchGraph,
-  PatchNode,
-  WorkspaceSnapshot,
-} from "../lib/types";
-import { wiredPatch } from "../test/resolved";
-import type { Workspace } from "./context";
-import { closeEngineObjects, dropNodes, releaseRadio } from "./remove";
+import type { PatchGraph, PatchNode, WorkspaceSnapshot } from "../lib/types";
+import { dropNodes } from "./remove";
 
-const api = vi.hoisted(() => ({
-  controlTimeMachine: vi.fn(async () => {}),
-  deleteChannel: vi.fn(async () => {}),
-  deleteDeviceSet: vi.fn(async () => {}),
-  networkExportChannel: vi.fn(async () => {}),
-  networkExportDeviceSet: vi.fn(async () => {}),
-}));
+const api = vi.hoisted(() => ({ client: { POST: vi.fn(), DELETE: vi.fn(), PATCH: vi.fn() } }));
 vi.mock("../lib/api", () => api);
 
 function node(id: string, body: Partial<PatchNode> & Pick<PatchNode, "kind">): PatchNode {
@@ -32,217 +18,8 @@ const graph: PatchGraph = {
   edges: [{ from: { node: "dev", port: "iq3" }, to: { node: "high", port: "iq" } }],
 };
 
-const channelOnLane2: ChannelInfo = {
-  id: 7,
-  stream: 2,
-  settings: { frequency_hz: 100_000_000, params: { type: "nfm", settings: {} } as never },
-};
-
-function resolvedFor(stub: {
-  graph: PatchGraph;
-  devices: ReadonlyMap<string, DeviceSet>;
-  channels: ReadonlyMap<string, ChannelInfo>;
-  owners: ReadonlyMap<string, string>;
-}): Workspace {
-  const sets = [...stub.devices.values()].map((set) => ({
-    ...set,
-    channels: [...stub.channels.values()],
-  }));
-  return {
-    ...stub,
-    resolved: wiredPatch(stub.graph, stub),
-    deviceSets: sets,
-  } as unknown as Workspace;
-}
-
-const workspace = resolvedFor({
-  graph,
-  devices: new Map([["dev", { id: 4 } as DeviceSet]]),
-  channels: new Map([["high", channelOnLane2]]),
-  owners: new Map([["high", "dev"]]),
-});
-
-const networkSettings = {
-  transport: "udp" as const,
-  format: "ci16_le" as const,
-  address: "127.0.0.1:7355",
-};
-const networkGraph: PatchGraph = {
-  nodes: [
-    node("dev", { kind: "device", data: {} }),
-    node("net-owned", { kind: "network_export", data: networkSettings }),
-    node("net-other", { kind: "network_export", data: networkSettings }),
-  ],
-  edges: [
-    { from: { node: "dev", port: "iq2" }, to: { node: "net-owned", port: "iq" } },
-    { from: { node: "dev", port: "iq3" }, to: { node: "net-other", port: "iq" } },
-  ],
-};
-const networkWorkspace = resolvedFor({
-  ...workspace,
-  graph: networkGraph,
-  devices: new Map([
-    [
-      "dev",
-      {
-        id: 4,
-        network_export: {
-          node: "net-owned",
-          stream: 1,
-          settings: networkSettings,
-          sample_rate: 2_048_000,
-          center_hz: 100_000_000,
-          samples: 128,
-          bytes: 512,
-          packets: 1,
-          overruns: 0,
-        },
-      } as DeviceSet,
-    ],
-  ]),
-});
-
-const basebandChannel: ChannelInfo = {
-  ...channelOnLane2,
-  id: 9,
-  stream: 0,
-  network_export: {
-    node: "net-baseband",
-    stream: 0,
-    settings: networkSettings,
-    sample_rate: 48_000,
-    center_hz: 100_000_000,
-    samples: 64,
-    bytes: 512,
-    packets: 1,
-    overruns: 0,
-  },
-};
-const basebandWorkspace = resolvedFor({
-  ...workspace,
-  graph: {
-    nodes: [
-      node("dev", { kind: "device", data: {} }),
-      node("ch", { kind: "channel", data: { channel_type: "nfm" } }),
-      node("net-baseband", { kind: "network_export", data: networkSettings }),
-      node("history", { kind: "time_machine", data: { history_seconds: 10 } }),
-    ],
-    edges: [
-      { from: { node: "dev", port: "iq" }, to: { node: "ch", port: "iq" } },
-      { from: { node: "ch", port: "baseband" }, to: { node: "net-baseband", port: "baseband" } },
-      { from: { node: "dev", port: "iq" }, to: { node: "history", port: "iq" } },
-    ],
-  },
-  devices: new Map([
-    [
-      "dev",
-      {
-        id: 4,
-        time_machine: { node: "history", stream: 0 },
-      } as unknown as DeviceSet,
-    ],
-  ]),
-  channels: new Map([["ch", basebandChannel]]),
-  owners: new Map([["ch", "dev"]]),
-});
-
-describe("closeEngineObjects", () => {
-  beforeEach(() => {
-    api.controlTimeMachine.mockClear();
-    api.deleteChannel.mockClear();
-    api.deleteDeviceSet.mockClear();
-    api.networkExportChannel.mockClear();
-    api.networkExportDeviceSet.mockClear();
-  });
-
-  it("stops a baseband export on the channel it belongs to", async () => {
-    await closeEngineObjects(basebandWorkspace, ["net-baseband"]);
-    expect(api.networkExportChannel).toHaveBeenCalledWith(
-      4,
-      9,
-      "stop",
-      "net-baseband",
-      networkSettings,
-    );
-    expect(api.networkExportDeviceSet).not.toHaveBeenCalled();
-  });
-
-  it("disarms the time machine a removed sink is holding", async () => {
-    await closeEngineObjects(basebandWorkspace, ["history"]);
-    expect(api.controlTimeMachine).toHaveBeenCalledWith(4, "disarm", "history", 0, {
-      history_seconds: 10,
-    });
-  });
-
-  it("deletes the engine channel behind a node wired past stream 0", async () => {
-    await closeEngineObjects(workspace, ["high"]);
-    expect(api.deleteChannel).toHaveBeenCalledWith(4, 7);
-    expect(api.deleteDeviceSet).not.toHaveBeenCalled();
-  });
-
-  it("closes the device set behind a device node", async () => {
-    await closeEngineObjects(workspace, ["dev"]);
-    expect(api.deleteDeviceSet).toHaveBeenCalledWith(4);
-    expect(api.deleteChannel).not.toHaveBeenCalled();
-  });
-
-  it("stops only the network export owned by a removed sink", async () => {
-    await closeEngineObjects(networkWorkspace, ["net-other"]);
-    expect(api.networkExportDeviceSet).not.toHaveBeenCalled();
-
-    await closeEngineObjects(networkWorkspace, ["net-owned"]);
-    expect(api.networkExportDeviceSet).toHaveBeenCalledTimes(1);
-    expect(api.networkExportDeviceSet).toHaveBeenCalledWith(
-      4,
-      "stop",
-      "net-owned",
-      1,
-      networkSettings,
-    );
-  });
-});
-
-describe("releaseRadio", () => {
-  beforeEach(() => {
-    api.deleteChannel.mockClear();
-    api.deleteDeviceSet.mockClear();
-    api.networkExportDeviceSet.mockClear();
-  });
-
-  it("closes the radio before unbinding the node", async () => {
-    const order: string[] = [];
-    api.deleteDeviceSet.mockImplementation(async () => {
-      order.push("closed");
-    });
-
-    await releaseRadio(workspace, "dev", () => order.push("unbound"));
-
-    expect(order).toEqual(["closed", "unbound"]);
-  });
-
-  it("leaves the node bound when the radio refuses to close", async () => {
-    api.deleteDeviceSet.mockRejectedValue(new Error("device busy"));
-    let unbound = false;
-
-    await expect(releaseRadio(workspace, "dev", () => (unbound = true))).rejects.toThrow(
-      "device busy",
-    );
-    expect(unbound).toBe(false);
-  });
-
-  it("unbinds a node whose radio is not attached, with nothing to close", async () => {
-    let unbound = false;
-    const detached = { ...workspace, devices: new Map() } as unknown as Workspace;
-
-    await releaseRadio(detached, "dev", () => (unbound = true));
-
-    expect(unbound).toBe(true);
-    expect(api.deleteDeviceSet).not.toHaveBeenCalled();
-  });
-});
-
 describe("dropNodes", () => {
-  it("takes the nodes out, forgets their state and applies so the server stops them", () => {
+  it("only edits the graph and forgets the nodes' state, leaving the engine to the server", () => {
     const finder = node("df", { kind: "df", data: {} });
     const snapshot = {
       version: 4,
@@ -256,28 +33,30 @@ describe("dropNodes", () => {
       rack: { slots: [{ node: "df", x: 0, y: 0, w: 1, h: 1 }] },
     } as unknown as WorkspaceSnapshot;
     let edited = snapshot;
-    const calls: string[] = [];
+    let edits = 0;
     const target = {
       edit: (change: (held: WorkspaceSnapshot) => WorkspaceSnapshot) => {
-        calls.push("edit");
+        edits += 1;
         edited = change(edited);
       },
-      apply: () => calls.push("apply"),
     };
     useProcessorStore.getState().observe({
       type: "ProcessorUpdate",
       data: { node: "df", reading: { type: "df", reading: {} } },
     } as never);
 
-    dropNodes(target, ["df"]);
+    dropNodes(target, ["df", "dev"]);
 
-    expect(calls).toEqual(["edit", "apply"]);
-    expect(edited.graph.nodes.map((kept) => kept.id)).toEqual(["dev", "high"]);
-    expect(edited.graph.edges).toEqual(graph.edges);
+    expect(edits).toBe(1);
+    expect(edited.graph.nodes.map((kept) => kept.id)).toEqual(["high"]);
+    expect(edited.graph.edges).toEqual([]);
     expect(edited.rack).toEqual({ slots: [] });
     expect(useProcessorStore.getState().byNode.df).toBeUndefined();
+    expect(api.client.POST).not.toHaveBeenCalled();
+    expect(api.client.DELETE).not.toHaveBeenCalled();
+    expect(api.client.PATCH).not.toHaveBeenCalled();
 
     dropNodes(target, []);
-    expect(calls).toEqual(["edit", "apply"]);
+    expect(edits).toBe(1);
   });
 });

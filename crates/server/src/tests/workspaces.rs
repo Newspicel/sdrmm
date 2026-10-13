@@ -118,11 +118,10 @@ async fn undoing_a_dial_move_puts_the_frequency_back() {
         .expect("the radio is tuned somewhere");
     let was_frequency = set.channels[0].settings.frequency_hz;
 
-    let (status, body) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(&format!(r#"{{"center_hz":{}}}"#, was_center + 1_000_000.0)),
+    let (status, body) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        &format!(r#"{{"center_hz":{}}}"#, was_center + 1_000_000.0),
     )
     .await;
     assert_eq!(
@@ -134,7 +133,10 @@ async fn undoing_a_dial_move_puts_the_frequency_back() {
     let (status, _) = request(
         app.clone(),
         "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{ch}"),
+        &format!(
+            "/api/workspaces/active/nodes/{}/channel",
+            channel_at(&app, ds, ch).await
+        ),
         Some(&format!(
             r#"{{"settings":{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}}}"#,
             was_center + 1_025_000.0
@@ -182,18 +184,23 @@ async fn undoing_a_dial_move_puts_the_frequency_back() {
 
 #[tokio::test]
 async fn a_radio_the_canvas_does_not_draw_records_no_history() {
-    let app = test_router();
+    let (app, state) = test_router_with_state();
     let workspace = workspaces(&app).await.active.expect("seeded workspace");
-    let ds = create_virtual_set(&app).await;
+    let ds = state
+        .engine
+        .create_device_set("virtual:band")
+        .expect("the radio opens");
 
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"center_hz":123000000.0}"#),
+    crate::rest::patch_device_live(
+        &state,
+        ds,
+        DeviceSettings {
+            center_hz: Some(123_000_000.0),
+            ..DeviceSettings::default()
+        },
+        None,
     )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    .expect("the radio retunes");
     assert!(!workspace_detail(&app, workspace).await.history.can_undo);
 }
 
@@ -312,11 +319,10 @@ async fn a_workspace_comes_back_tuned_the_way_it_was_left() {
     assert_eq!(apply(&app, workspace).await.created, 1);
 
     let ds = get_state(&app).await.device_sets[0].id;
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"center_hz":145500000.0}"#),
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"center_hz":145500000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -324,7 +330,7 @@ async fn a_workspace_comes_back_tuned_the_way_it_was_left() {
     let (status, body) = request(
         app.clone(),
         "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{channel}"),
+        &format!("/api/workspaces/active/nodes/{}/channel", channel_at(&app, ds, channel).await),
         Some(r#"{"settings":{"frequency_hz":145512500.0,"squelch":{"mode":"manual","level_db":-42.0},"params":{"type":"nfm","settings":{}}}}"#),
     )
     .await;
@@ -363,11 +369,10 @@ async fn a_hand_picked_radio_comes_up_with_the_nodes_stored_settings() {
     let workspace = store_siggen_workspace(&app).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"center_hz":145500000.0}"#),
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"center_hz":145500000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -376,7 +381,7 @@ async fn a_hand_picked_radio_comes_up_with_the_nodes_stored_settings() {
     let restarted = state_over(state.store.clone());
     let (app, background) = router_with_state(restarted, &ServerOptions::default());
     background.detach();
-    create_virtual_set(&app).await;
+    open_virtual_radio(&app).await;
     apply(&app, workspace).await;
     assert_eq!(
         get_state(&app).await.device_sets[0].settings.center_hz,
@@ -441,11 +446,10 @@ async fn applying_a_workspace_does_not_retune_an_open_radio() {
 
     let ds = get_state(&app).await.device_sets[0].id;
     let tune = async |hz: f64| {
-        let (status, _) = request(
-            app.clone(),
-            "PATCH",
-            &format!("/api/devicesets/{ds}/device"),
-            Some(&format!(r#"{{"center_hz":{hz}}}"#)),
+        let (status, _) = patch_node_device(
+            &app,
+            &radio_at(&app, ds).await,
+            &format!(r#"{{"center_hz":{hz}}}"#),
         )
         .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
@@ -494,11 +498,10 @@ async fn switching_between_workspaces_sharing_a_radio_restores_each_ones_setting
     let ds = get_state(&app).await.device_sets[0].id;
 
     let tune = async |hz: f64| {
-        let (status, _) = request(
-            app.clone(),
-            "PATCH",
-            &format!("/api/devicesets/{ds}/device"),
-            Some(&format!(r#"{{"center_hz":{hz}}}"#)),
+        let (status, _) = patch_node_device(
+            &app,
+            &radio_at(&app, ds).await,
+            &format!(r#"{{"center_hz":{hz}}}"#),
         )
         .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
@@ -546,24 +549,19 @@ async fn a_capture_without_the_radio_keeps_its_stored_settings() {
     let workspace = store_siggen_workspace(&app).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"center_hz":145500000.0}"#),
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"center_hz":145500000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     workspace::save_active(&state).expect("capture the workspace");
 
-    let (status, _) = request(
-        app.clone(),
-        "DELETE",
-        &format!("/api/devicesets/{ds}"),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    state
+        .engine
+        .remove_device_set(ds)
+        .expect("the radio closes");
     workspace::save_active(&state).expect("capture the empty workspace");
 
     let stored = state
@@ -586,11 +584,10 @@ async fn a_workspace_remembers_per_stream_overrides() {
     let workspace = put_active_workspace(&app, &virtual_snapshot("transceiver", &[])).await;
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
-    let (status, body) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"streams":[{"stream":1,"center_hz":433920000.0}]}"#),
+    let (status, body) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"streams":[{"stream":1,"center_hz":433920000.0}]}"#,
     )
     .await;
     assert_eq!(
@@ -677,7 +674,10 @@ async fn capture_and_restore_pair_same_type_channels_by_stream() {
         let (status, body) = request(
             app.clone(),
             "PATCH",
-            &format!("/api/devicesets/{}/channels/{}", set.id, channel.id),
+            &format!(
+                "/api/workspaces/active/nodes/{}/channel",
+                channel.node.as_deref().expect("every channel has its node")
+            ),
             Some(&format!(
                 r#"{{"settings":{{"frequency_hz":{},"params":{{"type":"nfm","settings":{{}}}}}}}}"#,
                 frequency_for(channel.stream)
@@ -1047,9 +1047,9 @@ async fn a_channel_node_holds_its_settings_before_any_radio_carries_it() {
     settings.squelch = sdrmm_wire::Squelch::Manual { level_db: -70.0 };
     let (status, _) = request(
         app.clone(),
-        "PUT",
-        &format!("/api/workspaces/{workspace}/channels/voice"),
-        Some(&serde_json::to_string(&settings).expect("settings serialize")),
+        "PATCH",
+        "/api/workspaces/active/nodes/voice/channel",
+        Some(&serde_json::json!({"settings": settings}).to_string()),
     )
     .await;
     assert_eq!(status, 204);
@@ -1088,23 +1088,23 @@ async fn a_channel_node_holds_its_settings_before_any_radio_carries_it() {
 async fn settings_of_another_channel_type_are_refused() {
     let app = test_router();
     let snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
-    let workspace = put_active_workspace(&app, &snapshot).await;
+    put_active_workspace(&app, &snapshot).await;
 
     let settings = sdrmm_wire::ChannelSettings::default_for("am").expect("am is built in");
     let (status, _) = request(
         app.clone(),
-        "PUT",
-        &format!("/api/workspaces/{workspace}/channels/voice"),
-        Some(&serde_json::to_string(&settings).expect("settings serialize")),
+        "PATCH",
+        "/api/workspaces/active/nodes/voice/channel",
+        Some(&serde_json::json!({"settings": settings}).to_string()),
     )
     .await;
     assert_eq!(status, 400);
 
     let (status, _) = request(
         app.clone(),
-        "PUT",
-        &format!("/api/workspaces/{workspace}/channels/device"),
-        Some(&serde_json::to_string(&settings).expect("settings serialize")),
+        "PATCH",
+        "/api/workspaces/active/nodes/device/channel",
+        Some(&serde_json::json!({"settings": settings}).to_string()),
     )
     .await;
     assert_eq!(status, 400, "a device node is not a channel");
@@ -1174,8 +1174,11 @@ async fn cutting_a_decoders_wire_closes_it_and_hands_the_window_to_the_rest() {
     snapshot.graph.edges.retain(|edge| edge.to.node != "planes");
     snapshot.graph.nodes.retain(|node| node.id != "planes");
     put_workspace(&app, &snapshot).await;
-    let report = apply(&app, workspace).await;
-    assert_eq!(report.closed, 1, "the unwired decoder went on running");
+    assert_eq!(
+        get_state(&app).await.device_sets[0].channels.len(),
+        1,
+        "the removed decoder went on running"
+    );
 
     let set = &get_state(&app).await.device_sets[0];
     assert_eq!(set.channels.len(), 1);
@@ -1190,7 +1193,7 @@ async fn retune(app: &Router, set: u32, channel: u32, frequency_hz: f64) {
     let (status, body) = request(
         app.clone(),
         "PATCH",
-        &format!("/api/devicesets/{set}/channels/{channel}"),
+        &format!("/api/workspaces/active/nodes/{}/channel", channel_at(app, set, channel).await),
         Some(&format!(
             r#"{{"settings":{{"frequency_hz":{frequency_hz},"params":{{"type":"nfm","settings":{{}}}}}}}}"#
         )),
@@ -1229,7 +1232,7 @@ async fn cutting_one_of_two_alike_decoders_leaves_the_other_where_it_was_set() {
     snapshot.graph.nodes.retain(|node| node.id != "first");
     put_workspace(&app, &snapshot).await;
     let report = apply(&app, workspace).await;
-    assert_eq!(report.closed, 1, "{report:?}");
+    assert_eq!(report.closed, 0, "saving already closed it: {report:?}");
 
     let set = &get_state(&app).await.device_sets[0];
     assert_eq!(set.channels.len(), 1);
@@ -1299,11 +1302,10 @@ fn carrier_of(state: &StateSnapshot, node: &str) -> Option<(u32, sdrmm_wire::Cha
 }
 
 async fn hold_by_hand(app: &Router, set: u32, center_hz: f64) {
-    let (status, body) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{set}/device"),
-        Some(&format!(r#"{{"center_hz":{center_hz},"tuning":"manual"}}"#)),
+    let (status, body) = patch_node_device(
+        app,
+        &radio_at(app, set).await,
+        &format!(r#"{{"center_hz":{center_hz},"tuning":"manual"}}"#),
     )
     .await;
     assert_eq!(
@@ -1314,14 +1316,14 @@ async fn hold_by_hand(app: &Router, set: u32, center_hz: f64) {
     );
 }
 
-async fn hold_channel(app: &Router, workspace: i64, node: &str, frequency_hz: f64) {
+async fn hold_channel(app: &Router, node: &str, frequency_hz: f64) {
     let mut settings = sdrmm_wire::ChannelSettings::default_for("nfm").expect("nfm is built in");
     settings.frequency_hz = frequency_hz;
     let (status, body) = request(
         app.clone(),
-        "PUT",
-        &format!("/api/workspaces/{workspace}/channels/{node}"),
-        Some(&serde_json::to_string(&settings).expect("settings serialize")),
+        "PATCH",
+        &format!("/api/workspaces/active/nodes/{node}/channel"),
+        Some(&serde_json::json!({"settings": settings}).to_string()),
     )
     .await;
     assert_eq!(
@@ -1409,9 +1411,9 @@ async fn two_self_tuning_radios_share_a_crowd_one_window_cannot_hold() {
     let app = test_router();
     let taps = [("low", "nfm"), ("high", "nfm"), ("low2", "nfm")];
     let workspace = put_active_workspace(&app, &two_radio_snapshot(&taps)).await;
-    hold_channel(&app, workspace, "low", 100e6).await;
-    hold_channel(&app, workspace, "low2", 100.5e6).await;
-    hold_channel(&app, workspace, "high", 400e6).await;
+    hold_channel(&app, "low", 100e6).await;
+    hold_channel(&app, "low2", 100.5e6).await;
+    hold_channel(&app, "high", 400e6).await;
 
     let report = apply(&app, workspace).await;
     assert_eq!(report.created, 3, "{report:?}");
@@ -1438,8 +1440,8 @@ async fn a_decoder_wired_to_one_radio_keeps_it_while_the_flexible_ones_move_asid
         .edges
         .retain(|edge| !(edge.to.node == "fixed" && edge.from.node == "device2"));
     let workspace = put_active_workspace(&app, &snapshot).await;
-    hold_channel(&app, workspace, "fixed", 400e6).await;
-    hold_channel(&app, workspace, "flex", 100e6).await;
+    hold_channel(&app, "fixed", 400e6).await;
+    hold_channel(&app, "flex", 100e6).await;
 
     let report = apply(&app, workspace).await;
     assert!(report.refused.is_empty(), "{:?}", report.refused);
@@ -1495,7 +1497,7 @@ async fn a_second_stream_on_the_same_radio_can_carry_a_decoder() {
         },
     });
     let workspace = put_active_workspace(&app, &snapshot).await;
-    hold_channel(&app, workspace, "voice", 400e6).await;
+    hold_channel(&app, "voice", 400e6).await;
     let set = state
         .engine
         .create_device_set("virtual:transceiver")
@@ -1540,11 +1542,10 @@ async fn a_converter_offset_follows_the_radio_into_another_workspace() {
     let first = store_siggen_workspace(&app).await;
     apply(&app, first).await;
     let ds = get_state(&app).await.device_sets[0].id;
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"offset_hz":1000000.0}"#),
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"offset_hz":1000000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -1559,14 +1560,10 @@ async fn a_converter_offset_follows_the_radio_into_another_workspace() {
 
     let second = store_second_workspace(&app, "Marine", "am").await;
     activate(&app, second).await;
-    let (status, _) = request(
-        app.clone(),
-        "DELETE",
-        &format!("/api/devicesets/{ds}"),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    state
+        .engine
+        .remove_device_set(ds)
+        .expect("the radio closes");
     apply(&app, second).await;
 
     let sets = get_state(&app).await.device_sets;

@@ -62,7 +62,7 @@ fn devices_running(
                            range); `detail` reports what a partial application left behind",
             body = ApiError,
         ),
-        (status = 404, description = "Template or device set not found", body = ApiError),
+        (status = 404, description = "No such template or node", body = ApiError),
         (status = 422, description = "Malformed request body", body = ApiError),
     ),
 )]
@@ -76,12 +76,12 @@ pub(super) async fn apply_template(
     let app = state.clone();
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
         let _serialized = lock_gate(&app.apply_gate);
-        let merge = template_merge(template, req.device_set)?;
-        active_workspace(&app.store)?;
-        let settings = template_settings(&app.engine, template, req.device_set)?;
+        let device_set = radio_of(&app, &req.node)?;
+        let merge = template_merge(template, device_set)?;
+        let settings = template_settings(&app.engine, template, device_set)?;
         app.engine
-            .validate_configuration(req.device_set, &settings, &template.channels)?;
-        app.engine.patch_device(req.device_set, settings)?;
+            .validate_configuration(device_set, &settings, &template.channels)?;
+        app.engine.patch_device(device_set, settings)?;
         place_merged(&app, &merge)
     })
     .await??;
@@ -162,7 +162,7 @@ fn template_decoders(
         .collect())
 }
 
-pub(super) fn active_workspace(store: &Store) -> Result<WorkspaceDetail, AppError> {
+pub(crate) fn active_workspace(store: &Store) -> Result<WorkspaceDetail, AppError> {
     store
         .active_workspace()?
         .ok_or_else(|| AppError::bad_request("no active workspace".to_owned()))
@@ -530,7 +530,12 @@ pub(super) async fn update_workspace(
     let app = state.clone();
     let detail = tokio::task::spawn_blocking(move || -> Result<WorkspaceDetail, AppError> {
         let _serialized = lock_gate(&app.apply_gate);
+        let active = store.active_workspace_id()? == Some(id);
+        let before = active.then(|| store.workspace(id)).transpose()?;
         let detail = store.update_workspace(id, &req, author.as_deref())?;
+        if let Some(before) = before {
+            crate::apply::release(&app, &before.snapshot.graph, &detail.snapshot.graph);
+        }
         engine.emit_scope(StateScope::Workspaces);
         Ok(detail)
     })
@@ -702,6 +707,7 @@ pub(crate) async fn step_history(
         let stepped = step(&state.store, id, author.as_deref())?;
         let detail = stepped.detail;
         if state.store.active_workspace_id()? == Some(id) {
+            crate::apply::release(&state, &before.snapshot.graph, &detail.snapshot.graph);
             if !before.snapshot.graph.same_topology(&detail.snapshot.graph) {
                 let saved = state.store.workspace_state(id)?;
                 workspace::reconcile(&state, &detail.snapshot.graph, &saved);
@@ -776,49 +782,6 @@ pub(super) async fn get_resolved(State(state): State<AppState>) -> Json<Resolved
         patch: state.resolved.current().patch.clone(),
         problems: state.problems.all(),
     })
-}
-
-#[utoipa::path(
-    put, path = "/api/workspaces/{id}/channels/{node}",
-    params(
-        ("id" = i64, Path, description = "Workspace id"),
-        ("node" = String, Path, description = "Channel node id"),
-    ),
-    request_body = ChannelSettings,
-    responses(
-        (status = 204, description = "Settings held against the node until a radio carries it"),
-        (
-            status = 400,
-            description = "No such channel node, or settings of another channel type",
-            body = ApiError,
-        ),
-        (status = 404, description = "Workspace not found", body = ApiError),
-        (status = 422, description = "Malformed request body", body = ApiError),
-    ),
-)]
-pub(super) async fn put_workspace_channel(
-    State(state): State<AppState>,
-    Path((id, node)): Path<(i64, String)>,
-    Json(settings): Json<ChannelSettings>,
-) -> Result<StatusCode, AppError> {
-    tokio::task::spawn_blocking(move || save_channel(&state, id, &node, settings)).await??;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-pub(crate) fn save_channel(
-    state: &AppState,
-    id: i64,
-    node: &str,
-    settings: ChannelSettings,
-) -> Result<(), AppError> {
-    let _serialized = lock_gate(&state.apply_gate);
-    let graph = state.store.workspace(id)?.snapshot.graph;
-    check_channel_node(&graph, node, &settings)?;
-    let mut saved = state.store.workspace_state(id)?;
-    saved.put_channel(node, settings);
-    state.store.put_workspace_state(id, &saved)?;
-    state.engine.emit_scope(StateScope::Workspace(id));
-    Ok(())
 }
 
 /// Refuses settings that do not belong to the node they are addressed to. A decoder holds its own

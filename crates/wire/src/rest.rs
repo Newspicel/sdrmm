@@ -102,11 +102,6 @@ pub struct DevicesResponse {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct CreateDeviceSetRequest {
-    pub device_id: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct WriteSerialRequest {
     pub device_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -116,14 +111,6 @@ pub struct WriteSerialRequest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct WrittenSerial {
     pub serial: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct CreateChannelRequest {
-    pub node: String,
-    #[serde(default)]
-    pub stream: u32,
-    pub settings: ChannelSettings,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -624,9 +611,9 @@ pub struct TemplatesResponse {
     pub templates: Vec<TemplateInfo>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ApplyTemplateRequest {
-    pub device_set: u32,
+    pub node: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -646,11 +633,6 @@ pub struct ServerStatus {
     pub version: String,
     pub platform: String,
     pub uptime_secs: u64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct CreatedId {
-    pub id: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

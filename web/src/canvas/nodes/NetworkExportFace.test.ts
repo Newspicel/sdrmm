@@ -23,44 +23,19 @@ const status: NetworkExportStatus = {
   overruns: 0,
 };
 
-function requests() {
-  return {
-    device: vi.fn(async () => status),
-    channel: vi.fn(async () => status),
-  };
-}
-
 describe("NetworkExportFace lifecycle", () => {
-  it("sends start and stop with the bound stream and current settings", async () => {
-    const request = requests();
-    const options = networkExportMutationOptions(
-      { kind: "device", deviceSet: 7, stream: 2 },
-      "net-a",
-      settings,
-      request,
-    );
+  it("sends start and stop to the node, which the server resolves to its source", async () => {
+    const request = vi.fn(async () => ({ result: "network_export" as const, with: status }));
+    const options = networkExportMutationOptions("net-a", request);
 
     await options.mutationFn("start");
     await options.mutationFn("stop");
 
-    expect(request.device).toHaveBeenNthCalledWith(1, 7, "start", "net-a", 2, settings);
-    expect(request.device).toHaveBeenNthCalledWith(2, 7, "stop", "net-a", 2, settings);
-    expect(request.channel).not.toHaveBeenCalled();
-  });
-
-  it("sends a channel's baseband export to the channel route", async () => {
-    const request = requests();
-    const options = networkExportMutationOptions(
-      { kind: "channel", deviceSet: 7, channel: 3 },
-      "net-a",
-      settings,
-      request,
-    );
-
-    await options.mutationFn("start");
-
-    expect(request.channel).toHaveBeenCalledWith(7, 3, "start", "net-a", settings);
-    expect(request.device).not.toHaveBeenCalled();
+    expect(request).toHaveBeenNthCalledWith(1, "net-a", {
+      action: "network_export",
+      with: "start",
+    });
+    expect(request).toHaveBeenNthCalledWith(2, "net-a", { action: "network_export", with: "stop" });
   });
 
   it("locks settings during a request and throughout an active export", () => {
@@ -71,16 +46,8 @@ describe("NetworkExportFace lifecycle", () => {
 
   it("routes request failures to the toast callback", () => {
     const notify = vi.fn();
-    const options = networkExportMutationOptions(null, "net-a", settings, undefined, notify);
+    const options = networkExportMutationOptions("net-a", undefined, notify);
     options.onError(new Error("destination refused"));
     expect(notify).toHaveBeenCalledWith("destination refused");
-  });
-
-  it("refuses an action when no live source is bound", async () => {
-    const request = requests();
-    const options = networkExportMutationOptions(null, "net-a", settings, request);
-    await expect(options.mutationFn("start")).rejects.toThrow("Wire a running device's IQ");
-    expect(request.device).not.toHaveBeenCalled();
-    expect(request.channel).not.toHaveBeenCalled();
   });
 });

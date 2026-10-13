@@ -2218,6 +2218,53 @@
         }
       }
     },
+    "/api/devices/network": {
+      "post": {
+        "operationId": "add_network_radio",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkRadioRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The network radio, known now but not opened. Name it in a Device node to open it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No radio answers at that address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/devices/serial": {
       "post": {
         "operationId": "write_serial",
@@ -2264,831 +2311,6 @@
           },
           "409": {
             "description": "Device open here or in another program",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets": {
-      "post": {
-        "operationId": "create_device_set",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateDeviceSetRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Device set created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreatedId"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unusable device",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Device already in use, here or by another program",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}": {
-      "delete": {
-        "operationId": "delete_device_set",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Device set removed"
-          },
-          "400": {
-            "description": "Invalid path parameter",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/channels": {
-      "post": {
-        "operationId": "create_channel",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateChannelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Channel created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreatedId"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid channel settings, or `node` is not a free channel node wired to this lane",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/channels/{ch}": {
-      "delete": {
-        "operationId": "delete_channel",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "ch",
-            "in": "path",
-            "description": "Channel id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Channel removed"
-          },
-          "400": {
-            "description": "Invalid path parameter",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set or channel not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "operationId": "patch_channel",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "ch",
-            "in": "path",
-            "description": "Channel id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchChannelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Settings applied. With a base, only the fields changed from it land, so another client's edit to other fields survives"
-          },
-          "400": {
-            "description": "Invalid channel settings",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set or channel not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/channels/{ch}/hunt": {
-      "post": {
-        "operationId": "hunt_channel",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "ch",
-            "in": "path",
-            "description": "The decoder being hunted",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/HuntRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Hunt status after `start`, `stop` or `sweep`. Readings arrive as the `HuntUpdate` WS event",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HuntStatus"
-                }
-              }
-            }
-          },
-          "204": {
-            "description": "`mark` sent one bearing event"
-          },
-          "400": {
-            "description": "Set not running, scanning, already hunting, or not hunting",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set or decoder not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "`No heading`, `No position`, `Not running` or `No hunt node`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/channels/{ch}/network-export": {
-      "post": {
-        "operationId": "network_export_channel",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "ch",
-            "in": "path",
-            "description": "Channel id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChannelNetworkExportRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Live status after start or final counters after stop",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetworkExportStatus"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid destination, inactive export, or conflicting owner",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set or channel not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/channels/{ch}/scanner": {
-      "post": {
-        "operationId": "scan_channel",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          {
-            "name": "ch",
-            "in": "path",
-            "description": "The decoder the scan drives",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScanRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Scanner status: the initial state after `start`, the final state after `stop`, the state after `skip` lets go of a held frequency. Live progress arrives as the `ScannerUpdate` WS event, not as one state change per step",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScannerStatus"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unusable scan settings, set not running, decoder already scanning or hunted, not scanning, or nothing held to skip",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set or decoder not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/device": {
-      "patch": {
-        "operationId": "patch_device",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeviceSettings"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Settings applied"
-          },
-          "400": {
-            "description": "Unsupported setting",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/network-export": {
-      "post": {
-        "operationId": "network_export_device_set",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NetworkExportRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Live status after start or final counters after stop",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetworkExportStatus"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid destination, inactive export, or conflicting owner",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/playback": {
-      "post": {
-        "operationId": "control_playback",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlaybackRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "The transport after the request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlaybackStatus"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The set's device is a radio, not a recording",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devicesets/{ds}/time-machine": {
-      "post": {
-        "operationId": "time_machine_device_set",
-        "parameters": [
-          {
-            "name": "ds",
-            "in": "path",
-            "description": "Device set id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TimeMachineRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "History status after the action: `arm` starts the rolling buffer, `capture` writes the buffered past into a SigMF pair and keeps appending, `stop` finalizes that pair, `disarm` releases the buffer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TimeMachineStatus"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Cannot hold history: no recordings directory, set not running, a window that does not fit in memory, or an action the current state has nothing to do with",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Device set not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -5407,7 +4629,7 @@
             }
           },
           "404": {
-            "description": "Template or device set not found",
+            "description": "No such template or node",
             "content": {
               "application/json": {
                 "schema": {
@@ -5601,20 +4823,17 @@
         },
         "responses": {
           "200": {
-            "description": "One ack per wired target; a failed target carries `error`",
+            "description": "What the action did. A control action lists one ack per wired target; a failed target carries `error`",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ControlAck"
-                  }
+                  "$ref": "#/components/schemas/NodeActed"
                 }
               }
             }
           },
           "400": {
-            "description": "The node takes no such action or controls nothing",
+            "description": "The node takes no such action, is locked, or is not wired",
             "content": {
               "application/json": {
                 "schema": {
@@ -5625,6 +4844,128 @@
           },
           "404": {
             "description": "No such node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/active/nodes/{node}/channel": {
+      "patch": {
+        "operationId": "patch_node_channel",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "description": "Channel node of the active workspace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Settings applied to the running decoder, or held for the node until a radio carries it. With a base, only the fields changed from it land"
+          },
+          "400": {
+            "description": "Not a channel node, or settings of another channel type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/active/nodes/{node}/device": {
+      "patch": {
+        "operationId": "patch_node_device",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "description": "Radio node of the active workspace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Settings applied to the node's radio"
+          },
+          "400": {
+            "description": "Not a radio node, no radio open, or an unsupported setting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
             "content": {
               "application/json": {
                 "schema": {
@@ -5963,77 +5304,6 @@
           },
           "404": {
             "description": "Workspace not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/workspaces/{id}/channels/{node}": {
-      "put": {
-        "operationId": "put_workspace_channel",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Workspace id",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "node",
-            "in": "path",
-            "description": "Channel node id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChannelSettings"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Settings held against the node until a radio carries it"
-          },
-          "400": {
-            "description": "No such channel node, or settings of another channel type",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Workspace not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
             "content": {
               "application/json": {
                 "schema": {
@@ -7565,13 +6835,11 @@
       "ApplyTemplateRequest": {
         "type": "object",
         "required": [
-          "device_set"
+          "node"
         ],
         "properties": {
-          "device_set": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
+          "node": {
+            "type": "string"
           }
         }
       },
@@ -11897,24 +11165,6 @@
           }
         ]
       },
-      "ChannelNetworkExportRequest": {
-        "type": "object",
-        "required": [
-          "action",
-          "node"
-        ],
-        "properties": {
-          "action": {
-            "$ref": "#/components/schemas/NetworkExportAction"
-          },
-          "node": {
-            "type": "string"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/NetworkExportSettings"
-          }
-        }
-      },
       "ChannelNode": {
         "type": "object",
         "required": [
@@ -14627,37 +13877,6 @@
           }
         }
       },
-      "CreateChannelRequest": {
-        "type": "object",
-        "required": [
-          "node",
-          "settings"
-        ],
-        "properties": {
-          "node": {
-            "type": "string"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/ChannelSettings"
-          },
-          "stream": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "CreateDeviceSetRequest": {
-        "type": "object",
-        "required": [
-          "device_id"
-        ],
-        "properties": {
-          "device_id": {
-            "type": "string"
-          }
-        }
-      },
       "CreateOfferRequest": {
         "type": "object",
         "properties": {
@@ -14698,19 +13917,6 @@
                 "type": "null"
               }
             ]
-          }
-        }
-      },
-      "CreatedId": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
           }
         }
       },
@@ -21322,27 +20528,6 @@
           }
         }
       },
-      "HuntRequest": {
-        "type": "object",
-        "required": [
-          "action"
-        ],
-        "properties": {
-          "action": {
-            "$ref": "#/components/schemas/HuntAction"
-          },
-          "settings": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/HuntSettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
       "HuntSettings": {
         "type": "object",
         "required": [
@@ -25931,29 +25116,6 @@
           }
         ]
       },
-      "NetworkExportRequest": {
-        "type": "object",
-        "required": [
-          "action",
-          "node"
-        ],
-        "properties": {
-          "action": {
-            "$ref": "#/components/schemas/NetworkExportAction"
-          },
-          "node": {
-            "type": "string"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/NetworkExportSettings"
-          },
-          "stream": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
       "NetworkExportSettings": {
         "type": "object",
         "properties": {
@@ -26035,6 +25197,17 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "NetworkRadioRequest": {
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "type": "string"
           }
         }
       },
@@ -26170,8 +25343,183 @@
           }
         }
       },
+      "NodeActed": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "controlled"
+                ]
+              },
+              "with": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ControlAck"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "tuned"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "retyped"
+                ]
+              },
+              "with": {
+                "type": "object",
+                "required": [
+                  "dropped"
+                ],
+                "properties": {
+                  "dropped": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/NoticeWire"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "time_machine"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/TimeMachineStatus"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "playback"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/PlaybackStatus"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "network_export"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/NetworkExportStatus"
+              }
+            }
+          }
+        ]
+      },
       "NodeAction": {
         "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "tune"
+                ]
+              },
+              "with": {
+                "type": "object",
+                "required": [
+                  "freq_hz"
+                ],
+                "properties": {
+                  "freq_hz": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "retype"
+                ]
+              },
+              "with": {
+                "type": "object",
+                "required": [
+                  "channel_type"
+                ],
+                "properties": {
+                  "channel_type": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
           {
             "type": "object",
             "required": [
@@ -26205,6 +25553,60 @@
               },
               "with": {
                 "$ref": "#/components/schemas/HuntAction"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "time_machine"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/TimeMachineAction"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "playback"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/PlaybackRequest"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "with",
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "network_export"
+                ]
+              },
+              "with": {
+                "$ref": "#/components/schemas/NetworkExportAction"
               }
             }
           }
@@ -33273,27 +32675,6 @@
           }
         }
       },
-      "ScanRequest": {
-        "type": "object",
-        "required": [
-          "action"
-        ],
-        "properties": {
-          "action": {
-            "$ref": "#/components/schemas/ScanAction"
-          },
-          "settings": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ScanSettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
       "ScanRevert": {
         "type": "string",
         "enum": [
@@ -37097,29 +36478,6 @@
             "type": "integer",
             "format": "int32",
             "default": 10,
-            "minimum": 0
-          }
-        }
-      },
-      "TimeMachineRequest": {
-        "type": "object",
-        "required": [
-          "action",
-          "node"
-        ],
-        "properties": {
-          "action": {
-            "$ref": "#/components/schemas/TimeMachineAction"
-          },
-          "node": {
-            "type": "string"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/TimeMachineNode"
-          },
-          "stream": {
-            "type": "integer",
-            "format": "int32",
             "minimum": 0
           }
         }

@@ -1,5 +1,4 @@
 import type { DeviceInfo, DeviceRef, PatchGraph, ResolvedPatch } from "../../lib/types";
-import { tuningLocked } from "../graph";
 import { iqLanesOf } from "../lanes";
 import { nodeDeviceRef, refMatches } from "./deviceNode";
 
@@ -31,8 +30,9 @@ export function lockedChannels(
   faces: ReadonlyMap<number, string>,
 ): ReadonlySet<number> {
   const locked = new Set<number>();
-  for (const [channel, node] of faces) {
-    if (tuningLocked(graph, node)) {
+  for (const [channel, id] of faces) {
+    const node = graph.nodes.find((candidate) => candidate.id === id);
+    if (node?.kind === "channel" && node.data.tuning_locked === true) {
       locked.add(channel);
     }
   }

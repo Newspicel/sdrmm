@@ -1,6 +1,5 @@
 import { catalogType } from "../lib/catalog";
 import type {
-  ArrayElement,
   Capabilities,
   ChannelDescriptor,
   DeviceSet,
@@ -17,7 +16,6 @@ import type {
   RackLayout,
   ResolvedPatch,
   ResolvedPort,
-  WorkspaceSnapshot,
 } from "../lib/types";
 
 export interface GraphContext {
@@ -29,14 +27,6 @@ export interface GraphContext {
 
 export function nodeOf(graph: PatchGraph, id: string): PatchNode | undefined {
   return graph.nodes.find((node) => node.id === id);
-}
-
-export function tuningLocked(graph: PatchGraph, id: string, stream = 0): boolean {
-  const node = nodeOf(graph, id);
-  if (node?.kind === "device") {
-    return (node.data.locked_streams ?? []).includes(stream);
-  }
-  return node?.kind === "channel" && (node.data.tuning_locked ?? false);
 }
 
 export const MAX_STREAMS = 16;
@@ -143,21 +133,6 @@ export function catalogPorts(context: GraphContext, node: PatchNode): PortSpec[]
 
 export const ARRAY_LANE_PORT = "lane";
 
-function wiredStreams(node: string, base: string, edges: readonly PatchEdge[]): number {
-  let highest = 0;
-  for (const edge of edges) {
-    const stream = edge.to.node === node ? portStream(base, edge.to.port) : null;
-    if (stream !== null) {
-      highest = Math.max(highest, stream + 1);
-    }
-  }
-  return highest;
-}
-
-export function arrayWiredLanes(graph: PatchGraph, array: string): number {
-  return wiredStreams(array, ARRAY_LANE_PORT, graph.edges ?? []);
-}
-
 export function portOf(
   context: GraphContext,
   graph: PatchGraph,
@@ -250,7 +225,7 @@ export function removeNode(graph: PatchGraph, id: string): PatchGraph {
 }
 
 export function addEdge(graph: PatchGraph, edge: PatchEdge): PatchGraph {
-  return settleArrays({ ...graph, edges: [...(graph.edges ?? []), edge] });
+  return { ...graph, edges: [...(graph.edges ?? []), edge] };
 }
 
 export function removeEdge(graph: PatchGraph, key: string): PatchGraph {
@@ -271,117 +246,8 @@ export function patchNode(
   };
 }
 
-const ORIGIN: ArrayElement = { x_m: 0, y_m: 0, z_m: 0 };
-
-function settledArray(graph: PatchGraph, node: PatchNode): PatchNode {
-  if (node.kind !== "array" || node.data.geometry.kind !== "explicit") {
-    return node;
-  }
-  const positions = node.data.geometry.positions;
-  const lanes = arrayWiredLanes(graph, node.id);
-  if (positions.length >= lanes) {
-    return node;
-  }
-  const padded = [
-    ...positions,
-    ...Array.from({ length: lanes - positions.length }, () => ({ ...ORIGIN })),
-  ];
-  return {
-    ...node,
-    data: { ...node.data, geometry: { kind: "explicit", positions: padded } },
-  };
-}
-
-export function settleArrays(graph: PatchGraph): PatchGraph {
-  const nodes = graph.nodes.map((node) => settledArray(graph, node));
-  return nodes.every((node, index) => node === graph.nodes[index]) ? graph : { ...graph, nodes };
-}
-
 export function sameGraph(a: PatchGraph, b: PatchGraph): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
-}
-
-export function migrateSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
-  const graph = migrateGraph(snapshot.graph);
-  return graph === snapshot.graph ? snapshot : { ...snapshot, graph };
-}
-
-function migrateGraph(graph: PatchGraph): PatchGraph {
-  return fillBareNodes(idleBareRecorders(repointControlWires(graph)));
-}
-
-const bare = (node: PatchNode): boolean =>
-  (node.kind === "recorder" ||
-    node.kind === "audio_recorder" ||
-    node.kind === "baseband_recorder") &&
-  (node as { data?: unknown }).data === undefined;
-
-function idleBareRecorders(graph: PatchGraph): PatchGraph {
-  if (!graph.nodes.some(bare)) {
-    return graph;
-  }
-  return {
-    ...graph,
-    nodes: graph.nodes.map((node) =>
-      bare(node) ? ({ ...node, data: { recording: false } } as PatchNode) : node,
-    ),
-  };
-}
-
-const dataless = (node: PatchNode): boolean =>
-  (node.kind === "scanner" || node.kind === "decoder_log") &&
-  (node as { data?: unknown }).data === undefined;
-
-function fillBareNodes(graph: PatchGraph): PatchGraph {
-  if (!graph.nodes.some(dataless)) {
-    return graph;
-  }
-  return {
-    ...graph,
-    nodes: graph.nodes.map((node) =>
-      dataless(node) ? ({ ...node, data: {} } as PatchNode) : node,
-    ),
-  };
-}
-
-function decodersFedBy(graph: PatchGraph, device: string): string[] {
-  return (graph.edges ?? [])
-    .filter(
-      (edge) =>
-        edge.from.node === device &&
-        portStream("iq", edge.from.port) !== null &&
-        edge.to.port === "iq" &&
-        nodeOf(graph, edge.to.node)?.kind === "channel",
-    )
-    .map((edge) => edge.to.node);
-}
-
-function repointControlWires(graph: PatchGraph): PatchGraph {
-  const radios = new Set(graph.nodes.filter((node) => node.kind === "device").map((n) => n.id));
-  const edges = graph.edges ?? [];
-  const stale = (edge: PatchEdge): boolean =>
-    edge.to.port === "control" && radios.has(edge.to.node);
-  if (!edges.some(stale)) {
-    return graph;
-  }
-  const taken = new Set(
-    edges.filter((edge) => edge.to.port === "control" && !stale(edge)).map((edge) => edge.to.node),
-  );
-  const migrated: PatchEdge[] = [];
-  for (const edge of edges) {
-    if (!stale(edge)) {
-      migrated.push(edge);
-      continue;
-    }
-    const fed = decodersFedBy(graph, edge.to.node);
-    const decoder = fed.length === 1 ? fed[0] : undefined;
-    if (decoder === undefined || taken.has(decoder)) {
-      continue;
-    }
-    taken.add(decoder);
-    migrated.push({ from: edge.from, to: { node: decoder, port: "control" } });
-  }
-  return { ...graph, edges: migrated };
 }
 
 export const RACK_COLS = 12;

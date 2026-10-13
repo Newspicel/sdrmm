@@ -540,6 +540,39 @@ impl PatchGraph {
     }
 
     #[must_use]
+    pub fn wired_lanes(&self, array: &str) -> usize {
+        self.edges
+            .iter()
+            .filter(|edge| edge.to.node == array)
+            .filter_map(|edge| port_stream(ARRAY_LANE_PORT, &edge.to.port))
+            .filter_map(|lane| usize::try_from(lane).ok())
+            .map(|lane| lane + 1)
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub fn settle_arrays(&mut self) -> bool {
+        let wired: Vec<usize> = self
+            .nodes
+            .iter()
+            .map(|node| self.wired_lanes(&node.id))
+            .collect();
+        let mut settled = false;
+        for (node, lanes) in self.nodes.iter_mut().zip(wired) {
+            if let NodeBody::Array(crate::array::ArrayNode {
+                geometry: crate::array::ArrayGeometry::Explicit { positions },
+                ..
+            }) = &mut node.body
+                && positions.len() < lanes
+            {
+                positions.resize(lanes, crate::array::ArrayElement::default());
+                settled = true;
+            }
+        }
+        settled
+    }
+
+    #[must_use]
     pub fn released_radios(&self, before: &Self) -> Vec<String> {
         before
             .nodes

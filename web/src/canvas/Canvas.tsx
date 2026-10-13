@@ -135,7 +135,7 @@ export function Canvas() {
   }, [publish, selectionKey]);
   usePeerDrags(setNodes);
 
-  const { handleNodesChange, handleEdgesChange, onBeforeDelete } = useGraphChanges(
+  const { handleNodesChange, handleEdgesChange } = useGraphChanges(
     workspace,
     onNodesChange,
     onEdgesChange,
@@ -208,7 +208,6 @@ export function Canvas() {
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
-        onBeforeDelete={onBeforeDelete}
         isValidConnection={isValidConnection}
         onPaneClick={() => {
           workspace.select(null);

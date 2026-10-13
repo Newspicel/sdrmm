@@ -1,5 +1,4 @@
-import type { WorkspaceExport, WorkspaceSnapshot } from "../lib/types";
-import { migrateSnapshot } from "./graph";
+import type { WorkspaceExport } from "../lib/types";
 
 export const WORKSPACE_FILE_ACCEPT = ".json,application/json";
 
@@ -24,10 +23,7 @@ export function parseWorkspaceExport(text: string): WorkspaceExport {
   ) {
     throw new Error("That file is not a workspace.");
   }
-  return {
-    ...(document as unknown as WorkspaceExport),
-    snapshot: migrateSnapshot(snapshot as unknown as WorkspaceSnapshot),
-  };
+  return document as unknown as WorkspaceExport;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

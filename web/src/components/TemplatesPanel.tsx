@@ -13,9 +13,11 @@ import { Popover } from "./Popover";
 import { supports, templateSize, templatesHint } from "./templates";
 
 export function TemplatesPanel({
+  node,
   active,
   onApplied,
 }: {
+  node: string | null;
   active: DeviceSet | null;
   onApplied?: (template: TemplateInfo) => void;
 }) {
@@ -26,7 +28,8 @@ export function TemplatesPanel({
   const [applied, setApplied] = useState<TemplateInfo | null>(null);
 
   const applyMut = useMutation({
-    mutationFn: (v: { template: TemplateInfo; ds: number }) => applyTemplate(v.template.id, v.ds),
+    mutationFn: (v: { template: TemplateInfo; node: string }) =>
+      applyTemplate(v.template.id, v.node),
     onSuccess: (_void, v) => {
       setApplied(v.template);
       onApplied?.(v.template);
@@ -72,7 +75,7 @@ export function TemplatesPanel({
                   <Button
                     type="button"
                     className={BTN_SM}
-                    disabled={!active || !ok || applyMut.isPending}
+                    disabled={node === null || !active || !ok || applyMut.isPending}
                     title={
                       active === null
                         ? undefined
@@ -80,7 +83,7 @@ export function TemplatesPanel({
                           ? `Apply to ${active.device.label}`
                           : `${active.device.label} cannot run this template`
                     }
-                    onClick={() => active && applyMut.mutate({ template: t, ds: active.id })}
+                    onClick={() => node !== null && applyMut.mutate({ template: t, node })}
                   >
                     Apply
                   </Button>

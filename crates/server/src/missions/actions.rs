@@ -70,7 +70,7 @@ fn hunt_action(
         MissionAction::Mark => HuntAction::Mark,
         _ => return Err(MissionRefusal::NotAControl.into()),
     };
-    rest::succeeded(rest::act(state, node, NodeAction::Hunt(action))?)?;
+    rest::controlled(rest::act(state, node, NodeAction::Hunt(action), None)?)?;
     Ok(())
 }
 

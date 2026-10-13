@@ -317,6 +317,26 @@ async fn processors_bind_to_the_array_they_are_wired_from() {
     assert_eq!(array::processor_array(&state, "df2"), None);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn removing_a_processor_node_stops_it_without_an_apply() {
+    let (app, state) = test_router_with_state();
+    let mut graph = kraken_graph(ArrayNode::default());
+    graph
+        .nodes
+        .push(node("df", NodeBody::Df(DfNode::default())));
+    graph.edges.push(wire((ARRAY, "array"), ("df", "array")));
+    let report = put_and_apply(&app, graph.clone()).await;
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    assert_eq!(array::processor_array(&state, "df").as_deref(), Some(ARRAY));
+
+    graph.nodes.retain(|node| node.id != "df");
+    graph.edges.retain(|edge| edge.to.node != "df");
+    put_workspace(&app, &snapshot(graph)).await;
+    assert_eq!(array::processor_array(&state, "df"), None);
+    let running = status_of(&state, ARRAY).map(|status| status.processors);
+    assert!(running.unwrap_or_default().is_empty());
+}
+
 fn beam_graph(listened: bool) -> PatchGraph {
     let mut graph = kraken_graph(ArrayNode::default());
     graph.nodes.extend([

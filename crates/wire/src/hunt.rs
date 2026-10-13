@@ -168,13 +168,6 @@ pub enum HuntAction {
     Mark,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct HuntRequest {
-    pub action: HuntAction,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settings: Option<HuntSettings>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,8 +265,10 @@ mod tests {
             serde_json::from_value::<HuntStatus>(json).expect("back"),
             status
         );
-        let request: HuntRequest = serde_json::from_str(r#"{"action":"mark"}"#).expect("mark");
-        assert_eq!(request.action, HuntAction::Mark);
+        assert_eq!(
+            serde_json::from_str::<HuntAction>(r#""mark""#).expect("mark"),
+            HuntAction::Mark
+        );
         assert_eq!(
             serde_json::to_value(HuntAction::Sweep).expect("json"),
             "sweep"

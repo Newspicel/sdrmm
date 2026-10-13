@@ -438,21 +438,16 @@ async fn a_scanning_decoder_offers_no_hunt() {
     let (app, state, _) = bench(hunt_graph(Some(fixed()))).await;
     let (device_set, decoder) = voice(&state);
     let here = decoder.settings.frequency_hz;
-    let scan = serde_json::json!({
-        "action": "start",
-        "settings": { "channel": decoder.id, "frequencies": [here, here + 25_000.0] },
-    });
-    let (status, body) = call(
-        &app,
-        "POST",
-        &format!(
-            "/api/devicesets/{device_set}/channels/{}/scanner",
-            decoder.id
-        ),
-        Some(&scan.to_string()),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    state
+        .engine
+        .start_scan(
+            device_set,
+            sdrmm_wire::ScanSettings {
+                frequencies: vec![here, here + 25_000.0],
+                ..sdrmm_wire::ScanSettings::for_channel(decoder.id)
+            },
+        )
+        .expect("the decoder scans");
 
     let listed = listing(&app).await;
     let mission = find(&listed, HUNT);

@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    array::{ArrayNode, MAX_ARRAY_LANES},
+    array::{ArrayElement, ArrayGeometry, ArrayNode, MAX_ARRAY_LANES},
     device::Coherence,
     processor::df::DfParams,
 };
@@ -644,4 +644,41 @@ fn a_wiring_refusal_reads_as_its_reason() {
         },
     );
     assert_eq!(error.to_string(), "Passive radar takes ADS-B");
+}
+
+#[test]
+fn settling_pads_explicit_geometry_to_the_wired_lanes() {
+    let mut explicit = array("arr");
+    if let NodeBody::Array(body) = &mut explicit.body {
+        body.geometry = ArrayGeometry::Explicit {
+            positions: vec![ArrayElement {
+                x_m: 1.0,
+                y_m: 0.0,
+                z_m: 0.0,
+            }],
+        };
+    }
+    let mut graph = PatchGraph {
+        nodes: vec![radio("a"), explicit, array("uca")],
+        edges: vec![
+            edge(("a", "iq"), ("arr", "lane")),
+            edge(("a", "iq2"), ("arr", "lane3")),
+            edge(("a", "iq"), ("uca", "lane")),
+        ],
+    };
+    assert!(graph.settle_arrays());
+    let Some(NodeBody::Array(body)) = graph.node("arr").map(|node| &node.body) else {
+        panic!("array kept");
+    };
+    let ArrayGeometry::Explicit { positions } = &body.geometry else {
+        panic!("still explicit");
+    };
+    assert_eq!(positions.len(), 3);
+    assert!((positions[0].x_m - 1.0).abs() < f64::EPSILON);
+    assert_eq!(positions[2], ArrayElement::default());
+    assert!(!graph.settle_arrays(), "settling twice changes nothing");
+    let Some(NodeBody::Array(uca)) = graph.node("uca").map(|node| &node.body) else {
+        panic!("array kept");
+    };
+    assert_eq!(uca.geometry, ArrayGeometry::default());
 }

@@ -14,10 +14,6 @@ const EDGE_EDITORS: ReadonlySet<string> = new Set([
   "./components/report.ts",
 ]);
 
-const EDGE_READERS_UNTIL_LATER_SLICES: ReadonlySet<string> = new Set([
-  "./canvas/nodes/decoderSwap.ts",
-]);
-
 const EDGES = /\.edges\b/;
 const FIXTURE = /generated\/catalog-fixture\.json/;
 
@@ -36,9 +32,7 @@ function offenders(pattern: RegExp, allowed: ReadonlySet<string>): string[] {
 
 describe("node contracts", () => {
   it("reads wires only where the graph is edited", () => {
-    expect(
-      offenders(EDGES, new Set([...EDGE_EDITORS, ...EDGE_READERS_UNTIL_LATER_SLICES])),
-    ).toEqual([]);
+    expect(offenders(EDGES, EDGE_EDITORS)).toEqual([]);
   });
 
   it("takes the catalog from the server, never from the test fixture", () => {
@@ -48,6 +42,16 @@ describe("node contracts", () => {
   it("leaves wire rules to the server", () => {
     expect(Object.keys(SOURCES).filter((path) => path.endsWith("/arrayRules.ts"))).toEqual([]);
     expect(offenders(/connectionRefusal|arrayRefusal|BEAM_TAKES_ONE/, new Set())).toEqual([]);
+  });
+
+  it("acts by node, leaving engine objects and tuning authority to the server", () => {
+    expect(offenders(/\/api\/devicesets/, new Set())).toEqual([]);
+    expect(
+      offenders(
+        /closeEngineObjects|releaseRadio|tuningLocked|laneTuneTarget|settleArrays|migrateSnapshot/,
+        new Set(),
+      ),
+    ).toEqual([]);
   });
 
   it("binds nothing in the client", () => {

@@ -7,11 +7,10 @@ async fn preset_capture_apply_delete_roundtrip() {
     apply(&app, workspace).await;
     let ds = get_state(&app).await.device_sets[0].id;
 
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"center_hz":145500000.0,"sample_rate":2400000.0}"#),
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"center_hz":145500000.0,"sample_rate":2400000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -19,7 +18,7 @@ async fn preset_capture_apply_delete_roundtrip() {
     let (status, _) = request(
         app.clone(),
         "PATCH",
-        &format!("/api/devicesets/{ds}/channels/{channel}"),
+        &format!("/api/workspaces/active/nodes/{}/channel", channel_at(&app, ds, channel).await),
         Some(r#"{"settings":{"frequency_hz":145525000.0,"squelch":{"mode":"manual","level_db":-70.0},"params":{"type":"nfm","settings":{}}}}"#),
     )
     .await;
@@ -45,11 +44,10 @@ async fn preset_capture_apply_delete_roundtrip() {
     assert_eq!(listed[0].name, "2m");
     assert_eq!(listed[0].devices, 1);
 
-    let (status, _) = request(
-        app.clone(),
-        "PATCH",
-        &format!("/api/devicesets/{ds}/device"),
-        Some(r#"{"center_hz":100000000.0,"sample_rate":2048000.0}"#),
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"center_hz":100000000.0,"sample_rate":2048000.0}"#,
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -138,11 +136,10 @@ async fn a_preset_carries_every_radio_the_workspace_draws() {
     assert_eq!(apply(&app, workspace).await.opened, 2);
 
     let tune = async |app: Router, ds: u32, hz: f64| {
-        let (status, _) = request(
-            app,
-            "PATCH",
-            &format!("/api/devicesets/{ds}/device"),
-            Some(&format!(r#"{{"center_hz":{hz}}}"#)),
+        let (status, _) = patch_node_device(
+            &app,
+            &radio_at(&app, ds).await,
+            &format!(r#"{{"center_hz":{hz}}}"#),
         )
         .await;
         assert_eq!(status, StatusCode::NO_CONTENT);

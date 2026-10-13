@@ -3,6 +3,10 @@ use sdrmm_wire::{
     PatchNode, PatchRefusal, ProblemSource, StateSnapshot, WorkspaceSnapshot, WorkspaceState,
 };
 
+mod release;
+
+pub(crate) use release::release;
+
 use crate::{
     AppState, array, radar,
     resolved::Resolved,

@@ -10,7 +10,7 @@ import type {
   StateSnapshot,
   WorkspaceSnapshot,
 } from "../src/lib/types";
-import { type Box, face, fitPatch, node, stage, wire } from "./canvas";
+import { type Box, face, fitPatch, node, nodeUrl, radioNodeOf, stage, wire } from "./canvas";
 
 const BAND: DeviceRef = { backend: "virtual", key: "band" };
 const BAND_CENTER_HZ = 100_000_000;
@@ -63,7 +63,7 @@ async function amend(
     if (open.settings.params.type !== type) {
       continue;
     }
-    const response = await page.request.patch(`/api/devicesets/${set.id}/channels/${open.id}`, {
+    const response = await page.request.patch(nodeUrl(open.node ?? "", "channel"), {
       data: { settings: { ...open.settings, ...change(open) } },
     });
     if (!response.ok()) {
@@ -81,9 +81,12 @@ async function tune(page: Page, device: DeviceRef, offsets: Record<string, numbe
   if (set.settings.center_hz === centerHz) {
     return;
   }
-  const response = await page.request.patch(`/api/devicesets/${set.id}/device`, {
-    data: { ...set.settings, center_hz: centerHz },
-  });
+  const response = await page.request.patch(
+    nodeUrl(await radioNodeOf(page.request, set.id), "device"),
+    {
+      data: { ...set.settings, center_hz: centerHz },
+    },
+  );
   if (!response.ok()) {
     throw new Error(`centering ${device.key}: ${await response.text()}`);
   }

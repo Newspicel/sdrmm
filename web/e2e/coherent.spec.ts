@@ -191,7 +191,7 @@ test("crosses bearings from two places and clears them", async ({ page }) => {
   await setExtra(page.request, deviceSet, BEARING, SECOND_DEG);
   await expect.poll(() => estimateError(tri), { timeout: SETTLE_MS }).toBeLessThan(0.01);
 
-  await expect(map.getByText("Bearings", { exact: true })).toBeVisible();
+  await expect(map.getByText("finder · Bearings", { exact: true })).toBeVisible();
   await expect(map.getByText("Heat", { exact: true })).toBeVisible();
   await expect(map.getByText("No position", { exact: true })).toHaveCount(0);
 
@@ -208,7 +208,7 @@ test("refuses a lane already in another array on the face", async ({ page }) => 
   await expect(second).toHaveCount(1);
   await fitPatch(page);
   await dropWire(page, port(face(page, "kraken"), "iq2"), port(second, "lane"));
-  await expect(second.getByRole("alert")).toContainText("that lane is in");
+  await expect(second.getByRole("alert")).toContainText(/that lane is in/i);
   await expect(
     page.locator(`.react-flow__edge[data-id="kraken.iq2->${await idOf(second)}.lane"]`),
   ).toHaveCount(0);

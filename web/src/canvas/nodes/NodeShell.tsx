@@ -1,4 +1,3 @@
-import { useMutation } from "@tanstack/react-query";
 import { Handle, NodeResizer, Position, useUpdateNodeInternals } from "@xyflow/react";
 import { CircleAlert, Maximize2, Minimize2, Pin, X } from "lucide-react";
 import {
@@ -21,7 +20,6 @@ import { PortalContainerProvider } from "../../components/PortalContainer";
 import { activityText, idlePort, usePortActivity } from "../../lib/activity";
 import { kindLabel } from "../../lib/eventKinds";
 import { ignoredOf, useNodeProblems } from "../../lib/resolved";
-import { toastError } from "../../lib/toasts";
 import type { NodeCategory, PatchNode, PortSpec, PortType } from "../../lib/types";
 import { portKey, useWiringStore } from "../../lib/wiring";
 import { HUE_TEXT, portHue } from "../../sinks/hues";
@@ -40,7 +38,7 @@ import {
   portLabel,
   unpin,
 } from "../graph";
-import { closeEngineObjects, dropNodes } from "../remove";
+import { dropNodes } from "../remove";
 import { movesCanvas, wheelStaysOnFace } from "../wheel";
 import { NodeName } from "./NodeName";
 import { offsetWithin } from "./portAnchor";
@@ -383,13 +381,7 @@ function useHandleRefresh(
 
 function useRemoveNode(node: PatchNode): () => void {
   const workspace = useWorkspaceContext();
-  const drop = useMutation({
-    mutationFn: () => closeEngineObjects(workspace, [node.id]),
-    onSuccess: () => dropNodes(workspace, [node.id]),
-    onError: (error: Error) => toastError(error),
-  });
-
-  return () => drop.mutate();
+  return () => dropNodes(workspace, [node.id]);
 }
 
 function indexOnSide(ports: readonly PortSpec[], index: number): number {

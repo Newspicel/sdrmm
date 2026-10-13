@@ -39,8 +39,13 @@ async fn a_rejected_request_names_which_part_refused() {
     let error: ApiError = serde_json::from_slice(&body).expect("json");
     assert_eq!(error.code, Some(sdrmm_wire::ErrorCode::NotFound));
 
-    let (status, body) =
-        request(app.clone(), "POST", "/api/devicesets", Some("{\"device\":")).await;
+    let (status, body) = request(
+        app.clone(),
+        "POST",
+        "/api/devices/network",
+        Some("{\"device\":"),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let error: ApiError = serde_json::from_slice(&body).expect("json");
     assert_eq!(error.code, Some(sdrmm_wire::ErrorCode::Request));

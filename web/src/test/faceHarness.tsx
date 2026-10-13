@@ -58,7 +58,6 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     channels: harness.channels ?? new Map(),
     owners: harness.owners ?? new Map(),
     savedChannels: new Map(),
-    saveChannel: () => {},
     selected: harness.selected ?? null,
     select: () => {},
     expanded: null,

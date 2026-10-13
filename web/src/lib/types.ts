@@ -193,6 +193,7 @@ export type ScanSettings = components["schemas"]["ScanSettings"];
 export type ScanRange = components["schemas"]["ScanRange"];
 export type ScannerStatus = components["schemas"]["ScannerStatus"];
 export type NodeAction = components["schemas"]["NodeAction"];
+export type NodeActed = components["schemas"]["NodeActed"];
 export type ScanAction = components["schemas"]["ScanAction"];
 export type HuntAction = components["schemas"]["HuntAction"];
 export type ControlAck = components["schemas"]["ControlAck"];

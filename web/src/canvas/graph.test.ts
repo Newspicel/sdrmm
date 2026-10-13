@@ -7,14 +7,12 @@ import type {
   PatchGraph,
   PatchNode,
   PortSpec,
-  WorkspaceSnapshot,
 } from "../lib/types";
 import { catalogBody, channelPortsNamed, CATALOG as REAL_CATALOG } from "../test/catalog";
 import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../test/resolved";
 import {
   addEdge,
   addNode,
-  arrayWiredLanes,
   clampCells,
   echoesWire,
   edgeKey,
@@ -24,7 +22,6 @@ import {
   handleSignature,
   isPinned,
   isResizable,
-  migrateSnapshot,
   moveSlot,
   newNodeId,
   nodeIds,
@@ -42,11 +39,9 @@ import {
   removeNode,
   resizeSlot,
   sameGraph,
-  settleArrays,
   slotRoom,
   streamLabel,
   streamPort,
-  tuningLocked,
   unpin,
 } from "./graph";
 
@@ -344,32 +339,6 @@ describe("node ids", () => {
   });
 });
 
-const scanning = (edges: PatchGraph["edges"]): WorkspaceSnapshot => ({
-  version: 1,
-  graph: {
-    nodes: [
-      ...workspace().nodes,
-      node("scan", { kind: "scanner" }),
-      node("dev2", { kind: "device", data: {} }),
-    ],
-    edges,
-  },
-});
-
-const driving = (edges: PatchGraph["edges"]): WorkspaceSnapshot => ({
-  version: 1,
-  graph: {
-    nodes: [
-      ...workspace().nodes,
-      node("scan", { kind: "scanner", data: {} }),
-      node("walk", { kind: "hunt", data: {} }),
-      node("am", { kind: "channel", data: { channel_type: "am" } }),
-      node("dev2", { kind: "device", data: {} }),
-    ],
-    edges,
-  },
-});
-
 describe("editing", () => {
   it("removing a node takes its wires with it", () => {
     const graph = removeNode(workspace(), "nfm");
@@ -384,75 +353,6 @@ describe("editing", () => {
       throw new Error("an empty patch");
     }
     expect(() => addNode(graph, drawn)).toThrow(/duplicate node id/);
-  });
-
-  it("keeps the lane a stored scanner watches", () => {
-    const stored = scanning([
-      { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
-      { from: { node: "dev", port: "iq" }, to: { node: "scan", port: "iq" } },
-    ]);
-    expect(migrateSnapshot(stored).graph.edges).toEqual(stored.graph.edges);
-  });
-
-  it("opens a recorder saved without a switch as switched off", () => {
-    const kinds = ["recorder", "audio_recorder", "baseband_recorder"] as const;
-    const stored: WorkspaceSnapshot = {
-      version: 1,
-      graph: {
-        nodes: kinds.map((kind) => node(kind, { kind })),
-        edges: [],
-      },
-    };
-    const migrated = migrateSnapshot(stored);
-    for (const [index, kind] of kinds.entries()) {
-      expect(migrated.graph.nodes[index]).toMatchObject({ kind, data: { recording: false } });
-    }
-    expect(migrateSnapshot(migrated)).toBe(migrated);
-  });
-
-  it("moves a stored control wire off the radio onto its one decoder, or drops it", () => {
-    const one = driving([
-      { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
-      { from: { node: "scan", port: "control" }, to: { node: "dev", port: "control" } },
-      { from: { node: "walk", port: "control" }, to: { node: "dev", port: "control" } },
-    ]);
-    expect(migrateSnapshot(one).graph.edges?.map(edgeKey)).toEqual([
-      "dev.iq->nfm.iq",
-      "scan.control->nfm.control",
-    ]);
-
-    const two = driving([
-      { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
-      { from: { node: "dev", port: "iq" }, to: { node: "am", port: "iq" } },
-      { from: { node: "scan", port: "control" }, to: { node: "dev", port: "control" } },
-      { from: { node: "walk", port: "control" }, to: { node: "dev2", port: "control" } },
-    ]);
-    expect(migrateSnapshot(two).graph.edges?.map(edgeKey)).toEqual([
-      "dev.iq->nfm.iq",
-      "dev.iq->am.iq",
-    ]);
-
-    const current = driving([
-      { from: { node: "dev", port: "iq" }, to: { node: "nfm", port: "iq" } },
-      { from: { node: "scan", port: "control" }, to: { node: "nfm", port: "control" } },
-    ]);
-    expect(migrateSnapshot(current)).toBe(current);
-  });
-
-  it("gives a scanner or decoder log saved without settings an empty body", () => {
-    const stored: WorkspaceSnapshot = {
-      version: 1,
-      graph: {
-        nodes: [
-          { id: "scan", kind: "scanner", position: { x: 0, y: 0 } } as PatchNode,
-          { id: "log", kind: "decoder_log", position: { x: 0, y: 0 } } as PatchNode,
-        ],
-        edges: [],
-      },
-    };
-    const migrated = migrateSnapshot(stored);
-    expect(migrated.graph.nodes.map((n) => (n as { data?: unknown }).data)).toEqual([{}, {}]);
-    expect(migrateSnapshot(migrated)).toBe(migrated);
   });
 
   it("compares graphs structurally so an echo of our own write is not re-applied", () => {
@@ -563,41 +463,6 @@ describe("the rack", () => {
   });
 });
 
-describe("tuningLocked", () => {
-  const graph: PatchGraph = {
-    nodes: [
-      { id: "held", kind: "device", data: { locked_streams: [1] }, position: { x: 0, y: 0 } },
-      { id: "free", kind: "device", data: {}, position: { x: 0, y: 0 } },
-      {
-        id: "pinned",
-        kind: "channel",
-        data: { channel_type: "nfm", tuning_locked: true },
-        position: { x: 0, y: 0 },
-      },
-      { id: "loose", kind: "channel", data: { channel_type: "am" }, position: { x: 0, y: 0 } },
-      { id: "scope", kind: "scope", position: { x: 0, y: 0 } },
-    ],
-    edges: [],
-  };
-
-  it("reads the lock off device and channel nodes alike", () => {
-    expect(tuningLocked(graph, "held", 1)).toBe(true);
-    expect(tuningLocked(graph, "pinned")).toBe(true);
-  });
-
-  it("holds one stream of a radio without holding the others", () => {
-    expect(tuningLocked(graph, "held")).toBe(false);
-    expect(tuningLocked(graph, "held", 0)).toBe(false);
-  });
-
-  it("treats a missing flag, another kind, or an unknown node as unlocked", () => {
-    expect(tuningLocked(graph, "free")).toBe(false);
-    expect(tuningLocked(graph, "loose")).toBe(false);
-    expect(tuningLocked(graph, "scope")).toBe(false);
-    expect(tuningLocked(graph, "nowhere")).toBe(false);
-  });
-});
-
 const ARRAY_CONTEXT: GraphContext = { catalog: REAL_CATALOG, channelTypes: [] };
 
 function arrayNodeOf(geometry?: object): PatchNode {
@@ -645,43 +510,6 @@ describe("arrays", () => {
   it("labels the resolved lane inputs from one", () => {
     expect(laneInputs(lanesWired([]), 1)).toEqual(["lane"]);
     expect(laneInputs(lanesWired([0, 1]), 3)).toEqual(["lane1", "lane2", "lane3"]);
-  });
-
-  it("counts lanes from the highest wired lane port", () => {
-    expect(arrayWiredLanes(lanesWired([]), "arr")).toBe(0);
-    expect(arrayWiredLanes(lanesWired([0, 2]), "arr")).toBe(3);
-  });
-
-  it("settleArrays grows lanes with wires and pads custom rows but never cuts them", () => {
-    const custom = { kind: "explicit", positions: [{ x_m: 1, y_m: 2, z_m: 0 }] };
-    const grown = settleArrays(lanesWired([0, 1, 2], custom));
-    const array = grown.nodes.find((candidate) => candidate.id === "arr");
-    expect(array?.kind === "array" && array.data.geometry).toEqual({
-      kind: "explicit",
-      positions: [
-        { x_m: 1, y_m: 2, z_m: 0 },
-        { x_m: 0, y_m: 0, z_m: 0 },
-        { x_m: 0, y_m: 0, z_m: 0 },
-      ],
-    });
-    const cut = { ...grown, edges: grown.edges?.slice(0, 1) };
-    expect(settleArrays(cut)).toBe(cut);
-    const circle = lanesWired([0, 1, 2]);
-    expect(settleArrays(circle)).toBe(circle);
-  });
-
-  it("pads custom rows as wires land", () => {
-    const custom = { kind: "explicit", positions: [] };
-    const graph = addEdge(lanesWired([], custom), {
-      from: { node: "dev", port: "iq2" },
-      to: { node: "arr", port: "lane2" },
-    });
-    const array = graph.nodes.find((candidate) => candidate.id === "arr");
-    expect(
-      array?.kind === "array" && array.data.geometry.kind === "explicit"
-        ? array.data.geometry.positions
-        : [],
-    ).toHaveLength(2);
   });
 
   it("sizes new processor kinds", () => {

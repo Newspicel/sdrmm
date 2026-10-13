@@ -1,8 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Input } from "../../components/BaseControls";
 import { BTN, BTN_PRIMARY, BTN_QUIET_DANGER, FIELD } from "../../components/controls";
-import { deviceId } from "../../components/devices";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { formatBytes, formatMhz, formatSampleRate } from "../../components/format";
@@ -15,28 +14,18 @@ import {
   recordingProvenance,
   recordingTitle,
 } from "../../components/recordings";
-import { createDeviceSet, recordingsQuery, STATE_KEY } from "../../lib/api";
-import { toastError } from "../../lib/toasts";
+import { recordingsQuery } from "../../lib/api";
 import type { PatchNode, PatchNodeOf, RecordingInfo } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { releaseRadio } from "../remove";
 import { MakeArrayButton, offersMakeArray } from "./MakeArrayButton";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
-import { claimedRecordings, recordingChoices, recordingDeviceId } from "./recordingNode";
+import { claimedRecordings, recordingChoices } from "./recordingNode";
 import { SourceHealth } from "./SourceHealth";
 
 type RecordingNodeData = PatchNodeOf<"recording">["data"];
 
-function Library({
-  node,
-  onPick,
-  busy,
-}: {
-  node: string;
-  onPick: (recording: RecordingInfo) => void;
-  busy: boolean;
-}) {
+function Library({ node, onPick }: { node: string; onPick: (recording: RecordingInfo) => void }) {
   const workspace = useWorkspaceContext();
   const library = useQuery(recordingsQuery());
   const [search, setSearch] = useState("");
@@ -66,7 +55,6 @@ function Library({
             type="button"
             className={`${BTN} h-auto min-h-7 shrink-0 justify-start py-1.5 text-left`}
             title={recordingProvenance(recording)}
-            disabled={busy}
             onClick={() => onPick(recording)}
           >
             <span className="flex w-full min-w-0 flex-col gap-0.5">
@@ -114,7 +102,6 @@ export function RecordingFacts({ recording }: { recording: RecordingInfo }) {
 
 export function RecordingFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
-  const queryClient = useQueryClient();
   const library = useQuery(recordingsQuery());
   const stem = node.kind === "recording" ? (node.data.recording ?? null) : null;
   const set = workspace.devices.get(node.id) ?? null;
@@ -131,35 +118,18 @@ export function RecordingFace({ node }: { node: PatchNode }) {
       ),
     }));
 
-  const open = useMutation({
-    mutationFn: createDeviceSet,
-    onSuccess: () => workspace.apply(),
-    onError: (error: Error) => toastError(error),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: STATE_KEY }),
-  });
-
-  const forget = useMutation({
-    mutationFn: () => releaseRadio(workspace, node.id, () => editNode({ recording: null })),
-    onError: (error: Error) => toastError(error),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: STATE_KEY }),
-  });
+  const forget = (): void => editNode({ recording: null });
 
   const pick = (recording: RecordingInfo): void => {
     editNode({ recording: recording.file });
-    if (
-      workspace.deviceSets.some((candidate) => deviceId(candidate.device) === recording.device_id)
-    ) {
-      workspace.apply();
-    } else {
-      open.mutate(recording.device_id);
-    }
+    workspace.apply();
   };
 
   if (stem === null) {
     return (
       <NodeShell node={node} title="Recording" category="source">
         <FaceBody>
-          <Library node={node.id} onPick={pick} busy={open.isPending} />
+          <Library node={node.id} onPick={pick} />
         </FaceBody>
       </NodeShell>
     );
@@ -187,8 +157,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
             type="button"
             className={BTN_QUIET_DANGER}
             title="Free this node so you can pick another recording"
-            onClick={() => forget.mutate()}
-            disabled={forget.isPending}
+            onClick={forget}
           >
             Forget recording
           </Button>
@@ -200,8 +169,8 @@ export function RecordingFace({ node }: { node: PatchNode }) {
                 ? "This recording is no longer in the library"
                 : "Start playing this recording into whatever is wired to it"
             }
-            onClick={() => open.mutate(recordingDeviceId(stem))}
-            disabled={gone || open.isPending}
+            onClick={() => workspace.apply()}
+            disabled={gone}
           >
             Play
           </Button>
@@ -218,7 +187,9 @@ export function RecordingFace({ node }: { node: PatchNode }) {
       subtitle={set.status === "error" ? <span className="text-danger">error</span> : undefined}
     >
       <FaceBody>
-        {set.playback != null && <PlaybackTransport set={set} status={set.playback} />}
+        {set.playback != null && (
+          <PlaybackTransport node={node.id} set={set} status={set.playback} />
+        )}
         {known !== null && <RecordingFacts recording={known} />}
         {set.error != null && <FaceFault message={set.error} />}
       </FaceBody>
@@ -231,10 +202,9 @@ export function RecordingFace({ node }: { node: PatchNode }) {
           type="button"
           className={BTN_QUIET_DANGER}
           title="Stop playing and free the node: the wires stay drawn"
-          onClick={() => forget.mutate()}
-          disabled={forget.isPending}
+          onClick={forget}
         >
-          {forget.isPending ? "Closing…" : "Forget recording"}
+          Forget recording
         </Button>
       </FaceFooter>
     </NodeShell>

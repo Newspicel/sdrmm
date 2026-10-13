@@ -14,10 +14,6 @@ export interface IqLane {
   virtual?: VirtualSource;
 }
 
-export type LaneTuneTarget =
-  | { kind: "device"; node: string; stream: number }
-  | { kind: "array"; node: string };
-
 export function arrayOf(patch: ResolvedPatch | null, processor: string): string | null {
   return feedsOf(patch, processor, "array")[0]?.source ?? null;
 }
@@ -52,13 +48,6 @@ export function iqLanesOf(patch: ResolvedPatch | null, node: string): IqLane[] {
 
 export function iqSourceOf(patch: ResolvedPatch | null, node: string): IqLane | null {
   return iqLanesOf(patch, node)[0] ?? null;
-}
-
-export function laneTuneTarget(lane: IqLane): LaneTuneTarget {
-  const array = lane.virtual?.array ?? null;
-  return array === null
-    ? { kind: "device", node: lane.source, stream: lane.stream }
-    : { kind: "array", node: array };
 }
 
 export interface BasebandSource {

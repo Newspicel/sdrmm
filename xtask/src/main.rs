@@ -37,6 +37,7 @@ mod replay;
 #[cfg(test)]
 mod site;
 mod units;
+mod wires;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "SDR-- workspace tasks")]
@@ -204,6 +205,11 @@ fn codegen(root: &Path) -> Result<()> {
         sdrmm_wire::limits::generated()?,
     )
     .context("write limits")?;
+    std::fs::write(
+        root.join("docs/src/wires.md"),
+        wires::page(&sdrmm_wire::PatchCatalog::build()),
+    )
+    .context("write the wires page")?;
     let frames = root.join("web/src/generated/frame.ts");
     std::fs::write(&frames, sdrmm_wire::typescript_frames()).context("write binary frame codec")?;
     let spec = sdrmm_server::openapi()

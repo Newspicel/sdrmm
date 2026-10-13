@@ -16,24 +16,20 @@ use sdrmm_tools::ToolError;
 use sdrmm_wire::{
     AboutResponse, ApiError, ApplyTemplateRequest, AudioRecordingInfo, AudioRecordingsResponse,
     AuthInfo, BandPlan, BandRegionMatch, BandRegionsResponse, Bookmark, CapturedImagesQuery,
-    CapturedImagesResponse, ChannelNetworkExportRequest, ChannelSettings, ChannelTypesResponse,
-    ClientCommand, ClientsResponse, CreateBookmarkRequest, CreateChannelRequest,
-    CreateDeviceSetRequest, CreatePresetRequest, CreateWorkspaceRequest, CreatedId, CreatedRowId,
+    CapturedImagesResponse, ChannelSettings, ChannelTypesResponse, ClientCommand, ClientsResponse,
+    CreateBookmarkRequest, CreatePresetRequest, CreateWorkspaceRequest, CreatedRowId,
     DecoderLogEntry, DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount,
     DeviceInfo, DeviceSettings, DevicesResponse, DfFusionState, DiagnosticsReport, DoctorReport,
-    ErrorCode, ExportFormat, HuntAction, HuntRequest, HuntSettings, HuntStatus, IonosondeReport,
-    LicenseTextResponse, LocateQuery, LogGroupKey, MAX_RECORDING_UPLOAD_BYTES,
-    MAX_SATELLITE_QUERY_LEN, NetworkExportAction, NetworkExportRequest, NetworkExportStatus,
-    NmeaDevicesResponse, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport,
-    PatchCatalog, PatchChannelRequest, PatchGraph, PlaybackRequest, PlaybackStatus, PresetDevice,
-    PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery, RecordingFormat,
-    RecordingInfo, RecordingUpload, RecordingsResponse, SatelliteCatalogQuery,
-    SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScanAction, ScanRequest, ScanSettings,
-    ScannerStatus, ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo,
-    TemplatesResponse, TimeMachineAction, TimeMachineRequest, TimeMachineStatus, ToolRequest,
-    ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest, VoiceCallsResponse,
-    WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspacesResponse, WriteSerialRequest,
-    WrittenSerial,
+    ErrorCode, ExportFormat, IonosondeReport, LicenseTextResponse, LocateQuery, LogGroupKey,
+    MAX_RECORDING_UPLOAD_BYTES, MAX_SATELLITE_QUERY_LEN, NmeaDevicesResponse, NodeBody,
+    OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport, PatchCatalog, PatchChannelRequest,
+    PatchGraph, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
+    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
+    SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScannerStatus,
+    ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo, TemplatesResponse,
+    ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest,
+    VoiceCallsResponse, WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspacesResponse,
+    WriteSerialRequest, WrittenSerial,
 };
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -41,7 +37,6 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 mod actions;
 mod arrays;
 mod audio_recordings;
-mod capture;
 mod cps;
 mod decoderlog;
 mod denoise;
@@ -51,6 +46,7 @@ mod info;
 mod media;
 mod missions;
 mod nanovna;
+mod nodes;
 mod patch;
 mod phones;
 mod presets;
@@ -58,29 +54,27 @@ mod radar;
 mod recordings;
 mod remote;
 mod satellites;
-mod scanning;
 mod sinks;
 mod survey;
 mod workspaces;
 
-pub(crate) use actions::{act, succeeded};
+pub(crate) use actions::{act, controlled};
 use audio_recordings::*;
-use capture::*;
 use cps::*;
 use decoderlog::*;
+pub(crate) use devices::patch_device_live;
 use devices::*;
-pub(crate) use devices::{patch_channel_live, patch_device_live};
 use info::*;
 use media::*;
 pub(crate) use media::{call_audio_path, captured_image_path};
+pub(crate) use nodes::{channel_settings, edit_channel, radio_of, set_channel, set_device};
 use presets::*;
 use recordings::*;
 use remote::*;
 use satellites::*;
-use scanning::*;
 use workspaces::*;
 pub(crate) use workspaces::{
-    HistoryStep, check_channel_node, resolve_now, save_channel, step_history, switch,
+    HistoryStep, active_workspace, check_channel_node, resolve_now, step_history, switch,
 };
 
 use crate::{
@@ -444,11 +438,6 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(call_audio))
         .routes(routes!(list_images))
         .routes(routes!(captured_image))
-        .routes(routes!(create_device_set))
-        .routes(routes!(delete_device_set))
-        .routes(routes!(patch_device))
-        .routes(routes!(create_channel))
-        .routes(routes!(patch_channel, delete_channel))
         .routes(routes!(list_presets, create_preset))
         .routes(routes!(apply_preset))
         .routes(routes!(delete_preset))
@@ -456,14 +445,10 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(delete_bookmark))
         .routes(routes!(list_saved_radios, save_radio))
         .routes(routes!(delete_saved_radio))
-        .routes(routes!(network_export_channel))
-        .routes(routes!(time_machine_device_set))
         .routes(routes!(list_audio_recordings))
         .routes(routes!(download_audio_recording))
         .routes(routes!(play_audio_recording, delete_audio_recording))
         .routes(routes!(reveal_audio_recording))
-        .routes(routes!(network_export_device_set))
-        .routes(routes!(control_playback))
         .merge(
             OpenApiRouter::new()
                 .routes(routes!(list_recordings, upload_recording))
@@ -477,8 +462,6 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(list_decoder_log, clear_decoder_log))
         .routes(routes!(export_decoder_log))
         .routes(routes!(group_decoder_log))
-        .routes(routes!(scan_channel))
-        .routes(routes!(hunt_channel))
         .routes(routes!(search_satellites))
         .routes(routes!(satellite_transmitters))
         .routes(routes!(list_templates))
@@ -490,9 +473,11 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_workspace, update_workspace, delete_workspace))
         .routes(routes!(activate_workspace))
         .routes(routes!(apply_workspace))
-        .routes(routes!(put_workspace_channel))
         .routes(routes!(get_resolved))
         .routes(routes!(actions::node_action))
+        .routes(routes!(nodes::patch_node_channel))
+        .routes(routes!(nodes::patch_node_device))
+        .routes(routes!(nodes::add_network_radio))
         .routes(routes!(undo_workspace))
         .routes(routes!(redo_workspace))
         .routes(routes!(get_patch_catalog))

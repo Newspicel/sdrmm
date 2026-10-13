@@ -2,9 +2,8 @@ use std::time::Duration;
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelSettings, DeviceSettings, IQ_PORT, PatchGraph, ResolveCtx, ResolvedPatch, ServerEvent,
-    StateScope, StateSnapshot, Tap, WorkspaceChannel, WorkspaceDevice, WorkspaceState,
-    patch::resolve,
+    ChannelSettings, DeviceSettings, PatchGraph, ResolveCtx, ResolvedPatch, ServerEvent,
+    StateScope, StateSnapshot, WorkspaceChannel, WorkspaceDevice, WorkspaceState, patch::resolve,
 };
 use tokio::{sync::broadcast::error::RecvError, time::Instant};
 
@@ -71,19 +70,6 @@ pub(crate) fn bindings(patch: &ResolvedPatch) -> Vec<DeviceBinding> {
             device_set,
         })
         .collect()
-}
-
-pub(crate) fn feeds(
-    graph: &PatchGraph,
-    state: &StateSnapshot,
-    node: &str,
-    device_set: u32,
-    stream: u32,
-) -> bool {
-    resolve(graph, state)
-        .feeds(node, IQ_PORT)
-        .iter()
-        .any(|feed| feed.tap == Some(Tap::Lane { device_set, stream }))
 }
 
 pub(crate) fn bind(graph: &PatchGraph, state: &StateSnapshot) -> Vec<DeviceBinding> {

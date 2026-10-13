@@ -7,8 +7,8 @@ import { pushToast } from "../lib/toasts";
 import type {
   BandPlan,
   ChannelInfo,
-  ControlAck,
   DeviceSet,
+  NodeActed,
   ScanAction,
   ScanMode,
   ScannerStatus,
@@ -68,8 +68,8 @@ export function ScannerPanel({
   const clearLive = useScannerStore((s) => s.clear);
   const status = liveStatus(active, node, pushed);
   const invalidate = (): void => void queryClient.invalidateQueries({ queryKey: STATE_KEY });
-  const keepLockouts = (acks: ControlAck[]): void => {
-    const finished = scanStatusOf(acks);
+  const keepLockouts = (acted: NodeActed): void => {
+    const finished = scanStatusOf(acted);
     if (finished !== null) {
       onSettings({ ...settings, lockouts: finished.settings.lockouts ?? [] });
     }
@@ -83,8 +83,8 @@ export function ScannerPanel({
   });
   const stopMut = useMutation({
     mutationFn: scan("stop"),
-    onSuccess: (acks) => {
-      keepLockouts(acks);
+    onSuccess: (acted) => {
+      keepLockouts(acted);
       clearLive(node);
     },
     onError: (e) => pushToast(e.message),

@@ -898,8 +898,9 @@ impl Store {
         snapshot: &WorkspaceSnapshot,
     ) -> Result<i64, StoreError> {
         validate_name(name)?;
+        let snapshot = settled(snapshot.clone());
         snapshot.validate_against(sdrmm_channels::descriptor_table())?;
-        let json = serde_json::to_string(snapshot)?;
+        let json = serde_json::to_string(&snapshot)?;
         let now = now_rfc3339();
         let conn = self.lock();
         conn.execute(
@@ -925,8 +926,9 @@ impl Store {
         export: &WorkspaceExport,
         notices: &[WorkspaceNoticeKind],
     ) -> Result<i64, StoreError> {
-        export.validate_against(sdrmm_channels::descriptor_table())?;
         let mut document = export.clone();
+        document.snapshot.graph.settle_arrays();
+        document.validate_against(sdrmm_channels::descriptor_table())?;
         document.forget_absent_nodes();
         let json = serde_json::to_string(&document.snapshot)?;
         let now = now_rfc3339();
@@ -952,7 +954,8 @@ impl Store {
         req: &UpdateWorkspaceRequest,
         author: Option<&str>,
     ) -> Result<WorkspaceDetail, StoreError> {
-        if let Some(snapshot) = &req.snapshot {
+        let settled = req.snapshot.clone().map(settled);
+        if let Some(snapshot) = &settled {
             snapshot.validate_against(sdrmm_channels::descriptor_table())?;
         }
         if let Some(name) = &req.name {
@@ -968,7 +971,7 @@ impl Store {
             )
             .map_err(|err| name_taken(err, name))?;
         }
-        if let Some(ours) = &req.snapshot {
+        if let Some(ours) = &settled {
             let held = parse_workspace_snapshot(&held)?;
             let merged = rebase(&tx, id, req.revision, current, &held, ours)?;
             if merged != held {
@@ -1509,6 +1512,11 @@ fn migrate_baseband_scopes(snapshot: &mut serde_json::Value) {
             edge["to"]["node"] = serde_json::json!(twin);
         }
     }
+}
+
+fn settled(mut snapshot: WorkspaceSnapshot) -> WorkspaceSnapshot {
+    snapshot.graph.settle_arrays();
+    snapshot
 }
 
 fn migrate_dataless_nodes(snapshot: &mut serde_json::Value) {

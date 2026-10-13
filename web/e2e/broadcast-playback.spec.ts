@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { StateSnapshot, WorkspaceSnapshot } from "../src/lib/types";
+import { nodeUrl } from "./canvas";
 
 for (const system of ["dab", "dvbt", "dvbs", "dvbs2", "dvbs2x", "dvbs2sf"] as const) {
   test(`${system} plays recorded broadcast media`, async ({ page }) => {
@@ -88,19 +89,16 @@ for (const system of ["dab", "dvbt", "dvbs", "dvbs2", "dvbs2x", "dvbs2sf"] as co
                 code_rate: "three_quarters",
               }
             : params.settings;
-      const patched = await page.request.patch(
-        `/api/devicesets/${device.id}/channels/${channel.id}`,
-        {
-          data: {
-            settings: {
-              ...channel.settings,
-              frequency_hz: 220_352_000,
-              squelch: { mode: "off" },
-              params: { type: params.type, settings },
-            },
+      const patched = await page.request.patch(nodeUrl(channel.node ?? "", "channel"), {
+        data: {
+          settings: {
+            ...channel.settings,
+            frequency_hz: 220_352_000,
+            squelch: { mode: "off" },
+            params: { type: params.type, settings },
           },
         },
-      );
+      });
       expect(patched.ok(), await patched.text()).toBe(true);
       await page.goto("/");
       const speaker = page.locator('.react-flow__node[data-id="speaker"]');

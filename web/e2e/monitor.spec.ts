@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { formatMhz } from "../src/components/format";
 import type { DecoderLogResponse, StateSnapshot, WorkspaceSnapshot } from "../src/lib/types";
+import { nodeUrl, radioNodeOf } from "./canvas";
 
 test("monitors IQ through one node and exports transmission audio", async ({ page }) => {
   test.setTimeout(60000);
@@ -66,7 +67,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     await page.goto("/");
     const monitor = page.locator(`.react-flow__node[data-id="${nodeIds.monitor}"]`);
     const log = page.locator(`.react-flow__node[data-id="${nodeIds.log}"]`);
-    await expect(monitor.locator(".react-flow__handle")).toHaveCount(2);
+    await expect(monitor.locator(".react-flow__handle")).toHaveCount(3);
     await expect(monitor.locator("li")).toHaveCount(0);
     await expect(monitor).not.toContainText(/\d+ (active|recent)/);
     const confidenceInfo =
@@ -130,7 +131,7 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     expect(device.channels).toHaveLength(0);
     expect(
       (
-        await page.request.patch(`/api/devicesets/${device.id}/device`, {
+        await page.request.patch(nodeUrl(await radioNodeOf(page.request, device.id), "device"), {
           data: { center_hz: (device.settings.center_hz ?? 100000000) + 1000 },
         })
       ).ok(),

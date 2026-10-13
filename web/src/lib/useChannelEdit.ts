@@ -1,8 +1,6 @@
 import type { Workspace } from "../canvas/context";
-import { useWorkspaceContext } from "../canvas/context";
 import { descriptorOf, nodeOf } from "../canvas/graph";
 import { deviceSetOf } from "../canvas/workspaceDevice";
-import { mergeChannelSettings } from "../components/channelSettings";
 import type { ChannelSettings } from "./types";
 import { type ChannelEdit, useChannelPatch } from "./useChannelPatch";
 
@@ -27,22 +25,5 @@ export function channelSettingsOf(workspace: Workspace, node: string): ChannelSe
 }
 
 export function useChannelEdit(): (node: string, edit: ChannelEdit) => void {
-  const workspace = useWorkspaceContext();
-  const { applyEdit } = useChannelPatch();
-
-  return (node, edit) => {
-    const live = liveChannelOf(workspace, node);
-    if (live !== null) {
-      applyEdit(live.deviceSet, live.id, edit);
-      return;
-    }
-    const settings = channelSettingsOf(workspace, node);
-    if (settings === null) {
-      return;
-    }
-    workspace.saveChannel(
-      node,
-      mergeChannelSettings(settings, typeof edit === "function" ? edit(settings) : edit),
-    );
-  };
+  return useChannelPatch().applyEdit;
 }

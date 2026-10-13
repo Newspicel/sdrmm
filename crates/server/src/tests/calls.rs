@@ -69,9 +69,9 @@ async fn a_plain_dmr_channel_with_its_audio_wired_records_calls_with_clips() {
     settings.frequency_hz = 145_000_000.0;
     let (status, _) = request(
         app.clone(),
-        "PUT",
-        &format!("/api/workspaces/{workspace}/channels/dmr"),
-        Some(&serde_json::to_string(&settings).expect("settings serialize")),
+        "PATCH",
+        "/api/workspaces/active/nodes/dmr/channel",
+        Some(&serde_json::json!({"settings": settings}).to_string()),
     )
     .await;
     assert_eq!(status, 204);

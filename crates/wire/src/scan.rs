@@ -150,13 +150,6 @@ pub struct ScannerStatus {
     pub error: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct ScanRequest {
-    pub action: ScanAction,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settings: Option<ScanSettings>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ScanAction {

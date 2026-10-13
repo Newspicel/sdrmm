@@ -67,6 +67,7 @@ type Patch = (delta: Parameters<ReturnType<typeof useDevicePatch>["applyPatch"]>
 const NOT_HELD: ReadonlyMap<number, string> = new Map();
 
 export function RadioSettings({
+  node,
   active,
   className,
   advised = new Set(),
@@ -75,6 +76,7 @@ export function RadioSettings({
   laneLeads,
   ports,
 }: {
+  node: string;
   active: DeviceSet;
   className?: string;
   advised?: ReadonlySet<number>;
@@ -84,7 +86,7 @@ export function RadioSettings({
   ports?: readonly string[];
 }) {
   const { applyPatch } = useDevicePatch();
-  const patch: Patch = (delta) => applyPatch(active.id, delta);
+  const patch: Patch = (delta) => applyPatch(node, delta);
   return (
     <div className={`flex flex-col gap-2 ${className ?? ""}`}>
       {lead}
@@ -742,6 +744,7 @@ function LaneRows({
             trailing={
               stage === metered && agcHere ? (
                 <AgcAuto
+                  onPatch={patch}
                   set={active}
                   stream={stream}
                   port={laneName}

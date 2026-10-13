@@ -197,13 +197,10 @@ fn a_missing_radio_is_a_problem_on_its_node() {
 #[tokio::test]
 async fn the_active_workspace_is_served_resolved() {
     let (app, state) = crate::tests::test_router_with_state();
-    crate::tests::request(
-        app.clone(),
-        "POST",
-        "/api/devicesets",
-        Some(r#"{"device_id":"virtual:band"}"#),
-    )
-    .await;
+    state
+        .engine
+        .create_device_set("virtual:band")
+        .expect("the radio opens");
     let workspace = state
         .store
         .active_workspace_id()
