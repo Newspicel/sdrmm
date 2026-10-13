@@ -26,7 +26,6 @@ development package is needed.
 git clone https://github.com/Newspicel/sdrmm.git
 cd sdrmm
 python3 scripts/build-media.py
-export FFMPEG_DIR="$(python3 scripts/build-media.py --print-prefix)"
 pnpm --dir web install --frozen-lockfile
 pnpm --dir web build
 cargo run -p sdrmm
@@ -35,9 +34,10 @@ cargo run -p sdrmm
 Open <http://localhost:8080>.
 
 The media script builds the few FFmpeg 9.0.2 codecs SDR-- needs, plus fdk-aac 2.0.3 for xHE-AAC,
-from checksummed source into `.media/<target>` as shared libraries. Keep `FFMPEG_DIR` set for every Cargo command. To run
-binaries and tests, CI also adds `$FFMPEG_DIR/lib` to `LD_LIBRARY_PATH` on Linux and
-`DYLD_LIBRARY_PATH` on macOS. A system FFmpeg older than 9 does not compile. For cross builds,
+from checksummed source into `.media/<target>` as shared libraries. For the host target it also
+writes `.media/cargo.toml`, which `.cargo/config.toml` includes, so every Cargo command uses that
+FFmpeg (`FFMPEG_DIR`, plus `LD_LIBRARY_PATH` on Linux or `DYLD_LIBRARY_PATH` on macOS). On
+Windows, also add `$FFMPEG_DIR/bin` to `PATH`. A system FFmpeg older than 9 does not compile. For cross builds,
 pass `--target <triple>` to the script. Nix uses its own FFmpeg with fdk-aac.
 
 The server embeds `web/dist`, so build the frontend first. Without it, the server shows a

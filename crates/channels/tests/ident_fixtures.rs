@@ -1,15 +1,23 @@
-use sdrmm_channels::synth::ident_fixtures::{Expect, FIXTURES, identify, judge, samples};
+use num_complex::Complex;
+use sdrmm_channels::synth::{
+    decoder_fixtures::recipe,
+    ident_fixtures::{Expect, FIXTURES, Fixture, identify, judge, samples},
+};
 
-fn fixture_bytes(file: &str) -> Vec<u8> {
+fn fixture_iq(fixture: &Fixture) -> Vec<Complex<f32>> {
+    if let Some(recipe) = recipe(fixture.stem) {
+        return (recipe.iq)();
+    }
+    let file = fixture.file();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/");
-    std::fs::read(format!("{path}{file}")).unwrap_or_else(|e| panic!("{file}: {e}"))
+    samples(&std::fs::read(format!("{path}{file}")).unwrap_or_else(|e| panic!("{file}: {e}")))
 }
 
 #[test]
 fn every_recorded_fixture_is_named_as_recorded() {
     let mut failures = Vec::new();
     for fixture in FIXTURES {
-        let outcome = identify(fixture, &samples(&fixture_bytes(&fixture.file())));
+        let outcome = identify(fixture, &fixture_iq(fixture));
         if let Err(miss) = judge(fixture, &outcome) {
             failures.push(miss);
         }

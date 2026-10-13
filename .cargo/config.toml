@@ -1,3 +1,5 @@
+include = [{ path = "../.media/cargo.toml", optional = true }]
+
 [alias]
 xtask = "run --package xtask --"
 xtask-release = "run --quiet --locked --package xtask-release --"

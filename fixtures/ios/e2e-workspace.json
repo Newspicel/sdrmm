@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "iPhone e2e",
   "snapshot": {
     "version": 4,
@@ -27,6 +27,7 @@
       ],
       "edges": [
         { "from": { "node": "radio", "port": "iq" }, "to": { "node": "voice", "port": "iq" } },
+        { "from": { "node": "radio", "port": "iq" }, "to": { "node": "hunt", "port": "iq" } },
         { "from": { "node": "hunt", "port": "control" }, "to": { "node": "voice", "port": "control" } }
       ]
     }

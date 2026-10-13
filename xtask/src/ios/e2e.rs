@@ -307,5 +307,6 @@ mod tests {
         assert!(matches!(body("voice"), Some(NodeBody::Channel(_))));
         assert!(matches!(body("hunt"), Some(NodeBody::Hunt(_))));
         assert!(wired("radio", "voice") && wired("hunt", "voice"));
+        assert!(wired("radio", "hunt"), "the hunt watches the radio lane");
     }
 }
