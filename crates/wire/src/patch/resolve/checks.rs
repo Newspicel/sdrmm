@@ -113,10 +113,11 @@ fn settings_valid(body: &NodeBody) -> bool {
 pub(super) fn wire<'a>(net: &mut Net<'a>) -> Vec<(PatchEdge, PatchError)> {
     let graph = net.graph;
     let mut refused = Vec::new();
-    if graph.edges.len() > MAX_EDGES {
-        return refused;
-    }
-    for edge in &graph.edges {
+    for (index, edge) in graph.edges.iter().enumerate() {
+        if index >= MAX_EDGES {
+            refused.push((edge.clone(), PatchError::TooManyEdges));
+            continue;
+        }
         match refusal(net, edge) {
             None => net.edges.push(edge),
             Some(error) => refused.push((edge.clone(), error)),

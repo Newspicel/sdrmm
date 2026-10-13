@@ -47,7 +47,7 @@ enum Lookup {
 struct Pending {
     upserts: BTreeSet<EntityKey>,
     removed: BTreeSet<EntityKey>,
-    records: Vec<DecodedRecord>,
+    records: VecDeque<DecodedRecord>,
     pictures: bool,
     tracks: bool,
     surfaces: bool,
@@ -131,7 +131,7 @@ impl Sink {
                 .filter_map(|key| self.entities.get(key).cloned())
                 .collect(),
             removed: pending.removed.into_iter().collect(),
-            records: pending.records,
+            records: pending.records.into(),
             tracks: pending
                 .tracks
                 .then(|| self.tracks.values().cloned().collect()),
@@ -168,10 +168,10 @@ impl Sink {
             self.records.pop_front();
         }
         self.records.push_back(record.clone());
-        self.pending.records.push(record);
-        if self.pending.records.len() > RECORDS_PER_SINK {
-            self.pending.records.remove(0);
+        if self.pending.records.len() == RECORDS_PER_SINK {
+            self.pending.records.pop_front();
         }
+        self.pending.records.push_back(record);
         self.count_lost(change.evicted)
     }
 
@@ -346,6 +346,8 @@ impl SinkHub {
         let removed = sink.entities.retain(|_| false);
         sink.pending.removed.extend(removed);
         sink.records.clear();
+        sink.pending.records.clear();
+        sink.pending.upserts.clear();
         if let Some(model) = sink.propagation.as_mut() {
             model.clear(now_ms());
         }
@@ -362,6 +364,17 @@ impl SinkHub {
                 Some((id.clone(), sink.take(record.clone(), now)))
             })
             .filter(|(_, lost)| *lost > 0)
+            .collect()
+    }
+
+    pub(crate) fn lost(&self, count: u64) -> Vec<String> {
+        self.lock()
+            .iter_mut()
+            .filter(|(_, sink)| !sink.events_from.is_empty())
+            .map(|(id, sink)| {
+                sink.count_lost(count);
+                id.clone()
+            })
             .collect()
     }
 
@@ -524,17 +537,23 @@ fn sorted(mut surfaces: Vec<SurfaceRef>) -> Vec<SurfaceRef> {
 
 fn prune(sink: &mut Sink, node: &str, resolved: &Resolved) {
     let routes = &resolved.events;
+    let entities = &sink.entities;
+    sink.records.retain(|record| {
+        let source = record.origin.as_ref().map(|origin| origin.node.as_str());
+        match (source, &record.view) {
+            (Some(source), Some(view)) => {
+                let judged = entities::key_of(record, view)
+                    .and_then(|key| entities.get(&key))
+                    .map_or(view, |entity| &entity.view);
+                routes.admits(source, node, record.event.kind(), judged)
+            }
+            _ => false,
+        }
+    });
     let removed = sink
         .entities
         .retain(|entity| routes.admits(&entity.key.source, node, entity.key.kind, &entity.view));
     sink.pending.removed.extend(removed);
-    sink.records.retain(|record| {
-        let source = record.origin.as_ref().map(|origin| origin.node.as_str());
-        match (source, &record.view) {
-            (Some(source), Some(view)) => routes.admits(source, node, record.event.kind(), view),
-            _ => false,
-        }
-    });
     if !sink.keeps_clips {
         sink.records.iter_mut().for_each(strip_clip);
     }
@@ -580,9 +599,11 @@ async fn run(
                         state.activity.lost(&sink, EVENTS_PORT, lost);
                     }
                 }
-                Ok(Decoded::Lost(_)) => {}
-                Err(RecvError::Lagged(count)) => {
+                Ok(Decoded::Lost(count)) | Err(RecvError::Lagged(count)) => {
                     tracing::warn!(count, "sink feeds missed decoded records");
+                    for sink in state.sinks.lost(count) {
+                        state.activity.lost(&sink, EVENTS_PORT, count);
+                    }
                 }
                 Err(RecvError::Closed) => return,
             },

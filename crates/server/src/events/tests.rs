@@ -354,3 +354,20 @@ fn a_callsign_rule_lets_the_plane_place_itself() {
     assert_eq!(send(plane(None, Some((48.2, 11.6)))), ["map"]);
     assert_eq!(stations.len(), 1);
 }
+
+#[test]
+fn a_full_station_table_drops_its_oldest() {
+    let routes = through(EventFilterNode::default());
+    let mut stations = Stations::default();
+    for icao in 0..=stations::MAX_STATIONS {
+        let mut record = from(
+            Some("adsb"),
+            DecoderEvent::Adsb(AdsbMessage {
+                icao: format!("{icao:06x}"),
+                ..AdsbMessage::default()
+            }),
+        );
+        routes.route(&mut record, &mut stations);
+    }
+    assert_eq!(stations.len(), stations::MAX_STATIONS);
+}

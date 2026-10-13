@@ -22,9 +22,9 @@ pub struct WireVerdict {
 
 #[must_use]
 pub fn wiring(graph: &PatchGraph, from: &PortRef, ctx: &ResolveCtx<'_>) -> Vec<WireVerdict> {
-    let candidates = targets(&Net::new(graph, ctx), from);
     let mut net = Net::new(graph, ctx);
     checks::wire(&mut net);
+    let candidates = targets(&net, from);
     candidates
         .iter()
         .map(|edge| WireVerdict {

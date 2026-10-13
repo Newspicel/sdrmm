@@ -515,6 +515,68 @@ fn clearing_a_sink_drops_what_it_held() {
     assert!(!bench.hub.clear("nowhere"));
 }
 
+#[test]
+fn a_clear_also_drops_what_waited_for_the_flush() {
+    let bench = Bench::over(two_decoders_one_map());
+    let (_, mut updates) = bench.hub.subscribe("map").expect("map is a sink");
+    bench.send(from("north", aircraft("3c6444", "DLH123")));
+
+    bench.hub.clear("map");
+    bench.hub.flush(&SurfaceHub::default());
+
+    let update = updates.try_recv().expect("the removal went out");
+    let event: ServerEvent = serde_json::from_str(update.as_str()).expect("update json");
+    let ServerEvent::SinkUpdate { update, .. } = event else {
+        panic!("a flush sends a sink update");
+    };
+    assert!(update.records.is_empty() && update.upserts.is_empty());
+}
+
+#[test]
+fn records_lost_upstream_count_on_every_event_sink() {
+    let bench = Bench::over(two_decoders_one_map());
+    let mut counted = bench.hub.lost(3);
+    counted.sort();
+    assert_eq!(counted, ["map", "readout"]);
+    assert_eq!(bench.feed("map").lost, 3);
+}
+
+#[test]
+fn a_record_its_station_let_through_survives_a_rewire() {
+    let graph = PatchGraph {
+        nodes: vec![
+            channel("adsb", "adsb"),
+            node(
+                "placed",
+                NodeBody::EventFilter(EventFilterNode {
+                    has_position: Some(true),
+                    ..EventFilterNode::default()
+                }),
+            ),
+            node("readout", NodeBody::Readout),
+        ],
+        edges: vec![events("adsb", "placed"), events("placed", "readout")],
+    };
+    let bench = Bench::over(graph);
+    let mut stations = crate::events::Stations::default();
+    let ident = DecoderEvent::Adsb(AdsbMessage {
+        icao: "3c6444".to_owned(),
+        df: 17,
+        callsign: Some("DLH123".to_owned()),
+        ..AdsbMessage::default()
+    });
+    for event in [aircraft("3c6444", "DLH123"), ident] {
+        let mut record = from("adsb", event);
+        bench.resolved.events.route(&mut record, &mut stations);
+        bench.hub.deliver(&record, Instant::now());
+    }
+    assert_eq!(bench.feed("readout").records.len(), 2);
+
+    bench.hub.rewire(&bench.resolved, |_| None);
+
+    assert_eq!(bench.feed("readout").records.len(), 2);
+}
+
 fn picture(sinks: &[&str]) -> CapturedImage {
     CapturedImage {
         id: 3,

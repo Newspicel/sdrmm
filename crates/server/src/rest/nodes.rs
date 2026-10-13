@@ -44,6 +44,16 @@ pub(crate) fn set_channel(
     author: Option<&str>,
 ) -> Result<bool, AppError> {
     let _serialized = lock_gate(&state.apply_gate);
+    set_channel_locked(state, node, settings, base, author)
+}
+
+fn set_channel_locked(
+    state: &AppState,
+    node: &str,
+    settings: ChannelSettings,
+    base: Option<&ChannelSettings>,
+    author: Option<&str>,
+) -> Result<bool, AppError> {
     let active = active_workspace(&state.store)?;
     check_channel_node(&active.snapshot.graph, node, &settings)?;
     let live = state.engine.snapshot();
@@ -66,8 +76,9 @@ pub(crate) fn edit_channel(
     edit: impl FnOnce(ChannelSettings) -> ChannelSettings,
     author: Option<&str>,
 ) -> Result<(), AppError> {
+    let _serialized = lock_gate(&state.apply_gate);
     let current = channel_settings(state, node)?;
-    set_channel(state, node, edit(current), None, author).map(drop)
+    set_channel_locked(state, node, edit(current), None, author).map(drop)
 }
 
 pub(crate) fn channel_settings(state: &AppState, node: &str) -> Result<ChannelSettings, AppError> {

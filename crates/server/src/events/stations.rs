@@ -7,13 +7,15 @@ use sdrmm_wire::{
     Capability, DecodedRecord, DecoderEvent, EventKind, Lifetime, present::Presentation,
 };
 
-const MAX_STATIONS: usize = 4_096;
+pub(super) const MAX_STATIONS: usize = 4_096;
+const SWEEP_EVERY: Duration = Duration::from_secs(5);
 
 type Key = (String, EventKind, String);
 
 #[derive(Default)]
 pub(crate) struct Stations {
     held: HashMap<Key, (DecoderEvent, Instant)>,
+    swept: Option<Instant>,
 }
 
 impl Stations {
@@ -38,6 +40,9 @@ impl Stations {
             return view.clone();
         }
         self.age_out(now);
+        if !self.held.contains_key(&key) && self.held.len() >= MAX_STATIONS {
+            self.evict_oldest();
+        }
         let (event, seen) = self
             .held
             .entry(key)
@@ -52,6 +57,13 @@ impl Stations {
     }
 
     fn age_out(&mut self, now: Instant) {
+        if self
+            .swept
+            .is_some_and(|at| now.duration_since(at) < SWEEP_EVERY)
+        {
+            return;
+        }
+        self.swept = Some(now);
         self.held
             .retain(|(_, kind, _), (_, seen)| match kind.info().lifetime {
                 Lifetime::Sighting { ttl_s } => {
@@ -59,17 +71,15 @@ impl Stations {
                 }
                 Lifetime::Instant | Lifetime::Standing => true,
             });
-        let excess = self.held.len().saturating_sub(MAX_STATIONS);
-        if excess == 0 {
-            return;
-        }
-        let mut by_age: Vec<(Instant, Key)> = self
+    }
+
+    fn evict_oldest(&mut self) {
+        let oldest = self
             .held
             .iter()
-            .map(|(key, (_, seen))| (*seen, key.clone()))
-            .collect();
-        by_age.sort_unstable_by_key(|(seen, _)| *seen);
-        for (_, key) in by_age.into_iter().take(excess) {
+            .min_by_key(|(_, (_, seen))| *seen)
+            .map(|(key, _)| key.clone());
+        if let Some(key) = oldest {
             self.held.remove(&key);
         }
     }

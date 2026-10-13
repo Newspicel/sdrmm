@@ -293,6 +293,44 @@ fn unwiring_a_scanner_stops_the_scan_it_started() {
 }
 
 #[test]
+fn removing_a_scanned_channel_still_stops_its_scan() {
+    let nodes = vec![
+        node("radio", NodeBody::Device(sdrmm_wire::DeviceNode::default())),
+        node("scan", NodeBody::Scanner(ScannerNode::default())),
+        channel("voice"),
+    ];
+    let watched = vec![
+        wire(("radio", "iq"), ("voice", "iq")),
+        wire(("radio", "iq"), ("scan", "iq")),
+    ];
+    let mut wired = watched.clone();
+    wired.push(wire(("scan", "control"), ("voice", "control")));
+    let mut patch = resolve(nodes.clone(), wired);
+    for feed in patch
+        .nodes
+        .iter_mut()
+        .flat_map(|node| &mut node.ports)
+        .flat_map(|port| &mut port.feeds)
+    {
+        feed.tap = Some(Tap::Lane {
+            device_set: 1,
+            stream: 2,
+        });
+    }
+    let bus = ControlBus::default();
+    let rig = FakeRig::default();
+    let start = ControlCommand::Sweep(SweepJob::Scan {
+        settings: ScanSettings::default(),
+        action: ScanAction::Start,
+    });
+    assert_eq!(bus.deliver(&rig, &patch, "scan", &start)[0].error, None);
+
+    let without_voice = nodes[..2].to_vec();
+    bus.settle(&rig, &resolve(without_voice, vec![watched[1].clone()]));
+    assert_eq!(rig.calls(), vec!["halt 2 scan".to_owned()]);
+}
+
+#[test]
 fn a_satellite_steering_leaves_a_running_scan_alone() {
     let nodes = vec![
         node("radio", NodeBody::Device(sdrmm_wire::DeviceNode::default())),

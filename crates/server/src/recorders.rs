@@ -25,6 +25,7 @@ pub(crate) struct Hooks {
 }
 
 const ONE_TAKE_PER_CHANNEL: &str = "Records each channel once";
+const ONE_TAKE_PER_RADIO: &str = "Another recorder holds this radio";
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct AudioTake {
@@ -69,7 +70,9 @@ impl Recorders {
         };
         let mut wanted_targets = HashSet::new();
         let (graph, patch) = (&resolved.graph, &resolved.patch);
-        let (audio, doubled) = wanted_audio(graph, patch);
+        let (audio, mut doubled) = wanted_audio(graph, patch);
+        let (iq, held) = wanted_iq(graph, patch);
+        doubled.extend(held);
         hooks
             .problems
             .replace(engine, ProblemSource::Recorder, &doubled);
@@ -80,12 +83,7 @@ impl Recorders {
             &snapshot,
             &mut wanted_targets,
         );
-        self.iq(
-            &mut tick,
-            wanted_iq(graph, patch),
-            &snapshot,
-            &mut wanted_targets,
-        );
+        self.iq(&mut tick, iq, &snapshot, &mut wanted_targets);
         self.failures
             .retain(|target, _| wanted_targets.contains(target));
         tick.finish();
@@ -373,21 +371,31 @@ fn running_iq(snapshot: &StateSnapshot) -> HashMap<u32, Take> {
         .collect()
 }
 
-fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<u32, Take> {
-    let mut wanted = HashMap::new();
+fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> (HashMap<u32, Take>, Vec<NodeProblem>) {
+    let mut wanted: HashMap<u32, Take> = HashMap::new();
+    let mut held = Vec::new();
     for node in switched_on(graph, NodeKind::Recorder) {
+        let mut shut_out = false;
         for (device_set, stream) in patch
             .feeds(&node.id, IQ_PORT)
             .iter()
             .filter_map(|feed| feed.tap.as_ref()?.lane())
         {
-            wanted.entry(device_set).or_insert_with(|| Take {
+            let take = wanted.entry(device_set).or_insert_with(|| Take {
                 stream,
                 node: Some(node.id.clone()),
             });
+            shut_out |= take.node.as_deref() != Some(node.id.as_str());
+        }
+        if shut_out {
+            held.push(NodeProblem {
+                node: node.id.clone(),
+                source: ProblemSource::Recorder,
+                text: ONE_TAKE_PER_RADIO.to_owned(),
+            });
         }
     }
-    wanted
+    (wanted, held)
 }
 
 #[cfg(test)]
@@ -577,6 +585,30 @@ mod tests {
                 node: "audio".to_owned(),
                 source: ProblemSource::Recorder,
                 text: ONE_TAKE_PER_CHANNEL.to_owned(),
+            }]
+        );
+        engine.remove_device_set(ds).expect("close");
+    }
+
+    #[test]
+    fn a_second_iq_recorder_on_one_radio_says_it_is_shut_out() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let (engine, ds, _) = radio(&dir);
+        let mut graph = patch(true);
+        graph.nodes.push(node("late", NodeBody::Recorder(on(true))));
+        graph.edges.push(wire(("dev", "iq"), ("late", "iq")));
+        let resolved = resolved(Some(graph), &engine);
+        let (wanted, held) = wanted_iq(&resolved.graph, &resolved.patch);
+        assert_eq!(
+            wanted.get(&ds).and_then(|take| take.node.as_deref()),
+            Some("iq")
+        );
+        assert_eq!(
+            held,
+            vec![NodeProblem {
+                node: "late".to_owned(),
+                source: ProblemSource::Recorder,
+                text: ONE_TAKE_PER_RADIO.to_owned(),
             }]
         );
         engine.remove_device_set(ds).expect("close");

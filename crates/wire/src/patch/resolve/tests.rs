@@ -832,3 +832,21 @@ fn a_coherent_radio_offers_the_wires_of_a_new_array() {
 
 mod contracts;
 mod verdicts;
+
+#[test]
+fn wires_past_the_cap_are_refused_and_the_rest_still_run() {
+    let graph = PatchGraph {
+        nodes: vec![channel("dmr", "dmr"), log("chat")],
+        edges: vec![events("dmr", "chat"); crate::patch::MAX_EDGES + 1],
+    };
+    let (patch, refused) = compile_draft(&graph, &ResolveCtx::default());
+    assert_eq!(
+        sources(patch.feeds("chat", "events")),
+        [("dmr", Vec::new())]
+    );
+    assert_eq!(refused.len(), crate::patch::MAX_EDGES);
+    assert_eq!(
+        refused.last().map(|edge| edge.reason.clone()),
+        Some(PatchError::TooManyEdges.to_string())
+    );
+}

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
@@ -29,8 +29,8 @@ pub(crate) trait Rig {
 
 #[derive(Clone, Default)]
 struct Held {
-    steered: BTreeSet<String>,
-    swept: BTreeSet<String>,
+    steered: BTreeMap<String, Option<ChannelAddr>>,
+    swept: BTreeMap<String, ChannelAddr>,
 }
 
 impl Held {
@@ -41,11 +41,11 @@ impl Held {
     fn split_off(&mut self, keep: impl Fn(&str) -> bool) -> Self {
         let (steered, kept) = std::mem::take(&mut self.steered)
             .into_iter()
-            .partition(|target| !keep(target));
+            .partition(|(target, _)| !keep(target));
         self.steered = kept;
         let (swept, kept) = std::mem::take(&mut self.swept)
             .into_iter()
-            .partition(|target| !keep(target));
+            .partition(|(target, _)| !keep(target));
         self.swept = kept;
         Self { steered, swept }
     }
@@ -83,7 +83,7 @@ impl ControlBus {
             .filter(|(_, verbs)| command.verb().is_none_or(|verb| verbs.contains(&verb)))
             .map(|(target, _)| self.apply(rig, patch, from, target, command))
             .collect();
-        self.remember(from, command, &acks);
+        self.remember(patch, from, command, &acks);
         acks
     }
 
@@ -133,19 +133,24 @@ impl ControlBus {
     }
 
     fn let_go(&self, rig: &dyn Rig, patch: &ResolvedPatch, from: &str, held: Held) {
-        for target in held.steered {
-            self.release(rig, patch, &target);
+        for (target, at) in held.steered {
+            self.release(rig, patch, &target, at);
         }
-        for target in held.swept {
-            if let Some(at) = patch.channel(&target)
-                && let Err(error) = rig.halt(at, from)
-            {
+        for (target, at) in held.swept {
+            let at = patch.channel(&target).unwrap_or(at);
+            if let Err(error) = rig.halt(at, from) {
                 tracing::debug!(%error, target, from, "could not stop a sweep");
             }
         }
     }
 
-    fn remember(&self, from: &str, command: &ControlCommand, acks: &[ControlAck]) {
+    fn remember(
+        &self,
+        patch: &ResolvedPatch,
+        from: &str,
+        command: &ControlCommand,
+        acks: &[ControlAck],
+    ) {
         let mut driven = locked(&self.driven);
         let held = driven.entry(from.to_owned()).or_default();
         let taken = acks
@@ -154,9 +159,16 @@ impl ControlBus {
             .map(|ack| ack.target.clone());
         match command {
             ControlCommand::Release => held.steered.clear(),
-            ControlCommand::Doppler(_) | ControlCommand::Point(_) => held.steered.extend(taken),
+            ControlCommand::Doppler(_) | ControlCommand::Point(_) => {
+                held.steered.extend(taken.map(|target| {
+                    let at = patch.channel(&target);
+                    (target, at)
+                }));
+            }
             ControlCommand::Sweep(job) => match runs(job) {
-                Some(true) => held.swept.extend(taken),
+                Some(true) => held.swept.extend(
+                    taken.filter_map(|target| patch.channel(&target).map(|at| (target, at))),
+                ),
                 Some(false) => {
                     for target in taken {
                         held.swept.remove(&target);
@@ -185,7 +197,7 @@ impl ControlBus {
                 Ok(None)
             }
             ControlCommand::Release => {
-                self.release(rig, patch, target);
+                self.release(rig, patch, target, None);
                 Ok(None)
             }
             ControlCommand::Tune { freq_hz } => {
@@ -211,9 +223,15 @@ impl ControlBus {
         }
     }
 
-    fn release(&self, rig: &dyn Rig, patch: &ResolvedPatch, target: &str) {
+    fn release(
+        &self,
+        rig: &dyn Rig,
+        patch: &ResolvedPatch,
+        target: &str,
+        held_at: Option<ChannelAddr>,
+    ) {
         self.publish(target, None);
-        if let Some(at) = patch.channel(target)
+        if let Some(at) = patch.channel(target).or(held_at)
             && let Err(error) = rig.steer(at, DopplerSteer::default())
         {
             tracing::debug!(%error, target, "could not release a Doppler correction");
