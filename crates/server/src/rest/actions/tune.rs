@@ -6,6 +6,8 @@ use sdrmm_wire::{
 use super::{node_of, takes_no_such_action};
 use crate::{AppState, array, resolved::Resolved, rest::AppError};
 
+const FOLLOWING: &str = "Auto mode: following decoders";
+
 #[derive(Clone, Copy)]
 pub(crate) struct Tuner<'a> {
     pub author: Option<&'a str>,
@@ -55,7 +57,10 @@ pub(crate) fn tune(
             tune_radio(state, node, set, 0, freq_hz, author)
         }
         _ => match lane_of(&resolved.patch, node) {
-            Some(lane) => tune_lane(state, &lane, freq_hz, author),
+            Some(lane) => {
+                refuse_auto(state, &lane)?;
+                tune_lane(state, &lane, freq_hz, author)
+            }
             None => Err(takes_no_such_action(node)),
         },
     }
@@ -78,6 +83,17 @@ pub(super) fn lane_of(patch: &ResolvedPatch, node: &str) -> Option<Lane> {
         set,
         stream,
     })
+}
+
+fn refuse_auto(state: &AppState, lane: &Lane) -> Result<(), AppError> {
+    let Lane::Radio { set, stream, .. } = lane else {
+        return Ok(());
+    };
+    let live = state.engine.snapshot();
+    match live.device_sets.iter().find(|held| held.id == *set) {
+        Some(held) if auto_tuning(held, *stream) => Err(AppError::bad_request(FOLLOWING)),
+        _ => Ok(()),
+    }
 }
 
 fn tune_lane(

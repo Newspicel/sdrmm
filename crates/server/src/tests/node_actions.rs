@@ -162,6 +162,24 @@ async fn tuning_a_locked_lane_is_refused() {
 }
 
 #[tokio::test]
+async fn a_scope_does_not_move_a_lane_on_auto() {
+    let app = test_router();
+    let workspace = put_active_workspace(&app, &virtual_snapshot("band", &[])).await;
+    apply(&app, workspace).await;
+    let path = "/api/workspaces/active/nodes/device/device";
+    let (status, _) = request(app.clone(), "PATCH", path, Some(r#"{"tuning":"auto"}"#)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let before = get_state(&app).await.device_sets[0].settings.center_hz;
+
+    let (status, body) = act(&app, "scope", tune(101e6)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8_lossy(&body).contains("Auto mode"));
+    let settings = &get_state(&app).await.device_sets[0].settings;
+    assert_eq!(settings.center_hz, before);
+    assert_eq!(settings.tuning, Some(sdrmm_wire::Tuning::Auto));
+}
+
+#[tokio::test]
 async fn retyping_drops_a_wire_the_new_decoder_refuses_with_a_notice() {
     let app = test_router();
     let mut snapshot = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
