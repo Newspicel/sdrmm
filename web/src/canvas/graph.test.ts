@@ -16,8 +16,6 @@ import {
   clampCells,
   echoesWire,
   edgeKey,
-  FIT_MIN_W,
-  fitWidth,
   type GraphContext,
   handleSignature,
   isPinned,
@@ -157,10 +155,9 @@ describe("echoesWire", () => {
   });
 });
 
-describe("fitWidth", () => {
-  it("holds the satellite face at one width", () => {
-    const fit = fitWidth("satellite");
-    expect(fit?.minWidth).toBe(fit?.maxWidth);
+describe("nodeSize", () => {
+  it("holds the satellite face at the dial floor", () => {
+    expect(nodeSize("satellite").w).toBe(420);
   });
 });
 
@@ -285,10 +282,10 @@ describe("ports", () => {
     expect(nodeMinSize("speaker", [])).toEqual({ w: nodeSize("speaker").w, h: PORT_TOP_PX });
   });
 
-  it("widens a dial face to the dial floor", () => {
-    expect(fitWidth("device")).toEqual({ minWidth: 420, maxWidth: 420 });
-    expect(fitWidth("speaker")).toEqual({ minWidth: FIT_MIN_W, maxWidth: 320 });
-    expect(fitWidth("map")).toBeNull();
+  it("gives a content-sized kind one fixed width", () => {
+    expect(nodeSize("device")).toEqual({ w: 420 });
+    expect(nodeSize("speaker")).toEqual({ w: 320 });
+    expect(nodeSize("scanner")).toEqual({ w: 400 });
   });
 });
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PatchEdge, PatchGraph } from "../lib/types";
 import { CATALOG } from "../test/catalog";
 import { resolvedPatch } from "../test/resolved";
-import { RETUNES_TITLE, toFlowEdges } from "./flowEdges";
+import { toFlowEdges } from "./flowEdges";
 
 const wire = (from: string, to: string): PatchEdge => ({
   from: { node: from, port: "iq" },
@@ -15,7 +15,7 @@ const GRAPH: PatchGraph = {
 };
 
 describe("toFlowEdges", () => {
-  it("marks only the wires the server says retune their radio", () => {
+  it("draws every wire plain, even one that retunes its radio", () => {
     const resolved = {
       ...resolvedPatch([]),
       edges: [
@@ -24,10 +24,10 @@ describe("toFlowEdges", () => {
       ],
     };
     const [voice, scope] = toFlowEdges(GRAPH, { catalog: CATALOG, channelTypes: [], resolved });
-    expect(voice?.className).toContain("wire-retunes");
-    expect(voice?.markerStart).toBeDefined();
-    expect(voice?.ariaLabel).toBe(RETUNES_TITLE);
-    expect(scope?.className).not.toContain("wire-retunes");
-    expect(scope?.markerStart).toBeUndefined();
+    for (const edge of [voice, scope]) {
+      expect(edge?.markerStart).toBeUndefined();
+      expect(edge?.markerEnd).toBeUndefined();
+      expect(edge?.className).not.toContain("retunes");
+    }
   });
 });

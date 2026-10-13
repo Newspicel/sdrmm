@@ -26,12 +26,12 @@ import { HUE_TEXT, portHue } from "../../sinks/hues";
 import { useWorkspaceContext } from "../context";
 import {
   echoesWire,
-  fitWidth,
   handleSignature,
   isPinned,
   isResizable,
   nodeMinSize,
   nodePorts,
+  nodeSize,
   PORT_STEP_PX,
   PORT_TOP_PX,
   pin,
@@ -210,7 +210,7 @@ export function NodeShell({
     <div
       ref={portalContainer}
       style={surface === "canvas" ? canvasSize(node.kind, minimum.h, width) : undefined}
-      className={`relative flex h-full min-h-0 flex-col ${surface === "canvas" && width === undefined && fitWidth(node.kind) !== null ? "w-max" : "w-full"} rounded-control border bg-linear-to-b from-panel-3 to-panel shadow-node ${
+      className={`relative flex h-full min-h-0 w-full flex-col rounded-control border bg-linear-to-b from-panel-3 to-panel shadow-node ${
         selected ? "border-accent" : "border-line"
       }`}
     >
@@ -331,7 +331,10 @@ function canvasSize(
   minHeight: number,
   width: number | undefined,
 ): React.CSSProperties {
-  return width === undefined ? { minHeight, ...fitWidth(kind) } : { minHeight, width };
+  if (width !== undefined) {
+    return { minHeight, width };
+  }
+  return isResizable(kind) ? { minHeight } : { minHeight, width: nodeSize(kind).w };
 }
 
 function useWheelRouting(

@@ -503,7 +503,7 @@ macro_rules! node_registry {
                 events_out(Accept::Kinds(&[EventKind::Df])).noted("Sweep and mark bearings"),
             ]),
             (Satellite(SatelliteNode), "satellite", Tool, "Satellite",
-                "Predicts passes and follows Doppler", Role::Plain, Face::fit(380).dial(), [
+                "Predicts passes and follows Doppler", Role::Plain, Face::fit(420).dial(), [
                 position_in(),
                 output(CONTROL_PORT, Payload::control(SATELLITE_VERBS))
                     .noted("decoders to tune and Doppler correct, rotators to point"),

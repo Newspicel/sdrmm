@@ -150,16 +150,11 @@ export function faceOf(kind: NodeKind): Face {
 
 export function nodeSize(kind: NodeKind): NodeSize {
   const face = faceOf(kind);
-  return face.height == null ? { w: face.width } : { w: face.width, h: face.height };
+  return face.height == null ? { w: fixedWidth(face) } : { w: face.width, h: face.height };
 }
 
-export function fitWidth(kind: NodeKind): { minWidth: number; maxWidth: number } | null {
-  const face = faceOf(kind);
-  if (face.height != null) {
-    return null;
-  }
-  const minWidth = face.dial === true ? DIAL_MIN_W : FIT_MIN_W;
-  return { minWidth, maxWidth: Math.max(minWidth, face.width) };
+function fixedWidth(face: Face): number {
+  return Math.max(face.dial === true ? DIAL_MIN_W : FIT_MIN_W, face.width);
 }
 
 export function isResizable(kind: NodeKind): boolean {
@@ -173,7 +168,7 @@ export const PORT_TOP_PX = HEADER_PX + PORT_STEP_PX / 2;
 export function nodeMinSize(kind: NodeKind, ports: readonly PortSpec[]): { w: number; h: number } {
   const face = faceOf(kind);
   const base =
-    face.min == null ? { w: face.width, h: 0 } : { w: face.min.width, h: face.min.height };
+    face.min == null ? { w: nodeSize(kind).w, h: 0 } : { w: face.min.width, h: face.min.height };
   const deepest = Math.max(
     ports.filter((port) => port.direction === "in").length,
     ports.filter((port) => port.direction === "out").length,
