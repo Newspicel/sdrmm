@@ -1315,7 +1315,7 @@ mod tests {
                 "{} emitted a partial sample frame",
                 d.type_id
             );
-            if d.calls == Some(CallGate::Frames) || d.emits.contains(&EventKind::BroadcastData) {
+            if d.calls == Some(CallGate::Frames) || d.emits.contains(&EventKind::Broadcast) {
                 continue;
             }
             if d.type_id == "atv" && audio.is_empty() {
