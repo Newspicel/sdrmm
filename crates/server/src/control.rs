@@ -191,7 +191,12 @@ impl ControlBus {
         target: &str,
         command: &ControlCommand,
     ) -> ControlAck {
-        let applied = match command {
+        let applied = if retunes(command) {
+            patch.may_tune(target, Some(from))
+        } else {
+            Ok(())
+        };
+        let applied = applied.and_then(|()| match command {
             ControlCommand::Point(_) => {
                 self.publish(target, Some(command.clone()));
                 Ok(None)
@@ -210,7 +215,7 @@ impl ControlBus {
                 let lane = watched_lane(patch, from).ok_or_else(|| NO_LANE.to_owned())?;
                 rig.sweep(at, &Sweep { job, from, lane })
             }),
-        };
+        });
         let (sweep, error) = match applied {
             Ok(sweep) => (sweep.map(Box::new), None),
             Err(error) => (None, Some(error)),
@@ -243,6 +248,14 @@ impl ControlBus {
             .entry(target.to_owned())
             .or_insert_with(|| watch::channel(None).0)
             .send_replace(command);
+    }
+}
+
+const fn retunes(command: &ControlCommand) -> bool {
+    match command {
+        ControlCommand::Tune { .. } | ControlCommand::Doppler(_) => true,
+        ControlCommand::Sweep(job) => matches!(runs(job), Some(true)),
+        ControlCommand::Point(_) | ControlCommand::Release => false,
     }
 }
 

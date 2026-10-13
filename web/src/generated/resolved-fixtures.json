@@ -2630,352 +2630,6 @@
       "revision": 0
     }
   },
-  "2d75e6c9dfa9f010": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "north",
-            "port": "lane"
-          }
-        },
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq2"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "north",
-            "port": "lane2"
-          }
-        },
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq5"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "south",
-            "port": "lane"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "kraken",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane",
-                  "sink": "north",
-                  "stream": 0
-                }
-              ],
-              "stream": 0
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq2",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane2",
-                  "sink": "north",
-                  "stream": 1
-                }
-              ],
-              "stream": 1
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq3",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 2
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq4",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 3
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq5",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane",
-                  "sink": "south",
-                  "stream": 0
-                }
-              ],
-              "stream": 4
-            }
-          ],
-          "runs": {
-            "reason": "radio_absent",
-            "runs": "unbound"
-          }
-        },
-        {
-          "id": "rtl",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0
-            }
-          ],
-          "runs": {
-            "reason": "radio_absent",
-            "runs": "unbound"
-          }
-        },
-        {
-          "id": "north",
-          "kind": "array",
-          "label": "North",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "kraken",
-                  "stream": 0
-                }
-              ],
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq2",
-                  "source": "kraken",
-                  "stream": 1
-                }
-              ],
-              "multi": "one",
-              "name": "lane2",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane3",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 2,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "south",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq5",
-                  "source": "kraken",
-                  "stream": 4
-                }
-              ],
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane2",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "2e3ea74db65cf410": {
     "patch": {
       "edges": [],
@@ -5203,134 +4857,6 @@
           "runs": {
             "reason": "not_placed",
             "runs": "unbound"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "63f564a9bc561212": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "north",
-            "port": "lane"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "kraken",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane",
-                  "sink": "north",
-                  "stream": 0
-                }
-              ],
-              "stream": 0
-            }
-          ],
-          "runs": {
-            "reason": "radio_absent",
-            "runs": "unbound"
-          }
-        },
-        {
-          "id": "north",
-          "kind": "array",
-          "label": "North",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "kraken",
-                  "stream": 0
-                }
-              ],
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane2",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
           }
         }
       ],
@@ -9378,6 +8904,403 @@
       "revision": 0
     }
   },
+  "d74090129286b682": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "kraken",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "north",
+            "port": "lane"
+          }
+        },
+        {
+          "from": {
+            "node": "kraken",
+            "port": "iq2"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "north",
+            "port": "lane2"
+          }
+        },
+        {
+          "from": {
+            "node": "kraken",
+            "port": "iq3"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "north",
+            "port": "lane3"
+          }
+        },
+        {
+          "from": {
+            "node": "kraken",
+            "port": "iq4"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "north",
+            "port": "lane4"
+          }
+        },
+        {
+          "from": {
+            "node": "kraken",
+            "port": "iq5"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "north",
+            "port": "lane5"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "kraken",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane",
+                  "sink": "north",
+                  "stream": 0
+                }
+              ],
+              "stream": 0
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq2",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane2",
+                  "sink": "north",
+                  "stream": 1
+                }
+              ],
+              "stream": 1
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq3",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane3",
+                  "sink": "north",
+                  "stream": 2
+                }
+              ],
+              "stream": 2
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq4",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane4",
+                  "sink": "north",
+                  "stream": 3
+                }
+              ],
+              "stream": 3
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq5",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane5",
+                  "sink": "north",
+                  "stream": 4
+                }
+              ],
+              "stream": 4
+            }
+          ],
+          "runs": {
+            "device_set": 1,
+            "runs": "radio"
+          }
+        },
+        {
+          "id": "north",
+          "kind": "array",
+          "label": "North",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "kraken",
+                  "stream": 0,
+                  "tap": {
+                    "device_set": 1,
+                    "stream": 0,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq2",
+                  "source": "kraken",
+                  "stream": 1,
+                  "tap": {
+                    "device_set": 1,
+                    "stream": 1,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane2",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 1,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq3",
+                  "source": "kraken",
+                  "stream": 2,
+                  "tap": {
+                    "device_set": 1,
+                    "stream": 2,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane3",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 2,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq4",
+                  "source": "kraken",
+                  "stream": 3,
+                  "tap": {
+                    "device_set": 1,
+                    "stream": 3,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane4",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 3,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq5",
+                  "source": "kraken",
+                  "stream": 4,
+                  "tap": {
+                    "device_set": 1,
+                    "stream": 4,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane5",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 4,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane6",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 5,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "d7e12858c5ced43f": {
     "patch": {
       "edges": [],
@@ -10064,378 +9987,6 @@
                     "stream": 0,
                     "tap": "lane"
                   }
-                }
-              ],
-              "multi": "one",
-              "name": "lane5",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 4,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane6",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 5,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "ec2f38d300221c72": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "north",
-            "port": "lane"
-          }
-        },
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq2"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "north",
-            "port": "lane2"
-          }
-        },
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq3"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "north",
-            "port": "lane3"
-          }
-        },
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq4"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "north",
-            "port": "lane4"
-          }
-        },
-        {
-          "from": {
-            "node": "kraken",
-            "port": "iq5"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "north",
-            "port": "lane5"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "kraken",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane",
-                  "sink": "north",
-                  "stream": 0
-                }
-              ],
-              "stream": 0
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq2",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane2",
-                  "sink": "north",
-                  "stream": 1
-                }
-              ],
-              "stream": 1
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq3",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane3",
-                  "sink": "north",
-                  "stream": 2
-                }
-              ],
-              "stream": 2
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq4",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane4",
-                  "sink": "north",
-                  "stream": 3
-                }
-              ],
-              "stream": 3
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq5",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane5",
-                  "sink": "north",
-                  "stream": 4
-                }
-              ],
-              "stream": 4
-            }
-          ],
-          "runs": {
-            "reason": "radio_absent",
-            "runs": "unbound"
-          }
-        },
-        {
-          "id": "north",
-          "kind": "array",
-          "label": "North",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "kraken",
-                  "stream": 0
-                }
-              ],
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq2",
-                  "source": "kraken",
-                  "stream": 1
-                }
-              ],
-              "multi": "one",
-              "name": "lane2",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq3",
-                  "source": "kraken",
-                  "stream": 2
-                }
-              ],
-              "multi": "one",
-              "name": "lane3",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 2,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq4",
-                  "source": "kraken",
-                  "stream": 3
-                }
-              ],
-              "multi": "one",
-              "name": "lane4",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 3,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq5",
-                  "source": "kraken",
-                  "stream": 4
                 }
               ],
               "multi": "one",

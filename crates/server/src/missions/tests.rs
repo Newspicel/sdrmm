@@ -460,6 +460,31 @@ async fn a_scanning_decoder_offers_no_hunt() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_decoder_out_of_band_offers_no_hunt() {
+    let (app, state, _) = bench(hunt_graph(Some(fixed()))).await;
+    let (device_set, decoder) = voice(&state);
+    state
+        .engine
+        .patch_device(
+            device_set,
+            sdrmm_wire::DeviceSettings {
+                center_hz: Some(decoder.settings.frequency_hz + 50e6),
+                tuning: Some(sdrmm_wire::Tuning::Manual),
+                ..sdrmm_wire::DeviceSettings::default()
+            },
+        )
+        .expect("the radio moves away");
+
+    let listed = listing(&app).await;
+    let mission = find(&listed, HUNT);
+    assert_eq!(mission.problems, vec![MissionProblem::OutOfBand]);
+    assert_eq!(mission.controls, vec![MissionControl::Tune]);
+    let (status, body) = try_act(&app, HUNT, r#"{"action":"start_hunt"}"#, None).await;
+    assert_eq!(refusal(status, &body).0, StatusCode::BAD_REQUEST);
+    assert!(hunt_status(&state).is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn tuning_a_hunt_moves_its_decoder_and_records_history() {
     let (app, state, id) = bench(hunt_graph(None)).await;
     let (_, before) = voice(&state);

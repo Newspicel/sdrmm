@@ -175,6 +175,18 @@ fn a_retune_stops_the_recording() {
 }
 
 #[test]
+fn an_offset_outside_the_span_stops_the_recording() {
+    let mut session = recording();
+    session.wiring.settings.offset_hz = 10_000_000;
+    let stopped = session
+        .step(&spectrum(CENTER_HZ), Some(&fix("t0", 52.0)), Instant::now())
+        .expect("a stop");
+    assert_eq!(stopped.stopped, Some(SurveyStop::OutOfSpan));
+    assert!(!session.recording);
+    assert!(session.cells.is_empty());
+}
+
+#[test]
 fn one_cell_per_new_fix() {
     let mut session = recording();
     let now = Instant::now();

@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelSettings, DeviceSettings, PatchGraph, ResolveCtx, ResolvedPatch, ServerEvent,
-    StateScope, StateSnapshot, WorkspaceChannel, WorkspaceDevice, WorkspaceState, patch::resolve,
+    ChannelInfo, ChannelSettings, DeviceSet, DeviceSettings, Held, PatchGraph, ResolveCtx,
+    ResolvedPatch, ServerEvent, StateScope, StateSnapshot, WorkspaceChannel, WorkspaceDevice,
+    WorkspaceState, patch::resolve,
 };
 use tokio::{sync::broadcast::error::RecvError, time::Instant};
 
@@ -94,12 +95,11 @@ pub(crate) fn capture(
         if unrestored.contains(&binding.node) {
             continue;
         }
-        let scanned = |id: u32| set.scanners.iter().any(|scan| scan.settings.channel == id);
         for (node, id) in binding.channels {
             let Some(channel) = set.channels.iter().find(|channel| channel.id == id) else {
                 continue;
             };
-            if scanned(id) {
+            if scanned(set, id) {
                 continue;
             }
             channels.push(WorkspaceChannel {
@@ -230,14 +230,16 @@ pub(crate) fn finish_edit(state: &AppState, edit: SettingsEdit) {
 /// step that moved them.
 pub(crate) fn restore_settings(state: &AppState, graph: &PatchGraph, saved: &WorkspaceState) {
     let engine = &state.engine;
-    for binding in bind(graph, &engine.snapshot()) {
+    let live = engine.snapshot();
+    let resolved = state.resolved.current();
+    for binding in bind(graph, &live) {
         if let Some(device) = saved.device(&binding.node) {
             let calibration = device.settings.calibration();
             if calibration != DeviceSettings::default() {
                 calibration::remember(engine, &state.store, binding.device_set, &calibration);
             }
         }
-        if let Err(err) = restore_device(
+        if let Err(err) = step_device(
             engine,
             &state.store,
             binding.device_set,
@@ -250,13 +252,34 @@ pub(crate) fn restore_settings(state: &AppState, graph: &PatchGraph, saved: &Wor
             let Some(stored) = saved.channel(&node) else {
                 continue;
             };
-            if let Err(err) =
-                engine.patch_channel(binding.device_set, channel, stored.settings.clone())
+            let mut settings = stored.settings.clone();
+            let hand = matches!(resolved.patch.held(&node), Some(Held::Hand));
+            if let Some((set, heard)) = live_channel(&live, binding.device_set, channel)
+                && (hand || scanned(set, channel))
             {
+                settings.frequency_hz = heard.settings.frequency_hz;
+            }
+            if let Err(err) = engine.patch_channel(binding.device_set, channel, settings) {
                 tracing::warn!(%err, node, "could not step a channel back");
             }
         }
     }
+}
+
+fn live_channel(
+    live: &StateSnapshot,
+    device_set: u32,
+    channel: u32,
+) -> Option<(&DeviceSet, &ChannelInfo)> {
+    let set = live.device_sets.iter().find(|set| set.id == device_set)?;
+    let heard = set.channels.iter().find(|held| held.id == channel)?;
+    Some((set, heard))
+}
+
+fn scanned(set: &DeviceSet, channel: u32) -> bool {
+    set.scanners
+        .iter()
+        .any(|scan| scan.settings.channel == channel)
 }
 
 /// The channel plans the trunk search confirmed for itself, so a restart does not start the hunt
@@ -453,6 +476,40 @@ pub(crate) fn restore_device(
     node: &str,
     saved: &WorkspaceState,
 ) -> Result<Restored, String> {
+    put_device(
+        engine,
+        store,
+        (device_set, node),
+        saved,
+        Engine::restore_device,
+    )
+}
+
+fn step_device(
+    engine: &sdrmm_engine::Engine,
+    store: &Store,
+    device_set: u32,
+    node: &str,
+    saved: &WorkspaceState,
+) -> Result<Restored, String> {
+    put_device(
+        engine,
+        store,
+        (device_set, node),
+        saved,
+        Engine::step_device,
+    )
+}
+
+type DevicePatch = fn(&Engine, u32, DeviceSettings) -> Result<(), sdrmm_engine::EngineError>;
+
+fn put_device(
+    engine: &sdrmm_engine::Engine,
+    store: &Store,
+    (device_set, node): (u32, &str),
+    saved: &WorkspaceState,
+    patch: DevicePatch,
+) -> Result<Restored, String> {
     let remembered = saved
         .device(node)
         .map(|device| device.settings.clone())
@@ -466,9 +523,7 @@ pub(crate) fn restore_device(
         .ok_or_else(|| format!("device set {device_set} is not open"))?;
     let taken = remembered.supported_by(&capabilities);
     let whole = taken == remembered;
-    engine
-        .patch_device(device_set, taken)
-        .map_err(|err| err.to_string())?;
+    patch(engine, device_set, taken).map_err(|err| err.to_string())?;
     Ok(if whole {
         Restored::Whole
     } else {

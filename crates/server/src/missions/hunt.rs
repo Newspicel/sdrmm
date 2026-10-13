@@ -18,14 +18,14 @@ pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built 
         clicks: settings.clicks,
         position,
     };
-    let mut scanning = false;
+    let mut blocked = false;
     match (channel_node, bound) {
         (None, _) => problems.push(MissionProblem::Unwired {
             port: CONTROL_PORT.to_owned(),
         }),
         (Some(_), None) => problems.push(MissionProblem::NotRunning),
         (Some(channel_node), Some((set, info))) => {
-            scanning = set
+            let scanning = set
                 .scanners
                 .iter()
                 .any(|scan| scan.settings.channel == info.id);
@@ -35,6 +35,7 @@ pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built 
             if info.out_of_band.is_some() {
                 problems.push(MissionProblem::OutOfBand);
             }
+            blocked = scanning || info.out_of_band.is_some();
             mission.status = set
                 .hunts
                 .iter()
@@ -49,7 +50,7 @@ pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built 
         });
     }
     problems.extend(phone);
-    let controls = controls(&mission, scanning);
+    let controls = controls(&mission, blocked);
     Built {
         body: MissionBody::Hunt(mission),
         problems,
@@ -75,7 +76,7 @@ fn sweeping(status: Option<&HuntStatus>) -> bool {
         .is_some_and(|sweep| sweep.state != SweepState::Off)
 }
 
-fn controls(mission: &HuntMission, scanning: bool) -> Vec<MissionControl> {
+fn controls(mission: &HuntMission, blocked: bool) -> Vec<MissionControl> {
     if mission.target.is_none() {
         return Vec::new();
     }
@@ -83,7 +84,7 @@ fn controls(mission: &HuntMission, scanning: bool) -> Vec<MissionControl> {
     let mut controls = vec![MissionControl::Tune];
     if running {
         controls.push(MissionControl::StopHunt);
-    } else if !scanning {
+    } else if !blocked {
         controls.push(MissionControl::StartHunt);
     }
     if mission.position.is_none() {
@@ -91,7 +92,7 @@ fn controls(mission: &HuntMission, scanning: bool) -> Vec<MissionControl> {
     }
     if sweeping(mission.status.as_ref()) {
         controls.push(MissionControl::StopSweep);
-    } else if !scanning {
+    } else if !blocked {
         controls.push(MissionControl::StartSweep);
     }
     if running {

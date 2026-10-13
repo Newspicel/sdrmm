@@ -9632,7 +9632,7 @@ export interface components {
             action: components["schemas"]["SurveyAction"];
         };
         /** @enum {string} */
-        SurveyStop: "retuned" | "unwired" | "radio_gone";
+        SurveyStop: "retuned" | "unwired" | "radio_gone" | "out_of_span";
         SurveyUpdate: {
             cell?: components["schemas"]["SurveyCell"] | null;
             /** Format: int32 */
@@ -15092,7 +15092,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Not a radio node, no radio open, or an unsupported setting */
+            /** @description Not a radio node, no radio open, an unsupported setting, or a new frequency for a locked lane */
             400: {
                 headers: {
                     [name: string]: unknown;

@@ -200,8 +200,19 @@ impl WorkspaceSnapshot {
     }
 
     pub fn merge_patch(&mut self, patch: &PatchGraph, prefix: &str, device: Option<&DeviceRef>) {
+        let kept = Kept::of(&self.graph, prefix);
         let at = self.remove_prefixed(prefix);
+        self.place(patch, prefix, device, at);
+        kept.restore(&mut self.graph);
+    }
 
+    fn place(
+        &mut self,
+        patch: &PatchGraph,
+        prefix: &str,
+        device: Option<&DeviceRef>,
+        at: Option<usize>,
+    ) {
         let existing_device = device.and_then(|want| {
             self.graph
                 .device_nodes()
@@ -310,6 +321,52 @@ impl WorkspaceSnapshot {
             .fold(f32::NEG_INFINITY, f32::max)
             .max(0.0)
             + MERGE_GAP
+    }
+}
+
+struct Kept {
+    prefix: String,
+    locked: Vec<String>,
+    wires: Vec<crate::patch::PatchEdge>,
+}
+
+impl Kept {
+    fn of(graph: &PatchGraph, prefix: &str) -> Self {
+        let ours = |id: &str| id.starts_with(prefix);
+        Self {
+            prefix: prefix.to_owned(),
+            locked: graph
+                .nodes
+                .iter()
+                .filter(|node| ours(&node.id))
+                .filter(|node| matches!(&node.body, NodeBody::Channel(channel) if channel.tuning_locked))
+                .map(|node| node.id.clone())
+                .collect(),
+            wires: graph
+                .edges
+                .iter()
+                .filter(|edge| ours(&edge.from.node) != ours(&edge.to.node))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    fn restore(self, graph: &mut PatchGraph) {
+        for node in &mut graph.nodes {
+            if let NodeBody::Channel(channel) = &mut node.body
+                && self.locked.contains(&node.id)
+            {
+                channel.tuning_locked = true;
+            }
+        }
+        for wire in self.wires {
+            let ends = graph.node(&wire.from.node).is_some() && graph.node(&wire.to.node).is_some();
+            let taken = wire.to.node.starts_with(&self.prefix)
+                && graph.edges.iter().any(|edge| edge.to == wire.to);
+            if ends && !taken && !graph.edges.contains(&wire) {
+                graph.edges.push(wire);
+            }
+        }
     }
 }
 
@@ -803,6 +860,37 @@ mod tests {
                 split_tuning: false,
             })
         );
+    }
+
+    #[test]
+    fn re_applying_a_template_keeps_a_decoder_s_lock_and_outside_wires() {
+        let mut snap = WorkspaceSnapshot::starter();
+        snap.merge_patch(&template(), "template:airband:", Some(&rtlsdr()));
+        snap.graph.nodes.push(PatchNode {
+            id: "scan".to_owned(),
+            body: NodeBody::Scanner(crate::patch::ScannerNode::default()),
+            position: Position { x: 0.0, y: 0.0 },
+            size: None,
+            label: None,
+        });
+        let control = wire(("scan", "control"), ("template:airband:ch", "control"));
+        snap.graph.edges.push(control.clone());
+        if let Some(NodeBody::Channel(channel)) = snap
+            .graph
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == "template:airband:ch")
+            .map(|node| &mut node.body)
+        {
+            channel.tuning_locked = true;
+        }
+
+        snap.merge_patch(&template(), "template:airband:", Some(&rtlsdr()));
+        assert!(snap.graph.edges.contains(&control));
+        assert!(matches!(
+            snap.graph.node("template:airband:ch").map(|node| &node.body),
+            Some(NodeBody::Channel(channel)) if channel.tuning_locked
+        ));
     }
 
     #[test]

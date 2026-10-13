@@ -23,7 +23,7 @@ mod measure;
 #[cfg(test)]
 mod tests;
 
-use measure::{Merged, measure_dbfs, merge};
+use measure::{Merged, measure_dbfs, merge, spans};
 
 pub(crate) const LEVEL_INTERVAL: Duration = Duration::from_millis(SURVEY_LEVEL_INTERVAL_MS);
 
@@ -141,6 +141,13 @@ impl SurveySession {
         {
             self.recording = false;
             return Some(self.update(level, Some(target_hz), None, Some(SurveyStop::Retuned)));
+        }
+        if self.recording
+            && snapshot.span_hz > 0.0
+            && !spans(snapshot.center_hz, f64::from(snapshot.span_hz), target_hz)
+        {
+            self.recording = false;
+            return Some(self.update(None, Some(target_hz), None, Some(SurveyStop::OutOfSpan)));
         }
         if self.recording
             && let (Some(level_dbfs), Some(fix)) = (level, fix)

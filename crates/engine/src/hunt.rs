@@ -289,12 +289,18 @@ fn admits_a_hunt(
             "the device set is not running".to_string(),
         ));
     }
-    let decoder = state
+    let channel = state
         .channels
         .iter()
         .find(|channel| channel.id == settings.channel)
-        .map(Decoder::of)
         .ok_or(EngineError::ChannelNotFound(settings.channel, ds))?;
+    if state.band_miss(channel).is_some() {
+        return Err(EngineError::Scan(format!(
+            "decoder {} is tuned outside its radio",
+            settings.channel
+        )));
+    }
+    let decoder = Decoder::of(channel);
     crate::scanner::session::watches(settings.lane, ds, decoder.stream)?;
     Ok(decoder)
 }

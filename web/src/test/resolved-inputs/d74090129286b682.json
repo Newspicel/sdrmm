@@ -1,5 +1,5 @@
 {
-  "name": "ec2f38d300221c72",
+  "name": "d74090129286b682",
   "test": "arrays on a radio > disables held lane dials and says which array tunes them",
   "graph": {
     "nodes": [
@@ -103,7 +103,73 @@
     ]
   },
   "live": {
-    "device_sets": [],
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "kraken5",
+          "label": "KrakenSDR"
+        },
+        "capabilities": {
+          "freq_ranges": [
+            {
+              "min": 24000000,
+              "max": 1766000000
+            }
+          ],
+          "sample_rates": [],
+          "gains": [
+            {
+              "name": "tuner",
+              "kind": "tuner",
+              "range": {
+                "min": 0,
+                "max": 49.6
+              }
+            }
+          ],
+          "antennas": [],
+          "bandwidths": [],
+          "extra": [],
+          "duplex": "rx_only",
+          "rx_streams": 5,
+          "coherence": "time_sync",
+          "per_stream": {
+            "gain": true
+          }
+        },
+        "settings": {
+          "center_hz": 145000000,
+          "sample_rate": 2048000
+        },
+        "status": "running",
+        "channels": [],
+        "overruns": 0,
+        "held": [
+          {
+            "stream": 0,
+            "array": "north"
+          },
+          {
+            "stream": 1,
+            "array": "north"
+          },
+          {
+            "stream": 2,
+            "array": "north"
+          },
+          {
+            "stream": 3,
+            "array": "north"
+          },
+          {
+            "stream": 4,
+            "array": "north"
+          }
+        ]
+      }
+    ],
     "revision": 0
   }
 }

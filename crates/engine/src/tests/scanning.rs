@@ -685,6 +685,34 @@ async fn a_hunt_leaves_the_dial_alone_and_says_so_when_the_radio_is_off_the_deco
 }
 
 #[tokio::test]
+async fn a_hunt_does_not_start_on_a_decoder_its_radio_cannot_hear() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(SignalDriver));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("mock:signal").unwrap();
+    let ch = nfm_decoder(&engine, ds, SIGNAL_HZ);
+    engine
+        .patch_device(
+            ds,
+            DeviceSettings {
+                center_hz: Some(110_000_000.0),
+                tuning: Some(sdrmm_wire::Tuning::Manual),
+                ..DeviceSettings::default()
+            },
+        )
+        .unwrap();
+    let refused = engine
+        .start_hunt(ds, sdrmm_wire::HuntSettings::for_channel(ch))
+        .expect_err("a hunt needs its decoder in band");
+    assert!(
+        refused.to_string().contains("outside its radio"),
+        "{refused}"
+    );
+    assert!(engine.snapshot().device_sets[0].hunts.is_empty());
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
 async fn a_hunt_and_a_scan_do_not_share_a_decoder() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));

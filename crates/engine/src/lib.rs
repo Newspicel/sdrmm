@@ -1,6 +1,6 @@
 pub mod monitor;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard, PoisonError,
@@ -271,6 +271,8 @@ pub enum EngineError {
     ProcessorNotFound(String),
     #[error("Tuned by {array}")]
     Held { array: String },
+    #[error("Tuning locked")]
+    Locked,
     #[error("Watches another lane")]
     OtherLane,
 }
@@ -306,6 +308,7 @@ impl EngineError {
                 | Self::NetworkExport(_)
                 | Self::Scan(_)
                 | Self::OtherLane
+                | Self::Locked
                 | Self::StreamOutOfRange { .. }
         )
     }
@@ -622,6 +625,7 @@ struct DeviceSetState {
     playback: Option<Arc<PlaybackShared>>,
     runtime: Arc<DeviceRuntime>,
     held: BTreeMap<u32, String>,
+    locked: BTreeSet<u32>,
     virtual_lanes: BTreeMap<u32, VirtualLaneState>,
 }
 
@@ -663,7 +667,7 @@ impl DeviceSetState {
         self.hears(channel.stream, &channel.settings)
     }
 
-    fn band_miss(&self, channel: &ChannelInfo) -> Option<BandMiss> {
+    pub(crate) fn band_miss(&self, channel: &ChannelInfo) -> Option<BandMiss> {
         (!self.reaches_channel(channel)).then(|| {
             planning::band_miss(
                 &self.capabilities,

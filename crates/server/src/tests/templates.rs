@@ -373,3 +373,55 @@ async fn an_open_radio_the_driver_no_longer_lists_can_still_run_templates() {
         .expect("fm-radio");
     assert_eq!(fm.supported_devices, vec!["virtual:band".to_string()]);
 }
+
+#[tokio::test]
+async fn re_applying_a_template_leaves_a_locked_decoder_where_it_is() {
+    let app = test_router();
+    open_virtual_radio(&app).await;
+    let apply = || {
+        request(
+            app.clone(),
+            "POST",
+            "/api/templates/fm-radio/apply",
+            Some(r#"{"node":"radio:band"}"#),
+        )
+    };
+    assert_eq!(apply().await.0, StatusCode::NO_CONTENT);
+    let node = "template:fm-radio:ch0";
+    let mut settings = get_state(&app).await.device_sets[0].channels[0]
+        .settings
+        .clone();
+    settings.frequency_hz += 100_000.0;
+    let tuned = settings.frequency_hz;
+    let body = serde_json::json!({ "settings": settings }).to_string();
+    let path = format!("/api/workspaces/active/nodes/{node}/channel");
+    let (status, _) = request(app.clone(), "PATCH", &path, Some(&body)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let workspace = workspaces(&app).await.active.expect("an active workspace");
+    let mut snapshot = workspace_detail(&app, workspace).await.snapshot;
+    if let Some(sdrmm_wire::NodeBody::Channel(channel)) = snapshot
+        .graph
+        .nodes
+        .iter_mut()
+        .find(|held| held.id == node)
+        .map(|held| &mut held.body)
+    {
+        channel.tuning_locked = true;
+    }
+    put_active_workspace(&app, &snapshot).await;
+
+    assert_eq!(apply().await.0, StatusCode::NO_CONTENT);
+    let heard = get_state(&app).await.device_sets[0].channels[0]
+        .settings
+        .frequency_hz;
+    assert!(
+        (heard - tuned).abs() < 1.0,
+        "the lock held through the re-apply"
+    );
+    let detail = workspace_detail(&app, workspace).await;
+    assert!(matches!(
+        detail.snapshot.graph.node(node).map(|held| &held.body),
+        Some(sdrmm_wire::NodeBody::Channel(channel)) if channel.tuning_locked
+    ));
+}

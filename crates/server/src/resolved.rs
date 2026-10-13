@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelDescriptor, DeviceInfo, NodeProblem, PatchGraph, ProblemSource, ResolveCtx,
+    ChannelDescriptor, DeviceInfo, NodeBody, NodeProblem, PatchGraph, ProblemSource, ResolveCtx,
     ResolvedPatch, ServerEvent, StateScope, StateSnapshot, patch::resolve,
 };
 use tokio::sync::{
@@ -129,6 +129,7 @@ impl ResolvedHub {
             }
             None => (ResolvedPatch::default(), Vec::new(), Arc::default()),
         };
+        lock_lanes(engine, &live, &patch, &graph);
         problems.replace(engine, ProblemSource::Bind, &found);
         problems.retain(engine, |node, _| patch.node(node).is_some());
         let events = EventRoutes::resolve(&patch, &graph);
@@ -149,6 +150,21 @@ impl ResolvedHub {
             engine.emit_event(ServerEvent::PatchResolved(Box::new(next.patch.clone())));
         }
         patch_changed
+    }
+}
+
+fn lock_lanes(engine: &Engine, live: &StateSnapshot, patch: &ResolvedPatch, graph: &PatchGraph) {
+    for set in &live.device_sets {
+        let locked = graph
+            .nodes
+            .iter()
+            .find(|node| patch.device_set(&node.id) == Some(set.id))
+            .and_then(|node| match &node.body {
+                NodeBody::Device(device) => Some(device.locked_streams.iter().copied().collect()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        engine.lock_lanes(set.id, locked);
     }
 }
 

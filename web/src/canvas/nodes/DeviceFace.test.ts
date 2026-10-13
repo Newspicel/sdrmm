@@ -4,21 +4,21 @@ import type { Capabilities, DeviceSet, PatchEdge, PatchGraph, PatchNode } from "
 import { mergeSettings } from "../../lib/useDevicePatch";
 import { catalogBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
-import { resolvedBy } from "../../test/recorded";
-import { dialHold, heldLanes, laneHolds } from "./arrayNode";
+import { dialHold, laneHolds } from "./arrayNode";
 import { DeviceFace } from "./DeviceFace";
 import {
   agcDelta,
   agcGainDb,
   agcModeDelta,
   allAutoTuning,
-  allLocked,
+  anyLocked,
   autoTuning,
   bondSaid,
   clippingSaid,
   faultSaid,
   hearing,
   laneAgc,
+  laneLocked,
   lanesAligned,
   lanesMerged,
   lockAll,
@@ -154,13 +154,27 @@ describe("allAutoTuning", () => {
   });
 });
 
+describe("laneLocked", () => {
+  it("reads one lane's lock off its device node", () => {
+    const device = {
+      id: "dev",
+      kind: "device",
+      position: { x: 0, y: 0 },
+      data: { device: null, locked_streams: [1] },
+    } as PatchNode;
+    expect(laneLocked(device, 1)).toBe(true);
+    expect(laneLocked(device, 0)).toBe(false);
+    expect(laneLocked(undefined, 1)).toBe(false);
+  });
+});
+
 describe("lockAll", () => {
-  it("holds or frees every lane at once", () => {
+  it("holds or frees every lane at once, and one held lane holds them all", () => {
     const caps = capabilities({ rx_streams: 3 });
     expect(lockAll(caps, true)).toEqual([0, 1, 2]);
     expect(lockAll(caps, false)).toEqual([]);
-    expect(allLocked([0, 1, 2], caps)).toBe(true);
-    expect(allLocked([0, 2], caps)).toBe(false);
+    expect(anyLocked([2], caps)).toBe(true);
+    expect(anyLocked([], caps)).toBe(false);
   });
 });
 
@@ -583,25 +597,25 @@ describe("arrays on a radio", () => {
 
   it("disables held lane dials and says which array tunes them", () => {
     const graph = patch(heldWires(5));
-    expect([...heldLanes(resolvedBy(graph), "kraken")]).toEqual([
-      [0, "north"],
-      [1, "north"],
-      [2, "north"],
-      [3, "north"],
-      [4, "north"],
-    ]);
-    const holds = laneHolds(graph, resolvedBy(graph), "kraken");
+    const held = {
+      ...bank,
+      held: [0, 1, 2, 3, 4].map((stream) => ({ stream, array: "north" })),
+    };
+    const holds = laneHolds(graph, held);
     expect(dialHold(holds, 0, false)).toEqual({ array: "north", label: "North" });
-    expect(
-      dialHold(laneHolds(patch(heldWires(1)), resolvedBy(patch(heldWires(1))), "kraken"), 1, true),
-    ).toBeNull();
+    expect(dialHold(laneHolds(graph, { ...bank, held: [] }), 1, true)).toBeNull();
+    const wiredButIdle = renderFace(DeviceFace, radio, {
+      graph,
+      devices: new Map([["kraken", bank]]),
+    });
+    expect(wiredButIdle).not.toContain("Tuned by");
     const free = renderFace(DeviceFace, radio, {
       graph: patch([]),
       devices: new Map([["kraken", bank]]),
     });
     expect(free).not.toContain('aria-disabled="true"');
     expect(free).not.toContain("Tuned by");
-    const html = renderFace(DeviceFace, radio, { graph, devices: new Map([["kraken", bank]]) });
+    const html = renderFace(DeviceFace, radio, { graph, devices: new Map([["kraken", held]]) });
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('title="Tuned by North"');
     expect(html).toContain('title="Set on North"');

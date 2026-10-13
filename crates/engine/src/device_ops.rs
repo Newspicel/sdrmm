@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -7,7 +7,7 @@ use std::{
 use sdrmm_device::DeviceError;
 use sdrmm_wire::{
     AgcSetting, Capabilities, DeviceSetStatus, DeviceSettings, GainValue, ServerEvent, StateScope,
-    StreamScope, Tuning,
+    StreamScope, StreamSettings, Tuning,
 };
 
 use crate::{
@@ -72,6 +72,17 @@ fn reached(
     let mut lane = settings.for_stream(stream, scope);
     lane.merge_from(&delta.for_stream(stream, scope));
     lane_setup(&lane, stream, scope)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Locks {
+    Refuse,
+    Ignore,
+}
+
+struct LaneChange {
+    setup: bool,
+    tuned: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -642,6 +653,7 @@ impl Engine {
                     playback,
                     runtime: Arc::new(DeviceRuntime::new(runtime)),
                     held: BTreeMap::new(),
+                    locked: BTreeSet::new(),
                     virtual_lanes: BTreeMap::new(),
                 },
             );
@@ -730,21 +742,87 @@ impl Engine {
     }
 
     pub fn patch_device(&self, ds: u32, delta: DeviceSettings) -> Result<(), EngineError> {
+        self.patch_device_with(ds, delta, Locks::Refuse)
+    }
+
+    pub fn restore_device(&self, ds: u32, delta: DeviceSettings) -> Result<(), EngineError> {
+        self.patch_device_with(ds, delta, Locks::Ignore)
+    }
+
+    pub fn step_device(&self, ds: u32, delta: DeviceSettings) -> Result<(), EngineError> {
+        let delta = self.around_locks(ds, delta);
+        self.patch_device_with(ds, delta, Locks::Refuse)
+    }
+
+    fn patch_device_with(
+        &self,
+        ds: u32,
+        delta: DeviceSettings,
+        locks: Locks,
+    ) -> Result<(), EngineError> {
         if delta != DeviceSettings::default() {
             let delta = take_the_wheel(delta);
-            self.refuse_held(ds, &delta)?;
+            self.refuse_held(ds, &delta, locks)?;
             self.patch_device_from(ds, delta)?;
         }
         self.settle_tuning(ds);
         Ok(())
     }
 
-    fn refuse_held(&self, ds: u32, delta: &DeviceSettings) -> Result<(), EngineError> {
+    fn around_locks(&self, ds: u32, mut delta: DeviceSettings) -> DeviceSettings {
+        let inner = self.lock();
+        let Some(state) = inner.device_sets.get(&ds) else {
+            return delta;
+        };
+        if state.locked.is_empty() {
+            return delta;
+        }
+        let scope = state.capabilities.per_stream;
+        if !scope.tuning {
+            delta.center_hz = None;
+            delta.tuning = None;
+            return delta;
+        }
+        for stream in &state.locked {
+            let lane = state.settings.for_stream(*stream, &scope);
+            delta.streams.retain(|held| held.stream != *stream);
+            delta.streams.push(StreamSettings {
+                stream: *stream,
+                center_hz: lane.center_hz,
+                tuning: lane.tuning,
+                ..StreamSettings::default()
+            });
+        }
+        delta
+    }
+
+    pub fn lock_lanes(&self, ds: u32, locked: BTreeSet<u32>) {
+        let manual = {
+            let mut inner = self.lock();
+            let Some(state) = inner.device_sets.get_mut(&ds) else {
+                return;
+            };
+            state.locked = locked;
+            state.manual_for_locked()
+        };
+        if let Some(delta) = manual
+            && let Err(error) = self.patch_device_from(ds, delta)
+        {
+            tracing::warn!(ds, %error, "a locked lane could not leave auto tuning");
+        }
+    }
+
+    fn refuse_held(
+        &self,
+        ds: u32,
+        delta: &DeviceSettings,
+        locks: Locks,
+    ) -> Result<(), EngineError> {
         let inner = self.lock();
         let Some(state) = inner.device_sets.get(&ds) else {
             return Ok(());
         };
-        if state.held.is_empty() {
+        if state.held.is_empty() && (state.locked.is_empty() || locks == Locks::Ignore) {
             return Ok(());
         }
         let mut delta = delta.clone();
@@ -752,16 +830,26 @@ impl Engine {
         let mut after = state.settings.clone();
         after.merge_from(&delta);
         let scope = state.capabilities.per_stream;
-        match state.held.iter().find(|(stream, _)| {
-            let now = lane_setup(&state.settings, **stream, &scope);
-            now != lane_setup(&after, **stream, &scope)
-                || now != reached(&state.settings, &delta, **stream, &scope)
-        }) {
-            Some((_, array)) => Err(EngineError::Held {
+        let change = |stream: u32| {
+            let now = lane_setup(&state.settings, stream, &scope);
+            let next = [
+                lane_setup(&after, stream, &scope),
+                reached(&state.settings, &delta, stream, &scope),
+            ];
+            LaneChange {
+                setup: next.iter().any(|lane| *lane != now),
+                tuned: next.iter().any(|lane| lane.tuned != now.tuned),
+            }
+        };
+        if let Some((_, array)) = state.held.iter().find(|(stream, _)| change(**stream).setup) {
+            return Err(EngineError::Held {
                 array: array.clone(),
-            }),
-            None => Ok(()),
+            });
         }
+        if locks == Locks::Refuse && state.locked.iter().any(|stream| change(*stream).tuned) {
+            return Err(EngineError::Locked);
+        }
+        Ok(())
     }
 
     fn runtime_of(&self, ds: u32) -> Option<Arc<DeviceRuntime>> {
@@ -1004,6 +1092,35 @@ impl Engine {
 }
 
 impl DeviceSetState {
+    fn manual_for_locked(&self) -> Option<DeviceSettings> {
+        let scope = self.capabilities.per_stream;
+        let auto = |stream: &&u32| self.settings.for_stream(**stream, &scope).tunes_itself();
+        if !scope.tuning {
+            return self
+                .locked
+                .iter()
+                .any(|stream| auto(&stream))
+                .then(|| DeviceSettings {
+                    tuning: Some(Tuning::Manual),
+                    ..DeviceSettings::default()
+                });
+        }
+        let streams: Vec<StreamSettings> = self
+            .locked
+            .iter()
+            .filter(auto)
+            .map(|stream| StreamSettings {
+                stream: *stream,
+                tuning: Some(Tuning::Manual),
+                ..StreamSettings::default()
+            })
+            .collect();
+        (!streams.is_empty()).then(|| DeviceSettings {
+            streams,
+            ..DeviceSettings::default()
+        })
+    }
+
     pub(crate) fn tunes_freely(&self) -> bool {
         self.recording.is_none() && !self.runtime.sweeping() && self.held.is_empty()
     }

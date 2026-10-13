@@ -256,13 +256,23 @@ fn hold_settings(
     id: i64,
     placed: &[(String, ChannelSettings)],
 ) -> Result<(), AppError> {
+    let live = app.engine.snapshot();
+    let resolved = app.resolved.current();
+    let placed: Vec<(String, ChannelSettings)> = placed
+        .iter()
+        .map(|(node, settings)| {
+            (
+                node.clone(),
+                kept_on(&resolved.patch, &live, node, settings),
+            )
+        })
+        .collect();
     let mut saved = app.store.workspace_state(id)?;
-    for (node, settings) in placed {
+    for (node, settings) in &placed {
         saved.put_channel(node, settings.clone());
     }
     app.store.put_workspace_state(id, &saved)?;
-    let live = app.engine.snapshot();
-    for (node, settings) in placed {
+    for (node, settings) in &placed {
         let carried = live.device_sets.iter().flat_map(|set| {
             set.channels
                 .iter()
@@ -277,6 +287,26 @@ fn hold_settings(
         }
     }
     Ok(())
+}
+
+fn kept_on(
+    patch: &sdrmm_wire::ResolvedPatch,
+    live: &StateSnapshot,
+    node: &str,
+    settings: &ChannelSettings,
+) -> ChannelSettings {
+    let heard = live
+        .device_sets
+        .iter()
+        .flat_map(|set| &set.channels)
+        .find(|channel| channel.node.as_deref() == Some(node));
+    match heard {
+        Some(heard) if patch.may_tune(node, None).is_err() => ChannelSettings {
+            frequency_hz: heard.settings.frequency_hz,
+            ..settings.clone()
+        },
+        _ => settings.clone(),
+    }
 }
 
 fn refused_among(

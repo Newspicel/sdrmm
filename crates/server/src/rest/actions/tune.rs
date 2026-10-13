@@ -1,12 +1,10 @@
 use sdrmm_wire::{
     ARRAY_PORT, ArrayTuneRequest, Capabilities, ChannelSettings, DeviceSet, DeviceSettings,
-    IQ_PORT, NodeBody, PatchGraph, ResolvedPatch, Role, StreamSettings, Tuning,
+    IQ_PORT, NodeBody, ResolvedPatch, Role, StreamSettings, Tuning,
 };
 
 use super::{node_of, takes_no_such_action};
 use crate::{AppState, array, resolved::Resolved, rest::AppError};
-
-const LOCKED: &str = "Tuning locked";
 
 #[derive(Clone, Copy)]
 pub(crate) struct Tuner<'a> {
@@ -54,10 +52,10 @@ pub(crate) fn tune(
                 .patch
                 .device_set(node)
                 .ok_or_else(|| AppError::bad_request(format!("{node} has no radio open")))?;
-            tune_radio(state, &resolved.graph, node, set, 0, freq_hz, author)
+            tune_radio(state, node, set, 0, freq_hz, author)
         }
         _ => match lane_of(&resolved.patch, node) {
-            Some(lane) => tune_lane(state, &resolved.graph, &lane, freq_hz, author),
+            Some(lane) => tune_lane(state, &lane, freq_hz, author),
             None => Err(takes_no_such_action(node)),
         },
     }
@@ -84,14 +82,13 @@ pub(super) fn lane_of(patch: &ResolvedPatch, node: &str) -> Option<Lane> {
 
 fn tune_lane(
     state: &AppState,
-    graph: &PatchGraph,
     lane: &Lane,
     freq_hz: f64,
     author: Option<&str>,
 ) -> Result<(), AppError> {
     match lane {
         Lane::Radio { node, set, stream } => {
-            tune_radio(state, graph, node, *set, *stream, freq_hz, author)
+            tune_radio(state, node, *set, *stream, freq_hz, author)
         }
         Lane::Array { node, .. } => tune_array(state, node, freq_hz),
     }
@@ -110,16 +107,12 @@ fn tune_array(state: &AppState, node: &str, freq_hz: f64) -> Result<(), AppError
 
 fn tune_radio(
     state: &AppState,
-    graph: &PatchGraph,
     node: &str,
     set: u32,
     stream: u32,
     freq_hz: f64,
     author: Option<&str>,
 ) -> Result<(), AppError> {
-    if lane_locked(graph, node, stream) {
-        return Err(AppError::bad_request(LOCKED));
-    }
     let live = state.engine.snapshot();
     let capabilities = &live
         .device_sets
@@ -129,13 +122,6 @@ fn tune_radio(
         .capabilities;
     let delta = tune_delta(capabilities, stream, freq_hz);
     crate::rest::patch_device_live(state, set, delta, author)
-}
-
-fn lane_locked(graph: &PatchGraph, node: &str, stream: u32) -> bool {
-    graph.node(node).is_some_and(|held| match &held.body {
-        NodeBody::Device(device) => device.tuning_locked(stream),
-        _ => false,
-    })
 }
 
 pub(super) fn tune_delta(capabilities: &Capabilities, stream: u32, freq_hz: f64) -> DeviceSettings {
@@ -198,7 +184,7 @@ fn pull_lane(
     if follows || reaches(held, stream, bandwidth_hz, freq_hz) {
         return Ok(());
     }
-    tune_lane(state, &resolved.graph, &lane, freq_hz, author)
+    tune_lane(state, &lane, freq_hz, author)
 }
 
 fn auto_tuning(set: &DeviceSet, stream: u32) -> bool {

@@ -32,7 +32,7 @@ import { patchNode, rxStreamCount } from "../graph";
 import { dialHold, type LaneHold, laneHolds } from "./arrayNode";
 import {
   allAutoTuning,
-  allLocked,
+  anyLocked,
   autoTuning,
   bondSaid,
   clippingSaid,
@@ -59,10 +59,12 @@ function AutoTuning({
   node,
   set,
   stream,
+  locked,
 }: {
   node: string;
   set: DeviceSet;
   stream: number | "all";
+  locked: boolean;
 }) {
   const { setTuning, setTuningAll } = useRadioTune();
   const auto = stream === "all" ? allAutoTuning(set) : autoTuning(set, stream);
@@ -83,6 +85,7 @@ function AutoTuning({
           className={`${ICON_BTN} ${auto ? "bg-accent/15" : ""}`}
           aria-label={auto ? "Tune by hand" : "Follow the decoders"}
           aria-pressed={auto}
+          disabled={locked}
           onClick={flip}
         />
       }
@@ -256,7 +259,7 @@ function Tuner(props: TunerProps) {
   const caps = set.capabilities;
   const merged = lanesMerged(set);
   const dial = tunerDials(set)[0];
-  const locked = merged ? allLocked(lockedStreams, caps) : lockedStreams.includes(0);
+  const locked = merged ? anyLocked(lockedStreams, caps) : lockedStreams.includes(0);
   const lock = (held: boolean): void =>
     onLock(merged ? lockAll(caps, held) : lockStream(lockedStreams, 0, held));
   const hold = dialHold(holds, 0, false);
@@ -265,7 +268,7 @@ function Tuner(props: TunerProps) {
       linked={!split}
       onLink={(linked) => {
         onSplit(!linked);
-        if (linked && dial !== undefined) {
+        if (linked && dial !== undefined && !locked) {
           tuneAll({ node, set }, dial.hz);
         }
       }}
@@ -279,7 +282,7 @@ function Tuner(props: TunerProps) {
           {hold === null ? (
             <>
               {link}
-              <AutoTuning node={node} set={set} stream="all" />
+              <AutoTuning node={node} set={set} stream="all" locked={locked} />
               <TuningLock locked={locked} held="Tuning locked" free="Lock tuning" onLock={lock} />
             </>
           ) : (
@@ -305,7 +308,7 @@ function Tuner(props: TunerProps) {
         tools={
           <>
             {link}
-            <AutoTuning node={node} set={set} stream={merged ? "all" : 0} />
+            <AutoTuning node={node} set={set} stream={merged ? "all" : 0} locked={locked} />
           </>
         }
       />
@@ -445,7 +448,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
     );
   }
 
-  const holds = laneHolds(workspace.graph, workspace.resolved, node.id);
+  const holds = laneHolds(workspace.graph, set);
   const heldBy = new Map([...holds].map(([stream, hold]) => [stream, hold.label]));
   const merged = lanesMerged(set);
   const dials = tunerDials(set);

@@ -2,7 +2,6 @@ import type { Options } from "../../components/controls";
 import { CAL_TEXT, failureText, SYNC_TEXT } from "../../lib/arrays";
 import { ARRAY_LIMITS } from "../../lib/limits";
 import { HEADING_SOURCE_LABEL } from "../../lib/phones";
-import { resolvedNode } from "../../lib/resolved";
 import type {
   ArrayCalSource,
   ArrayFailure,
@@ -26,29 +25,6 @@ export const RADIO = "Radio";
 export const NO_LANES = "no lanes";
 export const FAILED = "failed";
 
-function makesArray(resolved: ResolvedPatch | null, node: string): boolean {
-  return (resolvedNode(resolved, node)?.ports ?? []).some(
-    (port) => port.direction === "out" && port.port_type === "array",
-  );
-}
-
-export function heldLanes(
-  resolved: ResolvedPatch | null,
-  device: string,
-): ReadonlyMap<number, string> {
-  const held = new Map<number, string>();
-  for (const port of resolvedNode(resolved, device)?.ports ?? []) {
-    const stream = port.direction === "out" && port.port_type === "iq" ? port.stream : undefined;
-    const reach = (port.reaches ?? []).find(
-      (candidate) => candidate.stream != null && makesArray(resolved, candidate.sink),
-    );
-    if (stream != null && reach !== undefined && !held.has(stream)) {
-      held.set(stream, reach.sink);
-    }
-  }
-  return held;
-}
-
 export function arrayName(graph: PatchGraph, array: string): string {
   return nodeOf(graph, array)?.label ?? ARRAY_NAME;
 }
@@ -58,13 +34,9 @@ export interface LaneHold {
   label: string;
 }
 
-export function laneHolds(
-  graph: PatchGraph,
-  resolved: ResolvedPatch | null,
-  device: string,
-): ReadonlyMap<number, LaneHold> {
+export function laneHolds(graph: PatchGraph, set: DeviceSet): ReadonlyMap<number, LaneHold> {
   return new Map(
-    [...heldLanes(resolved, device)].map(([stream, array]) => [
+    (set.held ?? []).map(({ stream, array }) => [
       stream,
       { array, label: arrayName(graph, array) },
     ]),

@@ -193,6 +193,31 @@ fn a_target_error_returns_in_the_acks() {
 }
 
 #[test]
+fn a_hand_lock_beats_the_control_wire() {
+    let mut voice = channel("voice");
+    if let NodeBody::Channel(locked) = &mut voice.body {
+        locked.tuning_locked = true;
+    }
+    let nodes = vec![
+        node("sat", NodeBody::Satellite(SatelliteNode::default())),
+        voice,
+    ];
+    let patch = resolve(nodes, vec![wire(("sat", "control"), ("voice", "control"))]);
+    let bus = ControlBus::default();
+    let rig = FakeRig::default();
+    let acks = bus.deliver(
+        &rig,
+        &patch,
+        "sat",
+        &ControlCommand::Tune { freq_hz: 145.8e6 },
+    );
+    assert_eq!(acks[0].error.as_deref(), Some("Tuning locked"));
+    assert!(rig.calls().is_empty());
+    let acks = bus.deliver(&rig, &patch, "sat", &ControlCommand::Release);
+    assert_eq!(acks[0].error, None, "a lock never blocks a release");
+}
+
+#[test]
 fn a_sweep_carries_the_lane_the_scanner_watches() {
     let nodes = vec![
         node("radio", NodeBody::Device(sdrmm_wire::DeviceNode::default())),

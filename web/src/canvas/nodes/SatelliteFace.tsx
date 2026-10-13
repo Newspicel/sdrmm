@@ -239,6 +239,7 @@ function SignalChip({
         label="Signal"
         value={picked === undefined ? "own" : transmitterLabel(picked)}
         quiet={picked === undefined}
+        disabled={data.tuning_locked ?? false}
         title={`What this satellite sends, from ${sourceLabel(listed.data?.source ?? "SatNOGS DB", listed.data?.fetched ?? 0, now)}`}
       >
         {() => (

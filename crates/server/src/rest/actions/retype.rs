@@ -7,7 +7,7 @@ use sdrmm_wire::{
 use super::takes_no_such_action;
 use crate::{
     AppState,
-    rest::{AppError, active_workspace, channel_settings, lock_gate, set_channel},
+    rest::{AppError, Tuner, active_workspace, channel_settings, edit_channel, lock_gate},
 };
 
 pub(super) fn retype(
@@ -30,7 +30,11 @@ pub(super) fn retype(
         let _serialized = lock_gate(&state.apply_gate);
         rewrite(state, node, channel_type, &descriptors, author)?
     };
-    set_channel(state, node, retyped(&current, defaults), None, author)?;
+    let tuner = Tuner {
+        author,
+        actor: None,
+    };
+    edit_channel(state, node, |live| retyped(&live, defaults), tuner)?;
     state.resolve_now();
     Ok(dropped)
 }

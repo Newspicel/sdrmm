@@ -8,6 +8,7 @@ import type {
   DeviceRef,
   DeviceSet,
   DeviceSettings,
+  PatchNode,
   Tuning,
   VirtualLane,
 } from "../../lib/types";
@@ -191,8 +192,12 @@ export function lockAll(capabilities: Capabilities, held: boolean): number[] {
   return held ? rxStreams(capabilities) : [];
 }
 
-export function allLocked(locked: readonly number[], capabilities: Capabilities): boolean {
-  return rxStreams(capabilities).every((stream) => locked.includes(stream));
+export function laneLocked(node: PatchNode | undefined, stream: number): boolean {
+  return node?.kind === "device" && (node.data.locked_streams ?? []).includes(stream);
+}
+
+export function anyLocked(locked: readonly number[], capabilities: Capabilities): boolean {
+  return rxStreams(capabilities).some((stream) => locked.includes(stream));
 }
 
 export interface Hearing {

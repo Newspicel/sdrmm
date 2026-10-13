@@ -16,7 +16,6 @@ import {
   delayLabel,
   failureTitle,
   headingLabel,
-  heldLanes,
   laneGaps,
   laneQualityPercent,
   laneTitle,
@@ -100,16 +99,6 @@ describe("arrayLaneRows", () => {
     expect(unmeasured?.status).toBeNull();
     expect(laneTitle(present(unmeasured))).toBe("Lane 1 · virtual · kraken5 iq");
     expect(memberDevices(resolvedBy(graph), "north")).toEqual(["kraken", "rtl"]);
-  });
-
-  it("maps held device streams to their array", () => {
-    const graph = patch([lane("kraken", 0), lane("kraken", 1), lane("kraken", 4, "south", 0)]);
-    expect([...heldLanes(resolvedBy(graph), "kraken")]).toEqual([
-      [0, "north"],
-      [1, "north"],
-      [4, "south"],
-    ]);
-    expect(heldLanes(resolvedBy(graph), "rtl").size).toBe(0);
   });
 });
 

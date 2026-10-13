@@ -161,8 +161,8 @@ fn hold_channel(
     request_body = DeviceSettings,
     responses(
         (status = 204, description = "Settings applied to the node's radio"),
-        (status = 400, description = "Not a radio node, no radio open, or an unsupported setting",
-         body = ApiError),
+        (status = 400, description = "Not a radio node, no radio open, an unsupported setting, or \
+                                      a new frequency for a locked lane", body = ApiError),
         (status = 404, description = "No such node", body = ApiError),
         (status = 422, description = "Malformed request body", body = ApiError),
     ),

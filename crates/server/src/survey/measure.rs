@@ -22,6 +22,10 @@ impl Merged {
     }
 }
 
+pub(crate) fn spans(center_hz: f64, span_hz: f64, target_hz: f64) -> bool {
+    (target_hz - center_hz).abs() <= span_hz / 2.0
+}
+
 pub(crate) fn measure_dbfs(
     center_hz: f64,
     span_hz: f64,
@@ -40,11 +44,11 @@ pub(crate) fn measure_dbfs(
     {
         return None;
     }
-    let low = center_hz - span_hz / 2.0;
-    let high = center_hz + span_hz / 2.0;
-    if target_hz < low || target_hz > high {
+    if !spans(center_hz, span_hz, target_hz) {
         return None;
     }
+    let low = center_hz - span_hz / 2.0;
+    let high = center_hz + span_hz / 2.0;
     let bin_hz = span_hz / count as f64;
     let last_bin = count as f64 - 1.0;
     let slice_low = low.max(target_hz - bandwidth_hz / 2.0);

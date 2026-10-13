@@ -1738,6 +1738,49 @@ fn renamed(snapshot: &sdrmm_wire::WorkspaceSnapshot, node: &str, label: &str) ->
 }
 
 #[tokio::test]
+async fn undo_leaves_a_decoder_another_author_locked() {
+    let app = test_router();
+    let workspace =
+        put_active_workspace(&app, &virtual_snapshot("band", &[("voice", "nfm", "iq")])).await;
+    apply(&app, workspace).await;
+    let heard = |state: &StateSnapshot| state.device_sets[0].channels[0].settings.frequency_hz;
+    let tuned = heard(&get_state(&app).await) + 25_000.0;
+    let body = format!(
+        r#"{{"settings":{{"frequency_hz":{tuned},"params":{{"type":"nfm","settings":{{}}}}}}}}"#
+    );
+    let path = "/api/workspaces/active/nodes/voice/channel";
+    let (status, _) = as_author(&app, "ann", "PATCH", path, Some(&body)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let detail = workspace_detail(&app, workspace).await;
+    let mut snapshot = detail.snapshot.clone();
+    if let Some(sdrmm_wire::NodeBody::Channel(voice)) = snapshot
+        .graph
+        .nodes
+        .iter_mut()
+        .find(|held| held.id == "voice")
+        .map(|held| &mut held.body)
+    {
+        voice.tuning_locked = true;
+    }
+    let body = format!(
+        r#"{{"revision":{},"snapshot":{}}}"#,
+        detail.info.revision,
+        serde_json::to_string(&snapshot).expect("snapshot")
+    );
+    let uri = format!("/api/workspaces/{workspace}");
+    let (status, _) = as_author(&app, "bob", "PUT", &uri, Some(&body)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = as_author(&app, "ann", "POST", &format!("{uri}/undo"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        (heard(&get_state(&app).await) - tuned).abs() < 1.0,
+        "a locked decoder stays put"
+    );
+}
+
+#[tokio::test]
 async fn two_browsers_edit_from_one_revision_and_undo_only_their_own() {
     let app = test_router();
     let workspace = workspaces(&app).await.active.expect("seeded");

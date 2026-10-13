@@ -4928,7 +4928,7 @@
             "description": "Settings applied to the node's radio"
           },
           "400": {
-            "description": "Not a radio node, no radio open, or an unsupported setting",
+            "description": "Not a radio node, no radio open, an unsupported setting, or a new frequency for a locked lane",
             "content": {
               "application/json": {
                 "schema": {
@@ -35875,7 +35875,8 @@
         "enum": [
           "retuned",
           "unwired",
-          "radio_gone"
+          "radio_gone",
+          "out_of_span"
         ]
       },
       "SurveyUpdate": {

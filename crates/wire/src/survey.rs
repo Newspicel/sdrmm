@@ -49,6 +49,7 @@ pub enum SurveyStop {
     Retuned,
     Unwired,
     RadioGone,
+    OutOfSpan,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

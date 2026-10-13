@@ -122,6 +122,27 @@ async fn tuning_a_locked_lane_is_refused() {
 
     let (status, _) = act(&app, "device", tune(101e6)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+    let path = "/api/workspaces/active/nodes/device/device";
+    let (status, _) = request(app.clone(), "PATCH", path, Some(r#"{"center_hz":101e6}"#)).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a PATCH does not pass a lock"
+    );
+    let (status, _) = request(app.clone(), "PATCH", path, Some(r#"{"tuning":"auto"}"#)).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a locked lane stays manual"
+    );
+    let settings = &get_state(&app).await.device_sets[0].settings;
+    assert_eq!(settings.tuning, Some(sdrmm_wire::Tuning::Manual));
+    let (status, _) = request(app.clone(), "PATCH", path, Some(r#"{"dc_block":true}"#)).await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "the rest of the radio stays free"
+    );
     let (status, _) = act(&app, "scope", tune(101e6)).await;
     assert_eq!(
         status,

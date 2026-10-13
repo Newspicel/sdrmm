@@ -534,8 +534,13 @@ impl ResolvedPatch {
             .map(|node| node.id.as_str())
     }
 
+    #[must_use]
+    pub fn held(&self, node: &str) -> Option<&Held> {
+        self.node(node).and_then(|found| found.held.as_ref())
+    }
+
     pub fn may_tune(&self, node: &str, actor: Option<&str>) -> Result<(), String> {
-        match self.node(node).and_then(|found| found.held.as_ref()) {
+        match self.held(node) {
             None => Ok(()),
             Some(Held::Wire { node: by }) if actor == Some(by.as_str()) => Ok(()),
             Some(Held::Hand) => Err("Tuning locked".to_owned()),

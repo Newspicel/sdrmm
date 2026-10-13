@@ -72,7 +72,7 @@ import { useBandPlan } from "../../lib/useBandPlan";
 import { useChannelPatch } from "../../lib/useChannelPatch";
 import { useNodeTune } from "../../lib/useNodeTune";
 import { useWorkspaceContext } from "../context";
-import { addEdge, addNode, newNodeId, nodeIds } from "../graph";
+import { addEdge, addNode, newNodeId, nodeIds, nodeOf } from "../graph";
 import { type IqLane, iqSourceOf } from "../lanes";
 import { channelPicker } from "../palette";
 import { useNodePlacement } from "../placement";
@@ -80,7 +80,7 @@ import { runningSetOf } from "../workspaceDevice";
 import { BAND_RULER_H, BandRuler } from "./BandRuler";
 import { ChannelPicker } from "./ChannelPicker";
 import { lockedChannels } from "./channelNode";
-import { autoTuning } from "./deviceNode";
+import { autoTuning, laneLocked } from "./deviceNode";
 import { type TrunkChannelOwner, trunkChannelRoles } from "./dmrTrunk";
 import { FaceBody, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
 import { ScopeMenu, type ScopeMenuAt } from "./ScopeMenu";
@@ -157,8 +157,11 @@ export function ScopeFace({ node }: { node: PatchNode }) {
 
 function useLaneTune(node: string, set: DeviceSet | null, source: IqLane | null) {
   const tuneNode = useNodeTune();
+  const { graph } = useWorkspaceContext();
   const stream = source?.stream ?? 0;
-  const centerHeld = source?.virtual === undefined && set !== null && autoTuning(set, stream);
+  const locked = source !== null && laneLocked(nodeOf(graph, source.source), stream);
+  const centerHeld =
+    source?.virtual === undefined && set !== null && (autoTuning(set, stream) || locked);
   const tuneCenter = (hz: number): void => {
     if (!centerHeld) {
       tuneNode(node, hz);
