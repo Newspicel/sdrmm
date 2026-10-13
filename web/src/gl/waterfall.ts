@@ -322,11 +322,9 @@ class Plot implements WaterfallView {
 
   setColormap(palette: Palette): void {
     const map = paletteIndex(palette);
-    this.dirty ||= this.map !== map;
+    const stopsChanged = typeof palette !== "string" && this.storeCustom(palette);
+    this.dirty ||= this.map !== map || stopsChanged;
     this.map = map;
-    if (typeof palette !== "string") {
-      this.dirty ||= this.storeCustom(palette);
-    }
   }
 
   private storeCustom(stops: readonly Rgb[]): boolean {

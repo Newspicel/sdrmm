@@ -16,15 +16,17 @@ function canvas() {
 
 function harness() {
   const draw = vi.fn();
+  const uniform3fv = vi.fn();
   const callbacks = new Map<number, FrameRequestCallback>();
   const observers: IntersectionObserverCallback[] = [];
   const listeners = new Map<string, EventListener>();
   let next = 0;
   const gl = new Proxy(
-    { drawArrays: draw },
+    { drawArrays: draw, uniform3fv },
     {
       get(target, name) {
         if (name === "drawArrays") return target.drawArrays;
+        if (name === "uniform3fv") return target.uniform3fv;
         if (name === "getExtension") return () => null;
         if (String(name).toUpperCase() === name) return 1;
         return () => ({});
@@ -56,6 +58,7 @@ function harness() {
   );
   return {
     draw,
+    uniform3fv,
     canvas,
     frame() {
       const pending = [...callbacks.values()];
@@ -115,6 +118,19 @@ describe("waterfall repainting", () => {
     h.frame();
     h.frame();
     expect(h.draw).toHaveBeenCalledTimes(5);
+  });
+
+  it("keeps a custom palette set before the first paint", () => {
+    const h = harness();
+    const view = attachWaterfall(h.canvas().element);
+    views.push(view);
+    const red = [1, 0, 0] as const;
+    view.setColormap([red, red, red, red, red]);
+    h.visible(0, true);
+    h.frame();
+    expect(Array.from(h.uniform3fv.mock.lastCall?.[1] ?? [])).toEqual([
+      1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0,
+    ]);
   });
 
   it("keeps unchanged plots intact when another plot resizes", () => {
