@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "../../components/BaseControls";
 import { BTN_SM, TABLE_CELL, TABLE_HEAD } from "../../components/controls";
+import { MHZ_DIGITS } from "../../components/format";
 import { OptionalNumberField } from "../../components/NumberField";
 import { Unit } from "../../components/Unit";
 import type { DmrChannelEntry, TrunkChannel } from "../../lib/types";
@@ -121,6 +122,7 @@ export function ChannelPlanTable({
           value={mhz}
           min={0}
           step={0.0125}
+          digits={MHZ_DIGITS}
           className="w-28"
           unit="MHz"
           onCommit={setMhz}

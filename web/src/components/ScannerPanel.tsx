@@ -22,6 +22,7 @@ import { ChipField, Chips, ChoiceChip, NumberChip, SettingChip, ToggleChip } fro
 import { FaceFault } from "./face/Fault";
 import { Readout, Readouts } from "./face/Readouts";
 import { FaceStats, Stat } from "./face/Stats";
+import { MHZ_DIGITS } from "./format";
 import { Icon } from "./Icon";
 import { NumberField, OptionalNumberField } from "./NumberField";
 import {
@@ -443,6 +444,7 @@ function FrequencyListChip({
                 value={null}
                 min={0}
                 step={0.0125}
+                digits={MHZ_DIGITS}
                 unit="MHz"
                 onCommit={(added) =>
                   added !== null && added > 0 && onChange(withHz(values, Math.round(added * 1e6)))
@@ -457,7 +459,7 @@ function FrequencyListChip({
 }
 
 function mhz(hz: number): number {
-  return Number((hz / 1e6).toFixed(6));
+  return Number((hz / 1e6).toFixed(MHZ_DIGITS));
 }
 
 function RangeChip({
@@ -492,6 +494,7 @@ function RangeChip({
               value={mhz(range.start_hz)}
               min={0}
               step={0.1}
+              digits={MHZ_DIGITS}
               onCommit={(start) => onPatch({ start_hz: Math.round(start * 1e6) })}
               unit="MHz"
             />
@@ -503,6 +506,7 @@ function RangeChip({
               value={mhz(range.stop_hz)}
               min={0}
               step={0.1}
+              digits={MHZ_DIGITS}
               invalid={reversed}
               onCommit={(stop) => onPatch({ stop_hz: Math.round(stop * 1e6) })}
               unit="MHz"

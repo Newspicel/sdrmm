@@ -71,3 +71,5 @@ export function fractionDigits(step: number | undefined): number {
 }
 
 const DEFAULT_FRACTION_DIGITS = 6;
+
+export const MHZ_DIGITS = 6;

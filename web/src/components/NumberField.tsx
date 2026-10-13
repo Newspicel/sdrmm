@@ -9,6 +9,7 @@ interface Common {
   min?: number;
   max?: number;
   step?: number;
+  digits?: number;
   className?: string;
   invalid?: boolean;
   disabled?: boolean;
@@ -22,6 +23,7 @@ export function NumberField({
   min,
   max,
   step,
+  digits,
   className,
   invalid,
   disabled,
@@ -34,6 +36,7 @@ export function NumberField({
       min={min}
       max={max}
       step={step}
+      digits={digits}
       className={className}
       invalid={invalid}
       disabled={disabled}
@@ -60,6 +63,7 @@ export function OptionalNumberField({
   min,
   max,
   step,
+  digits,
   className,
   invalid,
   unit,
@@ -76,6 +80,7 @@ export function OptionalNumberField({
       min={min}
       max={max}
       step={step}
+      digits={digits}
       className={className}
       invalid={invalid}
       unit={unit}
@@ -97,6 +102,7 @@ function Field({
   min,
   max,
   step,
+  digits,
   className,
   invalid,
   disabled,
@@ -122,7 +128,7 @@ function Field({
       disabled={disabled}
       onValueChange={onDraft}
       onValueCommitted={onCommit}
-      format={{ useGrouping: false, maximumFractionDigits: fractionDigits(step) }}
+      format={{ useGrouping: false, maximumFractionDigits: digits ?? fractionDigits(step) }}
     >
       <Primitive.Input
         aria-label={label}
