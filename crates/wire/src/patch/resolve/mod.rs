@@ -7,6 +7,7 @@ use super::{
 };
 use crate::{
     channel::ChannelDescriptor,
+    control::ControlVerb,
     decode::{EventKind, KindSet},
     device::{Capabilities, Coherence},
     patch::{Keeps, Payload},
@@ -16,6 +17,7 @@ use crate::{
 mod bind;
 mod checks;
 mod feeds;
+mod offer;
 mod ports;
 mod wiring;
 
@@ -47,6 +49,21 @@ pub struct ResolvedNode {
     pub label: String,
     pub ports: Vec<ResolvedPort>,
     pub runs: Runs,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub array_offer: Option<ArrayOffer>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "offer", rename_all = "snake_case")]
+pub enum ArrayOffer {
+    Ready { wires: Vec<LaneWire> },
+    Refused { reason: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct LaneWire {
+    pub from: String,
+    pub to: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -67,11 +84,15 @@ pub struct ResolvedPort {
 pub struct Feed {
     pub source: String,
     pub port: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub via: Vec<String>,
     pub payload: Payload,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tap: Option<Tap>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drives: Option<ControlVerb>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -117,10 +138,14 @@ impl Tap {
 pub struct Reach {
     pub sink: String,
     pub port: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub via: Vec<String>,
     #[serde(default, skip_serializing_if = "no_kinds")]
     pub kinds: KindSet,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_runs: Option<Runs>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -129,11 +154,36 @@ pub struct RefusedEdge {
     pub reason: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UnboundReason {
+    NotWired,
+    NoRadio,
+    RadioAbsent,
+    RadioClosed,
+    NotPlaced,
+    NotRunning,
+}
+
+impl UnboundReason {
+    #[must_use]
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::NotWired => "No radio wired",
+            Self::NoRadio => "No radio named",
+            Self::RadioAbsent => "Radio not connected",
+            Self::RadioClosed => "Radio not open",
+            Self::NotPlaced => "Not placed on its radio",
+            Self::NotRunning => "Not running",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "runs", rename_all = "snake_case")]
 pub enum Runs {
     Unbound {
-        reason: String,
+        reason: UnboundReason,
     },
     Radio {
         device_set: u32,
@@ -169,6 +219,7 @@ pub enum ProblemSource {
     Position,
     Monitor,
     Apply,
+    Calls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -299,6 +350,7 @@ fn assemble(net: &Net<'_>) -> ResolvedPatch {
                 .map(|spec| feeds::resolve_port(net, &node.id, spec.clone()))
                 .collect(),
             runs: initial_runs(&node.body),
+            array_offer: None,
         })
         .collect();
     ResolvedPatch {
@@ -319,13 +371,13 @@ fn assemble(net: &Net<'_>) -> ResolvedPatch {
 fn initial_runs(body: &NodeBody) -> Runs {
     match body.role() {
         Role::OpensRadio => Runs::Unbound {
-            reason: "no radio".to_owned(),
+            reason: UnboundReason::NoRadio,
         },
         Role::Processor => Runs::Engine,
         Role::Pass(_) | Role::Plain => match body {
             NodeBody::Array(_) => Runs::Engine,
             NodeBody::Channel(_) | NodeBody::DmrTrunk(_) => Runs::Unbound {
-                reason: "no radio".to_owned(),
+                reason: UnboundReason::NotWired,
             },
             _ => Runs::Server,
         },
@@ -368,6 +420,13 @@ impl ResolvedPatch {
         self.reaches(node, port)
             .iter()
             .any(|reach| reach.kinds.contains(kind))
+    }
+
+    #[must_use]
+    pub fn retunes_source(&self, node: &str, port: &str) -> bool {
+        self.edges
+            .iter()
+            .any(|edge| edge.to.node == node && edge.to.port == port && edge.retunes_source)
     }
 
     #[must_use]

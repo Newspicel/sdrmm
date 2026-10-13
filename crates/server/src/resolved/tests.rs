@@ -185,7 +185,10 @@ fn a_scanner_step_publishes_nothing() {
 fn a_missing_radio_is_a_problem_on_its_node() {
     let bench = Bench::new();
     bench.reload();
-    assert_eq!(bench.board.of("device"), ["Radio not open"]);
+    assert_eq!(
+        bench.board.of("device"),
+        [sdrmm_wire::UnboundReason::RadioAbsent.text()]
+    );
     bench
         .engine
         .create_device_set("virtual:band")

@@ -43,6 +43,8 @@ pub trait EventPayload: Clone + Serialize + DeserializeOwned {
 pub struct Presentation {
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headline: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
@@ -64,6 +66,10 @@ pub struct Presentation {
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip: Option<EventAudio>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip_name: Option<ClipName>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callsign: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -95,6 +101,17 @@ impl Presentation {
             .map(|field| field.label.as_str())
             .collect()
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ClipName {
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freq_hz: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

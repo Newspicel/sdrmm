@@ -4,7 +4,6 @@ import {
   remoteIdPilot,
   remoteIdPosition,
   remoteIdStation,
-  remoteIdSummary,
   withRemoteIdState,
 } from "./remoteId";
 import type { RemoteIdFrame, RemoteIdMessage } from "./types";
@@ -67,14 +66,6 @@ describe("remote ID frames", () => {
     expect(remoteIdPosition(merged)).toEqual({ lat: 52.5163, lon: 13.3777 });
     expect(remoteIdPilot(merged)).toEqual({ lat: 52.5156, lon: 13.3761 });
   });
-
-  it("summarise like the server does", () => {
-    const frame = droneFrame([LOCATION, SYSTEM], { uas_id: "1581F5FJD239C00DW22E" });
-    expect(remoteIdSummary(frame)).toBe(
-      "1581F5FJD239C00DW22E · BT4 · 52.51630, 13.37770 · 84 m · pilot 52.51560, 13.37610",
-    );
-  });
-
   it("measure the drone to pilot distance", () => {
     const meters = distanceM({ lat: 52.5163, lon: 13.3777 }, { lat: 52.5156, lon: 13.3761 });
     expect(meters).toBeGreaterThan(125);

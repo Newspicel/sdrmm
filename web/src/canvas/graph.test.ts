@@ -9,7 +9,7 @@ import type {
   PortSpec,
 } from "../lib/types";
 import { catalogBody, channelPortsNamed, CATALOG as REAL_CATALOG } from "../test/catalog";
-import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../test/resolved";
+import { portName, resolvedNodeOf, resolvedPatch, resolvedPort } from "../test/resolved";
 import {
   addEdge,
   addNode,
@@ -33,7 +33,6 @@ import {
   pin,
   placeSlot,
   portLabel,
-  portStream,
   pruneRack,
   RACK_COLS,
   removeNode,
@@ -41,7 +40,6 @@ import {
   sameGraph,
   slotRoom,
   streamLabel,
-  streamPort,
   unpin,
 } from "./graph";
 
@@ -179,7 +177,6 @@ describe("portLabel", () => {
   });
 
   it("leaves the wire name alone", () => {
-    expect(streamPort("iq", 0)).toBe("iq");
     expect(streamLabel("iq", 0, 1)).toBe("iq");
     expect(streamLabel("iq", 0, 4)).toBe("iq1");
     expect(streamLabel("iq", 3, 4)).toBe("iq4");
@@ -242,16 +239,6 @@ describe("ports", () => {
     const dev = deviceNode(workspace());
     const stale = resolvedPatch([resolvedNodeOf("dev", "scope", [])]);
     expect(nodePorts({ ...context, resolved: stale }, dev).map((p) => p.name)).toEqual(["iq"]);
-  });
-
-  it("numbers stream ports from two and answers only canonical spellings", () => {
-    expect(streamPort("iq", 0)).toBe("iq");
-    expect(streamPort("iq", 2)).toBe("iq3");
-    expect(portStream("iq", "iq")).toBe(0);
-    expect(portStream("iq", "iq16")).toBe(15);
-    for (const name of ["iq1", "iq0", "iq02", "iq17", "iqx", "tx2"]) {
-      expect(portStream("iq", name)).toBeNull();
-    }
   });
 
   it("grows the resize floor with the port count", () => {
@@ -479,8 +466,8 @@ function lanesWired(lanes: readonly number[], geometry?: object): PatchGraph {
   return {
     nodes: [placedNode("dev", { kind: "device", data: {} }), arrayNodeOf(geometry)],
     edges: lanes.map((lane) => ({
-      from: { node: "dev", port: streamPort("iq", lane) },
-      to: { node: "arr", port: streamPort("lane", lane) },
+      from: { node: "dev", port: portName("iq", lane) },
+      to: { node: "arr", port: portName("lane", lane) },
     })),
   };
 }
@@ -495,7 +482,7 @@ function laneInputs(graph: PatchGraph, lanes: number): string[] {
       "arr",
       "array",
       Array.from({ length: lanes }, (_, lane) =>
-        resolvedPort({ name: streamPort("lane", lane), port_type: "iq", direction: "in" }),
+        resolvedPort({ name: portName("lane", lane), port_type: "iq", direction: "in" }),
       ),
       { runs: "engine" },
     ),

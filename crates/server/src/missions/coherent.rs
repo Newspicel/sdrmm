@@ -3,7 +3,7 @@ use sdrmm_wire::{
     RADAR_TX_PORT, RadarMission,
 };
 
-use super::{Built, Scene, TRIANGULATION, graph};
+use super::{Built, Scene, graph};
 use crate::array;
 
 #[derive(Default)]
@@ -24,7 +24,6 @@ pub(super) fn df(scene: &Scene<'_>, node: &str) -> Built {
             device_sets: wired.device_sets,
             center_hz: wired.center_hz,
             position: wired.position,
-            triangulations: graph::event_targets(&scene.resolved, node, TRIANGULATION),
         }),
         problems: wired.problems,
         controls: wired.controls,

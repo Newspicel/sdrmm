@@ -176,6 +176,19 @@ impl EventOutputTarget {
     }
 
     #[must_use]
+    pub const fn carries_audio(&self) -> bool {
+        matches!(
+            self,
+            Self::Recordings
+                | Self::Matrix { .. }
+                | Self::Webhook {
+                    format: WebhookFormat::Discord,
+                    ..
+                }
+        )
+    }
+
+    #[must_use]
     pub fn configured(&self) -> bool {
         match self {
             Self::Recordings | Self::Desktop => true,

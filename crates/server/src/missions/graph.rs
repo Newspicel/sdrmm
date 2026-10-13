@@ -1,26 +1,12 @@
 use sdrmm_wire::{
-    CONTROL_PORT, EVENTS_PORT, Feed, GpsNode, MissionProblem, NodeBody, NodeKind, POSITION_PORT,
-    PatchGraph, PortType, PositionLink, PositionSource,
+    ControlVerb, Feed, GpsNode, MissionProblem, NodeBody, POSITION_PORT, PatchGraph, PortType,
+    PositionLink, PositionSource,
 };
 
-use crate::{phones::Phones, resolved::Resolved};
+use crate::{control, phones::Phones, resolved::Resolved};
 
 pub(crate) fn source_of<'a>(resolved: &'a Resolved, node: &str, port: &str) -> Option<&'a Feed> {
     resolved.patch.first_feed(node, port)
-}
-
-pub(crate) fn event_targets(resolved: &Resolved, node: &str, kind: NodeKind) -> Vec<String> {
-    let mut found: Vec<String> = Vec::new();
-    for reach in resolved.patch.reaches(node, EVENTS_PORT) {
-        let wanted = resolved
-            .patch
-            .node(&reach.sink)
-            .is_some_and(|sink| sink.kind == kind);
-        if wanted && !found.contains(&reach.sink) {
-            found.push(reach.sink.clone());
-        }
-    }
-    found
 }
 
 pub(crate) fn event_sources(resolved: &Resolved, node: &str) -> Vec<String> {
@@ -71,17 +57,10 @@ pub(crate) fn link(
 }
 
 pub(crate) fn controlled_channel(resolved: &Resolved, hunt: &str) -> Option<String> {
-    resolved
-        .patch
-        .reaches(hunt, CONTROL_PORT)
-        .iter()
-        .find(|reach| {
-            resolved
-                .patch
-                .node(&reach.sink)
-                .is_some_and(|node| node.kind == NodeKind::Channel)
-        })
-        .map(|reach| reach.sink.clone())
+    control::targets(&resolved.patch, hunt)
+        .into_iter()
+        .find(|(_, verbs)| verbs.contains(&ControlVerb::Sweep))
+        .map(|(target, _)| target)
 }
 
 fn phone_of(graph: &PatchGraph, gps: &str) -> Option<String> {

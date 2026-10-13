@@ -1,0 +1,87 @@
+{
+  "name": "1dc22709b3cf2f0f",
+  "test": "ChannelFace > shows packets that synced but failed their check",
+  "graph": {
+    "nodes": [
+      {
+        "id": "radio",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "band"
+          }
+        }
+      },
+      {
+        "id": "ble",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "channel",
+        "data": {
+          "channel_type": "ble"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "radio",
+          "port": "iq"
+        },
+        "to": {
+          "node": "ble",
+          "port": "iq"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "band",
+          "label": "Test band"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "extra": [],
+          "duplex": "rx_only"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [
+          {
+            "id": 3,
+            "stream": 0,
+            "rejected": 12,
+            "skipped": 0,
+            "settings": {
+              "frequency_hz": 2426000000,
+              "params": {
+                "type": "ble",
+                "settings": {
+                  "link": "channel"
+                }
+              }
+            }
+          }
+        ],
+        "overruns": 0
+      }
+    ],
+    "revision": 0
+  }
+}

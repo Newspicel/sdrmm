@@ -1,4 +1,4 @@
-import { MAX_NAME_LEN } from "./graph";
+import { MAX_NAME_LEN } from "../lib/limits";
 
 export const DEFAULT_WORKSPACE_NAME = "Workspace";
 

@@ -1,0 +1,22 @@
+{
+  "name": "f1956d12f07559d6",
+  "test": "SpectrumMonitorFace > shows all until a range is set",
+  "graph": {
+    "nodes": [
+      {
+        "id": "monitor",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "spectrum_monitor",
+        "data": {}
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

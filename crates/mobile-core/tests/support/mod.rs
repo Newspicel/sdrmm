@@ -485,6 +485,7 @@ pub fn hunt_graph(phone: Option<&str>) -> PatchGraph {
         ],
         edges: vec![
             wire(("radio", "iq"), ("voice", "iq")),
+            wire(("radio", "iq"), (HUNT, "iq")),
             wire((HUNT, "control"), ("voice", "control")),
         ],
     };

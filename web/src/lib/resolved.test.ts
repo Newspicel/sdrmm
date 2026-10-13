@@ -5,17 +5,16 @@ import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../test/resolved";
 import { RESOLVED_KEY } from "./api";
 import {
   activePatch,
-  audioTaps,
   boundChannels,
   boundRadios,
   channelOwners,
-  controlledBy,
+  controlledChannel,
   feedsOf,
   ignoredOf,
   inputsOf,
   observeResolved,
-  radioOf,
   reachesOf,
+  runningSet,
   withPatch,
   withProblems,
 } from "./resolved";
@@ -96,7 +95,11 @@ function patch() {
           {
             reaches: [
               { sink: "spk", port: "audio" },
-              { sink: "nfm", port: "control" },
+              {
+                sink: "nfm",
+                port: "control",
+                target_runs: { runs: "channel", device_set: 1, channel: 4, stream: 0 },
+              },
             ],
           },
         ),
@@ -170,26 +173,24 @@ describe("resolved lookups", () => {
     expect(ignoredOf(null, "map", "events")).toEqual([]);
   });
 
-  it("names every audio stream a port plays as the server does, trunk followers included", () => {
-    expect(audioTaps(patch())).toEqual([
-      { node: "spk", port: "audio", source: "nfm/fx" },
-      { node: "spk", port: "audio", source: "trunk" },
-      { node: "spk", port: "audio", source: "trunk#1" },
-    ]);
+  it("names every audio stream a port plays as the server does", () => {
     expect(inputsOf(patch(), live, "spk", "audio").map((input) => input.source)).toEqual([
       "nfm/fx",
       "trunk",
     ]);
   });
 
-  it("finds the radio behind a node in either direction", () => {
+  it("reads where a node runs from what the server served", () => {
     const resolved = patch();
-    expect(radioOf(resolved, "dev")).toBe("dev");
-    expect(radioOf(resolved, "nfm")).toBe("dev");
-    expect(radioOf(resolved, "scan")).toBe("dev");
-    expect(radioOf(resolved, "lost")).toBeNull();
-    expect(radioOf(resolved, "spk")).toBeNull();
-    expect(controlledBy(resolved, "scan")).toBe("nfm");
-    expect(controlledBy(resolved, "lost")).toBeNull();
+    for (const node of ["dev", "nfm", "scan"]) {
+      expect(runningSet(resolved, live, node)?.id).toBe(1);
+    }
+    expect(runningSet(resolved, live, "lost")).toBeNull();
+    expect(runningSet(resolved, live, "spk")).toBeNull();
+    expect(controlledChannel(resolved, live, "scan")).toMatchObject({
+      node: "nfm",
+      channel: { id: 4 },
+    });
+    expect(controlledChannel(resolved, live, "lost")).toBeNull();
   });
 });

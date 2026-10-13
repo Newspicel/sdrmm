@@ -36,7 +36,7 @@ pub(crate) fn bring_up(
     for (node, reason) in hooks(app, &resolved, saved) {
         report.refused.push(PatchRefusal { node, reason });
     }
-    array::open_virtual_lane_channels(app, &resolved, saved, &mut report);
+    crate::placement::settle_lanes(app, &snapshot.graph, saved, &mut report);
     publish_refusals(app, &report);
     app.resolve_now();
     Ok(report)

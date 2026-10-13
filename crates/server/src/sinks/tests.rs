@@ -112,7 +112,9 @@ impl Bench {
 
     fn send(&self, record: DecodedRecord) {
         let mut record = record;
-        self.resolved.events.route(&mut record);
+        self.resolved
+            .events
+            .route(&mut record, &mut crate::events::Stations::default());
         self.hub.deliver(&record, Instant::now());
     }
 
@@ -328,14 +330,14 @@ fn satellite_fix() -> DecoderEvent {
     DecoderEvent::Satellite(sdrmm_wire::SatelliteFix {
         name: Some("ISS (ZARYA)".to_owned()),
         catalog: Some("25544".to_owned()),
-        ground: sdrmm_wire::SatelliteGround {
+        ground: Some(sdrmm_wire::SatelliteGround {
             at: sdrmm_wire::LatLon {
                 lat: 51.0,
                 lon: 10.0,
             },
             altitude_km: 420.0,
             footprint_km: 2_200.0,
-        },
+        }),
         ground_track: vec![
             sdrmm_wire::LatLon {
                 lat: 50.0,
@@ -385,11 +387,26 @@ fn a_satellite_wired_to_a_map_is_an_entity_with_footprint_and_track() {
 }
 
 #[test]
+fn a_lost_satellite_leaves_the_map() {
+    let bench = Bench::over(satellite_and_map(true));
+    bench.send(from("sat", satellite_fix()));
+    assert_eq!(bench.feed("map").entities.len(), 1);
+
+    let lost = sdrmm_wire::SatelliteFix::of(&sdrmm_wire::SatelliteStatus::default());
+    bench.send(from("sat", DecoderEvent::Satellite(lost)));
+
+    assert!(bench.feed("map").entities.is_empty());
+}
+
+#[test]
 fn an_unwired_satellite_reaches_no_map() {
     let bench = Bench::over(satellite_and_map(false));
     let mut record = from("sat", satellite_fix());
 
-    let outcome = bench.resolved.events.route(&mut record);
+    let outcome = bench
+        .resolved
+        .events
+        .route(&mut record, &mut crate::events::Stations::default());
     bench.hub.deliver(&record, Instant::now());
 
     assert_eq!(outcome, crate::events::RouteOutcome::Unrouted);

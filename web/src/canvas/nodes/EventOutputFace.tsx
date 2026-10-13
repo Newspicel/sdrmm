@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Chips, ChoiceChip, NumberChip } from "../../components/face/Chips";
 import { TextChip } from "../../components/face/TextChip";
 import { aboutQuery } from "../../lib/api";
-import { useFeeds } from "../../lib/resolved";
+import { portOn, useFeeds } from "../../lib/resolved";
 import type { EventOutputTarget, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -29,6 +29,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   const target = node.data.target;
   const inputs = useFeeds(node.id, "events").length;
   const configured = eventOutputConfigured(target);
+  const audio = portOn(workspace.resolved, node.id, "audio", "in") !== undefined;
   const editTarget = (next: EventOutputTarget) => {
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -59,7 +60,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
           />
         ) : (
           <>
-            <FaceEmpty hint={emptyHint(inputs, configured, target)} />
+            <FaceEmpty hint={emptyHint(inputs, configured, target, audio)} />
             <OutputDelivery node={node.id} />
           </>
         )}
@@ -68,7 +69,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   );
 }
 
-function emptyHint(inputs: number, configured: boolean, target: EventOutputTarget) {
+function emptyHint(inputs: number, configured: boolean, target: EventOutputTarget, audio: boolean) {
   if (inputs === 0) {
     return "Wire events in";
   }
@@ -93,15 +94,9 @@ function emptyHint(inputs: number, configured: boolean, target: EventOutputTarge
   if (target.service === "influx") {
     return "One point per event";
   }
-  return carriesAudio(target)
+  return audio
     ? "One send per event, with available audio"
     : "One send per event, as one JSON object";
-}
-
-function carriesAudio(target: EventOutputTarget) {
-  return (
-    target.service === "matrix" || (target.service === "webhook" && target.format === "discord")
-  );
 }
 
 type TargetOf<S extends EventOutputTarget["service"]> = Extract<EventOutputTarget, { service: S }>;

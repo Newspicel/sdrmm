@@ -711,23 +711,6 @@
         }
       }
     },
-    "/api/calls": {
-      "get": {
-        "operationId": "list_calls",
-        "responses": {
-          "200": {
-            "description": "Completed temporary voice calls",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VoiceCallsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/calls/{id}/audio": {
       "get": {
         "operationId": "call_audio",
@@ -7914,6 +7897,49 @@
           }
         }
       },
+      "ArrayOffer": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "wires",
+              "offer"
+            ],
+            "properties": {
+              "offer": {
+                "type": "string",
+                "enum": [
+                  "ready"
+                ]
+              },
+              "wires": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/LaneWire"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "offer"
+            ],
+            "properties": {
+              "offer": {
+                "type": "string",
+                "enum": [
+                  "refused"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
       "ArrayOrientation": {
         "oneOf": [
           {
@@ -12750,6 +12776,36 @@
           }
         }
       },
+      "ClipName": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "freq_hz": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ClutterMethod": {
         "type": "string",
         "enum": [
@@ -16231,6 +16287,21 @@
           }
         }
       },
+      "DeviceClaim": {
+        "type": "object",
+        "required": [
+          "device",
+          "node"
+        ],
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          }
+        }
+      },
       "DeviceFault": {
         "type": "string",
         "description": "Why a device set stopped, for the times a reader can act on it rather than only read it.",
@@ -16656,6 +16727,12 @@
           "devices"
         ],
         "properties": {
+          "claims": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceClaim"
+            }
+          },
           "devices": {
             "type": "array",
             "items": {
@@ -16932,12 +17009,6 @@
                 "type": "null"
               }
             ]
-          },
-          "triangulations": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
@@ -19186,6 +19257,16 @@
           "payload"
         ],
         "properties": {
+          "drives": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ControlVerb"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "payload": {
             "$ref": "#/components/schemas/Payload"
           },
@@ -19194,6 +19275,14 @@
           },
           "source": {
             "type": "string"
+          },
+          "stream": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
           },
           "tap": {
             "oneOf": [
@@ -20508,12 +20597,6 @@
                 "type": "null"
               }
             ]
-          },
-          "triangulations": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
@@ -21652,6 +21735,21 @@
           "phase_deg": {
             "type": "number",
             "format": "float"
+          }
+        }
+      },
+      "LaneWire": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
           }
         }
       },
@@ -28265,6 +28363,14 @@
           "repeat": {
             "$ref": "#/components/schemas/PortRepeat"
           },
+          "stream": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
           "takes": {
             "type": [
               "string",
@@ -28545,6 +28651,12 @@
           "summary"
         ],
         "properties": {
+          "audio_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "bearing": {
             "oneOf": [
               {
@@ -28565,6 +28677,16 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/EventAudio"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clip_name": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClipName"
               },
               {
                 "type": "null"
@@ -28593,6 +28715,12 @@
           },
           "gone": {
             "type": "boolean"
+          },
+          "headline": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "label": {
             "type": [
@@ -28724,7 +28852,8 @@
           "bind",
           "position",
           "monitor",
-          "apply"
+          "apply",
+          "calls"
         ]
       },
       "ProcessorGate": {
@@ -30721,6 +30850,24 @@
           "sink": {
             "type": "string"
           },
+          "stream": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "target_runs": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Runs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "via": {
             "type": "array",
             "items": {
@@ -30880,6 +31027,12 @@
           },
           "file": {
             "type": "string"
+          },
+          "node": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "overruns": {
             "type": "integer",
@@ -31610,6 +31763,16 @@
           "runs"
         ],
         "properties": {
+          "array_offer": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ArrayOffer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "type": "string"
           },
@@ -31977,7 +32140,7 @@
             ],
             "properties": {
               "reason": {
-                "type": "string"
+                "$ref": "#/components/schemas/UnboundReason"
               },
               "runs": {
                 "type": "string",
@@ -32240,9 +32403,6 @@
       },
       "SatelliteFix": {
         "type": "object",
-        "required": [
-          "ground"
-        ],
         "properties": {
           "catalog": {
             "type": [
@@ -32258,7 +32418,14 @@
             "format": "double"
           },
           "ground": {
-            "$ref": "#/components/schemas/SatelliteGround"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SatelliteGround"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "ground_track": {
             "type": "array",
@@ -32430,6 +32597,13 @@
             "format": "double"
           },
           "doppler_rate_hz_s": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "downlink_hz": {
             "type": [
               "number",
               "null"
@@ -35001,20 +35175,6 @@
               "scope": {
                 "type": "string",
                 "enum": [
-                  "calls"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "scope"
-            ],
-            "properties": {
-              "scope": {
-                "type": "string",
-                "enum": [
                   "images"
                 ]
               }
@@ -37365,6 +37525,17 @@
           "back"
         ]
       },
+      "UnboundReason": {
+        "type": "string",
+        "enum": [
+          "not_wired",
+          "no_radio",
+          "radio_absent",
+          "radio_closed",
+          "not_placed",
+          "not_running"
+        ]
+      },
       "Unit": {
         "type": "string",
         "enum": [
@@ -37621,20 +37792,6 @@
           },
           "started_at": {
             "type": "string"
-          }
-        }
-      },
-      "VoiceCallsResponse": {
-        "type": "object",
-        "required": [
-          "calls"
-        ],
-        "properties": {
-          "calls": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VoiceCall"
-            }
           }
         }
       },

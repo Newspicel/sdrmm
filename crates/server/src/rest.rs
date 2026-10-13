@@ -28,8 +28,8 @@ use sdrmm_wire::{
     SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScannerStatus,
     ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo, TemplatesResponse,
     ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse, UpdateWorkspaceRequest,
-    VoiceCallsResponse, WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspacesResponse,
-    WriteSerialRequest, WrittenSerial,
+    WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot, WorkspacesResponse, WriteSerialRequest,
+    WrittenSerial,
 };
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -434,7 +434,6 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(write_serial))
         .routes(routes!(get_nmea_devices))
         .routes(routes!(get_channel_types))
-        .routes(routes!(list_calls))
         .routes(routes!(call_audio))
         .routes(routes!(list_images))
         .routes(routes!(captured_image))

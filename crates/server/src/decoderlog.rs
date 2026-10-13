@@ -336,7 +336,7 @@ mod tests {
             channel,
             ..record("3C6444")
         };
-        routes.route(&mut record);
+        routes.route(&mut record, &mut crate::events::Stations::default());
         let mut batch = vec![Routed {
             source: Some("channel:adsb".to_owned()),
             record,

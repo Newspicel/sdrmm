@@ -1,16 +1,12 @@
 import { matchesRecordingSearch, recordingTitle } from "../../components/recordings";
+import { MAX_NAME_LEN } from "../../lib/limits";
 import type { PatchNodeOf, Position, RecordingInfo } from "../../lib/types";
-import { MAX_NAME_LEN } from "../graph";
 
 export const META_SUFFIX = ".sigmf-meta";
 export const DATA_SUFFIX = ".sigmf-data";
 export const ARCHIVE_SUFFIX = ".sigmf";
 
 export const UPLOAD_ACCEPT = [ARCHIVE_SUFFIX, META_SUFFIX, DATA_SUFFIX].join(",");
-
-export function recordingDeviceId(stem: string): string {
-  return `recording:${stem}`;
-}
 
 export function findRecording(
   library: readonly RecordingInfo[],

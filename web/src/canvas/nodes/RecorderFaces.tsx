@@ -14,7 +14,7 @@ import type { PatchNode, PatchNodeOf, RecordingStatus } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { deviceSetOf } from "../workspaceDevice";
+import { runningSetOf } from "../workspaceDevice";
 import { type RecorderNodeOf, recordingFor, withRecording, withSkipSilence } from "./audioRecorder";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import { inputKey, useInputName } from "./sinkInputs";
@@ -110,8 +110,8 @@ export function RecorderFace({ node }: { node: PatchNode }) {
 
 function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
   const workspace = useWorkspaceContext();
-  const set = deviceSetOf(workspace, node.id);
-  const status = set?.recording ?? null;
+  const set = runningSetOf(workspace, node.id);
+  const status = set?.recording?.node === node.id ? set.recording : null;
   const recording = node.data?.recording ?? false;
   return (
     <NodeShell node={node} title="Recorder" category="output">

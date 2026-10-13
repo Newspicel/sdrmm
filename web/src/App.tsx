@@ -23,10 +23,9 @@ import { ServerDown } from "./components/ServerDown";
 import { Toasts } from "./components/Toasts";
 import { TokenGate } from "./components/TokenGate";
 import { channelTypesQuery, patchCatalogQuery, resolvedQuery, stateQuery } from "./lib/api";
-import { audioEngine } from "./lib/audio/useChannelAudio";
 import { loadCatalog, useCatalogStore } from "./lib/catalog";
 import { useRefusalStore } from "./lib/refusals";
-import { activePatch, audioTaps, boundChannels, boundRadios, channelOwners } from "./lib/resolved";
+import { activePatch, boundChannels, boundRadios, channelOwners } from "./lib/resolved";
 import { closeToast, pushToast } from "./lib/toasts";
 import type { NodeProblem, PatchApplyReport, PatchGraph, WorkspaceSettings } from "./lib/types";
 import { useChannelPatch } from "./lib/useChannelPatch";
@@ -113,13 +112,6 @@ export function App() {
   }, [devices, graph.nodes]);
   const channels = useMemo(() => boundChannels(resolved, deviceSets), [resolved, deviceSets]);
   const owners = useMemo(() => channelOwners(resolved), [resolved]);
-
-  const reachable = useMemo(() => audioTaps(resolved), [resolved]);
-  useEffect(() => {
-    if (state.data !== undefined && resolved !== null) {
-      audioEngine.retain(reachable);
-    }
-  }, [reachable, state.data, resolved]);
 
   const context = useMemo(
     () => ({

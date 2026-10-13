@@ -14,7 +14,7 @@ import type {
 } from "../lib/types";
 import { SdrSocket } from "../lib/ws";
 import { CATALOG } from "./catalog";
-import { wiredPatch } from "./resolved";
+import { resolvedBy } from "./recorded";
 
 export interface FaceHarness {
   graph: PatchGraph;
@@ -32,13 +32,7 @@ const NO_DEVICES: ReadonlyMap<string, DeviceSet> = new Map();
 export function stubWorkspace(harness: FaceHarness): Workspace {
   const devices = harness.devices ?? NO_DEVICES;
   const resolved =
-    harness.resolved === undefined
-      ? wiredPatch(harness.graph, {
-          devices,
-          channels: harness.channels,
-          owners: harness.owners,
-        })
-      : harness.resolved;
+    harness.resolved === undefined ? resolvedBy(harness.graph, devices) : harness.resolved;
   return {
     socket: new SdrSocket(),
     graph: harness.graph,

@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { Button, Input } from "../../components/BaseControls";
+import { MAX_NAME_LEN } from "../../lib/limits";
 import type { PatchNode } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
-import { MAX_NAME_LEN, patchNode } from "../graph";
+import { patchNode } from "../graph";
 import { nodeLabel } from "../nodeName";
 
 const TEXT = "min-w-0 truncate text-xs font-semibold tracking-[0.01em] text-ink";

@@ -366,7 +366,6 @@ Sends events out, saves call audio
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `events` | in | Events | 57 kinds | many |
-| `audio` | in | Audio | live, clips | many |
 
 ### Video
 

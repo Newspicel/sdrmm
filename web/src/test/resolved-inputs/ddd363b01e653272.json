@@ -1,0 +1,80 @@
+{
+  "name": "ddd363b01e653272",
+  "test": "arrays on a radio > offers Make array for a multi-lane radio with a shared clock",
+  "graph": {
+    "nodes": [
+      {
+        "id": "kraken",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "kraken5"
+          }
+        }
+      },
+      {
+        "id": "north",
+        "position": {
+          "x": 500,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        },
+        "label": "North"
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "kraken5",
+          "label": "KrakenSDR"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "extra": [],
+          "duplex": "rx_only"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [],
+        "overruns": 0
+      }
+    ],
+    "revision": 0
+  }
+}

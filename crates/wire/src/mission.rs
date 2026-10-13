@@ -98,8 +98,6 @@ pub struct HuntMission {
     pub clicks: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<PositionLink>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub triangulations: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -112,8 +110,6 @@ pub struct DfMission {
     pub center_hz: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<PositionLink>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub triangulations: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

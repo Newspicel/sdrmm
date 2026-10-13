@@ -1,0 +1,81 @@
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+
+use sdrmm_wire::{
+    Capability, DecodedRecord, DecoderEvent, EventKind, Lifetime, present::Presentation,
+};
+
+const MAX_STATIONS: usize = 4_096;
+
+type Key = (String, EventKind, String);
+
+#[derive(Default)]
+pub(crate) struct Stations {
+    held: HashMap<Key, (DecoderEvent, Instant)>,
+}
+
+impl Stations {
+    pub(crate) fn judged(
+        &mut self,
+        source: &str,
+        record: &DecodedRecord,
+        view: &Presentation,
+        now: Instant,
+    ) -> Presentation {
+        let kind = record.event.kind();
+        let Some(entity) = view
+            .entity
+            .clone()
+            .filter(|_| kind.has(Capability::Station))
+        else {
+            return view.clone();
+        };
+        let key = (source.to_owned(), kind, entity);
+        if view.gone {
+            self.held.remove(&key);
+            return view.clone();
+        }
+        self.age_out(now);
+        let (event, seen) = self
+            .held
+            .entry(key)
+            .or_insert_with(|| (record.event.clone(), now));
+        if !event.merge(&record.event) {
+            *event = record.event.clone();
+        }
+        *seen = now;
+        let mut merged = event.present();
+        merged.gone = false;
+        merged
+    }
+
+    fn age_out(&mut self, now: Instant) {
+        self.held
+            .retain(|(_, kind, _), (_, seen)| match kind.info().lifetime {
+                Lifetime::Sighting { ttl_s } => {
+                    now.duration_since(*seen) <= Duration::from_secs(u64::from(ttl_s))
+                }
+                Lifetime::Instant | Lifetime::Standing => true,
+            });
+        let excess = self.held.len().saturating_sub(MAX_STATIONS);
+        if excess == 0 {
+            return;
+        }
+        let mut by_age: Vec<(Instant, Key)> = self
+            .held
+            .iter()
+            .map(|(key, (_, seen))| (*seen, key.clone()))
+            .collect();
+        by_age.sort_unstable_by_key(|(seen, _)| *seen);
+        for (_, key) in by_age.into_iter().take(excess) {
+            self.held.remove(&key);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.held.len()
+    }
+}

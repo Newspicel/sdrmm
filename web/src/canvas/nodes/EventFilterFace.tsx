@@ -1,6 +1,7 @@
 import { Chips, ChoiceChip, NumberChip, ToggleChip } from "../../components/face/Chips";
 import { TextChip } from "../../components/face/TextChip";
 import { isEventKind, kindLabel } from "../../lib/eventKinds";
+import { MAX_FILTER_DURATION_MS } from "../../lib/limits";
 import { useFeeds } from "../../lib/resolved";
 import type { EventFilterNode, EventKindEntry, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
@@ -12,8 +13,7 @@ import {
   formatIds,
   formatWords,
   fromTriState,
-  kindsOffered,
-  MAX_FILTER_DURATION_MS,
+  offeredBy,
   type PredicateKey,
   parseIds,
   parseWords,
@@ -21,7 +21,6 @@ import {
   stationLabel,
   type TriState,
   toTriState,
-  wiredSourcesOf,
 } from "./eventFilter";
 import { FaceBody, NodeShell } from "./NodeShell";
 
@@ -45,10 +44,7 @@ function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
   const settings: EventFilterNode = node.data ?? {};
   const sources = useFeeds(node.id, "events");
   const entries = workspace.context.catalog.event_kinds;
-  const offered = kindsOffered(
-    wiredSourcesOf(workspace.graph, workspace.resolved, node.id),
-    workspace.context.channelTypes,
-  ).filter((kind) => isEventKind(kind, entries));
+  const offered = offeredBy(sources).filter((kind) => isEventKind(kind, entries));
   const kinds = settings.kinds ?? [];
   const narrowed = kinds.length > 0 ? kinds : offered;
   const sections = sectionsFor(narrowed, entries);

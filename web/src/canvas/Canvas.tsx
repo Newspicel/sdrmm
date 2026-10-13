@@ -1,7 +1,6 @@
 import {
   Background,
   BackgroundVariant,
-  type Edge,
   type Node,
   ReactFlow,
   useEdgesState,
@@ -23,21 +22,18 @@ import { BTN_QUIET, SURFACE } from "../components/controls";
 import { CANVAS_MOVED } from "../components/Popover";
 import { createPointerSender, draggedByOthers, othersOf, usePresenceStore } from "../lib/presence";
 import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types";
-import { HUE_COLOR, portHue } from "../sinks/hues";
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
 import { useClipboard } from "./clipboard";
 import { useWorkspaceContext } from "./context";
+import { toFlowEdges } from "./flowEdges";
 import { movedGeometry, withGeometry } from "./geometry";
 import {
-  edgeKey,
-  type GraphContext,
   isPinned,
   isResizable,
   nodeOf,
   nodeSize,
   patchNode,
   pin,
-  portOf,
   removeEdge,
   sameGraph,
   unpin,
@@ -459,23 +455,6 @@ function toFlowNodes(graph: PatchGraph): Node<FlowData>[] {
       width: isResizable(node.kind) ? size.w : undefined,
       height: size.h,
       dragHandle: ".node-drag",
-    };
-  });
-}
-
-function toFlowEdges(graph: PatchGraph, context: GraphContext): Edge[] {
-  return (graph.edges ?? []).map((edge) => {
-    const carried = portOf(context, graph, edge.from, "out")?.port_type;
-    return {
-      id: edgeKey(edge),
-      source: edge.from.node,
-      sourceHandle: edge.from.port,
-      target: edge.to.node,
-      targetHandle: edge.to.port,
-      className: `wire-${carried}`,
-      ...(carried === undefined
-        ? {}
-        : { style: { stroke: HUE_COLOR[portHue(context.catalog, carried)] } }),
     };
   });
 }

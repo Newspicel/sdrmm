@@ -6,19 +6,21 @@ use std::{
 
 use axum::body::Bytes;
 use sdrmm_engine::{Engine, PcmBlock};
-use sdrmm_wire::{DvFrame, EventAudio, ServerEvent, StateScope, VoiceCall};
+use sdrmm_wire::{DvFrame, EventAudio, ProblemSource, ServerEvent, StateScope, VoiceCall};
 use tokio::{
     sync::{broadcast::error::RecvError, mpsc, watch},
     task::JoinHandle,
     time::{MissedTickBehavior, interval},
 };
 
-use crate::trunking::{CallBinding, CallPolicy, Recording};
-use sdrmm_wire::CallGate;
+use crate::{problems::ProblemBoard, resolved::Resolved};
 
+mod bindings;
 mod tracker;
 
-use tracker::{Bindings, Tracker};
+pub(crate) use bindings::CallBinding;
+
+use tracker::Tracker;
 
 const RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -66,6 +68,7 @@ pub(crate) struct NewCall {
 }
 
 impl Calls {
+    #[cfg(test)]
     pub(crate) fn list(&self) -> Vec<VoiceCall> {
         let mut inner = self.lock();
         prune(&mut inner);
@@ -119,11 +122,8 @@ impl Calls {
         self.audio(id)
     }
 
-    fn expire(&self) -> bool {
-        let mut inner = self.lock();
-        let before = inner.calls.len();
-        prune(&mut inner);
-        inner.calls.len() != before
+    fn expire(&self) {
+        prune(&mut self.lock());
     }
 
     fn push(&self, new: NewCall, audio: Option<Bytes>, retention: Duration) -> (VoiceCall, bool) {
@@ -230,11 +230,20 @@ enum Input {
     AudioError(u32, u32, String),
 }
 
-pub(crate) async fn run(
-    engine: Weak<Engine>,
-    calls: Arc<Calls>,
-    mut recording: watch::Receiver<Recording>,
-) {
+pub(crate) struct CallWatch {
+    pub(crate) engine: Weak<Engine>,
+    pub(crate) calls: Arc<Calls>,
+    pub(crate) resolved: watch::Receiver<Arc<Resolved>>,
+    pub(crate) problems: Arc<ProblemBoard>,
+}
+
+pub(crate) async fn run(watch: CallWatch) {
+    let CallWatch {
+        engine,
+        calls,
+        mut resolved,
+        problems,
+    } = watch;
     let Some(strong) = engine.upgrade() else {
         return;
     };
@@ -253,7 +262,10 @@ pub(crate) async fn run(
             let Some(strong) = engine.upgrade() else {
                 break;
             };
-            tracker.rebind(resolve_bindings(&strong, &recording.borrow()));
+            let current = resolved.borrow().clone();
+            let (bound, missing) = bindings::bindings(&current.patch, &strong.snapshot());
+            problems.replace(&strong, ProblemSource::Calls, &missing);
+            tracker.rebind(bound);
             reconcile_audio(&strong, &input_tx, &tracker.sources(), &mut audio_tasks);
         }
         tokio::select! {
@@ -271,7 +283,7 @@ pub(crate) async fn run(
                 Ok(_) | Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => break,
             },
-            changed = recording.changed() => match changed {
+            changed = resolved.changed() => match changed {
                 Ok(()) => rebind = true,
                 Err(_) => break,
             },
@@ -284,9 +296,7 @@ pub(crate) async fn run(
             },
             _ = reconcile_tick.tick() => {
                 rebind = true;
-                if calls.expire() && let Some(strong) = engine.upgrade() {
-                    strong.emit_scope(StateScope::Calls);
-                }
+                calls.expire();
             }
             _ = idle_tick.tick() => tracker.expire_idle(),
         }
@@ -301,34 +311,6 @@ fn ticker(period: Duration) -> tokio::time::Interval {
     let mut ticker = interval(period);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     ticker
-}
-
-fn resolve_bindings(engine: &Engine, policy: &CallPolicy) -> Bindings {
-    let mut resolved = Bindings::new();
-    for system in engine.trunk_systems() {
-        let Some(&keep_audio) = policy.trunk_systems.get(&system.node) else {
-            continue;
-        };
-        for follower in system.followers {
-            resolved
-                .entry((follower.device_set, follower.channel))
-                .or_default()
-                .push(CallBinding {
-                    node: system.node.clone(),
-                    device_set: follower.device_set,
-                    channel: follower.channel,
-                    gate: CallGate::Frames,
-                    keep_audio,
-                });
-        }
-    }
-    for binding in &policy.channels {
-        resolved
-            .entry((binding.device_set, binding.channel))
-            .or_default()
-            .push(binding.clone());
-    }
-    resolved
 }
 
 fn reconcile_audio(

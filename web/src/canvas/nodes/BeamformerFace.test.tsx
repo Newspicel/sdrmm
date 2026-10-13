@@ -24,7 +24,7 @@ function graph(steer: boolean): PatchGraph {
     edges: [
       { from: { node: "arr", port: "array" }, to: { node: "beam", port: "array" } },
       ...(steer
-        ? [{ from: { node: "finder", port: "events" }, to: { node: "beam", port: "steer" } }]
+        ? [{ from: { node: "finder", port: "bearing" }, to: { node: "beam", port: "steer" } }]
         : []),
     ],
   };

@@ -64,7 +64,7 @@ import { bookmarksQuery, nodeAction, STATE_KEY } from "../../lib/api";
 import type { SpectrumFrame } from "../../lib/frame";
 import { heardHz, type SetLevels, useLevelStore } from "../../lib/levels";
 import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
-import { channelNodesOn } from "../../lib/resolved";
+import { channelNodesOn, feedsOf } from "../../lib/resolved";
 import { SPECTRUM_MAX_BINS, spectrumHub } from "../../lib/spectrum";
 import { toastError } from "../../lib/toasts";
 import type { Bookmark, ChannelInfo, ChannelParams, DeviceSet, PatchNode } from "../../lib/types";
@@ -72,11 +72,11 @@ import { useBandPlan } from "../../lib/useBandPlan";
 import { useChannelPatch } from "../../lib/useChannelPatch";
 import { useNodeTune } from "../../lib/useNodeTune";
 import { useWorkspaceContext } from "../context";
-import { addEdge, addNode, newNodeId, nodeIds, streamPort } from "../graph";
+import { addEdge, addNode, newNodeId, nodeIds } from "../graph";
 import { type IqLane, iqSourceOf } from "../lanes";
 import { channelPicker } from "../palette";
 import { useNodePlacement } from "../placement";
-import { deviceSetOf } from "../workspaceDevice";
+import { runningSetOf } from "../workspaceDevice";
 import { BAND_RULER_H, BandRuler } from "./BandRuler";
 import { ChannelPicker } from "./ChannelPicker";
 import { lockedChannels } from "./channelNode";
@@ -139,7 +139,7 @@ interface Gesture {
 
 export function ScopeFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
-  const set = deviceSetOf(workspace, node.id);
+  const set = runningSetOf(workspace, node.id);
   const source = iqSourceOf(workspace.resolved, node.id);
   return (
     <NodeShell node={node} title="Scope" category="output">
@@ -259,7 +259,6 @@ function Spectrum({
   });
 
   const faces = new Map<number, string>();
-  const deviceNode = source?.source;
   const onStream = new Set(channels.map((channel) => channel.id));
   if (setId !== null) {
     for (const [channel, face] of channelNodesOn(workspace.resolved, setId)) {
@@ -327,9 +326,11 @@ function Spectrum({
   };
 
   const addChannelAt = (pick: ScopePick, channelType: string): void => {
-    if (deviceNode === undefined) {
+    const feed = feedsOf(workspace.resolved, node, "iq")[0];
+    if (feed === undefined) {
       return;
     }
+    const fed = { node: feed.source, port: feed.port };
     const id = newNodeId("channel", nodeIds(workspace.graph));
     tuneOnCreate(id, pick.hz);
     workspace.edit((snapshot) => ({
@@ -341,13 +342,7 @@ function Spectrum({
           data: { channel_type: channelType },
           position: placeNode(snapshot.graph, "channel"),
         }),
-        {
-          from:
-            source?.virtual === undefined
-              ? { node: deviceNode, port: streamPort("iq", stream) }
-              : { node: source.virtual.node, port: source.virtual.port },
-          to: { node: id, port: "iq" },
-        },
+        { from: fed, to: { node: id, port: "iq" } },
       ),
     }));
     workspace.apply();

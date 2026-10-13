@@ -1,0 +1,34 @@
+{
+  "name": "7934997307611ce8",
+  "test": "TriangulationFace > asks for finders when nothing is wired",
+  "graph": {
+    "nodes": [
+      {
+        "id": "tri",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "triangulation",
+        "data": {
+          "settings": {
+            "decay": {
+              "kind": "auto"
+            },
+            "extent_km": 12.8,
+            "nav": "auto",
+            "probe_km": 5,
+            "min_confidence": 0.05,
+            "max_emitters": 3,
+            "align": true
+          }
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

@@ -1,7 +1,7 @@
 use super::{
-    EventPayload, Field, FieldValue, Place, Presentation, Unit, VoiceFacts, count, fields, flag,
-    joined, lat_lon, measure::modulation_label, number, only_if, percent, position, text, text_of,
-    trimmed,
+    ClipName, EventPayload, Field, FieldValue, Place, Presentation, Unit, VoiceFacts, count,
+    fields, flag, joined, lat_lon, measure::modulation_label, number, only_if, percent, position,
+    text, text_of, trimmed,
 };
 use crate::{
     decode::{
@@ -268,7 +268,18 @@ impl EventPayload for VoiceCall {
                 emergency: Some(self.emergency),
             }),
             duration_ms: Some(self.duration_ms),
+            headline: Some(format!("{} call", self.mode_label())),
             clip: self.audio.clone(),
+            clip_name: Some(ClipName {
+                mode: self.mode_label(),
+                started_at: Some(self.started_at.clone()),
+                freq_hz: Some(self.freq_hz),
+                tag: self.destination.map(|id| match self.group_call {
+                    Some(true) => format!("TG{id}"),
+                    _ => format!("ID{id}"),
+                }),
+            }),
+            audio_error: self.audio_error.clone(),
             fields: call_fields(self),
             ..Presentation::of(call_summary(self))
         }
@@ -329,6 +340,15 @@ impl EventPayload for Transmission {
         Presentation {
             duration_ms: Some(self.duration_ms),
             clip: self.audio.clone(),
+            clip_name: Some(ClipName {
+                mode: self
+                    .decoder
+                    .clone()
+                    .unwrap_or_else(|| self.signal.modulation.label().to_owned()),
+                started_at: self.started_at.clone(),
+                freq_hz: None,
+                tag: None,
+            }),
             fields: transmission_fields(self),
             ..Presentation::of(self.summary())
         }

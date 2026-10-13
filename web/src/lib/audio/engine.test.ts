@@ -635,22 +635,22 @@ describe("AudioEngine", () => {
     expect(engine.getBufferedMs(tap(2))).toBe(0);
   });
 
-  it("retain stops the taps the canvas can no longer reach, and only those", async () => {
+  it("a source the server stops while another plays leaves the speaker", async () => {
     engine.start(tap(2));
-    engine.start(tap(3));
     await flush();
     socket.emit(started(2, 10));
-    socket.emit(started(3, 11));
+    socket.emit(started(2, 11, "other"));
+    expect(engine.isPending(tap(2, "other"))).toBe(true);
+    await flush();
     socket.sent.length = 0;
 
-    engine.retain([tap(2)]);
+    socket.emit(stopped(10));
 
-    expect(engine.isPlaying(tap(2))).toBe(true);
-    expect(engine.isPlaying(tap(3))).toBe(false);
-    expect(engine.isPending(tap(3))).toBe(false);
-    expect(socket.sent).toEqual([unsubscribe(3)]);
-    expect(sinks[1]?.closed).toBe(true);
-    expect(sinks[0]?.closed).toBe(false);
+    expect(engine.isPlaying(tap(2))).toBe(false);
+    expect(engine.isPending(tap(2))).toBe(false);
+    expect(sinks[0]?.closed).toBe(true);
+    expect(engine.isPlaying(tap(2, "other"))).toBe(true);
+    expect(socket.sent).toEqual([]);
   });
 
   it("keeps two sources of one speaker apart on one port subscription", async () => {
@@ -665,32 +665,31 @@ describe("AudioEngine", () => {
     socket.emit(started(2, 12, "voice/fx"));
     expect(routed.isPlaying(tap(2, "voice/fx"))).toBe(true);
     expect(routed.isPlaying(tap(2))).toBe(false);
-
-    socket.sent.length = 0;
-    routed.retain([tap(2)]);
-    expect(routed.isPlaying(tap(2, "voice/fx"))).toBe(false);
-    expect(socket.sent).toEqual([]);
   });
 
   it("a playing speaker plays the input a rewire brings", async () => {
     engine.start(tap(2));
     await flush();
     socket.emit(started(2, 10));
-    engine.retain([tap(2, "other")]);
+    socket.emit(stopped(10));
+    socket.emit(started(2, 11, "other"));
     expect(engine.isPending(tap(2, "other"))).toBe(true);
     await flush();
     socket.emit(started(2, 11, "other"));
     expect(engine.isPlaying(tap(2, "other"))).toBe(true);
+    expect(engine.isPlaying(tap(2))).toBe(false);
+    expect(engine.isPending(tap(2))).toBe(false);
   });
 
-  it("retain leaves a stopped channel alone rather than resubscribing or re-erroring", async () => {
+  it("a stopped speaker starts nothing a new stream brings", async () => {
     engine.start(tap(2));
     await flush();
     socket.emit(started(2, 10));
     engine.stop(tap(2));
     socket.sent.length = 0;
 
-    engine.retain([]);
+    socket.emit(started(2, 11, "other"));
+    expect(engine.isPending(tap(2, "other"))).toBe(false);
     expect(socket.sent).toEqual([]);
   });
 

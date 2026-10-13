@@ -1,6 +1,6 @@
 use sdrmm_wire::{
-    AdsbMessage, ChannelNode, DecoderEvent, EventKind, EventOrigin, FilterMode, PatchEdge,
-    PatchNode, PortRef, Position, RttyText,
+    AdsbMessage, ChannelNode, DecoderEvent, EventKind, EventOrigin, FilterMode, NodeBody,
+    PatchEdge, PatchNode, PortRef, Position, RttyText,
 };
 
 use super::*;
@@ -97,7 +97,7 @@ fn routes(graph: &PatchGraph) -> EventRoutes {
 
 fn routed(routes: &EventRoutes, record: DecodedRecord) -> (RouteOutcome, Vec<String>) {
     let mut record = record;
-    let outcome = routes.route(&mut record);
+    let outcome = routes.route(&mut record, &mut crate::events::Stations::default());
     let mut sinks = record.sinks;
     sinks.sort();
     (outcome, sinks)
@@ -125,7 +125,10 @@ fn a_routed_record_names_the_sinks_it_reached_after_every_filter() {
     let routes = routes(&rtty_graph());
 
     let mut record = from(Some("rtty"), rtty("CQ"));
-    assert_eq!(routes.route(&mut record), RouteOutcome::Delivered);
+    assert_eq!(
+        routes.route(&mut record, &mut crate::events::Stations::default()),
+        RouteOutcome::Delivered
+    );
 
     assert_eq!(record.sinks, ["export"]);
     assert_eq!(routes.workspace, Some(7));
@@ -212,7 +215,10 @@ fn a_record_without_origin_is_unattributed_and_reaches_nothing() {
     let mut record = from(None, rtty("CQ"));
     record.sinks = vec!["export".to_owned()];
 
-    assert_eq!(routes.route(&mut record), RouteOutcome::Unattributed);
+    assert_eq!(
+        routes.route(&mut record, &mut crate::events::Stations::default()),
+        RouteOutcome::Unattributed
+    );
     assert!(record.sinks.is_empty());
 }
 
@@ -282,4 +288,69 @@ fn a_filter_is_never_a_sink() {
     assert!(routes.reaches("rtty", "export"));
     assert!(!routes.reaches("rtty", "only-calls"));
     assert!(!routes.reaches("rtty", "idle"));
+}
+
+fn plane(callsign: Option<&str>, place: Option<(f64, f64)>) -> DecoderEvent {
+    DecoderEvent::Adsb(AdsbMessage {
+        icao: "3c6444".to_owned(),
+        callsign: callsign.map(str::to_owned),
+        lat: place.map(|(lat, _)| lat),
+        lon: place.map(|(_, lon)| lon),
+        ..AdsbMessage::default()
+    })
+}
+
+fn through(settings: EventFilterNode) -> EventRoutes {
+    routes(&PatchGraph {
+        nodes: vec![
+            channel("adsb", "adsb"),
+            filter("rule", settings),
+            node("map", NodeBody::Map),
+        ],
+        edges: vec![edge("adsb", "rule"), edge("rule", "map")],
+    })
+}
+
+#[test]
+fn a_plane_is_judged_on_everything_its_frames_said() {
+    let routes = through(EventFilterNode {
+        has_position: Some(true),
+        ..EventFilterNode::default()
+    });
+    let mut stations = Stations::default();
+    let mut send = |event| {
+        let mut record = from(Some("adsb"), event);
+        routes.route(&mut record, &mut stations);
+        record
+    };
+
+    assert!(send(plane(Some("DLH123"), None)).sinks.is_empty());
+    let placed = send(plane(None, Some((48.1, 11.5))));
+    assert_eq!(placed.sinks, ["map"]);
+    assert!(
+        placed
+            .view
+            .is_some_and(|view| !view.summary.contains("DLH123")),
+        "the record keeps its own view"
+    );
+    assert_eq!(send(plane(Some("DLH123"), None)).sinks, ["map"]);
+}
+
+#[test]
+fn a_callsign_rule_lets_the_plane_place_itself() {
+    let routes = through(EventFilterNode {
+        contains: Some("DLH".to_owned()),
+        ..EventFilterNode::default()
+    });
+    let mut stations = Stations::default();
+    let mut send = |event| {
+        let mut record = from(Some("adsb"), event);
+        routes.route(&mut record, &mut stations);
+        record.sinks
+    };
+
+    assert!(send(plane(None, Some((48.1, 11.5)))).is_empty());
+    assert_eq!(send(plane(Some("DLH123"), None)), ["map"]);
+    assert_eq!(send(plane(None, Some((48.2, 11.6)))), ["map"]);
+    assert_eq!(stations.len(), 1);
 }

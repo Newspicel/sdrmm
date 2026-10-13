@@ -1,13 +1,8 @@
 use super::*;
 
 #[tokio::test]
-async fn call_endpoints_list_completed_calls_and_reject_missing_audio() {
+async fn missing_call_audio_is_refused() {
     let app = test_router();
-    let (status, body) = request(app.clone(), "GET", "/api/calls", None).await;
-    assert_eq!(status, StatusCode::OK);
-    let listed: VoiceCallsResponse = serde_json::from_slice(&body).expect("json");
-    assert!(listed.calls.is_empty());
-
     let (status, body) = request(app, "GET", "/api/calls/99/audio", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     serde_json::from_slice::<ApiError>(&body).expect("ApiError body");
@@ -79,10 +74,19 @@ async fn a_plain_dmr_channel_with_its_audio_wired_records_calls_with_clips() {
 
     let recorded = tokio::time::timeout(Duration::from_secs(60), async {
         loop {
-            let (status, body) = request(app.clone(), "GET", "/api/calls", None).await;
+            let (status, body) = request(
+                app.clone(),
+                "GET",
+                "/api/decoderlog?sink=log&kind=call",
+                None,
+            )
+            .await;
             assert_eq!(status, StatusCode::OK);
-            let listed: VoiceCallsResponse = serde_json::from_slice(&body).expect("json");
-            if let Some(call) = listed.calls.into_iter().next() {
+            let listed: sdrmm_wire::DecoderLogResponse =
+                serde_json::from_slice(&body).expect("json");
+            if let Some(sdrmm_wire::DecoderEvent::Call(call)) =
+                listed.entries.into_iter().next().map(|entry| entry.event)
+            {
                 return call;
             }
             tokio::time::sleep(Duration::from_millis(25)).await;

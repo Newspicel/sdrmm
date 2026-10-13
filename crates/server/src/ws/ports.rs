@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use sdrmm_wire::{
-    AudioRoute, ChannelAddr, Feed, IQ_PORT, PortType, ResolvedPatch, ServerEvent, StreamKind,
-    StreamParams, port_stream,
+    AudioRoute, ChannelAddr, Feed, PortType, ResolvedPatch, ServerEvent, StreamKind, StreamParams,
 };
 use tokio::task::JoinHandle;
 
@@ -190,7 +189,11 @@ fn own_output(patch: &ResolvedPatch, node: &str, port: &str, port_type: PortType
         PortType::Iq => patch.device_set(node).map(|device_set| {
             vec![Tapped::Spectrum {
                 device_set,
-                stream: port_stream(IQ_PORT, port).unwrap_or(0),
+                stream: patch
+                    .node(node)
+                    .and_then(|held| held.output(port))
+                    .and_then(|output| output.spec.stream)
+                    .unwrap_or_default(),
             }]
         }),
         _ => patch

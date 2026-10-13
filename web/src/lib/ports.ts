@@ -45,29 +45,34 @@ export class PortHub {
   private readonly held = new Map<string, Held>();
   private readonly streams = new Map<number, PortStream>();
   private readonly refusals = new Map<string, string>();
+  private readonly ended = new Set<string>();
   private readonly listeners = new Set<() => void>();
 
   private readonly onEvent = (event: ServerEvent): void => {
     if (event.type === "PortStream") {
       const { stream_id, node, port, source, via, index, kind } = event.data;
-      this.streams.set(stream_id, {
+      const stream = {
         streamId: stream_id,
         node,
         port,
         source: streamSource(source, via ?? [], index ?? 0),
         kind,
-      });
+      };
+      this.streams.set(stream_id, stream);
+      this.ended.delete(sourceKey(node, port, stream.source));
       this.refusals.delete(portKey(node, port));
       this.notify();
     } else if (event.type === "PortRefused") {
       const { node, port, reason } = event.data;
       this.refusals.set(portKey(node, port), reason);
       this.notify();
-    } else if (
-      event.type === "StreamStopped" &&
-      this.streams.get(event.data.stream_id)?.kind === event.data.kind
-    ) {
+    } else if (event.type === "StreamStopped") {
+      const stream = this.streams.get(event.data.stream_id);
+      if (stream?.kind !== event.data.kind) {
+        return;
+      }
       this.streams.delete(event.data.stream_id);
+      this.ended.add(sourceKey(stream.node, stream.port, stream.source));
       this.notify();
     }
   };
@@ -75,6 +80,7 @@ export class PortHub {
   private readonly onStatus = (connected: boolean): void => {
     this.streams.clear();
     this.refusals.clear();
+    this.ended.clear();
     this.notify();
     if (connected) {
       for (const held of this.held.values()) {
@@ -148,6 +154,10 @@ export class PortHub {
     );
   }
 
+  hasEnded(node: string, port: string, source: string): boolean {
+    return this.ended.has(sourceKey(node, port, source));
+  }
+
   refusalOf(node: string, port: string): string | null {
     return this.refusals.get(portKey(node, port)) ?? null;
   }
@@ -163,6 +173,11 @@ export class PortHub {
     }
     this.held.delete(key);
     this.refusals.delete(key);
+    for (const ended of this.ended) {
+      if (ended.startsWith(`${key}\u0000`)) {
+        this.ended.delete(ended);
+      }
+    }
     for (const [id, stream] of this.streams) {
       if (portKey(stream.node, stream.port) === key) {
         this.streams.delete(id);

@@ -369,7 +369,6 @@ impl Drop for Background {
 }
 
 fn start_background(state: &AppState, health: health::Reporter) -> Background {
-    let (recording_tx, recording_rx) = tokio::sync::watch::channel(trunking::Recording::default());
     let resolved = {
         let state = state.clone();
         spawn_task("sdrmm-resolved", move || resolved::run(state))
@@ -410,7 +409,7 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
         let store = state.store.clone();
         let resolved = state.resolved.subscribe();
         spawn_task("sdrmm-trunking", move || {
-            trunking::watch_patch(engine, store, resolved, recording_tx)
+            trunking::watch_patch(engine, store, resolved)
         })
     };
     let monitor = {
@@ -423,11 +422,13 @@ fn start_background(state: &AppState, health: health::Reporter) -> Background {
         spawn_task("sdrmm-monitors", move || monitor::run(watch))
     };
     let calls = {
-        let engine = Arc::downgrade(&state.engine);
-        let calls = state.calls.clone();
-        spawn_task("sdrmm-calls", move || {
-            calls::run(engine, calls, recording_rx)
-        })
+        let watch = calls::CallWatch {
+            engine: Arc::downgrade(&state.engine),
+            calls: state.calls.clone(),
+            resolved: state.resolved.subscribe(),
+            problems: state.problems.clone(),
+        };
+        spawn_task("sdrmm-calls", move || calls::run(watch))
     };
     let images = {
         let state = state.clone();

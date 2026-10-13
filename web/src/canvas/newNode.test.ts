@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PatchCatalog, PatchNodeOf } from "../lib/types";
 import { CATALOG } from "../test/catalog";
-import {
-  carriesSettings,
-  defaultBody,
-  huntSweepOf,
-  newNodeBody,
-  settingsOf,
-  startsOnItsOwn,
-} from "./newNode";
+import { carriesSettings, defaultBody, huntSweepOf, newNodeBody, settingsOf } from "./newNode";
 
 const KINDS = CATALOG.nodes.map((entry) => entry.kind);
 
@@ -59,11 +52,6 @@ describe("newNodeBody", () => {
     expect(carriesSettings(CATALOG, "scope")).toBe(false);
     expect(carriesSettings(CATALOG, "triangulation")).toBe(true);
     expect(carriesSettings({ nodes: [], port_types: [], event_kinds: [] }, "df")).toBe(false);
-  });
-
-  it("starts only a signal generator on its own", () => {
-    expect(startsOnItsOwn("signal_gen")).toBe(true);
-    expect(startsOnItsOwn("device")).toBe(false);
   });
 });
 

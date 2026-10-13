@@ -20,8 +20,9 @@ pub use contract::*;
 pub use ports::*;
 pub use registry::*;
 pub use resolve::{
-    ChannelAddr, Feed, NodeProblem, ProblemSource, Reach, RefusedEdge, ResolveCtx, ResolvedEdge,
-    ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Runs, Tap,
+    ArrayOffer, ChannelAddr, Feed, LaneWire, NodeProblem, ProblemSource, Reach, RefusedEdge,
+    ResolveCtx, ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Runs, Tap,
+    UnboundReason,
 };
 
 pub const MAX_NODES: usize = 128;

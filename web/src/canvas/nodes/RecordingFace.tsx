@@ -18,7 +18,7 @@ import { recordingsQuery } from "../../lib/api";
 import type { PatchNode, PatchNodeOf, RecordingInfo } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { MakeArrayButton, offersMakeArray } from "./MakeArrayButton";
+import { MakeArrayButton } from "./MakeArrayButton";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import { claimedRecordings, recordingChoices } from "./recordingNode";
 import { SourceHealth } from "./SourceHealth";
@@ -195,9 +195,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
       </FaceBody>
       <FaceFooter>
         <SourceHealth set={set} />
-        {offersMakeArray(workspace.resolved, node.id, set) && (
-          <MakeArrayButton node={node.id} set={set} />
-        )}
+        <MakeArrayButton node={node.id} />
         <Button
           type="button"
           className={BTN_QUIET_DANGER}

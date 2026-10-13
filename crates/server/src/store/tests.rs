@@ -1226,6 +1226,41 @@ fn deleting_and_pruning_rows_drops_their_sink_marks_too() {
 }
 
 #[test]
+fn clearing_one_sink_keeps_the_rows_other_sinks_hold() {
+    let store = Store::open(None).expect("open");
+    let workspace = active(&store);
+    store
+        .insert_decoder_events(&[reaching(
+            workspace,
+            &["log", "export"],
+            record("2026-08-09T12:00:00Z", 0, adsb("3C6444", "DLH123")),
+        )])
+        .expect("insert");
+    let at = |sink: &str| {
+        query(
+            &store,
+            DecoderLogQuery {
+                sink: Some(sink.to_owned()),
+                ..DecoderLogQuery::default()
+            },
+        )
+        .1
+    };
+
+    let removed = store
+        .delete_decoder_log(&DecoderLogQuery {
+            sink: Some("log".to_owned()),
+            q: Some("DLH".to_owned()),
+            ..DecoderLogQuery::default()
+        })
+        .expect("delete");
+
+    assert_eq!(removed, 1);
+    assert_eq!(at("log"), 0);
+    assert_eq!(at("export"), 1);
+}
+
+#[test]
 fn an_oversized_sink_id_is_refused() {
     let store = Store::open(None).expect("open");
     let err = store

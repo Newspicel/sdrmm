@@ -65,6 +65,7 @@ fn a_failed_move_keeps_the_original_decoder() {
                 pinned: false,
             },
             carried: Some(Carried { lane, channel }),
+            fixed: false,
         }],
         refused: Vec::new(),
     };

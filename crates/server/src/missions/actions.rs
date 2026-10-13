@@ -1,13 +1,11 @@
 use sdrmm_wire::{
-    ArrayTuneRequest, HuntAction, HuntMission, Mission, MissionAction, MissionBody, NodeAction,
-    SurveyAction,
+    HuntAction, HuntMission, Mission, MissionAction, MissionBody, NodeAction, SurveyAction,
 };
 
 use super::{MissionRefusal, mission};
 use crate::{
-    AppState, array, df_fusion, placement,
+    AppState, array, df_fusion,
     rest::{self, AppError},
-    workspace,
 };
 
 pub(crate) fn act(
@@ -57,12 +55,7 @@ fn hunt_action(
     let target = hunt.target.as_ref().ok_or(MissionRefusal::NotRunning)?;
     let action = match action {
         MissionAction::Tune { frequency_hz } => {
-            return tune_channel(
-                state,
-                (target.device_set, target.channel),
-                frequency_hz,
-                author,
-            );
+            return tune(state, &target.channel_node, frequency_hz, author);
         }
         MissionAction::StartHunt | MissionAction::StopSweep => HuntAction::Start,
         MissionAction::StopHunt => HuntAction::Stop,
@@ -74,20 +67,14 @@ fn hunt_action(
     Ok(())
 }
 
-fn tune_channel(
+fn tune(
     state: &AppState,
-    (ds, ch): (u32, u32),
+    node: &str,
     frequency_hz: f64,
     author: Option<&str>,
 ) -> Result<(), AppError> {
-    let frequency_hz = positive(frequency_hz)?;
-    let _serialized = crate::rest::lock_gate(&state.apply_gate);
-    let edit = workspace::begin_edit(state, ds, Some(ch), author);
-    state.engine.tune_channel(ds, ch, frequency_hz)?;
-    if let Some(edit) = edit {
-        workspace::finish_edit(state, edit);
-    }
-    placement::settle_active(state);
+    let freq_hz = positive(frequency_hz)?;
+    rest::act(state, node, NodeAction::Tune { freq_hz }, author)?;
     Ok(())
 }
 
@@ -98,14 +85,7 @@ fn array_action(
 ) -> Result<(), AppError> {
     let array = array.ok_or(MissionRefusal::NotRunning)?;
     match action {
-        MissionAction::Tune { frequency_hz } => array::tune(
-            state,
-            array,
-            ArrayTuneRequest {
-                center_hz: Some(positive(frequency_hz)?),
-                gain: None,
-            },
-        ),
+        MissionAction::Tune { frequency_hz } => tune(state, array, frequency_hz, None),
         MissionAction::Calibrate => array::calibrate(state, array),
         _ => Err(MissionRefusal::NotAControl.into()),
     }

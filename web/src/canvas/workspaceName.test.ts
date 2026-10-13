@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MAX_NAME_LEN } from "./graph";
+import { MAX_NAME_LEN } from "../lib/limits";
+
 import { DEFAULT_WORKSPACE_NAME, workspaceName } from "./workspaceName";
 
 describe("workspaceName", () => {

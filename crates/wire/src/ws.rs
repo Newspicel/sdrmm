@@ -23,7 +23,6 @@ pub enum StateScope {
     Recordings,
     Clients,
     DecoderLog,
-    Calls,
     Images,
     Workspaces,
     Workspace(i64),

@@ -1,11 +1,11 @@
 import { HuntPanel } from "../../components/HuntPanel";
-import { feedsOf } from "../../lib/resolved";
+import { sweptBy } from "../../lib/resolved";
 import type { PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { hasFeed } from "../lanes";
 import { huntSweepOf } from "../newNode";
-import { decoderOf } from "../workspaceDevice";
+import { controlledOf } from "../workspaceDevice";
 import { NodeShell } from "./NodeShell";
 
 export function HuntFace({ node }: { node: PatchNode }) {
@@ -17,13 +17,9 @@ export function HuntFace({ node }: { node: PatchNode }) {
 
 function HuntNodeFace({ node }: { node: PatchNodeOf<"hunt"> }) {
   const workspace = useWorkspaceContext();
-  const decoder = decoderOf(workspace, node.id);
+  const decoder = controlledOf(workspace, node.id);
   const sweep = huntSweepOf(node, workspace.context.catalog);
-  const scanning =
-    decoder !== null &&
-    feedsOf(workspace.resolved, decoder.node, "control").some((feed) =>
-      decoder.set.scanners?.some((scanner) => scanner.settings.node === feed.source),
-    );
+  const scanning = decoder !== null && sweptBy(workspace.resolved, decoder.node, node.id);
   const remember = (data: Partial<PatchNodeOf<"hunt">["data"]>): void => {
     workspace.edit((snapshot) => ({
       ...snapshot,

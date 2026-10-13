@@ -1,11 +1,14 @@
-import { controlledBy, radioOf } from "../lib/resolved";
-import type { ChannelInfo, DeviceSet } from "../lib/types";
+import { type Controlled, controlledChannel, runningSet } from "../lib/resolved";
+import type { DeviceSet } from "../lib/types";
 import type { Workspace } from "./context";
 import { type IqLane, iqSourceOf } from "./lanes";
 
-export function deviceSetOf(workspace: Workspace, node: string): DeviceSet | null {
-  const owner = radioOf(workspace.resolved, node);
-  return owner === null ? null : (workspace.devices.get(owner) ?? null);
+export function runningSetOf(workspace: Workspace, node: string): DeviceSet | null {
+  return runningSet(workspace.resolved, workspace.deviceSets, node);
+}
+
+export function controlledOf(workspace: Workspace, node: string): Controlled | null {
+  return controlledChannel(workspace.resolved, workspace.deviceSets, node);
 }
 
 export function laneOf(workspace: Workspace, node: string): IqLane | null {
@@ -17,20 +20,4 @@ export function laneOf(workspace: Workspace, node: string): IqLane | null {
     return wired?.source === owner && wired.stream === stream ? wired : { source: owner, stream };
   }
   return wired;
-}
-
-export interface Decoder {
-  node: string;
-  set: DeviceSet;
-  channel: ChannelInfo;
-}
-
-export function decoderOf(workspace: Workspace, node: string): Decoder | null {
-  const driven = controlledBy(workspace.resolved, node);
-  if (driven === null) {
-    return null;
-  }
-  const channel = workspace.channels.get(driven);
-  const set = deviceSetOf(workspace, driven);
-  return channel === undefined || set === null ? null : { node: driven, set, channel };
 }

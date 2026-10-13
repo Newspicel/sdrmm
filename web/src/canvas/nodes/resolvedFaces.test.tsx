@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { ChannelInfo, DeviceSet, PatchGraph, PatchNode } from "../../lib/types";
 import { renderFace } from "../../test/faceHarness";
 import { deviceSet, placed } from "../../test/fixtures";
-import { resolvedNodeOf, resolvedPatch, resolvedPort, wiredPatch } from "../../test/resolved";
+import { resolvedBy } from "../../test/recorded";
+import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
 import { ChannelFace } from "./ChannelFace";
+import { EventFilterFace } from "./EventFilterFace";
 import { EventOutputFace } from "./EventOutputFace";
 import { AudioRecorderFace } from "./RecorderFaces";
 
@@ -126,8 +128,31 @@ describe("faces read the resolved patch", () => {
     const free = renderFace(ChannelFace, DECODER, {
       graph,
       ...wiring,
-      resolved: wiredPatch({ ...graph, edges: graph.edges?.slice(0, 1) }, wiring),
+      resolved: resolvedBy({ ...graph, edges: graph.edges?.slice(0, 1) }, wiring.devices),
     });
     expect(free).not.toContain("Tuned by");
+  });
+
+  it("offers the kinds the server says reach a filter", () => {
+    const filter = placed("rule", { kind: "event_filter", data: {} });
+    const resolved = resolvedPatch([
+      resolvedNodeOf("rule", "event_filter", [
+        resolvedPort(
+          { name: "events", port_type: "events", direction: "in", multi: "many" },
+          {
+            feeds: [
+              { source: "sat", port: "events", payload: { type: "events", kinds: ["satellite"] } },
+              { source: "plane", port: "events", payload: { type: "events", kinds: ["adsb"] } },
+            ],
+          },
+        ),
+      ]),
+    ]);
+    const html = renderFace(EventFilterFace, filter, {
+      graph: { nodes: [filter], edges: [] },
+      resolved,
+    });
+    expect(html).toContain(`aria-label="Match Satellite events"`);
+    expect(html).toContain(`aria-label="Match ADS-B events"`);
   });
 });

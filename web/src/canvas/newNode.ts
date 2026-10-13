@@ -66,10 +66,6 @@ export function carriesSettings(catalog: PatchCatalog, kind: NodeKind): boolean 
   return body !== null && "data" in body;
 }
 
-export function startsOnItsOwn(kind: NodeKind): boolean {
-  return kind === "signal_gen";
-}
-
 export function huntSweepOf(
   node: PatchNodeOf<"hunt">,
   catalog: PatchCatalog,

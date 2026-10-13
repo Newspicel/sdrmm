@@ -16,7 +16,7 @@ import type {
   PatchGraph,
   ResolvedPatch,
 } from "../../lib/types";
-import { ARRAY_LANE_PORT, nodeOf, portStream, rxStreamCount, streamLabel } from "../graph";
+import { nodeOf, rxStreamCount, streamLabel } from "../graph";
 import { arrayLanes } from "../lanes";
 import { laneCenterHz, refLabel } from "./deviceNode";
 import { ageLabel } from "./processorFace";
@@ -38,13 +38,11 @@ export function heldLanes(
 ): ReadonlyMap<number, string> {
   const held = new Map<number, string>();
   for (const port of resolvedNode(resolved, device)?.ports ?? []) {
-    const stream = port.direction === "out" ? portStream("iq", port.name) : null;
+    const stream = port.direction === "out" && port.port_type === "iq" ? port.stream : undefined;
     const reach = (port.reaches ?? []).find(
-      (candidate) =>
-        portStream(ARRAY_LANE_PORT, candidate.port) !== null &&
-        makesArray(resolved, candidate.sink),
+      (candidate) => candidate.stream != null && makesArray(resolved, candidate.sink),
     );
-    if (stream !== null && reach !== undefined && !held.has(stream)) {
+    if (stream != null && reach !== undefined && !held.has(stream)) {
       held.set(stream, reach.sink);
     }
   }
@@ -113,7 +111,7 @@ export function arrayLaneRows(
   status: ArrayStatus | undefined,
 ): ArrayLaneRow[] {
   return arrayLanes(resolved, array).map((wire) => {
-    const stream = portStream("iq", wire.source.port) ?? 0;
+    const stream = wire.stream;
     const streams = rxStreamCount(devices.get(wire.source.node)?.capabilities);
     const name = sourceName(graph, devices, wire.source.node);
     return {
@@ -270,8 +268,7 @@ export function arraySpanHz(
 ): number | null {
   const centres = arrayLanes(resolved, array).flatMap((wire) => {
     const set = devices.get(wire.source.node);
-    const stream = portStream("iq", wire.source.port);
-    const hz = set === undefined || stream === null ? null : laneCenterHz(set, stream);
+    const hz = set === undefined ? null : laneCenterHz(set, wire.stream);
     return hz === null ? [] : [hz];
   });
   if (centres.length === 0 || status === undefined) {

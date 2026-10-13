@@ -1,19 +1,12 @@
 import { kindEntry, kindHas } from "../../lib/eventKinds";
-import { feedSources } from "../../lib/resolved";
+import { MAX_FILTER_IDS, MAX_FILTER_TEXT_LEN } from "../../lib/limits";
 import type {
   Capability,
-  ChannelDescriptor,
   EventFilterNode,
   EventKindEntry,
+  Feed,
   FilterMode,
-  PatchGraph,
-  ResolvedPatch,
 } from "../../lib/types";
-import { nodeOf } from "../graph";
-
-export const MAX_FILTER_IDS = 256;
-export const MAX_FILTER_DURATION_MS = 600_000;
-export const MAX_FILTER_TEXT_LEN = 128;
 
 export type TriState = "any" | "yes" | "no";
 
@@ -85,49 +78,11 @@ export function fromTriState(state: TriState): boolean | undefined {
   return state === "yes";
 }
 
-export interface WiredSource {
-  channelType?: string;
-  trunk: boolean;
-  monitor?: boolean;
-}
-
-export function wiredSourcesOf(
-  graph: PatchGraph,
-  resolved: ResolvedPatch | null,
-  node: string,
-): WiredSource[] {
-  return feedSources(resolved, node, "events").map((id) => {
-    const found = nodeOf(graph, id);
-    if (found?.kind === "channel") {
-      return { channelType: found.data.channel_type, trunk: false };
-    }
-    if (found?.kind === "spectrum_monitor") {
-      return { trunk: false, monitor: true };
-    }
-    return { trunk: found?.kind === "dmr_trunk" };
-  });
-}
-
-export function kindsOffered(
-  sources: readonly WiredSource[],
-  descriptors: readonly ChannelDescriptor[],
-): string[] {
+export function offeredBy(feeds: readonly Feed[]): string[] {
   const kinds = new Set<string>();
-  for (const source of sources) {
-    if (source.monitor) {
-      kinds.add("transmission");
-      for (const descriptor of descriptors) {
-        for (const kind of descriptor.emits ?? []) kinds.add(kind);
-      }
-    }
-    if (source.trunk) {
-      kinds.add("dv");
-      kinds.add("call");
-    }
-    const descriptor = descriptors.find((d) => d.type_id === source.channelType);
-    for (const kind of descriptor?.emits ?? []) kinds.add(kind);
-    if (descriptor?.calls != null) {
-      kinds.add("call");
+  for (const feed of feeds) {
+    if (feed.payload.type === "events") {
+      for (const kind of feed.payload.kinds) kinds.add(kind);
     }
   }
   return [...kinds].toSorted();

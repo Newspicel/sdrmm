@@ -1,4 +1,4 @@
-use super::{bind::*, feeds::MAX_PASS_DEPTH, *};
+use super::{feeds::MAX_PASS_DEPTH, *};
 use crate::{
     CallGate, EventKind,
     array::VirtualLane,
@@ -104,13 +104,21 @@ fn compiled(graph: &PatchGraph) -> ResolvedPatch {
 }
 
 fn bound(graph: &PatchGraph, live: &StateSnapshot) -> (ResolvedPatch, Vec<NodeProblem>) {
+    bound_with(graph, live, &[])
+}
+
+fn bound_with(
+    graph: &PatchGraph,
+    live: &StateSnapshot,
+    attached: &[crate::device::DeviceInfo],
+) -> (ResolvedPatch, Vec<NodeProblem>) {
     let all = descriptors();
     let ctx = ResolveCtx {
         descriptors: Some(&all),
         live: Some(live),
     };
     let mut patch = compile(graph, &ctx).expect("compiles");
-    let problems = bind(&mut patch, graph, live);
+    let problems = bind(&mut patch, graph, live, attached);
     (patch, problems)
 }
 
@@ -300,13 +308,14 @@ fn a_radio_binds_to_the_first_open_set_it_names_and_claims_it_once() {
     assert_eq!(
         patch.runs("far"),
         Some(&Runs::Unbound {
-            reason: RADIO_ABSENT.to_owned()
+            reason: UnboundReason::RadioAbsent
         })
     );
     assert!(
         problems
             .iter()
-            .any(|problem| problem.node == "far" && problem.text == RADIO_ABSENT)
+            .any(|problem| problem.node == "far"
+                && problem.text == UnboundReason::RadioAbsent.text())
     );
 }
 
@@ -368,11 +377,11 @@ fn a_decoder_on_another_lane_or_unwired_stays_unbound() {
     assert_eq!(
         patch.runs("loose"),
         Some(&Runs::Unbound {
-            reason: NOT_WIRED.to_owned()
+            reason: UnboundReason::NotWired
         })
     );
     assert_eq!(problems.len(), 1);
-    assert_eq!(problems[0].text, NOT_PLACED);
+    assert_eq!(problems[0].text, UnboundReason::NotPlaced.text());
 }
 
 #[test]
@@ -599,12 +608,47 @@ fn a_decoder_retunes_its_radio_lane_unless_either_end_is_locked() {
         nodes: vec![radio("dev", "band"), channel("voice", "nfm")],
         edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
     };
+    let mut manual = set(1, "band", Vec::new());
+    manual.settings.tuning = Some(crate::Tuning::Manual);
+    for state in [live(vec![set(1, "band", Vec::new())]), live(vec![manual])] {
+        assert!(bound(&graph, &state).0.edges[0].retunes_source);
+    }
     let state = live(vec![set(1, "band", Vec::new())]);
-    assert!(bound(&graph, &state).0.edges[0].retunes_source);
+    if let NodeBody::Channel(channel) = &mut graph.nodes[1].body {
+        channel.tuning_locked = true;
+    }
+    assert!(!bound(&graph, &state).0.edges[0].retunes_source);
+    if let NodeBody::Channel(channel) = &mut graph.nodes[1].body {
+        channel.tuning_locked = false;
+    }
     if let NodeBody::Device(device) = &mut graph.nodes[0].body {
         device.locked_streams.push(0);
     }
     assert!(!bound(&graph, &state).0.edges[0].retunes_source);
+}
+
+#[test]
+fn a_decoder_on_an_array_lane_retunes_the_array() {
+    let graph = beam_graph();
+    let mut radio_set = set(1, "band", Vec::new());
+    radio_set.virtual_lanes.push(VirtualLane {
+        stream: 5,
+        node: "bf".to_owned(),
+        port: "beam".to_owned(),
+        center_hz: 1.0,
+        sample_rate: 1.0,
+    });
+    let (patch, _) = bound(&graph, &live(vec![radio_set]));
+    let retunes = |to: &str| {
+        patch
+            .edges
+            .iter()
+            .find(|edge| edge.to.node == to)
+            .is_some_and(|edge| edge.retunes_source)
+    };
+    assert!(retunes("voice"));
+    assert!(!retunes("arr"));
+    assert!(!retunes("bf"));
 }
 
 #[test]
@@ -638,6 +682,152 @@ fn the_resolved_patch_serializes_its_tags() {
     assert_eq!(voice["ports"][0]["feeds"][0]["tap"]["tap"], "lane");
     let back: ResolvedPatch = serde_json::from_value(json).expect("round trip");
     assert_eq!(back, patch);
+}
+
+#[test]
+fn an_unbound_decoder_says_why_from_its_radio() {
+    let graph = |reference: Option<&str>| PatchGraph {
+        nodes: vec![
+            match reference {
+                Some(key) => radio("dev", key),
+                None => node("dev", NodeBody::Device(DeviceNode::default())),
+            },
+            channel("voice", "nfm"),
+            channel("loose", "nfm"),
+        ],
+        edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
+    };
+    let reason = |patch: &ResolvedPatch, node: &str| match patch.runs(node) {
+        Some(Runs::Unbound { reason }) => Some(*reason),
+        _ => None,
+    };
+    let nothing = live(Vec::new());
+    let (patch, _) = bound(&graph(None), &nothing);
+    assert_eq!(reason(&patch, "dev"), Some(UnboundReason::NoRadio));
+    assert_eq!(reason(&patch, "voice"), Some(UnboundReason::NoRadio));
+    assert_eq!(reason(&patch, "loose"), Some(UnboundReason::NotWired));
+
+    let (patch, _) = bound(&graph(Some("band")), &nothing);
+    assert_eq!(reason(&patch, "voice"), Some(UnboundReason::RadioAbsent));
+
+    let mut plugged = set(1, "band", Vec::new()).device;
+    plugged.key = "band".to_owned();
+    let (patch, problems) = bound_with(&graph(Some("band")), &nothing, &[plugged]);
+    assert_eq!(reason(&patch, "dev"), Some(UnboundReason::RadioClosed));
+    assert_eq!(reason(&patch, "voice"), Some(UnboundReason::RadioClosed));
+    assert!(
+        problems
+            .iter()
+            .any(|problem| problem.text == UnboundReason::RadioClosed.text())
+    );
+
+    let (patch, _) = bound(
+        &graph(Some("band")),
+        &live(vec![set(1, "band", Vec::new())]),
+    );
+    assert_eq!(reason(&patch, "voice"), Some(UnboundReason::NotPlaced));
+
+    let (patch, _) = bound(&beam_graph(), &live(vec![set(1, "band", Vec::new())]));
+    assert_eq!(reason(&patch, "voice"), Some(UnboundReason::NotRunning));
+}
+
+#[test]
+fn a_controller_sees_where_its_target_runs_and_a_target_who_sweeps_it() {
+    let graph = PatchGraph {
+        nodes: vec![
+            radio("dev", "band"),
+            channel("voice", "nfm"),
+            node("scan", NodeBody::Scanner(Default::default())),
+        ],
+        edges: vec![
+            wire(("dev", "iq"), ("voice", "iq")),
+            wire(("dev", "iq"), ("scan", "iq")),
+            wire(("scan", "control"), ("voice", "control")),
+        ],
+    };
+    let mut radio_set = set(1, "band", vec![live_channel(8, Some("voice"), "nfm", 0)]);
+    let (patch, _) = bound(&graph, &live(vec![radio_set.clone()]));
+    let target = &patch.reaches("scan", "control")[0];
+    assert_eq!(
+        target.target_runs,
+        Some(Runs::Channel {
+            device_set: 1,
+            channel: 8,
+            stream: 0
+        })
+    );
+    assert_eq!(patch.feeds("voice", "control")[0].drives, None);
+
+    radio_set.scanners.push(crate::scan::ScannerStatus {
+        settings: crate::scan::ScanSettings {
+            channel: 8,
+            node: Some("scan".to_owned()),
+            ..Default::default()
+        },
+        ..serde_json::from_value(serde_json::json!({
+            "state": "scanning", "settings": {"channel": 8, "ranges": []},
+            "targets": 0, "current_hz": 0.0, "sweeps": 0, "hits": 0
+        }))
+        .expect("a scanner status")
+    });
+    let (patch, _) = bound(&graph, &live(vec![radio_set]));
+    assert_eq!(
+        patch.feeds("voice", "control")[0].drives,
+        Some(crate::control::ControlVerb::Sweep)
+    );
+}
+
+#[test]
+fn a_coherent_radio_offers_the_wires_of_a_new_array() {
+    let graph = PatchGraph {
+        nodes: vec![radio("dev", "kraken")],
+        edges: Vec::new(),
+    };
+    let mut kraken = set(1, "kraken", Vec::new());
+    kraken.capabilities.rx_streams = 3;
+    kraken.capabilities.coherence = crate::device::Coherence::PhaseCoherent;
+    let offer = |state: &StateSnapshot, graph: &PatchGraph| {
+        bound(graph, state)
+            .0
+            .node("dev")
+            .and_then(|node| node.array_offer.clone())
+    };
+    let wire_of = |from: &str, to: &str| LaneWire {
+        from: from.to_owned(),
+        to: to.to_owned(),
+    };
+    assert_eq!(
+        offer(&live(vec![kraken.clone()]), &graph),
+        Some(ArrayOffer::Ready {
+            wires: vec![
+                wire_of("iq", "lane"),
+                wire_of("iq2", "lane2"),
+                wire_of("iq3", "lane3"),
+            ]
+        })
+    );
+
+    let mut loose = kraken.clone();
+    loose.capabilities.coherence = crate::device::Coherence::None;
+    assert_eq!(
+        offer(&live(vec![loose]), &graph),
+        Some(ArrayOffer::Refused {
+            reason: crate::Refusal::SharedClock.text()
+        })
+    );
+
+    let held = PatchGraph {
+        nodes: vec![
+            radio("dev", "kraken"),
+            node("arr", NodeBody::Array(crate::array::ArrayNode::default())),
+        ],
+        edges: vec![wire(("dev", "iq"), ("arr", "lane"))],
+    };
+    assert_eq!(offer(&live(vec![kraken]), &held), None);
+    assert_eq!(
+        offer(&live(vec![set(1, "kraken", Vec::new())]), &graph),
+        None
+    );
 }
 
 mod contracts;

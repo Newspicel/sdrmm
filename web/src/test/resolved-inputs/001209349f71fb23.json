@@ -1,0 +1,133 @@
+{
+  "name": "001209349f71fb23",
+  "test": "array readouts > spans from the lowest to the highest held lane plus one rate",
+  "graph": {
+    "nodes": [
+      {
+        "id": "kraken",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "kraken5"
+          }
+        }
+      },
+      {
+        "id": "rtl",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "rtlsdr",
+            "serial": "7"
+          }
+        }
+      },
+      {
+        "id": "north",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        },
+        "label": "North"
+      },
+      {
+        "id": "south",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane"
+        }
+      },
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq2"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane2"
+        }
+      },
+      {
+        "from": {
+          "node": "kraken",
+          "port": "iq3"
+        },
+        "to": {
+          "node": "north",
+          "port": "lane3"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

@@ -9,7 +9,7 @@ use tokio::sync::{
 
 use crate::{
     activity::Activity,
-    events::{RouteOutcome, Routed},
+    events::{RouteOutcome, Routed, Stations},
     reference::Reference,
     resolved::Resolved,
 };
@@ -50,6 +50,7 @@ pub(crate) async fn run(router: Router) {
     let mut records = strong.subscribe_decoded();
     drop(strong);
     let mut routes = resolved.borrow_and_update().clone();
+    let mut stations = Stations::default();
     loop {
         tokio::select! {
             changed = resolved.changed() => match changed {
@@ -58,7 +59,8 @@ pub(crate) async fn run(router: Router) {
             },
             record = records.recv() => match record {
                 Ok(record) => {
-                    if let Some(routed) = route(&routes, record, &reference, &activity) {
+                    let seen = (reference.as_ref(), activity.as_ref());
+                    if let Some(routed) = route(&routes, record, &mut stations, seen) {
                         let _ = feed.send(Decoded::Record(Box::new(routed)));
                     }
                 }
@@ -75,10 +77,10 @@ pub(crate) async fn run(router: Router) {
 fn route(
     routes: &Resolved,
     mut record: DecodedRecord,
-    reference: &Reference,
-    activity: &Activity,
+    stations: &mut Stations,
+    (reference, activity): (&Reference, &Activity),
 ) -> Option<Routed> {
-    let outcome = routes.events.route(&mut record);
+    let outcome = routes.events.route(&mut record, stations);
     let source = record.origin.as_ref().map(|origin| origin.node.clone());
     activity.routed(source.as_deref(), outcome);
     if outcome != RouteOutcome::Delivered {

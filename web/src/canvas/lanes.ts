@@ -1,6 +1,6 @@
 import { channelAt, feedsOf, radioRunning, resolvedNode, tapChannels } from "../lib/resolved";
 import type { ChannelInfo, DeviceSet, Feed, PortRef, ResolvedPatch } from "../lib/types";
-import { ARRAY_LANE_PORT, opensDevice, portStream } from "./graph";
+import { opensDevice } from "./graph";
 
 export interface VirtualSource {
   node: string;
@@ -24,12 +24,10 @@ export function hasFeed(patch: ResolvedPatch | null, node: string, port: string)
 
 function laneOfFeed(patch: ResolvedPatch | null, feed: Feed): IqLane | null {
   const source = resolvedNode(patch, feed.source);
-  const direct = source !== undefined && opensDevice(source.kind);
   if (feed.tap?.tap !== "lane") {
-    const stream = direct ? portStream("iq", feed.port) : null;
-    return stream === null ? null : { source: feed.source, stream };
+    return null;
   }
-  if (direct) {
+  if (source !== undefined && opensDevice(source.kind)) {
     return { source: feed.source, stream: feed.tap.stream };
   }
   const radio = radioRunning(patch, feed.tap.device_set);
@@ -76,16 +74,24 @@ export interface ArrayLane {
   lane: number;
   port: string;
   source: PortRef;
+  stream: number;
 }
 
 export function arrayLanes(resolved: ResolvedPatch | null, array: string): ArrayLane[] {
   return (resolvedNode(resolved, array)?.ports ?? [])
     .flatMap((port) => {
-      const lane = port.direction === "in" ? portStream(ARRAY_LANE_PORT, port.name) : null;
+      const lane = port.direction === "in" && port.port_type === "iq" ? port.stream : undefined;
       const feed = port.feeds?.[0];
-      return lane === null || feed === undefined
+      return lane == null || feed === undefined
         ? []
-        : [{ lane, port: port.name, source: { node: feed.source, port: feed.port } }];
+        : [
+            {
+              lane,
+              port: port.name,
+              source: { node: feed.source, port: feed.port },
+              stream: feed.stream ?? 0,
+            },
+          ];
     })
     .toSorted((a, b) => a.lane - b.lane);
 }

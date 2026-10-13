@@ -21,20 +21,32 @@ struct Carried {
 struct Slot {
     decoder: Placeable,
     carried: Option<Carried>,
+    fixed: bool,
 }
 
 pub(crate) struct Plan {
     slots: Vec<Slot>,
-    pub refused: Vec<PatchRefusal>,
+    refused: Vec<(bool, PatchRefusal)>,
 }
 
 impl Plan {
     fn decoders(&self) -> Vec<Placeable> {
-        self.slots.iter().map(|slot| slot.decoder.clone()).collect()
+        self.slots
+            .iter()
+            .filter(|slot| !slot.fixed)
+            .map(|slot| slot.decoder.clone())
+            .collect()
     }
 
     fn flexible_only(mut self) -> Self {
-        self.slots.retain(|slot| slot.decoder.lanes.len() > 1);
+        self.slots
+            .retain(|slot| !slot.fixed && slot.decoder.lanes.len() > 1);
+        self
+    }
+
+    fn only(mut self, fixed: bool) -> Self {
+        self.slots.retain(|slot| slot.fixed == fixed);
+        self.refused.retain(|(held, _)| *held == fixed);
         self
     }
 }
@@ -77,19 +89,49 @@ fn holds_channel(set: &DeviceSet, channel: &ChannelInfo) -> bool {
         || channel.network_export.is_some()
 }
 
-fn radio_feeds<'a>(patch: &'a ResolvedPatch, node: &str) -> impl Iterator<Item = &'a Feed> {
-    patch.feeds(node, IQ_PORT).iter().filter(|feed| {
-        patch
-            .node(&feed.source)
-            .is_some_and(|source| source.kind.role() == Role::OpensRadio)
-    })
+fn opens_radio(patch: &ResolvedPatch, feed: &Feed) -> bool {
+    patch
+        .node(&feed.source)
+        .is_some_and(|source| source.kind.role() == Role::OpensRadio)
 }
 
-fn radio_lanes(patch: &ResolvedPatch, node: &str) -> Vec<Lane> {
-    radio_feeds(patch, node)
+fn radio_feeds<'a>(patch: &'a ResolvedPatch, node: &str) -> impl Iterator<Item = &'a Feed> {
+    patch
+        .feeds(node, IQ_PORT)
+        .iter()
+        .filter(|feed| opens_radio(patch, feed))
+}
+
+fn lanes_of<'a>(feeds: impl Iterator<Item = &'a Feed>) -> Vec<Lane> {
+    feeds
         .filter_map(|feed| feed.tap.as_ref()?.lane())
         .map(|(device_set, stream)| Lane { device_set, stream })
         .collect()
+}
+
+fn wired_lanes(patch: &ResolvedPatch, node: &str) -> (Vec<Lane>, bool) {
+    let radio = lanes_of(radio_feeds(patch, node));
+    if !radio.is_empty() {
+        return (radio, false);
+    }
+    let fixed = lanes_of(
+        patch
+            .feeds(node, IQ_PORT)
+            .iter()
+            .filter(|feed| !opens_radio(patch, feed)),
+    );
+    (fixed.into_iter().take(1).collect(), true)
+}
+
+fn lane_center(state: &StateSnapshot, lane: Lane) -> Option<f64> {
+    state
+        .device_sets
+        .iter()
+        .find(|set| set.id == lane.device_set)?
+        .virtual_lanes
+        .iter()
+        .find(|held| held.stream == lane.stream)
+        .map(|held| held.center_hz)
 }
 
 pub(crate) fn plan(
@@ -104,19 +146,25 @@ pub(crate) fn plan(
         let NodeBody::Channel(channel) = &node.body else {
             continue;
         };
-        let lanes = radio_lanes(patch, &node.id);
-        if lanes.is_empty() {
+        let (lanes, fixed) = wired_lanes(patch, &node.id);
+        let Some(&first) = lanes.first() else {
             continue;
-        }
+        };
         let live = carried_by(state, &node.id, &channel.channel_type);
+        let center_hz = fixed.then(|| lane_center(state, first)).flatten();
         let settings = live
             .map(|(_, _, channel)| channel.settings.clone())
-            .or_else(|| workspace::channel_settings(&node.id, &channel.channel_type, saved));
-        let Some(settings) = settings else {
-            refused.push(PatchRefusal {
-                node: node.id.clone(),
-                reason: format!("this build has no channel type {:?}", channel.channel_type),
+            .or_else(|| {
+                workspace::channel_settings(&node.id, &channel.channel_type, saved, center_hz)
             });
+        let Some(settings) = settings else {
+            refused.push((
+                fixed,
+                PatchRefusal {
+                    node: node.id.clone(),
+                    reason: format!("this build has no channel type {:?}", channel.channel_type),
+                },
+            ));
             continue;
         };
         slots.push(Slot {
@@ -128,6 +176,7 @@ pub(crate) fn plan(
                 pinned: live.is_some_and(|(_, set, channel)| holds_channel(set, channel)),
             },
             carried: live.map(|(carried, _, _)| carried),
+            fixed,
         });
     }
     Plan { slots, refused }
@@ -175,9 +224,11 @@ fn close(app: &AppState, slot: &Slot, carried: Carried, report: &mut PatchApplyR
     }
 }
 
-pub(crate) fn settle(app: &AppState, plan: &Plan, report: &mut PatchApplyReport) {
+fn settle(app: &AppState, plan: &Plan, report: &mut PatchApplyReport) {
     report.placement = None;
-    report.refused.extend(plan.refused.iter().cloned());
+    report
+        .refused
+        .extend(plan.refused.iter().map(|(_, refusal)| refusal.clone()));
     let allocation = app.engine.place_channels(&plan.decoders());
     let placements = &allocation.placements;
     let refused = report.refused.len();
@@ -188,7 +239,7 @@ pub(crate) fn settle(app: &AppState, plan: &Plan, report: &mut PatchApplyReport)
             "decoder allocation search stopped before proving optimality"
         );
     }
-    for slot in &plan.slots {
+    for slot in plan.slots.iter().filter(|slot| !slot.fixed) {
         let target = placements
             .iter()
             .find(|placement| placement.node == slot.decoder.node)
@@ -221,6 +272,30 @@ pub(crate) fn settle(app: &AppState, plan: &Plan, report: &mut PatchApplyReport)
     }
 }
 
+fn settle_fixed(app: &AppState, plan: &Plan, report: &mut PatchApplyReport) {
+    report
+        .refused
+        .extend(plan.refused.iter().map(|(_, refusal)| refusal.clone()));
+    for slot in &plan.slots {
+        let Some(&lane) = slot.decoder.lanes.first() else {
+            continue;
+        };
+        match slot.carried {
+            Some(carried) if carried.lane == lane => {}
+            Some(carried) => {
+                if let Some(created) = open(app, slot, lane, report)
+                    && !close(app, slot, carried, report)
+                {
+                    close(app, slot, created, report);
+                }
+            }
+            None => {
+                open(app, slot, lane, report);
+            }
+        }
+    }
+}
+
 pub(crate) fn settle_workspace(
     app: &AppState,
     graph: &PatchGraph,
@@ -229,8 +304,18 @@ pub(crate) fn settle_workspace(
 ) {
     let state = app.engine.snapshot();
     let patch = workspace::resolve(graph, &state);
-    let plan = plan(graph, &patch, &state, saved);
-    settle(app, &plan, report);
+    settle(app, &plan(graph, &patch, &state, saved).only(false), report);
+}
+
+pub(crate) fn settle_lanes(
+    app: &AppState,
+    graph: &PatchGraph,
+    saved: &WorkspaceState,
+    report: &mut PatchApplyReport,
+) {
+    let state = app.engine.snapshot();
+    let patch = workspace::resolve(graph, &state);
+    settle_fixed(app, &plan(graph, &patch, &state, saved).only(true), report);
 }
 
 pub(crate) fn settle_active(app: &AppState) -> bool {

@@ -273,3 +273,7 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+.wire-retunes .react-flow__edge-path {
+  stroke-dasharray: 10 3;
+}

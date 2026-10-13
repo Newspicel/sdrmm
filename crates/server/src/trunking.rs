@@ -1,10 +1,7 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use sdrmm_engine::{Engine, TrunkSystem, trunking::TrunkRadio};
-use sdrmm_wire::{
-    AUDIO_PORT, CallGate, EVENTS_PORT, EventKind, IQ_PORT, Keeps, NodeBody, ResolvedPatch,
-    ServerEvent, StateScope,
-};
+use sdrmm_wire::{IQ_PORT, NodeBody, ResolvedPatch, ServerEvent, StateScope};
 use tokio::sync::{broadcast::error::RecvError, watch};
 
 use crate::{Store, resolved::Resolved};
@@ -13,28 +10,10 @@ const DEBOUNCE: Duration = Duration::from_millis(250);
 
 const REFRESH: Duration = Duration::from_secs(30);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct CallBinding {
-    pub node: String,
-    pub device_set: u32,
-    pub channel: u32,
-    pub gate: CallGate,
-    pub keep_audio: bool,
-}
-
-#[derive(Clone, Default, Debug, PartialEq, Eq)]
-pub(crate) struct CallPolicy {
-    pub trunk_systems: HashMap<String, bool>,
-    pub channels: Vec<CallBinding>,
-}
-
-pub(crate) type Recording = Arc<CallPolicy>;
-
 pub(crate) async fn watch_patch(
     engine: std::sync::Weak<Engine>,
     store: Arc<Store>,
     mut patch: watch::Receiver<Arc<Resolved>>,
-    recording: watch::Sender<Recording>,
 ) {
     let Some(strong) = engine.upgrade() else {
         return;
@@ -53,12 +32,11 @@ pub(crate) async fn watch_patch(
             tokio::task::spawn_blocking(move || resolve(&store, &engine, &current)).await
         };
         match resolved {
-            Ok((systems, policy)) => {
+            Ok(systems) => {
                 if configured.as_ref() != Some(&systems) {
                     strong.configure_trunking(systems.clone());
                     configured = Some(systems);
                 }
-                let _ = recording.send(policy);
             }
             Err(error) => tracing::warn!(%error, "could not resolve the trunk systems"),
         }
@@ -89,67 +67,28 @@ fn touches_binding(event: &ServerEvent) -> bool {
     )
 }
 
-fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> (Vec<TrunkSystem>, Recording) {
+fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> Vec<TrunkSystem> {
     let Some(workspace) = resolved.patch.workspace else {
-        return (Vec::new(), Recording::default());
+        return Vec::new();
     };
     let saved = store.workspace_state(workspace).unwrap_or_default();
     let live_trunks = engine.trunk_systems();
-    let state = engine.snapshot();
-    let patch = &resolved.patch;
-    let mut systems = Vec::new();
-    let mut policy = CallPolicy::default();
-    for node in &resolved.graph.nodes {
-        let wants_calls = patch.delivers(&node.id, EVENTS_PORT, EventKind::Call);
-        let keep_audio = patch.keeps(&node.id, AUDIO_PORT, Keeps::Clips);
-        match &node.body {
-            NodeBody::DmrTrunk(settings) => {
-                systems.push(TrunkSystem {
-                    node: node.id.clone(),
-                    protocol: settings.protocol,
-                    discovery: settings.discovery.clone(),
-                    channel_map: settings.channel_map.clone(),
-                    learned: learned_for(&saved, &node.id, &live_trunks),
-                    radio: own_radio(patch, &node.id, settings),
-                });
-                if wants_calls {
-                    policy.trunk_systems.insert(node.id.clone(), keep_audio);
-                }
-            }
-            NodeBody::Channel(_) if wants_calls => {
-                let Some(addr) = patch.channel(&node.id) else {
-                    continue;
-                };
-                let Some(gate) = gate_of(&state, addr.device_set, addr.channel) else {
-                    continue;
-                };
-                policy.channels.push(CallBinding {
-                    node: node.id.clone(),
-                    device_set: addr.device_set,
-                    channel: addr.channel,
-                    gate,
-                    keep_audio,
-                });
-            }
-            _ => {}
-        }
-    }
-    (systems, Arc::new(policy))
-}
-
-fn gate_of(state: &sdrmm_wire::StateSnapshot, device_set: u32, channel: u32) -> Option<CallGate> {
-    let info = state
-        .device_sets
+    resolved
+        .graph
+        .nodes
         .iter()
-        .find(|set| set.id == device_set)?
-        .channels
-        .iter()
-        .find(|info| info.id == channel)?;
-    let descriptor = sdrmm_channels::descriptor(info.settings.params.type_id())?;
-    match descriptor.calls? {
-        CallGate::Squelch if info.settings.squelch.is_off() => None,
-        gate => Some(gate),
-    }
+        .filter_map(|node| match &node.body {
+            NodeBody::DmrTrunk(settings) => Some(TrunkSystem {
+                node: node.id.clone(),
+                protocol: settings.protocol,
+                discovery: settings.discovery.clone(),
+                channel_map: settings.channel_map.clone(),
+                learned: learned_for(&saved, &node.id, &live_trunks),
+                radio: own_radio(&resolved.patch, &node.id, settings),
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 /// What the search already worked out for the site this system is sitting on. Keyed by colour
@@ -189,108 +128,17 @@ fn own_radio(
 mod tests {
     use sdrmm_device::DeviceRegistry;
     use sdrmm_wire::{
-        ChannelNode, ChannelParams, ChannelSettings, DeviceRef, DmrTrunkNode, DmrTrunkProtocol,
-        PatchEdge, PatchNode, PortRef, Position, UpdateWorkspaceRequest, WorkspaceSnapshot,
+        DeviceRef, DmrTrunkNode, DmrTrunkProtocol, PatchEdge, PatchNode, PortRef, Position,
+        UpdateWorkspaceRequest, WorkspaceSnapshot,
     };
 
     use super::*;
     use crate::{problems::ProblemBoard, resolved::ResolvedHub};
 
-    fn resolved(store: &Store, engine: &Engine) -> (Vec<TrunkSystem>, Recording) {
+    fn resolved(store: &Store, engine: &Engine) -> Vec<TrunkSystem> {
         let hub = ResolvedHub::default();
         hub.reload(store, engine, &ProblemBoard::default());
         resolve(store, engine, &hub.current())
-    }
-
-    fn channel_node(id: &str, channel_type: &str) -> PatchNode {
-        PatchNode {
-            id: id.to_owned(),
-            body: NodeBody::Channel(ChannelNode {
-                channel_type: channel_type.to_owned(),
-                tuning_locked: false,
-            }),
-            position: Position { x: 0.0, y: 0.0 },
-            size: None,
-            label: None,
-        }
-    }
-
-    fn live_channel_workspace(
-        store: &Store,
-        engine: &Engine,
-        node: PatchNode,
-        squelch: sdrmm_wire::Squelch,
-        wired: bool,
-    ) {
-        let set = engine
-            .create_device_set("virtual:band")
-            .expect("open the virtual radio");
-        let NodeBody::Channel(channel) = &node.body else {
-            panic!("the fixture wires a channel node");
-        };
-        engine
-            .add_channel_for(
-                set,
-                0,
-                ChannelSettings {
-                    frequency_hz: 100_000_000.0,
-                    squelch,
-                    params: ChannelParams::default_for(&channel.channel_type)
-                        .expect("a known channel type"),
-                    blanker: Default::default(),
-                },
-                Some(&node.id),
-            )
-            .expect("add channel");
-        let mut snapshot = WorkspaceSnapshot::starter();
-        let node_id = node.id.clone();
-        snapshot.graph.nodes.push(node);
-        snapshot.graph.edges.push(PatchEdge {
-            from: PortRef {
-                node: "device".to_owned(),
-                port: "iq".to_owned(),
-            },
-            to: PortRef {
-                node: node_id.clone(),
-                port: "iq".to_owned(),
-            },
-        });
-        if wired {
-            snapshot.graph.nodes.push(PatchNode {
-                id: "log".to_owned(),
-                body: NodeBody::Readout,
-                position: Position { x: 0.0, y: 0.0 },
-                size: None,
-                label: None,
-            });
-            snapshot.graph.edges.push(PatchEdge {
-                from: PortRef {
-                    node: node_id,
-                    port: "events".to_owned(),
-                },
-                to: PortRef {
-                    node: "log".to_owned(),
-                    port: "events".to_owned(),
-                },
-            });
-        }
-        let NodeBody::Device(device) = &mut snapshot
-            .graph
-            .nodes
-            .iter_mut()
-            .find(|node| node.id == "device")
-            .expect("the starter draws a radio")
-            .body
-        else {
-            panic!("the starter's radio is a device node");
-        };
-        device.device = Some(DeviceRef {
-            backend: "virtual".to_owned(),
-            serial: None,
-            key: Some("band".to_owned()),
-        });
-        let id = store.create_workspace("w", &snapshot).expect("workspace");
-        store.activate_workspace(id).expect("activate");
     }
 
     fn trunk_node() -> PatchNode {
@@ -357,7 +205,7 @@ mod tests {
         let engine = Engine::with_registry(registry, None);
         trunk_on_a_radio(&store, &engine, Some(451_000_000));
 
-        let (systems, _) = resolved(&store, &engine);
+        let systems = resolved(&store, &engine);
 
         assert_eq!(systems.len(), 1);
         let radio = systems[0].radio.expect("the radio was not resolved");
@@ -373,7 +221,7 @@ mod tests {
         let engine = Engine::with_registry(registry, None);
         trunk_on_a_radio(&store, &engine, None);
 
-        let (systems, _) = resolved(&store, &engine);
+        let systems = resolved(&store, &engine);
 
         assert_eq!(systems.len(), 1);
         assert!(
@@ -388,7 +236,7 @@ mod tests {
         let engine = Engine::with_registry(DeviceRegistry::new(), None);
         trunk_on_a_radio(&store, &engine, Some(451_000_000));
 
-        let (systems, _) = resolved(&store, &engine);
+        let systems = resolved(&store, &engine);
 
         assert_eq!(systems.len(), 1);
         assert!(
@@ -419,120 +267,6 @@ mod tests {
             )
             .expect("store the patch");
 
-        let (systems, policy) = resolved(&store, &engine);
-        assert_eq!(systems.len(), 1);
-        assert!(
-            policy.trunk_systems.is_empty(),
-            "a system with nothing wired to its events must not buffer calls"
-        );
-    }
-
-    fn policy_for(channel_type: &str, squelch: sdrmm_wire::Squelch, wired: bool) -> CallPolicy {
-        let store = Store::open(None).expect("in-memory store");
-        let mut registry = DeviceRegistry::new();
-        registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
-        let engine = Engine::with_registry(registry, None);
-        let node = channel_node("radio", channel_type);
-        live_channel_workspace(&store, &engine, node, squelch, wired);
-        let (systems, policy) = resolved(&store, &engine);
-        assert!(systems.is_empty(), "no trunk node was drawn");
-        Arc::unwrap_or_clone(policy)
-    }
-
-    #[test]
-    fn a_wired_voice_channel_keeps_calls_framed_by_its_protocol() {
-        let policy = policy_for("dmr", sdrmm_wire::Squelch::Off, true);
-        assert_eq!(policy.channels.len(), 1);
-        assert_eq!(policy.channels[0].node, "radio");
-        assert_eq!(policy.channels[0].gate, CallGate::Frames);
-    }
-
-    #[test]
-    fn a_wired_analog_channel_keeps_calls_framed_by_its_squelch() {
-        let squelch = sdrmm_wire::Squelch::Manual { level_db: -80.0 };
-        let policy = policy_for("am", squelch, true);
-        assert_eq!(policy.channels.len(), 1);
-        assert_eq!(policy.channels[0].gate, CallGate::Squelch);
-    }
-
-    #[test]
-    fn a_squelched_broadcast_channel_makes_no_calls() {
-        let squelch = sdrmm_wire::Squelch::Manual { level_db: -80.0 };
-        let policy = policy_for("drm", squelch, true);
-        assert!(policy.channels.is_empty());
-    }
-
-    #[test]
-    fn a_squelched_data_decoder_makes_no_calls() {
-        let squelch = sdrmm_wire::Squelch::Manual { level_db: -80.0 };
-        let policy = policy_for("pocsag", squelch, true);
-        assert!(policy.channels.is_empty());
-    }
-
-    #[test]
-    fn an_open_squelch_has_no_calls_to_frame() {
-        let policy = policy_for("am", sdrmm_wire::Squelch::Off, true);
-        assert!(policy.channels.is_empty());
-    }
-
-    #[test]
-    fn a_channel_whose_events_reach_no_call_sink_keeps_no_calls() {
-        let store = Store::open(None).expect("in-memory store");
-        let mut registry = DeviceRegistry::new();
-        registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
-        let engine = Engine::with_registry(registry, None);
-        live_channel_workspace(
-            &store,
-            &engine,
-            channel_node("radio", "dmr"),
-            sdrmm_wire::Squelch::Off,
-            true,
-        );
-        let id = store.active_workspace_id().expect("id").expect("active");
-        let mut detail = store.workspace(id).expect("detail");
-        for node in &mut detail.snapshot.graph.nodes {
-            if node.id == "log" {
-                node.body = NodeBody::Map;
-            }
-        }
-        store
-            .update_workspace(
-                id,
-                &UpdateWorkspaceRequest {
-                    revision: detail.info.revision,
-                    name: None,
-                    snapshot: Some(detail.snapshot),
-                },
-                None,
-            )
-            .expect("a map instead of the readout");
-        let (_, policy) = resolved(&store, &engine);
-        assert!(policy.channels.is_empty(), "a map takes no calls");
-    }
-
-    #[test]
-    fn a_wired_channel_keeps_call_audio_only_with_its_audio_wire() {
-        let policy = policy_for("dmr", sdrmm_wire::Squelch::Off, true);
-        assert!(!policy.channels[0].keep_audio);
-    }
-
-    #[test]
-    fn a_channel_with_nothing_on_its_events_keeps_nothing() {
-        let policy = policy_for("dmr", sdrmm_wire::Squelch::Off, false);
-        assert!(policy.channels.is_empty());
-    }
-
-    #[test]
-    fn a_channel_the_radio_never_opened_cannot_record_calls() {
-        let store = Store::open(None).expect("in-memory store");
-        let engine = Engine::with_registry(DeviceRegistry::new(), None);
-        let mut snapshot = WorkspaceSnapshot::empty();
-        snapshot.graph.nodes.push(channel_node("dmr", "dmr"));
-        let id = store.create_workspace("w", &snapshot).expect("workspace");
-        store.activate_workspace(id).expect("activate");
-
-        let (_, policy) = resolved(&store, &engine);
-
-        assert!(policy.channels.is_empty());
+        assert_eq!(resolved(&store, &engine).len(), 1);
     }
 }

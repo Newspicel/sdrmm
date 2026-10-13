@@ -1,5 +1,5 @@
 use super::{
-    super::{NodeBody, PortDirection, PortRef, PortSpec, PortType, Role},
+    super::{PortDirection, PortRef, PortSpec, PortType, Role},
     Feed, Net, Reach, ResolvedPort,
 };
 use crate::{
@@ -106,8 +106,11 @@ fn pass_ports(
 }
 
 fn through(net: &Net<'_>, pass: &str, payload: Payload) -> Payload {
-    match (net.node(pass).map(|(node, _)| &node.body), payload) {
-        (Some(NodeBody::EventFilter(filter)), Payload::Events { kinds }) => Payload::Events {
+    match (
+        net.node(pass).and_then(|(node, _)| node.body.event_rule()),
+        payload,
+    ) {
+        (Some(filter), Payload::Events { kinds }) => Payload::Events {
             kinds: filter.narrow(kinds),
         },
         (_, payload) => payload,
@@ -158,9 +161,11 @@ fn back(
             feeds.push(Feed {
                 source: source.to_owned(),
                 port: edge.from.port.clone(),
+                stream: out.stream,
                 via,
                 payload,
                 tap: None,
+                drives: None,
             });
             continue;
         }
@@ -203,14 +208,15 @@ fn forward(
     {
         let target = edge.to.node.as_str();
         if !passes(net, target, port_type) {
-            let accepted = net
-                .spec(&edge.to, PortDirection::In)
-                .map_or(KindSet::EMPTY, |input| input.payload.kinds());
+            let input = net.spec(&edge.to, PortDirection::In);
+            let accepted = input.map_or(KindSet::EMPTY, |input| input.payload.kinds());
             reaches.push(Reach {
                 sink: target.to_owned(),
                 port: edge.to.port.clone(),
+                stream: input.and_then(|input| input.stream),
                 via: via.clone(),
                 kinds: kinds.intersection(accepted),
+                target_runs: None,
             });
             continue;
         }

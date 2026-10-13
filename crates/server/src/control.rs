@@ -87,12 +87,7 @@ impl ControlBus {
         acks
     }
 
-    pub(crate) fn release_all_but(
-        &self,
-        rig: &dyn Rig,
-        patch: &ResolvedPatch,
-        live: &dyn Fn(&str) -> bool,
-    ) {
+    fn release_all_but(&self, rig: &dyn Rig, patch: &ResolvedPatch, live: &dyn Fn(&str) -> bool) {
         let gone: Vec<(String, Held)> = {
             let mut driven = locked(&self.driven);
             let gone = driven
@@ -268,7 +263,7 @@ pub(crate) fn takes(patch: &ResolvedPatch, from: &str, verb: ControlVerb) -> boo
         .any(|(_, verbs)| verbs.contains(&verb))
 }
 
-fn targets(patch: &ResolvedPatch, from: &str) -> Vec<(String, Vec<ControlVerb>)> {
+pub(crate) fn targets(patch: &ResolvedPatch, from: &str) -> Vec<(String, Vec<ControlVerb>)> {
     patch
         .reaches(from, CONTROL_PORT)
         .iter()

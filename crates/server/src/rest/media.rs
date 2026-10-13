@@ -1,16 +1,6 @@
 use super::*;
 
 #[utoipa::path(
-    get, path = "/api/calls",
-    responses((status = 200, description = "Completed temporary voice calls", body = VoiceCallsResponse)),
-)]
-pub(super) async fn list_calls(State(state): State<AppState>) -> Json<VoiceCallsResponse> {
-    Json(VoiceCallsResponse {
-        calls: state.calls.list(),
-    })
-}
-
-#[utoipa::path(
     get, path = "/api/calls/{id}/audio",
     params(("id" = u64, Path, description = "Call id")),
     responses(

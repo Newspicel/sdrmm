@@ -24,7 +24,7 @@ import type { NetworkExportStatus, PatchNode, PatchNodeOf } from "../../lib/type
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { basebandSourceOf, hasFeed } from "../lanes";
-import { deviceSetOf } from "../workspaceDevice";
+import { runningSetOf } from "../workspaceDevice";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 
 const TRANSPORTS = [
@@ -48,7 +48,7 @@ export function NetworkExportFace({ node }: { node: PatchNode }) {
 
 function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }) {
   const workspace = useWorkspaceContext();
-  const set = deviceSetOf(workspace, node.id);
+  const set = runningSetOf(workspace, node.id);
   const channel = basebandSourceOf(workspace.resolved, workspace.deviceSets, node.id);
   const owner =
     channel === null

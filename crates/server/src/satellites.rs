@@ -116,6 +116,7 @@ impl SatelliteHub {
             stop: self.stop.clone(),
             satellites: HashMap::new(),
             published_at: None,
+            placed: HashSet::new(),
         };
         match std::thread::Builder::new()
             .name("sdrmm-satellites".to_owned())
@@ -186,11 +187,11 @@ struct Tracker {
     stop: Arc<AtomicBool>,
     satellites: HashMap<String, Orbit>,
     published_at: Option<Instant>,
+    placed: HashSet<String>,
 }
 
-fn fix_record(status: &SatelliteStatus) -> Option<DecodedRecord> {
-    let fix = SatelliteFix::of(status)?;
-    Some(DecodedRecord {
+fn fix_record(status: &SatelliteStatus) -> DecodedRecord {
+    DecodedRecord {
         origin: Some(EventOrigin {
             node: status.node.clone(),
             transmission: 0,
@@ -198,12 +199,12 @@ fn fix_record(status: &SatelliteStatus) -> Option<DecodedRecord> {
         device_set: 0,
         channel: NO_CHANNEL,
         at: format!("{:.9}", jiff::Timestamp::now()),
-        freq_hz: status.uplink_hz.unwrap_or_default(),
-        event: DecoderEvent::Satellite(fix),
+        freq_hz: status.downlink_hz.unwrap_or_default(),
+        event: DecoderEvent::Satellite(SatelliteFix::of(status)),
         sinks: Vec::new(),
         view: None,
         callsign: None,
-    })
+    }
 }
 
 impl Tracker {
@@ -248,16 +249,19 @@ impl Tracker {
             );
             statuses.insert(wiring.node.clone(), status);
         }
-        self.control
-            .release_all_but(engine, &resolved.patch, &|from: &str| {
-                wirings.iter().any(|wiring| wiring.node == from)
-            });
         *locked(&self.statuses) = statuses.clone();
+        self.placed.retain(|node| statuses.contains_key(node));
+        for status in statuses.values() {
+            if status.ground.is_none() && self.placed.remove(&status.node) {
+                engine.publish_decoded(fix_record(status));
+            }
+        }
         if publish {
             self.published_at = Some(Instant::now());
             for status in statuses.into_values() {
-                if let Some(record) = fix_record(&status) {
-                    engine.publish_decoded(record);
+                if status.ground.is_some() {
+                    self.placed.insert(status.node.clone());
+                    engine.publish_decoded(fix_record(&status));
                 }
                 engine.emit_event(ServerEvent::SatelliteUpdate {
                     status: Box::new(status),
@@ -323,6 +327,7 @@ impl Tracker {
         status.next_pass = orbit.pass;
         status.pass_track.clone_from(&orbit.sky);
         status.uplink_hz = steering.uplink_hz;
+        status.downlink_hz = steering.downlink_hz;
         status.doppler_hz = steering.doppler.map(|doppler| doppler.shift_hz);
         status.doppler_rate_hz_s = steering.doppler.map(|doppler| doppler.rate_hz_s);
         Ok(steering)

@@ -13,6 +13,7 @@ const SETTLED: Duration = Duration::from_secs(10);
 /// turned up, and the fresh search runs behind it.
 #[derive(Debug, Default)]
 pub(crate) struct Discovery {
+    attached: Vec<DeviceInfo>,
     extras: Vec<DeviceInfo>,
     searching: bool,
     searched: Option<Instant>,
@@ -29,6 +30,14 @@ impl Discovery {
         );
         attached.sort_by_key(DeviceInfo::id);
         attached
+    }
+
+    pub(crate) fn note(&mut self, attached: Vec<DeviceInfo>) {
+        self.attached = attached;
+    }
+
+    pub(crate) fn seen(&self) -> Vec<DeviceInfo> {
+        self.merge(self.attached.clone())
     }
 
     /// Claims the right to search, so that a burst of requests starts one search and not one each.

@@ -21,6 +21,7 @@ pub(super) fn concrete(
             ports.push(PortSpec {
                 name: stream_port(&spec.name, stream),
                 repeat: PortRepeat::Once,
+                stream: Some(stream),
                 ..spec.clone()
             });
         }

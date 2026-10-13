@@ -39,7 +39,7 @@ const WIRED: PatchGraph = {
   nodes: [
     placed("finder", catalogBody("df")),
     placed("walk", catalogBody("hunt")),
-    placed("filter", { kind: "event_filter" }),
+    placed("filter", catalogBody("event_filter")),
     placed("east", catalogBody("df")),
     TRI,
   ],

@@ -628,8 +628,21 @@ impl NodeBody {
             Self::SpectrumMonitor(monitor) => {
                 carrying_events(declared, monitor_kinds(monitor, descriptors))
             }
-            Self::EventOutput(node) => carrying_events(declared, node.target.accepts()),
+            Self::EventOutput(node) => carrying_events(declared, node.target.accepts())
+                .into_iter()
+                .filter(|port| {
+                    node.target.carries_audio() || !matches!(port.payload, Payload::Audio { .. })
+                })
+                .collect(),
             _ => declared,
+        }
+    }
+
+    #[must_use]
+    pub const fn event_rule(&self) -> Option<&EventFilterNode> {
+        match self {
+            Self::EventFilter(rule) => Some(rule),
+            _ => None,
         }
     }
 }

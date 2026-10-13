@@ -3,7 +3,7 @@ import type { PatchNode, PatchNodeOf, ScanSettings } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { defaultScannerSettings } from "../newNode";
-import { decoderOf } from "../workspaceDevice";
+import { controlledOf } from "../workspaceDevice";
 import { NodeShell } from "./NodeShell";
 
 export function ScannerFace({ node }: { node: PatchNode }) {
@@ -15,7 +15,7 @@ export function ScannerFace({ node }: { node: PatchNode }) {
 
 function ScannerNodeFace({ node }: { node: PatchNodeOf<"scanner"> }) {
   const workspace = useWorkspaceContext();
-  const decoder = decoderOf(workspace, node.id);
+  const decoder = controlledOf(workspace, node.id);
   const settings = node.data?.settings ?? defaultScannerSettings(workspace.context.catalog);
   const remember = (next: ScanSettings): void => {
     workspace.edit((snapshot) => ({

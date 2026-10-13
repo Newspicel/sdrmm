@@ -343,6 +343,8 @@ pub struct PortSpec {
     pub multi: Multi,
     #[serde(default, skip_serializing_if = "is_once")]
     pub repeat: PortRepeat,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<u32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub exclusive: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -384,6 +386,7 @@ fn port(name: &str, direction: PortDirection, payload: Payload, multi: Multi) ->
         payload,
         multi,
         repeat: PortRepeat::Once,
+        stream: None,
         exclusive: false,
         coherent: false,
         direct: false,

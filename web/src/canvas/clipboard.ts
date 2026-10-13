@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { MAX_EDGES, MAX_NODES } from "../lib/limits";
 import { pushToast } from "../lib/toasts";
 import type { PatchEdge, PatchGraph, PatchNode, Position } from "../lib/types";
 import type { Workspace } from "./context";
-import { MAX_EDGES, MAX_NODES, newNodeId, nodeIds } from "./graph";
-import { startsOnItsOwn } from "./newNode";
+import { newNodeId, nodeIds, opensDevice } from "./graph";
 import { isTyping } from "./useHotkeys";
 
 export interface Clipboard {
@@ -37,7 +37,7 @@ export function pasteRefusal(graph: PatchGraph, clipboard: Clipboard): string | 
 }
 
 export function pasteRuns(clipboard: Clipboard): boolean {
-  return clipboard.edges.length > 0 || clipboard.nodes.some((node) => startsOnItsOwn(node.kind));
+  return clipboard.edges.length > 0 || clipboard.nodes.some((node) => opensDevice(node.kind));
 }
 
 export function pasteIds(graph: PatchGraph, clipboard: Clipboard): string[] {
@@ -81,11 +81,8 @@ export function pasteNodes(
 
 function copyOf(node: PatchNode, id: string, offset: Position): PatchNode {
   const position = { x: node.position.x + offset.x, y: node.position.y + offset.y };
-  if (node.kind === "device") {
-    return { ...node, id, position, data: {} };
-  }
-  if (node.kind === "recording") {
-    return { ...node, id, position, data: {} };
+  if (opensDevice(node.kind)) {
+    return { ...node, id, position, data: {} } as PatchNode;
   }
   return { ...node, id, position };
 }

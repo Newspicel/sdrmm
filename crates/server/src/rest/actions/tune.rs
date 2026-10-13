@@ -165,7 +165,7 @@ fn pull_lane(
     freq_hz: f64,
     author: Option<&str>,
 ) -> Result<(), AppError> {
-    if resolved.patch.feeds(node, IQ_PORT).len() != 1 {
+    if !resolved.patch.retunes_source(node, IQ_PORT) {
         return Ok(());
     }
     let Some(lane) = lane_of(&resolved.patch, node) else {
@@ -185,9 +185,7 @@ fn pull_lane(
         .find(|descriptor| descriptor.type_id == channel_type)
         .map_or(0.0, |descriptor| descriptor.bandwidth_hz);
     let follows = matches!(lane, Lane::Radio { .. }) && auto_tuning(held, stream);
-    let blocked =
-        matches!(&lane, Lane::Radio { node, .. } if lane_locked(&resolved.graph, node, stream));
-    if follows || blocked || reaches(held, stream, bandwidth_hz, freq_hz) {
+    if follows || reaches(held, stream, bandwidth_hz, freq_hz) {
         return Ok(());
     }
     tune_lane(state, &resolved.graph, &lane, freq_hz, author)

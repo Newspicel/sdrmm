@@ -237,6 +237,38 @@ fn an_event_output_takes_what_its_target_sends() {
 }
 
 #[test]
+fn only_an_event_output_that_sends_audio_takes_call_audio() {
+    let sends = |target: EventOutputTarget| {
+        NodeBody::EventOutput(crate::EventOutputNode { target })
+            .ports(None)
+            .iter()
+            .any(|port| port.name == "audio")
+    };
+    let webhook = |format| EventOutputTarget::Webhook {
+        url: "https://example.com/hook".to_owned(),
+        format,
+    };
+    assert!(sends(EventOutputTarget::Recordings));
+    assert!(sends(webhook(WebhookFormat::Discord)));
+    assert!(!sends(webhook(WebhookFormat::Json)));
+    assert!(!sends(EventOutputTarget::Desktop));
+    let graph = PatchGraph {
+        nodes: vec![
+            channel("voice", "dmr"),
+            output("out", webhook(WebhookFormat::Json)),
+        ],
+        edges: vec![events("voice", "out"), audio("voice", "out")],
+    };
+    assert_eq!(
+        reasons(&graph)
+            .iter()
+            .map(|(edge, _)| edge)
+            .collect::<Vec<_>>(),
+        [&audio("voice", "out")]
+    );
+}
+
+#[test]
 fn compile_returns_the_first_refusal_and_draft_lists_every_one() {
     let graph = PatchGraph {
         nodes: vec![channel("nfm", "nfm"), channel("text", "rtty"), map("map")],
@@ -275,7 +307,7 @@ fn outputs_know_what_their_sinks_keep() {
                 "out",
                 EventOutputTarget::Webhook {
                     url: "https://example.com/hook".to_owned(),
-                    format: WebhookFormat::Json,
+                    format: WebhookFormat::Discord,
                 },
             ),
         ],

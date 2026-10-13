@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { DeviceSet, PatchGraph, PatchNode, RecordingInfo } from "../../lib/types";
 import { catalogBody } from "../../test/catalog";
 import { renderFace, stubWorkspace } from "../../test/faceHarness";
-import { resolvedNodeOf, resolvedPatch, resolvedPort, wiredPatch } from "../../test/resolved";
+import { resolvedBy } from "../../test/recorded";
+import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
 import { nodePorts } from "../graph";
 import { makeArray } from "../makeArray";
 import { arrayLaneRows } from "./arrayNode";
 import { RecordingFace, RecordingFacts } from "./RecordingFace";
-import { recordingDeviceId } from "./recordingNode";
 
 const LANES = 5;
 
@@ -46,7 +46,7 @@ function collection(lanes: number): RecordingInfo {
   return {
     id: 1,
     file: "take",
-    device_id: recordingDeviceId("take"),
+    device_id: "recording:take",
     device_label: "virtual:kraken5",
     center_hz: 433_920_000,
     sample_rate: 2_400_000,
@@ -95,8 +95,12 @@ describe("RecordingFace", () => {
     if (body.kind !== "array") {
       throw new Error("an array body");
     }
-    const made = makeArray(alone, "rec", LANES, body, "arr");
-    const rows = arrayLaneRows(made, wiredPatch(made), devices, "arr", undefined);
+    const offer = resolvedBy(alone, devices).nodes.find((node) => node.id === "rec")?.array_offer;
+    if (offer?.offer !== "ready") {
+      throw new Error("the server offers an array");
+    }
+    const made = makeArray(alone, "rec", offer.wires, body, "arr");
+    const rows = arrayLaneRows(made, resolvedBy(made), devices, "arr", undefined);
     expect(rows.map((row) => row.sourceLabel)).toEqual([
       "take iq1",
       "take iq2",

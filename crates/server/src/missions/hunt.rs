@@ -3,7 +3,7 @@ use sdrmm_wire::{
     MissionBody, MissionControl, MissionProblem, SweepState,
 };
 
-use super::{Built, Scene, TRIANGULATION, graph};
+use super::{Built, Scene, graph};
 
 pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built {
     let mut problems = Vec::new();
@@ -17,7 +17,6 @@ pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built 
         status: None,
         clicks: settings.clicks,
         position,
-        triangulations: graph::event_targets(&scene.resolved, node, TRIANGULATION),
     };
     let mut scanning = false;
     match (channel_node, bound) {

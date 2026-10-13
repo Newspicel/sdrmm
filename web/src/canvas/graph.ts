@@ -1,4 +1,5 @@
 import { catalogType } from "../lib/catalog";
+import { MAX_STREAMS } from "../lib/limits";
 import type {
   Capabilities,
   ChannelDescriptor,
@@ -29,12 +30,6 @@ export function nodeOf(graph: PatchGraph, id: string): PatchNode | undefined {
   return graph.nodes.find((node) => node.id === id);
 }
 
-export const MAX_STREAMS = 16;
-
-export function streamPort(base: string, index: number): string {
-  return index === 0 ? base : `${base}${index + 1}`;
-}
-
 export function portLabel(name: string, siblings: readonly PortSpec[]): string {
   const numbered = `${name}2`;
   return siblings.some((port) => port.name === numbered) ? `${name}1` : name;
@@ -50,7 +45,7 @@ export function echoesWire(graph: PatchGraph, node: string, port: PortSpec): boo
 }
 
 export function streamLabel(base: string, index: number, streams: number): string {
-  return streams > 1 && index === 0 ? `${base}1` : streamPort(base, index);
+  return `${base}${streams > 1 || index > 0 ? index + 1 : ""}`;
 }
 
 export function rxStreamCount(capabilities: Capabilities | undefined): number {
@@ -60,24 +55,6 @@ export function rxStreamCount(capabilities: Capabilities | undefined): number {
 function clampStreams(declared: number | undefined, floor = 1): number {
   return Math.min(Math.max(declared ?? floor, floor), MAX_STREAMS);
 }
-
-export function portStream(base: string, name: string): number | null {
-  if (name === base) {
-    return 0;
-  }
-  if (!name.startsWith(base)) {
-    return null;
-  }
-  const suffix = name.slice(base.length);
-  const n = Number(suffix);
-  if (!Number.isInteger(n) || n < 2 || n > MAX_STREAMS || suffix !== String(n)) {
-    return null;
-  }
-  return n - 1;
-}
-
-export const MAX_NODES = 128;
-export const MAX_EDGES = 256;
 
 const ID_BYTES = 4;
 
@@ -130,8 +107,6 @@ export function catalogPorts(context: GraphContext, node: PatchNode): PortSpec[]
     entry?.needs_channel_type === true ? (descriptorOf(context, node)?.ports ?? []) : entry?.ports;
   return (declared ?? []).map((port) => ({ ...port, repeat: "once" as const }));
 }
-
-export const ARRAY_LANE_PORT = "lane";
 
 export function portOf(
   context: GraphContext,
@@ -253,8 +228,6 @@ export function sameGraph(a: PatchGraph, b: PatchGraph): boolean {
 export const RACK_COLS = 12;
 export const RACK_ROWS = 8;
 export const RACK_DEFAULT = { w: 6, h: 4 } as const;
-
-export const MAX_NAME_LEN = 64;
 
 export interface RackCell {
   x: number;

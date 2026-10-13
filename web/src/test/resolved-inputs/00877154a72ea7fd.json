@@ -1,0 +1,28 @@
+{
+  "name": "00877154a72ea7fd",
+  "test": "EventOutputFace > never shows a secret on its chip",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "webhook",
+            "url": "https://hooks.example/abc",
+            "format": "json"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

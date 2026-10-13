@@ -10,6 +10,7 @@ const SOURCES: Record<string, string> = import.meta.glob("./**/*.{ts,tsx}", {
 const EDGE_EDITORS: ReadonlySet<string> = new Set([
   "./canvas/Canvas.tsx",
   "./canvas/clipboard.ts",
+  "./canvas/flowEdges.ts",
   "./canvas/graph.ts",
   "./components/report.ts",
 ]);

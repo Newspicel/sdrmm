@@ -1,28 +1,26 @@
-import type { DeviceInfo, DeviceRef, PatchGraph, ResolvedPatch } from "../../lib/types";
-import { iqLanesOf } from "../lanes";
-import { nodeDeviceRef, refMatches } from "./deviceNode";
+import type { PatchGraph, Runs, UnboundReason } from "../../lib/types";
 
-export type ChannelBinding =
-  | "unwired"
-  | "no-radio"
-  | "radio-absent"
-  | "radio-closed"
-  | "not-started";
+export interface Unbound {
+  status: string | null;
+  hint: string;
+  action: string | null;
+}
 
-export function radioRefsOf(
-  graph: PatchGraph,
-  resolved: ResolvedPatch | null,
-  node: string,
-): DeviceRef[] {
-  const refs: DeviceRef[] = [];
-  for (const lane of iqLanesOf(resolved, node)) {
-    const found = graph.nodes.find((candidate) => candidate.id === lane.source);
-    const reference = found === undefined ? null : nodeDeviceRef(found);
-    if (reference !== null) {
-      refs.push(reference);
-    }
-  }
-  return refs;
+const UNBOUND: Record<UnboundReason, Unbound> = {
+  not_wired: { status: null, hint: "Wire a device's IQ in", action: null },
+  no_radio: { status: "no radio", hint: "Pick a radio on the device node", action: null },
+  radio_absent: { status: "radio missing", hint: "Its radio is not connected", action: null },
+  radio_closed: { status: "radio closed", hint: "Its radio is not open", action: "Open radio" },
+  not_placed: {
+    status: "not started",
+    hint: "Not started on the radio yet",
+    action: "Start channel",
+  },
+  not_running: { status: "not running", hint: "Its source is not running yet", action: null },
+};
+
+export function unboundOf(runs: Runs | undefined): Unbound | null {
+  return runs?.runs === "unbound" ? UNBOUND[runs.reason] : null;
 }
 
 export function lockedChannels(
@@ -37,62 +35,4 @@ export function lockedChannels(
     }
   }
   return locked;
-}
-
-export function radioIsAttached(
-  references: readonly DeviceRef[],
-  attached: readonly DeviceInfo[],
-): boolean {
-  return references.some((reference) => attached.some((device) => refMatches(reference, device)));
-}
-
-export function channelBinding(input: {
-  wired: boolean;
-  open: boolean;
-  named: boolean;
-  attached: boolean;
-}): ChannelBinding {
-  if (!input.wired) {
-    return "unwired";
-  }
-  if (input.open) {
-    return "not-started";
-  }
-  if (!input.named) {
-    return "no-radio";
-  }
-  return input.attached ? "radio-closed" : "radio-absent";
-}
-
-const HINTS: Record<ChannelBinding, string> = {
-  unwired: "Wire a device's IQ in",
-  "no-radio": "Pick a radio on the device node",
-  "radio-absent": "Its radio is not connected",
-  "radio-closed": "Its radio is not open",
-  "not-started": "Not started on the radio yet",
-};
-
-const ACTIONS: Partial<Record<ChannelBinding, string>> = {
-  "radio-closed": "Open radio",
-  "not-started": "Start channel",
-};
-
-const STATUS: Record<ChannelBinding, string> = {
-  unwired: "unwired",
-  "no-radio": "no radio",
-  "radio-absent": "radio missing",
-  "radio-closed": "radio closed",
-  "not-started": "not started",
-};
-
-export function channelBindingStatus(binding: ChannelBinding): string {
-  return STATUS[binding];
-}
-
-export function channelBindingHint(binding: ChannelBinding): string {
-  return HINTS[binding];
-}
-
-export function channelBindingAction(binding: ChannelBinding): string | null {
-  return ACTIONS[binding] ?? null;
 }

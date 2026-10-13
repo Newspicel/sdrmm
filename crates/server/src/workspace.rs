@@ -47,7 +47,7 @@ pub(crate) fn resolve(graph: &PatchGraph, state: &StateSnapshot) -> ResolvedPatc
         live: Some(state),
     };
     let (mut patch, _) = resolve::compile_draft(graph, &ctx);
-    resolve::bind(&mut patch, graph, state);
+    resolve::bind(&mut patch, graph, state, &[]);
     patch
 }
 
@@ -480,12 +480,19 @@ pub(crate) fn channel_settings(
     node: &str,
     channel_type: &str,
     saved: &WorkspaceState,
+    center_hz: Option<f64>,
 ) -> Option<ChannelSettings> {
     saved
         .channel(node)
         .filter(|channel| channel.settings.params.type_id() == channel_type)
         .map(|channel| channel.settings.clone())
-        .or_else(|| ChannelSettings::default_for(channel_type))
+        .or_else(|| {
+            let mut settings = ChannelSettings::default_for(channel_type)?;
+            if let Some(center_hz) = center_hz {
+                settings.frequency_hz = center_hz;
+            }
+            Some(settings)
+        })
 }
 
 #[cfg(test)]

@@ -336,10 +336,13 @@ impl Engine {
             self.lock_discovery().expire();
         }
 
-        let mut ids = ids_of(&self.registry.probe_all());
+        let mut probed = self.registry.probe_all();
+        let mut ids = ids_of(&probed);
         if self.wants_a_deeper_look(&ids) {
-            ids = ids_of(&self.registry.probe_all_deep());
+            probed = self.registry.probe_all_deep();
+            ids = ids_of(&probed);
         }
+        self.lock_discovery().note(probed);
 
         let (absent, returned): (HashSet<u32>, Vec<u32>) = {
             let inner = self.lock();

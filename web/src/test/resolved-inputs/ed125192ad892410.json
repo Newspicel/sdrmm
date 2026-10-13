@@ -1,0 +1,80 @@
+{
+  "name": "ed125192ad892410",
+  "test": "RecorderFace > shows only the take its own node started",
+  "graph": {
+    "nodes": [
+      {
+        "id": "dev",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "ad936x",
+            "key": "192.168.1.10:30431"
+          }
+        }
+      },
+      {
+        "id": "rec",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "recorder",
+        "data": {
+          "recording": true
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "dev",
+          "port": "iq"
+        },
+        "to": {
+          "node": "rec",
+          "port": "iq"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "ad936x",
+          "key": "192.168.1.10:30431",
+          "label": "AntSDR AD9361"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "duplex": "rx_only"
+        },
+        "settings": {
+          "sample_rate": 8000000
+        },
+        "status": "running",
+        "channels": [],
+        "overruns": 0,
+        "recording": {
+          "bytes": 167317504,
+          "file": "rec_0_20261009T114426Z",
+          "overruns": 0,
+          "samples": 20914688,
+          "started_at": "2026-10-09T11:44:26Z",
+          "node": "other"
+        }
+      }
+    ],
+    "revision": 0
+  }
+}

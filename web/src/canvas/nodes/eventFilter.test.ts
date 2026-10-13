@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelDescriptor } from "../../lib/types";
+import { MAX_FILTER_IDS } from "../../lib/limits";
+import type { EventKind, Feed } from "../../lib/types";
 import { CATALOG } from "../../test/catalog";
 import {
   filterSaid,
   formatIds,
   fromTriState,
-  kindsOffered,
-  MAX_FILTER_IDS,
+  offeredBy,
   parseIds,
   parseWords,
   predicatesFor,
@@ -55,62 +55,22 @@ describe("tri-state flags", () => {
   });
 });
 
-describe("kindsOffered", () => {
-  const descriptors = [
-    { type_id: "adsb", emits: ["adsb"] },
-    { type_id: "dmr", emits: ["dv"], calls: "frames" },
-    { type_id: "pocsag", emits: ["pocsag"] },
-    { type_id: "am", emits: [], calls: "squelch" },
-    { type_id: "nfm", emits: ["tone", "scrambler"], calls: "squelch" },
-    { type_id: "dab", emits: ["broadcast_data"], has_audio: true },
-    { type_id: "scope", emits: [], has_audio: false },
-  ] as ChannelDescriptor[];
+function feed(source: string, kinds: EventKind[]): Feed {
+  return { source, port: "events", payload: { type: "events", kinds } };
+}
 
-  it("offers only what the wired decoders emit", () => {
-    expect(kindsOffered([{ channelType: "adsb", trunk: false }], descriptors)).toEqual(["adsb"]);
-  });
-
-  it("adds calls for every channel that gates them", () => {
-    expect(kindsOffered([{ channelType: "dmr", trunk: false }], descriptors)).toEqual([
+describe("offeredBy", () => {
+  it("offers what the server says each wire carries, each kind once", () => {
+    expect(offeredBy([feed("sat", ["satellite"]), feed("dmr", ["dv", "call"])])).toEqual([
       "call",
       "dv",
+      "satellite",
     ]);
-    expect(kindsOffered([{ channelType: "am", trunk: false }], descriptors)).toEqual(["call"]);
+    expect(offeredBy([feed("adsb", ["adsb"]), feed("adsb2", ["adsb"])])).toEqual(["adsb"]);
   });
 
-  it("offers every kind a decoder declares", () => {
-    expect(kindsOffered([{ channelType: "nfm", trunk: false }], descriptors)).toEqual([
-      "call",
-      "scrambler",
-      "tone",
-    ]);
-  });
-
-  it("offers no calls from a broadcast channel", () => {
-    expect(kindsOffered([{ channelType: "dab", trunk: false }], descriptors)).toEqual([
-      "broadcast_data",
-    ]);
-  });
-
-  it("treats a trunk system as digital voice", () => {
-    expect(kindsOffered([{ trunk: true }], descriptors)).toEqual(["call", "dv"]);
-  });
-
-  it("offers nothing for a channel that decodes and hears nothing", () => {
-    expect(kindsOffered([{ channelType: "scope", trunk: false }], descriptors)).toEqual([]);
-  });
-
-  it("lists each kind once across several wires", () => {
-    expect(
-      kindsOffered(
-        [
-          { channelType: "adsb", trunk: false },
-          { channelType: "adsb", trunk: false },
-          { channelType: "pocsag", trunk: false },
-        ],
-        descriptors,
-      ),
-    ).toEqual(["adsb", "pocsag"]);
+  it("offers nothing when nothing is wired", () => {
+    expect(offeredBy([])).toEqual([]);
   });
 });
 
@@ -237,9 +197,4 @@ describe("sectionsFor", () => {
       ["Voice", ["call"]],
     ]);
   });
-});
-
-it("offers automatically decoded kinds from a spectrum monitor", () => {
-  const offered = kindsOffered([{ monitor: true, trunk: false }], []);
-  expect(offered).toContain("transmission");
 });

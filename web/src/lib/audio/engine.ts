@@ -200,28 +200,6 @@ export class AudioEngine {
     entry.hold = null;
   }
 
-  retain(live: Iterable<AudioTap>): void {
-    const wired = new Map<string, AudioTap>();
-    for (const tap of live) {
-      wired.set(tapKey(tap), tap);
-    }
-    const playing = new Set<string>();
-    for (const [key, entry] of this.entries) {
-      if (!entry.desired) {
-        continue;
-      }
-      playing.add(portKey(entry.tap.node, entry.tap.port));
-      if (!wired.has(key)) {
-        this.stop(entry.tap);
-      }
-    }
-    for (const [key, tap] of wired) {
-      if (!this.entries.has(key) && playing.has(portKey(tap.node, tap.port))) {
-        this.start(tap);
-      }
-    }
-  }
-
   setVolume(tap: AudioTap, volume: number): void {
     const entry = this.ensureEntry(tap);
     entry.volume = Math.min(1, Math.max(0, volume));
@@ -230,6 +208,7 @@ export class AudioEngine {
   }
 
   private readonly followStreams = (): void => {
+    this.followSources();
     let changed = false;
     for (const entry of this.entries.values()) {
       if (entry.hold === null) {
@@ -259,6 +238,50 @@ export class AudioEngine {
       this.notify();
     }
   };
+
+  private followSources(): void {
+    const playing = new Map<string, AudioTap>();
+    for (const entry of this.entries.values()) {
+      if (entry.desired) {
+        playing.set(portKey(entry.tap.node, entry.tap.port), entry.tap);
+      }
+    }
+    const begun: AudioTap[] = [];
+    const left: AudioTap[] = [];
+    for (const { node, port } of playing.values()) {
+      const live = new Set(
+        this.ports
+          .streamsOf(node, port)
+          .filter((stream) => stream.kind === "audio")
+          .map((stream) => stream.source),
+      );
+      for (const source of live) {
+        if (!this.entries.has(sourceKey(node, port, source))) {
+          begun.push({ node, port, source });
+        }
+      }
+      if (live.size === 0) {
+        continue;
+      }
+      for (const { desired, tap } of this.entries.values()) {
+        if (
+          desired &&
+          tap.node === node &&
+          tap.port === port &&
+          !live.has(tap.source) &&
+          this.ports.hasEnded(node, port, tap.source)
+        ) {
+          left.push(tap);
+        }
+      }
+    }
+    for (const tap of begun) {
+      this.start(tap);
+    }
+    for (const tap of left) {
+      this.stop(tap);
+    }
+  }
 
   private readonly handleStatus = (connected: boolean): void => {
     if (connected) {

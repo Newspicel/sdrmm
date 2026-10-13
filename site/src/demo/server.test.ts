@@ -75,7 +75,7 @@ describe("DemoServer", () => {
   });
 
   it("answers an unrecorded GET with an API error", async () => {
-    const answer = await call(server(), "GET", "/api/calls");
+    const answer = await call(server(), "GET", "/api/images");
     expect(answer.status).toBe(404);
     expect(typeof answer.body.error).toBe("string");
   });

@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelDescriptor, NodeProblem, PatchGraph, ProblemSource, ResolveCtx, ResolvedPatch,
-    ServerEvent, StateScope, StateSnapshot, patch::resolve,
+    ChannelDescriptor, DeviceInfo, NodeProblem, PatchGraph, ProblemSource, ResolveCtx,
+    ResolvedPatch, ServerEvent, StateScope, StateSnapshot, patch::resolve,
 };
 use tokio::sync::{
     broadcast::{Receiver, error::TryRecvError},
@@ -95,7 +95,11 @@ impl ResolvedHub {
         self.loaded.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn resolve(&self, loaded: &Loaded, live: &StateSnapshot) -> (ResolvedPatch, Vec<NodeProblem>) {
+    fn resolve(
+        &self,
+        loaded: &Loaded,
+        (live, attached): (&StateSnapshot, &[DeviceInfo]),
+    ) -> (ResolvedPatch, Vec<NodeProblem>) {
         let ctx = ResolveCtx {
             descriptors: Some(&self.descriptors),
             live: Some(live),
@@ -110,7 +114,7 @@ impl ResolvedHub {
                 "the active workspace holds a refused wire"
             );
         }
-        let problems = resolve::bind(&mut patch, &loaded.graph, live);
+        let problems = resolve::bind(&mut patch, &loaded.graph, live, attached);
         patch.workspace = Some(loaded.workspace);
         patch.revision = loaded.revision;
         (patch, problems)
@@ -120,7 +124,7 @@ impl ResolvedHub {
         let live = engine.snapshot();
         let (mut patch, found, graph) = match loaded {
             Some(loaded) => {
-                let (patch, found) = self.resolve(loaded, &live);
+                let (patch, found) = self.resolve(loaded, (&live, &engine.attached_devices()));
                 (patch, found, loaded.graph.clone())
             }
             None => (ResolvedPatch::default(), Vec::new(), Arc::default()),

@@ -9,7 +9,7 @@ use crate::{
 
 pub const WORKSPACE_SNAPSHOT_VERSION: u32 = 4;
 
-pub const WORKSPACE_EXPORT_VERSION: u32 = 1;
+pub const WORKSPACE_EXPORT_VERSION: u32 = 2;
 
 pub const MAX_NAME_LEN: usize = 64;
 
@@ -188,11 +188,11 @@ impl WorkspaceSnapshot {
             edges: vec![crate::patch::PatchEdge {
                 from: crate::patch::PortRef {
                     node: "device".to_owned(),
-                    port: "iq".to_owned(),
+                    port: crate::patch::IQ_PORT.to_owned(),
                 },
                 to: crate::patch::PortRef {
                     node: "scope".to_owned(),
-                    port: "iq".to_owned(),
+                    port: crate::patch::IQ_PORT.to_owned(),
                 },
             }],
         };

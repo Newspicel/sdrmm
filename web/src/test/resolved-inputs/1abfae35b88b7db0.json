@@ -1,0 +1,113 @@
+{
+  "name": "1abfae35b88b7db0",
+  "test": "BeamformerFace > disables DF steering without a steer wire",
+  "graph": {
+    "nodes": [
+      {
+        "id": "arr",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      },
+      {
+        "id": "finder",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "df",
+        "data": {
+          "settings": {
+            "algorithm": "music",
+            "source_rule": "dominance",
+            "max_peaks": 2,
+            "smoothing": 0,
+            "forward_backward": false,
+            "elevation": false,
+            "ula_side": "both",
+            "offset_hz": 0,
+            "bandwidth_hz": 20000,
+            "report_ms": 500,
+            "carry_over": 0.5,
+            "squelch_db": 6,
+            "loading": 0.001,
+            "azimuth_step_deg": 1,
+            "yaw_gate_dps": 20
+          }
+        }
+      },
+      {
+        "id": "beam",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "beamformer",
+        "data": {
+          "settings": {
+            "mode": "lcmv",
+            "steer": {
+              "kind": "wired"
+            },
+            "nulls_deg": [45],
+            "auto_nulls": false,
+            "main_lane": 0,
+            "reference_lanes": [],
+            "taps": 1,
+            "adaptation": "nlms",
+            "step": 0.05,
+            "forget": 0.999,
+            "crossfade_ms": 20,
+            "update_ms": 200,
+            "carry_over": 0.7,
+            "loading": 0.1,
+            "noise": "measured",
+            "offset_hz": 0,
+            "bandwidth_hz": 200000,
+            "steer_timeout_ms": 5000
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "arr",
+          "port": "array"
+        },
+        "to": {
+          "node": "beam",
+          "port": "array"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

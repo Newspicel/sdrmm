@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
 import { broadcastTitle } from "../../components/broadcastStatus";
 import { ChannelControls, ChannelDial } from "../../components/ChannelControls";
@@ -20,29 +19,19 @@ import {
   SKIPPED_HINT,
 } from "../../components/format";
 import { SignalRow } from "../../components/SignalRow";
-import { devicesQuery } from "../../lib/api";
 import { useBroadcast } from "../../lib/broadcast";
 import { heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, usePipelineHealth } from "../../lib/pipeline";
-import { controllerOf, feedsOf } from "../../lib/resolved";
-import { trackedBy, useSatelliteStore } from "../../lib/satellite";
+import { controllerOf, runsOf, sweptBy } from "../../lib/resolved";
 import type { BandMiss, BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
 import { useWorkspaceContext } from "../context";
 import { nodeOf, patchNode } from "../graph";
-import { hasFeed, iqLanesOf } from "../lanes";
-import { deviceSetOf, laneOf } from "../workspaceDevice";
+import { iqLanesOf } from "../lanes";
+import { laneOf, runningSetOf } from "../workspaceDevice";
 import { bandMissOf, bandMissSaid } from "./bandMiss";
-import {
-  type ChannelBinding,
-  channelBinding,
-  channelBindingAction,
-  channelBindingHint,
-  channelBindingStatus,
-  radioIsAttached,
-  radioRefsOf,
-} from "./channelNode";
+import { type Unbound, unboundOf } from "./channelNode";
 import { laneCenterHz, laneRateHz } from "./deviceNode";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 
@@ -52,11 +41,9 @@ type ChannelNodeData = PatchNodeOf<"channel">["data"];
 
 export function ChannelFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
-  const set = deviceSetOf(workspace, node.id);
+  const set = runningSetOf(workspace, node.id);
   const levels = useLevelStore((state) => (set === null ? undefined : state.byDeviceSet[set.id]));
-  const attached = useQuery(devicesQuery());
   const editChannel = useChannelEdit();
-  const tracked = useSatelliteStore((store) => trackedBy(store.byNode, node.id));
   const live = liveChannelOf(workspace, node.id);
   const broadcast = useBroadcast(node.id);
   if (node.kind !== "channel") {
@@ -69,13 +56,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const channel = workspace.channels.get(node.id) ?? null;
   const lanes = iqLanesOf(workspace.resolved, node.id);
   const source = laneOf(workspace, node.id);
-  const references = radioRefsOf(workspace.graph, workspace.resolved, node.id);
-  const binding = channelBinding({
-    wired: hasFeed(workspace.resolved, node.id, "iq"),
-    open: set !== null,
-    named: references.length > 0,
-    attached: radioIsAttached(references, attached.data?.devices ?? []),
-  });
+  const unbound = unboundOf(runsOf(workspace.resolved, node.id));
   const centerHz = set === null ? null : laneCenterHz(set, source?.stream ?? 0);
   const settings = channelSettingsOf(workspace, node.id);
   const onEdit = (edit: ChannelEdit): void => editChannel(node.id, edit);
@@ -88,14 +69,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
     reaches: set === null || frequencyHz === null || reachesHz(frequencyHz, window),
   });
   const locked = node.data.tuning_locked ?? false;
-  const scanned =
-    channel !== null &&
-    feedsOf(workspace.resolved, node.id, "control").some(
-      (feed) =>
-        set?.scanners?.some(
-          (scanner) => scanner.error == null && scanner.settings.node === feed.source,
-        ) ?? false,
-    );
+  const scanned = sweptBy(workspace.resolved, node.id);
   const controller = controllerOf(workspace.resolved, node.id);
   const editNode = (next: Partial<ChannelNodeData>): void =>
     workspace.edit((snapshot) => ({
@@ -111,13 +85,13 @@ export function ChannelFace({ node }: { node: PatchNode }) {
       : null;
   const status = faceStatus({
     live: live !== null,
-    binding,
+    unbound,
     miss,
-    driver: scanned ? "scanning" : (tracked?.name ?? (tracked === null ? null : "satellite")),
+    driver: scanned ? "scanning" : controller,
     carrier,
   });
   const widthHz = channelWidthHz(settings?.params, descriptor);
-  const action = live === null ? channelBindingAction(binding) : null;
+  const action = live === null ? (unbound?.action ?? null) : null;
 
   return (
     <NodeShell
@@ -142,7 +116,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
               dialId={dialId(node.id)}
               wheelTunes={workspace.selected === node.id}
               locked={locked}
-              heldBy={controller === null ? null : (tracked?.name ?? controller)}
+              heldBy={controller}
               onTune={(frequency_hz) => onEdit({ frequency_hz })}
               onLock={(tuning_locked) => editNode({ tuning_locked })}
             />
@@ -180,7 +154,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
           <Button
             type="button"
             className={BTN_PRIMARY}
-            title={channelBindingHint(binding)}
+            title={unbound?.hint}
             onClick={workspace.apply}
           >
             {action}
@@ -193,20 +167,20 @@ export function ChannelFace({ node }: { node: PatchNode }) {
 
 function faceStatus({
   live,
-  binding,
+  unbound,
   miss,
   driver,
   carrier,
 }: {
   live: boolean;
-  binding: ChannelBinding;
+  unbound: Unbound | null;
   miss: BandMiss | null;
   driver: string | null;
   carrier: string | null;
 }) {
   if (!live) {
-    return binding === "unwired" ? undefined : (
-      <span title={channelBindingHint(binding)}>{channelBindingStatus(binding)}</span>
+    return unbound === null || unbound.status === null ? undefined : (
+      <span title={unbound.hint}>{unbound.status}</span>
     );
   }
   if (driver !== null) {

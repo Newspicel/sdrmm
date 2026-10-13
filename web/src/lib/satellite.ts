@@ -18,12 +18,3 @@ export const useSatelliteStore = create<SatelliteStore>((set) => ({
   },
   reset: () => set({ byNode: {} }),
 }));
-
-export function trackedBy(
-  statuses: Readonly<Record<string, SatelliteStatus>>,
-  channelNode: string,
-): SatelliteStatus | null {
-  return (
-    Object.values(statuses).find((status) => status.driving?.includes(channelNode) ?? false) ?? null
-  );
-}

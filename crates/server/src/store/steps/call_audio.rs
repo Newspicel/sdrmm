@@ -1,4 +1,4 @@
-use sdrmm_wire::{AUDIO_PORT, NodeKind, NoticeWire, PortRef, WorkspaceNoticeKind};
+use sdrmm_wire::{AUDIO_PORT, EventOutputNode, NodeKind, NoticeWire, PortRef, WorkspaceNoticeKind};
 use serde_json::{Value, json};
 
 use super::{graph_nodes, wires};
@@ -14,13 +14,20 @@ pub(super) fn wire_call_audio(snapshot: &mut Value) -> Vec<WorkspaceNoticeKind> 
         .filter(|node| keeps_call_audio(node))
         .filter_map(|node| Some(node.get("id")?.as_str()?.to_owned()))
         .collect();
+    let silent: Vec<String> = graph_nodes(snapshot)
+        .filter(|node| drops_audio(node))
+        .filter_map(|node| Some(node.get("id")?.as_str()?.to_owned()))
+        .collect();
     drop_audio_switch(snapshot);
     let Some(edges) = wires::graph_edges(snapshot) else {
         return Vec::new();
     };
     let mut added = Vec::new();
     for source in sources {
-        for sink in wires::event_sinks(edges, &kinds, &source, CLIP_SINKS) {
+        for sink in wires::event_sinks(edges, &kinds, &source, CLIP_SINKS)
+            .into_iter()
+            .filter(|sink| !silent.contains(sink))
+        {
             let from = PortRef {
                 node: source.clone(),
                 port: AUDIO_PORT.to_owned(),
@@ -63,6 +70,15 @@ fn keeps_call_audio(node: &Value) -> bool {
             .is_some_and(|descriptor| descriptor.calls.is_some() && descriptor.has_audio),
         _ => false,
     }
+}
+
+fn drops_audio(node: &Value) -> bool {
+    node_kind(node) == Some(NodeKind::EventOutput.as_str())
+        && node
+            .get("data")
+            .cloned()
+            .and_then(|data| serde_json::from_value::<EventOutputNode>(data).ok())
+            .is_none_or(|output| !output.target.carries_audio())
 }
 
 fn drop_audio_switch(snapshot: &mut Value) {

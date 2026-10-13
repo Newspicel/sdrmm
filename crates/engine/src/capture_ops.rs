@@ -14,7 +14,12 @@ use crate::{
 };
 
 impl Engine {
-    pub fn start_recording(&self, ds: u32, stream: u32) -> Result<(), EngineError> {
+    pub fn start_recording(
+        &self,
+        ds: u32,
+        stream: u32,
+        node: Option<&str>,
+    ) -> Result<(), EngineError> {
         loop {
             let (rate, center, hw) = {
                 let inner = self.lock();
@@ -80,6 +85,7 @@ impl Engine {
                         state.recording = Some(RecordingState {
                             file,
                             stream,
+                            node: node.map(str::to_owned),
                             started_at: started_at.to_string(),
                             stem: stem.clone(),
                             shared,

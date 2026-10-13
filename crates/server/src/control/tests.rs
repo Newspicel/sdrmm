@@ -177,7 +177,7 @@ fn a_target_error_returns_in_the_acks() {
     for node in &mut patch.nodes {
         if node.id == "voice" {
             node.runs = Runs::Unbound {
-                reason: "Radio not open".to_owned(),
+                reason: sdrmm_wire::UnboundReason::RadioClosed,
             };
         }
     }
@@ -290,4 +290,53 @@ fn unwiring_a_scanner_stops_the_scan_it_started() {
     assert_eq!(rig.calls(), vec!["halt 2 scan".to_owned()]);
     bus.settle(&rig, &resolve(nodes(), Vec::new()));
     assert_eq!(rig.calls().len(), 1, "stopped once");
+}
+
+#[test]
+fn a_satellite_steering_leaves_a_running_scan_alone() {
+    let nodes = vec![
+        node("radio", NodeBody::Device(sdrmm_wire::DeviceNode::default())),
+        node("scan", NodeBody::Scanner(ScannerNode::default())),
+        node("sat", NodeBody::Satellite(SatelliteNode::default())),
+        channel("voice"),
+        channel("downlink"),
+    ];
+    let edges = vec![
+        wire(("radio", "iq"), ("voice", "iq")),
+        wire(("radio", "iq"), ("scan", "iq")),
+        wire(("scan", "control"), ("voice", "control")),
+        wire(("sat", "control"), ("downlink", "control")),
+    ];
+    let mut patch = resolve(nodes, edges);
+    for node in &mut patch.nodes {
+        for port in &mut node.ports {
+            for feed in &mut port.feeds {
+                feed.tap = Some(Tap::Lane {
+                    device_set: 1,
+                    stream: 3,
+                });
+            }
+        }
+    }
+    let bus = ControlBus::default();
+    let rig = FakeRig::default();
+    let start = ControlCommand::Sweep(SweepJob::Scan {
+        settings: ScanSettings::default(),
+        action: ScanAction::Start,
+    });
+    assert_eq!(bus.deliver(&rig, &patch, "scan", &start)[0].error, None);
+    for _ in 0..3 {
+        bus.deliver(
+            &rig,
+            &patch,
+            "sat",
+            &ControlCommand::Doppler(DopplerSteer::default()),
+        );
+        bus.settle(&rig, &patch);
+    }
+    assert!(
+        rig.calls().iter().all(|call| !call.starts_with("halt")),
+        "{:?}",
+        rig.calls()
+    );
 }

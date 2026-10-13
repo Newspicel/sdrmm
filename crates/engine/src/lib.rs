@@ -444,6 +444,7 @@ impl ChannelMedia {
 struct RecordingState {
     file: String,
     stream: u32,
+    node: Option<String>,
     started_at: String,
     stem: PathBuf,
     shared: Arc<RecordingShared>,
@@ -560,6 +561,7 @@ impl RecordingState {
         RecordingStatus {
             file: self.file.clone(),
             stream: self.stream,
+            node: self.node.clone(),
             started_at: self.started_at.clone(),
             samples: self.shared.samples(),
             bytes: self.shared.bytes(),
@@ -1461,7 +1463,14 @@ impl Engine {
     pub fn probe_devices(self: &Arc<Self>) -> Vec<DeviceInfo> {
         let attached = self.registry.probe_all();
         self.search_the_network();
-        self.lock_discovery().merge(attached)
+        let mut discovery = self.lock_discovery();
+        discovery.note(attached.clone());
+        discovery.merge(attached)
+    }
+
+    #[must_use]
+    pub fn attached_devices(&self) -> Vec<DeviceInfo> {
+        self.lock_discovery().seen()
     }
 
     fn lock_discovery(&self) -> std::sync::MutexGuard<'_, discovery::Discovery> {

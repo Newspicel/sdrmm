@@ -912,7 +912,9 @@ fn aircraft(icao: &str) -> sdrmm_wire::DecodedRecord {
 fn deliver(state: &AppState, record: sdrmm_wire::DecodedRecord) {
     let mut record = record;
     let resolved = state.resolved.current();
-    resolved.events.route(&mut record);
+    resolved
+        .events
+        .route(&mut record, &mut crate::events::Stations::default());
     assert_eq!(
         record.sinks,
         ["map"],

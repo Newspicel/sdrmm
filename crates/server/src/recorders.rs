@@ -152,13 +152,13 @@ impl Recorders {
     fn iq(
         &mut self,
         tick: &mut Tick<'_>,
-        wanted: HashMap<u32, u32>,
+        wanted: HashMap<u32, Take>,
         snapshot: &StateSnapshot,
         targets: &mut HashSet<Target>,
     ) {
         let current = running_iq(snapshot);
-        for (&device_set, &stream) in &current {
-            if wanted.get(&device_set) == Some(&stream) {
+        for (&device_set, take) in &current {
+            if wanted.get(&device_set) == Some(take) {
                 continue;
             }
             match tick.engine.stop_recording(device_set) {
@@ -169,11 +169,13 @@ impl Recorders {
                 Err(error) => tracing::warn!(device_set, %error, "could not stop an IQ recording"),
             }
         }
-        for (&device_set, &stream) in &wanted {
-            if current.get(&device_set) == Some(&stream) {
+        for (&device_set, take) in &wanted {
+            if current.get(&device_set) == Some(take) {
                 continue;
             }
-            let result = tick.engine.start_recording(device_set, stream);
+            let result = tick
+                .engine
+                .start_recording(device_set, take.stream, take.node.as_deref());
             if result.is_ok() {
                 tick.moved_iq = true;
             }
@@ -300,15 +302,29 @@ fn wanted_baseband(graph: &PatchGraph, patch: &ResolvedPatch) -> HashSet<(u32, u
         .collect()
 }
 
-fn running_iq(snapshot: &StateSnapshot) -> HashMap<u32, u32> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Take {
+    stream: u32,
+    node: Option<String>,
+}
+
+fn running_iq(snapshot: &StateSnapshot) -> HashMap<u32, Take> {
     snapshot
         .device_sets
         .iter()
-        .filter_map(|set| set.recording.as_ref().map(|status| (set.id, status.stream)))
+        .filter_map(|set| {
+            set.recording.as_ref().map(|status| {
+                let take = Take {
+                    stream: status.stream,
+                    node: status.node.clone(),
+                };
+                (set.id, take)
+            })
+        })
         .collect()
 }
 
-fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<u32, u32> {
+fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<u32, Take> {
     let mut wanted = HashMap::new();
     for node in switched_on(graph, NodeKind::Recorder) {
         for (device_set, stream) in patch
@@ -316,7 +332,10 @@ fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<u32, u32> {
             .iter()
             .filter_map(|feed| feed.tap.as_ref()?.lane())
         {
-            wanted.entry(device_set).or_insert(stream);
+            wanted.entry(device_set).or_insert_with(|| Take {
+                stream,
+                node: Some(node.id.clone()),
+            });
         }
     }
     wanted
@@ -489,6 +508,14 @@ mod tests {
         recorders.reconcile(&engine, &resolved(Some(patch(true)), &engine), &hooks);
         let started = running(&engine, ch);
         assert!(started.iq && started.baseband && started.audio == 1);
+        assert_eq!(
+            engine.snapshot().device_sets[0]
+                .recording
+                .as_ref()
+                .and_then(|status| status.node.as_deref()),
+            Some("iq"),
+            "the IQ take names the recorder that asked for it"
+        );
         recorders.reconcile(&engine, &resolved(Some(patch(true)), &engine), &hooks);
         assert_eq!(
             running(&engine, ch).audio,

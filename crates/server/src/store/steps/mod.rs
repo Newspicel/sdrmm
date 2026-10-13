@@ -1,5 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, params};
-use sdrmm_wire::WorkspaceNoticeKind;
+use sdrmm_wire::{WORKSPACE_EXPORT_VERSION, WorkspaceNoticeKind};
 use serde_json::Value;
 
 use super::{StoreError, coherent_break};
@@ -46,9 +46,18 @@ fn upgrade_with(snapshot: &mut Value, once: &[Step]) -> Vec<WorkspaceNoticeKind>
 
 pub(crate) fn upgrade_import(export: &mut Value) -> Vec<WorkspaceNoticeKind> {
     let mut notices = coherent_break::upgrade_export(export).notices();
+    let version = export.get("version").and_then(Value::as_u64).unwrap_or(0);
+    let old = version < u64::from(WORKSPACE_EXPORT_VERSION);
+    let once: Vec<Step> = if old {
+        ONCE.iter().map(|(_, step)| *step).collect()
+    } else {
+        Vec::new()
+    };
     if let Some(snapshot) = export.get_mut("snapshot") {
-        let once: Vec<Step> = ONCE.iter().map(|(_, step)| *step).collect();
         notices.extend(upgrade_with(snapshot, &once));
+    }
+    if old && let Some(fields) = export.as_object_mut() {
+        fields.insert("version".to_owned(), WORKSPACE_EXPORT_VERSION.into());
     }
     notices
 }

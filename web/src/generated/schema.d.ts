@@ -260,22 +260,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/calls": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_calls"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/calls/{id}/audio": {
         parameters: {
             query?: never;
@@ -2352,6 +2336,15 @@ export interface components {
             /** @default together */
             tuning: components["schemas"]["ArrayTuningMode"];
         };
+        ArrayOffer: {
+            /** @enum {string} */
+            offer: "ready";
+            wires: components["schemas"]["LaneWire"][];
+        } | {
+            /** @enum {string} */
+            offer: "refused";
+            reason: string;
+        };
         ArrayOrientation: {
             /** Format: double */
             azimuth_deg: number;
@@ -3624,6 +3617,13 @@ export interface components {
             /** Format: int32 */
             clients: number;
         };
+        ClipName: {
+            /** Format: double */
+            freq_hz?: number | null;
+            mode: string;
+            started_at?: string | null;
+            tag?: string | null;
+        };
         /** @enum {string} */
         ClutterMethod: "eca_batch" | "eca_sliding" | "nlms" | "block_nlms" | "off";
         ClutterParams: {
@@ -4496,6 +4496,10 @@ export interface components {
             /** Format: float */
             strength?: number;
         };
+        DeviceClaim: {
+            device: string;
+            node: string;
+        };
         /**
          * @description Why a device set stopped, for the times a reader can act on it rather than only read it.
          * @enum {string}
@@ -4582,6 +4586,7 @@ export interface components {
             tuning?: components["schemas"]["Tuning"] | null;
         };
         DevicesResponse: {
+            claims?: components["schemas"]["DeviceClaim"][];
             devices: components["schemas"]["DeviceInfo"][];
         };
         /** @enum {string} */
@@ -4657,7 +4662,6 @@ export interface components {
             center_hz?: number | null;
             device_sets?: number[];
             position?: components["schemas"]["PositionLink"] | null;
-            triangulations?: string[];
         };
         DfNode: {
             settings?: components["schemas"]["DfParams"];
@@ -5277,9 +5281,12 @@ export interface components {
             width: number;
         };
         Feed: {
+            drives?: components["schemas"]["ControlVerb"] | null;
             payload: components["schemas"]["Payload"];
             port: string;
             source: string;
+            /** Format: int32 */
+            stream?: number | null;
             tap?: components["schemas"]["Tap"] | null;
             via?: string[];
         };
@@ -5595,7 +5602,6 @@ export interface components {
             position?: components["schemas"]["PositionLink"] | null;
             status?: components["schemas"]["HuntStatus"] | null;
             target?: components["schemas"]["ChannelTarget"] | null;
-            triangulations?: string[];
         };
         HuntNode: {
             clicks?: boolean;
@@ -5936,6 +5942,10 @@ export interface components {
             amplitude_db: number;
             /** Format: float */
             phase_deg: number;
+        };
+        LaneWire: {
+            from: string;
+            to: string;
         };
         LatLon: {
             /** Format: double */
@@ -7626,6 +7636,8 @@ export interface components {
             payload: components["schemas"]["Payload"];
             port_type: components["schemas"]["PortType"];
             repeat?: components["schemas"]["PortRepeat"];
+            /** Format: int32 */
+            stream?: number | null;
             takes?: string | null;
         };
         /** @enum {string} */
@@ -7695,14 +7707,17 @@ export interface components {
         /** @enum {string} */
         Power: "min" | "low" | "mid" | "high" | "max";
         Presentation: {
+            audio_error?: string | null;
             bearing?: components["schemas"]["BearingRay"] | null;
             callsign?: string | null;
             clip?: components["schemas"]["EventAudio"] | null;
+            clip_name?: components["schemas"]["ClipName"] | null;
             /** Format: int64 */
             duration_ms?: number | null;
             entity?: string | null;
             fields?: components["schemas"]["Field"][];
             gone?: boolean;
+            headline?: string | null;
             label?: string | null;
             place?: components["schemas"]["Place"] | null;
             shapes?: components["schemas"]["Shape"][];
@@ -7731,7 +7746,7 @@ export interface components {
             version: number;
         };
         /** @enum {string} */
-        ProblemSource: "bind" | "position" | "monitor" | "apply";
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls";
         /** @enum {string} */
         ProcessorGate: "sync" | "phase" | "gain" | "calibrating" | "retuning" | "tier" | "tuning_mode";
         ProcessorReading: {
@@ -8284,6 +8299,9 @@ export interface components {
             kinds?: components["schemas"]["KindSet"];
             port: string;
             sink: string;
+            /** Format: int32 */
+            stream?: number | null;
+            target_runs?: components["schemas"]["Runs"] | null;
             via?: string[];
         };
         RecorderNode: {
@@ -8332,6 +8350,7 @@ export interface components {
             bytes: number;
             error?: string | null;
             file: string;
+            node?: string | null;
             /** Format: int64 */
             overruns: number;
             /** Format: int64 */
@@ -8512,6 +8531,7 @@ export interface components {
             to: components["schemas"]["PortRef"];
         };
         ResolvedNode: {
+            array_offer?: components["schemas"]["ArrayOffer"] | null;
             id: string;
             kind: components["schemas"]["NodeKind"];
             label: string;
@@ -8602,7 +8622,7 @@ export interface components {
             text: string;
         };
         Runs: {
-            reason: string;
+            reason: components["schemas"]["UnboundReason"];
             /** @enum {string} */
             runs: "unbound";
         } | {
@@ -8668,7 +8688,7 @@ export interface components {
             catalog?: string | null;
             /** Format: double */
             doppler_hz?: number | null;
-            ground: components["schemas"]["SatelliteGround"];
+            ground?: components["schemas"]["SatelliteGround"] | null;
             ground_track?: components["schemas"]["LatLon"][];
             look?: components["schemas"]["SatelliteLook"] | null;
             name?: string | null;
@@ -8717,6 +8737,8 @@ export interface components {
             doppler_hz?: number | null;
             /** Format: double */
             doppler_rate_hz_s?: number | null;
+            /** Format: double */
+            downlink_hz?: number | null;
             driving?: string[];
             error?: string | null;
             ground?: components["schemas"]["SatelliteGround"] | null;
@@ -9415,9 +9437,6 @@ export interface components {
             scope: "decoder_log";
         } | {
             /** @enum {string} */
-            scope: "calls";
-        } | {
-            /** @enum {string} */
             scope: "images";
         } | {
             /** @enum {string} */
@@ -10072,6 +10091,8 @@ export interface components {
         /** @enum {string} */
         UlaSide: "both" | "front" | "back";
         /** @enum {string} */
+        UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running";
+        /** @enum {string} */
         Unit: "none" | "hz" | "db" | "dbfs" | "degrees" | "feet" | "metres" | "kilometres" | "knots" | "metres_per_second" | "feet_per_minute" | "celsius" | "percent" | "hectopascal" | "seconds" | "baud" | "millimetres" | "volts" | "db_hz" | "kilometres_per_hour" | "watts_per_square_metre" | "chips" | "wpm" | "dbm" | "psi" | "lux" | "kelvin";
         UpdateNanoVnaMeasurementRequest: {
             label: string;
@@ -10130,9 +10151,6 @@ export interface components {
             /** Format: int32 */
             source?: number | null;
             started_at: string;
-        };
-        VoiceCallsResponse: {
-            calls: components["schemas"]["VoiceCall"][];
         };
         VoiceFacts: {
             /** Format: int32 */
@@ -11060,26 +11078,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    list_calls: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Completed temporary voice calls */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VoiceCallsResponse"];
                 };
             };
         };

@@ -50,11 +50,6 @@ impl VoiceCall {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct VoiceCallsResponse {
-    pub calls: Vec<VoiceCall>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct EventImage {
     pub url: String,
@@ -99,6 +94,34 @@ pub struct CapturedImagesResponse {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DevicesResponse {
     pub devices: Vec<DeviceInfo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claims: Vec<DeviceClaim>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct DeviceClaim {
+    pub device: String,
+    pub node: String,
+}
+
+#[must_use]
+pub fn device_claims(graph: &crate::PatchGraph, devices: &[DeviceInfo]) -> Vec<DeviceClaim> {
+    let mut claims: Vec<DeviceClaim> = Vec::new();
+    for node in graph.device_nodes() {
+        let Some(reference) = node.body.device_ref(&node.id) else {
+            continue;
+        };
+        let free = devices.iter().find(|device| {
+            reference.matches(device) && !claims.iter().any(|claim| claim.device == device.id())
+        });
+        if let Some(device) = free {
+            claims.push(DeviceClaim {
+                device: device.id(),
+                node: node.id.clone(),
+            });
+        }
+    }
+    claims
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -677,6 +700,53 @@ mod tests {
             sources: sources.map(str::to_owned),
             ..DecoderLogQuery::default()
         }
+    }
+
+    #[test]
+    fn each_radio_is_claimed_once_by_the_first_node_naming_it() {
+        let device = |key: &str| DeviceInfo {
+            driver: "rtlsdr".to_owned(),
+            key: key.to_owned(),
+            label: key.to_owned(),
+            serial: None,
+            profile: None,
+        };
+        let radio = |id: &str, key: Option<&str>| crate::PatchNode {
+            id: id.to_owned(),
+            body: crate::NodeBody::Device(crate::DeviceNode {
+                device: Some(crate::DeviceRef {
+                    backend: "rtlsdr".to_owned(),
+                    serial: None,
+                    key: key.map(str::to_owned),
+                }),
+                ..crate::DeviceNode::default()
+            }),
+            position: crate::Position { x: 0.0, y: 0.0 },
+            size: None,
+            label: None,
+        };
+        let graph = crate::PatchGraph {
+            nodes: vec![
+                radio("a", Some("0")),
+                radio("b", Some("0")),
+                radio("c", None),
+            ],
+            edges: Vec::new(),
+        };
+        let claims = device_claims(&graph, &[device("0"), device("1")]);
+        assert_eq!(
+            claims,
+            [
+                DeviceClaim {
+                    device: "rtlsdr:0".to_owned(),
+                    node: "a".to_owned(),
+                },
+                DeviceClaim {
+                    device: "rtlsdr:1".to_owned(),
+                    node: "c".to_owned(),
+                },
+            ]
+        );
     }
 
     #[test]

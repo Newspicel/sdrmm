@@ -23,7 +23,7 @@ import type { PatchNode, PatchNodeOf, SurveyCell } from "../../lib/types";
 import { useWorkspaceContext, type Workspace } from "../context";
 import { patchNode } from "../graph";
 import { iqSourceOf } from "../lanes";
-import { deviceSetOf } from "../workspaceDevice";
+import { runningSetOf } from "../workspaceDevice";
 import { laneCenterHz, laneRateHz } from "./deviceNode";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
 
@@ -33,7 +33,7 @@ const MAX_BANDWIDTH_HZ = 100_000_000;
 
 export function SignalMapFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
-  const set = deviceSetOf(workspace, node.id);
+  const set = runningSetOf(workspace, node.id);
   const iq = iqSourceOf(workspace.resolved, node.id);
   const radioFeeds = useFeeds(node.id, "iq");
   const positionNode = useFeeds(node.id, "position")[0]?.source ?? null;

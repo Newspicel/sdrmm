@@ -17,7 +17,8 @@ pub(super) async fn get_devices(
 ) -> Result<Json<DevicesResponse>, AppError> {
     let engine = state.engine.clone();
     let devices = tokio::task::spawn_blocking(move || engine.probe_devices()).await?;
-    Ok(Json(DevicesResponse { devices }))
+    let claims = sdrmm_wire::device_claims(&state.resolved.current().graph, &devices);
+    Ok(Json(DevicesResponse { devices, claims }))
 }
 
 #[utoipa::path(

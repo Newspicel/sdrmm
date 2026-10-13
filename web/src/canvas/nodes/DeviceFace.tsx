@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link2, Radar } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../../components/BaseControls";
@@ -15,19 +15,26 @@ import { RadioSettings } from "../../components/RadioSettings";
 import { Tip } from "../../components/Tip";
 import { TuneTo } from "../../components/TuneTo";
 import { TuningLock } from "../../components/TuningLock";
-import { addNetworkRadio, devicesQuery, STATE_KEY } from "../../lib/api";
+import { addNetworkRadio, STATE_KEY } from "../../lib/api";
+import { resolvedNode, runsOf } from "../../lib/resolved";
 import { toastError } from "../../lib/toasts";
-import type { DeviceInfo, DeviceRef, DeviceSet, PatchNode, PatchNodeOf } from "../../lib/types";
+import type {
+  DeviceInfo,
+  DeviceRef,
+  DeviceSet,
+  PatchNode,
+  PatchNodeOf,
+  ResolvedPatch,
+} from "../../lib/types";
 import { useRadioTune } from "../../lib/useRadioTune";
 import { useWorkspaceContext } from "../context";
-import { patchNode, rxStreamCount, streamPort } from "../graph";
+import { patchNode, rxStreamCount } from "../graph";
 import { dialHold, type LaneHold, laneHolds } from "./arrayNode";
 import {
   allAutoTuning,
   allLocked,
   autoTuning,
   bondSaid,
-  claimedDevices,
   clippingSaid,
   deviceRefOf,
   faultSaid,
@@ -38,12 +45,11 @@ import {
   lockStream,
   lossSaid,
   refLabel,
-  refMatches,
   refusalSaid,
   type TunerDial,
   tunerDials,
 } from "./deviceNode";
-import { MakeArrayButton, offersMakeArray } from "./MakeArrayButton";
+import { MakeArrayButton } from "./MakeArrayButton";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
 import { SourceHealth } from "./SourceHealth";
 
@@ -342,17 +348,22 @@ function Refused({ set }: { set: DeviceSet }) {
   return said == null ? null : <FaceFault message={said} detail={set.refused?.error} />;
 }
 
+function iqOutputs(resolved: ResolvedPatch | null, node: string): string[] {
+  return (resolvedNode(resolved, node)?.ports ?? [])
+    .filter((port) => port.direction === "out" && port.port_type === "iq")
+    .toSorted((a, b) => (a.stream ?? 0) - (b.stream ?? 0))
+    .map((port) => port.name);
+}
+
 export function DeviceFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const queryClient = useQueryClient();
-  const attached = useQuery(devicesQuery());
   const reference = node.kind === "device" ? (node.data.device ?? null) : null;
   const lockedStreams = node.kind === "device" ? (node.data.locked_streams ?? []) : [];
   const split = node.kind === "device" && node.data.split_tuning === true;
   const set = workspace.devices.get(node.id) ?? null;
-  const onBus =
-    reference !== null &&
-    (attached.data?.devices ?? []).some((device) => refMatches(reference, device));
+  const runs = runsOf(workspace.resolved, node.id);
+  const onBus = runs?.runs === "unbound" && runs.reason === "radio_closed";
 
   const editNode = (next: Partial<DeviceNodeData>): void =>
     workspace.edit((snapshot) => ({
@@ -388,7 +399,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
               onAddNetwork={(id) => openNetwork.mutate(id)}
               busy={openNetwork.isPending}
               error={openNetwork.error?.message ?? null}
-              claimed={claimedDevices(workspace.graph, node.id)}
+              claimant={node.id}
             />
           </div>
         </FaceBody>
@@ -480,11 +491,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
                 ))
               : undefined
           }
-          ports={
-            rowPerPort
-              ? Array.from({ length: streams }, (_, stream) => streamPort("iq", stream))
-              : undefined
-          }
+          ports={rowPerPort ? iqOutputs(workspace.resolved, node.id) : undefined}
         />
 
         {set.error != null && <Fault set={set} />}
@@ -492,9 +499,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
       </FaceBody>
       <FaceFooter>
         <DeviceHealth set={set} />
-        {offersMakeArray(workspace.resolved, node.id, set) && (
-          <MakeArrayButton node={node.id} set={set} />
-        )}
+        <MakeArrayButton node={node.id} />
         <Button
           type="button"
           className={BTN_QUIET_DANGER}

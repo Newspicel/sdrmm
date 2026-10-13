@@ -1,9 +1,16 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 use sdrmm_wire::{
-    DecodedRecord, EventFilterNode, EventKind, Keeps, KindSet, NodeBody, PatchGraph, Payload,
-    PortType, ResolvedNode, ResolvedPatch, Role, present::Presentation,
+    DecodedRecord, EventFilterNode, EventKind, Keeps, KindSet, PatchGraph, Payload, PortType,
+    ResolvedNode, ResolvedPatch, Role, present::Presentation,
 };
+
+mod stations;
+
+pub(crate) use stations::Stations;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Route {
@@ -13,15 +20,8 @@ pub(crate) struct Route {
 }
 
 impl Route {
-    fn passes(&self, record: &DecodedRecord) -> bool {
-        let kind = record.event.kind();
-        match &record.view {
-            Some(view) => self.filters.iter().all(|filter| filter.admits(kind, view)),
-            None => self
-                .filters
-                .iter()
-                .all(|filter| filter.passes(&record.event)),
-        }
+    fn passes(&self, kind: EventKind, view: &Presentation) -> bool {
+        self.filters.iter().all(|filter| filter.admits(kind, view))
     }
 }
 
@@ -69,10 +69,7 @@ fn accepts(node: &ResolvedNode, port: &str) -> KindSet {
 
 fn filters_on(via: &[String], graph: &PatchGraph) -> Vec<EventFilterNode> {
     via.iter()
-        .filter_map(|id| match &graph.node(id)?.body {
-            NodeBody::EventFilter(settings) => Some(settings.clone()),
-            _ => None,
-        })
+        .filter_map(|id| graph.node(id)?.body.event_rule().cloned())
         .collect()
 }
 
@@ -140,17 +137,23 @@ impl EventRoutes {
         })
     }
 
-    pub(crate) fn route(&self, record: &mut DecodedRecord) -> RouteOutcome {
+    pub(crate) fn route(
+        &self,
+        record: &mut DecodedRecord,
+        stations: &mut Stations,
+    ) -> RouteOutcome {
         let Some(source) = record.origin.as_ref().map(|origin| origin.node.clone()) else {
             record.sinks.clear();
             return RouteOutcome::Unattributed;
         };
-        record.view = Some(record.event.present());
+        let view = record.event.present();
+        let judged = stations.judged(&source, record, &view, Instant::now());
+        record.view = Some(view);
         let kind = record.event.kind();
         let mut sinks: Vec<String> = Vec::new();
         let mut ignored = false;
         for route in self.routes_from(&source) {
-            if sinks.contains(&route.sink) || !route.passes(record) {
+            if sinks.contains(&route.sink) || !route.passes(kind, &judged) {
                 continue;
             }
             if route.accepts.contains(kind) {

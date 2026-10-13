@@ -830,14 +830,51 @@ impl Store {
 
     pub fn delete_decoder_log(&self, filter: &DecoderLogQuery) -> Result<u64, StoreError> {
         let predicate = self.decoder_log_predicate(filter)?;
-        let deleted = self.lock().execute(
-            &format!(
-                "DELETE FROM decoder_log WHERE id IN (SELECT decoder_log.id FROM {}{})",
+        match &filter.sink {
+            Some(sink) => self.unmark_decoder_log(sink, &predicate),
+            None => {
+                let deleted = self.lock().execute(
+                    &format!(
+                        "DELETE FROM decoder_log WHERE id IN (SELECT decoder_log.id FROM {}{})",
+                        predicate.from, predicate.clause
+                    ),
+                    params_from_iter(&predicate.params),
+                )?;
+                Ok(deleted as u64)
+            }
+        }
+    }
+
+    fn unmark_decoder_log(
+        &self,
+        sink: &str,
+        predicate: &DecoderLogPredicate,
+    ) -> Result<u64, StoreError> {
+        let mut conn = self.lock();
+        let tx = conn.transaction()?;
+        let ids: Vec<i64> = {
+            let mut stmt = tx.prepare(&format!(
+                "SELECT decoder_log.id FROM {}{}",
                 predicate.from, predicate.clause
-            ),
-            params_from_iter(&predicate.params),
-        )?;
-        Ok(deleted as u64)
+            ))?;
+            let rows = stmt.query_map(params_from_iter(&predicate.params), |row| row.get(0))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        let mut removed = 0;
+        {
+            let mut unmark =
+                tx.prepare_cached("DELETE FROM decoder_log_sinks WHERE sink = ?1 AND entry = ?2")?;
+            let mut orphan = tx.prepare_cached(
+                "DELETE FROM decoder_log WHERE id = ?1 AND NOT EXISTS \
+                 (SELECT 1 FROM decoder_log_sinks AS m WHERE m.entry = decoder_log.id)",
+            )?;
+            for id in ids {
+                removed += unmark.execute(params![sink, id])? as u64;
+                orphan.execute(params![id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(removed)
     }
 
     pub fn prune_decoder_log_before(&self, cutoff: &str) -> Result<u64, StoreError> {

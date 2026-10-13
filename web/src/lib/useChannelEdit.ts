@@ -1,6 +1,6 @@
 import type { Workspace } from "../canvas/context";
 import { descriptorOf, nodeOf } from "../canvas/graph";
-import { deviceSetOf } from "../canvas/workspaceDevice";
+import { runningSetOf } from "../canvas/workspaceDevice";
 import type { ChannelSettings } from "./types";
 import { type ChannelEdit, useChannelPatch } from "./useChannelPatch";
 
@@ -10,7 +10,7 @@ export interface LiveChannel {
 }
 
 export function liveChannelOf(workspace: Workspace, node: string): LiveChannel | null {
-  const set = deviceSetOf(workspace, node);
+  const set = runningSetOf(workspace, node);
   const channel = workspace.channels.get(node);
   return set === null || channel === undefined ? null : { deviceSet: set.id, id: channel.id };
 }

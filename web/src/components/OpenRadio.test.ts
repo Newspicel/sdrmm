@@ -62,32 +62,17 @@ describe("unclaimedDevices", () => {
     device("rtlsdr", "00000002", "RTL-SDR 00000002"),
     device("virtual", "band", "Test band"),
   ];
+  const claims = [{ device: "rtlsdr:00000001", node: "a" }];
 
-  it("drops the radios another node already names", () => {
-    expect(
-      unclaimedDevices(devices, [{ backend: "rtlsdr", key: "00000001" }]).map(deviceId),
-    ).toEqual(["rtlsdr:00000002", "virtual:band"]);
-    expect(
-      unclaimedDevices(
-        [{ driver: "rtlsdr", key: "0@rx", label: "RTL-SDR", serial: "0" }],
-        [{ backend: "rtlsdr", serial: "0", key: "0@rx" }],
-      ),
-    ).toEqual([]);
-  });
-
-  it("matches a keyed reference and a bare backend alike", () => {
-    expect(unclaimedDevices(devices, [{ backend: "virtual", key: "band" }]).map(deviceId)).toEqual([
-      "rtlsdr:00000001",
+  it("drops the radios the server says another node claims", () => {
+    expect(unclaimedDevices(devices, claims, "b").map(deviceId)).toEqual([
       "rtlsdr:00000002",
-    ]);
-    expect(unclaimedDevices(devices, [{ backend: "virtual" }]).map(deviceId)).toEqual([
-      "rtlsdr:00000001",
-      "rtlsdr:00000002",
+      "virtual:band",
     ]);
   });
 
-  it("offers everything when no node holds a radio", () => {
-    expect(unclaimedDevices(devices, [])).toEqual(devices);
+  it("keeps the radio the asking node claims itself", () => {
+    expect(unclaimedDevices(devices, claims, "a")).toEqual(devices);
   });
 });
 

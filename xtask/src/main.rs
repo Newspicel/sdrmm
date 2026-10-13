@@ -34,6 +34,7 @@ mod linkage;
 mod mobile;
 mod nixhash;
 mod replay;
+mod resolved_fixtures;
 #[cfg(test)]
 mod site;
 mod units;
@@ -195,6 +196,7 @@ fn codegen(root: &Path) -> Result<()> {
         serde_json::to_string_pretty(&sdrmm_wire::PatchCatalog::build())?,
     )
     .context("write catalog test fixture")?;
+    resolved_fixtures::write(root)?;
     std::fs::write(
         root.join("web/src/generated/labels.json"),
         serde_json::to_string_pretty(&sdrmm_wire::labels::generated()?)?,

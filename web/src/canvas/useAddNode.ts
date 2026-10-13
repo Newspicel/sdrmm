@@ -1,8 +1,8 @@
 import { pushToast } from "../lib/toasts";
 import type { NodeKind, PatchNode, Position } from "../lib/types";
 import { useWorkspaceContext } from "./context";
-import { addNode, newNodeId, nodeIds } from "./graph";
-import { newNodeBody, startsOnItsOwn } from "./newNode";
+import { addNode, newNodeId, nodeIds, opensDevice } from "./graph";
+import { newNodeBody } from "./newNode";
 import { useNodePlacement } from "./placement";
 
 export type AddNode = (kind: NodeKind, channelType?: string, at?: Position) => void;
@@ -23,7 +23,7 @@ export function useAddNode(): AddNode {
       return { ...snapshot, graph: addNode(snapshot.graph, node) };
     });
     workspace.select(id);
-    if (startsOnItsOwn(kind)) {
+    if (opensDevice(kind)) {
       workspace.apply();
     }
   };

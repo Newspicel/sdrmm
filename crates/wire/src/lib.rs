@@ -205,23 +205,23 @@ pub use network::{
 };
 pub use node_action::{NetworkRadioRequest, NodeActed, NodeAction};
 pub use patch::{
-    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, AudioStream, BASEBAND_PORT,
-    BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
+    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, AudioStream,
+    BASEBAND_PORT, BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
     CorrelatorNode, DEFAULT_DMR_PROBES, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
     DEFAULT_SIGNAL_MAP_OFFSET_HZ, DecoderLogNode, DeviceNode, DeviceRef, DfNode, DmrChannelEntry,
     DmrDiscovery, DmrSearchRange, DmrTrunkNode, DmrTrunkProtocol, EVENTS_PORT, Face, FaceSize,
-    Feed, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, MAX_DMR_CHANNEL_MAP, MAX_DMR_LOGICAL_CHANNEL,
-    MAX_DMR_PROBES, MAX_DMR_SEARCH_CANDIDATES, MAX_DMR_SEARCH_RANGES, MAX_EDGES, MAX_NODES,
-    MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS, MIN_DMR_SEARCH_STEP_HZ,
-    Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo, POSITION_PORT,
-    PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode, Payload,
-    PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType, PortTypeInfo,
+    Feed, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_DMR_CHANNEL_MAP,
+    MAX_DMR_LOGICAL_CHANNEL, MAX_DMR_PROBES, MAX_DMR_SEARCH_CANDIDATES, MAX_DMR_SEARCH_RANGES,
+    MAX_EDGES, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_STREAMS,
+    MIN_DMR_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo,
+    POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode,
+    Payload, PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType, PortTypeInfo,
     Position, ProblemSource, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT, REFUSALS,
     RackCell, RackLayout, RackSlot, Reach, RecorderNode, RecordingNode, Refusal, RefusedEdge,
     ResolveCtx, ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs,
     STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalGenNode, SignalMapNode, Size,
-    SpatialSpectrumNode, StitchNode, Tap, TriangulationNode, VIDEO_PORT, channel_ports,
-    port_stream, siggen_key, stream_port,
+    SpatialSpectrumNode, StitchNode, Tap, TriangulationNode, UnboundReason, VIDEO_PORT,
+    channel_ports, port_stream, siggen_key, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;
@@ -279,14 +279,14 @@ pub use rest::{
     AuthInfo, Bookmark, CapturedImage, CapturedImagesQuery, CapturedImagesResponse,
     ChannelTypesResponse, ClientsResponse, CreateBookmarkRequest, CreatePresetRequest,
     CreatedRowId, DecoderLogEntry, DecoderLogGroup, DecoderLogGroupsResponse, DecoderLogQuery,
-    DecoderLogResponse, DeletedCount, DevicesResponse, ErrorCode, EventAudio, EventImage,
-    ExportFormat, LogGroupKey, LogScope, MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN,
+    DecoderLogResponse, DeletedCount, DeviceClaim, DevicesResponse, ErrorCode, EventAudio,
+    EventImage, ExportFormat, LogGroupKey, LogScope, MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN,
     MAX_RECORDING_NOTE_LEN, MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES,
     OccupancyBucket, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction,
     PlaybackRequest, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
     RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
     SaveRadioRequest, SavedRadio, ServerStatus, TemplateInfo, TemplatesResponse, VoiceCall,
-    VoiceCallsResponse, WriteSerialRequest, WrittenSerial,
+    WriteSerialRequest, WrittenSerial, device_claims,
 };
 pub use rotator::{
     DEFAULT_GS232_BAUD, DEFAULT_ROTATOR_TOLERANCE_DEG, DEFAULT_ROTCTLD_ADDRESS, FLIP_ELEVATION_DEG,
@@ -1195,6 +1195,7 @@ mod contract_tests {
         set.recording = Some(RecordingStatus {
             file: "rec-20260809-120000".to_owned(),
             stream: 0,
+            node: Some("recorder".to_owned()),
             started_at: "2026-08-09T12:00:00Z".to_owned(),
             samples: 2_400_000,
             bytes: 19_200_000,
@@ -1266,6 +1267,7 @@ mod contract_tests {
 
         info.baseband_recording = Some(RecordingStatus {
             file: "bb_1_3_20260815T120000Z".to_owned(),
+            node: None,
             stream: 0,
             started_at: "2026-08-15T12:00:00Z".to_owned(),
             samples: 48_000,

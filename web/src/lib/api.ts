@@ -86,7 +86,6 @@ import type {
   ToolsResponse,
   TransmittersResponse,
   UpdateNanoVnaMeasurementRequest,
-  VoiceCallsResponse,
   WireVerdict,
   WorkspaceDetail,
   WorkspaceExport,
@@ -124,7 +123,6 @@ export const BOOKMARKS_KEY = ["get", "/api/bookmarks"] as const;
 export const SAVED_RADIOS_KEY = ["get", "/api/saved-radios"] as const;
 export const RECORDINGS_KEY = ["get", "/api/recordings"] as const;
 export const AUDIO_RECORDINGS_KEY = ["get", "/api/audiorecordings"] as const;
-export const CALLS_KEY = ["get", "/api/calls"] as const;
 export const DECODER_LOG_KEY = ["get", "/api/decoderlog"] as const;
 export const TEMPLATES_KEY = ["get", "/api/templates"] as const;
 export const AUTH_KEY = ["get", "/api/auth"] as const;
@@ -156,13 +154,6 @@ export function stateQuery() {
   return queryOptions({
     queryKey: STATE_KEY,
     queryFn: async (): Promise<StateSnapshot> => unwrap(await client.GET("/api/state")),
-  });
-}
-
-export function callsQuery() {
-  return queryOptions({
-    queryKey: CALLS_KEY,
-    queryFn: async (): Promise<VoiceCallsResponse> => unwrap(await client.GET("/api/calls")),
   });
 }
 

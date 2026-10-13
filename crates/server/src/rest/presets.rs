@@ -202,11 +202,11 @@ fn preset_merge(id: i64, targets: &[(u32, PresetDevice)]) -> Merge {
             patch.edges.push(sdrmm_wire::PatchEdge {
                 from: sdrmm_wire::PortRef {
                     node: dev.clone(),
-                    port: "iq".to_owned(),
+                    port: sdrmm_wire::IQ_PORT.to_owned(),
                 },
                 to: sdrmm_wire::PortRef {
                     node: node.clone(),
-                    port: "iq".to_owned(),
+                    port: sdrmm_wire::IQ_PORT.to_owned(),
                 },
             });
             settings.push((node, channel.clone()));

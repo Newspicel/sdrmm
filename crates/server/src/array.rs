@@ -10,12 +10,11 @@ use std::{
 use sdrmm_channels::array_processor::processor_descriptor;
 use sdrmm_engine::{ArraySpec, EngineError, LaneRef, ProcessorSpec};
 use sdrmm_wire::{
-    ARRAY_LANE_PORT, ARRAY_PORT, ArrayCalRecord, ArrayCalSource, ArrayFailure, ArrayNode,
-    ArrayOrientation, ArrayRecordingRequest, ArrayRecordingStarted, ArrayTune, ArrayTuneRequest,
-    ChannelSettings, DeviceSet, HeadingSource, IQ_PORT, LaneKey, NodeBody, NodeKind, POSITION_PORT,
-    PatchApplyReport, PatchGraph, PatchNode, PatchRefusal, PositionFix, ResolvedPatch, STEER_PORT,
-    ServerEvent, StateSnapshot, StreamKind, WorkspaceArray, WorkspaceState, array::MAX_ARRAY_LANES,
-    port_stream,
+    ARRAY_PORT, ArrayCalRecord, ArrayCalSource, ArrayFailure, ArrayNode, ArrayOrientation,
+    ArrayRecordingRequest, ArrayRecordingStarted, ArrayTune, ArrayTuneRequest, DeviceSet,
+    HeadingSource, LaneKey, NodeBody, POSITION_PORT, PatchGraph, PatchNode, PortType, PositionFix,
+    ResolvedPatch, STEER_PORT, ServerEvent, StateSnapshot, StreamKind, WorkspaceArray,
+    WorkspaceState, array::MAX_ARRAY_LANES,
 };
 
 use crate::{AppState, resolved::Resolved, rest::AppError};
@@ -183,16 +182,17 @@ fn array_lanes(patch: &ResolvedPatch, node: &str) -> Vec<Option<(String, u32)>> 
     let Some(array) = patch.node(node) else {
         return lanes;
     };
-    for port in array.inputs() {
-        let Some(lane) = port_stream(ARRAY_LANE_PORT, &port.spec.name) else {
+    for port in array
+        .inputs()
+        .filter(|port| port.spec.port_type == PortType::Iq)
+    {
+        let Some(lane) = port.spec.stream else {
             continue;
         };
         let Some(feed) = port.feeds.first() else {
             continue;
         };
-        let Some(stream) = port_stream(IQ_PORT, &feed.port) else {
-            continue;
-        };
+        let stream = feed.stream.unwrap_or_default();
         let index = lane as usize;
         if lanes.len() <= index {
             lanes.resize(index + 1, None);
@@ -222,23 +222,6 @@ pub(crate) fn wired_array(patch: &ResolvedPatch, node: &str) -> ArrayWiring {
         wired.push(lane);
     }
     ArrayWiring::Lanes(wired)
-}
-
-pub(crate) fn lane_port_listeners(
-    patch: &ResolvedPatch,
-    processor: &str,
-    port: &str,
-) -> Vec<String> {
-    patch
-        .reaches(processor, port)
-        .iter()
-        .filter(|reach| {
-            patch
-                .node(&reach.sink)
-                .is_some_and(|target| target.kind == NodeKind::Channel)
-        })
-        .map(|reach| reach.sink.clone())
-        .collect()
 }
 
 fn source_of(patch: &ResolvedPatch, node: &str, port: &str) -> Option<String> {
@@ -554,98 +537,6 @@ fn pose(state: &AppState, array: &str, fix: Option<PositionFix>, received_ns: i6
             });
         }
     }
-}
-
-pub(crate) fn virtual_lane_channels(
-    state: &AppState,
-    patch: &ResolvedPatch,
-    live: &StateSnapshot,
-) -> Vec<(String, u32, u32)> {
-    let processors = state.arrays.processors();
-    live.device_sets
-        .iter()
-        .flat_map(|set| {
-            set.virtual_lanes
-                .iter()
-                .filter(|lane| {
-                    processors
-                        .get(&lane.node)
-                        .is_some_and(|binding| binding.lane_ports.contains(&lane.port))
-                })
-                .flat_map(|lane| {
-                    lane_port_listeners(patch, &lane.node, &lane.port)
-                        .into_iter()
-                        .map(|listener| (listener, set.id, lane.stream))
-                })
-        })
-        .collect()
-}
-
-pub(crate) fn open_virtual_lane_channels(
-    state: &AppState,
-    resolved: &Resolved,
-    saved: &WorkspaceState,
-    report: &mut PatchApplyReport,
-) {
-    let live = state.engine.snapshot();
-    for (node, device_set, stream) in virtual_lane_channels(state, &resolved.patch, &live) {
-        let Some(NodeBody::Channel(channel)) = resolved.graph.node(&node).map(|patch| &patch.body)
-        else {
-            continue;
-        };
-        let Some(set) = live.device_sets.iter().find(|set| set.id == device_set) else {
-            continue;
-        };
-        let open = set.channels.iter().any(|existing| {
-            existing.stream == stream
-                && existing.node.as_deref() == Some(node.as_str())
-                && existing.settings.params.type_id() == channel.channel_type
-        });
-        if open {
-            continue;
-        }
-        let center_hz = set
-            .virtual_lanes
-            .iter()
-            .find(|lane| lane.stream == stream)
-            .map(|lane| lane.center_hz);
-        let Some(settings) = lane_channel(&node, &channel.channel_type, saved, center_hz) else {
-            report.refused.push(PatchRefusal {
-                node,
-                reason: format!("this build has no channel type {:?}", channel.channel_type),
-            });
-            continue;
-        };
-        match state
-            .engine
-            .add_channel_for(device_set, stream, settings, Some(&node))
-        {
-            Ok(_) => report.created += 1,
-            Err(error) => report.refused.push(PatchRefusal {
-                node,
-                reason: error.to_string(),
-            }),
-        }
-    }
-}
-
-fn lane_channel(
-    node: &str,
-    channel_type: &str,
-    saved: &WorkspaceState,
-    center_hz: Option<f64>,
-) -> Option<ChannelSettings> {
-    if let Some(held) = saved
-        .channel(node)
-        .filter(|held| held.settings.params.type_id() == channel_type)
-    {
-        return Some(held.settings.clone());
-    }
-    let mut settings = ChannelSettings::default_for(channel_type)?;
-    if let Some(center_hz) = center_hz {
-        settings.frequency_hz = center_hz;
-    }
-    Some(settings)
 }
 
 pub(crate) fn capture_tunes(state: &AppState) -> Vec<WorkspaceArray> {

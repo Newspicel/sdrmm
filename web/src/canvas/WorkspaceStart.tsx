@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Button, Form, Input } from "../components/BaseControls";
 import { BTN_PRIMARY, FIELD } from "../components/controls";
-import { MAX_NAME_LEN } from "./graph";
+import { MAX_NAME_LEN } from "../lib/limits";
+
 import { DEFAULT_WORKSPACE_NAME, workspaceName } from "./workspaceName";
 
 export function WorkspaceStart({ onCreate }: { onCreate: (name: string) => void }) {

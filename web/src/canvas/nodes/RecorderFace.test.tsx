@@ -12,6 +12,7 @@ const TAKE: RecordingStatus = {
   overruns: 0,
   samples: 20_914_688,
   started_at: "2026-10-09T11:44:26Z",
+  node: "rec",
 };
 
 function recorder(recording: boolean) {
@@ -56,5 +57,10 @@ describe("RecorderFace", () => {
     expect(html).toContain(">rec_0_20261009T114426Z<");
     expect(html).toContain(">167.3 MB<");
     expect(html).toContain(">Stop<");
+  });
+
+  it("shows only the take its own node started", () => {
+    const html = render(true, { ...TAKE, node: "other" });
+    expect(html).not.toContain("rec_0_20261009T114426Z");
   });
 });

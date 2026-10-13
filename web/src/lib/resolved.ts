@@ -1,6 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useWorkspaceContext } from "../canvas/context";
-import { opensDevice } from "../canvas/graph";
 import { RESOLVED_KEY } from "./api";
 import { streamSource } from "./ports";
 import type {
@@ -109,48 +108,67 @@ export function radioRunning(patch: ResolvedPatch | null, deviceSet: number): st
   )?.id;
 }
 
-function carrierOf(patch: ResolvedPatch | null, node: string): string | null {
+export function deviceSetIdOf(patch: ResolvedPatch | null, node: string): number | null {
   const runs = runsOf(patch, node);
-  const placed = runs?.runs === "channel" ? radioRunning(patch, runs.device_set) : undefined;
-  if (placed !== undefined) {
-    return placed;
+  if (runs?.runs === "radio" || runs?.runs === "channel") {
+    return runs.device_set;
   }
   for (const feed of feedsOf(patch, node, "iq")) {
-    const source = resolvedNode(patch, feed.source);
-    if (source !== undefined && opensDevice(source.kind)) {
-      return source.id;
+    if (feed.tap?.tap === "lane") {
+      return feed.tap.device_set;
     }
-    const lane = feed.tap?.tap === "lane" ? radioRunning(patch, feed.tap.device_set) : undefined;
-    if (lane !== undefined) {
-      return lane;
+  }
+  for (const reach of reachesOf(patch, node, "control")) {
+    if (reach.target_runs?.runs === "channel") {
+      return reach.target_runs.device_set;
     }
   }
   return null;
 }
 
-export function controlledBy(patch: ResolvedPatch | null, node: string): string | null {
-  return (
-    reachesOf(patch, node, "control").find((reach) => carrierOf(patch, reach.sink) !== null)
-      ?.sink ?? null
+export function runningSet(
+  patch: ResolvedPatch | null,
+  sets: readonly DeviceSet[],
+  node: string,
+): DeviceSet | null {
+  const id = deviceSetIdOf(patch, node);
+  return id === null ? null : (sets.find((set) => set.id === id) ?? null);
+}
+
+export interface Controlled {
+  node: string;
+  set: DeviceSet;
+  channel: ChannelInfo;
+}
+
+export function controlledChannel(
+  patch: ResolvedPatch | null,
+  sets: readonly DeviceSet[],
+  node: string,
+): Controlled | null {
+  for (const reach of reachesOf(patch, node, "control")) {
+    const runs = reach.target_runs;
+    if (runs?.runs !== "channel") {
+      continue;
+    }
+    const set = sets.find((candidate) => candidate.id === runs.device_set);
+    const channel = set?.channels.find((candidate) => candidate.id === runs.channel);
+    if (set !== undefined && channel !== undefined) {
+      return { node: reach.sink, set, channel };
+    }
+  }
+  return null;
+}
+
+export function sweptBy(patch: ResolvedPatch | null, node: string, except?: string): boolean {
+  return feedsOf(patch, node, "control").some(
+    (feed) => feed.drives === "sweep" && feed.source !== except,
   );
 }
 
 export function controllerOf(patch: ResolvedPatch | null, node: string): string | null {
   const feed = feedsOf(patch, node, "control")[0];
   return feed === undefined ? null : (resolvedNode(patch, feed.source)?.label ?? feed.source);
-}
-
-export function radioOf(patch: ResolvedPatch | null, node: string): string | null {
-  const own = resolvedNode(patch, node);
-  if (own !== undefined && opensDevice(own.kind)) {
-    return node;
-  }
-  const carrier = carrierOf(patch, node);
-  if (carrier !== null) {
-    return carrier;
-  }
-  const driven = controlledBy(patch, node);
-  return driven === null ? null : carrierOf(patch, driven);
 }
 
 export function tapChannels(tap: Tap | null | undefined): ChannelAddr[] {
@@ -257,24 +275,6 @@ export function inputsOf(
             },
           ];
     }),
-  );
-}
-
-export function audioTaps(
-  patch: ResolvedPatch | null,
-): { node: string; port: string; source: string }[] {
-  return (patch?.nodes ?? []).flatMap((node) =>
-    node.ports
-      .filter((port) => port.direction === "in" && port.port_type === "audio")
-      .flatMap((port) =>
-        (port.feeds ?? []).flatMap((feed) =>
-          tapChannels(feed.tap).map((_, index) => ({
-            node: node.id,
-            port: port.name,
-            source: feedSource(feed, index),
-          })),
-        ),
-      ),
   );
 }
 

@@ -6,10 +6,10 @@ use std::{
 
 use sdrmm_dsp::{decim::RealDecimator, fir::design_lowpass};
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload};
-use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, EventOrigin, StateScope};
+use sdrmm_wire::{DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, EventOrigin};
 
+use super::CallBinding;
 use super::{Calls, DECIMATION, MAX_CALL_SAMPLES, NewCall, RETENTION, wav};
-use crate::trunking::CallBinding;
 use sdrmm_wire::CallGate;
 
 const ANTIALIAS_TAPS: usize = 96;
@@ -415,7 +415,7 @@ impl Tracker {
             return;
         };
         let (new, audio) = call.into_new_call(key);
-        let (call, evicted) = self.calls.push(new, audio, RETENTION);
+        let (call, _) = self.calls.push(new, audio, RETENTION);
         engine.publish_decoded(DecodedRecord {
             origin: Some(EventOrigin {
                 node: call.node.clone(),
@@ -430,9 +430,6 @@ impl Tracker {
             event: DecoderEvent::Call(call),
             view: None,
         });
-        if evicted {
-            engine.emit_scope(StateScope::Calls);
-        }
     }
 
     #[cfg(test)]

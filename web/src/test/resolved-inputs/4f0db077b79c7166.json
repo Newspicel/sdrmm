@@ -1,0 +1,30 @@
+{
+  "name": "4f0db077b79c7166",
+  "test": "array processor faces > says no array when nothing is wired",
+  "graph": {
+    "nodes": [
+      {
+        "id": "proc",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "correlator",
+        "data": {
+          "settings": {
+            "bins": 1024,
+            "integrate_s": 1,
+            "offset_hz": 0,
+            "overlap": false,
+            "channels": 256
+          }
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

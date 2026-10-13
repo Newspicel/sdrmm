@@ -47,6 +47,7 @@ impl TimeMachineState {
             capture: self.capture.as_ref().map(|capture| RecordingStatus {
                 file: capture.file.clone(),
                 stream: self.stream,
+                node: None,
                 started_at: capture.started_at.clone(),
                 samples: shared.captured(),
                 bytes: shared.captured_bytes(),

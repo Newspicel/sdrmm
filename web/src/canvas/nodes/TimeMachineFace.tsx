@@ -22,7 +22,7 @@ import {
 import type { PatchNode, PatchNodeOf, TimeMachineStatus } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { deviceSetOf } from "../workspaceDevice";
+import { runningSetOf } from "../workspaceDevice";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 
 export function TimeMachineFace({ node }: { node: PatchNode }) {
@@ -34,7 +34,7 @@ export function TimeMachineFace({ node }: { node: PatchNode }) {
 
 function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
   const workspace = useWorkspaceContext();
-  const set = deviceSetOf(workspace, node.id);
+  const set = runningSetOf(workspace, node.id);
   const seconds = node.data.history_seconds ?? DEFAULT_HISTORY_SECONDS;
   const phase = timeMachinePhase(set, node.id);
   const status = phase.kind === "armed" || phase.kind === "capturing" ? phase.status : null;

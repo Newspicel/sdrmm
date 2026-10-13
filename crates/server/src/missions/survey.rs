@@ -1,6 +1,5 @@
 use sdrmm_wire::{
     MissionBody, MissionControl, MissionProblem, SignalMapNode, StateSnapshot, SurveyMission,
-    port_stream,
 };
 
 use super::{Built, Scene, graph};
@@ -35,10 +34,7 @@ pub(super) fn survey(scene: &Scene<'_>, node: &str, settings: &SignalMapNode) ->
     if cells > 0 {
         controls.push(MissionControl::ClearSurvey);
     }
-    let stream = radio
-        .map(|radio| radio.stream)
-        .or_else(|| iq.and_then(|feed| port_stream(IQ_PORT, &feed.port)))
-        .unwrap_or_default();
+    let stream = radio.map(|radio| radio.stream).unwrap_or_default();
     Built {
         body: MissionBody::Survey(SurveyMission {
             device_set: radio.map(|radio| radio.device_set),

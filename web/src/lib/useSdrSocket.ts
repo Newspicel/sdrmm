@@ -5,7 +5,6 @@ import { useActivityStore } from "./activity";
 import {
   AUDIO_RECORDINGS_KEY,
   BOOKMARKS_KEY,
-  CALLS_KEY,
   DECODER_LOG_KEY,
   DEVICES_KEY,
   PHONES_KEY,
@@ -194,9 +193,6 @@ export function invalidateScope(queryClient: QueryClient, scope: StateScope): vo
       break;
     case "decoder_log":
       void queryClient.invalidateQueries({ queryKey: DECODER_LOG_KEY });
-      break;
-    case "calls":
-      void queryClient.invalidateQueries({ queryKey: CALLS_KEY });
       break;
     case "images":
       break;

@@ -3,14 +3,15 @@ use std::sync::LazyLock;
 mod array;
 
 use sdrmm_wire::{
-    AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink, BleParams,
-    ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
-    EotParams, ErmesParams, FlexParams, GnssParams, IsmParams, IsmSurveyParams, LrptParams,
-    M17Params, MorseParams, NavtexParams, NfmParams, NodeBody, NoiseFigureParams, PatchEdge,
-    PatchGraph, PatchNode, PerParams, PocsagParams, PortRef, Position, PskParams, RadioClockParams,
-    RadiosondeParams, RemoteIdLink, RemoteIdParams, RttyParams, SarsatParams, SidParams, Squelch,
-    SsbParams, SstvParams, StanagParams, TemplateInfo, TetraParams, WefaxParams, WfmParams,
-    WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
+    AUDIO_PORT, AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink,
+    BleParams, ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams,
+    DstarParams, EVENTS_PORT, EotParams, ErmesParams, FlexParams, GnssParams, IQ_PORT, IsmParams,
+    IsmSurveyParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NodeBody,
+    NoiseFigureParams, PatchEdge, PatchGraph, PatchNode, PerParams, PocsagParams, PortRef,
+    Position, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
+    RttyParams, SarsatParams, SidParams, Squelch, SsbParams, SstvParams, StanagParams,
+    TemplateInfo, TetraParams, VIDEO_PORT, WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams,
+    WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -45,9 +46,9 @@ impl Sink {
 
     const fn port(self) -> &'static str {
         match self {
-            Self::Speaker => "audio",
-            Self::Video => "video",
-            Self::Readout | Self::Map | Self::Log => "events",
+            Self::Speaker => AUDIO_PORT,
+            Self::Video => VIDEO_PORT,
+            Self::Readout | Self::Map | Self::Log => EVENTS_PORT,
         }
     }
 }
@@ -130,7 +131,7 @@ fn patch(channels: &[Channel]) -> PatchGraph {
         node("dev", NodeBody::Device(DeviceNode::default()), 0.0, 0.0),
         node("scope", NodeBody::Scope, COLUMN, -40.0),
     ];
-    let mut edges = vec![wire(("dev", "iq"), ("scope", "iq"))];
+    let mut edges = vec![wire(("dev", IQ_PORT), ("scope", IQ_PORT))];
 
     for (index, channel) in channels.iter().enumerate() {
         let id = format!("ch{index}");
@@ -148,12 +149,12 @@ fn patch(channels: &[Channel]) -> PatchGraph {
             COLUMN,
             y,
         ));
-        edges.push(wire(("dev", "iq"), (&id, "iq")));
+        edges.push(wire(("dev", IQ_PORT), (&id, IQ_PORT)));
         for sink in channel.sinks {
             edges.push(wire((&id, sink.port()), (sink.node(), sink.port())));
         }
         if channel.sinks.contains(&Sink::Log) && makes_calls(channel) {
-            edges.push(wire((&id, "audio"), (Sink::Log.node(), "audio")));
+            edges.push(wire((&id, AUDIO_PORT), (Sink::Log.node(), AUDIO_PORT)));
         }
     }
 
@@ -1025,6 +1026,28 @@ mod tests {
             workspace
                 .validate()
                 .unwrap_or_else(|e| panic!("{} merged: {e}", template.id));
+        }
+    }
+
+    #[test]
+    fn every_template_and_the_starter_resolve_without_a_refused_wire() {
+        let descriptors = sdrmm_engine::Engine::new(None).channel_types();
+        let ctx = sdrmm_wire::patch::resolve::ResolveCtx {
+            descriptors: Some(&descriptors),
+            live: None,
+        };
+        let graphs = all()
+            .iter()
+            .map(|template| {
+                (
+                    template.id.clone(),
+                    template.patch.clone().expect("templates carry a patch"),
+                )
+            })
+            .chain([("starter".to_owned(), WorkspaceSnapshot::starter().graph)]);
+        for (id, graph) in graphs {
+            let (_, refused) = sdrmm_wire::patch::resolve::compile_draft(&graph, &ctx);
+            assert!(refused.is_empty(), "{id}: {refused:?}");
         }
     }
 

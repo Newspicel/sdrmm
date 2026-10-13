@@ -1,7 +1,6 @@
 use sdrmm_wire::{
     ChannelInfo, DeviceSet, Mission, MissionBody, MissionControl, MissionProblem, MissionWorkspace,
-    MissionsResponse, NodeBody, NodeKind, PatchGraph, PatchNode, StateSnapshot,
-    mission::MAX_MISSIONS,
+    MissionsResponse, NodeBody, PatchGraph, PatchNode, StateSnapshot, mission::MAX_MISSIONS,
 };
 use sha2::{Digest, Sha256};
 
@@ -19,8 +18,6 @@ pub(crate) mod watch;
 mod tests;
 
 pub(crate) use actions::act;
-
-const TRIANGULATION: NodeKind = NodeKind::Triangulation;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum MissionRefusal {
