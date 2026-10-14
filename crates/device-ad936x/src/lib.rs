@@ -29,6 +29,7 @@ mod apply;
 mod caps;
 mod convert;
 mod discovery;
+mod fir;
 mod iio;
 mod iqlink;
 mod layout;

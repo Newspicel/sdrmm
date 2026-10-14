@@ -5,6 +5,7 @@ use sdrmm_wire::{
 };
 
 use crate::{
+    fir::{FIR_CHANNEL, FIR_CONFIG, FIR_ENABLE},
     iio::{Client, Context, Direction},
     layout::{
         BB_DC_TRACKING, CONVERTER_CHANNEL, FREQUENCY, GAIN_CONTROL_MODE, HARDWAREGAIN, Layout,
@@ -41,6 +42,7 @@ pub(crate) struct Front {
     pub(crate) trim: Option<Trim>,
     pub(crate) tracking: Tracking,
     pub(crate) decimation: Option<Decimation>,
+    pub(crate) fir: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -178,6 +180,12 @@ impl Front {
             trim: reader.trim(),
             tracking: reader.tracking(rx),
             decimation: decimation(client, context, layout),
+            fir: context.device(&layout.phy).is_some_and(|phy| {
+                phy.attributes.iter().any(|name| name == FIR_CONFIG)
+                    && phy
+                        .channel(FIR_CHANNEL, false)
+                        .is_some_and(|channel| channel.has(FIR_ENABLE))
+            }),
         })
     }
 }
@@ -480,6 +488,7 @@ pub(crate) mod tests {
                 rx: "cf-ad9361-lpc".to_string(),
                 tx: Some("cf-ad9361-dds-core-lpc".to_string()),
             }),
+            fir: false,
         }
     }
 

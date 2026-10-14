@@ -6,6 +6,7 @@ use sdrmm_wire::{
 
 use crate::{
     caps::{BB_DC, Front, MANUAL_GAIN, QUADRATURE, RF_DC, TX_PORT},
+    fir::{FIR_CHANNEL, FIR_CONFIG, FIR_ENABLE, Fir, SAFE_RATE_HZ, needs_safe_rate},
     iio::{Client, Direction},
     layout::{
         BB_DC_TRACKING, CONVERTER_CHANNEL, FREQUENCY, GAIN_CONTROL_MODE, HARDWAREGAIN, Layout,
@@ -186,12 +187,17 @@ fn plan_rate(
         )));
     }
     let port = shared_rx_port(layout)?;
-    writes.push(Write::channel(
-        false,
-        port,
-        SAMPLING_FREQUENCY,
-        whole(front.converter_rate(rate)),
-    ));
+    let converted = front.converter_rate(rate);
+    if front.fir {
+        plan_fir(port, converted, writes);
+    } else {
+        writes.push(Write::channel(
+            false,
+            port,
+            SAMPLING_FREQUENCY,
+            whole(converted),
+        ));
+    }
     if let Some(decimation) = &front.decimation {
         let converters = std::iter::once((false, &decimation.rx))
             .chain(decimation.tx.iter().map(|tx| (true, tx)));
@@ -205,6 +211,31 @@ fn plan_rate(
         }
     }
     Ok(())
+}
+
+fn plan_fir(port: &str, rate: f64, writes: &mut Vec<Write>) {
+    let fir_enable = |on: bool| {
+        Write::channel(
+            false,
+            FIR_CHANNEL,
+            FIR_ENABLE,
+            if on { "1" } else { "0" }.to_string(),
+        )
+    };
+    let rate_write = |hz: f64| Write::channel(false, port, SAMPLING_FREQUENCY, whole(hz));
+    writes.push(rate_write(SAFE_RATE_HZ));
+    writes.push(fir_enable(false));
+    writes.push(Write::Device {
+        attr: FIR_CONFIG.to_string(),
+        value: Fir::for_rate(rate).config(),
+    });
+    if needs_safe_rate(rate) {
+        writes.push(fir_enable(true));
+        writes.push(rate_write(rate));
+    } else {
+        writes.push(rate_write(rate));
+        writes.push(fir_enable(true));
+    }
 }
 
 fn plan_bandwidth(
@@ -709,13 +740,16 @@ mod tests {
     const TX_STAGE: &str = "TX";
 
     fn planned(delta: DeviceSettings) -> Vec<Write> {
+        planned_on(&front(), delta)
+    }
+
+    fn planned_on(front: &Front, delta: DeviceSettings) -> Vec<Write> {
         let layout = crate::layout::tests::two_by_two_layout();
-        let front = front();
-        let capabilities = both_lanes(&front, &layout);
+        let capabilities = both_lanes(front, &layout);
         plan(
             &delta,
             &capabilities,
-            &front,
+            front,
             &layout,
             &DeviceSettings::default(),
         )
@@ -749,6 +783,91 @@ mod tests {
             attr: SAMPLING_FREQUENCY.to_string(),
             value: value.to_string(),
         }
+    }
+
+    fn fir_enable(on: bool) -> Write {
+        channel(false, FIR_CHANNEL, FIR_ENABLE, if on { "1" } else { "0" })
+    }
+
+    fn fir_config(rate: f64) -> Write {
+        Write::Device {
+            attr: FIR_CONFIG.to_string(),
+            value: Fir::for_rate(rate).config(),
+        }
+    }
+
+    fn with_fir() -> Front {
+        Front {
+            fir: true,
+            ..front()
+        }
+    }
+
+    #[test]
+    fn a_rate_change_loads_a_decimating_fir_for_it() {
+        let writes = planned_on(
+            &with_fir(),
+            DeviceSettings {
+                sample_rate: Some(10_000_000.0),
+                ..DeviceSettings::default()
+            },
+        );
+        assert_eq!(
+            writes,
+            vec![
+                channel(false, "voltage0", SAMPLING_FREQUENCY, "3000000"),
+                fir_enable(false),
+                fir_config(10_000_000.0),
+                channel(false, "voltage0", SAMPLING_FREQUENCY, "10000000"),
+                fir_enable(true),
+                converter(false, "cf-ad9361-lpc", "10000000"),
+                converter(true, "cf-ad9361-dds-core-lpc", "10000000"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_low_rate_turns_the_fir_on_before_it_is_reached() {
+        let writes = planned_on(
+            &with_fir(),
+            DeviceSettings {
+                sample_rate: Some(500_000.0),
+                ..DeviceSettings::default()
+            },
+        );
+        assert_eq!(
+            writes,
+            vec![
+                channel(false, "voltage0", SAMPLING_FREQUENCY, "3000000"),
+                fir_enable(false),
+                fir_config(4_000_000.0),
+                channel(false, "voltage0", SAMPLING_FREQUENCY, "4000000"),
+                fir_enable(true),
+                converter(false, "cf-ad9361-lpc", "500000"),
+                converter(true, "cf-ad9361-dds-core-lpc", "500000"),
+            ]
+        );
+        let slow = planned_on(
+            &Front {
+                decimation: None,
+                rate: sdrmm_wire::Range {
+                    min: 520_833.0,
+                    ..front().rate
+                },
+                ..with_fir()
+            },
+            DeviceSettings {
+                sample_rate: Some(1_000_000.0),
+                ..DeviceSettings::default()
+            },
+        );
+        assert_eq!(
+            slow[3..],
+            [
+                fir_enable(true),
+                channel(false, "voltage0", SAMPLING_FREQUENCY, "1000000"),
+            ]
+        );
     }
 
     #[test]

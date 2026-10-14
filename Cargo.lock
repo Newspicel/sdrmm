@@ -5974,6 +5974,7 @@ dependencies = [
  "num-complex",
  "nusb",
  "sdrmm-device",
+ "sdrmm-dsp",
  "sdrmm-iqlink",
  "sdrmm-usb-stream",
  "sdrmm-wire",

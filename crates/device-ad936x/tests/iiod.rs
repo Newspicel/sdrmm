@@ -491,6 +491,50 @@ fn a_rate_below_the_transceiver_is_decimated_in_the_fpga() {
 }
 
 #[test]
+fn a_radio_with_a_programmable_fir_gets_one_for_every_rate() {
+    let xml = common::context_xml(1).replace(
+        "<attribute name=\"ensm_mode\" value=\"fdd\" />",
+        "<attribute name=\"ensm_mode\" value=\"fdd\" />\n<attribute name=\"filter_fir_config\" />\n\
+         <channel id=\"out\" type=\"input\" ><attribute name=\"voltage_filter_fir_en\" \
+         filename=\"in_out_voltage_filter_fir_en\" /></channel>",
+    );
+    let server = FakeIiod::with(xml, common::attributes(1));
+    let mut device = open(&server);
+    device
+        .apply(&DeviceSettings {
+            sample_rate: Some(10e6),
+            ..DeviceSettings::default()
+        })
+        .expect("the radio took it");
+    assert!(
+        server
+            .attribute("ad9361-phy//filter_fir_config")
+            .is_some_and(|config| config.starts_with("RX 3 GAIN 0 DEC 4\nTX 3 GAIN 0 INT 4\n"))
+    );
+    assert_eq!(
+        server.attribute("ad9361-phy/INPUT/out/voltage_filter_fir_en"),
+        Some("1".to_string())
+    );
+    assert_eq!(
+        server.attribute("ad9361-phy/INPUT/voltage0/sampling_frequency"),
+        Some("10000000".to_string())
+    );
+}
+
+#[test]
+fn a_radio_without_a_programmable_fir_is_left_alone() {
+    let server = FakeIiod::spawn(1);
+    let mut device = open(&server);
+    device
+        .apply(&DeviceSettings {
+            sample_rate: Some(10e6),
+            ..DeviceSettings::default()
+        })
+        .expect("the radio took it");
+    assert!(wrote(&server, "WRITE ad9361-phy filter_fir_config").is_empty());
+}
+
+#[test]
 fn applying_settings_reaches_the_radio_as_the_attributes_it_understands() {
     let server = FakeIiod::spawn(1);
     let mut device = open(&server);
