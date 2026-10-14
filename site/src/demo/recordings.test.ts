@@ -8,6 +8,12 @@ const SESSIONS = import.meta.glob<DemoSession>("../../public/demo/*.json", {
   eager: true,
   import: "default",
 });
+const RAW = import.meta.glob<string>("../../public/demo/*.json", {
+  eager: true,
+  query: "?raw",
+  import: "default",
+});
+const WORKERS_ASSET_LIMIT = 25 * 1024 * 1024;
 
 function sessionOf(scene: string): DemoSession {
   const session = SESSIONS[`../../public/demo/${scene}.json`];
@@ -32,6 +38,10 @@ function stateOf(session: DemoSession): StateSnapshot {
 }
 
 describe("demo recordings", () => {
+  it.each(Object.keys(RAW))("%s fits the Workers asset limit", (path) => {
+    expect(new TextEncoder().encode(RAW[path]).byteLength).toBeLessThan(WORKERS_ASSET_LIMIT);
+  });
+
   it.each(SCENES.map((scene) => scene.id))("%s carries the current band miss shape", (scene) => {
     const misses = stateOf(sessionOf(scene)).device_sets.flatMap((set) =>
       set.channels.map((channel) => channel.out_of_band),

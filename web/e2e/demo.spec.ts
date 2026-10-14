@@ -20,6 +20,7 @@ const STARTED: Record<string, string> = {
 };
 const GREETING = new Set(["Hello", "DecodedBacklog"]);
 const DECODED_PER_SECOND = 20;
+const RECORDS_PER_UPDATE = 20;
 
 interface Sent {
   at: number;
@@ -98,7 +99,7 @@ class Tape {
         .map((message) => message.text ?? ""),
       streams: [...new Set(streams.values())].filter((stream) => stream.frames.length > 0),
       events: thinned(texts.filter((message) => message.at >= from && !isControl(message))).map(
-        (message): RecordedMessage => ({ at: message.at - from, text: message.text }),
+        (message): RecordedMessage => ({ at: message.at - from, text: trimmed(message) }),
       ),
     };
   }
@@ -169,6 +170,19 @@ function thinned(messages: Received[]): Received[] {
     perSecond.set(second, count + 1);
     return count < DECODED_PER_SECOND;
   });
+}
+
+function trimmed(message: Received): string | undefined {
+  const event = parse(message);
+  const update = event.data?.update as { records?: unknown[] } | undefined;
+  if (event.type !== "SinkUpdate" || update?.records === undefined) {
+    return message.text;
+  }
+  if (update.records.length <= RECORDS_PER_UPDATE) {
+    return message.text;
+  }
+  update.records = update.records.slice(-RECORDS_PER_UPDATE);
+  return JSON.stringify(event);
 }
 
 function isControl(message: Received): boolean {
