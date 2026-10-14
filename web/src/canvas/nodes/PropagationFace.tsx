@@ -278,7 +278,7 @@ function PathTable({
     : [];
   const plain = rows.length === 0 ? cells.slice(0, 12) : [];
   if (rows.length === 0 && plain.length === 0) {
-    return <p className="px-2 py-2 font-mono text-3xs text-ink-faint">No reflection points yet.</p>;
+    return <p className="px-2 py-2 font-mono text-2xs text-ink-faint">No reflection points yet.</p>;
   }
   return (
     <table className="w-full border-collapse">

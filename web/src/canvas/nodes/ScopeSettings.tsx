@@ -213,7 +213,7 @@ function TraceToggle({
       onClick={onClick}
       className={`flex h-7 items-center gap-2 rounded-control border px-2 font-mono text-2xs transition-colors duration-100 ${
         on
-          ? "border-accent-dim bg-accent/12 text-accent"
+          ? "border-accent-dim bg-accent/10 text-accent"
           : "border-line bg-well text-ink-dim hover:border-line-strong hover:text-ink"
       }`}
     >

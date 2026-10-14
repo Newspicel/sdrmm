@@ -21,7 +21,7 @@ import {
 import { SignalRow } from "../../components/SignalRow";
 import { useBroadcast } from "../../lib/broadcast";
 import { heardHz, useLevelStore } from "../../lib/levels";
-import { channelQueueSummary, usePipelineHealth } from "../../lib/pipeline";
+import { channelQueueSummary, queueLagging, usePipelineHealth } from "../../lib/pipeline";
 import { controllerOf, heldByOf, runsOf, sweptBy } from "../../lib/resolved";
 import type { BandMiss, BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
@@ -222,7 +222,7 @@ function ChannelHealth({
     <FaceStats>
       {broadcast !== undefined && <BroadcastStats status={broadcast} />}
       {summary !== null && (
-        <Stat label="Queue" title={summary.detail}>
+        <Stat label="Queue" title={summary.detail} quiet={!queueLagging(summary)}>
           {summary.oldestMs.toFixed(0)} ms
         </Stat>
       )}

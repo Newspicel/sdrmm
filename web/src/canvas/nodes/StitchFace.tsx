@@ -74,7 +74,7 @@ export function StitchFace({ node }: { node: PatchNode }) {
           <FaceEmpty hint={NO_CATALOG} />
         ) : (
           <>
-            <div className={stale ? "opacity-50" : ""}>
+            <div className={stale ? "opacity-45" : ""}>
               <Readouts columns={2}>
                 <Readout label="Center">{mhz(reading?.center_hz)}</Readout>
                 <Readout label="Span">{mhz(reading?.span_hz)}</Readout>

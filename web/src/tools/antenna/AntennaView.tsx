@@ -220,7 +220,7 @@ export function AntennaView({
 
         <g className="fill-ink-faint stroke-ink-faint">
           <line x1={16} y1={RULER_LINE} x2={16 + ruler.pixels} y2={RULER_LINE} strokeWidth={1.5} />
-          <text x={16} y={RULER_LINE - 6} className="font-mono text-3xs" stroke="none">
+          <text x={16} y={RULER_LINE - 6} className="font-mono text-2xs" stroke="none">
             {ruler.label}
           </text>
         </g>
@@ -229,7 +229,7 @@ export function AntennaView({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         {currents.length > 0 && <CurrentScale />}
         {rolesIn(report.geometry).map((role) => (
-          <span key={role} className="flex items-center gap-1.5 font-mono text-3xs text-ink-dim">
+          <span key={role} className="flex items-center gap-1.5 font-mono text-2xs text-ink-dim">
             <svg viewBox="0 0 16 4" className="h-1 w-4" aria-hidden>
               <line
                 x1={0}
@@ -251,7 +251,7 @@ export function AntennaView({
 
 function CurrentScale() {
   return (
-    <span className="flex items-center gap-1.5 font-mono text-3xs text-ink-dim">
+    <span className="flex items-center gap-1.5 font-mono text-2xs text-ink-dim">
       <svg viewBox="0 0 32 6" className="h-1.5 w-8" aria-hidden>
         <defs>
           <linearGradient id="antenna-current-scale">
@@ -361,7 +361,7 @@ function Dimensions({
             y={DIMENSION_RULE - 7}
             textAnchor="middle"
             stroke="none"
-            className="font-mono text-3xs"
+            className="font-mono text-2xs"
           >
             {formatLength(across, unit)}
           </text>
@@ -379,7 +379,7 @@ function Dimensions({
             dominantBaseline="middle"
             transform={`rotate(-90 12 ${(top + bottom) / 2})`}
             stroke="none"
-            className="font-mono text-3xs"
+            className="font-mono text-2xs"
           >
             {formatLength(down, unit)}
           </text>

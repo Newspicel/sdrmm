@@ -131,7 +131,7 @@ function Lane({
             />
           )}
           {span.width >= LABEL_MIN && (
-            <span className="absolute inset-y-0 right-1 left-1 flex items-center overflow-hidden text-ellipsis whitespace-nowrap font-mono text-3xs text-ink">
+            <span className="absolute inset-y-0 right-1 left-1 flex items-center overflow-hidden text-ellipsis whitespace-nowrap font-mono text-2xs text-ink">
               {span.allocation.name}
             </span>
           )}

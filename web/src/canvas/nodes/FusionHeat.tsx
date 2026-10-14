@@ -112,7 +112,7 @@ export function HeatMarks({
           key={`${emitter.lat},${emitter.lon}`}
           at={geoToGrid(emitter, bounds, box)}
           box={box}
-          className="stroke-accent/50"
+          className="stroke-accent/40"
         />
       ))}
       {estimate !== null && (

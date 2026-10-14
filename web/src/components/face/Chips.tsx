@@ -1,6 +1,13 @@
 import type { ReactNode } from "react";
 import { Button } from "../BaseControls";
-import { CHIP_READOUT, CHIP_SETTING, listItem, type Options, WRAPPED_LABEL } from "../controls";
+import {
+  CHIP_READOUT,
+  CHIP_SETTING,
+  CHIP_SETTING_QUIET,
+  listItem,
+  type Options,
+  WRAPPED_LABEL,
+} from "../controls";
 import { NumberField, OptionalNumberField } from "../NumberField";
 import { Popover } from "../Popover";
 import { Tip } from "../Tip";
@@ -56,7 +63,7 @@ function ChipFace({
     tone !== undefined
       ? `font-medium ${TONE[tone]}`
       : quiet
-        ? "font-normal text-ink-dim"
+        ? "font-normal text-ink-faint"
         : "font-medium text-ink";
   return (
     <>
@@ -103,7 +110,7 @@ export function SettingChip({
     <Popover
       label={<ChipFace label={label} value={value} unit={unit} quiet={quiet} tone={tone} />}
       title={title}
-      triggerClass={CHIP_SETTING}
+      triggerClass={quiet && tone === undefined ? CHIP_SETTING_QUIET : CHIP_SETTING}
       disabled={disabled}
       padded={padded}
       width={width}
@@ -316,7 +323,7 @@ export function ToggleChip({
       render={
         <Button
           type="button"
-          className={CHIP_SETTING}
+          className={on ? CHIP_SETTING : CHIP_SETTING_QUIET}
           aria-label={title}
           aria-pressed={on}
           disabled={disabled}
@@ -326,7 +333,7 @@ export function ToggleChip({
     >
       {icon}
       <span className="font-sans">{label}</span>
-      <b className={on ? "font-medium text-accent" : "font-normal text-ink-dim"}>
+      <b className={on ? "font-medium text-accent" : "font-normal text-ink-faint"}>
         {on ? "on" : "off"}
       </b>
     </Tip>

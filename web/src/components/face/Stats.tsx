@@ -15,13 +15,16 @@ export function Stat({
   label,
   title,
   tone,
+  quiet = false,
   children,
 }: {
   label: ReactNode;
   title: string;
   tone?: ChipTone;
+  quiet?: boolean;
   children?: ReactNode;
 }) {
+  const shade = tone !== undefined ? TONE[tone] : quiet ? "text-ink-faint" : "text-ink";
   return (
     <span
       className={`inline-flex items-center gap-1 font-mono text-2xs whitespace-nowrap ${
@@ -30,9 +33,7 @@ export function Stat({
       title={title}
     >
       {label}
-      {children !== undefined && (
-        <b className={`font-medium ${tone === undefined ? "text-ink" : TONE[tone]}`}>{children}</b>
-      )}
+      {children !== undefined && <b className={`font-medium ${shade}`}>{children}</b>}
     </span>
   );
 }

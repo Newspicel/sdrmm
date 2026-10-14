@@ -31,7 +31,7 @@ export function Peers() {
             <Avatar key={`${person.hue}:${person.name}`} person={person} stacked />
           ))}
           {hidden > 0 && (
-            <span className="ml-1 font-mono text-3xs text-ink-dim tabular-nums">+{hidden}</span>
+            <span className="ml-1 font-mono text-2xs text-ink-dim tabular-nums">+{hidden}</span>
           )}
         </span>
       }
@@ -49,7 +49,7 @@ function Avatar({ person, stacked = false }: { person: Person; stacked?: boolean
   return (
     <span
       aria-hidden
-      className={`flex size-5 shrink-0 items-center justify-center rounded-full text-3xs font-semibold text-bg ring-2 ring-panel ${
+      className={`flex size-5 shrink-0 items-center justify-center rounded-full text-2xs font-semibold text-bg ring-2 ring-panel ${
         stacked ? "-ml-1.5 first:ml-0" : ""
       }`}
       style={{ background: peerColor(person) }}
@@ -65,9 +65,9 @@ function Row({ person, note }: { person: Person; note?: string }) {
       <Avatar person={person} />
       <span className="min-w-0 flex-1 truncate">{person.name}</span>
       {person.tabs > 1 && (
-        <span className="font-mono text-3xs text-ink-faint tabular-nums">{person.tabs} tabs</span>
+        <span className="font-mono text-2xs text-ink-faint tabular-nums">{person.tabs} tabs</span>
       )}
-      {note !== undefined && <span className="text-3xs text-ink-faint">{note}</span>}
+      {note !== undefined && <span className="text-2xs text-ink-faint">{note}</span>}
     </li>
   );
 }

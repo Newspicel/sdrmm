@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { DROPS_HINT, formatCount } from "../../components/format";
-import { queueSummary, usePipelineHealth } from "../../lib/pipeline";
+import { queueLagging, queueSummary, usePipelineHealth } from "../../lib/pipeline";
 import type { DeviceSet } from "../../lib/types";
 
 export function SourceHealth({ set, children }: { set: DeviceSet; children?: ReactNode }) {
@@ -11,7 +11,7 @@ export function SourceHealth({ set, children }: { set: DeviceSet; children?: Rea
   return (
     <FaceStats>
       {summary !== null && (
-        <Stat label="Queue" title={summary.detail}>
+        <Stat label="Queue" title={summary.detail} quiet={!queueLagging(summary)}>
           {summary.oldestMs.toFixed(0)} ms
         </Stat>
       )}

@@ -161,7 +161,7 @@ export function SweepBar({
         <Button
           type="button"
           aria-pressed={live}
-          className={`${BTN} ${live ? "border-danger/70 text-danger" : ""}`}
+          className={`${BTN} ${live ? "border-danger/60 text-danger" : ""}`}
           disabled={!canSweep || invalid}
           title="Sweep again as soon as each sweep ends"
           onClick={() => onLive(!live)}

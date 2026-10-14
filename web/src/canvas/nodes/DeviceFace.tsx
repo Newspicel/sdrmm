@@ -36,7 +36,7 @@ import {
   anyLocked,
   autoTuning,
   bondSaid,
-  clippingSaid,
+  clippingLanes,
   deviceRefOf,
   faultSaid,
   type Hearing,
@@ -528,7 +528,7 @@ const LOSS_HINT =
   "The radio sends more than its link or this computer carries. Lower the rate or the lanes";
 
 function DeviceHealth({ set }: { set: DeviceSet }) {
-  const clipping = clippingSaid(set);
+  const clipping = clippingLanes(set);
   const loss = lossSaid(set);
   const bond = lanesMerged(set) ? bondSaid(set.capabilities.coherence) : null;
   const readouts = readoutStats(useDeviceReadouts(set.id));
@@ -553,7 +553,7 @@ function DeviceHealth({ set }: { set: DeviceSet }) {
       )}
       {clipping !== null && (
         <Stat label="Clipping" title="The ADC is at full scale. Lower the gain" tone="danger">
-          {clipping}
+          {clipping.length === 0 ? undefined : clipping.join(", ")}
         </Stat>
       )}
       {bond !== null && (

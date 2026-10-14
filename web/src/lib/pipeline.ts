@@ -22,6 +22,12 @@ export interface QueueSummary {
   detail: string;
 }
 
+export const QUEUE_LAG_MS = 100;
+
+export function queueLagging(summary: QueueSummary | null): summary is QueueSummary {
+  return summary !== null && summary.oldestMs >= QUEUE_LAG_MS;
+}
+
 export function queueSummary(health: Health | null, deviceSet: number): QueueSummary | null {
   return summarize(health?.queues.filter((queue) => queue.device_set === deviceSet) ?? []);
 }

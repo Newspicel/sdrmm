@@ -79,17 +79,19 @@ function RecordStats({
 }) {
   return (
     <FaceStats>
-      {elapsedS !== undefined && (
+      {typeof elapsedS === "number" && (
         <Stat label="Time" title="Recording length">
-          {elapsedS === null ? IDLE : formatDuration(elapsedS)}
+          {formatDuration(elapsedS)}
         </Stat>
       )}
-      <Stat label="Written" title="Bytes on disk">
-        {bytes === null ? IDLE : formatBytes(bytes)}
-      </Stat>
-      {samples !== undefined && (
+      {bytes !== null && (
+        <Stat label="Written" title="Bytes on disk">
+          {formatBytes(bytes)}
+        </Stat>
+      )}
+      {typeof samples === "number" && (
         <Stat label="Samples" title="Samples written">
-          {samples === null ? IDLE : formatCount(samples)}
+          {formatCount(samples)}
         </Stat>
       )}
       {overruns > 0 && (

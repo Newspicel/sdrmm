@@ -27,7 +27,7 @@ export function ToolsDialog({ tool, onClose }: { tool: string | null; onClose: (
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-bg/70" />
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-bg/85" />
         <Dialog.Popup
           ref={portalContainer}
           className={`${SURFACE} fixed top-1/2 left-1/2 z-40 flex ${size} -translate-x-1/2 -translate-y-1/2 flex-col`}

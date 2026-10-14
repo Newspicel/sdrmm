@@ -16,7 +16,7 @@ import {
 const KEY =
   "inline-flex h-5 items-center gap-1.5 rounded-control border px-1.5 font-mono text-2xs " +
   "transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 " +
-  "focus-visible:ring-accent/30";
+  "focus-visible:ring-accent/25";
 
 const KEY_ON = "border-accent-dim bg-accent/10 text-ink";
 

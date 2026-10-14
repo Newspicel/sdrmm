@@ -61,7 +61,7 @@ export function CorrelatorPlots({
       {frame !== null && whole.w > 0 && half > 0 && (
         <svg
           aria-hidden
-          className={`pointer-events-none absolute inset-0 size-full overflow-visible ${dim ? "opacity-50" : ""}`}
+          className={`pointer-events-none absolute inset-0 size-full overflow-visible ${dim ? "opacity-45" : ""}`}
         >
           <Plots frame={frame} index={index} amplitude={amplitude} phase={phase} />
         </svg>

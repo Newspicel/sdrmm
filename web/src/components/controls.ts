@@ -32,7 +32,7 @@ export const BTN_DANGER =
 
 export const BTN_DANGER_ARMED =
   `${INTERACTIVE} h-7 border border-danger bg-danger/10 px-2.5 text-xs font-medium text-danger ` +
-  "hover:bg-danger/20";
+  "hover:bg-danger/25";
 
 export const BTN_SM_DANGER =
   `${INTERACTIVE} h-5 border border-line ${RAISED} px-1.5 text-2xs font-medium ` +
@@ -40,7 +40,7 @@ export const BTN_SM_DANGER =
 
 export const BTN_DANGER_SM =
   `${INTERACTIVE} h-5 border border-danger/60 bg-danger/10 px-1.5 text-2xs font-medium ` +
-  "text-danger hover:bg-danger/20";
+  "text-danger hover:bg-danger/25";
 
 const ICON_BASE =
   `${INTERACTIVE} justify-center border border-transparent text-ink-dim ` +
@@ -56,12 +56,12 @@ export const ICON_BTN_SM_DANGER =
 
 export const ICON_BTN_SM_DANGER_ARMED =
   `${INTERACTIVE} size-5 justify-center border border-transparent bg-danger/10 text-danger ` +
-  "hover:bg-danger/20 pointer-coarse:size-10";
+  "hover:bg-danger/25 pointer-coarse:size-10";
 
 export const FIELD =
   `${INTERACTIVE} h-7 min-w-0 border border-line bg-well px-2 font-mono text-xs ` +
   "text-ink placeholder:font-sans placeholder:text-ink-faint hover:border-line-strong " +
-  "focus-visible:border-accent-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20";
+  "focus-visible:border-accent-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25";
 
 export const CONTROL_W = "w-full max-w-52";
 
@@ -75,12 +75,16 @@ export const CHIP =
 
 export const CHIP_SM =
   "inline-flex h-5 items-center rounded-control border border-line bg-well px-1.5 " +
-  "font-mono text-3xs text-ink";
+  "font-mono text-2xs text-ink";
 
-export const CHIP_SETTING =
-  `${INTERACTIVE} h-5 gap-1 border border-transparent bg-ink/5 px-1.5 font-mono text-2xs ` +
-  "whitespace-nowrap text-ink-faint hover:bg-ink/9 hover:text-ink-dim " +
-  "aria-expanded:border-accent-dim aria-expanded:bg-well aria-pressed:bg-accent/14";
+const CHIP_BASE =
+  `${INTERACTIVE} h-5 gap-1 border border-transparent px-1.5 font-mono text-2xs ` +
+  "whitespace-nowrap text-ink-faint hover:text-ink-dim " +
+  "aria-expanded:border-accent-dim aria-expanded:bg-well";
+
+export const CHIP_SETTING = `${CHIP_BASE} bg-ink/10 hover:bg-ink/15 aria-pressed:bg-accent/15`;
+
+export const CHIP_SETTING_QUIET = `${CHIP_BASE} bg-ink/5 hover:bg-ink/10`;
 
 export const CHIP_READOUT =
   "inline-flex h-5 items-center gap-1 rounded-control bg-ink/5 px-1.5 font-mono text-2xs " +
@@ -91,7 +95,7 @@ export const TOGGLE_QUIET =
   "text-ink-faint hover:bg-panel-2 hover:text-ink aria-pressed:bg-accent/15 aria-pressed:text-accent " +
   "aria-[pressed=mixed]:border-dashed aria-[pressed=mixed]:border-accent-dim aria-[pressed=mixed]:bg-transparent";
 
-export const SURFACE = "rounded-control border border-line-strong/70 bg-panel-3 shadow-pop";
+export const SURFACE = "rounded-control border border-line-strong/60 bg-panel-3 shadow-pop";
 
 export const WELL = "flex gap-px rounded-control border border-line bg-well p-px";
 
@@ -100,12 +104,20 @@ export const ALERT =
 
 export const TABLE_HEAD = "px-2 py-1 text-left font-mono text-2xs text-ink-faint";
 export const TABLE_CELL = "px-2 py-1 align-top font-mono text-xs tabular-nums";
+export const TABLE_TEXT = "px-2 py-1 align-top text-xs";
+
+export function tableRow(striped: boolean): string {
+  return (
+    "cursor-pointer hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent " +
+    (striped ? "bg-ink/5" : "")
+  );
+}
 
 export function plotButton(on: boolean): string {
   return (
     `${INTERACTIVE} h-5 border border-transparent px-1.5 font-mono text-2xs ` +
     (on
-      ? "bg-plot-ink/16 text-plot-ink"
+      ? "bg-plot-ink/15 text-plot-ink"
       : "text-plot-ink-dim hover:bg-plot-ink/10 hover:text-plot-ink")
   );
 }

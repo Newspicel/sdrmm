@@ -14,7 +14,7 @@ export function InfoTip({ text }: { text: string }) {
         openOnHover
         delay={HOVER_DELAY_MS}
         aria-label={text}
-        className="nodrag nopan inline-flex size-3.5 shrink-0 cursor-help items-center justify-center rounded-full text-ink-faint/70 hover:text-accent data-popup-open:text-accent"
+        className="nodrag nopan inline-flex size-3.5 shrink-0 cursor-help items-center justify-center rounded-full text-ink-faint/60 hover:text-accent data-popup-open:text-accent"
       >
         <Icon glyph={Info} size={12} />
       </Popover.Trigger>

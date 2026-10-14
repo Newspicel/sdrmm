@@ -28,7 +28,7 @@ export function AboutPanel({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-bg/70" />
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-bg/85" />
         <Dialog.Popup
           className={`${SURFACE} fixed top-1/2 left-1/2 z-40 flex max-h-[85vh] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col p-4`}
         >

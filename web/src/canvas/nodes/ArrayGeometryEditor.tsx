@@ -207,7 +207,7 @@ function CustomRows({
             <tr
               key={row}
               title={row >= lanes ? NOT_WIRED : overlapping.has(row) ? SAME_PLACE : undefined}
-              className={`${row >= lanes ? "opacity-50" : ""} ${overlapping.has(row) ? "text-danger" : ""}`}
+              className={`${row >= lanes ? "opacity-45" : ""} ${overlapping.has(row) ? "text-danger" : ""}`}
             >
               <td className="px-2 font-mono text-xs">{row + 1}</td>
               {AXES.map((axis) => (
@@ -267,7 +267,7 @@ function ArrayPreview({
         <title>Forward</title>
       </path>
       {north !== null && (
-        <g className="stroke-accent/70">
+        <g className="stroke-accent/60">
           <line x1={centre} y1={centre} x2={north.x} y2={north.y} strokeDasharray="2 2" />
           <text
             x={north.x}
@@ -286,7 +286,7 @@ function ArrayPreview({
             cx={point.x}
             cy={point.y}
             r={5}
-            className="fill-hue-indigo/30 stroke-hue-indigo"
+            className="fill-hue-indigo/25 stroke-hue-indigo"
           />
           <text
             x={point.x}

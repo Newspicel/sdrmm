@@ -12,9 +12,9 @@ export interface LegendGroup {
   count: number;
 }
 
-const ROW = "flex items-center gap-2 font-mono text-3xs tabular-nums";
+const ROW = "flex items-center gap-2 font-mono text-2xs tabular-nums";
 const BADGE =
-  "rounded-control border border-line bg-bg/85 px-2 py-1 font-mono text-3xs text-ink-dim";
+  "rounded-control border border-line bg-bg/85 px-2 py-1 font-mono text-2xs text-ink-dim";
 
 function Row({
   swatch,
@@ -99,7 +99,7 @@ export function MapLegend({
 
 function SignalRows({ cells }: { cells: number }) {
   return (
-    <div className="flex min-w-36 flex-col gap-1 font-mono text-3xs tabular-nums">
+    <div className="flex min-w-36 flex-col gap-1 font-mono text-2xs tabular-nums">
       <div className="flex items-center justify-between gap-3">
         <span className="text-ink-dim">Signal cells</span>
         <span className="text-ink">{cells}</span>

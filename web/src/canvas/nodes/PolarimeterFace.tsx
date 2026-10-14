@@ -75,7 +75,7 @@ export function PolarimeterFace({ node }: { node: PatchNode }) {
           <FaceEmpty hint={NO_CATALOG} />
         ) : (
           <>
-            <div className={`flex items-center gap-1 pl-2 ${stale ? "opacity-50" : ""}`}>
+            <div className={`flex items-center gap-1 pl-2 ${stale ? "opacity-45" : ""}`}>
               <PolarGlyph reading={reading} />
               <PolarReadout reading={reading} receivedAt={state?.receivedAt} now={now} />
             </div>

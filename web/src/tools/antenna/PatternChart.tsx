@@ -77,7 +77,7 @@ export function PatternChart({
             </svg>
           )}
           {sample !== null && hover !== null && (
-            <div className="pointer-events-none absolute top-1 right-1 rounded-control bg-panel-3/90 px-1.5 py-0.5 font-mono text-2xs text-ink tabular-nums">
+            <div className="pointer-events-none absolute top-1 right-1 rounded-control bg-panel-3/85 px-1.5 py-0.5 font-mono text-2xs text-ink tabular-nums">
               {Math.round(hover)}° · {sample.toFixed(1)} dBi
             </div>
           )}
@@ -151,7 +151,7 @@ function Grid({ frame, kind, peakDbi }: { frame: Frame; kind: PatternKind; peakD
     fraction: (RANGE_DB - drop) / RANGE_DB,
   }));
   return (
-    <g className="font-mono text-3xs tabular-nums">
+    <g className="font-mono text-2xs tabular-nums">
       {rings.map((ring) => (
         <path
           key={ring.drop}
@@ -231,7 +231,7 @@ function HoverRay({
         y1={frame.cy}
         x2={edge.x}
         y2={edge.y}
-        className="stroke-plot-ink/35"
+        className="stroke-plot-ink/40"
         strokeDasharray="2 3"
       />
       <circle

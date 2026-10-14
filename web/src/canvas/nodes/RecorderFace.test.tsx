@@ -40,11 +40,10 @@ function rows(html: string): string[] {
 }
 
 describe("RecorderFace", () => {
-  it("keeps the same rows whether unwired, idle or recording", () => {
-    const states = [render(false, null), render(true, null), render(true, TAKE)];
-    for (const html of states) {
-      expect(rows(html)).toEqual(["File", "Time", "Written"]);
-    }
+  it("shows time and size only while recording", () => {
+    expect(rows(render(false, null))).toEqual(["File"]);
+    expect(rows(render(true, null))).toEqual(["File"]);
+    expect(rows(render(true, TAKE))).toEqual(["File", "Time", "Written"]);
   });
 
   it("offers Record only once a device's IQ is wired in", () => {

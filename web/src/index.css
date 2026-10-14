@@ -21,17 +21,17 @@
   --color-warn: oklch(0.8 0.13 85);
   --color-ok: oklch(0.78 0.15 155);
 
-  --color-plot-bg: #000000;
-  --color-plot-grid: #323232;
-  --color-plot-trace: #66e5ff;
-  --color-plot-hold: #ffff00;
-  --color-plot-ink: #ffffff;
-  --color-plot-ink-dim: #7f7f7f;
-  --color-waterfall-ink: #7f7f7f;
-  --color-plot-ref-1: #d95926;
-  --color-plot-ref-2: #199e70;
-  --color-plot-ref-3: #9085e9;
-  --color-plot-ref-4: #d55181;
+  --color-plot-bg: oklch(0 0 0);
+  --color-plot-grid: oklch(0.317 0.012 252);
+  --color-plot-trace: oklch(0.86 0.117 213.3);
+  --color-plot-hold: oklch(0.968 0.211 109.8);
+  --color-plot-ink: oklch(1 0 0);
+  --color-plot-ink-dim: oklch(0.596 0.012 252);
+  --color-waterfall-ink: oklch(0.596 0.012 252);
+  --color-plot-ref-1: oklch(0.622 0.173 40.1);
+  --color-plot-ref-2: oklch(0.621 0.128 163.1);
+  --color-plot-ref-3: oklch(0.67 0.145 286.8);
+  --color-plot-ref-4: oklch(0.622 0.171 0.8);
 
   --color-hue-blue: oklch(0.72 0.11 228);
   --color-hue-cyan: oklch(0.74 0.1 196);
@@ -60,7 +60,7 @@
   --color-band-other: oklch(0.6 0.02 80);
 
   --text-plot: 9px;
-  --text-3xs: 10px;
+  --text-2xs: 10px;
   --text-2xs: 11px;
   --text-dial-sm: 16px;
   --text-dial-md: 20px;

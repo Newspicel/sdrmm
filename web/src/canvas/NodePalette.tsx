@@ -111,7 +111,7 @@ function RailEntry({
     >
       <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${SECTION_DOT[section]}`} />
       <span className="flex-1">{title}</span>
-      <span className="text-3xs tabular-nums text-ink-faint">{count}</span>
+      <span className="text-2xs tabular-nums text-ink-faint">{count}</span>
     </Button>
   );
 }
@@ -165,7 +165,7 @@ export function PaletteEntry({ item, onAdd }: { item: PaletteItem; onAdd: () => 
           {item.name}
         </span>
         {item.type !== undefined && (
-          <span aria-hidden className="shrink-0 font-mono text-3xs tabular-nums text-ink-faint">
+          <span aria-hidden className="shrink-0 font-mono text-2xs tabular-nums text-ink-faint">
             {formatHz(item.type.bandwidth_hz)}
           </span>
         )}

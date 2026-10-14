@@ -219,7 +219,7 @@ function WorkspaceRow({
       </Button>
       <span
         aria-hidden
-        className="w-4 text-right font-mono text-3xs text-ink-faint tabular-nums"
+        className="w-4 text-right font-mono text-2xs text-ink-faint tabular-nums"
         title={`${workspace.nodes} nodes`}
       >
         {workspace.nodes}

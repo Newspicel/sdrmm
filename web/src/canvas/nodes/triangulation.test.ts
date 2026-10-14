@@ -173,7 +173,7 @@ describe("HeatMarks", () => {
     expect(html).toMatch(/<circle cx="0" cy="0"[^>]*><title>roof<\/title>/);
     expect(html).not.toContain("far");
     expect(html).toContain('d="M194 100H206M200 94V106" class="stroke-accent stroke-2"');
-    expect(html).toContain('d="M94 150H106M100 144V156" class="stroke-accent/50"');
+    expect(html).toContain('d="M94 150H106M100 144V156" class="stroke-accent/40"');
     expect(html.match(/<path/g)).toHaveLength(2);
   });
 });

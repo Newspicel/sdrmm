@@ -1,5 +1,11 @@
 import { afterEach, expect, it } from "vitest";
-import { channelQueueSummary, queueSummary, usePipelineHealth } from "./pipeline";
+import {
+  channelQueueSummary,
+  QUEUE_LAG_MS,
+  queueLagging,
+  queueSummary,
+  usePipelineHealth,
+} from "./pipeline";
 
 afterEach(() => usePipelineHealth.getState().reset());
 
@@ -81,4 +87,15 @@ it("summarizes only the queues of one decoder", () => {
   expect(summary?.dropped).toBe(5);
   expect(channelQueueSummary(health, 1, 9)).toBeNull();
   expect(channelQueueSummary(health, 2, 3)).toBeNull();
+});
+
+function lagOf(oldestMs: number) {
+  return { oldestMs, dropped: 0, detail: "" };
+}
+
+it("calls a queue lagging only once it holds a noticeable delay", () => {
+  expect(queueLagging(null)).toBe(false);
+  expect(queueLagging(lagOf(0))).toBe(false);
+  expect(queueLagging(lagOf(QUEUE_LAG_MS - 1))).toBe(false);
+  expect(queueLagging(lagOf(QUEUE_LAG_MS))).toBe(true);
 });

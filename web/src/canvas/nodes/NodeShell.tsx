@@ -124,10 +124,10 @@ const CATEGORY_STRIP: Record<NodeCategory, string> = {
 };
 
 const CATEGORY_BAR: Record<NodeCategory, string> = {
-  source: "bg-cat-source/17 shadow-[inset_0_2px_0_var(--color-cat-source)]",
-  channel: "bg-cat-channel/17 shadow-[inset_0_2px_0_var(--color-cat-channel)]",
-  tool: "bg-cat-tool/17 shadow-[inset_0_2px_0_var(--color-cat-tool)]",
-  output: "bg-cat-output/17 shadow-[inset_0_2px_0_var(--color-cat-output)]",
+  source: "bg-cat-source/15 shadow-[inset_0_2px_0_var(--color-cat-source)]",
+  channel: "bg-cat-channel/15 shadow-[inset_0_2px_0_var(--color-cat-channel)]",
+  tool: "bg-cat-tool/15 shadow-[inset_0_2px_0_var(--color-cat-tool)]",
+  output: "bg-cat-output/15 shadow-[inset_0_2px_0_var(--color-cat-output)]",
 };
 
 function PortGlyph({ type }: { type: PortType }) {
@@ -235,14 +235,14 @@ export function NodeShell({
           />
           <NodeName node={node} title={title} />
           {badge !== undefined && (
-            <span className="shrink-0 font-mono text-2xs text-ink-faint">{badge}</span>
+            <span className="shrink-0 font-mono text-2xs text-ink-dim">{badge}</span>
           )}
           <ProblemMark node={node.id} />
           <span className="nodrag flex cursor-auto">
             <FaceAlert node={node.id} />
           </span>
           {subtitle !== undefined && (
-            <span className="ml-auto truncate font-mono text-2xs text-ink-faint">{subtitle}</span>
+            <span className="ml-auto truncate font-mono text-2xs text-ink-dim">{subtitle}</span>
           )}
           <span
             className={`nodrag flex cursor-auto items-center gap-0.5 ${subtitle === undefined ? "ml-auto" : ""}`}
@@ -434,7 +434,7 @@ function PortHandle({
         style={{ top: offset }}
         title={refusal ?? description}
         aria-label={`${out ? "output" : "input"} ${description}`}
-        className={`!size-3 !border-0 !bg-transparent ${color} ${idlePort(activity) ? "opacity-40" : ""}`}
+        className={`!size-3 !border-0 !bg-transparent ${color} ${idlePort(activity) ? "opacity-45" : ""}`}
       >
         <PortGlyph type={port.port_type} />
       </Handle>
@@ -442,7 +442,7 @@ function PortHandle({
         <span
           aria-hidden
           style={{ top: offset }}
-          className={`pointer-events-none absolute z-10 -translate-y-1/2 rounded-control bg-bg/85 px-1 font-mono text-3xs whitespace-nowrap select-none text-ink-faint ${
+          className={`pointer-events-none absolute z-10 -translate-y-1/2 rounded-control bg-bg/85 px-1 font-mono text-2xs whitespace-nowrap select-none text-ink-faint ${
             out ? "left-full ml-2.5" : "right-full mr-2.5"
           }`}
         >
@@ -484,7 +484,7 @@ export function FaceEmpty({ hint }: { hint?: string }) {
 
 export function FaceFooter({ children }: { children: ReactNode }) {
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line px-2.5 py-2">
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 bg-ink/5 px-2.5 py-2 empty:hidden">
       {children}
     </div>
   );

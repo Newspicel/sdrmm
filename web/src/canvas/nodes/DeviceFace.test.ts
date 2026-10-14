@@ -14,7 +14,7 @@ import {
   anyLocked,
   autoTuning,
   bondSaid,
-  clippingSaid,
+  clippingLanes,
   faultSaid,
   hearing,
   laneAgc,
@@ -407,18 +407,18 @@ describe("hearing", () => {
   });
 });
 
-describe("clippingSaid", () => {
+describe("clippingLanes", () => {
   it("says nothing while no lane is at full scale", () => {
-    expect(clippingSaid(deviceSet())).toBeNull();
+    expect(clippingLanes(deviceSet())).toBeNull();
   });
 
   it("names the clipping lanes by their IQ port on a multi-lane radio", () => {
     const set = deviceSet({ capabilities: capabilities({ rx_streams: 5 }), clipping: [0, 3] });
-    expect(clippingSaid(set)).toBe("iq1, iq4");
+    expect(clippingLanes(set)).toEqual(["iq1", "iq4"]);
   });
 
-  it("just says yes on a single-lane radio", () => {
-    expect(clippingSaid(deviceSet({ clipping: [0] }))).toBe("yes");
+  it("names no lane on a single-lane radio", () => {
+    expect(clippingLanes(deviceSet({ clipping: [0] }))).toEqual([]);
   });
 });
 

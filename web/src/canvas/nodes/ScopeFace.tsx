@@ -906,7 +906,7 @@ function Spectrum({
       {glError !== null && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-2">
           <span
-            className="pointer-events-auto rounded-control border border-danger bg-bg/90 px-2 py-1 font-mono text-xs text-danger"
+            className="pointer-events-auto rounded-control border border-danger bg-bg/85 px-2 py-1 font-mono text-xs text-danger"
             title={GRAPHICS_HELP}
           >
             waterfall unavailable: {glError}
@@ -953,7 +953,7 @@ function Divider({
     >
       <span
         aria-hidden
-        className="absolute inset-x-0 top-1 h-px bg-plot-ink-dim/45 group-hover:bg-accent"
+        className="absolute inset-x-0 top-1 h-px bg-plot-ink-dim/40 group-hover:bg-accent"
       />
     </div>
   );
@@ -1023,7 +1023,7 @@ function Markers({
                   {bandwidth !== null && visible > 0 && (
                     <span
                       aria-hidden
-                      className={`absolute inset-y-0 -translate-x-1/2 ${active ? "bg-plot-ink/12" : "bg-plot-ink/6"}`}
+                      className={`absolute inset-y-0 -translate-x-1/2 ${active ? "bg-plot-ink/10" : "bg-plot-ink/5"}`}
                       style={{ left: `${at * 100}%`, width: `${(bandwidth / visible) * 100}%` }}
                     />
                   )}
@@ -1122,7 +1122,7 @@ function Bookmarks({
         <span
           key={bookmark.id}
           aria-hidden
-          className="absolute inset-y-0 w-0 border-l border-dashed border-accent/50"
+          className="absolute inset-y-0 w-0 border-l border-dashed border-accent/40"
           style={{ left: `${at * 100}%` }}
         />
       ))}
@@ -1137,7 +1137,7 @@ function Bookmarks({
             title={members
               .map((mark) => `${mark.bookmark.label}: ${formatMhz(mark.bookmark.freq_hz)}`)
               .join("\n")}
-            className="absolute -translate-x-1/2 rounded-inset border border-accent/40 bg-bg/85 px-1 py-px font-mono text-3xs whitespace-nowrap text-accent"
+            className="absolute -translate-x-1/2 rounded-inset border border-accent/40 bg-bg/85 px-1 py-px font-mono text-2xs whitespace-nowrap text-accent"
             style={{ left: `${anchor.at * 100}%`, top: `${labelTop}px` }}
           >
             {anchor.bookmark.label}
@@ -1188,7 +1188,7 @@ function MarkerLabel({
       aria-hidden
       data-marker={channel}
       title={title}
-      className={`rounded-inset border px-1 py-px font-mono text-3xs whitespace-nowrap tabular-nums ${
+      className={`rounded-inset border px-1 py-px font-mono text-2xs whitespace-nowrap tabular-nums ${
         active ? "border-accent bg-bg text-accent" : "border-line bg-bg/85 text-ink-dim"
       } ${channel === undefined || owned ? "" : "cursor-ew-resize"} ${className ?? ""}`}
     >

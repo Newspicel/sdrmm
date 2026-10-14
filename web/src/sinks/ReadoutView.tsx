@@ -116,7 +116,7 @@ function EntityRow({
 }) {
   return (
     <>
-      <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+      <tr className={`border-b border-line/40 ${ageClass(ageMs)}`}>
         <td className={`${TABLE_CELL} font-semibold`}>
           <Button type="button" className={BTN} aria-expanded={open} onClick={onToggle}>
             {entity.view.label ?? entity.key.id}

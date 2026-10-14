@@ -204,7 +204,7 @@ export function Plot({
               x2={hover}
               y1={TOP}
               y2={frame.height - BOTTOM}
-              className="stroke-plot-ink/35"
+              className="stroke-plot-ink/40"
               strokeDasharray="2 3"
             />
           )}
@@ -249,12 +249,12 @@ function Bands({ frame, bands, clip }: { frame: Frame; bands: readonly PlotBand[
               y={TOP}
               width={Math.max(1, right - left)}
               height={frame.height - TOP - BOTTOM}
-              className="fill-band-amateur/20"
+              className="fill-band-amateur/25"
             />
             <text
               x={Math.max(left, LEFT) + 4}
               y={TOP + 11}
-              className="fill-band-amateur text-3xs font-medium"
+              className="fill-band-amateur text-2xs font-medium"
             >
               {band.label}
             </text>
@@ -267,7 +267,7 @@ function Bands({ frame, bands, clip }: { frame: Frame; bands: readonly PlotBand[
 
 function Grid({ frame, xTicks, yTicks }: { frame: Frame; xTicks: Tick[]; yTicks: Tick[] }) {
   return (
-    <g className="font-mono text-3xs tabular-nums">
+    <g className="font-mono text-2xs tabular-nums">
       {yTicks.map((tick) => (
         <g key={`y${tick.value}`}>
           <line
@@ -320,14 +320,14 @@ function Guides({ frame, guides }: { frame: Frame; guides: readonly PlotGuide[] 
             x2={frame.width - RIGHT}
             y1={frame.y(guide.value)}
             y2={frame.y(guide.value)}
-            className="stroke-plot-ink/45"
+            className="stroke-plot-ink/40"
             strokeDasharray="4 4"
           />
           <text
             x={frame.width - RIGHT - 4}
             y={frame.y(guide.value) - 4}
             textAnchor="end"
-            className="fill-plot-ink/60 font-mono text-3xs"
+            className="fill-plot-ink/60 font-mono text-2xs"
           >
             {guide.label}
           </text>
@@ -345,7 +345,7 @@ function Markers({ frame, markers }: { frame: Frame; markers: readonly PlotMarke
         if (x < LEFT - 1 || x > frame.width - RIGHT + 1) {
           return null;
         }
-        const tone = marker.active ? "stroke-plot-ink" : "stroke-plot-ink/50";
+        const tone = marker.active ? "stroke-plot-ink" : "stroke-plot-ink/40";
         return (
           <g key={marker.id}>
             <line x1={x} x2={x} y1={TOP} y2={frame.height - BOTTOM} className={tone} />
@@ -357,7 +357,7 @@ function Markers({ frame, markers }: { frame: Frame; markers: readonly PlotMarke
               x={x}
               y={TOP - 6.5}
               textAnchor="middle"
-              className="fill-plot-bg font-mono text-plot font-bold"
+              className="fill-plot-bg font-mono text-plot font-semibold"
             >
               {marker.label}
             </text>
@@ -372,7 +372,7 @@ function Tooltip({ reading, left, width }: { reading: Reading; left: number; wid
   const flip = left > width * 0.62;
   return (
     <div
-      className="pointer-events-none absolute top-6 z-10 min-w-36 rounded-control border border-line-strong/70 bg-panel-3 px-2 py-1.5 shadow-pop"
+      className="pointer-events-none absolute top-6 z-10 min-w-36 rounded-control border border-line-strong/60 bg-panel-3 px-2 py-1.5 shadow-pop"
       style={flip ? { right: width - left + 12 } : { left: left + 12 }}
     >
       <div className="mb-1 font-mono text-2xs text-ink">{reading.title}</div>

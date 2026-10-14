@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { CHIP_SETTING_QUIET } from "../controls";
 import { chipText, TextChip } from "./TextChip";
 
 const accept = () => true;
@@ -37,7 +38,8 @@ describe("TextChip", () => {
       <TextChip label="Contains" title="Text" value="" placeholder="any" onCommit={accept} />,
     );
     expect(html).toContain(">any<");
-    expect(html).toContain("font-normal text-ink-dim");
+    expect(html).toContain("font-normal text-ink-faint");
+    expect(html).toContain(CHIP_SETTING_QUIET);
   });
 
   it("shows a formatted value over the raw one", () => {

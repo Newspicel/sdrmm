@@ -224,14 +224,14 @@ function Overview({
   const reason = unavailableReason(report);
   if (simulation === null) {
     return reason === null ? null : (
-      <p className="rounded-control border border-warn/50 bg-warn/10 px-3 py-1.5 text-xs text-warn">
+      <p className="rounded-control border border-warn/40 bg-warn/10 px-3 py-1.5 text-xs text-warn">
         {reason}
       </p>
     );
   }
   const transform = matching?.apply ?? ((z) => z);
   return (
-    <div className={stale ? "opacity-70 transition-opacity" : "transition-opacity"}>
+    <div className={stale ? "opacity-60 transition-opacity" : "transition-opacity"}>
       <Summary
         simulation={simulation}
         frequencyHz={report.frequency_hz}

@@ -209,7 +209,7 @@ function TrackTable({
             <tr
               key={track.id}
               className={`${chosen ? "bg-accent/15" : "hover:bg-panel-2"} ${
-                track.state === "coasting" ? "opacity-50" : ""
+                track.state === "coasting" ? "opacity-45" : ""
               }`}
             >
               <td className={TABLE_CELL}>

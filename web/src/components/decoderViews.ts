@@ -446,7 +446,7 @@ export function ageClass(ageMs: number): string {
   if (ageMs < TARGET_STALE_MS) {
     return "text-ink";
   }
-  return ageMs < TARGET_MAX_AGE_MS / 2 ? "text-ink-dim" : "text-ink-dim opacity-50";
+  return ageMs < TARGET_MAX_AGE_MS / 2 ? "text-ink-dim" : "text-ink-dim opacity-45";
 }
 
 export function formatAge(ageMs: number): string {

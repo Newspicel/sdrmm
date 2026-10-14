@@ -23,7 +23,7 @@ export function EntityCard({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute inset-x-2 bottom-2 rounded-control border border-line bg-panel/95 md:inset-x-auto md:right-2 md:w-64">
+    <div className="absolute inset-x-2 bottom-2 rounded-control border border-line bg-panel/85 md:inset-x-auto md:right-2 md:w-64">
       <div className="flex items-center justify-between gap-2 border-b border-line px-2 py-1">
         <span className="truncate font-mono text-sm" style={{ color }}>
           {entityLabel(entity)}
@@ -41,7 +41,7 @@ export function EntityCard({
       <div className="max-h-64 overflow-y-auto px-2 py-1.5">
         <Fields fields={entity.view.fields ?? []} />
       </div>
-      <div className="border-t border-line px-2 py-1 font-mono text-3xs tabular-nums text-ink-dim">
+      <div className="border-t border-line px-2 py-1 font-mono text-2xs tabular-nums text-ink-dim">
         {formatMhz(entity.freq_hz)} · last seen {formatUtc(entity.last_seen)}
       </div>
     </div>

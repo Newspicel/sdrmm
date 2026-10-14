@@ -23,16 +23,16 @@ export function deviceRefOf(info: DeviceInfo): DeviceRef {
   };
 }
 
-export function clippingSaid(set: DeviceSet): string | null {
+export function clippingLanes(set: DeviceSet): string[] | null {
   const lanes = set.clipping ?? [];
   if (lanes.length === 0) {
     return null;
   }
   const streams = rxStreamCount(set.capabilities);
   if (streams <= 1) {
-    return "yes";
+    return [];
   }
-  return lanes.map((lane) => streamLabel("iq", lane, streams)).join(", ");
+  return lanes.map((lane) => streamLabel("iq", lane, streams));
 }
 
 export interface TunerDial {

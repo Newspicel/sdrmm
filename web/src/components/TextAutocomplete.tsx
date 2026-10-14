@@ -92,7 +92,7 @@ export function TextAutocomplete({
                 >
                   <span className="font-mono">{suggestion.value}</span>
                   {suggestion.detail !== undefined && (
-                    <span className="opacity-70">{suggestion.detail}</span>
+                    <span className="opacity-60">{suggestion.detail}</span>
                   )}
                 </Primitive.Item>
               )}

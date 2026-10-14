@@ -127,18 +127,18 @@ export function Rose({
         cx={centre}
         cy={centre}
         r={(outer + inner) / 2}
-        className="fill-none stroke-line/50"
+        className="fill-none stroke-line/40"
       />
       {marks.map((mark) => (
         <RoseMarkTick key={mark.label} mark={mark} centre={centre} outer={outer} />
       ))}
       {wedge != null && (
-        <path d={sigmaWedge(wedge.deg, wedge.sigmaDeg, centre, outer)} className="fill-accent/20" />
+        <path d={sigmaWedge(wedge.deg, wedge.sigmaDeg, centre, outer)} className="fill-accent/25" />
       )}
       {spectrum.length > 0 && (
         <path
           d={spectrumPath(spectrum, centre, inner, outer, rotateDeg)}
-          className="fill-accent/15 stroke-accent/80"
+          className="fill-accent/15 stroke-accent/85"
         />
       )}
       {distinctNeedles(needles).map(([key, needle]) => {

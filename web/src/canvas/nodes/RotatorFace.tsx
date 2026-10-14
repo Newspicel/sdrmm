@@ -232,7 +232,7 @@ function SerialChoices({ onPick }: { onPick: Pick }) {
             <span className="flex w-full min-w-0 flex-col gap-0.5">
               <span className="truncate">{device.path}</span>
               {detail !== "" && (
-                <span className="truncate font-mono text-3xs text-ink-faint">{detail}</span>
+                <span className="truncate font-mono text-2xs text-ink-faint">{detail}</span>
               )}
             </span>
           </Button>

@@ -134,7 +134,7 @@ describe("ageing", () => {
     expect(ageClass(0)).toBe("text-ink");
     expect(ageClass(TARGET_STALE_MS - 1)).toBe("text-ink");
     expect(ageClass(TARGET_STALE_MS)).toBe("text-ink-dim");
-    expect(ageClass(TARGET_MAX_AGE_MS / 2)).toBe("text-ink-dim opacity-50");
+    expect(ageClass(TARGET_MAX_AGE_MS / 2)).toBe("text-ink-dim opacity-45");
   });
 
   it("formats age as seconds, m:ss then hours", () => {

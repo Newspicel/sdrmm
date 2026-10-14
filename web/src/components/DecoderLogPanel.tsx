@@ -13,7 +13,7 @@ import { toastError } from "../lib/toasts";
 import type { LogGroupKey } from "../lib/types";
 import { Input } from "./BaseControls";
 import { ConfirmButton } from "./ConfirmButton";
-import { FIELD, TABLE_CELL, TABLE_HEAD } from "./controls";
+import { FIELD, TABLE_CELL, TABLE_HEAD, TABLE_TEXT, tableRow } from "./controls";
 import { DecoderLogGroups } from "./DecoderLogGroups";
 import { DownloadMenu } from "./DownloadMenu";
 import {
@@ -237,7 +237,7 @@ function LogTable({
   const anchor = useRowAnchor(scroller, opened);
   return (
     <table
-      className="table-fixed border-collapse font-mono text-xs"
+      className="table-fixed border-collapse text-xs"
       style={{ width: totalColumnWidth(widths), minWidth: "100%" }}
     >
       <colgroup>
@@ -255,9 +255,7 @@ function LogTable({
             return (
               <th
                 key={column.key}
-                className={`${TABLE_HEAD} relative ${last ? "" : "border-r border-line"} ${
-                  column.key === "freq" ? "text-right" : ""
-                }`}
+                className={`${TABLE_HEAD} relative ${column.key === "freq" ? "text-right" : ""}`}
               >
                 <span className="block truncate">{column.label}</span>
                 {!last && (
@@ -274,13 +272,14 @@ function LogTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => {
+        {rows.map((row, index) => {
           const id = rowSignature(row);
           const open = opened === id;
           return (
             <LogRows
               key={row.key}
               row={row}
+              striped={index % 2 === 1}
               open={open}
               anchor={open ? anchor : undefined}
               onToggle={() => setOpened(open ? null : id)}
@@ -357,11 +356,13 @@ function ColumnHandle({
 
 function LogRows({
   row,
+  striped,
   open,
   anchor,
   onToggle,
 }: {
   row: LogRow;
+  striped: boolean;
   open: boolean;
   anchor?: RefObject<HTMLTableRowElement | null>;
   onToggle: () => void;
@@ -371,7 +372,7 @@ function LogRows({
     <>
       <tr
         ref={anchor}
-        className="cursor-pointer border-b border-line/50 hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent"
+        className={tableRow(striped)}
         aria-expanded={open}
         tabIndex={0}
         onClick={onToggle}
@@ -385,7 +386,7 @@ function LogRows({
         <td className={`${TABLE_CELL} truncate tabular-nums text-ink-dim`} title={row.at}>
           {formatClock(row.at)}
         </td>
-        <td className={`${TABLE_CELL} truncate text-ink-dim`}>{kindLabel(row.kind)}</td>
+        <td className={`${TABLE_TEXT} truncate text-ink-dim`}>{kindLabel(row.kind)}</td>
         <td className={`${TABLE_CELL} truncate text-right tabular-nums text-ink`}>
           {formatMhz(row.freqHz)}
         </td>
@@ -398,12 +399,12 @@ function LogRows({
             <span className="ml-1 text-ink-dim">{row.callsign.country}</span>
           )}
         </td>
-        <td className={`${TABLE_CELL} truncate text-ink`} title={row.summary}>
+        <td className={`${TABLE_TEXT} truncate text-ink`} title={row.summary}>
           {row.summary}
         </td>
       </tr>
       {open && (
-        <tr className="border-b border-line/50 bg-panel-2">
+        <tr className="bg-panel-2">
           <td colSpan={LOG_COLUMNS.length} className="px-3 py-2">
             <RowDetail row={row} />
           </td>

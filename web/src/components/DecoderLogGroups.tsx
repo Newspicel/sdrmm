@@ -2,7 +2,7 @@ import { type RefObject, useState } from "react";
 import { useKindLabel } from "../lib/eventKinds";
 import type { LogGroupKey } from "../lib/types";
 import { Button } from "./BaseControls";
-import { TABLE_CELL, TABLE_HEAD } from "./controls";
+import { TABLE_CELL, TABLE_HEAD, TABLE_TEXT, tableRow } from "./controls";
 import { formatClock } from "./decoderViews";
 import { RowDetail } from "./LogRowDetail";
 import { formatAirtime, type GroupRow, type GroupSort, hasAirtime, sortGroups } from "./logGroups";
@@ -53,7 +53,7 @@ export function DecoderLogGroups({
   const airtime = hasAirtime(rows);
   const columns = columnsFor(by, airtime);
   return (
-    <table className="w-full table-fixed border-collapse font-mono text-xs">
+    <table className="w-full table-fixed border-collapse text-xs">
       <colgroup>
         {columns.map((column) => (
           <col
@@ -70,10 +70,11 @@ export function DecoderLogGroups({
         </tr>
       </thead>
       <tbody>
-        {sortGroups(rows, sort, by).map((row) => (
+        {sortGroups(rows, sort, by).map((row, index) => (
           <GroupRows
             key={row.key}
             row={row}
+            striped={index % 2 === 1}
             byFrequency={by === "frequency"}
             airtime={airtime}
             span={columns.length}
@@ -123,6 +124,7 @@ function SortHead({
 
 function GroupRows({
   row,
+  striped,
   byFrequency,
   airtime,
   span,
@@ -131,6 +133,7 @@ function GroupRows({
   onToggle,
 }: {
   row: GroupRow;
+  striped: boolean;
   byFrequency: boolean;
   airtime: boolean;
   span: number;
@@ -143,7 +146,7 @@ function GroupRows({
     <>
       <tr
         ref={anchor}
-        className="cursor-pointer border-b border-line/50 hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent"
+        className={tableRow(striped)}
         aria-expanded={open}
         tabIndex={0}
         onClick={onToggle}
@@ -160,7 +163,7 @@ function GroupRows({
         >
           {row.label}
         </td>
-        <td className={`${TABLE_CELL} truncate text-ink-dim`}>{kindLabel(row.kind)}</td>
+        <td className={`${TABLE_TEXT} truncate text-ink-dim`}>{kindLabel(row.kind)}</td>
         <td className={`${TABLE_CELL} truncate text-right text-ink`}>{row.count}</td>
         {airtime && (
           <td className={`${TABLE_CELL} truncate text-right text-ink-dim`}>
@@ -173,12 +176,12 @@ function GroupRows({
         >
           {formatClock(row.lastAt)}
         </td>
-        <td className={`${TABLE_CELL} truncate text-ink`} title={row.latest.summary}>
+        <td className={`${TABLE_TEXT} truncate text-ink`} title={row.latest.summary}>
           {row.latest.summary}
         </td>
       </tr>
       {open && (
-        <tr className="border-b border-line/50 bg-panel-2">
+        <tr className="bg-panel-2">
           <td colSpan={span} className="px-3 py-2">
             <RowDetail row={row.latest} />
           </td>

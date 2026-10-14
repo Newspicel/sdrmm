@@ -127,7 +127,7 @@ export function MarkerTable({
                 marker.id === active ? "bg-accent/10 text-ink" : "text-ink-dim hover:bg-panel-2"
               }`}
             >
-              <td className="py-1 pl-1 font-bold">{marker.label}</td>
+              <td className="py-1 pl-1 font-semibold">{marker.label}</td>
               <td className="py-1">{formatHz(marker.row.frequencyHz)}</td>
               <td className="py-1 text-right">{formatSwr(marker.row.vswr)}</td>
               <td className="py-1 text-right">{formatImpedance(marker.row.impedance)}</td>

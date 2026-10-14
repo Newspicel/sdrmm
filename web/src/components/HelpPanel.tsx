@@ -49,7 +49,7 @@ export function HelpPanel({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-bg/70" />
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-bg/85" />
         <Dialog.Popup
           className={`${SURFACE} fixed top-1/2 left-1/2 z-40 flex max-h-[85vh] w-[calc(100%-2rem)] max-w-[56rem] -translate-x-1/2 -translate-y-1/2 flex-col`}
         >

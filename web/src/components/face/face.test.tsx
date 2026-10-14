@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { CHIP_SETTING, CHIP_SETTING_QUIET } from "../controls";
 import { Chips, ChoiceChip, NumberChip, ReadoutChip, ToggleChip } from "./Chips";
 import { FaceFault } from "./Fault";
 import { MeterRow } from "./Meter";
@@ -56,6 +57,19 @@ describe("chips", () => {
     expect(off).toContain(">off<");
   });
 
+  it("drops the chip fill while a setting sits at its default", () => {
+    const on = renderToStaticMarkup(<ToggleChip label="Invert" title="Flip" on onChange={noop} />);
+    expect(on).toContain(CHIP_SETTING);
+    const off = renderToStaticMarkup(
+      <ToggleChip label="Invert" title="Flip" on={false} onChange={noop} />,
+    );
+    expect(off).toContain(CHIP_SETTING_QUIET);
+    const quiet = renderToStaticMarkup(
+      <ChoiceChip label="Tone" title="Tone" value="off" options={[]} quiet onChange={noop} />,
+    );
+    expect(quiet).toContain(CHIP_SETTING_QUIET);
+  });
+
   it("tones a read-only chip", () => {
     const html = renderToStaticMarkup(
       <Chips>
@@ -105,6 +119,21 @@ describe("stats", () => {
     const bare = renderToStaticMarkup(<Stat label="No ref" title="No reference" tone="danger" />);
     expect(bare).toMatch(/<span class="[^"]*text-danger/);
     expect(bare).not.toContain("<b");
+  });
+
+  it("keeps a healthy value but dims it", () => {
+    const quiet = renderToStaticMarkup(
+      <Stat label="Queue" title="Queue" quiet>
+        0 ms
+      </Stat>,
+    );
+    expect(quiet).toMatch(/<b class="[^"]*text-ink-faint/);
+    const loud = renderToStaticMarkup(
+      <Stat label="Queue" title="Queue">
+        180 ms
+      </Stat>,
+    );
+    expect(loud).toMatch(/<b class="[^"]*text-ink"/);
   });
 });
 

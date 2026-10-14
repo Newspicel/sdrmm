@@ -141,7 +141,7 @@ function Flag({ label, on }: { label: string; on: boolean }) {
   return (
     <span
       className={`rounded-control border px-1.5 py-0.5 font-mono text-xs ${
-        on ? "border-accent text-accent" : "border-line text-ink-dim opacity-50"
+        on ? "border-accent text-accent" : "border-line text-ink-dim opacity-45"
       }`}
     >
       {label}
@@ -221,7 +221,7 @@ function TargetTable({
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline gap-2">
         <span className="legend">{title}</span>
-        <span className="font-mono text-3xs tabular-nums text-ink-dim">{rows.length}</span>
+        <span className="font-mono text-2xs tabular-nums text-ink-dim">{rows.length}</span>
       </div>
       {rows.length === 0 ? (
         <span className={EMPTY}>No {title.toLowerCase()} heard.</span>
@@ -260,7 +260,7 @@ function TargetTable({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className={`border-b border-line/50 ${ageClass(row.ageMs)}`}>
+                <tr key={row.id} className={`border-b border-line/40 ${ageClass(row.ageMs)}`}>
                   <td className={`${TABLE_CELL} font-semibold`}>{row.id}</td>
                   <td className={TABLE_CELL}>{row.label}</td>
                   <td className={TABLE_CELL}>{row.primary}</td>
@@ -376,7 +376,7 @@ function CwSkimmerView({ records }: PanelProps<"cw_skimmer">) {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={Math.round(row.offsetHz)} className="border-b border-line/50">
+                <tr key={Math.round(row.offsetHz)} className="border-b border-line/40">
                   <td className={`${TABLE_CELL} tabular-nums`}>{formatHz(row.frequencyHz)}</td>
                   <td className={`${TABLE_CELL} tabular-nums`}>
                     {row.offsetHz >= 0 ? "+" : ""}
@@ -650,7 +650,7 @@ function GsmView({ records }: PanelProps<"gsm">) {
               return (
                 <tr
                   key={`${record.at}:${frame.frame_number}:${frame.timeslot}`}
-                  className="border-b border-line/50"
+                  className="border-b border-line/40"
                 >
                   <td className={`${TABLE_CELL} tabular-nums`}>{formatClock(record.at)}</td>
                   <td className={`${TABLE_CELL} tabular-nums`}>{frame.frame_number}</td>
@@ -671,7 +671,7 @@ function GsmView({ records }: PanelProps<"gsm">) {
 function LoraRow({ station, now }: { station: LoraStation; now: number }) {
   const ageMs = now - Date.parse(station.at);
   return (
-    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+    <tr className={`border-b border-line/40 ${ageClass(ageMs)}`}>
       <td className={`${TABLE_CELL} font-mono`}>{station.key}</td>
       <td className={TABLE_CELL}>{station.name ?? "-"}</td>
       <td className={TABLE_CELL}>{station.protocol}</td>
@@ -692,7 +692,7 @@ function wholeMetres(value: number | null): string {
 function DroneRow({ drone, now }: { drone: Drone; now: number }) {
   const ageMs = now - Date.parse(drone.at);
   return (
-    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+    <tr className={`border-b border-line/40 ${ageClass(ageMs)}`}>
       <td className={`${TABLE_CELL} font-mono`}>{drone.key}</td>
       <td className={TABLE_CELL}>{drone.kind}</td>
       <td className={`${TABLE_CELL} tabular-nums`}>{wholeMetres(drone.heightM)}</td>
@@ -759,7 +759,7 @@ function RemoteIdView({ records }: PanelProps<"remote_id">) {
 function BleRow({ device, now }: { device: BleDevice; now: number }) {
   const ageMs = now - Date.parse(device.at);
   return (
-    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+    <tr className={`border-b border-line/40 ${ageClass(ageMs)}`}>
       <td className={`${TABLE_CELL} font-mono`}>{device.key}</td>
       <td className={`${TABLE_CELL} max-w-40 truncate`} title={device.name ?? undefined}>
         {device.name ?? "-"}
@@ -852,7 +852,7 @@ function WifiOccupancyView({ records }: PanelProps<"wifi_occupancy">) {
         </thead>
         <tbody>
           {latest.event.data.channels.map((channel) => (
-            <tr key={`${channel.band}-${channel.number}`} className="border-b border-line/50">
+            <tr key={`${channel.band}-${channel.number}`} className="border-b border-line/40">
               <td className={TABLE_CELL} title={WIFI_BAND_LABELS[channel.band]}>
                 {channel.number}
               </td>
@@ -913,7 +913,7 @@ function IsmSurveyView({ records }: PanelProps<"ism_survey">) {
           </thead>
           <tbody>
             {report.kinds.map((load) => (
-              <tr key={load.kind} className="border-b border-line/50">
+              <tr key={load.kind} className="border-b border-line/40">
                 <td className={TABLE_CELL}>{ISM_KIND_LABELS[load.kind]}</td>
                 <td className={`${TABLE_CELL} tabular-nums`}>{load.bursts}</td>
                 <td className={`${TABLE_CELL} tabular-nums`}>{percentOf(load.airtime)}</td>
@@ -982,7 +982,7 @@ function RadiosondeRow({
 }) {
   const ageMs = now - Date.parse(sonde.at);
   return (
-    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+    <tr className={`border-b border-line/40 ${ageClass(ageMs)}`}>
       <td className={`${TABLE_CELL} font-mono`}>
         <Button
           type="button"
@@ -1034,7 +1034,7 @@ function RadiosondeLog({ records }: { records: readonly DecodedRecordOf<"radioso
           {records.map((record) => {
             const frame = record.event.data;
             return (
-              <tr key={`${record.at}:${frame.frame ?? ""}`} className="border-b border-line/50">
+              <tr key={`${record.at}:${frame.frame ?? ""}`} className="border-b border-line/40">
                 <td className={`${TABLE_CELL} tabular-nums`}>{formatClock(record.at)}</td>
                 <td className={`${TABLE_CELL} tabular-nums`}>{frame.frame ?? "-"}</td>
                 <td className={`${TABLE_CELL} tabular-nums`}>{metres(frame.altitude_m) ?? "-"}</td>
@@ -1109,7 +1109,7 @@ function AprsWeatherRow({ station, now }: { station: AprsWeatherStation; now: nu
   const weather = station.weather;
   const ageMs = now - Date.parse(station.at);
   return (
-    <tr className={`border-b border-line/50 ${ageClass(ageMs)}`}>
+    <tr className={`border-b border-line/40 ${ageClass(ageMs)}`}>
       <td className={`${TABLE_CELL} font-mono`}>{station.source}</td>
       <td className={`${TABLE_CELL} tabular-nums`}>{celsius(weather.temperature_c) ?? "-"}</td>
       <td className={`${TABLE_CELL} tabular-nums`}>
@@ -1397,7 +1397,7 @@ function SidView({ records }: PanelProps<"sid">) {
             return (
               <tr
                 key={`${station.call}:${station.frequency_hz}`}
-                className={`border-b border-line/50 ${station.disturbed ? "text-warn" : ""}`}
+                className={`border-b border-line/40 ${station.disturbed ? "text-warn" : ""}`}
               >
                 <td className={TABLE_CELL}>{station.call}</td>
                 <td className={`${TABLE_CELL} tabular-nums`}>

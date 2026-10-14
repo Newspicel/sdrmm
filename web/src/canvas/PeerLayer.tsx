@@ -48,7 +48,7 @@ function Outline({ node, peer, zoom }: { node: Node; peer: Peer; zoom: number })
       }}
     >
       <span
-        className="absolute bottom-full left-0 mb-0.5 origin-bottom-left rounded-control px-1 text-3xs whitespace-nowrap text-bg"
+        className="absolute bottom-full left-0 mb-0.5 origin-bottom-left rounded-control px-1 text-2xs whitespace-nowrap text-bg"
         style={{ background: color, transform: `scale(${1 / zoom})` }}
       >
         {peer.name}
@@ -73,7 +73,7 @@ function Cursor({ at, peer, zoom }: { at: Position; peer: Peer; zoom: number }) 
         />
       </svg>
       <span
-        className="absolute top-4 left-3 rounded-control px-1 text-3xs whitespace-nowrap text-bg"
+        className="absolute top-4 left-3 rounded-control px-1 text-2xs whitespace-nowrap text-bg"
         style={{ background: color }}
       >
         {peer.name}

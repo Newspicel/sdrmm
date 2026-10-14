@@ -60,7 +60,7 @@ export function RadarPlot({
     frame === null ? null : { cols: frame.ranges, rows: frame.dopplers, cells: frame.cells };
   return (
     <div ref={ref} className="relative min-h-48 flex-1 bg-plot-bg">
-      <div className={`absolute ${dim ? "opacity-50" : ""}`} style={GUTTERS}>
+      <div className={`absolute ${dim ? "opacity-45" : ""}`} style={GUTTERS}>
         <GridCanvas frame={grid} colormap={colormap} flipY />
       </div>
       <span className="absolute top-0.5 left-1 font-mono text-plot text-ink-faint">Hz</span>
@@ -97,7 +97,7 @@ export function RadarPlot({
           onPointerLeave={() => setHover(null)}
         >
           {hover !== null && (
-            <span className="pointer-events-none absolute top-1 left-1 rounded-inset bg-bg/80 px-1 font-mono text-3xs tabular-nums text-ink">
+            <span className="pointer-events-none absolute top-1 left-1 rounded-inset bg-bg/85 px-1 font-mono text-2xs tabular-nums text-ink">
               {hoverLabel(hover, axes, plot, frame)}
             </span>
           )}

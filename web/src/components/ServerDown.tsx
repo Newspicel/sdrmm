@@ -46,7 +46,7 @@ export function ServerDown({
   }, [reconnect]);
 
   return (
-    <div className="fixed inset-0 z-35 flex items-center justify-center bg-bg/90 px-4 py-10">
+    <div className="fixed inset-0 z-35 flex items-center justify-center bg-bg/85 px-4 py-10">
       <div
         role="alert"
         className="flex w-full max-w-md flex-col gap-3 rounded-control border border-line bg-panel px-4 py-4"

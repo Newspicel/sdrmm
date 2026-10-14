@@ -59,7 +59,7 @@ function Library({ node, onPick }: { node: string; onPick: (recording: Recording
           >
             <span className="flex w-full min-w-0 flex-col gap-0.5">
               <span className="truncate">{recordingTitle(recording)}</span>
-              <span className="truncate font-mono text-3xs text-ink-dim tabular-nums">
+              <span className="truncate font-mono text-2xs text-ink-dim tabular-nums">
                 {describeRecording(recording)}
               </span>
             </span>
@@ -147,7 +147,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
         <FaceBody>
           <p className="p-3 font-mono text-sm text-ink">{known?.file ?? stem}</p>
           {known !== null && (
-            <p className="px-3 pb-3 font-mono text-3xs text-ink-dim tabular-nums">
+            <p className="px-3 pb-3 font-mono text-2xs text-ink-dim tabular-nums">
               {describeRecording(known)}
             </p>
           )}

@@ -66,7 +66,7 @@ export function BeamformerFace({ node }: { node: PatchNode }) {
           <FaceEmpty hint={NO_CATALOG} />
         ) : (
           <>
-            <div className={`flex gap-2 p-2 ${stale ? "opacity-50" : ""}`}>
+            <div className={`flex gap-2 p-2 ${stale ? "opacity-45" : ""}`}>
               <BeamPattern reading={reading} />
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <Readouts ruled={false} padded={false}>
@@ -140,7 +140,7 @@ function BeamPattern({ reading }: { reading: BeamformerReading | null }) {
         Fwd
       </text>
       {pattern.length > 0 && (
-        <path d={patternPath(pattern, radius, centre)} className="fill-accent/20 stroke-accent" />
+        <path d={patternPath(pattern, radius, centre)} className="fill-accent/25 stroke-accent" />
       )}
       {steer !== null && (
         <path
@@ -175,7 +175,7 @@ function WeightBars({ reading }: { reading: BeamformerReading | null }) {
     <div role="group" className="flex flex-col gap-0.5" aria-label="Lane weights">
       {weights.map((weight, lane) => (
         <div key={lane} className="flex items-center gap-1.5" title={weightTitle(lane, weight)}>
-          <span className="w-4 font-mono text-3xs text-hue-indigo">{lane + 1}</span>
+          <span className="w-4 font-mono text-2xs text-hue-indigo">{lane + 1}</span>
           <MeterBar
             label={`Lane ${lane + 1} weight`}
             value={(percent[lane] ?? 0) / 100}

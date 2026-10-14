@@ -97,7 +97,7 @@ export function PlaybackTransport({
           drive.mutate({ action: "seek", position: target });
         }}
       />
-      <span className="shrink-0 font-mono text-3xs tabular-nums text-ink-dim">
+      <span className="shrink-0 font-mono text-2xs tabular-nums text-ink-dim">
         {formatClock(samplesToSeconds(position, sampleRate))}
         {" / "}
         {formatClock(samplesToSeconds(status.total_samples, sampleRate))}

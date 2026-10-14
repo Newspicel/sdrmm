@@ -171,7 +171,7 @@ function Digit({
             : digit.leading
               ? "text-ink-faint/60"
               : "text-vfo"
-        } ${active ? "bg-accent/12 shadow-[inset_0_-2px_0_var(--color-accent)]" : ""}`}
+        } ${active ? "bg-accent/10 shadow-[inset_0_-2px_0_var(--color-accent)]" : ""}`}
         onPointerDown={(event) => {
           onSelect();
           onStep(halfAt(event.currentTarget, event.clientY));
@@ -194,7 +194,7 @@ function Digit({
         {armed !== null && (
           <span
             aria-hidden
-            className={`pointer-events-none absolute inset-x-0 h-1/2 bg-accent/18 ${
+            className={`pointer-events-none absolute inset-x-0 h-1/2 bg-accent/15 ${
               armed > 0 ? "top-0" : "bottom-0"
             }`}
           />
@@ -202,7 +202,7 @@ function Digit({
         <span className="relative">{digit.digit}</span>
       </Button>
       {separator !== "" && (
-        <span aria-hidden className={`text-vfo/70 ${DIGIT_SIZE}`}>
+        <span aria-hidden className={`text-vfo/60 ${DIGIT_SIZE}`}>
           {separator}
         </span>
       )}
