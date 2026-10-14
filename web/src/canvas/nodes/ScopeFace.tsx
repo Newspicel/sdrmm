@@ -239,6 +239,7 @@ function Spectrum({
     offsetHz: number;
   } | null>(null);
   const [panning, setPanning] = useState(false);
+  const [hovering, setHovering] = useState(false);
   const [picked, setPicked] = useState<number | null>(null);
   const [menu, setMenu] = useState<{
     pick: ScopePick;
@@ -260,6 +261,12 @@ function Spectrum({
       hoverRef.current = null;
     }
   });
+
+  const hover = (at: number | null): void => {
+    hoverRef.current = at;
+    setHovering(at !== null);
+  };
+  const rulerH = bandRuler && plan !== null ? BAND_RULER_H : 0;
 
   const faces = new Map<number, string>();
   const onStream = new Set(channels.map((channel) => channel.id));
@@ -644,10 +651,11 @@ function Spectrum({
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    hoverRef.current =
+    hover(
       active && plotRef.current !== null && onPlotSurface(event.target, plotRef.current)
         ? pointerFraction(event.clientX)
-        : null;
+        : null,
+    );
     const gesture = gestureRef.current;
     if (gesture === null) {
       return;
@@ -774,9 +782,7 @@ function Spectrum({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onPointerLeave={() => {
-        hoverRef.current = null;
-      }}
+      onPointerLeave={() => hover(null)}
       onContextMenu={onContextMenu}
       onDoubleClick={(event) => {
         const plot = plotRef.current;
@@ -822,15 +828,18 @@ function Spectrum({
           locked={locked}
           preview={preview}
           onSelect={selectChannel}
+          labelTop={rulerH + LABEL_TOP_PX}
           widthPx={waterfall.width}
         />
       )}
 
       <div
         className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-between p-1.5"
-        style={{ top: bandRuler && plan !== null ? BAND_RULER_H : 0 }}
+        style={{ top: rulerH }}
       >
-        <span className="legend self-end font-mono text-2xs text-right whitespace-pre text-plot-ink-dim">
+        <span
+          className={`legend self-end ${hovering && active ? "invisible" : ""} font-mono text-2xs text-right whitespace-pre text-plot-ink-dim`}
+        >
           {meta !== null && `${formatCentre(meta, view)}${formatFloor(meta.floorDb)}`}
           {range !== null && " · manual"}
         </span>
@@ -961,6 +970,7 @@ function Markers({
   locked,
   preview,
   onSelect,
+  labelTop,
   widthPx,
 }: {
   channels: readonly ChannelInfo[];
@@ -973,6 +983,7 @@ function Markers({
   locked: ReadonlyMap<number, string>;
   preview: { channel: number; offsetHz: number } | null;
   onSelect: (channel: number) => void;
+  labelTop: number;
   widthPx: number;
 }) {
   const held = (channel: number): boolean => owners.has(channel) || locked.has(channel);
@@ -1042,7 +1053,7 @@ function Markers({
 
             <div
               className="pointer-events-auto group absolute flex -translate-x-1/2 flex-col items-center gap-1"
-              style={{ left: `${shown.at * 100}%`, top: LABEL_TOP_PX }}
+              style={{ left: `${shown.at * 100}%`, top: labelTop }}
             >
               <MarkerLabel
                 active={shown.channel.id === selected}
