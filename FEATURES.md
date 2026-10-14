@@ -11,7 +11,7 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 ### Foundation
 - Transmit gate: the only node that may feed a Device's `tx` input
 - Engine TX path: modulator to `TxStream`, settings via command queue
-- Safety: band limits, TX timeout, a visible on-air state
+- Safety: TX timeout, a visible on-air state
 - PTT: button, hotkey, VOX
 - Microphone input into the voice modulators
 - TX level metering and spectral mask check
@@ -23,8 +23,7 @@ M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 
 ### Links
 - Satellite uplink on the Doppler-corrected frequency the Satellite node already shows
-- Bench loopback: TX into your own RX to validate decoders. The graph's no-cycle proof stops
-  being sufficient here
+- Bench loopback: TX into your own RX to validate decoders. The graph's no-cycle proof stops being sufficient here
 - Beam-steering CW (TX MIMO)
 
 ### Security research (own DUT, contained link)
