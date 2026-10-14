@@ -39,6 +39,59 @@ impl DeviceDriver for LateDriver {
     }
 }
 
+fn late_state(present: &Arc<AtomicBool>, store: &Arc<Store>) -> AppState {
+    let mut registry = DeviceRegistry::new();
+    registry.register(
+        1,
+        Box::new(LateDriver {
+            present: present.clone(),
+            radios: VirtualDriver::new(),
+        }),
+    );
+    AppState::new(Engine::with_registry(registry, None), store.clone())
+}
+
+fn late_snapshot() -> sdrmm_wire::WorkspaceSnapshot {
+    let mut snapshot = virtual_snapshot("band", &[]);
+    let NodeBody::Device(node) = &mut snapshot.graph.nodes[0].body else {
+        panic!("the default workspace opens with a receiver")
+    };
+    node.device = Some(DeviceRef {
+        backend: "late".to_string(),
+        serial: Some(SERIAL.to_string()),
+        key: None,
+    });
+    snapshot
+}
+
+async fn bound_eventually(state: &AppState, why: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while state.engine.snapshot().device_sets.is_empty() {
+        assert!(Instant::now() < deadline, "{why}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_restarted_server_opens_the_active_workspaces_radio_without_a_client() {
+    let store = Arc::new(Store::open(None).expect("in-memory store"));
+    let absent = Arc::new(AtomicBool::new(false));
+    let (first, background) =
+        router_with_state(late_state(&absent, &store), &ServerOptions::default());
+    background.detach();
+    put_active_workspace(&first, &late_snapshot()).await;
+
+    let present = Arc::new(AtomicBool::new(true));
+    let restarted = late_state(&present, &store);
+    let (_app, background) = router_with_state(restarted.clone(), &ServerOptions::default());
+    background.detach();
+    bound_eventually(
+        &restarted,
+        "the restarted server never opened the saved radio",
+    )
+    .await;
+}
+
 #[tokio::test]
 async fn a_radio_that_turns_up_later_is_bound_to_the_node_waiting_for_it() {
     let present = Arc::new(AtomicBool::new(false));

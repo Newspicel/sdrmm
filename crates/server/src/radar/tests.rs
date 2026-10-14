@@ -507,6 +507,10 @@ struct Bench {
 
 impl Bench {
     fn new(graph: PatchGraph) -> Self {
+        Self::watched(graph).0
+    }
+
+    fn watched(graph: PatchGraph) -> (Self, broadcast::Receiver<ServerEvent>) {
         let store = Arc::new(Store::open(None).expect("store"));
         let snapshot = WorkspaceSnapshot {
             graph,
@@ -515,13 +519,15 @@ impl Bench {
         let workspace = store.create_workspace("radar", &snapshot).expect("create");
         store.activate_workspace(workspace).expect("activate");
         let state = state_over(store);
+        let events = state.engine.subscribe_events();
         let (app, background) = router_with_state(state.clone(), &ServerOptions::default());
         background.detach();
-        Self {
+        let bench = Self {
             app,
             state,
             workspace,
-        }
+        };
+        (bench, events)
     }
 
     async fn applied(graph: PatchGraph) -> Self {
@@ -936,11 +942,10 @@ async fn a_track_event_reaches_a_sink_once_with_its_fix() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unwired_radar_reports_no_array() {
-    let bench = Bench::new(graph(Wiring {
+    let (bench, mut events) = Bench::watched(graph(Wiring {
         array: false,
         ..Wiring::default()
     }));
-    let mut events = bench.state.engine.subscribe_events();
     bench.apply().await;
 
     let sent = radar_update(&mut events, |update| !update.problems.is_empty()).await;
@@ -970,8 +975,7 @@ async fn an_unwired_radar_reports_no_array() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_plan_refusal_is_a_problem() {
-    let bench = Bench::new(graph(Wiring::without_engine_reports()));
-    let mut events = bench.state.engine.subscribe_events();
+    let (bench, mut events) = Bench::watched(graph(Wiring::without_engine_reports()));
     let report = bench.apply().await;
 
     let refused = report

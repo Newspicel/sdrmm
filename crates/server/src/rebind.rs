@@ -7,6 +7,7 @@ use crate::{AppState, rest, workspace};
 /// finished after the page loaded, or a radio plugged in later.
 pub(crate) async fn run(state: AppState) {
     let mut events = state.engine.subscribe_events();
+    bring_up_saved(state.clone()).await;
     loop {
         match events.recv().await {
             Ok(ServerEvent::StateChanged {
@@ -16,6 +17,23 @@ pub(crate) async fn run(state: AppState) {
             Ok(_) => {}
             Err(RecvError::Closed) => break,
         }
+    }
+}
+
+async fn bring_up_saved(state: AppState) {
+    let opened = tokio::task::spawn_blocking(move || {
+        let Some(id) = state.store.list_workspaces()?.active else {
+            return Ok(false);
+        };
+        let _serialized = rest::lock_gate(&state.apply_gate);
+        crate::apply::bring_up_active(&state, id).map(|report| report.opened > 0)
+    })
+    .await;
+    match opened {
+        Ok(Ok(true)) => tracing::info!("opened the active workspace's radios"),
+        Ok(Ok(false)) => {}
+        Ok(Err(error)) => tracing::warn!(?error, "opening the active workspace's radios failed"),
+        Err(error) => tracing::warn!(%error, "opening the active workspace's radios stopped"),
     }
 }
 
