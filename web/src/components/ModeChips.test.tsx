@@ -11,6 +11,7 @@ import {
   withLoraKeyText,
   withLoraPreset,
 } from "./modeOptions";
+import { wmbusKeyComplete, wmbusKeysShown } from "./WmbusKeysChip";
 
 const CHOICES: Partial<Record<ChannelParams["type"], readonly ParamChoice[]>> = {
   nfm: [{ name: "ctcss_hz", options: [{ value: 100, label: "100.0 Hz" }] }],
@@ -144,6 +145,16 @@ describe("ModeChips", () => {
       settings: { bandwidth: "khz250", spreading_factor: "sf11", protocol: "meshtastic" },
     });
     expect(fast).toContain("LongFast");
+  });
+
+  it("shows how many wM-Bus meter keys are set", () => {
+    expect(render({ type: "wmbus", settings: {} })).toContain("none");
+    const key = { meter: "76348799", key: "28F64A24988064A079AA2C807D6102AE" };
+    expect(render({ type: "wmbus", settings: { keys: [key] } })).toContain(">1<");
+    expect(wmbusKeysShown([key, key])).toBe("2");
+    expect(wmbusKeyComplete(key)).toBe(true);
+    expect(wmbusKeyComplete({ ...key, meter: "7634879" })).toBe(false);
+    expect(wmbusKeyComplete({ ...key, key: "28F6" })).toBe(false);
   });
 
   it("adds coding rate and CRC chips for an implicit header", () => {

@@ -171,6 +171,8 @@ const ISM: &[Range] = &[
     mhz(863.0, 870.0),
     mhz(902.0, 928.0),
 ];
+const WMBUS_T_C: &[Range] = &[mhz(868.85, 869.05)];
+const WMBUS_S: &[Range] = &[mhz(868.2, 868.4)];
 const ADSB: &[Range] = &[mhz(1_089.0, 1_091.0)];
 const DECT_BANDS: &[Range] = &[mhz(1_880.0, 1_900.0), mhz(1_920.0, 1_930.0)];
 const IRIDIUM_BAND: &[Range] = &[mhz(1_616.0, 1_626.5)];
@@ -554,6 +556,30 @@ const SIGNATURES: &[Signature] = &[
             &[Modulation::Fsk2],
             range(8_000.0, 14_000.0),
             "8 kbaud GMSK in a 12.5 kHz channel on a Tetrapol band",
+        )
+    },
+    Signature {
+        symbol_rate_hz: Some(range(90_000.0, 110_000.0)),
+        deviation_hz: Some(range(30_000.0, 90_000.0)),
+        frequencies: WMBUS_T_C,
+        ..signature(
+            "Wireless M-Bus T/C",
+            Some("wmbus"),
+            &[Modulation::Fsk2],
+            range(120_000.0, 300_000.0),
+            "100 kchip/s 2-FSK on the 868.95 MHz meter channel",
+        )
+    },
+    Signature {
+        symbol_rate_hz: Some(range(30_000.0, 35_500.0)),
+        deviation_hz: Some(range(30_000.0, 90_000.0)),
+        frequencies: WMBUS_S,
+        ..signature(
+            "Wireless M-Bus S",
+            Some("wmbus"),
+            &[Modulation::Fsk2],
+            range(80_000.0, 250_000.0),
+            "32.768 kchip/s Manchester 2-FSK on the 868.3 MHz meter channel",
         )
     },
     Signature {

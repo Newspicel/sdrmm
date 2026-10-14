@@ -1,4 +1,3 @@
-mod crypto;
 pub(crate) mod lorawan;
 pub(crate) mod meshcore;
 pub(crate) mod meshtastic;

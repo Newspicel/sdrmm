@@ -77,6 +77,7 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 | `wifi_occupancy` | Wi-Fi load | Wi-Fi load | log |
 | `ism_survey` | 2.4 GHz | 2.4 GHz | log |
 | `ism` | ISM sensor | Sensors | log, station |
+| `wmbus` | wM-Bus | Meters | log, station |
 | `noise_figure` | Noise figure | Noise figure | log |
 | `per` | PER | PER | log |
 | `sid` | SID | SID | log |
@@ -355,7 +356,7 @@ Every decoded message in a table
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 57 kinds | many, keeps history, clips |
+| `events` | in | Events | 58 kinds | many, keeps history, clips |
 
 ### Event output
 
@@ -363,7 +364,7 @@ Sends events out, saves call audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 57 kinds | many |
+| `events` | in | Events | 58 kinds | many |
 
 ### Video
 
@@ -422,7 +423,7 @@ Saves logged rows as CSV or JSON
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 57 kinds | many, keeps history |
+| `events` | in | Events | 58 kinds | many, keeps history |
 
 ### Rotator
 

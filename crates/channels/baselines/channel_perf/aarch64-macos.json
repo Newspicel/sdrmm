@@ -399,6 +399,13 @@
     "host": "aarch64-macos"
   },
   {
+    "bench": "wmbus",
+    "msamples_per_s": 20.24,
+    "realtime_factor": 50.6,
+    "config": "noise including deferred decode slots, 400000 Hz, 2048 sample blocks",
+    "host": "aarch64-macos"
+  },
+  {
     "bench": "wifi_occupancy",
     "msamples_per_s": 588.52,
     "realtime_factor": 29.426,

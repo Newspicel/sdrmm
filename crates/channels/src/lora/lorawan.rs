@@ -8,7 +8,7 @@ mod tests;
 
 use sdrmm_wire::{LoraKey, LorawanFrame, LorawanMessageType};
 
-use super::crypto::{self, Aes};
+use crate::crypto::{self, Aes};
 use crate::datalink::hex;
 
 #[cfg(any(test, feature = "synth"))]

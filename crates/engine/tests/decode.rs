@@ -20,8 +20,8 @@ use sdrmm_wire::{
     PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
     RemoteIdTransport, RttyParams, SarsatParams, SelcallParams, SelcallSystem, ServerEvent,
     SidParams, SondeType, StanagModem, StanagParams, SymbolPlane, TetraParams, TetrapolParams,
-    TetrapolPayload, UaType, UasIdType, VorParams, WefaxIoc, WefaxLpm, WefaxParams, WfmParams,
-    WsjtParams, WsprParams, YsfParams,
+    TetrapolPayload, UaType, UasIdType, VorParams, WMBUS_T_C_HZ, WefaxIoc, WefaxLpm, WefaxParams,
+    WfmParams, WmbusFormat, WmbusMode, WmbusParams, WsjtParams, WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -2409,6 +2409,40 @@ async fn the_2_4_ghz_survey_reports_each_second() {
     ] {
         assert!(kinds.contains(&kind), "{kind:?} missing from {report:?}");
     }
+}
+
+#[tokio::test]
+async fn a_wmbus_meter_beside_the_centre_survives_the_ddc() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let rate = 1_200_000.0;
+    let center_hz = 868_625_000.0;
+    let mut iq = synth::wmbus::telegram(
+        WmbusMode::T,
+        WmbusFormat::A,
+        &synth::wmbus::WATER_METER,
+        rate,
+    );
+    synth::shift(&mut iq, WMBUS_T_C_HZ - center_hz, rate);
+    synth::add_noise(&mut iq, 5, 0.05);
+    let device = plant_at(dir.path(), "wmbus", iq, rate, center_hz);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: WMBUS_T_C_HZ,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Wmbus(WmbusParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Wmbus(_)),
+    )
+    .await;
+    let DecoderEvent::Wmbus(message) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(message.station(), "SEN 33225544");
+    assert_eq!(message.summary(), "Water SEN 33225544 · Volume 123.529 m³");
 }
 
 #[tokio::test]

@@ -1,6 +1,6 @@
 use super::data::{Link, crypt, data_mic};
 use super::mic;
-use crate::lora::crypto::Aes;
+use crate::crypto::Aes;
 
 const UNCONFIRMED_UP: u8 = 0x40;
 const CONFIRMED_UP: u8 = 0x80;

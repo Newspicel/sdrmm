@@ -1,6 +1,6 @@
 use sdrmm_wire::{MeshcoreContent, MeshcoreNodeType};
 
-use super::super::crypto;
+use crate::crypto;
 use crate::datalink::hex;
 
 pub(super) const PUBLIC_KEY_LEN: usize = 32;

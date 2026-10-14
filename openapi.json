@@ -12310,6 +12310,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/WmbusParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "wmbus"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/NoiseFigureParams"
               },
               "type": {
@@ -15324,6 +15342,24 @@
                 "type": "string",
                 "enum": [
                   "ism"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/WmbusMessage"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "wmbus"
                 ]
               }
             }
@@ -18708,6 +18744,7 @@
           "wifi_occupancy",
           "ism_survey",
           "ism",
+          "wmbus",
           "noise_figure",
           "per",
           "sid",
@@ -21729,6 +21766,7 @@
             "wifi_occupancy",
             "ism_survey",
             "ism",
+            "wmbus",
             "noise_figure",
             "per",
             "sid",
@@ -38177,6 +38215,227 @@
             "$ref": "#/components/schemas/PatchGraph"
           }
         }
+      },
+      "WmbusFormat": {
+        "type": "string",
+        "enum": [
+          "a",
+          "b"
+        ]
+      },
+      "WmbusFunction": {
+        "type": "string",
+        "enum": [
+          "instantaneous",
+          "maximum",
+          "minimum",
+          "error"
+        ]
+      },
+      "WmbusKey": {
+        "type": "object",
+        "required": [
+          "meter",
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "meter": {
+            "type": "string"
+          }
+        }
+      },
+      "WmbusMessage": {
+        "type": "object",
+        "required": [
+          "mode",
+          "format",
+          "control",
+          "manufacturer",
+          "id",
+          "version",
+          "device_type",
+          "frame",
+          "snr_db"
+        ],
+        "properties": {
+          "access": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "ci": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "control": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "corrected": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "device_type": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "format": {
+            "$ref": "#/components/schemas/WmbusFormat"
+          },
+          "frame": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/WmbusMode"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WmbusRecord"
+            }
+          },
+          "security": {
+            "$ref": "#/components/schemas/WmbusSecurity"
+          },
+          "snr_db": {
+            "type": "number",
+            "format": "float"
+          },
+          "status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "via": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WmbusMode": {
+        "type": "string",
+        "enum": [
+          "s",
+          "t",
+          "c"
+        ]
+      },
+      "WmbusParams": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WmbusKey"
+            }
+          }
+        }
+      },
+      "WmbusQuantity": {
+        "type": "string",
+        "enum": [
+          "energy",
+          "volume",
+          "mass",
+          "on_time",
+          "operating_time",
+          "power",
+          "volume_flow",
+          "mass_flow",
+          "flow_temperature",
+          "return_temperature",
+          "temperature_difference",
+          "external_temperature",
+          "pressure",
+          "date",
+          "date_time",
+          "heat_cost_units",
+          "averaging_duration",
+          "actuality_duration",
+          "fabrication_number",
+          "identification",
+          "humidity",
+          "error_flags",
+          "dimensionless",
+          "battery_days",
+          "other"
+        ]
+      },
+      "WmbusRecord": {
+        "type": "object",
+        "required": [
+          "quantity"
+        ],
+        "properties": {
+          "function": {
+            "$ref": "#/components/schemas/WmbusFunction"
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/WmbusQuantity"
+          },
+          "storage": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "tariff": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "WmbusSecurity": {
+        "type": "string",
+        "enum": [
+          "none",
+          "decrypted",
+          "no_key",
+          "wrong_key",
+          "unsupported"
+        ]
       },
       "WorkspaceArray": {
         "type": "object",

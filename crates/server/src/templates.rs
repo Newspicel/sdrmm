@@ -10,8 +10,8 @@ use sdrmm_wire::{
     NoiseFigureParams, PatchEdge, PatchGraph, PatchNode, PerParams, PocsagParams, PortRef,
     Position, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
     RttyParams, SarsatParams, SidParams, Squelch, SsbParams, SstvParams, StanagParams,
-    TemplateInfo, TetraParams, VIDEO_PORT, WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams,
-    WsprParams, YsfParams,
+    TemplateInfo, TetraParams, VIDEO_PORT, WMBUS_T_C_HZ, WefaxParams, WfmParams,
+    WifiOccupancyParams, WmbusParams, WsjtParams, WsprParams, YsfParams,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -412,6 +412,20 @@ static TEMPLATES: &[Entry] = &[
         channels: &[Channel::at(
             433_920_000.0,
             || ChannelParams::Ism(IsmParams::default()),
+            LOG_READ,
+        )],
+    },
+    Entry {
+        id: "wmbus-868",
+        name: "868 MHz meters",
+        description: "Water, heat and energy meters.",
+        explainer: "Reads wireless M-Bus modes T and C. Add a meter's key to open \
+                    encrypted readings.",
+        center_hz: WMBUS_T_C_HZ,
+        sample_rate: 1_024_000.0,
+        channels: &[Channel::at(
+            WMBUS_T_C_HZ,
+            || ChannelParams::Wmbus(WmbusParams::default()),
             LOG_READ,
         )],
     },

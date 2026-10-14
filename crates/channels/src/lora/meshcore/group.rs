@@ -1,7 +1,7 @@
 use sdrmm_wire::MeshcoreContent;
 
-use super::super::crypto::{self, Aes};
 use super::keys::{Channel, Keys, LONG_SECRET_LEN};
+use crate::crypto::{self, Aes};
 use crate::datalink::hex;
 
 pub(super) const MAC_LEN: usize = 2;

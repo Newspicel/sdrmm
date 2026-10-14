@@ -279,6 +279,12 @@ Twenty bursts from `rtl_433_tests`, which states no license, trimmed to the shor
 still decodes. `ism/README.md` lists each source and the expected readings, which match rtl_433.
 `ism::tests` reads them directly.
 
+### Wireless M-Bus: `wmbus/`
+
+Seven bursts from `rtl_433_tests`, which states no license, and one off-air Techem frame recorded
+with an AntSDR. `wmbus/README.md` lists each source and the expected frame, which matches rtl_433.
+`wmbus::tests` reads them directly.
+
 ### Public receivers: `dsc_offair_8k`, `radio_clock_*_offair_2k`, `flex_p2000_offair_48k`
 
 Excerpts of `cargo xtask net-capture` recordings from public KiwiSDRs and a public SpyServer, made

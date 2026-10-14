@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 400000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "RTL-SDR",
+    "core:description": "BMT water meter, wM-Bus T1 mode 5"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868950000.0,
+      "core:datetime": "2026-10-13T23:40:16.751829Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/m-bus/03/g001_868.9M_1600k.cu8; source SHA-256 c416729702519105f5ef0f19f5b377e65982769dda14d5aee1be36e164399a4f; samples 28640..50880 at 1600000 Hz",
+      "core:sample_count": 5560,
+      "core:sample_start": 0
+    }
+  ]
+}

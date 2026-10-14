@@ -217,6 +217,10 @@ const FIXTURES: &[(EventKind, &str)] = &[
         r#"{"model":"Acurite-Tower","id":"1234","modulation":"ook","coding":"pwm","integrity":"crc","bits":56,"raw":"00","snr_db":15.0}"#,
     ),
     (
+        EventKind::Wmbus,
+        r#"{"mode":"t","format":"a","control":68,"manufacturer":"BMT","id":"18162333","version":19,"device_type":7,"frame":"4e44","snr_db":15.0}"#,
+    ),
+    (
         EventKind::NoiseFigure,
         r#"{"window_ms":1000,"level_dbfs":-60.0,"settled_s":2.0}"#,
     ),

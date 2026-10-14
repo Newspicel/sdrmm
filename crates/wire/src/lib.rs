@@ -56,6 +56,7 @@ pub mod timemachine;
 pub mod tools;
 pub mod units;
 pub mod weather;
+pub mod wmbus;
 pub mod workspace;
 pub mod workspace_state;
 pub mod ws;
@@ -359,6 +360,11 @@ pub use weather::{
     AprsWeather, AptImage, AptParams, AvhrrChannel, DEFAULT_SONDE_BURST_M, LrptImage, LrptMode,
     LrptParams, RadiosondeFrame, RadiosondeParams, SondeForecast, SondeType, WefaxIoc, WefaxLpm,
     WefaxParams, WefaxPicture,
+};
+pub use wmbus::{
+    MAX_WMBUS_KEYS, WMBUS_BANDWIDTH_HZ, WMBUS_S_HZ, WMBUS_SAMPLE_RATE_HZ, WMBUS_T_C_HZ,
+    WmbusFormat, WmbusFunction, WmbusKey, WmbusMessage, WmbusMode, WmbusParams, WmbusQuantity,
+    WmbusRecord, WmbusSecurity,
 };
 pub use workspace::{
     CreateWorkspaceRequest, DroppedNode, MAX_NAME_LEN, MAX_REGION_ID_LEN, NoticeWire,

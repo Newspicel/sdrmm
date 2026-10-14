@@ -328,6 +328,8 @@ decoder_events! {
         info("2.4 GHz", "2.4 GHz", Hue::Muted).caps(&[Log])),
     (Ism, "ism", crate::ism::IsmMessage,
         info("ISM sensor", "Sensors", Hue::Muted).caps(&[Log, Station]).sighting()),
+    (Wmbus, "wmbus", crate::wmbus::WmbusMessage,
+        info("wM-Bus", "Meters", Hue::Muted).caps(&[Log, Station]).sighting()),
     (NoiseFigure, "noise_figure", crate::measurement::NoiseFigureReport,
         info("Noise figure", "Noise figure", Hue::Muted).caps(&[Log])),
     (Per, "per", crate::measurement::PerReport, info("PER", "PER", Hue::Muted).caps(&[Log])),

@@ -10,7 +10,7 @@ mod tests;
 use sdrmm_wire::{LoraKey, MeshtasticEncryption, MeshtasticPacket};
 
 use self::content::Data;
-use super::crypto::{self, Aes};
+use crate::crypto::{self, Aes};
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use synth::{position, text};

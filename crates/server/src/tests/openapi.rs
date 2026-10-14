@@ -107,6 +107,8 @@ fn openapi_registers_paths_and_ws_schemas() {
         "WifiOccupancyParams",
         "IsmMessage",
         "IsmParams",
+        "WmbusMessage",
+        "WmbusParams",
         "IsmModulation",
         "IsmCoding",
         "IsmIntegrity",

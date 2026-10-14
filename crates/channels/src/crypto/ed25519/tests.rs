@@ -1,5 +1,5 @@
 use super::{keypair, sign, verify};
-use crate::lora::crypto::hex;
+use crate::crypto::hex;
 
 struct Vector {
     seed: &'static str,

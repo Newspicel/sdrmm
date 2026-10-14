@@ -18,7 +18,7 @@ covers the modes that need more than a frequency.
 | Pictures and video | [SSTV](#sstv) | ATV | |
 | Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
-| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
+| Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems), [Wireless M-Bus](#wireless-m-bus) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
 | Label | Means |
 |---|---|
@@ -105,6 +105,17 @@ is logged once.
 
 **Unknown** logs a code no decoder knows when the same row repeats, with its coding and pulse
 widths. A burst whose checksum fails in every decoder counts under **Rejected**.
+
+## Wireless M-Bus
+
+Reads water, heat, gas and electricity meters (EN 13757-4). One channel decodes modes T and C on
+868.95 MHz; tune 868.3 MHz for mode S, which is tested on generated IQ only. Each frame shows the meter's manufacturer, ID and type, and
+the radio it came through when a repeater forwards it.
+
+Most meters encrypt their readings. Add the meter ID and its AES key under **Keys** to open them;
+OMS security mode 5 and Kamstrup's ELL encryption are supported. Plain and decrypted frames list
+their records: volume, energy, power, flow, temperatures and dates. Only frames whose CRCs pass are
+logged; **Rejected** counts the ones that failed after a valid header.
 
 ## 406 MHz beacons
 

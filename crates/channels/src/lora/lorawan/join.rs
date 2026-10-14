@@ -1,7 +1,7 @@
 use sdrmm_wire::LorawanFrame;
 
 use super::{Keys, frame, le_u16, le_u24, mic, msb_first_hex, split_mic};
-use crate::lora::crypto::Aes;
+use crate::crypto::Aes;
 
 const JOIN_REQUEST_LEN: usize = 23;
 const JOIN_ACCEPT_LEN: usize = 17;
