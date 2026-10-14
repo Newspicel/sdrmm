@@ -136,7 +136,7 @@ fn am_and_fm() -> Vec<Complex<f32>> {
         .collect();
     synth::shift(&mut am, -250_000.0, RATE);
     for ((sample, fm), am) in iq.iter_mut().zip(fm).zip(am) {
-        *sample += fm + am;
+        *sample += (fm + am) * 0.4;
     }
     iq
 }
@@ -204,6 +204,7 @@ fn buffered_pager_decodes_the_first_message_and_retains_its_origin() {
         numeric: false,
     }];
     let mut iq = synth::pocsag::transmission(&pages, 1200, 4500.0, RATE);
+    synth::scale(&mut iq, 0.5);
     synth::shift(&mut iq, 300_000.0, RATE);
     synth::add_noise(&mut iq, 44, 0.002);
     let mut monitor = monitor();
@@ -228,6 +229,7 @@ fn a_disabled_protocol_is_neither_decoded_nor_reported() {
         numeric: false,
     }];
     let mut iq = synth::pocsag::transmission(&pages, 1200, 4500.0, RATE);
+    synth::scale(&mut iq, 0.5);
     synth::shift(&mut iq, 300_000.0, RATE);
     synth::add_noise(&mut iq, 44, 0.002);
     let settings = SpectrumMonitorNode {
@@ -255,6 +257,7 @@ fn a_disabled_protocol_is_neither_decoded_nor_reported() {
 fn unidentified_signals_can_be_hidden() {
     let bits = synth::dv::filler(720, 85);
     let mut iq = synth::fsk(&bits, 1200.0, 4500.0, RATE);
+    synth::scale(&mut iq, 0.5);
     synth::shift(&mut iq, 250_000.0, RATE);
     synth::add_noise(&mut iq, 86, 0.002);
     let settings = SpectrumMonitorNode {
@@ -279,6 +282,7 @@ fn unidentified_signals_can_be_hidden() {
 fn simplex_dmr_at_435_125_mhz_is_confirmed() {
     let call = synth::dv::dmr::Call::default();
     let mut iq = synth::dv::dmr::simplex_transmission(&call, RATE);
+    synth::scale(&mut iq, 0.5);
     synth::shift(&mut iq, 125_000.0, RATE);
     synth::add_noise(&mut iq, 84, 0.02);
     let mut monitor = SpectrumMonitor::new(RATE, 435_000_000.0, keeping()).unwrap();
@@ -309,6 +313,7 @@ fn simplex_dmr_at_435_125_mhz_is_confirmed() {
 fn unrecognized_fsk_does_not_create_nfm_audio() {
     let bits = synth::dv::filler(720, 85);
     let mut iq = synth::fsk(&bits, 1200.0, 4500.0, RATE);
+    synth::scale(&mut iq, 0.5);
     synth::shift(&mut iq, 250_000.0, RATE);
     synth::add_noise(&mut iq, 86, 0.002);
     let mut monitor = monitor();
@@ -414,7 +419,7 @@ fn more_than_thirty_two_signals_reports_capacity_loss() {
     for offset in (0..34).map(|i| -450_000.0 + i as f64 * 25_000.0) {
         for (i, sample) in iq.iter_mut().enumerate() {
             *sample += Complex::from_polar(
-                0.2,
+                0.02,
                 (std::f64::consts::TAU * offset * i as f64 / RATE).rem_euclid(std::f64::consts::TAU)
                     as f32,
             );
@@ -521,4 +526,65 @@ fn an_unconfirmed_track_closes_when_confidence_falls() {
             .any(|t| t.id == id && t.state == TransmissionState::Completed)
     );
     assert!(monitor.tracks.is_empty());
+}
+
+#[test]
+fn a_faint_lora_train_is_heard_as_chirps_and_decoded() {
+    let waveform = synth::lora::LoraWaveform::default();
+    let packets: Vec<Vec<u8>> = (0..4).map(|n| vec![0x40 + n; 48]).collect();
+    let mut iq = synth::lora::scene(&waveform, &packets, RATE);
+    synth::scale(&mut iq, 0.002);
+    synth::shift(&mut iq, -200_000.0, RATE);
+    let floor = noise(iq.len() as f64 / RATE, 90);
+    for (sample, noise) in iq.iter_mut().zip(floor) {
+        *sample += noise;
+    }
+    let mut monitor = SpectrumMonitor::new(RATE, 868_000_000.0, keeping()).unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    assert!(
+        output.iter().any(|out| matches!(&out.event,
+            DecoderEvent::Lora(frame) if frame.integrity == sdrmm_wire::LoraIntegrity::CrcOk
+                && frame.spreading_factor == 7)),
+        "{:?}",
+        transmissions(&output)
+    );
+    let heard = transmissions(&output);
+    assert!(
+        heard
+            .iter()
+            .any(|t| t.signal.modulation == Modulation::Chirp
+                && t.decoder.as_deref() == Some("lora")
+                && t.decoder_confirmed)
+    );
+}
+
+#[test]
+fn a_clipping_front_end_is_reported_instead_of_its_spurs() {
+    let mut iq = noise(0.3, 91);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        let tone = Complex::from_polar(
+            3.0,
+            (std::f64::consts::TAU * 120_000.0 * i as f64 / RATE).rem_euclid(std::f64::consts::TAU)
+                as f32,
+        );
+        let loud = *sample + tone;
+        *sample = Complex::new(loud.re.clamp(-1.0, 1.0), loud.im.clamp(-1.0, 1.0));
+    }
+    let mut monitor = monitor();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    let heard = transmissions(&output);
+    assert_eq!(
+        heard
+            .iter()
+            .filter(|t| t.error.as_deref().is_some_and(|e| e.contains("clipping")))
+            .count(),
+        1,
+        "{heard:?}"
+    );
+    assert!(
+        heard.iter().all(|t| t.state == TransmissionState::Problem),
+        "{heard:?}"
+    );
 }

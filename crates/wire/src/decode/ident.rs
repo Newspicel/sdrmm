@@ -17,6 +17,7 @@ pub enum Modulation {
     Psk2,
     Psk4,
     Ofdm,
+    Chirp,
     NoiseLike,
     Unknown,
 }
@@ -37,6 +38,7 @@ impl Modulation {
             Self::Psk2 => "BPSK",
             Self::Psk4 => "QPSK",
             Self::Ofdm => "OFDM",
+            Self::Chirp => "chirp",
             Self::NoiseLike => "noise-like",
             Self::Unknown => "unknown",
         }

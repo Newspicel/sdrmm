@@ -1,9 +1,8 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use num_complex::Complex;
+use sdrmm_dsp::clip::{clipped_and_peak, clipping};
 
-const FULL_SCALE: f32 = 0.995;
-const CLIPPING_FRACTION: u64 = 10_000;
 pub(crate) const SILENT_DB: f32 = -140.0;
 
 #[derive(Debug, Default)]
@@ -11,13 +10,6 @@ pub(crate) struct ClipMeter {
     clipped: AtomicU64,
     samples: AtomicU64,
     peak_bits: AtomicU32,
-}
-
-fn clipped_and_peak(samples: &[Complex<f32>]) -> (u64, f32) {
-    samples.iter().fold((0, 0.0), |(clipped, peak), sample| {
-        let rail = sample.re.abs().max(sample.im.abs());
-        (clipped + u64::from(rail >= FULL_SCALE), peak.max(rail))
-    })
 }
 
 impl ClipMeter {
@@ -43,7 +35,7 @@ impl ClipMeter {
     pub(crate) fn take_clipping(&self) -> bool {
         let clipped = self.clipped.swap(0, Ordering::Relaxed);
         let samples = self.samples.swap(0, Ordering::Relaxed);
-        clipped > 0 && clipped.saturating_mul(CLIPPING_FRACTION) >= samples
+        clipping(clipped, samples)
     }
 }
 

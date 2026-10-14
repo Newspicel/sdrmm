@@ -6485,7 +6485,7 @@ export interface components {
             name: string;
         };
         /** @enum {string} */
-        Modulation: "none" | "carrier" | "ook" | "am" | "ssb" | "fm" | "fsk2" | "fsk4" | "fsk8" | "psk2" | "psk4" | "ofdm" | "noise_like" | "unknown";
+        Modulation: "none" | "carrier" | "ook" | "am" | "ssb" | "fm" | "fsk2" | "fsk4" | "fsk8" | "psk2" | "psk4" | "ofdm" | "chirp" | "noise_like" | "unknown";
         MorseParams: {
             /** Format: double */
             bandwidth_hz?: number;

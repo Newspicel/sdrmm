@@ -5,7 +5,9 @@ use std::collections::VecDeque;
 
 use decoder::Decoder;
 use num_complex::Complex;
-use sdrmm_wire::{DecoderEvent, IdentSignal, SpectrumMonitorNode, Transmission, TransmissionState};
+use sdrmm_wire::{
+    DecoderEvent, IdentSignal, Modulation, SpectrumMonitorNode, Transmission, TransmissionState,
+};
 
 use crate::{ChannelError, ident};
 
@@ -14,6 +16,9 @@ const MAX_HISTORY_SAMPLES: usize = 8 * 1024 * 1024;
 const HANG_SECONDS: f64 = 0.3;
 const SEGMENT_SECONDS: f64 = 30.0;
 const IDENTIFY_SECONDS: f64 = 0.6;
+const REJECT_SECONDS: f64 = 1.0;
+const RETRY_GAIN_DB: f32 = 6.0;
+const MAX_REJECTED: usize = 64;
 
 pub struct MonitorOutput {
     pub transmission: u64,
@@ -36,6 +41,17 @@ struct Track {
     error: Option<String>,
 }
 
+struct Rejected {
+    frequency_hz: f64,
+    bandwidth_hz: f64,
+    snr_db: f32,
+    until: u64,
+}
+
+fn same_signal(frequency_hz: f64, bandwidth_hz: f64, band_hz: f64, band_width_hz: f64) -> bool {
+    (frequency_hz - band_hz).abs() < ((bandwidth_hz + band_width_hz) * 0.4).max(1500.0)
+}
+
 pub struct SpectrumMonitor {
     settings: SpectrumMonitorNode,
     rate: f64,
@@ -47,7 +63,9 @@ pub struct SpectrumMonitor {
     history_capacity: usize,
     detector: detect::Detector,
     tracks: Vec<Track>,
+    rejected: Vec<Rejected>,
     overloaded: bool,
+    clipping: bool,
 }
 
 impl SpectrumMonitor {
@@ -78,7 +96,9 @@ impl SpectrumMonitor {
             history_capacity,
             detector: detect::Detector::new(rate),
             tracks: Vec::new(),
+            rejected: Vec::with_capacity(MAX_REJECTED),
             overloaded: false,
+            clipping: false,
         })
     }
 
@@ -116,15 +136,22 @@ impl SpectrumMonitor {
 
     fn survey(&mut self, end: u64, output: &mut Vec<MonitorOutput>) {
         let bands = self.detector.measure(&self.window);
+        let clipping = sdrmm_dsp::clip::clips(&self.window);
+        self.rejected.retain(|rejected| rejected.until > end);
         let mut overflow = false;
-        for band in bands {
+        let clear = bands.clear.into_iter().map(|band| (band, false));
+        for (band, faint) in clear.chain(bands.faint.into_iter().map(|band| (band, true))) {
             let frequency = self.center + band.center_hz;
             if !self.settings.covers(frequency) {
                 continue;
             }
             if let Some(track) = self.tracks.iter_mut().find(|track| {
-                (track.signal.frequency_hz - frequency).abs()
-                    < ((track.signal.bandwidth_hz + band.bandwidth_hz) * 0.4).max(1500.0)
+                same_signal(
+                    track.signal.frequency_hz,
+                    track.signal.bandwidth_hz,
+                    frequency,
+                    band.bandwidth_hz,
+                )
             }) {
                 track.last_seen = end;
                 track.signal.snr_db = band.snr_db;
@@ -143,8 +170,19 @@ impl SpectrumMonitor {
                 }
                 continue;
             }
-            let signal = ident::identify(&self.window, self.rate, &band, self.center);
-            if signal.confidence < self.settings.min_confidence || !self.wanted(&signal) {
+            if clipping || self.recently_rejected(frequency, &band) {
+                continue;
+            }
+            let signal = if faint {
+                self.identify_retained(&band)
+            } else {
+                ident::identify(&self.window, self.rate, &band, self.center)
+            };
+            if signal.confidence < self.settings.min_confidence
+                || !self.wanted(&signal)
+                || faint && signal.modulation != Modulation::Chirp
+            {
+                self.reject(frequency, &band, end);
                 continue;
             }
             if self.tracks.len() >= MAX_TRACKS {
@@ -171,6 +209,13 @@ impl SpectrumMonitor {
             feed(&mut track, buffered, output);
             self.tracks.push(track);
         }
+        if clipping && !self.clipping {
+            output.push(self.problem(
+                "front end clipping; new signals not identified until it stops",
+                end,
+            ));
+        }
+        self.clipping = clipping;
         if overflow && !self.overloaded {
             output.push(self.problem(
                 "32 simultaneous signals reached; additional signals skipped",
@@ -212,11 +257,7 @@ impl SpectrumMonitor {
             && end.saturating_sub(track.identified_at) as f64 >= self.rate * 0.2
         {
             track.identified_at = end;
-            let history = self.history.make_contiguous();
-            let start = history
-                .len()
-                .saturating_sub((self.rate * IDENTIFY_SECONDS) as usize);
-            let signal = ident::identify(&history[start..], self.rate, &track.band, self.center);
+            let signal = self.identify_retained(&track.band);
             if signal.confidence < self.settings.min_confidence {
                 return false;
             }
@@ -273,6 +314,39 @@ impl SpectrumMonitor {
             }
         }
         true
+    }
+
+    fn identify_retained(&mut self, band: &ident::detect::Band) -> IdentSignal {
+        let (rate, center) = (self.rate, self.center);
+        let history = self.history.make_contiguous();
+        let start = history
+            .len()
+            .saturating_sub((rate * IDENTIFY_SECONDS) as usize);
+        ident::identify(&history[start..], rate, band, center)
+    }
+
+    fn recently_rejected(&self, frequency_hz: f64, band: &ident::detect::Band) -> bool {
+        self.rejected.iter().any(|rejected| {
+            band.snr_db < rejected.snr_db + RETRY_GAIN_DB
+                && same_signal(
+                    rejected.frequency_hz,
+                    rejected.bandwidth_hz,
+                    frequency_hz,
+                    band.bandwidth_hz,
+                )
+        })
+    }
+
+    fn reject(&mut self, frequency_hz: f64, band: &ident::detect::Band, end: u64) {
+        if self.rejected.len() == MAX_REJECTED {
+            self.rejected.remove(0);
+        }
+        self.rejected.push(Rejected {
+            frequency_hz,
+            bandwidth_hz: band.bandwidth_hz,
+            snr_db: band.snr_db,
+            until: end + (self.rate * REJECT_SECONDS) as u64,
+        });
     }
 
     fn wanted(&self, signal: &IdentSignal) -> bool {

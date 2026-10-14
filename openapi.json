@@ -24084,6 +24084,7 @@
           "psk2",
           "psk4",
           "ofdm",
+          "chirp",
           "noise_like",
           "unknown"
         ]

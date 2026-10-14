@@ -20,6 +20,11 @@ const FLOOR_QUANTILE: f32 = 0.1;
 /// How far either side of the LO artifact its main lobe reaches, in bins.
 const ARTIFACT_BINS: usize = 2;
 
+const FAINT_BLOCKS_PER_BAND: f64 = 8.0;
+const FAINT_REACH_BANDS: f64 = 12.0;
+const FAINT_FLOOR_QUANTILE: f32 = 0.25;
+const MAX_FAINT_BANDS: usize = 8;
+
 fn from_db(db: f32) -> f32 {
     (db * 0.332_192_8).exp2()
 }
@@ -68,6 +73,13 @@ pub(crate) struct Search {
     pub(crate) artifact_hz: Option<f64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Faint {
+    pub(crate) half_span_hz: f64,
+    pub(crate) min_bandwidth_hz: f64,
+    pub(crate) threshold_db: f32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Survey {
     pub(crate) floor_db: f32,
@@ -85,6 +97,9 @@ pub(crate) struct Detector {
     scratch: Vec<f32>,
     masked: Vec<bool>,
     covered: usize,
+    blocks: Vec<f32>,
+    floors: Vec<f32>,
+    measured: bool,
 }
 
 struct Slice {
@@ -112,6 +127,9 @@ impl Detector {
             scratch: vec![0.0; size],
             masked: vec![false; size],
             covered: 0,
+            blocks: Vec::new(),
+            floors: Vec::new(),
+            measured: false,
         }
     }
 
@@ -128,7 +146,8 @@ impl Detector {
             peak_db: -200.0,
             bands: Vec::new(),
         };
-        if iq.len() < self.size || rate <= 0.0 {
+        self.measured = iq.len() >= self.size && rate > 0.0;
+        if !self.measured {
             return quiet;
         }
         self.accumulate(iq);
@@ -175,6 +194,84 @@ impl Detector {
             survey.bands.push(self.describe(&slice, lo, hi, peak));
         }
         survey
+    }
+
+    pub(crate) fn faint(&mut self, rate: f64, search: &Faint) -> Vec<Band> {
+        if !self.measured {
+            return Vec::new();
+        }
+        let bin_hz = rate / self.size as f64;
+        let center = self.size / 2;
+        let half_bins = ((search.half_span_hz / bin_hz).floor() as usize).clamp(1, center);
+        let lo = center - half_bins;
+        let hi = (center + half_bins).min(self.size - 1);
+        let block =
+            ((search.min_bandwidth_hz / FAINT_BLOCKS_PER_BAND / bin_hz).round() as usize).max(1);
+        let reach = (FAINT_BLOCKS_PER_BAND * FAINT_REACH_BANDS) as usize;
+        self.block_powers(lo, hi, block);
+        self.local_floors(reach);
+        let rise = from_db(search.threshold_db);
+        let min_blocks = FAINT_BLOCKS_PER_BAND as usize;
+        let mut bands = Vec::new();
+        let mut index = 0;
+        while index < self.blocks.len() && bands.len() < MAX_FAINT_BANDS {
+            let above = |i: usize| self.blocks[i] >= self.floors[i] * rise;
+            if !above(index) {
+                index += 1;
+                continue;
+            }
+            let start = index;
+            let mut end = index;
+            while end + 1 < self.blocks.len()
+                && (above(end + 1) || end + 2 < self.blocks.len() && above(end + 2))
+            {
+                end += 1;
+            }
+            index = end + 1;
+            if end - start + 1 < min_blocks {
+                continue;
+            }
+            let (first, last) = (lo + start * block, (lo + (end + 1) * block - 1).min(hi));
+            if self.masked[first..=last].iter().any(|&masked| masked) {
+                continue;
+            }
+            let floor = self.floors[(start + end) / 2];
+            let peak = (first..=last)
+                .max_by(|&a, &b| self.smoothed[a].total_cmp(&self.smoothed[b]))
+                .unwrap_or(first);
+            let slice = Slice {
+                lo,
+                hi,
+                floor,
+                floor_db: 10.0 * floor.max(f32::MIN_POSITIVE).log10(),
+                bin_hz,
+                gap: block,
+            };
+            bands.push(self.describe(&slice, first, last, peak));
+        }
+        bands
+    }
+
+    fn block_powers(&mut self, lo: usize, hi: usize, block: usize) {
+        self.blocks.clear();
+        self.blocks.extend(
+            self.power[lo..=hi]
+                .chunks_exact(block)
+                .map(|bins| bins.iter().sum::<f32>() / block as f32),
+        );
+    }
+
+    fn local_floors(&mut self, reach: usize) {
+        self.floors.clear();
+        for i in 0..self.blocks.len() {
+            let window =
+                &self.blocks[i.saturating_sub(reach)..(i + reach + 1).min(self.blocks.len())];
+            self.scratch.clear();
+            self.scratch.extend_from_slice(window);
+            let index = ((self.scratch.len() - 1) as f32 * FAINT_FLOOR_QUANTILE) as usize;
+            let (_, floor, _) = self.scratch.select_nth_unstable_by(index, f32::total_cmp);
+            self.floors.push(*floor);
+        }
     }
 
     fn survey(&mut self, slice: &Slice, threshold_db: f32, first: usize, bands: &mut Vec<Band>) {
@@ -389,6 +486,66 @@ mod tests {
             dominated,
             artifact_hz,
         }
+    }
+
+    fn faint(detector: &mut Detector) -> Vec<Band> {
+        detector.faint(
+            RATE,
+            &Faint {
+                half_span_hz: RATE / 2.0,
+                min_bandwidth_hz: 20_000.0,
+                threshold_db: 3.0,
+            },
+        )
+    }
+
+    fn band_limited(center_hz: f64, width_hz: f64, len: usize, amp: f32) -> Vec<Complex<f32>> {
+        let mut spectrum = complex_noise(0x0b5e, amp, len);
+        sdrmm_dsp::fft::Transform::forward(len).process(&mut spectrum);
+        let bin_hz = RATE / len as f64;
+        for (bin, value) in spectrum.iter_mut().enumerate() {
+            let hz = if bin < len / 2 {
+                bin as f64
+            } else {
+                bin as f64 - len as f64
+            } * bin_hz;
+            if (hz - center_hz).abs() > width_hz / 2.0 {
+                *value = Complex::new(0.0, 0.0);
+            }
+        }
+        sdrmm_dsp::fft::Transform::inverse(len).process(&mut spectrum);
+        let scale = 1.0 / len as f32;
+        spectrum.iter().map(|value| value * scale).collect()
+    }
+
+    #[test]
+    fn a_faint_wide_band_is_found_against_its_local_floor() {
+        let len = 65_536;
+        let mut iq = complex_noise(0x2a2a, 0.01, len);
+        for (sample, band) in iq
+            .iter_mut()
+            .zip(band_limited(-40_000.0, 50_000.0, len, 0.014))
+        {
+            *sample += band;
+        }
+        let mut detector = Detector::new();
+        let clear = detector.measure(&iq, RATE, &search(RATE / 2.0, 3_000.0, false, None));
+        assert!(clear.bands.is_empty(), "{:?}", clear.bands);
+        let found = faint(&mut detector);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!((found[0].center_hz + 40_000.0).abs() < 3_000.0, "{found:?}");
+        assert!(
+            (found[0].bandwidth_hz - 50_000.0).abs() < 8_000.0,
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn bare_noise_has_no_faint_band() {
+        let mut detector = Detector::new();
+        let iq = complex_noise(0x77, 0.01, 65_536);
+        detector.measure(&iq, RATE, &search(RATE / 2.0, 3_000.0, false, None));
+        assert!(faint(&mut detector).is_empty());
     }
 
     #[test]

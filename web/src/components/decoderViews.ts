@@ -732,6 +732,7 @@ const MODULATION_LABELS: Record<Modulation, string> = {
   psk2: "BPSK",
   psk4: "QPSK",
   ofdm: "OFDM",
+  chirp: "chirp",
   noise_like: "noise-like",
   unknown: "unknown",
 };

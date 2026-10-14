@@ -733,6 +733,15 @@ const SIGNATURES: &[Signature] = &[
         )
     },
     Signature {
+        ..signature(
+            "LoRa",
+            Some("lora"),
+            &[Modulation::Chirp],
+            range(7_000.0, 550_000.0),
+            "chirps sweeping the whole channel",
+        )
+    },
+    Signature {
         burst_ms: Some(range(0.05, 0.15)),
         frequencies: ADSB,
         ..signature(

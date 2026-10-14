@@ -1,10 +1,18 @@
 use num_complex::Complex;
 
-use crate::ident::detect::{Band, Detector as SignalDetector, Search};
+use crate::ident::detect::{Band, Detector as SignalDetector, Faint, Search};
+
+const FAINT_MIN_BANDWIDTH_HZ: f64 = 20_000.0;
+const FAINT_THRESHOLD_DB: f32 = 3.0;
 
 pub(super) struct Detector {
     detector: SignalDetector,
     rate: f64,
+}
+
+pub(super) struct Bands {
+    pub(super) clear: Vec<Band>,
+    pub(super) faint: Vec<Band>,
 }
 
 impl Detector {
@@ -18,8 +26,9 @@ impl Detector {
         }
     }
 
-    pub(super) fn measure(&mut self, iq: &[Complex<f32>]) -> Vec<Band> {
-        self.detector
+    pub(super) fn measure(&mut self, iq: &[Complex<f32>]) -> Bands {
+        let clear = self
+            .detector
             .measure(
                 iq,
                 self.rate,
@@ -31,6 +40,15 @@ impl Detector {
                     artifact_hz: None,
                 },
             )
-            .bands
+            .bands;
+        let faint = self.detector.faint(
+            self.rate,
+            &Faint {
+                half_span_hz: self.rate / 2.0,
+                min_bandwidth_hz: FAINT_MIN_BANDWIDTH_HZ.min(self.rate / 8.0),
+                threshold_db: FAINT_THRESHOLD_DB,
+            },
+        );
+        Bands { clear, faint }
     }
 }

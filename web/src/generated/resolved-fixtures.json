@@ -10587,6 +10587,7 @@
                   "hfdl",
                   "iridium",
                   "dect",
+                  "lora",
                   "ism"
                 ],
                 "type": "events"
@@ -10668,6 +10669,7 @@
                   "hfdl",
                   "iridium",
                   "dect",
+                  "lora",
                   "ism"
                 ],
                 "type": "events"

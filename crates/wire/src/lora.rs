@@ -57,6 +57,14 @@ impl LoraBandwidth {
             Self::Khz500 => 500_000.0,
         }
     }
+
+    #[must_use]
+    pub fn nearest(hz: f64) -> Self {
+        Self::ALL
+            .into_iter()
+            .min_by(|a, b| (a.hz() - hz).abs().total_cmp(&(b.hz() - hz).abs()))
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -86,6 +94,19 @@ impl LoraSpreadingFactor {
             Self::Sf10 => 10..=10,
             Self::Sf11 => 11..=11,
             Self::Sf12 => 12..=12,
+        }
+    }
+
+    #[must_use]
+    pub fn of_chips(chips: f64) -> Self {
+        match chips.log2().round() as i32 {
+            7 => Self::Sf7,
+            8 => Self::Sf8,
+            9 => Self::Sf9,
+            10 => Self::Sf10,
+            11 => Self::Sf11,
+            12 => Self::Sf12,
+            _ => Self::All,
         }
     }
 }
@@ -891,6 +912,29 @@ impl EventPayload for LoraFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_measured_width_snaps_to_the_nearest_lora_bandwidth() {
+        assert_eq!(LoraBandwidth::nearest(118_000.0), LoraBandwidth::Khz125);
+        assert_eq!(LoraBandwidth::nearest(240_000.0), LoraBandwidth::Khz250);
+        assert_eq!(LoraBandwidth::nearest(1.0), LoraBandwidth::Khz7_8);
+    }
+
+    #[test]
+    fn chips_per_symbol_name_the_spreading_factor() {
+        assert_eq!(
+            LoraSpreadingFactor::of_chips(128.0),
+            LoraSpreadingFactor::Sf7
+        );
+        assert_eq!(
+            LoraSpreadingFactor::of_chips(4_090.0),
+            LoraSpreadingFactor::Sf12
+        );
+        assert_eq!(
+            LoraSpreadingFactor::of_chips(32.0),
+            LoraSpreadingFactor::All
+        );
+    }
 
     #[test]
     fn params_default_from_empty_settings_and_roundtrip() {

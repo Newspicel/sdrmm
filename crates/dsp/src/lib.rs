@@ -4,6 +4,7 @@ pub mod array_sync;
 pub mod beamform;
 pub mod bits;
 pub mod channelizer;
+pub mod clip;
 pub mod compander;
 pub mod correlator;
 pub mod covariance;

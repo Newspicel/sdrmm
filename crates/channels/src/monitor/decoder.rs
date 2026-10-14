@@ -1,8 +1,8 @@
 use num_complex::Complex;
 use sdrmm_dsp::{Ddc, RealDecimator, design_lowpass};
 use sdrmm_wire::{
-    ChannelParams, ChannelSettings, DecoderEvent, IdentSignal, Modulation, Sideband,
-    SpectrumMonitorNode,
+    ChannelParams, ChannelSettings, DecoderEvent, IdentSignal, LoraBandwidth, LoraIntegrity,
+    LoraIq, LoraSpreadingFactor, Modulation, Sideband, SpectrumMonitorNode,
 };
 
 use crate::{
@@ -101,6 +101,15 @@ impl Decoder {
                 };
             }
             ChannelParams::Wfm(p) => p.stereo = false,
+            ChannelParams::Lora(p) => {
+                p.bandwidth = LoraBandwidth::nearest(signal.bandwidth_hz);
+                p.spreading_factor = signal
+                    .symbol_rate_hz
+                    .map_or(LoraSpreadingFactor::All, |rate| {
+                        LoraSpreadingFactor::of_chips(signal.bandwidth_hz / rate)
+                    });
+                p.iq = LoraIq::Both;
+            }
             _ => {}
         }
         let input_rate = crate::input_rate(&settings.params);
@@ -201,6 +210,9 @@ fn valid(event: &DecoderEvent, frequency_hz: f64) -> bool {
             crate::ident::in_allocation("ils", frequency_hz)
                 && reading.modulation_90 >= 0.05
                 && reading.modulation_150 >= 0.05
+        }
+        DecoderEvent::Lora(frame) => {
+            matches!(frame.integrity, LoraIntegrity::CrcOk | LoraIntegrity::NoCrc)
         }
         DecoderEvent::Tone(_) | DecoderEvent::Scrambler(_) => false,
         _ => true,

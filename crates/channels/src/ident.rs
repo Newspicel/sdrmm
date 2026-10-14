@@ -1,5 +1,6 @@
 mod agreement;
 mod catalog;
+mod chirp;
 mod classify;
 mod confirm;
 pub(crate) mod detect;
@@ -387,11 +388,15 @@ pub(crate) fn identify(
         return signal;
     };
     let waveform = features::Meter::new().measure(&zoom, band);
-    let verdict = classify::classify(band, &waveform);
+    let chirp = chirp::find(&zoom, band);
+    let verdict = chirp.map_or_else(|| classify::classify(band, &waveform), chirp::verdict);
     signal.modulation = verdict.modulation;
     signal.confidence = verdict.confidence;
     signal.sideband = verdict.sideband;
-    signal.symbol_rate_hz = waveform.symbol_rate_hz;
+    signal.symbol_rate_hz = chirp
+        .map(|chirp| chirp.symbol_rate_hz())
+        .or(waveform.symbol_rate_hz);
+    signal.bandwidth_hz = chirp.map_or(band.bandwidth_hz, |chirp| chirp.bandwidth_hz);
     signal.deviation_hz = shifts(verdict.modulation).then_some(waveform.deviation_hz);
     signal.burst_ms = waveform.burst_ms;
     signal.burst_period_ms = waveform.burst_period_ms;
