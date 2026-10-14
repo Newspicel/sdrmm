@@ -169,11 +169,11 @@ export function buildRows(
   live: readonly DecodedRecord[],
 ): LogRow[] {
   const stored = entries.map(storedRow);
-  const seen = new Set(stored.map(signature));
+  const seen = new Set(stored.map(rowSignature));
   const rows: LogRow[] = [];
   for (const record of live) {
     const row = liveRow(record);
-    const key = signature(row);
+    const key = rowSignature(row);
     if (!seen.has(key)) {
       seen.add(key);
       rows.push(row);
@@ -234,7 +234,7 @@ export function liveRow(record: DecodedRecord): LogRow {
       record.callsign ?? null,
     ),
   };
-  row.key = `live:${signature(row)}`;
+  row.key = `live:${rowSignature(row)}`;
   return row;
 }
 
@@ -260,7 +260,7 @@ function frameWord(n: number): string {
   return n === 1 ? "frame" : "frames";
 }
 
-function signature(row: LogRow): string {
+export function rowSignature(row: LogRow): string {
   return `${row.at}|${row.kind}|${row.source}|${row.station ?? ""}|${row.summary}`;
 }
 

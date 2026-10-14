@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
 import {
   clearDecoderLog,
@@ -33,6 +33,7 @@ import {
   logDownloads,
   readColumnWidths,
   resizeColumn,
+  rowSignature,
   toQuery,
   totalColumnWidth,
   type WireScope,
@@ -45,6 +46,7 @@ import { FaceStats, Stat } from "./face/Stats";
 import { formatMhz } from "./format";
 import { RowDetail } from "./LogRowDetail";
 import { groupOf, groupRows, VIEW_CHOICES, viewOf } from "./logGroups";
+import { useRowAnchor } from "./rowAnchor";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -70,6 +72,7 @@ export function DecoderLogPanel({
   const [cleared, setCleared] = useState<number | null>(null);
   const [widths, setWidths] = useState<ColumnWidths>(readColumnWidths);
   const commit = (): void => writeColumnWidths(widths);
+  const scroller = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (search === filter.q) {
@@ -154,11 +157,20 @@ export function DecoderLogPanel({
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto rounded-control border border-line">
+          <div
+            ref={scroller}
+            className="min-h-0 flex-1 overflow-auto rounded-control border border-line [overflow-anchor:none]"
+          >
             {group === null ? (
-              <LogTable rows={rows} widths={widths} setWidths={setWidths} commit={commit} />
+              <LogTable
+                rows={rows}
+                scroller={scroller}
+                widths={widths}
+                setWidths={setWidths}
+                commit={commit}
+              />
             ) : (
-              <DecoderLogGroups rows={groups} by={group} />
+              <DecoderLogGroups rows={groups} by={group} scroller={scroller} />
             )}
 
             {shown === 0 && (
@@ -210,16 +222,19 @@ export function DecoderLogPanel({
 
 function LogTable({
   rows,
+  scroller,
   widths,
   setWidths,
   commit,
 }: {
   rows: readonly LogRow[];
+  scroller: RefObject<HTMLDivElement | null>;
   widths: ColumnWidths;
   setWidths: (update: (widths: ColumnWidths) => ColumnWidths) => void;
   commit: () => void;
 }) {
   const [opened, setOpened] = useState<string | null>(null);
+  const anchor = useRowAnchor(scroller, opened);
   return (
     <table
       className="table-fixed border-collapse font-mono text-xs"
@@ -259,14 +274,19 @@ function LogTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <LogRows
-            key={row.key}
-            row={row}
-            open={opened === row.key}
-            onToggle={() => setOpened(opened === row.key ? null : row.key)}
-          />
-        ))}
+        {rows.map((row) => {
+          const id = rowSignature(row);
+          const open = opened === id;
+          return (
+            <LogRows
+              key={row.key}
+              row={row}
+              open={open}
+              anchor={open ? anchor : undefined}
+              onToggle={() => setOpened(open ? null : id)}
+            />
+          );
+        })}
       </tbody>
     </table>
   );
@@ -335,11 +355,22 @@ function ColumnHandle({
   );
 }
 
-function LogRows({ row, open, onToggle }: { row: LogRow; open: boolean; onToggle: () => void }) {
+function LogRows({
+  row,
+  open,
+  anchor,
+  onToggle,
+}: {
+  row: LogRow;
+  open: boolean;
+  anchor?: RefObject<HTMLTableRowElement | null>;
+  onToggle: () => void;
+}) {
   const kindLabel = useKindLabel();
   return (
     <>
       <tr
+        ref={anchor}
         className="cursor-pointer border-b border-line/50 hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent"
         aria-expanded={open}
         tabIndex={0}

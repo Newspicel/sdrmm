@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type RefObject, useState } from "react";
 import { useKindLabel } from "../lib/eventKinds";
 import type { LogGroupKey } from "../lib/types";
 import { Button } from "./BaseControls";
@@ -6,6 +6,7 @@ import { TABLE_CELL, TABLE_HEAD } from "./controls";
 import { formatClock } from "./decoderViews";
 import { RowDetail } from "./LogRowDetail";
 import { formatAirtime, type GroupRow, type GroupSort, hasAirtime, sortGroups } from "./logGroups";
+import { useRowAnchor } from "./rowAnchor";
 
 interface Column {
   key: string;
@@ -37,9 +38,18 @@ function columnsFor(by: LogGroupKey, airtime: boolean): Column[] {
   return columns;
 }
 
-export function DecoderLogGroups({ rows, by }: { rows: readonly GroupRow[]; by: LogGroupKey }) {
+export function DecoderLogGroups({
+  rows,
+  by,
+  scroller,
+}: {
+  rows: readonly GroupRow[];
+  by: LogGroupKey;
+  scroller: RefObject<HTMLDivElement | null>;
+}) {
   const [sort, setSort] = useState<GroupSort>("last");
   const [opened, setOpened] = useState<string | null>(null);
+  const anchor = useRowAnchor(scroller, opened);
   const airtime = hasAirtime(rows);
   const columns = columnsFor(by, airtime);
   return (
@@ -68,6 +78,7 @@ export function DecoderLogGroups({ rows, by }: { rows: readonly GroupRow[]; by: 
             airtime={airtime}
             span={columns.length}
             open={opened === row.key}
+            anchor={opened === row.key ? anchor : undefined}
             onToggle={() => setOpened(opened === row.key ? null : row.key)}
           />
         ))}
@@ -116,6 +127,7 @@ function GroupRows({
   airtime,
   span,
   open,
+  anchor,
   onToggle,
 }: {
   row: GroupRow;
@@ -123,12 +135,14 @@ function GroupRows({
   airtime: boolean;
   span: number;
   open: boolean;
+  anchor?: RefObject<HTMLTableRowElement | null>;
   onToggle: () => void;
 }) {
   const kindLabel = useKindLabel();
   return (
     <>
       <tr
+        ref={anchor}
         className="cursor-pointer border-b border-line/50 hover:bg-panel-2 focus-visible:outline focus-visible:outline-accent"
         aria-expanded={open}
         tabIndex={0}

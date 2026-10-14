@@ -19,6 +19,7 @@ import {
   matchesFilter,
   readColumnWidths,
   resizeColumn,
+  rowSignature,
   storedRow,
   toQuery,
   totalColumnWidth,
@@ -170,6 +171,11 @@ describe("buildRows", () => {
     const stored = entry({ at: "2026-08-09T12:00:01Z", view: PLANE_VIEW });
     expect(buildRows([stored], [record()])).toHaveLength(1);
     expect(buildRows([stored], [record()])[0]?.live).toBe(false);
+  });
+
+  it("gives a live frame and its stored copy the same signature", () => {
+    const stored = storedRow(entry({ at: "2026-08-09T12:00:01Z", view: PLANE_VIEW }));
+    expect(rowSignature(stored)).toBe(rowSignature(liveRow(record())));
   });
 
   it("keys rows uniquely even when two identical frames arrive at the same instant", () => {
