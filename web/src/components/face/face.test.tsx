@@ -121,19 +121,13 @@ describe("stats", () => {
     expect(bare).not.toContain("<b");
   });
 
-  it("keeps a healthy value but dims it", () => {
-    const quiet = renderToStaticMarkup(
-      <Stat label="Queue" title="Queue" quiet>
-        0 ms
-      </Stat>,
-    );
-    expect(quiet).toMatch(/<b class="[^"]*text-ink-faint/);
-    const loud = renderToStaticMarkup(
+  it("shows an untoned value in ink", () => {
+    const html = renderToStaticMarkup(
       <Stat label="Queue" title="Queue">
         180 ms
       </Stat>,
     );
-    expect(loud).toMatch(/<b class="[^"]*text-ink"/);
+    expect(html).toMatch(/<b class="[^"]*text-ink"/);
   });
 });
 

@@ -8,23 +8,23 @@ const TONE: Record<ChipTone, string> = {
 };
 
 export function FaceStats({ children }: { children: ReactNode }) {
-  return <span className="mr-auto flex min-w-0 flex-wrap items-center gap-3">{children}</span>;
+  return (
+    <span className="flex min-w-0 flex-[1_1_10rem] flex-wrap items-center gap-3">{children}</span>
+  );
 }
 
 export function Stat({
   label,
   title,
   tone,
-  quiet = false,
   children,
 }: {
   label: ReactNode;
   title: string;
   tone?: ChipTone;
-  quiet?: boolean;
   children?: ReactNode;
 }) {
-  const shade = tone !== undefined ? TONE[tone] : quiet ? "text-ink-faint" : "text-ink";
+  const shade = tone !== undefined ? TONE[tone] : "text-ink";
   return (
     <span
       className={`inline-flex items-center gap-1 font-mono text-2xs whitespace-nowrap ${

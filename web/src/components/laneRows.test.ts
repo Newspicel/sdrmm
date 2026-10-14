@@ -7,10 +7,13 @@ import {
   laneGains,
   laneInputName,
   laneLayout,
+  laneTitle,
   meterStage,
   pickedInputs,
   rxStages,
   spreadOf,
+  switching,
+  txLaneNames,
   txStages,
 } from "./laneRows";
 
@@ -143,5 +146,62 @@ describe("rx inputs", () => {
     const set = deviceSet(caps, { rx_inputs: [1] });
     expect(laneInputName(set, 0)).toBe("RX2");
     expect(laneInputName(deviceSet(capabilities()), 0)).toBeUndefined();
+  });
+});
+
+describe("txLaneNames", () => {
+  it("names one TX row on a single lane", () => {
+    expect(txLaneNames(capabilities({ gains: [tuner, tx], tx_streams: 1 }))).toEqual(["TX"]);
+  });
+
+  it("names a TX row per lane once lanes are set apart", () => {
+    const caps = capabilities({
+      gains: [tuner, tx],
+      rx_streams: 2,
+      tx_streams: 2,
+      per_stream: { gain: true },
+    });
+    expect(txLaneNames(caps)).toEqual(["TX1", "TX2"]);
+  });
+
+  it("numbers the TX row of a radio with picked inputs, so splitting only adds rows", () => {
+    const caps = capabilities({ gains: [tuner, tx], tx_streams: 1, rx_inputs: ["RX1", "RX2"] });
+    expect(txLaneNames(caps)).toEqual(["TX1"]);
+  });
+
+  it("keeps one TX row while lanes share their gain", () => {
+    const caps = capabilities({ gains: [tuner, tx], rx_streams: 2, tx_streams: 2 });
+    expect(txLaneNames(caps)).toEqual(["TX"]);
+  });
+});
+
+describe("laneTitle", () => {
+  const inputs = capabilities({ rx_inputs: ["RX1", "RX2"] });
+
+  it("names a lone lane by its input, as it will be named once split", () => {
+    expect(laneTitle(deviceSet(inputs, { rx_inputs: [0] }), 0)).toBe("RX1");
+    expect(laneTitle(deviceSet(inputs, { rx_inputs: [1] }), 0)).toBe("RX2");
+  });
+
+  it("keeps a lane's input name while the radio drops it", () => {
+    const split = capabilities({
+      rx_inputs: ["RX1", "RX2"],
+      rx_streams: 2,
+      per_stream: { gain: true },
+    });
+    expect(laneTitle(deviceSet(split, { rx_inputs: [0] }), 1)).toBe("RX2");
+  });
+
+  it("leaves a radio without inputs or lanes unnamed", () => {
+    expect(laneTitle(deviceSet(capabilities()), 0)).toBeUndefined();
+  });
+});
+
+describe("switching", () => {
+  const inputs = capabilities({ rx_inputs: ["RX1", "RX2"], rx_streams: 1 });
+
+  it("holds while the radio has not yet opened the lanes asked for", () => {
+    expect(switching(deviceSet(inputs, { rx_inputs: [0, 1] }))).toBe(true);
+    expect(switching(deviceSet(inputs, { rx_inputs: [0] }))).toBe(false);
   });
 });

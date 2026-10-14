@@ -13,7 +13,7 @@ import { toastError } from "../lib/toasts";
 import type { LogGroupKey } from "../lib/types";
 import { Input } from "./BaseControls";
 import { ConfirmButton } from "./ConfirmButton";
-import { FIELD, TABLE_CELL, TABLE_HEAD, TABLE_TEXT, tableRow } from "./controls";
+import { FIELD_SM, TABLE_CELL, TABLE_HEAD, TABLE_TEXT, tableRow } from "./controls";
 import { DecoderLogGroups } from "./DecoderLogGroups";
 import { DownloadMenu } from "./DownloadMenu";
 import {
@@ -135,7 +135,7 @@ export function DecoderLogPanel({
         <div className="flex min-h-0 flex-1 flex-col gap-2 p-2">
           <div className="flex items-center gap-2">
             <Input
-              className={`${FIELD} min-w-0 flex-1`}
+              className={`${FIELD_SM} min-w-0 flex-1`}
               placeholder="Search station or summary"
               value={search}
               onChange={(e) => setSearch(e.target.value)}

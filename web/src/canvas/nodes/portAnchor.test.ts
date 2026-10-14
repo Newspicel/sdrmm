@@ -1,34 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { type Measurable, offsetWithin } from "./portAnchor";
+import { anchorsOf, sameAnchors, visualCenter } from "./portAnchor";
 
-function box(
-  offsetTop: number,
-  offsetHeight: number,
-  parent: Measurable | null,
-  scrollTop = 0,
-): Measurable {
-  return { offsetTop, offsetHeight, scrollTop, offsetParent: parent, parentElement: parent };
-}
-
-describe("offsetWithin", () => {
-  it("centres a row that sits directly in the node", () => {
-    const node = box(0, 300, null);
-    const row = box(120, 28, node);
-    expect(offsetWithin(row, node)).toBe(134);
+describe("visualCenter", () => {
+  it("reads a row's place on screen back into the node's own pixels", () => {
+    expect(visualCenter({ top: 150, height: 10 }, { top: 50, height: 200 }, 0.5, 1)).toBe(209);
   });
+});
 
-  it("adds up the positioned ancestors between the row and the node", () => {
-    const node = box(0, 300, null);
-    const body = box(26, 200, node);
-    const lanes = box(60, 100, body);
-    const row = box(30, 28, lanes);
-    expect(offsetWithin(row, node)).toBe(26 + 60 + 30 + 14);
+describe("anchorsOf", () => {
+  it("places every tracked port on its row", () => {
+    const marks = new Map([
+      ["iq", 110],
+      ["iq2", 140],
+    ]);
+    expect(anchorsOf(marks, (top) => top)).toEqual({ iq: 110, iq2: 140 });
   });
+});
 
-  it("takes a scrolled body into account", () => {
-    const node = box(0, 300, null);
-    const body = box(26, 200, node, 40);
-    const row = box(100, 28, body);
-    expect(offsetWithin(row, node)).toBe(26 + 100 + 14 - 40);
+describe("sameAnchors", () => {
+  it("tells a moved or added port apart from a stable set", () => {
+    expect(sameAnchors({ iq: 110 }, { iq: 110 })).toBe(true);
+    expect(sameAnchors({ iq: 110 }, { iq: 120 })).toBe(false);
+    expect(sameAnchors({ iq: 110 }, { iq: 110, iq2: 140 })).toBe(false);
   });
 });

@@ -454,7 +454,10 @@ export function DeviceFace({ node }: { node: PatchNode }) {
   const merged = lanesMerged(set);
   const dials = tunerDials(set);
   const streams = rxStreamCount(set.capabilities);
-  const rowPerPort = laneLayout(set.capabilities).lanes === streams;
+  const rowPorts =
+    laneLayout(set.capabilities).lanes === streams
+      ? iqOutputs(workspace.resolved, node.id)
+      : undefined;
 
   return (
     <NodeShell
@@ -462,6 +465,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
       title={set.device.label}
       category="source"
       subtitle={<Heard set={set} />}
+      rowPorts={rowPorts}
     >
       <FaceBody>
         <RadioSettings
@@ -495,7 +499,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
                 ))
               : undefined
           }
-          ports={rowPerPort ? iqOutputs(workspace.resolved, node.id) : undefined}
+          ports={rowPorts}
         />
 
         {set.error != null && <Fault set={set} />}

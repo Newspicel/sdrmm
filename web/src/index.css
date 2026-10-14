@@ -265,6 +265,60 @@
   stroke-width: 2;
 }
 
+:root {
+  --glide: 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.reveal > * {
+  min-height: 0;
+}
+
+.reveal[data-enter] {
+  animation: reveal-in var(--glide) both;
+}
+
+.reveal[data-enter] > * {
+  animation: clip-while var(--glide);
+}
+
+.reveal[data-leaving] {
+  animation: reveal-out var(--glide) forwards;
+}
+
+.reveal[data-leaving] > * {
+  overflow: hidden;
+}
+
+@keyframes reveal-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+@keyframes reveal-out {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+@keyframes clip-while {
+  from,
+  to {
+    overflow: hidden;
+  }
+}
+
+.ease-height {
+  transition: height var(--glide);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

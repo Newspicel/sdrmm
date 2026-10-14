@@ -1,26 +1,19 @@
-export interface Measurable {
-  offsetTop: number;
-  offsetHeight: number;
-  scrollTop: number;
-  offsetParent: Element | Measurable | null;
-  parentElement: Element | Measurable | null;
+export interface Span {
+  top: number;
+  height: number;
 }
 
-function measurable(candidate: Element | Measurable | null): Measurable | null {
-  return candidate !== null && "offsetTop" in candidate ? candidate : null;
+export type Anchors = Readonly<Record<string, number>>;
+
+export function visualCenter(mark: Span, host: Span, scale: number, border: number): number {
+  return (mark.top + mark.height / 2 - host.top) / scale - border;
 }
 
-export function offsetWithin(element: Measurable, container: Measurable | Element): number {
-  let top = element.offsetTop + element.offsetHeight / 2;
-  let parent = measurable(element.offsetParent);
-  while (parent !== null && parent !== container) {
-    top += parent.offsetTop;
-    parent = measurable(parent.offsetParent);
-  }
-  let scroller = measurable(element.parentElement);
-  while (scroller !== null && scroller !== container) {
-    top -= scroller.scrollTop;
-    scroller = measurable(scroller.parentElement);
-  }
-  return top;
+export function anchorsOf<T>(marks: ReadonlyMap<string, T>, centre: (mark: T) => number): Anchors {
+  return Object.fromEntries([...marks].map(([port, mark]) => [port, centre(mark)]));
+}
+
+export function sameAnchors(a: Anchors, b: Anchors): boolean {
+  const ports = Object.keys(a);
+  return ports.length === Object.keys(b).length && ports.every((port) => a[port] === b[port]);
 }

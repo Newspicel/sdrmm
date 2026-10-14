@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { rxStreamCount, streamLabel } from "../canvas/graph";
 import { agcDelta, agcGainDb, agcModeDelta, laneAgc, radioAgc } from "../canvas/nodes/deviceNode";
 import { useLevelStore } from "../lib/levels";
@@ -31,18 +31,23 @@ import { isTunable, tuningRange } from "./dial";
 import { ExtraChips } from "./ExtraSettings";
 import { ChipField, Chips, ReadoutChip, SettingChip, ToggleChip } from "./face/Chips";
 import { GainMeter, MeterRow } from "./face/Meter";
+import { useFadeOnChange } from "./face/motion";
+import { RevealRows } from "./face/RevealRows";
 import { formatHz, formatSampleRate } from "./format";
 import {
   allLanesGain,
   inputOptions,
   laneGain,
+  laneGainDb,
   laneGains,
-  laneInputName,
   laneLayout,
+  laneTitle,
   meterStage,
   pickedInputs,
   rxStages,
   spreadOf,
+  switching,
+  txLaneNames,
   txStages,
 } from "./laneRows";
 import { NumberField } from "./NumberField";
@@ -447,66 +452,90 @@ function GainLanes({
     return null;
   }
   const lanes = Array.from({ length: layout.lanes }, (_, stream) => stream);
+  const rows: ReactElement[] = [];
+  if (layout.master && metered !== undefined) {
+    rows.push(
+      <MasterRow
+        key="all"
+        active={active}
+        stage={metered}
+        layout={layout}
+        peakDb={Math.max(...lanes.map((stream) => peaks?.[stream] ?? Number.NEGATIVE_INFINITY))}
+        clipping={lanes.some((stream) => clipping.has(stream))}
+        heldBy={heldBy.values().next().value}
+        port={layout.lanes === 1 ? ports?.[0] : undefined}
+        patch={patch}
+      />,
+    );
+  }
+  if (layout.lanes > 1 || !layout.master || laneLeads !== undefined) {
+    for (const stream of lanes) {
+      rows.push(
+        <LaneRows
+          key={`rx${stream}`}
+          active={active}
+          stream={stream}
+          stages={stages}
+          metered={metered}
+          peakDb={peaks?.[stream]}
+          clipping={clipping.has(stream)}
+          advised={advised.has(stream)}
+          heldBy={heldBy.get(stream)}
+          lead={laneLeads?.[stream]}
+          port={ports?.[stream]}
+          laneName={laneTitle(active, stream)}
+          patch={patch}
+        />,
+      );
+    }
+  }
+  for (const stage of transmit) {
+    rows.push(...txRows(active, stage, patch));
+  }
   return (
     <div className="flex flex-col gap-px">
-      {layout.inputs && (
-        <span title="Receivers streamed. One gets the whole link" className="pb-1">
-          <SegmentedToggles
-            label="RX inputs"
-            values={pickedInputs(active.settings)}
-            options={inputOptions(caps)}
-            onChange={(rx_inputs) => patch({ rx_inputs })}
-          />
-        </span>
-      )}
-      {layout.master && metered !== undefined && (
-        <MasterRow
-          active={active}
-          stage={metered}
-          layout={layout}
-          peakDb={Math.max(...lanes.map((stream) => peaks?.[stream] ?? Number.NEGATIVE_INFINITY))}
-          clipping={lanes.some((stream) => clipping.has(stream))}
-          heldBy={heldBy.values().next().value}
-          port={layout.lanes === 1 ? ports?.[0] : undefined}
-          patch={patch}
-        />
-      )}
-      {(layout.lanes > 1 || !layout.master || laneLeads !== undefined) &&
-        lanes.map((stream) => (
-          <LaneRows
-            key={stream}
-            active={active}
-            stream={stream}
-            stages={stages}
-            metered={metered}
-            peakDb={peaks?.[stream]}
-            clipping={clipping.has(stream)}
-            advised={advised.has(stream)}
-            heldBy={heldBy.get(stream)}
-            lead={laneLeads?.[stream]}
-            port={ports?.[stream]}
-            laneName={
-              layout.perLane
-                ? (laneInputName(active, stream) ?? streamLabel("iq", stream, layout.lanes))
-                : undefined
-            }
-            patch={patch}
-          />
-        ))}
-      {transmit.map((stage) => (
-        <StageRow
-          key={stage.name}
-          label="TX"
-          stage={stage}
-          value={
-            active.settings.gains?.find((gain) => gain.stage === stage.name)?.value_db ??
-            stage.range.min
-          }
-          onCommit={(value_db) => patch({ gains: [{ stage: stage.name, value_db }] })}
-        />
-      ))}
+      {layout.inputs && <InputToggles active={active} patch={patch} />}
+      <RevealRows className="flex flex-col gap-px">{rows}</RevealRows>
     </div>
   );
+}
+
+function InputToggles({ active, patch }: { active: DeviceSet; patch: Patch }) {
+  return (
+    <span
+      title="Receivers streamed. One gets the whole link"
+      className={`pb-1 ${switching(active) ? "animate-pulse" : ""}`}
+    >
+      <SegmentedToggles
+        label="RX inputs"
+        values={pickedInputs(active.settings)}
+        options={inputOptions(active.capabilities)}
+        onChange={(rx_inputs) => patch({ rx_inputs })}
+      />
+    </span>
+  );
+}
+
+function txRows(active: DeviceSet, stage: GainStage, patch: Patch): ReactElement[] {
+  const caps = active.capabilities;
+  const names = txLaneNames(caps);
+  const split = names.length > 1;
+  return names.map((name, lane) => (
+    <StageRow
+      key={`${stage.name}:${name}`}
+      label={name}
+      lane={name === "TX" ? undefined : name}
+      stage={stage}
+      value={laneGainDb(active.settings, caps, lane, stage)}
+      onCommit={(value_db) =>
+        patch(
+          split
+            ? laneGain(caps, lane, stage, value_db)
+            : { gains: [{ stage: stage.name, value_db }] },
+        )
+      }
+    />
+  ));
 }
 
 function LaneRows({
@@ -686,9 +715,11 @@ function StageRow({
   const unit = gainUnit(stage);
   const control = `${lane === undefined ? "" : `${lane} `}${name} gain`;
   const settings = stageSettings(stage);
+  const fresh = useFadeOnChange<HTMLSpanElement>(label);
   const lead =
     typeof label === "string" ? (
       <span
+        ref={fresh}
         className={`truncate ${lane !== undefined && label === lane ? "font-mono text-2xs text-hue-blue" : "legend"}`}
         title={
           heldBy === undefined

@@ -1,4 +1,4 @@
-import { rxStreamCount } from "../canvas/graph";
+import { rxStreamCount, streamLabel } from "../canvas/graph";
 import type { Capabilities, DeviceSet, DeviceSettings, GainStage } from "../lib/types";
 import { forStream } from "../lib/useDevicePatch";
 import { agcStageIndex, isSwitch } from "./capabilities";
@@ -24,6 +24,26 @@ export function rxStages(caps: Capabilities): GainStage[] {
 
 export function txStages(caps: Capabilities): GainStage[] {
   return caps.gains.filter((stage) => stage.kind === "tx");
+}
+
+export function txLaneNames(caps: Capabilities): string[] {
+  const layout = laneLayout(caps);
+  const lanes = layout.perLane ? Math.min(caps.tx_streams ?? 0, rxStreamCount(caps)) : 1;
+  return lanes > 1 || layout.inputs
+    ? Array.from({ length: Math.max(lanes, 1) }, (_, lane) => `TX${lane + 1}`)
+    : ["TX"];
+}
+
+export function laneTitle(set: DeviceSet, stream: number): string | undefined {
+  const layout = laneLayout(set.capabilities);
+  if (!layout.perLane && !layout.inputs) {
+    return undefined;
+  }
+  return (
+    laneInputName(set, stream) ??
+    set.capabilities.rx_inputs?.[stream] ??
+    streamLabel("iq", stream, layout.lanes)
+  );
 }
 
 export function meterStage(caps: Capabilities): GainStage | undefined {
@@ -95,4 +115,8 @@ export function pickedInputs(settings: DeviceSettings): number[] {
 export function laneInputName(set: DeviceSet, stream: number): string | undefined {
   const input = set.settings.rx_inputs?.[stream];
   return input === undefined ? undefined : set.capabilities.rx_inputs?.[input];
+}
+
+export function switching(set: DeviceSet): boolean {
+  return pickedInputs(set.settings).length !== rxStreamCount(set.capabilities);
 }

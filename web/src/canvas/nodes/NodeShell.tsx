@@ -1,4 +1,4 @@
-import { Handle, NodeResizer, Position, useUpdateNodeInternals } from "@xyflow/react";
+import { Handle, NodeResizer, Position, useStoreApi } from "@xyflow/react";
 import { CircleAlert, Maximize2, Minimize2, Pin, X } from "lucide-react";
 import {
   createContext,
@@ -8,9 +8,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
-  useState,
 } from "react";
 import { Button } from "../../components/BaseControls";
 import { ICON_BTN_SM } from "../../components/controls";
@@ -41,7 +39,8 @@ import {
 import { dropNodes } from "../remove";
 import { movesCanvas, wheelStaysOnFace } from "../wheel";
 import { NodeName } from "./NodeName";
-import { offsetWithin } from "./portAnchor";
+import type { Anchors } from "./portAnchor";
+import { type AnchorSlot, useContentHeight, useFaceLayout } from "./useFaceLayout";
 
 const Surface = createContext<"canvas" | "rack">("rack");
 
@@ -72,46 +71,14 @@ export function useFaceWheel(claim: WheelClaim): void {
   }, [hold, claim]);
 }
 
-type Anchors = Readonly<Record<string, number>>;
-
-interface AnchorSlot {
-  container: RefObject<HTMLDivElement | null>;
-  place: (port: string, top: number | null) => void;
-}
-
 const PortAnchors = createContext<AnchorSlot | null>(null);
-
-function placed(anchors: Anchors, port: string, top: number | null): Anchors {
-  if (top === null) {
-    const { [port]: _dropped, ...rest } = anchors;
-    return port in anchors ? rest : anchors;
-  }
-  return anchors[port] === top ? anchors : { ...anchors, [port]: top };
-}
 
 export function PortAnchor({ port }: { port: string }) {
   const slot = useContext(PortAnchors);
   const mark = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
-    const host = slot?.container.current ?? null;
     const element = mark.current;
-    if (slot === null || host === null || element === null) {
-      return;
-    }
-    const measure = () => slot.place(port, offsetWithin(element, host));
-    measure();
-    if (typeof ResizeObserver === "undefined") {
-      return () => slot.place(port, null);
-    }
-    const observer = new ResizeObserver(measure);
-    observer.observe(host);
-    if (element.parentElement !== null) {
-      observer.observe(element.parentElement);
-    }
-    return () => {
-      observer.disconnect();
-      slot.place(port, null);
-    };
+    return slot === null || element === null ? undefined : slot.track(port, element);
   }, [slot, port]);
   return <span ref={mark} aria-hidden className="w-0 shrink-0 self-stretch" />;
 }
@@ -170,6 +137,7 @@ export interface NodeShellProps {
   badge?: ReactNode;
   actions?: ReactNode;
   width?: number;
+  rowPorts?: readonly string[];
   children: ReactNode;
 }
 
@@ -181,6 +149,7 @@ export function NodeShell({
   badge,
   actions,
   width,
+  rowPorts,
   children,
 }: NodeShellProps) {
   const workspace = useWorkspaceContext();
@@ -191,20 +160,14 @@ export function NodeShell({
   const selected = workspace.selected === node.id;
   const active = surface === "rack" || selected;
   const minimum = nodeMinSize(node.kind, ports);
-  const portalContainer = useRef<HTMLDivElement>(null);
   const wheelClaim = useRef<WheelClaim | null>(null);
   const holdWheel = useCallback<WheelHold>((claim) => {
     wheelClaim.current = claim;
   }, []);
   const full = workspace.expanded === node.id;
-  const [anchors, setAnchors] = useState<Anchors>({});
-  const place = useCallback(
-    (port: string, top: number | null) => setAnchors((current) => placed(current, port, top)),
-    [],
-  );
-  const anchorSlot = useMemo<AnchorSlot>(() => ({ container: portalContainer, place }), [place]);
+  const { container: portalContainer, anchors, slot: anchorSlot } = useFaceLayout();
   useWheelRouting(portalContainer, wheelClaim);
-  useHandleRefresh(node.id, ports, anchors, surface === "canvas");
+  useHandleRefresh(node.id, ports, anchors, portalContainer, surface === "canvas");
 
   return (
     <div
@@ -307,6 +270,7 @@ export function NodeShell({
             label={portLabel(port.name, ports)}
             offset={anchors[port.name] ?? PORT_TOP_PX + PORT_STEP_PX * indexOnSide(ports, index)}
             labelled={!(port.name in anchors) && !echoesWire(workspace.graph, node.id, port)}
+            waiting={rowPorts?.includes(port.name) === true && !(port.name in anchors)}
           />
         ))}
       </PortalContainerProvider>
@@ -369,18 +333,23 @@ function useHandleRefresh(
   id: string,
   ports: readonly PortSpec[],
   anchors: Anchors,
+  container: RefObject<HTMLDivElement | null>,
   onCanvas: boolean,
 ): void {
-  const updateNodeInternals = useUpdateNodeInternals();
+  const store = useStoreApi();
   const handles = handleSignature(ports);
   const placement = Object.entries(anchors)
     .map(([port, top]) => `${port}@${Math.round(top)}`)
     .join(",");
-  useEffect(() => {
-    if (onCanvas && (handles !== "" || placement !== "")) {
-      updateNodeInternals(id);
+  useLayoutEffect(() => {
+    const nodeElement = container.current?.closest<HTMLDivElement>(".react-flow__node");
+    if (!onCanvas || nodeElement == null || (handles === "" && placement === "")) {
+      return;
     }
-  }, [id, handles, placement, onCanvas, updateNodeInternals]);
+    store.getState().updateNodeInternals(new Map([[id, { id, nodeElement, force: true }]]), {
+      triggerFitView: false,
+    });
+  }, [id, handles, placement, container, onCanvas, store]);
 }
 
 function useRemoveNode(node: PatchNode): () => void {
@@ -400,6 +369,7 @@ function PortHandle({
   label,
   offset,
   labelled,
+  waiting,
 }: {
   node: string;
   port: PortSpec;
@@ -407,6 +377,7 @@ function PortHandle({
   label: string;
   offset: number;
   labelled: boolean;
+  waiting: boolean;
 }) {
   const out = port.direction === "out";
   const refusal = useWiringStore((state) =>
@@ -434,11 +405,13 @@ function PortHandle({
         style={{ top: offset }}
         title={refusal ?? description}
         aria-label={`${out ? "output" : "input"} ${description}`}
-        className={`!size-3 !border-0 !bg-transparent ${color} ${idlePort(activity) ? "opacity-45" : ""}`}
+        className={`!size-3 !border-0 !bg-transparent transition-opacity duration-150 ${color} ${
+          waiting ? "pointer-events-none opacity-0" : idlePort(activity) ? "opacity-45" : ""
+        }`}
       >
         <PortGlyph type={port.port_type} />
       </Handle>
-      {labelled && (
+      {labelled && !waiting && (
         <span
           aria-hidden
           style={{ top: offset }}
@@ -483,9 +456,19 @@ export function FaceEmpty({ hint }: { hint?: string }) {
 }
 
 export function FaceFooter({ children }: { children: ReactNode }) {
+  const inner = useRef<HTMLDivElement>(null);
+  const height = useContentHeight(inner);
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 bg-ink/5 px-2.5 py-2 empty:hidden">
-      {children}
+    <div
+      className="ease-height shrink-0 overflow-hidden bg-ink/5"
+      style={height === null ? undefined : { height }}
+    >
+      <div
+        ref={inner}
+        className="flex flex-wrap items-center justify-end gap-2 px-2.5 py-2 empty:hidden"
+      >
+        {children}
+      </div>
     </div>
   );
 }

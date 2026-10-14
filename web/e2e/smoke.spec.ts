@@ -20,6 +20,14 @@ async function rowOffset(node: Locator, port: string): Promise<number> {
   return Math.abs(marker.y + marker.height / 2 - (label.y + label.height / 2));
 }
 
+async function verticalGap(a: Locator, b: Locator): Promise<number> {
+  const [first, second] = await Promise.all([a.boundingBox(), b.boundingBox()]);
+  if (first === null || second === null) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.abs(first.y + first.height / 2 - (second.y + second.height / 2));
+}
+
 async function cursor(locator: Locator): Promise<string> {
   return locator.evaluate((element) => getComputedStyle(element).cursor);
 }
@@ -1197,6 +1205,44 @@ test.describe("the workspace", () => {
 
     await page.request.post(`/api/workspaces/${list.active}/activate`);
     await page.request.delete(`/api/workspaces/${created.id}`);
+  });
+
+  test("sits a radio's iq port on its gain row as the face first opens", async ({ page }) => {
+    const list = await page.request.get("/api/workspaces").then((r) => r.json());
+    const created = await page.request
+      .post("/api/workspaces", {
+        data: {
+          name: "Port rows",
+          snapshot: {
+            version: 4,
+            graph: {
+              nodes: [
+                {
+                  id: "radio",
+                  kind: "device",
+                  position: { x: 0, y: 0 },
+                  data: { device: { backend: "virtual", key: "band" } },
+                },
+                { id: "view", kind: "scope", position: { x: 440, y: 0 } },
+              ],
+              edges: [{ from: { node: "radio", port: "iq" }, to: { node: "view", port: "iq" } }],
+            },
+          },
+        },
+      })
+      .then((r) => r.json());
+    await page.request.post(`/api/workspaces/${created.id}/activate`);
+    try {
+      await page.goto("/");
+      const radio = page.locator('.react-flow__node[data-id="radio"]');
+      const gain = radio.getByRole("slider", { name: /gain$/i }).first();
+      await expect(gain).toBeVisible();
+      const port = radio.locator('.react-flow__handle[data-handleid="iq"]');
+      await expect.poll(() => verticalGap(port, gain)).toBeLessThan(4);
+    } finally {
+      await page.request.post(`/api/workspaces/${list.active}/activate`);
+      await page.request.delete(`/api/workspaces/${created.id}`);
+    }
   });
 
   test("takes a name for the first workspace on an empty desk", async ({ page }) => {

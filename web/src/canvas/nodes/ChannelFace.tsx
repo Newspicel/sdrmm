@@ -215,20 +215,27 @@ function ChannelHealth({
 }) {
   const health = usePipelineHealth((state) => state.health);
   const summary = channelQueueSummary(health, deviceSet, channel);
-  if (summary === null && broadcast === undefined && rejected === 0 && skipped === 0) {
+  const dropped = summary?.dropped ?? 0;
+  if (
+    !queueLagging(summary) &&
+    dropped === 0 &&
+    broadcast === undefined &&
+    rejected === 0 &&
+    skipped === 0
+  ) {
     return null;
   }
   return (
     <FaceStats>
       {broadcast !== undefined && <BroadcastStats status={broadcast} />}
-      {summary !== null && (
-        <Stat label="Queue" title={summary.detail} quiet={!queueLagging(summary)}>
+      {queueLagging(summary) && (
+        <Stat label="Queue" title={summary.detail} tone="warn">
           {summary.oldestMs.toFixed(0)} ms
         </Stat>
       )}
-      {summary !== null && summary.dropped > 0 && (
+      {dropped > 0 && (
         <Stat label="Drops" title={DROPS_HINT} tone="warn">
-          {formatCount(summary.dropped)}
+          {formatCount(dropped)}
         </Stat>
       )}
       {rejected > 0 && (

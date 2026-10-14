@@ -58,10 +58,14 @@ export const ICON_BTN_SM_DANGER_ARMED =
   `${INTERACTIVE} size-5 justify-center border border-transparent bg-danger/10 text-danger ` +
   "hover:bg-danger/25 pointer-coarse:size-10";
 
-export const FIELD =
-  `${INTERACTIVE} h-7 min-w-0 border border-line bg-well px-2 font-mono text-xs ` +
+const FIELD_BASE =
+  `${INTERACTIVE} min-w-0 border border-line bg-well font-mono ` +
   "text-ink placeholder:font-sans placeholder:text-ink-faint hover:border-line-strong " +
   "focus-visible:border-accent-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/25";
+
+export const FIELD = `${FIELD_BASE} h-7 px-2 text-xs`;
+
+export const FIELD_SM = `${FIELD_BASE} h-5 px-1.5 text-2xs`;
 
 export const CONTROL_W = "w-full max-w-52";
 

@@ -10,8 +10,8 @@ export function SourceHealth({ set, children }: { set: DeviceSet; children?: Rea
   const overruns = set.overruns ?? 0;
   return (
     <FaceStats>
-      {summary !== null && (
-        <Stat label="Queue" title={summary.detail} quiet={!queueLagging(summary)}>
+      {queueLagging(summary) && (
+        <Stat label="Queue" title={summary.detail} tone="warn">
           {summary.oldestMs.toFixed(0)} ms
         </Stat>
       )}
