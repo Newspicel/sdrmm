@@ -188,6 +188,13 @@ fn a_techem_allocator_decodes_off_air() {
     assert!(message.snr_db > 6.0, "{}", message.snr_db);
 }
 
+pub(crate) fn fixture() -> crate::fixtures::Fixture {
+    crate::fixtures::Fixture::new(
+        ChannelParams::Wmbus(WmbusParams::default()),
+        synthetic(WmbusMode::T, WmbusFormat::A, &WATER_METER),
+    )
+}
+
 fn synthetic(mode: WmbusMode, format: WmbusFormat, payload: &[u8]) -> Vec<Complex<f32>> {
     let mut iq = synth::wmbus::telegram(mode, format, payload, RATE);
     iq.extend(synth::silence(TAIL));

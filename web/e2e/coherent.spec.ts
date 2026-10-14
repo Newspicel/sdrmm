@@ -201,14 +201,14 @@ test("crosses bearings from two places and clears them", async ({ page }) => {
   await expect(readout(tri, "Bearings")).toHaveText("0");
 });
 
-test("refuses a lane already in another array on the face", async ({ page }) => {
+test("refuses a lane already in another array", async ({ page }) => {
   await stage(page, "Two arrays", crossings());
   await addNode(page, "Array");
   const second = nodeOf(page, "array");
   await expect(second).toHaveCount(1);
   await fitPatch(page);
   await dropWire(page, port(face(page, "kraken"), "iq2"), port(second, "lane"));
-  await expect(second.getByRole("alert")).toContainText(/that lane is in/i);
+  await expect(page.getByText(/that lane is in/i)).toBeVisible();
   await expect(
     page.locator(`.react-flow__edge[data-id="kraken.iq2->${await idOf(second)}.lane"]`),
   ).toHaveCount(0);

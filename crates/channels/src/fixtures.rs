@@ -193,6 +193,7 @@ fn heard(type_id: &str) -> Option<Heard> {
         "vdl2" => crate::vdl2::fixture(),
         "hfdl" => crate::hfdl::fixture(),
         "iridium" => crate::iridium::fixture(),
+        "wmbus" => crate::wmbus::fixture(),
         _ => return None,
     };
     Some(fixture.heard())
@@ -888,4 +889,5 @@ emitted_kinds_are_declared! {
     vdl2_emits_what_it_declares => "vdl2",
     hfdl_emits_what_it_declares => "hfdl",
     iridium_emits_what_it_declares => "iridium",
+    wmbus_emits_what_it_declares => "wmbus",
 }

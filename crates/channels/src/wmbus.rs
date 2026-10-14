@@ -145,3 +145,5 @@ impl ChannelRx for WmbusChannel {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::fixture;

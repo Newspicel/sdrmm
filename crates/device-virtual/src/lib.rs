@@ -45,7 +45,7 @@ pub fn stream_marker_offset_hz(stream: u32) -> f64 {
     STREAM_MARKER_SPACING_HZ * (f64::from(stream) + 1.0)
 }
 
-const MOD_CARRIER_AMP: f64 = 0.20;
+const MOD_CARRIER_AMP: f64 = 0.10;
 
 const DEFAULT_CENTER_HZ: f64 = 100_000_000.0;
 const DEFAULT_SAMPLE_RATE_HZ: f64 = 2_048_000.0;
@@ -569,7 +569,7 @@ const DRIFT_STEP_SAMPLES: u64 = 64;
 const SERIES_LIMIT_RAD: f64 = 0.3;
 const LFO_HZ: f64 = 0.08;
 const DRIFT_SPAN: f64 = 0.35;
-const NOISE_AMP: f64 = 0.012;
+const NOISE_AMP: f64 = 0.006;
 
 #[derive(Clone, Copy)]
 struct Phasor {
@@ -727,11 +727,11 @@ impl Generator {
     fn new() -> Self {
         Self {
             tones: vec![
-                Tone::new(0.15, 0.30),
-                Tone::new(-0.30, 0.16),
-                Tone::new(0.05, 0.10),
+                Tone::new(0.15, 0.15),
+                Tone::new(-0.30, 0.08),
+                Tone::new(0.05, 0.05),
             ],
-            drift_amp: 0.20,
+            drift_amp: 0.10,
             drift: Phasor::ONE,
             drift_turn: Phasor::ONE,
             lfo: Phasor::ONE,
