@@ -10,6 +10,7 @@
       "!.astro/**",
       "!.wrangler/**",
       "!worker/worker-configuration.d.ts",
+      "!downloads/worker-configuration.d.ts",
       "!public/demo/**",
       "!legacy/**"
     ]

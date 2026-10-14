@@ -43,7 +43,7 @@ export const imprint: LegalEntry[] = [
 export const privacy: LegalEntry[] = [
   {
     title: "In short",
-    body: "This policy covers this site and the SDR-- iPhone app. Both process as little data as possible: no cookies, no tracking across sites, no advertising, no account. The sections below explain what still gets processed, and why.",
+    body: "This policy covers this site, downloads.sdrmm.com and the SDR-- iPhone app. All process as little data as possible: no cookies, no tracking across sites, no advertising, no account. The sections below explain what still gets processed, and why.",
   },
   {
     title: "Controller",
@@ -59,7 +59,11 @@ export const privacy: LegalEntry[] = [
   },
   {
     title: "Download page",
-    body: "To show the latest release and its file sizes, your browser asks the GitHub API (api.github.com). Downloads come straight from GitHub. GitHub receives your IP address and user agent. Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in offering the right file).",
+    body: "To show the latest release and its file sizes, your browser asks the GitHub API (api.github.com). GitHub receives your IP address and user agent. Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in offering the right file).",
+  },
+  {
+    title: "Download counts",
+    body: "Downloads, Linux package repository refreshes and desktop update checks are served from downloads.sdrmm.com. For each, Cloudflare Workers Analytics Engine stores the file path, release version, operating system, CPU architecture and country. No IP address or other identifier is stored, so a count cannot be linked to you. Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in knowing how many people use SDR--).",
   },
   {
     title: "Live demo map",

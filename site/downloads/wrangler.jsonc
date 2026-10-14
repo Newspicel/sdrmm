@@ -1,0 +1,10 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "sdrmm-downloads",
+  "main": "index.ts",
+  "compatibility_date": "2026-09-26",
+  "routes": [{ "pattern": "downloads.sdrmm.com/*", "zone_name": "sdrmm.com" }],
+  "workers_dev": false,
+  "analytics_engine_datasets": [{ "binding": "DOWNLOADS", "dataset": "sdrmm_downloads" }],
+  "observability": { "enabled": true }
+}
