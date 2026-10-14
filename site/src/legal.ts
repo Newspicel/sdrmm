@@ -63,7 +63,7 @@ export const privacy: LegalEntry[] = [
   },
   {
     title: "Download counts",
-    body: "Downloads, Linux package repository refreshes and desktop update checks are served from downloads.sdrmm.com. For each, Cloudflare Workers Analytics Engine stores the file path, release version, operating system, CPU architecture and country. No IP address or other identifier is stored, so a count cannot be linked to you. Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in knowing how many people use SDR--).",
+    body: "Downloads, Linux package repository refreshes and desktop update checks are served from downloads.sdrmm.com. For each, Cloudflare Workers Analytics Engine and Workers Logs store the file path, release version, operating system, CPU architecture and country. No IP address or other identifier is stored, so a count cannot be linked to you. Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in knowing how many people use SDR--).",
   },
   {
     title: "Live demo map",

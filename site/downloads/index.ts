@@ -31,20 +31,42 @@ function version(url: URL): string {
   );
 }
 
-export function point(request: Request, response: Response): AnalyticsEngineDataPoint {
+export interface Hit {
+  kind: Kind;
+  path: string;
+  file: string;
+  version: string;
+  target: string;
+  arch: string;
+  country: string;
+  status: number;
+}
+
+export function hit(request: Request, response: Response): Hit {
   const url = new URL(request.url);
-  const country = (request.cf?.country as string | undefined) ?? "";
-  const kindOf = kind(url.pathname);
   return {
-    indexes: [kindOf],
+    kind: kind(url.pathname),
+    path: url.pathname,
+    file: url.pathname.slice(url.pathname.lastIndexOf("/") + 1),
+    version: version(url),
+    target: url.searchParams.get("target") ?? "",
+    arch: url.searchParams.get("arch") ?? "",
+    country: (request.cf?.country as string | undefined) ?? "",
+    status: response.status,
+  };
+}
+
+export function point(entry: Hit): AnalyticsEngineDataPoint {
+  return {
+    indexes: [entry.kind],
     blobs: [
-      kindOf,
-      url.pathname,
-      version(url),
-      url.searchParams.get("target") ?? "",
-      url.searchParams.get("arch") ?? "",
-      country,
-      String(response.status),
+      entry.kind,
+      entry.path,
+      entry.version,
+      entry.target,
+      entry.arch,
+      entry.country,
+      String(entry.status),
     ],
     doubles: [1],
   };
@@ -56,7 +78,9 @@ export default {
     origin.search = "";
     const response = await fetch(new Request(origin, request));
     if (counted(request, response)) {
-      env.DOWNLOADS.writeDataPoint(point(request, response));
+      const entry = hit(request, response);
+      env.DOWNLOADS.writeDataPoint(point(entry));
+      console.log({ message: "hit", ...entry });
     }
     return response;
   },

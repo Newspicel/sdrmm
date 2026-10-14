@@ -6,5 +6,5 @@
   "routes": [{ "pattern": "downloads.sdrmm.com/*", "zone_name": "sdrmm.com" }],
   "workers_dev": false,
   "analytics_engine_datasets": [{ "binding": "DOWNLOADS", "dataset": "sdrmm_downloads" }],
-  "observability": { "enabled": false }
+  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": false } }
 }

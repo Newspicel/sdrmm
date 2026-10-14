@@ -52,6 +52,22 @@ describe("download counter", () => {
     expect(points[0]?.blobs?.slice(2, 5)).toEqual(["2.2.0", "darwin", "aarch64"]);
   });
 
+  it("logs each counted hit as structured fields", async () => {
+    const { env } = environment();
+    origin();
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await send("/releases/latest.json?version=2.2.0&target=linux&arch=x86_64", env);
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "hit",
+        kind: "update",
+        file: "latest.json",
+        target: "linux",
+      }),
+    );
+    log.mockRestore();
+  });
+
   it("takes the version of a download from its path", async () => {
     const { env, points } = environment();
     origin();
