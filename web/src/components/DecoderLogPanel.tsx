@@ -9,6 +9,7 @@ import {
 } from "../lib/api";
 import { useKindLabel } from "../lib/eventKinds";
 import { useSinkFeed } from "../lib/sinks";
+import { toastError } from "../lib/toasts";
 import type { LogGroupKey } from "../lib/types";
 import { Input } from "./BaseControls";
 import { ConfirmButton } from "./ConfirmButton";
@@ -66,7 +67,6 @@ export function DecoderLogPanel({
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<LogFilter>(DEFAULT_LOG_FILTER);
   const [search, setSearch] = useState(DEFAULT_LOG_FILTER.q);
-  const [error, setError] = useState<string | null>(null);
   const [cleared, setCleared] = useState<number | null>(null);
   const [widths, setWidths] = useState<ColumnWidths>(readColumnWidths);
   const commit = (): void => writeColumnWidths(widths);
@@ -107,10 +107,9 @@ export function DecoderLogPanel({
     onSuccess: (deleted) => {
       const live = rows.filter((row) => row.live).length;
       setClearedAt(newestMs(feed.records));
-      setError(null);
       setCleared(deleted + live);
     },
-    onError: (e) => setError(e.message),
+    onError: toastError,
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: DECODER_LOG_KEY });
     },
@@ -118,7 +117,6 @@ export function DecoderLogPanel({
 
   const patch = (next: Partial<LogFilter>): void => {
     setCleared(null);
-    setError(null);
     setFilter((f) => ({ ...f, ...next }));
   };
 
@@ -174,7 +172,6 @@ export function DecoderLogPanel({
             )}
           </div>
         </div>
-        {error !== null && <FaceFault message={`Rejected: ${error}`} />}
         {source.isError && <FaceFault message={`Log unavailable: ${source.error.message}`} />}
       </FaceBody>
       <FaceFooter>

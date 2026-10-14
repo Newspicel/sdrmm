@@ -238,6 +238,9 @@ export function NodeShell({
             <span className="shrink-0 font-mono text-2xs text-ink-faint">{badge}</span>
           )}
           <ProblemMark node={node.id} />
+          <span className="nodrag flex cursor-auto">
+            <FaceAlert node={node.id} />
+          </span>
           {subtitle !== undefined && (
             <span className="ml-auto truncate font-mono text-2xs text-ink-faint">{subtitle}</span>
           )}
@@ -283,8 +286,6 @@ export function NodeShell({
             </Button>
           </span>
         </header>
-
-        <FaceAlert node={node.id} />
 
         <div
           className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-control nodrag nopan"

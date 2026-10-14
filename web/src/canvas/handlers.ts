@@ -10,7 +10,6 @@ import {
 } from "@xyflow/react";
 import { useCallback } from "react";
 import { wiringVerdicts } from "../lib/api";
-import { useRefusalStore } from "../lib/refusals";
 import { pushToast, toastError } from "../lib/toasts";
 import type { PatchEdge, PatchGraph, PortRef } from "../lib/types";
 import { useWiringStore, wireRefusal } from "../lib/wiring";
@@ -142,7 +141,6 @@ export function useConnections(workspace: Workspace) {
       const reason = refusal(from, to);
       if (reason !== null) {
         pushToast(reason);
-        useRefusalStore.getState().flag(to.node, reason, "wire");
       }
     },
     [refusal],

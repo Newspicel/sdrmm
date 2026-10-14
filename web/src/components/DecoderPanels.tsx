@@ -13,6 +13,7 @@ import {
   wholeDb,
 } from "../lib/measurement";
 import type { EntityOf } from "../lib/sinks";
+import { toastError } from "../lib/toasts";
 import type { DecodedRecordOf, IdentSignal } from "../lib/types";
 import { useNow } from "../lib/useNow";
 import type { PanelProps, Panels } from "../sinks/panels";
@@ -59,7 +60,6 @@ import {
   targetRow,
   toneLabel,
 } from "./decoderViews";
-import { FaceFault } from "./face/Fault";
 import { Readout, Readouts } from "./face/Readouts";
 import { formatHz } from "./format";
 import { Icon } from "./Icon";
@@ -310,7 +310,6 @@ function TextView({
   const wpm = kind === "morse" ? latestWpm(records as readonly DecodedRecordOf<"morse">[]) : null;
   const paneRef = useRef<HTMLPreElement>(null);
   const stick = useRef(true);
-  const [copyError, setCopyError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     const el = paneRef.current;
@@ -321,14 +320,7 @@ function TextView({
   }, [text]);
 
   const copy = (): void => {
-    void (async () => {
-      try {
-        await copyText(text);
-        setCopyError(null);
-      } catch (e) {
-        setCopyError(e instanceof Error ? e.message : String(e));
-      }
-    })();
+    copyText(text).catch(toastError);
   };
 
   return (
@@ -344,8 +336,6 @@ function TextView({
           Copy all
         </Button>
       </div>
-
-      {copyError !== null && <FaceFault message={`Copy failed: ${copyError}`} />}
 
       <pre
         ref={paneRef}

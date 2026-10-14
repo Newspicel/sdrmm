@@ -4,7 +4,7 @@ import { describeError } from "./diagnostics";
 import { toastError } from "./toasts";
 import type { PatchApplyReport } from "./types";
 
-export type RefusalSource = "apply" | "wire" | "action";
+export type RefusalSource = "apply" | "action";
 
 export interface Refusal {
   reason: string;
@@ -22,8 +22,6 @@ export interface RefusalStore {
   forget: (nodes: readonly string[]) => void;
   reset: () => void;
 }
-
-export const WIRE_REFUSAL_MS = 6_000;
 
 export const MAX_REFUSALS = 8;
 
@@ -44,13 +42,8 @@ function kept(byNode: ByNode, keep: (refusal: Refusal, node: string) => boolean)
   return changed ? next : byNode;
 }
 
-export function wireExpired(refusal: Refusal, now: number): boolean {
-  return refusal.source === "wire" && now - refusal.at > WIRE_REFUSAL_MS;
-}
-
 function appended(byNode: ByNode, node: string, refusal: Refusal): ByNode {
-  const live = (byNode[node] ?? []).filter((held) => !wireExpired(held, refusal.at));
-  return { ...byNode, [node]: [...live, refusal].slice(-MAX_REFUSALS) };
+  return { ...byNode, [node]: [...(byNode[node] ?? []), refusal].slice(-MAX_REFUSALS) };
 }
 
 export const useRefusalStore = create<RefusalStore>((set) => ({
@@ -90,24 +83,14 @@ export const useRefusalStore = create<RefusalStore>((set) => ({
   reset: () => set({ byNode: {} }),
 }));
 
-export function visibleRefusal(list: readonly Refusal[] | undefined, now: number): Refusal | null {
+export function newestRefusal(list: readonly Refusal[] | undefined): Refusal | null {
   let newest: Refusal | null = null;
   for (const refusal of list ?? []) {
-    if (!wireExpired(refusal, now) && (newest === null || refusal.at >= newest.at)) {
+    if (newest === null || refusal.at >= newest.at) {
       newest = refusal;
     }
   }
   return newest;
-}
-
-export function wireShownUntil(list: readonly Refusal[] | undefined): number | null {
-  let until: number | null = null;
-  for (const refusal of list ?? []) {
-    if (refusal.source === "wire") {
-      until = Math.max(until ?? 0, refusal.at + WIRE_REFUSAL_MS);
-    }
-  }
-  return until;
 }
 
 export function messageOf(error: unknown): string {
