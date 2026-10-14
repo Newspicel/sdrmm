@@ -48,6 +48,9 @@ pub enum StreamError {
 
     #[error("stream config: {0}")]
     Config(&'static str),
+
+    #[error("usb stream did not pause: {0}")]
+    Pause(&'static str),
 }
 
 impl StreamError {
@@ -56,7 +59,7 @@ impl StreamError {
         match self {
             Self::Transfers { source, .. } => is_disconnect(source),
             Self::Endpoint(e) => e.kind() == nusb::ErrorKind::Disconnected,
-            Self::Spawn(_) | Self::Config(_) => false,
+            Self::Spawn(_) | Self::Config(_) | Self::Pause(_) => false,
         }
     }
 }

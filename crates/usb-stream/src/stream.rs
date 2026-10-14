@@ -14,6 +14,7 @@ use nusb::transfer::TransferError;
 use crate::{
     bulk::BulkIn,
     error::{Result, StreamError},
+    pause::{PauseState, Pauser},
     policy::{Action, TransferPolicy},
 };
 
@@ -55,6 +56,7 @@ struct Shared {
     processed: AtomicU64,
     dropped: AtomicU64,
     error: OnceLock<StreamError>,
+    pause: Arc<PauseState>,
 }
 
 impl Shared {
@@ -150,6 +152,11 @@ impl RxStream {
     }
 
     #[must_use]
+    pub fn pauser(&self) -> Pauser {
+        Pauser::new(self.shared.pause.clone())
+    }
+
+    #[must_use]
     pub fn stats(&self) -> StreamingStats {
         self.shared.stats()
     }
@@ -212,6 +219,7 @@ pub fn start<B: BulkIn>(mut bulk_in: B, config: StreamConfig) -> Result<RxStream
         missing: Missing::default(),
         queue_depth: config.queue_depth,
         poll_interval: config.poll_interval,
+        parked: Vec::with_capacity(config.queue_depth),
     };
     let on_thread_start = config.on_thread_start;
     let worker = std::thread::Builder::new()
@@ -248,11 +256,13 @@ struct Pump<B: BulkIn> {
     transfer_size: usize,
     missing: Missing,
     poll_interval: Duration,
+    parked: Vec<B::Buffer>,
 }
 
 impl<B: BulkIn> Pump<B> {
     fn run(mut self, tx: SyncSender<Block>) {
         while self.step(&tx) != Step::Ended {}
+        self.shared.pause.end();
         drop(tx);
         self.drain();
     }
@@ -262,6 +272,9 @@ impl<B: BulkIn> Pump<B> {
             return Step::Ended;
         }
         let stopping = self.shared.stopping.load(Ordering::Acquire);
+        if self.shared.pause.wanted() && !stopping {
+            return self.pause(tx);
+        }
         let Some(completion) = self.bulk_in.wait_next_complete(self.poll_interval) else {
             return if stopping { Step::Ended } else { Step::Idle };
         };
@@ -294,38 +307,94 @@ impl<B: BulkIn> Pump<B> {
             }
             Action::Deliver => {
                 let len = completion.actual_len.min(completion.buffer.len());
-                if len == 0 {
-                    self.bulk_in.submit(completion.buffer);
-                    return Step::Progress;
-                }
-                let Ok(mut bytes) = self.recycle_rx.try_recv() else {
-                    self.missing.add_exact(len);
-                    self.shared.dropped.fetch_add(1, Ordering::Relaxed);
-                    self.bulk_in.submit(completion.buffer);
-                    return Step::Progress;
-                };
-                bytes.clear();
-                bytes.extend_from_slice(&completion.buffer[..len]);
+                let step = self.deliver(&completion.buffer[..len], tx);
                 self.bulk_in.submit(completion.buffer);
-                let block = Block {
-                    bytes,
-                    recycle: self.recycle_tx.clone(),
-                    missing: self.missing,
-                };
-                match tx.try_send(block) {
-                    Ok(()) => {
-                        self.missing = Missing::default();
-                        self.shared.processed.fetch_add(1, Ordering::Relaxed);
-                    }
-                    Err(TrySendError::Full(_)) => {
-                        self.missing.add_exact(len);
-                        self.shared.dropped.fetch_add(1, Ordering::Relaxed);
-                    }
-                    Err(TrySendError::Disconnected(_)) => return Step::Ended,
-                }
-                Step::Progress
+                step
             }
         }
+    }
+
+    fn deliver(&mut self, data: &[u8], tx: &SyncSender<Block>) -> Step {
+        if data.is_empty() {
+            return Step::Progress;
+        }
+        let Ok(mut bytes) = self.recycle_rx.try_recv() else {
+            self.missing.add_exact(data.len());
+            self.shared.dropped.fetch_add(1, Ordering::Relaxed);
+            return Step::Progress;
+        };
+        bytes.clear();
+        bytes.extend_from_slice(data);
+        let block = Block {
+            bytes,
+            recycle: self.recycle_tx.clone(),
+            missing: self.missing,
+        };
+        match tx.try_send(block) {
+            Ok(()) => {
+                self.missing = Missing::default();
+                self.shared.processed.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(TrySendError::Full(_)) => {
+                self.missing.add_exact(data.len());
+                self.shared.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(TrySendError::Disconnected(_)) => return Step::Ended,
+        }
+        Step::Progress
+    }
+
+    fn pause(&mut self, tx: &SyncSender<Block>) -> Step {
+        let Some(cancelled) = self.park(tx) else {
+            return Step::Ended;
+        };
+        let lost = if self.bulk_in.pending() == 0 {
+            self.shared.pause.hold();
+            while self.shared.pause.wanted() && !self.stopping() {
+                std::thread::sleep(PauseState::poll());
+            }
+            self.shared.pause.release()
+        } else {
+            cancelled
+        };
+        self.missing.estimated = self.missing.estimated.saturating_add(lost);
+        if self.stopping() {
+            return Step::Ended;
+        }
+        for buffer in self.parked.drain(..) {
+            self.bulk_in.submit(buffer);
+        }
+        Step::Progress
+    }
+
+    fn park(&mut self, tx: &SyncSender<Block>) -> Option<u64> {
+        let mut cancelled = 0u64;
+        self.bulk_in.cancel_all();
+        while self.bulk_in.pending() > 0 && self.shared.pause.wanted() && !self.stopping() {
+            let Some(completion) = self.bulk_in.wait_next_complete(self.poll_interval) else {
+                continue;
+            };
+            self.shared.received.fetch_add(1, Ordering::Relaxed);
+            let step = match completion.status {
+                Ok(()) => {
+                    let len = completion.actual_len.min(completion.buffer.len());
+                    self.deliver(&completion.buffer[..len], tx)
+                }
+                Err(_) => {
+                    cancelled = cancelled.saturating_add(self.transfer_size as u64);
+                    Step::Progress
+                }
+            };
+            self.parked.push(completion.buffer);
+            if step == Step::Ended {
+                return None;
+            }
+        }
+        Some(cancelled)
+    }
+
+    fn stopping(&self) -> bool {
+        self.shared.stopping.load(Ordering::Acquire)
     }
 
     fn drain(&mut self) {
@@ -482,6 +551,7 @@ mod tests {
             transfer_size: TRANSFER_SIZE,
             missing: Missing::default(),
             poll_interval: Duration::from_millis(1),
+            parked: Vec::with_capacity(DEPTH),
         };
         (pump, tx, rx)
     }
@@ -818,6 +888,76 @@ mod tests {
         let (mut pump, _tx, _rx) = pump(fake.clone());
         pump.drain();
         assert_eq!(fake.state().cancel_calls, 1);
+        assert_eq!(fake.state().queued.len(), 0);
+    }
+
+    fn settle(until: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !until() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the pump never settled"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn a_pause_empties_the_queue_until_it_is_released() {
+        let fake = FakeBulkIn::default();
+        let mut stream = start(fake.clone(), config()).expect("fake endpoint cannot fail");
+        let paused = stream
+            .pauser()
+            .hold(1_000_000.0, Duration::from_secs(5))
+            .expect("an idle pump pauses");
+        assert_eq!(fake.state().cancel_calls, 1);
+        assert_eq!(fake.state().queued.len(), 0);
+        std::thread::sleep(Duration::from_millis(20));
+        drop(paused);
+        settle(|| fake.state().queued.len() == DEPTH);
+        fake.push_data([7; 4]);
+        let block = stream
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the stream runs again");
+        assert_eq!(&*block, &[7; 4]);
+        assert!(
+            block.missing_estimated_bytes() >= 20_000,
+            "{}",
+            block.missing_estimated_bytes()
+        );
+        assert_eq!(block.missing_exact_bytes(), 0);
+        stream.stop();
+    }
+
+    #[test]
+    fn an_ended_stream_cannot_pause() {
+        let fake = FakeBulkIn::default();
+        for _ in 0..DEPTH {
+            fake.push_error(TransferError::Disconnected);
+        }
+        let mut stream = start(fake, config()).expect("fake endpoint cannot fail");
+        assert_eq!(
+            stream.recv_timeout(Duration::from_secs(5)).map(|_| ()),
+            Err(RecvTimeoutError::Disconnected)
+        );
+        let error = stream
+            .pauser()
+            .hold(1.0, Duration::from_secs(5))
+            .expect_err("nothing left to pause");
+        assert!(matches!(error, StreamError::Pause(_)), "{error}");
+        stream.stop();
+    }
+
+    #[test]
+    fn a_stop_during_a_pause_ends_the_pump() {
+        let fake = FakeBulkIn::default();
+        let mut stream = start(fake.clone(), config()).expect("fake endpoint cannot fail");
+        let paused = stream
+            .pauser()
+            .hold(1.0, Duration::from_secs(5))
+            .expect("an idle pump pauses");
+        stream.stop();
+        drop(paused);
         assert_eq!(fake.state().queued.len(), 0);
     }
 }

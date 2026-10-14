@@ -16,6 +16,8 @@ mod hardware;
 
 pub(crate) use board::Board;
 pub(crate) use catalog::{Catalog, Listing};
+#[cfg(test)]
+pub(crate) use chip::{Access, Dir};
 pub(crate) use demod::DIRECT_MAX_HZ;
 #[cfg(test)]
 pub(crate) use demod::PPM_LIMIT;

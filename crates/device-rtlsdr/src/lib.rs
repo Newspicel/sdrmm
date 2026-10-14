@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    sync::{Arc, Mutex, MutexGuard, atomic::AtomicBool},
+    time::Duration,
+};
 
 use caps::{GainMode, Plan};
 use dongle::{Catalog, Dongle, Listing};
@@ -6,7 +9,7 @@ use sdrmm_device::{
     Capture, CaptureConfig, CaptureRadio, DeviceDriver, DeviceError, RxSink, SdrDevice, lock,
     single_rx_sink,
 };
-use sdrmm_usb_stream::RxStream;
+use sdrmm_usb_stream::{Pauser, RxStream};
 use sdrmm_wire::{
     AgcSetting, BandwidthSetting, Capabilities, DeviceInfo, DeviceSettings, ExtraValue,
 };
@@ -15,6 +18,7 @@ mod caps;
 mod convert;
 mod dongle;
 mod kraken;
+mod pausing;
 
 pub use kraken::KrakenDriver;
 
@@ -22,6 +26,8 @@ pub(crate) const DRIVER_ID: &str = "rtlsdr";
 
 const DEFAULT_SAMPLE_RATE_HZ: u32 = 2_048_000;
 pub(crate) const DEFAULT_CENTER_HZ: u32 = 100_000_000;
+const PAUSE_TIMEOUT: Duration = Duration::from_secs(1);
+const BYTES_PER_SAMPLE: f64 = 2.0;
 
 fn enumerate() -> Result<Vec<Listing>, dongle::Error> {
     Ok(Catalog::scan()?.listings().cloned().collect())
@@ -141,11 +147,34 @@ fn random_serial(
 
 struct RtlRadio {
     dongle: Mutex<Dongle>,
+    pauser: Mutex<Option<Pauser>>,
+    pause_for_control: AtomicBool,
 }
 
 impl RtlRadio {
+    fn new(dongle: Dongle) -> Self {
+        Self {
+            dongle: Mutex::new(dongle),
+            pauser: Mutex::new(None),
+            pause_for_control: AtomicBool::new(false),
+        }
+    }
+
     fn lock(&self) -> MutexGuard<'_, Dongle> {
         lock(&self.dongle)
+    }
+
+    fn reshape(&self, dongle: &mut Dongle, plan: &Plan) -> Result<(), dongle::Error> {
+        let pauser = lock(&self.pauser).clone();
+        let Some(pauser) = pauser else {
+            return apply_to_hardware(dongle, plan);
+        };
+        let bytes_per_second = f64::from(dongle.sample_rate()) * BYTES_PER_SAMPLE;
+        pausing::apply_pausing(
+            &self.pause_for_control,
+            || apply_to_hardware(dongle, plan),
+            || Ok(pauser.hold(bytes_per_second, PAUSE_TIMEOUT)?),
+        )
     }
 }
 
@@ -153,7 +182,13 @@ impl CaptureRadio for RtlRadio {
     type Stream = RxStream;
 
     fn arm(&self) -> Result<RxStream, DeviceError> {
-        Ok(self.lock().start_stream()?)
+        let stream = self.lock().start_stream()?;
+        *lock(&self.pauser) = Some(stream.pauser());
+        Ok(stream)
+    }
+
+    fn disarm(&self) {
+        *lock(&self.pauser) = None;
     }
 }
 
@@ -203,9 +238,7 @@ impl RtlSdrDevice {
         };
 
         Ok(Self {
-            radio: Arc::new(RtlRadio {
-                dongle: Mutex::new(dongle),
-            }),
+            radio: Arc::new(RtlRadio::new(dongle)),
             capabilities,
             settings,
             gain_table,
@@ -214,7 +247,7 @@ impl RtlSdrDevice {
     }
 }
 
-fn apply_to_hardware(dongle: &mut Dongle, plan: &Plan) -> Result<(), DeviceError> {
+fn apply_to_hardware(dongle: &mut Dongle, plan: &Plan) -> Result<(), dongle::Error> {
     if let Some(mode) = plan.direct_sampling {
         dongle.set_direct_sampling(mode)?;
     }
@@ -259,7 +292,7 @@ impl SdrDevice for RtlSdrDevice {
         )?;
         let (result, center_hz, sample_rate, ppm) = {
             let mut dongle = self.radio.lock();
-            let result = apply_to_hardware(&mut dongle, &plan);
+            let result = self.radio.reshape(&mut dongle, &plan);
             (
                 result,
                 dongle.center_hz(),
@@ -270,7 +303,7 @@ impl SdrDevice for RtlSdrDevice {
         self.settings.center_hz = center_hz.map(f64::from);
         self.settings.sample_rate = Some(f64::from(sample_rate));
         self.settings.ppm = Some(f64::from(ppm));
-        result?;
+        result.map_err(DeviceError::from)?;
         self.settings.merge_from(&plan.applied);
         Ok(())
     }

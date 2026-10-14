@@ -349,7 +349,7 @@ impl SdrDevice for KrakenDevice {
             .zip(&plan.lanes)
         {
             let mut dongle = lock(dongle);
-            let result = apply_to_hardware(&mut dongle, lane);
+            let result = apply_to_hardware(&mut dongle, lane).map_err(DeviceError::from);
             settled.center_hz = dongle.center_hz().map(f64::from);
             settled.sample_rate = Some(f64::from(dongle.sample_rate()));
             settled.ppm = Some(f64::from(dongle.ppm()));

@@ -133,6 +133,16 @@ fn usb_gone(error: &nusb::Error) -> bool {
 }
 
 impl Error {
+    pub(crate) const fn is_stall(&self) -> bool {
+        matches!(
+            self,
+            Self::Control {
+                source: TransferError::Stall,
+                ..
+            }
+        )
+    }
+
     pub(crate) fn is_disconnected(&self) -> bool {
         match self {
             Self::Control { source, .. } => is_disconnect(source),
@@ -223,6 +233,13 @@ mod tests {
             matches!(&mapped, DeviceError::Disconnected(text) if text == "radio unplugged"),
             "{mapped}"
         );
+    }
+
+    #[test]
+    fn only_a_stalled_control_transfer_is_a_stall() {
+        assert!(control(TransferError::Stall).is_stall());
+        assert!(!control(TransferError::Fault).is_stall());
+        assert!(!Error::NoTuner.is_stall());
     }
 
     #[test]
