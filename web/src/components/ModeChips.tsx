@@ -41,6 +41,7 @@ import { NumberField } from "./NumberField";
 import { Segmented } from "./Segmented";
 import { withCurrent } from "./selectOptions";
 import { TextAutocomplete } from "./TextAutocomplete";
+import { WmbusKeysChip } from "./WmbusKeysChip";
 
 type Limits = readonly ParamLimit[];
 type Choices = readonly ParamChoice[];
@@ -94,6 +95,13 @@ export function ModeChips({
       return <EotChips params={params} {...mode} />;
     case "ism":
       return <IsmChips params={params} {...mode} />;
+    case "wmbus":
+      return (
+        <WmbusKeysChip
+          keys={params.settings.keys ?? []}
+          onChange={(keys) => onParams({ type: "wmbus", settings: { ...params.settings, keys } })}
+        />
+      );
     case "sarsat":
       return <SarsatChips params={params} {...mode} />;
     case "tetrapol":

@@ -3498,6 +3498,10 @@ export interface components {
             /** @enum {string} */
             type: "ism";
         } | {
+            settings: components["schemas"]["WmbusParams"];
+            /** @enum {string} */
+            type: "wmbus";
+        } | {
             settings: components["schemas"]["NoiseFigureParams"];
             /** @enum {string} */
             type: "noise_figure";
@@ -4284,6 +4288,10 @@ export interface components {
             data: components["schemas"]["IsmMessage"];
             /** @enum {string} */
             kind: "ism";
+        } | {
+            data: components["schemas"]["WmbusMessage"];
+            /** @enum {string} */
+            kind: "wmbus";
         } | {
             data: components["schemas"]["NoiseFigureReport"];
             /** @enum {string} */
@@ -5150,7 +5158,7 @@ export interface components {
             url: string;
         };
         /** @enum {string} */
-        EventKind: "transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "noise_figure" | "per" | "sid" | "stanag";
+        EventKind: "transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "wmbus" | "noise_figure" | "per" | "sid" | "stanag";
         EventKindEntry: {
             caps: components["schemas"]["Capability"][];
             hue: components["schemas"]["Hue"];
@@ -5937,7 +5945,7 @@ export interface components {
         ItuRegion: "r1" | "r2" | "r3";
         /** @enum {string} */
         Keeps: "history" | "clips" | "pictures";
-        KindSet: ("transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "noise_figure" | "per" | "sid" | "stanag")[];
+        KindSet: ("transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "wmbus" | "noise_figure" | "per" | "sid" | "stanag")[];
         LaneLevel: {
             /** Format: float */
             peak_db: number;
@@ -10265,6 +10273,60 @@ export interface components {
             from: components["schemas"]["PortRef"];
             graph: components["schemas"]["PatchGraph"];
         };
+        /** @enum {string} */
+        WmbusFormat: "a" | "b";
+        /** @enum {string} */
+        WmbusFunction: "instantaneous" | "maximum" | "minimum" | "error";
+        WmbusKey: {
+            key: string;
+            meter: string;
+        };
+        WmbusMessage: {
+            /** Format: int32 */
+            access?: number | null;
+            /** Format: int32 */
+            ci?: number | null;
+            /** Format: int32 */
+            control: number;
+            /** Format: int32 */
+            corrected?: number;
+            /** Format: int32 */
+            device_type: number;
+            format: components["schemas"]["WmbusFormat"];
+            frame: string;
+            id: string;
+            manufacturer: string;
+            mode: components["schemas"]["WmbusMode"];
+            records?: components["schemas"]["WmbusRecord"][];
+            security?: components["schemas"]["WmbusSecurity"];
+            /** Format: float */
+            snr_db: number;
+            /** Format: int32 */
+            status?: number | null;
+            /** Format: int32 */
+            version: number;
+            via?: string | null;
+        };
+        /** @enum {string} */
+        WmbusMode: "s" | "t" | "c";
+        WmbusParams: {
+            keys?: components["schemas"]["WmbusKey"][];
+        };
+        /** @enum {string} */
+        WmbusQuantity: "energy" | "volume" | "mass" | "on_time" | "operating_time" | "power" | "volume_flow" | "mass_flow" | "flow_temperature" | "return_temperature" | "temperature_difference" | "external_temperature" | "pressure" | "date" | "date_time" | "heat_cost_units" | "averaging_duration" | "actuality_duration" | "fabrication_number" | "identification" | "humidity" | "error_flags" | "dimensionless" | "battery_days" | "other";
+        WmbusRecord: {
+            function?: components["schemas"]["WmbusFunction"];
+            quantity: components["schemas"]["WmbusQuantity"];
+            /** Format: int32 */
+            storage?: number;
+            /** Format: int32 */
+            tariff?: number;
+            text?: string | null;
+            /** Format: double */
+            value?: number | null;
+        };
+        /** @enum {string} */
+        WmbusSecurity: "none" | "decrypted" | "no_key" | "wrong_key" | "unsupported";
         WorkspaceArray: {
             node: string;
             tune: components["schemas"]["ArrayTune"];

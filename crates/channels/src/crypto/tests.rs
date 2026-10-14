@@ -1,4 +1,4 @@
-use super::{Aes, cmac, ctr, hex, hmac_sha256, increment_counter, sha256};
+use super::{Aes, cbc_decrypt, cmac, ctr, hex, hmac_sha256, increment_counter, sha256};
 
 fn bytes(text: &str) -> Vec<u8> {
     hex(text).unwrap()
@@ -131,4 +131,17 @@ fn ctr_keystream_matches_wrapped_counter() {
     assert_eq!(data[16..32], second_block[..]);
     ctr(&aes, &nonce, &mut data);
     assert_eq!(data, plaintext);
+}
+
+#[test]
+fn cbc_nist_sp800_38a_f22() {
+    let mut data = bytes(
+        "7649abac8119b246cee98e9b12e9197d 5086cb9b507219ee95db113a917678b2 \
+         73bed6b8e3c1743b7116e69e22229516 3ff1caa1681fac09120eca307586e1a7",
+    );
+    let iv: [u8; 16] = bytes("000102030405060708090a0b0c0d0e0f")
+        .try_into()
+        .unwrap();
+    cbc_decrypt(&rfc4493_aes(), &iv, &mut data);
+    assert_eq!(data, bytes(RFC4493_MESSAGE));
 }

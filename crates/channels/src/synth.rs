@@ -46,6 +46,7 @@ pub mod vor;
 pub mod weak_signal;
 pub mod wefax;
 pub mod wfm;
+pub mod wmbus;
 
 use std::f64::consts::TAU;
 

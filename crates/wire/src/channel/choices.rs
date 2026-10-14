@@ -202,6 +202,7 @@ impl ChannelParams {
             | Self::Gsm(_)
             | Self::Apt(_)
             | Self::Ism(_)
+            | Self::Wmbus(_)
             | Self::NoiseFigure(_)
             | Self::Sid(_)
             | Self::Stanag(_) => Vec::new(),

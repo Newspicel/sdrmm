@@ -14,6 +14,7 @@ mod ble;
 mod broadcast_audio;
 mod broadcast_media;
 pub mod correlator;
+mod crypto;
 mod cw_skimmer;
 mod dab;
 mod datalink;
@@ -77,6 +78,7 @@ mod weak_signal;
 mod wefax;
 mod wfm;
 mod wifi;
+mod wmbus;
 #[cfg(test)]
 mod xng_adapter;
 
@@ -159,6 +161,7 @@ pub use weak_signal::{Ft4Channel, Ft8Channel, WsprChannel};
 pub use wefax::WefaxChannel;
 pub use wfm::WfmChannel;
 pub use wifi::WifiOccupancyChannel;
+pub use wmbus::WmbusChannel;
 
 pub const AUDIO_RATE: u32 = 48_000;
 
@@ -251,6 +254,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::WifiOccupancy(p) => wifi::occupied_band(p),
         ChannelParams::IsmSurvey(p) => ism_survey::occupied_band(p),
         ChannelParams::Ism(p) => ism::occupied_band(p),
+        ChannelParams::Wmbus(_) => wmbus::occupied_band(),
         ChannelParams::NoiseFigure(_) => noise_figure::occupied_band(),
         ChannelParams::Per(p) => per::occupied_band(p),
         ChannelParams::Sid(_) => sid::occupied_band(),
@@ -348,6 +352,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::WifiOccupancy(p) => Ok(wifi::channel_filter(p)),
         ChannelParams::IsmSurvey(p) => Ok(ism_survey::channel_filter(p)),
         ChannelParams::Ism(p) => Ok(ism::channel_filter(p)),
+        ChannelParams::Wmbus(_) => Ok(wmbus::channel_filter()),
         ChannelParams::NoiseFigure(_) => Ok(noise_figure::channel_filter()),
         ChannelParams::Per(p) => Ok(per::channel_filter(p)),
         ChannelParams::Sid(_) => Ok(sid::channel_filter()),
@@ -803,6 +808,11 @@ const REGISTRY: &[Registration] = &[
         create_tx: None,
     },
     Registration {
+        descriptor: WmbusChannel::descriptor,
+        create: boxed::<WmbusChannel>,
+        create_tx: None,
+    },
+    Registration {
         descriptor: NoiseFigureChannel::descriptor,
         create: boxed::<NoiseFigureChannel>,
         create_tx: None,
@@ -1017,6 +1027,7 @@ mod tests {
             }
             "ism_survey" => ChannelParams::IsmSurvey(sdrmm_wire::IsmSurveyParams::default()),
             "ism" => ChannelParams::Ism(sdrmm_wire::IsmParams::default()),
+            "wmbus" => ChannelParams::Wmbus(sdrmm_wire::WmbusParams::default()),
             "noise_figure" => ChannelParams::NoiseFigure(sdrmm_wire::NoiseFigureParams::default()),
             "per" => ChannelParams::Per(sdrmm_wire::PerParams::default()),
             "sid" => ChannelParams::Sid(sdrmm_wire::SidParams::default()),
@@ -1135,6 +1146,7 @@ mod tests {
                 "wifi_occupancy",
                 "ism_survey",
                 "ism",
+                "wmbus",
                 "noise_figure",
                 "per",
                 "sid",
@@ -1194,6 +1206,7 @@ mod tests {
                 "remote_id" | "ble" => (2_000_000.0, 4_000_000.0),
                 "wifi_occupancy" | "ism_survey" => (17_000_000.0, 20_000_000.0),
                 "ism" => (240_000.0, 250_000.0),
+                "wmbus" => (300_000.0, 400_000.0),
                 "noise_figure" => (400_000.0, 500_000.0),
                 "per" => (28_800.0, 96_000.0),
                 "sid" => (42_000.0, 48_000.0),

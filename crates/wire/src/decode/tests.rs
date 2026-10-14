@@ -258,6 +258,7 @@ fn kind_matches_the_serialized_tag() {
         DecoderEvent::Iridium(link()),
         DecoderEvent::Radar(radar_event()),
         DecoderEvent::Ism(crate::ism::IsmMessage::default()),
+        DecoderEvent::Wmbus(crate::wmbus::WmbusMessage::default()),
     ] {
         let json = serde_json::to_value(&ev).unwrap();
         assert_eq!(json["kind"], ev.kind().as_str());

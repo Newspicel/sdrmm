@@ -145,7 +145,7 @@ fn recover_x(y: Field, x_odd: bool) -> Option<Field> {
 #[cfg(test)]
 mod tests {
     use super::{Point, curve_d, sqrt_minus_one};
-    use crate::lora::crypto::ed25519::field::Field;
+    use crate::crypto::ed25519::field::Field;
 
     fn small(value: u32) -> Field {
         let mut bytes = [0u8; 32];

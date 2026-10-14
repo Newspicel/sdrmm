@@ -2,7 +2,7 @@ use sdrmm_wire::MeshtasticPacket;
 
 use super::proto::Writer;
 use super::{HOP_START_SHIFT, channel_hash, expand_psk, nonce, ports};
-use crate::lora::crypto::{self, Aes};
+use crate::crypto::{self, Aes};
 
 const HOPS: u8 = 3;
 

@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 400000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "RTL-SDR",
+    "core:description": "Kamstrup heat meter, wM-Bus C1 format B, ELL AES"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868950000.0,
+      "core:datetime": "2026-10-13T23:40:15.182049Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/m-bus/01/g002_868.95M_1200k.cu8; source SHA-256 e8be9d8387f41679baba10caf6131cfff1294857a0d8fc553bed84e298d838f8; samples 47040..56880 at 1200000 Hz",
+      "core:sample_count": 3280,
+      "core:sample_start": 0
+    }
+  ]
+}

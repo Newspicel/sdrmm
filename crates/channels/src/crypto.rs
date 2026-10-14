@@ -84,6 +84,16 @@ pub(crate) fn ctr(aes: &Aes, nonce: &[u8; 16], data: &mut [u8]) {
     }
 }
 
+pub(crate) fn cbc_decrypt(aes: &Aes, iv: &[u8; 16], data: &mut [u8]) {
+    let mut previous = *iv;
+    for chunk in data.as_chunks_mut::<AES_BLOCK>().0 {
+        let cipher = *chunk;
+        aes.decrypt(chunk);
+        xor_into(chunk, &previous);
+        previous = cipher;
+    }
+}
+
 fn increment_counter(counter: &mut [u8; AES_BLOCK]) {
     let mut low = [0u8; 4];
     low.copy_from_slice(&counter[12..]);

@@ -474,6 +474,19 @@ fn ism_sensors_allocate_nothing_while_listening_to_noise() {
 }
 
 #[test]
+fn wmbus_allocates_nothing_while_listening_to_noise() {
+    let settings = ChannelSettings::default_for("wmbus").expect("settings");
+    let rate = sdrmm_channels::input_rate(&settings.params);
+    let mut rx =
+        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+    let iq = searching_signal(rate);
+    let mut outputs = ChannelOutputs::default();
+    drive(rx.as_mut(), &iq, &mut outputs);
+    assert_no_alloc("wmbus", || drive(rx.as_mut(), &iq, &mut outputs));
+    assert!(outputs.events.is_empty());
+}
+
+#[test]
 fn tetra_allocates_nothing_while_it_follows_an_idle_cell() {
     use sdrmm_channels::synth::tetra::{Cell, Downlink};
     let settings = ChannelSettings::default_for("tetra").expect("settings");

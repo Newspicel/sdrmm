@@ -1,7 +1,7 @@
 use sdrmm_wire::{LoraKey, LorawanMessageType};
 
 use super::{Keys, decode, join_request, mac, uplink};
-use crate::lora::crypto::{self, Aes};
+use crate::crypto::{self, Aes};
 
 const NWK_S_KEY: &str = "44024241ed4ce9a68c6a8bc055233fd3";
 const APP_S_KEY: &str = "ec925802ae430ca77fd3dd73cb2cc588";

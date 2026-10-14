@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 400000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "RTL-SDR",
+    "core:description": "Kamstrup cold water meter, wM-Bus C1 format B, plain ELL"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868950000.0,
+      "core:datetime": "2026-10-13T23:40:15.805985Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/m-bus/05/g001_868.6M_1000k.cu8; source SHA-256 f05d11a80cb53874cab33e27a774da9b345806f01f30b2fcdc00fc272b0636e3; samples 44500..50300 at 1000000 Hz",
+      "core:sample_count": 2320,
+      "core:sample_start": 0
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 400000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "RTL-SDR",
+    "core:description": "IMT radio module, wM-Bus T1 long header"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868950000.0,
+      "core:datetime": "2026-10-13T23:40:16.439671Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/m_bus/02/g001_868.9M_1000k.cu8; source SHA-256 778b892bb9f12234817ea8eb51e50bdb32700466d26697163c4cb52e885318eb; samples 37000..50200 at 1000000 Hz",
+      "core:sample_count": 5280,
+      "core:sample_start": 0
+    }
+  ]
+}

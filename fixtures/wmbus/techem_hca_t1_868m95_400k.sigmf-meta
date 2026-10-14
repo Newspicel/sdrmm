@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 400000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "RTL-SDR",
+    "core:description": "Techem heat cost allocator, wM-Bus T1"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 868950000.0,
+      "core:datetime": "2026-10-13T23:40:17.04201Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "rtl_433_tests (github.com/merbanan/rtl_433_tests, states no license) 1aa8c29d6b9383739d1aeed495dbc5069b704392 tests/m-bus/04/g001_868.9M_1000k.cu8; source SHA-256 9ad2c46d2ad541ffd9ceff1c901b0b89a4d12641d469c20ee14ca5347bc02535; samples 40100..50200 at 1000000 Hz",
+      "core:sample_count": 4040,
+      "core:sample_start": 0
+    }
+  ]
+}

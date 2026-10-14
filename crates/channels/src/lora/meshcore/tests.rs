@@ -1,9 +1,9 @@
 use sdrmm_wire::{LoraKey, MeshcoreContent, MeshcoreNodeType, MeshcorePayloadType, MeshcoreRoute};
 
-use super::super::crypto;
 use super::encode::group_datagram;
 use super::keys::hashtag_secret;
 use super::{Keys, PUBLIC_SECRET, advert, decode, group_text};
+use crate::crypto;
 
 const SEED: [u8; 32] = [7; 32];
 

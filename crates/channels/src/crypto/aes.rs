@@ -169,7 +169,7 @@ fn multiply(mut left: u8, mut right: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::Aes;
-    use crate::lora::crypto::hex;
+    use crate::crypto::hex;
 
     fn block(text: &str) -> [u8; 16] {
         hex(text).unwrap().try_into().unwrap()
