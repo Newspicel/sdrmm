@@ -502,6 +502,12 @@ impl CaptureRuntime {
             .map_or_else(|| Ok(Vec::new()), |device| device.agc_gains())
     }
 
+    pub fn readouts(&self) -> Result<Vec<sdrmm_wire::Readout>, DeviceError> {
+        self.device
+            .as_ref()
+            .map_or_else(|| Ok(Vec::new()), |device| device.readouts())
+    }
+
     pub fn stop(&mut self) {
         drop(self.halt());
     }

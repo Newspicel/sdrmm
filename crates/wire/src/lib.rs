@@ -145,8 +145,8 @@ pub use device::{
     BandwidthSetting, Capabilities, ChannelCapabilities, Coherence, DcArtifact, DeviceInfo,
     DeviceProfile, DeviceSettings, Direction, DirectionalCapabilities, Duplex, ExtraSetting,
     ExtraValue, GainKind, GainStage, GainUnit, GainValue, MAX_RECORDING_STEM_LEN, NoiseSource,
-    RECORDING_DRIVER_ID, Range, SIGGEN_DRIVER_ID, StreamScope, StreamSettings, Tuning,
-    any_range_holds, recording_stem_valid,
+    RECORDING_DRIVER_ID, Range, Readout, ReadoutValue, SIGGEN_DRIVER_ID, StreamScope,
+    StreamSettings, Tuning, any_range_holds, recording_stem_valid,
 };
 pub use diagnostics::{DiagnosticsReport, LogLevel, LogLine, MAX_LOG_LINES, MAX_LOG_MESSAGE_LEN};
 pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};

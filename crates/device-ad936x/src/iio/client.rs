@@ -157,6 +157,23 @@ impl Client {
         take_attr(&mut link, &command, &what)
     }
 
+    pub(crate) fn write_debug_attr(
+        &self,
+        device: &str,
+        attr: &str,
+        value: &str,
+    ) -> Result<(), DeviceError> {
+        let mut link = lock(&self.link);
+        let payload = payload(value);
+        let command = proto::write_debug_attr(device, attr, payload.len());
+        put_attr(
+            &mut link,
+            &command,
+            &payload,
+            &format!("set {device} debug {attr}"),
+        )
+    }
+
     pub(crate) fn write_device_attr(
         &self,
         device: &str,

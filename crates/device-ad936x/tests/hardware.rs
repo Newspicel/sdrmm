@@ -8,7 +8,9 @@ use std::{
 
 use sdrmm_device::{DeviceDriver, RxSink, Sample, SdrDevice, lock};
 use sdrmm_device_ad936x::Ad936xDriver;
-use sdrmm_wire::{AgcSetting, DeviceSettings, GainKind, GainValue, StreamSettings};
+use sdrmm_wire::{
+    AgcSetting, DeviceSettings, ExtraValue, GainKind, GainValue, ReadoutValue, StreamSettings,
+};
 
 const RADIO: &str = "SDRMM_AD936X";
 
@@ -42,6 +44,7 @@ impl Drop for Radio {
             antenna: held.antenna.clone(),
             gains: held.gains.clone(),
             agc: held.agc.clone(),
+            extra: held.extra.clone(),
             streams: held
                 .streams
                 .iter()
@@ -240,4 +243,210 @@ fn a_real_radio_gives_one_lane_the_whole_link() {
     let (delivered, reached) = *lock(&seen);
     assert_eq!(delivered, reached, "one lane at {rate} S/s lost samples");
     assert!(delivered as f64 > rate * 2.5, "{delivered}");
+}
+
+fn extra(name: &str, value: serde_json::Value) -> ExtraValue {
+    ExtraValue {
+        name: name.to_string(),
+        value,
+    }
+}
+
+fn held(device: &dyn SdrDevice, name: &str) -> Option<serde_json::Value> {
+    device
+        .settings()
+        .extra
+        .iter()
+        .find(|extra| extra.name == name)
+        .map(|extra| extra.value.clone())
+}
+
+fn reopened() -> Box<dyn SdrDevice> {
+    let address = std::env::var(RADIO).expect("set SDRMM_AD936X to the radio's address");
+    let driver = Ad936xDriver::searching([]);
+    let info = driver.resolve(&address).expect("an addressable radio");
+    driver.open(&info).expect("opens a second time")
+}
+
+fn capture(device: &mut Radio, samples: usize) -> Vec<Sample> {
+    let lanes = device.capabilities().rx_streams as usize;
+    let taken: Arc<Mutex<Vec<Sample>>> = Arc::default();
+    let filled = taken.clone();
+    let mut sinks = vec![RxSink::new(move |block: &[Sample], _| {
+        let mut taken = lock(&filled);
+        let room = samples.saturating_sub(taken.len());
+        taken.extend_from_slice(&block[..room.min(block.len())]);
+    })];
+    sinks.extend((1..lanes).map(|_| RxSink::new(|_: &[Sample], _| {})));
+    device.rx_start(sinks).expect("streams");
+    let started = Instant::now();
+    while lock(&taken).len() < samples && started.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    device.rx_stop();
+    let taken = lock(&taken).clone();
+    assert_eq!(taken.len(), samples, "the capture filled");
+    taken
+}
+
+fn power_at(samples: &[Sample], hz: f64, rate: f64) -> f64 {
+    let step = -std::f64::consts::TAU * hz / rate;
+    let (re, im) = samples
+        .iter()
+        .enumerate()
+        .fold((0.0, 0.0), |(re, im), (n, sample)| {
+            let (sin, cos) = (step * n as f64).sin_cos();
+            let (i, q) = (f64::from(sample.re), f64::from(sample.im));
+            (re + i * cos - q * sin, im + i * sin + q * cos)
+        });
+    10.0 * ((re * re + im * im) / (samples.len() as f64).powi(2)).log10()
+}
+
+#[test]
+#[ignore = "needs an AD936x radio at SDRMM_AD936X"]
+fn a_real_radio_reads_out_its_temperature_and_signal_level() {
+    let device = open();
+    let readouts = device.readouts().expect("readouts");
+    let number = |name: &str| {
+        readouts
+            .iter()
+            .filter(|readout| readout.name == name)
+            .map(|readout| match readout.value {
+                ReadoutValue::Number { value, .. } => value,
+                ReadoutValue::Flag { .. } => panic!("{name} is a number"),
+            })
+            .collect::<Vec<f64>>()
+    };
+    let chip = number("temperature");
+    assert!(
+        chip.len() == 1 && (5.0..110.0).contains(&chip[0]),
+        "{readouts:?}"
+    );
+    assert_eq!(
+        number("rssi").len(),
+        device.capabilities().rx_streams as usize,
+        "{readouts:?}"
+    );
+    assert!(number("rssi").iter().all(|db| *db < 0.0), "{readouts:?}");
+}
+
+#[test]
+#[ignore = "needs an AD936x radio at SDRMM_AD936X"]
+fn a_real_radio_holds_its_chip_settings() {
+    let mut device = open();
+    let names: Vec<String> = device
+        .capabilities()
+        .extra
+        .iter()
+        .map(|setting| setting.name().to_string())
+        .collect();
+    for name in [
+        "rate_governor",
+        "calibration",
+        "ensm",
+        "agc_high",
+        "agc_low",
+        "rx_lo_external",
+        "tone_1",
+    ] {
+        assert!(
+            names.iter().any(|offered| offered == name),
+            "{name} in {names:?}"
+        );
+    }
+    let wanted = [
+        extra("rate_governor", serde_json::json!("highest_osr")),
+        extra("calibration", serde_json::json!("manual")),
+        extra("agc_high", serde_json::json!(-12.0)),
+        extra("agc_low", serde_json::json!(-15.0)),
+        extra("ensm", serde_json::json!("fdd")),
+    ];
+    device
+        .apply(&DeviceSettings {
+            extra: wanted.to_vec(),
+            ..DeviceSettings::default()
+        })
+        .expect("the chip takes them");
+    let fresh = reopened();
+    for want in &wanted {
+        assert_eq!(
+            held(fresh.as_ref(), &want.name).as_ref(),
+            Some(&want.value),
+            "{} reads back from the radio",
+            want.name
+        );
+    }
+    assert!(
+        device
+            .apply(&DeviceSettings {
+                extra: vec![extra("agc_low", serde_json::json!(-10.0))],
+                ..DeviceSettings::default()
+            })
+            .is_err(),
+        "a low threshold above the high one is refused"
+    );
+}
+
+#[test]
+#[ignore = "needs an AD936x radio at SDRMM_AD936X"]
+fn a_real_radio_hears_its_own_test_tone_across_recalled_retunes() {
+    let mut device = open();
+    if device.capabilities().tx_streams == 0 {
+        return;
+    }
+    let rate = 4e6;
+    let offset = 200e3;
+    let home = 869_500_000.0;
+    device
+        .apply(&DeviceSettings {
+            center_hz: Some(home),
+            sample_rate: Some(rate),
+            agc: Some(AgcSetting::off()),
+            gains: vec![
+                GainValue::new(GainKind::Tuner, 50.0),
+                GainValue::new(GainKind::Tx, -30.0),
+            ],
+            extra: vec![
+                extra("tone_1", serde_json::json!(true)),
+                extra("tone_1_hz", serde_json::json!(offset)),
+                extra("tone_1_dbfs", serde_json::json!(-6.0)),
+                extra("tone_2", serde_json::json!(false)),
+            ],
+            ..DeviceSettings::default()
+        })
+        .expect("a tone");
+    let mut retunes = Vec::new();
+    for center in [home, home + 1e6, home, home + 1e6, home] {
+        let started = Instant::now();
+        device
+            .apply(&DeviceSettings {
+                center_hz: Some(center),
+                ..DeviceSettings::default()
+            })
+            .expect("retunes");
+        retunes.push(started.elapsed());
+        let samples = capture(&mut device, 65_536);
+        let tone = power_at(&samples, offset, rate);
+        let mirror = power_at(&samples, -offset, rate);
+        let elsewhere = power_at(&samples, offset + 377e3, rate);
+        assert!(
+            tone > mirror + 20.0 && tone > elsewhere + 20.0,
+            "at {center}: tone {tone:.1} dB, mirror {mirror:.1}, elsewhere {elsewhere:.1}"
+        );
+    }
+    eprintln!("retunes took {retunes:?}");
+
+    device
+        .apply(&DeviceSettings {
+            extra: vec![extra("tone_1", serde_json::json!(false))],
+            ..DeviceSettings::default()
+        })
+        .expect("silence");
+    let samples = capture(&mut device, 65_536);
+    let quiet = power_at(&samples, offset, rate);
+    let elsewhere = power_at(&samples, offset + 377e3, rate);
+    assert!(
+        quiet < elsewhere + 10.0,
+        "tone off: {quiet:.1} dB vs {elsewhere:.1}"
+    );
 }

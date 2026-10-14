@@ -16,6 +16,7 @@ import { Tip } from "../../components/Tip";
 import { TuneTo } from "../../components/TuneTo";
 import { TuningLock } from "../../components/TuningLock";
 import { addNetworkRadio, STATE_KEY } from "../../lib/api";
+import { readoutStats, useDeviceReadouts } from "../../lib/readouts";
 import { resolvedNode, runsOf } from "../../lib/resolved";
 import { toastError } from "../../lib/toasts";
 import type {
@@ -516,6 +517,13 @@ export function DeviceFace({ node }: { node: PatchNode }) {
   );
 }
 
+const READOUT_TITLES: Record<string, string> = {
+  temperature: "Transceiver temperature",
+  fpga_temperature: "FPGA temperature",
+  rssi: "Received signal strength per lane",
+  reference: "Reference clock lock",
+};
+
 const LOSS_HINT =
   "The radio sends more than its link or this computer carries. Lower the rate or the lanes";
 
@@ -523,8 +531,21 @@ function DeviceHealth({ set }: { set: DeviceSet }) {
   const clipping = clippingSaid(set);
   const loss = lossSaid(set);
   const bond = lanesMerged(set) ? bondSaid(set.capabilities.coherence) : null;
+  const readouts = readoutStats(useDeviceReadouts(set.id));
   return (
     <SourceHealth set={set}>
+      {set.status === "running" &&
+        readouts.map((stat) => (
+          <Stat
+            key={stat.name}
+            label={stat.label}
+            title={READOUT_TITLES[stat.name] ?? stat.label}
+            tone={stat.warn ? "warn" : undefined}
+          >
+            {stat.text}
+            {stat.unit !== "" && ` ${stat.unit}`}
+          </Stat>
+        ))}
       {loss !== null && (
         <Stat label="Lost" title={LOSS_HINT} tone="warn">
           {loss}

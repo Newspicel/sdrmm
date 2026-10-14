@@ -1,11 +1,10 @@
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { rxStreamCount, streamLabel } from "../canvas/graph";
 import { agcDelta, agcGainDb, agcModeDelta, laneAgc, radioAgc } from "../canvas/nodes/deviceNode";
 import { useLevelStore } from "../lib/levels";
-import type { Capabilities, DeviceSet, ExtraSetting, GainStage, Range } from "../lib/types";
+import type { Capabilities, DeviceSet, GainStage } from "../lib/types";
 import { forStream, useDevicePatch } from "../lib/useDevicePatch";
 import { AgcAuto, AutoToggle, agcTip } from "./AgcAuto";
-import { Input } from "./BaseControls";
 import { Checkbox } from "./Checkbox";
 import {
   AUTO_FILTER,
@@ -14,7 +13,6 @@ import {
   dcBlockOn,
   filterHz,
   filterIsAuto,
-  fitsSlider,
   formatGain,
   gainLabel,
   gainUnit,
@@ -28,9 +26,9 @@ import {
   spanOf,
   stageSettings,
 } from "./capabilities";
-import { FIELD } from "./controls";
 import { meterTone } from "./dbfs";
 import { isTunable, tuningRange } from "./dial";
+import { ExtraChips } from "./ExtraSettings";
 import { ChipField, Chips, ReadoutChip, SettingChip, ToggleChip } from "./face/Chips";
 import { GainMeter, MeterRow } from "./face/Meter";
 import { formatHz, formatSampleRate } from "./format";
@@ -49,16 +47,11 @@ import {
 } from "./laneRows";
 import { NumberField } from "./NumberField";
 import { LOOP_SETTING } from "./playback";
-import { SearchableSelect } from "./SearchableSelect";
 import { SegmentedToggles } from "./Segmented";
 import { Select } from "./Select";
-import { Slider } from "./Slider";
 import { withCurrent } from "./selectOptions";
-import { settingLabel } from "./settingLabel";
 import { Unit } from "./Unit";
 import { useDebouncedCommit } from "./useDebouncedCommit";
-
-const SEARCHABLE_FROM = 12;
 
 const WIDE = "min-w-0 flex-1";
 
@@ -255,14 +248,11 @@ function SettingChips({ active, patch }: { active: DeviceSet; patch: Patch }) {
         />
       )}
 
-      {extras.map((setting) => (
-        <ExtraChip
-          key={setting.name}
-          setting={setting}
-          raw={settings.extra?.find((e) => e.name === setting.name)?.value}
-          onCommit={(value) => patch({ extra: [{ name: setting.name, value }] })}
-        />
-      ))}
+      <ExtraChips
+        settings={extras}
+        values={settings.extra ?? []}
+        onCommit={(name, value) => patch({ extra: [{ name, value }] })}
+      />
     </Chips>
   );
 }
@@ -428,173 +418,6 @@ function FilterControl({
         )
       )}
     </>
-  );
-}
-
-function ExtraChip({
-  setting,
-  raw,
-  onCommit,
-}: {
-  setting: ExtraSetting;
-  raw: unknown;
-  onCommit: (value: boolean | string | number) => void;
-}) {
-  const name = setting.label ?? settingLabel(setting.name);
-  switch (setting.kind) {
-    case "bool":
-      return (
-        <ToggleChip
-          label={name}
-          on={typeof raw === "boolean" ? raw : setting.default}
-          title={name}
-          onChange={onCommit}
-        />
-      );
-    case "enum": {
-      const options = setting.options.map((option) => ({
-        value: option.value,
-        label: option.label ?? option.value,
-      }));
-      const value = typeof raw === "string" ? raw : setting.default;
-      const Picker = options.length > SEARCHABLE_FROM ? SearchableSelect : Select;
-      return (
-        <SettingChip
-          label={name}
-          value={options.find((option) => option.value === value)?.label ?? value}
-          title={name}
-        >
-          {() => (
-            <ChipField label={name}>
-              <Picker
-                className={WIDE}
-                label={name}
-                value={value}
-                options={options}
-                onChange={onCommit}
-              />
-            </ChipField>
-          )}
-        </SettingChip>
-      );
-    }
-    case "range": {
-      const value = typeof raw === "number" ? raw : setting.range.min;
-      return (
-        <SettingChip
-          label={name}
-          value={String(value)}
-          unit={setting.unit === "" ? undefined : setting.unit}
-          title={`${name}: ${setting.range.min} to ${setting.range.max}`}
-        >
-          {() =>
-            fitsSlider(setting.range) ? (
-              <RangeSlider
-                name={name}
-                unit={setting.unit}
-                range={setting.range}
-                value={value}
-                onCommit={onCommit}
-              />
-            ) : (
-              <ChipField label={name}>
-                <NumberField
-                  className={WIDE}
-                  label={name}
-                  unit={setting.unit === "" ? undefined : setting.unit}
-                  value={value}
-                  min={setting.range.min}
-                  max={setting.range.max}
-                  step={setting.range.step ?? undefined}
-                  onCommit={onCommit}
-                />
-              </ChipField>
-            )
-          }
-        </SettingChip>
-      );
-    }
-    case "string": {
-      const value = typeof raw === "string" ? raw : setting.default;
-      return (
-        <SettingChip
-          label={name}
-          value={value === "" ? "none" : value}
-          quiet={value === ""}
-          title={name}
-        >
-          {(close) => (
-            <ChipField label={name}>
-              <TextEntry label={name} value={value} onCommit={onCommit} onDone={close} />
-            </ChipField>
-          )}
-        </SettingChip>
-      );
-    }
-  }
-}
-
-function TextEntry({
-  label,
-  value,
-  onCommit,
-  onDone,
-}: {
-  label: string;
-  value: string;
-  onCommit: (value: string) => void;
-  onDone: () => void;
-}) {
-  const [draft, setDraft] = useState(value);
-  return (
-    <Input
-      autoFocus
-      aria-label={label}
-      className={`${FIELD} ${WIDE}`}
-      value={draft}
-      onChange={(event) => setDraft(event.currentTarget.value)}
-      onBlur={() => onCommit(draft)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          onCommit(draft);
-          onDone();
-        }
-      }}
-    />
-  );
-}
-
-function RangeSlider({
-  name,
-  unit,
-  range,
-  value,
-  onCommit,
-}: {
-  name: string;
-  unit: string;
-  range: Range;
-  value: number;
-  onCommit: (value: number) => void;
-}) {
-  const { pending, change } = useDebouncedCommit(onCommit);
-  const shown = pending ?? value;
-  const digits = range.step != null && range.step < 1 ? 1 : 0;
-  return (
-    <ChipField label={name}>
-      <Slider
-        label={`${name} (${unit})`}
-        className="min-w-0 flex-1"
-        min={range.min}
-        max={range.max}
-        step={range.step ?? 1}
-        value={shown}
-        onChange={change}
-      />
-      <span className="w-14 shrink-0 text-right font-mono text-xs tabular-nums text-ink">
-        {shown.toFixed(digits)} <Unit symbol={unit} className="text-ink-faint" />
-      </span>
-    </ChipField>
   );
 }
 

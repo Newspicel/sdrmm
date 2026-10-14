@@ -5,6 +5,7 @@ use sdrmm_wire::{
 };
 
 use crate::{
+    chip::Chip,
     fir::{FIR_CHANNEL, FIR_CONFIG, FIR_ENABLE},
     iio::{Client, Context, Direction},
     layout::{
@@ -12,6 +13,9 @@ use crate::{
         QUADRATURE_TRACKING, RF_BANDWIDTH, RF_DC_TRACKING, RF_PORT_SELECT, RX_LO,
         SAMPLING_FREQUENCY, XO_CORRECTION, available,
     },
+    lo::Abilities,
+    readouts::Probes,
+    tone::Tones,
 };
 
 pub(crate) const MANUAL_GAIN: &str = "manual";
@@ -25,6 +29,7 @@ pub(crate) const QUADRATURE: &str = "quadrature_tracking";
 pub(crate) const RF_DC: &str = "rf_dc_tracking";
 pub(crate) const BB_DC: &str = "bb_dc_tracking";
 pub(crate) const TX_PORT: &str = "tx_port";
+const TRACKING_GROUP: &str = "Tracking";
 const RX_PORT_LOCK: &str = "adi,rx-rf-port-input-select-lock-enable";
 const TX_PORT_LOCK: &str = "adi,tx-rf-port-input-select-lock-enable";
 
@@ -38,11 +43,16 @@ pub(crate) struct Front {
     pub(crate) tx_gain: Option<Range>,
     pub(crate) gain_modes: Vec<String>,
     pub(crate) rx_ports: Vec<String>,
+    pub(crate) rx_port_locked: bool,
     pub(crate) tx_ports: Vec<String>,
     pub(crate) trim: Option<Trim>,
     pub(crate) tracking: Tracking,
     pub(crate) decimation: Option<Decimation>,
     pub(crate) fir: bool,
+    pub(crate) chip: Chip,
+    pub(crate) tones: Option<Tones>,
+    pub(crate) probes: Probes,
+    pub(crate) synths: Abilities,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -174,6 +184,7 @@ impl Front {
                 .list(Direction::In, rx, GAIN_CONTROL_MODE)
                 .unwrap_or_default(),
             rx_ports: reader.ports(Direction::In, rx, RX_PORT_LOCK),
+            rx_port_locked: reader.locked(RX_PORT_LOCK),
             tx_ports: tx
                 .map(|tx| reader.ports(Direction::Out, tx, TX_PORT_LOCK))
                 .unwrap_or_default(),
@@ -186,6 +197,13 @@ impl Front {
                         .channel(FIR_CHANNEL, false)
                         .is_some_and(|channel| channel.has(FIR_ENABLE))
             }),
+            chip: Chip::read(client, context, &layout.phy),
+            tones: layout
+                .tx
+                .as_ref()
+                .and_then(|tx| Tones::read(context, &tx.device)),
+            probes: Probes::read(client, context, layout),
+            synths: Abilities::read(context, &layout.phy),
         })
     }
 }
@@ -262,16 +280,16 @@ impl Reader<'_> {
     }
 
     fn trim(&self) -> Option<Trim> {
-        let reference = self
-            .client
-            .read_device_attr(self.phy, XO_CORRECTION)
-            .ok()
-            .and_then(|value| value.trim().parse::<f64>().ok())
+        let factory = self
+            .context
+            .attribute(&format!("{},{XO_CORRECTION}", self.phy))
+            .and_then(|value| value.trim().parse::<f64>().ok());
+        let reference = factory
             .or_else(|| {
-                self.context
-                    .attribute(&format!("{},{XO_CORRECTION}", self.phy))?
-                    .parse()
+                self.client
+                    .read_device_attr(self.phy, XO_CORRECTION)
                     .ok()
+                    .and_then(|value| value.trim().parse::<f64>().ok())
             })
             .filter(|reference| *reference > 0.0)?;
         let range = self
@@ -360,7 +378,7 @@ pub(crate) fn capabilities(front: &Front, layout: &Layout) -> Capabilities {
         bandwidth_auto: false,
         bias_tee: false,
         agc: agc(front),
-        extra: extra_settings(front),
+        extra: extra_settings(front, layout),
         ppm: front.trim.is_some(),
         duplex: if tx_streams > 0 {
             Duplex::Full
@@ -431,15 +449,15 @@ fn agc(front: &Front) -> Agc {
     }
 }
 
-fn extra_settings(front: &Front) -> Vec<ExtraSetting> {
+fn extra_settings(front: &Front, layout: &Layout) -> Vec<ExtraSetting> {
     let mut extra = Vec::new();
     for (present, name, label) in [
-        (front.tracking.quadrature, QUADRATURE, "Quadrature tracking"),
-        (front.tracking.rf_dc, RF_DC, "RF DC tracking"),
-        (front.tracking.bb_dc, BB_DC, "Baseband DC tracking"),
+        (front.tracking.quadrature, QUADRATURE, "Quadrature"),
+        (front.tracking.rf_dc, RF_DC, "RF DC"),
+        (front.tracking.bb_dc, BB_DC, "Baseband DC"),
     ] {
         if present {
-            extra.push(ExtraSetting::bool(name, label, true));
+            extra.push(ExtraSetting::bool(name, label, true).in_group(TRACKING_GROUP));
         }
     }
     if front.tx_ports.len() > 1 {
@@ -449,6 +467,10 @@ fn extra_settings(front: &Front) -> Vec<ExtraSetting> {
             front.tx_ports.iter().map(ArgumentOption::plain).collect(),
             front.tx_ports[0].clone(),
         ));
+    }
+    extra.extend(front.chip.settings(agc(front).offered()));
+    if let Some(tones) = front.tones.as_ref().filter(|_| layout.tx_streams() > 0) {
+        extra.extend(tones.settings(front.rate.max));
     }
     extra
 }
@@ -473,6 +495,7 @@ pub(crate) mod tests {
                 .map(str::to_string)
                 .to_vec(),
             rx_ports: ["A_BALANCED", "B_BALANCED"].map(str::to_string).to_vec(),
+            rx_port_locked: false,
             tx_ports: ["A", "B"].map(str::to_string).to_vec(),
             trim: Some(Trim {
                 reference: 40_000_000.0,
@@ -489,6 +512,10 @@ pub(crate) mod tests {
                 tx: Some("cf-ad9361-dds-core-lpc".to_string()),
             }),
             fir: false,
+            chip: Chip::default(),
+            tones: None,
+            probes: Probes::default(),
+            synths: Abilities::default(),
         }
     }
 
@@ -619,14 +646,14 @@ pub(crate) mod tests {
     #[test]
     fn only_the_corrections_this_firmware_carries_become_settings() {
         let names = |front: &Front| {
-            extra_settings(front)
+            extra_settings(front, &crate::layout::tests::one_by_one_layout())
                 .iter()
                 .map(|setting| setting.name().to_string())
                 .collect::<Vec<_>>()
         };
         assert_eq!(names(&front()), vec![QUADRATURE, RF_DC, BB_DC, TX_PORT]);
         assert!(
-            extra_settings(&front())
+            extra_settings(&front(), &crate::layout::tests::one_by_one_layout())
                 .iter()
                 .all(|setting| setting.label().is_some())
         );

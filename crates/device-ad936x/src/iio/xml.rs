@@ -15,6 +15,7 @@ pub(crate) struct Device {
     pub(crate) name: String,
     pub(crate) channels: Vec<Channel>,
     pub(crate) attributes: Vec<String>,
+    pub(crate) debug_attributes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -141,6 +142,11 @@ impl Context {
                     (None, Some(device), Some(name)) => device.attributes.push(name),
                     _ => {}
                 },
+                "debug-attribute" => {
+                    if let (Some(device), Some(name)) = (device.as_mut(), tag.get("name")) {
+                        device.debug_attributes.push(name);
+                    }
+                }
                 _ => {}
             }
         }

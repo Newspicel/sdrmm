@@ -298,8 +298,18 @@ sets the real limit. On a 2×2 board both RX lanes share a clock and are phase c
 | TX | Transmit attenuation per lane |
 | AGC | Per lane: fast attack, slow attack, or hybrid |
 | Filter | Analog bandwidth |
-| Quadrature, RF DC, Baseband DC tracking | Hardware corrections |
+| Tracking | Quadrature, RF DC and baseband DC corrections |
+| Tone | Two DDS test tones on every TX lane, with offset and level. Transmits without a stream |
+| AGC | High and low thresholds of the gain loop, in dBFS |
+| Chip | Rate governor, calibration (auto or manual), and state: run, alert, wait or sleep |
+| LO | External RX or TX LO |
 | Antenna, TX port | Shown only if the board lets the port change |
+
+The face shows chip and FPGA temperature and RSSI per lane, refreshed every second.
+
+A frequency tuned before is recalled from one of 8 fast-lock profiles instead of recalibrating
+the synthesizer, so a scanner hopping between known channels retunes in about 2 ms instead of 10. The
+TX synthesizer sleeps while nothing transmits and no tone is on.
 
 Linux needs the libiio udev rules. `sdrmm --doctor` checks for them.
 

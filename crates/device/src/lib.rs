@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use num_complex::Complex;
-use sdrmm_wire::{AgcGain, Capabilities, DeviceInfo, DeviceSettings, StreamScope};
+use sdrmm_wire::{AgcGain, Capabilities, DeviceInfo, DeviceSettings, Readout, StreamScope};
 
 pub type Sample = Complex<f32>;
 
@@ -363,6 +363,10 @@ pub trait SdrDevice: Send {
     }
 
     fn agc_gains(&self) -> Result<Vec<AgcGain>, DeviceError> {
+        Ok(Vec::new())
+    }
+
+    fn readouts(&self) -> Result<Vec<Readout>, DeviceError> {
         Ok(Vec::new())
     }
 

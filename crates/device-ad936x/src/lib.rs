@@ -10,7 +10,8 @@ use sdrmm_device::{
     net::{Adopted, Endpoint},
 };
 use sdrmm_wire::{
-    AgcGain, Capabilities, DeviceInfo, DeviceSettings, Duplex, GainKind, StreamSettings,
+    AgcGain, Capabilities, DeviceInfo, DeviceSettings, Duplex, GainKind, Readout, ReadoutValue,
+    StreamSettings,
 };
 
 use crate::{
@@ -18,7 +19,8 @@ use crate::{
     convert::IqConverter,
     discovery::{Identity, USB_PREFIX},
     iio::{Client, DEFAULT_PORT, Direction as Way, UsbBus},
-    layout::{HARDWAREGAIN, Layout, available},
+    layout::{FREQUENCY, HARDWAREGAIN, Layout, RF_PORT_SELECT, TX_LO, available},
+    lo::{Lo, POWERDOWN, Synths},
     pace::LiveRate,
     rx::{RxRadio, fan_out},
     source::Source,
@@ -27,15 +29,20 @@ use crate::{
 
 mod apply;
 mod caps;
+mod chip;
 mod convert;
 mod discovery;
+mod fastlock;
 mod fir;
 mod iio;
 mod iqlink;
 mod layout;
+mod lo;
 mod pace;
+mod readouts;
 mod rx;
 mod source;
+mod tone;
 mod tx;
 
 const DRIVER_ID: &str = "ad936x";
@@ -219,6 +226,33 @@ fn split_gains(delta: &DeviceSettings) -> (DeviceSettings, DeviceSettings) {
     (front, gains)
 }
 
+fn synths(client: &Client, front: &Front, layout: &Layout, settings: &DeviceSettings) -> Synths {
+    let tx = |attr: &str| {
+        client
+            .read_channel_attr(&layout.phy, Way::Out, TX_LO, attr)
+            .inspect_err(|e| tracing::debug!("{TX_LO}.{attr}: {e}"))
+            .ok()
+    };
+    let tx_hz = tx(FREQUENCY).and_then(|hz| hz.trim().parse::<u64>().ok());
+    let tx_on = !front.synths.powerdown || tx(POWERDOWN).is_some_and(|off| off.trim() == "0");
+    let mut synths = Synths::new(front.synths, tx_hz, tx_on);
+    follow_external(&mut synths, settings);
+    synths
+}
+
+fn follow_external(synths: &mut Synths, settings: &DeviceSettings) {
+    for extra in &settings.extra {
+        let lo = match extra.name.as_str() {
+            chip::RX_LO_EXTERNAL => Lo::Rx,
+            chip::TX_LO_EXTERNAL => Lo::Tx,
+            _ => continue,
+        };
+        if let Some(external) = extra.value.as_bool() {
+            synths.set_external(lo, external);
+        }
+    }
+}
+
 fn lane_only(stream: u32) -> StreamSettings {
     StreamSettings {
         stream,
@@ -245,6 +279,8 @@ pub struct Ad936xDevice {
     duplex: Arc<Mutex<DuplexState>>,
     capture: Capture<RxRadio>,
     rate: LiveRate,
+    synths: Synths,
+    celsius: Mutex<Option<f64>>,
 }
 
 impl Ad936xDevice {
@@ -263,6 +299,7 @@ impl Ad936xDevice {
         }
         let mut settings = apply::read_settings(&client, &capabilities, &front, &layout);
         settings.rx_inputs = (!capabilities.rx_inputs.is_empty()).then(|| vec![0]);
+        let synths = synths(&client, &front, &layout, &settings);
         tracing::info!(
             radio = context
                 .attribute("hw_model")
@@ -272,7 +309,7 @@ impl Ad936xDevice {
             tx = capabilities.tx_streams,
             "opened an AD936x radio"
         );
-        Ok(Self {
+        let mut device = Self {
             duplex: Arc::new(Mutex::new(DuplexState::new(capabilities.duplex))),
             client: Arc::new(client),
             source,
@@ -283,7 +320,39 @@ impl Ad936xDevice {
             rate: LiveRate::new(settings.sample_rate),
             settings,
             capture: Capture::new(),
-        })
+            synths,
+            celsius: Mutex::new(None),
+        };
+        device.settle_tx()?;
+        Ok(device)
+    }
+
+    fn settle_tx(&mut self) -> Result<(), DeviceError> {
+        self.execute_resolved(Vec::new(), self.tx_wanted(&self.settings.clone()))
+    }
+
+    fn tx_wanted(&self, next: &DeviceSettings) -> bool {
+        tone::any_on(next) || lock(&self.duplex).is_active(Direction::Tx)
+    }
+
+    fn execute_resolved(
+        &mut self,
+        planned: Vec<apply::Write>,
+        tx_wanted: bool,
+    ) -> Result<(), DeviceError> {
+        let now = Instant::now();
+        let celsius = *lock(&self.celsius);
+        let resolved = self.synths.resolve(planned, tx_wanted, now, celsius);
+        match apply::execute(&self.client, &self.layout.phy, &resolved.writes) {
+            Ok(()) => {
+                self.synths.commit(&resolved, now, celsius);
+                Ok(())
+            }
+            Err(e) => {
+                self.synths.forget();
+                Err(e)
+            }
+        }
     }
 
     fn apply_all(&mut self, settings: &DeviceSettings) -> Result<(), DeviceError> {
@@ -309,8 +378,13 @@ impl Ad936xDevice {
             &self.layout,
             &self.settings,
         )?;
-        match apply::execute(&self.client, &self.layout.phy, &writes) {
+        let tx_wanted = self.tx_wanted(&next);
+        match self.execute_resolved(writes, tx_wanted) {
             Ok(()) => {
+                if delta.ppm.is_some() {
+                    self.synths.forget();
+                }
+                follow_external(&mut self.synths, delta);
                 self.settings = next;
                 Ok(())
             }
@@ -322,18 +396,24 @@ impl Ad936xDevice {
     }
 
     fn reread(&mut self) {
-        let held =
+        let mut held =
             apply::read_settings(&self.client, &self.capabilities, &self.front, &self.layout);
+        if let Some(hz) = self.synths.rx_hz() {
+            held.center_hz = Some(hz as f64);
+        }
         self.settings.merge_from(&held);
     }
 
     fn follow_band(&mut self) {
-        let Some(port) = self.layout.port(false, 0) else {
+        let Some(port) = self.layout.port(false, 0).map(str::to_string) else {
             return;
         };
+        if self.front.rx_port_locked {
+            self.follow_port(port.clone());
+        }
         let range = self
             .client
-            .read_channel_attr(&self.layout.phy, Way::In, port, &available(HARDWAREGAIN))
+            .read_channel_attr(&self.layout.phy, Way::In, &port, &available(HARDWAREGAIN))
             .inspect_err(|e| tracing::debug!("{port} gain range: {e}"))
             .ok()
             .and_then(|text| parse_range(&text));
@@ -349,6 +429,24 @@ impl Ad936xDevice {
             stage.range = range;
             self.front.rx_gain = range;
             self.reread();
+        }
+    }
+
+    fn follow_port(&mut self, port: String) {
+        let Some(picked) = self
+            .client
+            .read_channel_attr(&self.layout.phy, Way::In, &port, RF_PORT_SELECT)
+            .inspect_err(|e| tracing::debug!("{port} input: {e}"))
+            .ok()
+            .map(|picked| picked.trim().to_string())
+            .filter(|picked| !picked.is_empty())
+        else {
+            return;
+        };
+        if self.capabilities.antennas != [picked.as_str()] {
+            self.front.rx_ports = vec![picked.clone()];
+            self.capabilities.antennas = vec![picked.clone()];
+            self.settings.antenna = Some(picked);
         }
     }
 
@@ -429,6 +527,23 @@ impl SdrDevice for Ad936xDevice {
         applied
     }
 
+    fn readouts(&self) -> Result<Vec<Readout>, DeviceError> {
+        let readouts = self.front.probes.sample(
+            &self.client,
+            &self.layout,
+            self.capabilities.rx_streams as usize,
+        )?;
+        if let Some(celsius) = readouts.iter().find_map(|readout| match &readout.value {
+            ReadoutValue::Number { value, .. } if readout.name == readouts::TEMPERATURE => {
+                Some(*value)
+            }
+            _ => None,
+        }) {
+            *lock(&self.celsius) = Some(celsius);
+        }
+        Ok(readouts)
+    }
+
     fn agc_gains(&self) -> Result<Vec<AgcGain>, DeviceError> {
         let mut gains = Vec::new();
         for lane in 0..self.capabilities.rx_streams as usize {
@@ -498,6 +613,10 @@ impl SdrDevice for Ad936xDevice {
             stream.sample_bytes(lanes),
         );
         lock(&self.duplex).claim(Direction::Tx)?;
+        if let Err(e) = self.execute_resolved(Vec::new(), true) {
+            lock(&self.duplex).release(Direction::Tx);
+            return Err(e);
+        }
         match Ad936xTx::open(&self.source, &stream, lanes, samples, self.duplex.clone()) {
             Ok(stream) => Ok(Box::new(stream)),
             Err(e) => {

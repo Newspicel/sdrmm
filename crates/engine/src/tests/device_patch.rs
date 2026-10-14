@@ -596,6 +596,36 @@ impl SdrDevice for AgcDevice {
             value_db: 28.0,
         }])
     }
+
+    fn readouts(&self) -> Result<Vec<sdrmm_wire::Readout>, DeviceError> {
+        Ok(vec![sdrmm_wire::Readout::number(
+            "temperature",
+            "Chip",
+            43.9,
+            "°C",
+        )])
+    }
+}
+
+#[tokio::test]
+async fn a_running_radio_reports_its_readouts_every_tick() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(AgcDriver));
+    let engine = Engine::with_registry(registry, None);
+    let mut events = engine.subscribe_events();
+    let ds = engine.create_device_set("mock:agc").unwrap();
+    engine.sink_tick();
+    let readouts = std::iter::from_fn(|| events.try_recv().ok())
+        .find_map(|event| match event {
+            ServerEvent::DeviceReadouts {
+                device_set,
+                readouts,
+            } if device_set == ds => Some(readouts),
+            _ => None,
+        })
+        .expect("a readout event");
+    assert_eq!(readouts[0].label, "Chip");
+    engine.remove_device_set(ds).unwrap();
 }
 
 #[tokio::test]

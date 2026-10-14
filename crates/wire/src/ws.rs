@@ -121,6 +121,10 @@ pub enum ServerEvent {
         queues: Vec<crate::PipelineQueue>,
         websocket: crate::QueueHealth,
     },
+    DeviceReadouts {
+        device_set: u32,
+        readouts: Vec<crate::Readout>,
+    },
     Hello {
         revision: u64,
         protocol: u32,

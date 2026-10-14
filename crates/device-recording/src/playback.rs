@@ -671,7 +671,7 @@ mod tests {
         assert_eq!(caps.freq_ranges[0].max, 100_000_000.0);
         assert!(matches!(
             &caps.extra[..],
-            [ExtraSetting::Bool { name, label: Some(label), default: true }]
+            [ExtraSetting::Bool { name, label: Some(label), default: true, .. }]
                 if name == LOOP_SETTING && label == "Loop"
         ));
         assert_eq!(caps.freq_ranges[0].min, caps.freq_ranges[0].max);

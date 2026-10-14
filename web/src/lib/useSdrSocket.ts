@@ -28,6 +28,7 @@ import { iqHub, symbolHub } from "./portTaps";
 import { usePositionStore } from "./position";
 import { authorKey, savedName, usePresenceStore } from "./presence";
 import { useProcessorStore } from "./processors";
+import { useReadouts } from "./readouts";
 import { observeResolved } from "./resolved";
 import { useRotatorStore } from "./rotator";
 import { useSatelliteStore } from "./satellite";
@@ -97,11 +98,13 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
         s.send({ type: "Present", data: { author: authorKey(), name: savedName() } });
       } else {
         usePipelineHealth.getState().reset();
+        useReadouts.getState().reset();
         usePresenceStore.getState().reset();
       }
       up = now;
     });
     s.on("event", usePipelineHealth.getState().observe);
+    s.on("event", useReadouts.getState().observe);
     s.on("event", useScannerStore.getState().observe);
     s.on("event", useHuntStore.getState().observe);
     s.on("event", useBroadcastStore.getState().observe);

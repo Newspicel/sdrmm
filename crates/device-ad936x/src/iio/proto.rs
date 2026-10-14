@@ -46,6 +46,10 @@ pub(crate) fn read_debug_attr(device: &str, attr: &str) -> String {
     format!("READ {device} DEBUG {attr}{EOL}")
 }
 
+pub(crate) fn write_debug_attr(device: &str, attr: &str, bytes: usize) -> String {
+    format!("WRITE {device} DEBUG {attr} {bytes}{EOL}")
+}
+
 pub(crate) fn write_device_attr(device: &str, attr: &str, bytes: usize) -> String {
     format!("WRITE {device} {attr} {bytes}{EOL}")
 }

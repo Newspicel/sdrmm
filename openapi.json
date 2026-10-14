@@ -19103,6 +19103,12 @@
               "default": {
                 "type": "boolean"
               },
+              "group": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -19129,6 +19135,12 @@
               "kind"
             ],
             "properties": {
+              "group": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -19164,6 +19176,12 @@
               "default": {
                 "type": "string"
               },
+              "group": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "kind": {
                 "type": "string",
                 "enum": [
@@ -19197,6 +19215,12 @@
             "properties": {
               "default": {
                 "type": "string"
+              },
+              "group": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "kind": {
                 "type": "string",
@@ -30938,6 +30962,78 @@
           }
         }
       },
+      "Readout": {
+        "type": "object",
+        "required": [
+          "name",
+          "label",
+          "value"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stream": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "value": {
+            "$ref": "#/components/schemas/ReadoutValue"
+          }
+        }
+      },
+      "ReadoutValue": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "unit",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "number"
+                ]
+              },
+              "unit": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "on",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "flag"
+                ]
+              },
+              "on": {
+                "type": "boolean"
+              }
+            }
+          }
+        ]
+      },
       "RecorderNode": {
         "type": "object",
         "properties": {
@@ -33242,6 +33338,41 @@
                 "type": "string",
                 "enum": [
                   "PipelineHealth"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "device_set",
+                  "readouts"
+                ],
+                "properties": {
+                  "device_set": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  },
+                  "readouts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Readout"
+                    }
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "DeviceReadouts"
                 ]
               }
             }

@@ -15,6 +15,7 @@ export type GainStage = components["schemas"]["GainStage"];
 export type GainKind = components["schemas"]["GainKind"];
 export type Agc = components["schemas"]["Agc"];
 export type AgcSetting = components["schemas"]["AgcSetting"];
+export type Readout = components["schemas"]["Readout"];
 export type BandwidthSetting = components["schemas"]["BandwidthSetting"];
 export type Range = components["schemas"]["Range"];
 export type ExtraSetting = components["schemas"]["ExtraSetting"];

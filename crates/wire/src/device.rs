@@ -423,12 +423,16 @@ pub enum ExtraSetting {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group: Option<String>,
         default: bool,
     },
     Range {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group: Option<String>,
         range: Range,
         unit: String,
     },
@@ -436,6 +440,8 @@ pub enum ExtraSetting {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group: Option<String>,
         options: Vec<ArgumentOption>,
         default: String,
     },
@@ -443,6 +449,8 @@ pub enum ExtraSetting {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group: Option<String>,
         default: String,
     },
 }
@@ -469,10 +477,32 @@ impl ExtraSetting {
     }
 
     #[must_use]
+    pub fn group(&self) -> Option<&str> {
+        match self {
+            Self::Bool { group, .. }
+            | Self::Range { group, .. }
+            | Self::Enum { group, .. }
+            | Self::String { group, .. } => group.as_deref(),
+        }
+    }
+
+    #[must_use]
+    pub fn in_group(mut self, name: impl Into<String>) -> Self {
+        match &mut self {
+            Self::Bool { group, .. }
+            | Self::Range { group, .. }
+            | Self::Enum { group, .. }
+            | Self::String { group, .. } => *group = Some(name.into()),
+        }
+        self
+    }
+
+    #[must_use]
     pub fn bool(name: impl Into<String>, label: impl Into<String>, default: bool) -> Self {
         Self::Bool {
             name: name.into(),
             label: Some(label.into()),
+            group: None,
             default,
         }
     }
@@ -487,6 +517,7 @@ impl ExtraSetting {
         Self::Range {
             name: name.into(),
             label: Some(label.into()),
+            group: None,
             range,
             unit: unit.into(),
         }
@@ -502,6 +533,7 @@ impl ExtraSetting {
         Self::Enum {
             name: name.into(),
             label: Some(label.into()),
+            group: None,
             options,
             default: default.into(),
         }
@@ -516,6 +548,7 @@ impl ExtraSetting {
         Self::String {
             name: name.into(),
             label: Some(label.into()),
+            group: None,
             default: default.into(),
         }
     }
@@ -563,6 +596,58 @@ impl Agc {
 pub struct AgcGain {
     pub stream: u32,
     pub value_db: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct Readout {
+    pub name: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<u32>,
+    pub value: ReadoutValue,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ReadoutValue {
+    Number { value: f64, unit: String },
+    Flag { on: bool },
+}
+
+impl Readout {
+    #[must_use]
+    pub fn number(
+        name: impl Into<String>,
+        label: impl Into<String>,
+        value: f64,
+        unit: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            label: label.into(),
+            stream: None,
+            value: ReadoutValue::Number {
+                value,
+                unit: unit.into(),
+            },
+        }
+    }
+
+    #[must_use]
+    pub fn flag(name: impl Into<String>, label: impl Into<String>, on: bool) -> Self {
+        Self {
+            name: name.into(),
+            label: label.into(),
+            stream: None,
+            value: ReadoutValue::Flag { on },
+        }
+    }
+
+    #[must_use]
+    pub const fn on_stream(mut self, stream: u32) -> Self {
+        self.stream = Some(stream);
+        self
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

@@ -5244,11 +5244,13 @@ export interface components {
         ExportFormat: "csv" | "json";
         ExtraSetting: {
             default: boolean;
+            group?: string | null;
             /** @enum {string} */
             kind: "bool";
             label?: string | null;
             name: string;
         } | {
+            group?: string | null;
             /** @enum {string} */
             kind: "range";
             label?: string | null;
@@ -5257,6 +5259,7 @@ export interface components {
             unit: string;
         } | {
             default: string;
+            group?: string | null;
             /** @enum {string} */
             kind: "enum";
             label?: string | null;
@@ -5264,6 +5267,7 @@ export interface components {
             options: components["schemas"]["ArgumentOption"][];
         } | {
             default: string;
+            group?: string | null;
             /** @enum {string} */
             kind: "string";
             label?: string | null;
@@ -8318,6 +8322,24 @@ export interface components {
             target_runs?: components["schemas"]["Runs"] | null;
             via?: string[];
         };
+        Readout: {
+            label: string;
+            name: string;
+            /** Format: int32 */
+            stream?: number | null;
+            value: components["schemas"]["ReadoutValue"];
+        };
+        ReadoutValue: {
+            /** @enum {string} */
+            kind: "number";
+            unit: string;
+            /** Format: double */
+            value: number;
+        } | {
+            /** @enum {string} */
+            kind: "flag";
+            on: boolean;
+        };
         RecorderNode: {
             /** @default false */
             recording: boolean;
@@ -8913,6 +8935,14 @@ export interface components {
             };
             /** @enum {string} */
             type: "PipelineHealth";
+        } | {
+            data: {
+                /** Format: int32 */
+                device_set: number;
+                readouts: components["schemas"]["Readout"][];
+            };
+            /** @enum {string} */
+            type: "DeviceReadouts";
         } | {
             data: {
                 phone?: string | null;

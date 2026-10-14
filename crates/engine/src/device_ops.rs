@@ -113,11 +113,35 @@ impl Engine {
     ) -> bool {
         self.report_sinks(self.poll_sinks());
         self.read_agc_gains();
+        self.read_readouts();
         self.probe_bus(known, missing_once, gate, woken)
     }
 
     pub(crate) fn sink_tick(&self) {
         self.report_sinks(self.poll_sinks());
+        self.read_readouts();
+    }
+
+    fn read_readouts(&self) {
+        let running: Vec<(u32, Arc<DeviceRuntime>)> = self
+            .lock()
+            .device_sets
+            .iter()
+            .filter(|(_, state)| state.status == DeviceSetStatus::Running)
+            .map(|(id, state)| (*id, state.runtime.clone()))
+            .collect();
+        for (device_set, runtime) in running {
+            match lock_runtime(&runtime).readouts() {
+                Ok(readouts) if readouts.is_empty() => {}
+                Ok(readouts) => self.emit(ServerEvent::DeviceReadouts {
+                    device_set,
+                    readouts,
+                }),
+                Err(error) => {
+                    tracing::warn!(ds = device_set, %error, "reading the radio's readouts failed")
+                }
+            }
+        }
     }
 
     fn read_agc_gains(&self) {

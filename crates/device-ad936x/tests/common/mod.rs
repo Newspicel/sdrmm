@@ -60,6 +60,10 @@ impl FakeIiod {
         lock(&self.state.attributes).get(key).cloned()
     }
 
+    pub fn attributes(&self) -> HashMap<String, String> {
+        lock(&self.state.attributes).clone()
+    }
+
     pub fn commands(&self) -> Vec<String> {
         lock(&self.state.recorded).commands.clone()
     }
@@ -151,6 +155,29 @@ fn write_attribute(state: &Arc<State>, stream: &mut TcpStream, words: &[&str]) -
     say(stream, &format!("{count}\n"))
 }
 
+const REGISTER_KEY: &str = "ad9361-phy/DEBUG/direct_reg_access";
+
+pub fn register(attributes: &HashMap<String, String>, address: u16) -> u8 {
+    attributes
+        .get(&format!("ad9361-phy/REG/{address:x}"))
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0)
+}
+
+fn access_register(attributes: &mut HashMap<String, String>, value: &str) -> bool {
+    let hex = |text: &str| u16::from_str_radix(text.trim_start_matches("0x"), 16).ok();
+    let mut words = value.split_whitespace();
+    let Some(address) = words.next().and_then(hex) else {
+        return false;
+    };
+    if let Some(written) = words.next().and_then(hex) {
+        attributes.insert(format!("ad9361-phy/REG/{address:x}"), written.to_string());
+    }
+    let held = register(attributes, address);
+    attributes.insert(REGISTER_KEY.to_string(), format!("0x{held:X}"));
+    true
+}
+
 const SHARED: [&str; 5] = [
     "rf_bandwidth",
     "sampling_frequency",
@@ -160,6 +187,9 @@ const SHARED: [&str; 5] = [
 ];
 
 fn store(attributes: &mut HashMap<String, String>, key: &str, value: &str) -> bool {
+    if key == REGISTER_KEY {
+        return access_register(attributes, value);
+    }
     let parts: Vec<&str> = key.split('/').collect();
     let [device, way, channel, attr] = parts[..] else {
         attributes.insert(key.to_string(), value.to_string());
@@ -483,6 +513,94 @@ pub fn attributes(lanes: usize) -> HashMap<String, String> {
             &format!("{tx}/rf_bandwidth_available"),
             "[200000 1 40000000]",
         );
+    }
+    attributes
+}
+
+pub fn antsdr(lanes: usize) -> FakeIiod {
+    FakeIiod::with(antsdr_xml(lanes), antsdr_attributes(lanes))
+}
+
+fn antsdr_xml(lanes: usize) -> String {
+    let lo_extras = r#"<attribute name="fastlock_store" /><attribute name="fastlock_recall" /><attribute name="powerdown" /><attribute name="external" />"#;
+    let mut xml = context_xml(lanes);
+    for (id, name) in [("altvoltage0", "RX_LO"), ("altvoltage1", "TX_LO")] {
+        let anchor = format!("<channel id=\"{id}\" name=\"{name}\" type=\"output\" >");
+        xml = xml.replacen(&anchor, &format!("{anchor}\n{lo_extras}"), 1);
+    }
+    for lane in 0..lanes {
+        let anchor =
+            format!("filename=\"in_voltage{lane}_hardwaregain\" value=\"40.000000 dB\" />");
+        xml = xml.replacen(
+            &anchor,
+            &format!("{anchor}\n<attribute name=\"rssi\" />"),
+            1,
+        );
+    }
+    let phy_extras = r#"<channel id="temp0" type="input" ><attribute name="input" /></channel>
+<attribute name="trx_rate_governor" />
+<attribute name="calib_mode" />
+<debug-attribute name="direct_reg_access" />
+</device>"#;
+    xml = xml.replacen("</device>", phy_extras, 1);
+    let mut tones = String::new();
+    for lane in 0..lanes {
+        for (offset, (way, tone)) in [("I", 1), ("I", 2), ("Q", 1), ("Q", 2)].iter().enumerate() {
+            tones.push_str(&format!(
+                "<channel id=\"altvoltage{}\" name=\"TX{}_{way}_F{tone}\" type=\"output\" >\
+                 <attribute name=\"frequency\" /><attribute name=\"phase\" />\
+                 <attribute name=\"raw\" /><attribute name=\"scale\" /></channel>\n",
+                lane * 4 + offset,
+                lane + 1
+            ));
+        }
+    }
+    let dds = "<device id=\"iio:device2\" name=\"cf-ad9361-dds-core-lpc\" >\n";
+    xml.replacen(dds, &format!("{dds}{tones}"), 1)
+}
+
+fn antsdr_attributes(lanes: usize) -> HashMap<String, String> {
+    let mut attributes = attributes(lanes);
+    let mut put = |key: String, value: &str| {
+        attributes.insert(key, value.to_string());
+    };
+    put("ad9361-phy/INPUT/temp0/input".to_string(), "43860");
+    put("ad9361-phy//trx_rate_governor".to_string(), "nominal");
+    put(
+        "ad9361-phy//trx_rate_governor_available".to_string(),
+        "nominal highest_osr",
+    );
+    put("ad9361-phy//calib_mode".to_string(), "auto");
+    put(
+        "ad9361-phy//calib_mode_available".to_string(),
+        "auto manual manual_tx_quad tx_quad rf_dc_offs rssi_gain_step",
+    );
+    put("ad9361-phy//ensm_mode".to_string(), "fdd");
+    put(
+        "ad9361-phy//ensm_mode_available".to_string(),
+        "sleep wait alert fdd pinctrl pinctrl_fdd_indep",
+    );
+    put("ad9361-phy/REG/101".to_string(), "139");
+    put("ad9361-phy/REG/120".to_string(), "12");
+    for lo in ["altvoltage0", "altvoltage1"] {
+        put(format!("ad9361-phy/OUTPUT/{lo}/powerdown"), "0");
+        put(format!("ad9361-phy/OUTPUT/{lo}/external"), "0");
+    }
+    for lane in 0..lanes {
+        put(
+            format!("ad9361-phy/INPUT/voltage{lane}/rssi"),
+            &format!("{}.75 dB", 86 + lane),
+        );
+        for channel in lane * 4..lane * 4 + 4 {
+            let base = format!("cf-ad9361-dds-core-lpc/OUTPUT/altvoltage{channel}");
+            put(format!("{base}/frequency"), "9999694");
+            put(
+                format!("{base}/phase"),
+                if channel % 4 < 2 { "90000" } else { "0" },
+            );
+            put(format!("{base}/raw"), "1");
+            put(format!("{base}/scale"), "0.000000");
+        }
     }
     attributes
 }

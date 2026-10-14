@@ -6,13 +6,16 @@ use sdrmm_wire::{
 
 use crate::{
     caps::{BB_DC, Front, MANUAL_GAIN, QUADRATURE, RF_DC, TX_PORT},
+    chip,
     fir::{FIR_CHANNEL, FIR_CONFIG, FIR_ENABLE, Fir, SAFE_RATE_HZ, needs_safe_rate},
     iio::{Client, Direction},
     layout::{
         BB_DC_TRACKING, CONVERTER_CHANNEL, FREQUENCY, GAIN_CONTROL_MODE, HARDWAREGAIN, Layout,
         QUADRATURE_TRACKING, RF_BANDWIDTH, RF_DC_TRACKING, RF_PORT_SELECT, RX_LO,
-        SAMPLING_FREQUENCY, TX_LO, XO_CORRECTION,
+        SAMPLING_FREQUENCY, XO_CORRECTION,
     },
+    lo::Lo,
+    tone,
 };
 
 /// One attribute write, in the order the transceiver needs them: a rate change re-derives the
@@ -34,6 +37,22 @@ pub(crate) enum Write {
         output: bool,
         attr: String,
         value: String,
+    },
+    Attr {
+        device: String,
+        output: bool,
+        channel: String,
+        attr: String,
+        value: String,
+    },
+    Register {
+        address: u16,
+        mask: u8,
+        value: u8,
+    },
+    Tune {
+        lo: Lo,
+        hz: u64,
     },
 }
 
@@ -78,6 +97,23 @@ pub(crate) fn execute(client: &Client, phy: &str, writes: &[Write]) -> Result<()
                 attr,
                 value,
             )?,
+            Write::Attr {
+                device,
+                output,
+                channel,
+                attr,
+                value,
+            } => client.write_channel_attr(device, direction(*output), channel, attr, value)?,
+            Write::Register {
+                address,
+                mask,
+                value,
+            } => chip::write_register(client, phy, *address, *mask, *value)?,
+            Write::Tune { lo, hz } => {
+                return Err(DeviceError::Io(format!(
+                    "the {lo:?} synthesizer was asked for {hz} Hz without a way to get there"
+                )));
+            }
         }
     }
     Ok(())
@@ -104,6 +140,13 @@ pub(crate) fn plan(
     plan_trim(delta, front, &mut writes)?;
     plan_lanes(delta, capabilities, layout, &next, &mut writes)?;
     plan_extra(delta, capabilities, layout, &mut writes)?;
+    chip::check_thresholds(
+        extra_number(&next, chip::AGC_HIGH),
+        extra_number(&next, chip::AGC_LOW),
+    )?;
+    if let Some(tones) = &front.tones {
+        tones.plan(delta, &next, &mut writes)?;
+    }
     next.gains = snapped(&next.gains, capabilities);
     for stream in &mut next.streams {
         stream.gains = snapped(&stream.gains, capabilities);
@@ -292,11 +335,10 @@ fn plan_tuning(
             "center_hz {hz} is outside this radio's tuning range"
         )));
     }
-    writes.push(Write::channel(true, RX_LO, FREQUENCY, whole(hz)));
-    // The transmit synthesizer is a separate one on this part. It follows the dial so that a
-    // transmission lands where the operator tuned rather than wherever it was last left.
+    let hz = hz.round() as u64;
+    writes.push(Write::Tune { lo: Lo::Rx, hz });
     if layout.tx_streams() > 0 {
-        writes.push(Write::channel(true, TX_LO, FREQUENCY, whole(hz)));
+        writes.push(Write::Tune { lo: Lo::Tx, hz });
     }
     Ok(())
 }
@@ -463,6 +505,10 @@ fn plan_extra(
                     u8::from(flag(extra)?).to_string(),
                 ));
             }
+            name if chip::owns(name) => {
+                writes.push(chip::plan(extra, || choice(extra, declared))?);
+            }
+            name if tone::owns(name) => {}
             other => {
                 return Err(DeviceError::Unsupported(format!(
                     "this radio has no {other} setting"
@@ -471,6 +517,14 @@ fn plan_extra(
         }
     }
     Ok(())
+}
+
+fn extra_number(settings: &DeviceSettings, name: &str) -> Option<f64> {
+    settings
+        .extra
+        .iter()
+        .find(|extra| extra.name == name)
+        .and_then(|extra| extra.value.as_f64())
 }
 
 fn tracking_attr(name: &str) -> &'static str {
@@ -579,7 +633,10 @@ pub(crate) fn read_settings(
         ppm: read_ppm(client, front, phy),
         agc: read_agc(capabilities, layout, 0, &read),
         gains: read_lane_gains(capabilities, layout, 0, &read),
-        extra: read_extra(capabilities, layout, &read),
+        extra: read_extra(capabilities, layout, &read)
+            .into_iter()
+            .chain(read_own_extra(client, capabilities, front, phy))
+            .collect(),
         streams: read_streams(capabilities, layout, &read),
         ..DeviceSettings::default()
     }
@@ -657,7 +714,7 @@ fn read_ppm(client: &Client, front: &Front, phy: &str) -> Option<f64> {
         .read_device_attr(phy, XO_CORRECTION)
         .ok()
         .and_then(|value| number(&value))?;
-    Some(trim.ppm(correction))
+    Some((trim.ppm(correction) * 100.0).round() / 100.0)
 }
 
 pub(crate) fn read_lane_gains(
@@ -701,6 +758,32 @@ fn read_extra(
                 }
                 _ => return None,
             };
+            Some(ExtraValue {
+                name: name.to_string(),
+                value,
+            })
+        })
+        .collect()
+}
+
+fn read_own_extra(
+    client: &Client,
+    capabilities: &Capabilities,
+    front: &Front,
+    phy: &str,
+) -> Vec<ExtraValue> {
+    capabilities
+        .extra
+        .iter()
+        .filter_map(|setting| {
+            let name = setting.name();
+            let value = if chip::owns(name) {
+                chip::read(client, phy, setting)
+            } else if tone::owns(name) {
+                front.tones.as_ref()?.read_back(client, name)
+            } else {
+                None
+            }?;
             Some(ExtraValue {
                 name: name.to_string(),
                 value,
@@ -909,8 +992,14 @@ mod tests {
                 converter(true, "cf-ad9361-dds-core-lpc", "2400000"),
                 channel(false, "voltage0", RF_BANDWIDTH, "2000000"),
                 channel(true, "voltage0", RF_BANDWIDTH, "2000000"),
-                channel(true, RX_LO, FREQUENCY, "433920000"),
-                channel(true, TX_LO, FREQUENCY, "433920000"),
+                Write::Tune {
+                    lo: Lo::Rx,
+                    hz: 433_920_000
+                },
+                Write::Tune {
+                    lo: Lo::Tx,
+                    hz: 433_920_000
+                },
             ]
         );
     }

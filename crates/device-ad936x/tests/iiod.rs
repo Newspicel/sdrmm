@@ -10,8 +10,9 @@ use sdrmm_device::{
 use sdrmm_device_ad936x::Ad936xDriver;
 use sdrmm_wire::{
     Agc, AgcSetting, BandwidthSetting, Coherence, DcArtifact, DeviceInfo, DeviceSettings, Duplex,
-    GainKind, GainValue, StreamSettings,
+    ExtraValue, GainKind, GainValue, ReadoutValue, StreamSettings,
 };
+use serde_json::json;
 
 const SERIAL: &str = "1044734c960500111e002e0041984fc267";
 
@@ -940,4 +941,197 @@ fn networked(listed: Vec<DeviceInfo>) -> Vec<DeviceInfo> {
         .into_iter()
         .filter(|info| !info.key.starts_with("usb-"))
         .collect()
+}
+
+fn writes_of(server: &FakeIiod, needle: &str) -> usize {
+    server
+        .commands()
+        .iter()
+        .filter(|command| command.starts_with("WRITE") && command.contains(needle))
+        .count()
+}
+
+fn one_extra(name: &str, value: serde_json::Value) -> DeviceSettings {
+    DeviceSettings {
+        extra: vec![ExtraValue {
+            name: name.to_string(),
+            value,
+        }],
+        ..DeviceSettings::default()
+    }
+}
+
+fn tune_to(device: &mut Box<dyn SdrDevice>, hz: f64) {
+    device
+        .apply(&DeviceSettings {
+            center_hz: Some(hz),
+            ..DeviceSettings::default()
+        })
+        .expect("retunes");
+}
+
+#[test]
+fn readouts_carry_the_chip_temperature_and_every_lanes_signal_level() {
+    let server = common::antsdr(2);
+    let mut device = open(&server);
+    device
+        .apply(&DeviceSettings {
+            rx_inputs: Some(vec![0, 1]),
+            ..DeviceSettings::default()
+        })
+        .expect("both lanes");
+    let readouts = device.readouts().expect("readouts");
+    let values: Vec<(&str, Option<u32>, f64)> = readouts
+        .iter()
+        .map(|readout| match readout.value {
+            ReadoutValue::Number { value, .. } => (readout.name.as_str(), readout.stream, value),
+            ReadoutValue::Flag { .. } => panic!("no flag on this radio"),
+        })
+        .collect();
+    assert_eq!(
+        values,
+        vec![
+            ("temperature", None, 43.9),
+            ("rssi", Some(0), -86.75),
+            ("rssi", Some(1), -87.75),
+        ]
+    );
+}
+
+#[test]
+fn a_frequency_visited_again_is_recalled_from_a_fastlock_profile() {
+    let server = common::antsdr(1);
+    let mut device = open(&server);
+    for hz in [868e6, 869e6, 868e6, 869e6] {
+        tune_to(&mut device, hz);
+    }
+    assert_eq!(writes_of(&server, "altvoltage0 frequency"), 2);
+    assert_eq!(writes_of(&server, "altvoltage0 fastlock_store"), 2);
+    assert_eq!(writes_of(&server, "altvoltage0 fastlock_recall"), 2);
+    assert_eq!(device.settings().center_hz, Some(869e6));
+    assert_eq!(
+        writes_of(&server, "altvoltage1 frequency"),
+        0,
+        "a sleeping transmit synthesizer is not retuned"
+    );
+}
+
+#[test]
+fn the_transmit_synthesizer_sleeps_until_a_tone_needs_it() {
+    let server = common::antsdr(1);
+    let mut device = open(&server);
+    let powerdown = || server.attribute("ad9361-phy/OUTPUT/altvoltage1/powerdown");
+    assert_eq!(powerdown().as_deref(), Some("1"));
+    tune_to(&mut device, 433.92e6);
+    device
+        .apply(&DeviceSettings {
+            extra: vec![
+                ExtraValue {
+                    name: "tone_1".to_string(),
+                    value: json!(true),
+                },
+                ExtraValue {
+                    name: "tone_1_hz".to_string(),
+                    value: json!(-25_000.0),
+                },
+                ExtraValue {
+                    name: "tone_1_dbfs".to_string(),
+                    value: json!(-20.0),
+                },
+            ],
+            ..DeviceSettings::default()
+        })
+        .expect("a tone");
+    assert_eq!(powerdown().as_deref(), Some("0"));
+    assert_eq!(
+        server
+            .attribute("ad9361-phy/OUTPUT/altvoltage1/frequency")
+            .as_deref(),
+        Some("433920000"),
+        "the synthesizer wakes on the frequency it missed"
+    );
+    let dds = |channel: &str, attr: &str| {
+        server.attribute(&format!("cf-ad9361-dds-core-lpc/OUTPUT/{channel}/{attr}"))
+    };
+    assert_eq!(dds("altvoltage0", "scale").as_deref(), Some("0.100000"));
+    assert_eq!(dds("altvoltage2", "phase").as_deref(), Some("180000"));
+    assert_eq!(dds("altvoltage0", "frequency").as_deref(), Some("25000"));
+
+    device
+        .apply(&one_extra("tone_1", json!(false)))
+        .expect("silence");
+    assert_eq!(dds("altvoltage0", "scale").as_deref(), Some("0.000000"));
+    assert_eq!(powerdown().as_deref(), Some("1"));
+}
+
+#[test]
+fn chip_settings_reach_their_attributes_and_registers() {
+    let server = common::antsdr(1);
+    let mut device = open(&server);
+    let held = |name: &str| {
+        device
+            .settings()
+            .extra
+            .iter()
+            .find(|extra| extra.name == name)
+            .map(|extra| extra.value.clone())
+    };
+    assert_eq!(held("agc_high"), Some(json!(-11.0)));
+    assert_eq!(held("rate_governor"), Some(json!("nominal")));
+    assert_eq!(held("tone_1"), Some(json!(false)));
+
+    device
+        .apply(&one_extra("rate_governor", json!("highest_osr")))
+        .expect("a governor");
+    device
+        .apply(&one_extra("agc_high", json!(-8.0)))
+        .expect("a threshold");
+    assert_eq!(
+        server.attribute("ad9361-phy//trx_rate_governor").as_deref(),
+        Some("highest_osr")
+    );
+    let registers = server.attributes();
+    assert_eq!(
+        common::register(&registers, 0x101),
+        0x88,
+        "the threshold bits change and the rest of the register stays"
+    );
+    assert!(
+        device
+            .apply(&one_extra("agc_low", json!(-5.0)))
+            .expect_err("refused")
+            .to_string()
+            .contains("below the high one")
+    );
+    assert!(
+        device.apply(&one_extra("ensm", json!("pinctrl"))).is_err(),
+        "a state this driver does not offer is refused"
+    );
+}
+
+#[test]
+fn a_trim_is_counted_from_the_factory_crystal_so_it_does_not_grow_on_every_open() {
+    let xml = common::context_xml(1).replacen(
+        "<context-attribute name=\"hw_serial\"",
+        "<context-attribute name=\"ad9361-phy,xo_correction\" value=\"40000000\" />\n<context-attribute name=\"hw_serial\"",
+        1,
+    );
+    let mut attributes = common::attributes(1);
+    attributes.insert(
+        "ad9361-phy//xo_correction".to_string(),
+        "40000480".to_string(),
+    );
+    let server = FakeIiod::with(xml, attributes);
+    let mut device = open(&server);
+    assert_eq!(device.settings().ppm, Some(12.0));
+    device
+        .apply(&DeviceSettings {
+            ppm: Some(12.0),
+            ..DeviceSettings::default()
+        })
+        .expect("the same trim");
+    assert_eq!(
+        server.attribute("ad9361-phy//xo_correction").as_deref(),
+        Some("40000480")
+    );
 }

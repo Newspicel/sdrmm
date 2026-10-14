@@ -309,6 +309,7 @@ fn extra_setting(info: &ArgumentInfo) -> ExtraSetting {
         return ExtraSetting::Enum {
             name,
             label,
+            group: None,
             options: info.options.clone(),
             default: info.default.clone(),
         };
@@ -317,17 +318,20 @@ fn extra_setting(info: &ArgumentInfo) -> ExtraSetting {
         (ArgumentType::Bool, _) => ExtraSetting::Bool {
             name,
             label,
+            group: None,
             default: is_true(&info.default),
         },
         (ArgumentType::Float | ArgumentType::Int, Some(range)) => ExtraSetting::Range {
             name,
             label,
+            group: None,
             range,
             unit: info.units.clone().unwrap_or_default(),
         },
         _ => ExtraSetting::String {
             name,
             label,
+            group: None,
             default: info.default.clone(),
         },
     }
@@ -1052,7 +1056,7 @@ mod tests {
             extra_settings_from_wire(&argument_infos(&[soapy_arg("iq_swap", ArgType::Bool)]));
         assert!(matches!(
             &extras[0],
-            ExtraSetting::Bool { name, label, default }
+            ExtraSetting::Bool { name, label, default, .. }
                 if name == "iq_swap" && label.as_deref() == Some("I/Q swap") && !default
         ));
         assert_eq!(
