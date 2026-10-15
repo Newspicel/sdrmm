@@ -7,6 +7,7 @@
   "groups": [
     {
       "id": "fir",
+      "subject": "FIR, 127 taps",
       "title": "FIR, 127 taps",
       "unit": "Msps",
       "better": "higher",
@@ -35,6 +36,7 @@
     },
     {
       "id": "decimate",
+      "subject": "FIR, 127 taps, decimate by 4",
       "title": "FIR, 127 taps, decimate by 4",
       "unit": "Msps",
       "better": "higher",
@@ -63,6 +65,7 @@
     },
     {
       "id": "resample",
+      "subject": "Resample 44.1 to 48 kHz",
       "title": "Resample 44.1 to 48 kHz",
       "unit": "Msps",
       "better": "higher",
@@ -92,6 +95,7 @@
     },
     {
       "id": "nco",
+      "subject": "NCO mix",
       "title": "NCO mix",
       "unit": "Msps",
       "better": "higher",
@@ -120,6 +124,7 @@
     },
     {
       "id": "ddc",
+      "subject": "DDC 20 MS/s to 48 kHz",
       "title": "DDC 20 MS/s to 48 kHz",
       "unit": "Msps",
       "better": "higher",
@@ -149,6 +154,7 @@
     },
     {
       "id": "fft",
+      "subject": "FFT, 4,096 points",
       "title": "FFT, 4,096 points",
       "unit": "Msps",
       "better": "higher",
@@ -177,6 +183,7 @@
     },
     {
       "id": "fm",
+      "subject": "FM demod",
       "title": "FM demod",
       "unit": "Msps",
       "better": "higher",

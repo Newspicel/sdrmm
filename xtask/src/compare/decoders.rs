@@ -110,12 +110,14 @@ fn measure(
     let fed = loops as f64 * fixture.seconds();
     let mut decodes = Group::new(
         &format!("{}-decodes", signal.id),
+        signal.name,
         &format!("{} decodes", signal.name),
         "msgs",
         Better::Higher,
     );
     let mut speed = Group::new(
         &format!("{}-speed", signal.id),
+        signal.name,
         &format!("{} speed", signal.name),
         "× realtime",
         Better::Higher,
@@ -192,6 +194,7 @@ fn sweep(
     let runs = signal.noise.runs();
     let mut group = Group::new(
         &format!("{}-noise", signal.id),
+        signal.name,
         &format!("{} in noise", signal.name),
         "% decoded",
         Better::Higher,
@@ -431,7 +434,7 @@ mod tests {
 
     #[test]
     fn hidden_groups_are_dropped_and_notes_kept() {
-        let group = || Group::new("x", "X", "msgs", Better::Higher);
+        let group = || Group::new("x", "X", "X", "msgs", Better::Higher);
         assert!(shown(group(), Show::Hidden).is_none());
         assert_eq!(shown(group(), Show::Plain).and_then(|g| g.note), None);
         assert_eq!(

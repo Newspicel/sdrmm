@@ -108,7 +108,13 @@ pub fn groups(tools: &[Tool]) -> Vec<Group> {
     KERNELS
         .iter()
         .map(|kernel| {
-            let mut group = Group::new(kernel.id, kernel.title, "Msps", Better::Higher);
+            let mut group = Group::new(
+                kernel.id,
+                kernel.title,
+                kernel.title,
+                "Msps",
+                Better::Higher,
+            );
             if let Some(note) = kernel.note {
                 group = group.with_note(note);
             }

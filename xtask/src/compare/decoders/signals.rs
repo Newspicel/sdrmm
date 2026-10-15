@@ -50,8 +50,6 @@ impl Signal {
 
 pub const INPUT: &str = "{input}";
 
-const FROM_FM: &str = "Others start from FM audio, SDR-- from IQ.";
-
 const MODE_S: Format = Format::Cu8 { rate: 2_400_000.0 };
 
 const fn fm(deviation_hz: f64, rate: u32, container: Container) -> Format {
@@ -152,7 +150,7 @@ pub const SIGNALS: &[Signal] = &[
         cu8_rate: None,
         unique: true,
         decodes: Show::Hidden,
-        speed: Show::Noted(FROM_FM),
+        speed: Show::Plain,
         noise: Ladder {
             high_db: 5.0,
             low_db: -10.0,
@@ -188,7 +186,7 @@ pub const SIGNALS: &[Signal] = &[
         cu8_rate: None,
         unique: true,
         decodes: Show::Hidden,
-        speed: Show::Noted(FROM_FM),
+        speed: Show::Plain,
         noise: Ladder {
             high_db: 5.0,
             low_db: -20.0,
@@ -214,7 +212,7 @@ pub const SIGNALS: &[Signal] = &[
         cu8_rate: None,
         unique: true,
         decodes: Show::Hidden,
-        speed: Show::Noted(FROM_FM),
+        speed: Show::Plain,
         noise: Ladder {
             high_db: 45.0,
             low_db: 20.0,
@@ -240,7 +238,7 @@ pub const SIGNALS: &[Signal] = &[
         cu8_rate: None,
         unique: true,
         decodes: Show::Hidden,
-        speed: Show::Noted(FROM_FM),
+        speed: Show::Plain,
         noise: Ladder {
             high_db: 5.0,
             low_db: -10.0,
@@ -266,7 +264,7 @@ pub const SIGNALS: &[Signal] = &[
         cu8_rate: None,
         unique: true,
         decodes: Show::Plain,
-        speed: Show::Noted("acarsdec starts from AM audio, SDR-- from IQ."),
+        speed: Show::Plain,
         noise: Ladder {
             high_db: 30.0,
             low_db: 5.0,
@@ -326,7 +324,7 @@ pub const SIGNALS: &[Signal] = &[
         cu8_rate: None,
         unique: false,
         decodes: Show::Noted("Counts frames carrying the call's addresses."),
-        speed: Show::Noted(FROM_FM),
+        speed: Show::Plain,
         noise: Ladder {
             high_db: 20.0,
             low_db: 0.0,
@@ -352,7 +350,7 @@ pub const SIGNALS: &[Signal] = &[
         cu8_rate: None,
         unique: false,
         decodes: Show::Hidden,
-        speed: Show::Noted(FROM_FM),
+        speed: Show::Plain,
         noise: Ladder {
             high_db: 15.0,
             low_db: -10.0,
@@ -378,7 +376,7 @@ pub const SIGNALS: &[Signal] = &[
         cu8_rate: None,
         unique: false,
         decodes: Show::Hidden,
-        speed: Show::Noted(FROM_FM),
+        speed: Show::Plain,
         noise: Ladder {
             high_db: 25.0,
             low_db: 0.0,

@@ -7,6 +7,7 @@
   "groups": [
     {
       "id": "adsb-speed",
+      "subject": "ADS-B",
       "title": "ADS-B speed",
       "unit": "× realtime",
       "better": "higher",
@@ -30,6 +31,7 @@
     },
     {
       "id": "adsb-noise",
+      "subject": "ADS-B",
       "title": "ADS-B in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -54,6 +56,7 @@
     },
     {
       "id": "ais-speed",
+      "subject": "AIS",
       "title": "AIS speed",
       "unit": "× realtime",
       "better": "higher",
@@ -72,6 +75,7 @@
     },
     {
       "id": "ais-noise",
+      "subject": "AIS",
       "title": "AIS in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -91,10 +95,10 @@
     },
     {
       "id": "aprs-speed",
+      "subject": "APRS",
       "title": "APRS speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "Others start from FM audio, SDR-- from IQ.",
       "results": [
         {
           "tool": "SDR--",
@@ -115,6 +119,7 @@
     },
     {
       "id": "aprs-noise",
+      "subject": "APRS",
       "title": "APRS in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -139,10 +144,10 @@
     },
     {
       "id": "pocsag-speed",
+      "subject": "POCSAG",
       "title": "POCSAG speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "Others start from FM audio, SDR-- from IQ.",
       "results": [
         {
           "tool": "SDR--",
@@ -158,6 +163,7 @@
     },
     {
       "id": "pocsag-noise",
+      "subject": "POCSAG",
       "title": "POCSAG in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -177,10 +183,10 @@
     },
     {
       "id": "flex-speed",
+      "subject": "FLEX",
       "title": "FLEX speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "Others start from FM audio, SDR-- from IQ.",
       "results": [
         {
           "tool": "SDR--",
@@ -196,6 +202,7 @@
     },
     {
       "id": "flex-noise",
+      "subject": "FLEX",
       "title": "FLEX in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -215,10 +222,10 @@
     },
     {
       "id": "selcall-speed",
+      "subject": "Selcall",
       "title": "Selcall speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "Others start from FM audio, SDR-- from IQ.",
       "results": [
         {
           "tool": "SDR--",
@@ -234,6 +241,7 @@
     },
     {
       "id": "selcall-noise",
+      "subject": "Selcall",
       "title": "Selcall in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -253,6 +261,7 @@
     },
     {
       "id": "acars-decodes",
+      "subject": "ACARS",
       "title": "ACARS decodes",
       "unit": "msgs",
       "better": "higher",
@@ -271,10 +280,10 @@
     },
     {
       "id": "acars-speed",
+      "subject": "ACARS",
       "title": "ACARS speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "acarsdec starts from AM audio, SDR-- from IQ.",
       "results": [
         {
           "tool": "SDR--",
@@ -290,6 +299,7 @@
     },
     {
       "id": "acars-noise",
+      "subject": "ACARS",
       "title": "ACARS in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -309,6 +319,7 @@
     },
     {
       "id": "ft8-decodes",
+      "subject": "FT8",
       "title": "FT8 decodes",
       "unit": "msgs",
       "better": "higher",
@@ -328,6 +339,7 @@
     },
     {
       "id": "ft8-speed",
+      "subject": "FT8",
       "title": "FT8 speed",
       "unit": "× realtime",
       "better": "higher",
@@ -347,6 +359,7 @@
     },
     {
       "id": "ft8-noise",
+      "subject": "FT8",
       "title": "FT8 in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -366,6 +379,7 @@
     },
     {
       "id": "dmr-decodes",
+      "subject": "DMR",
       "title": "DMR decodes",
       "unit": "msgs",
       "better": "higher",
@@ -385,10 +399,10 @@
     },
     {
       "id": "dmr-speed",
+      "subject": "DMR",
       "title": "DMR speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "Others start from FM audio, SDR-- from IQ.",
       "results": [
         {
           "tool": "SDR--",
@@ -404,6 +418,7 @@
     },
     {
       "id": "dmr-noise",
+      "subject": "DMR",
       "title": "DMR in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -423,10 +438,10 @@
     },
     {
       "id": "nxdn-speed",
+      "subject": "NXDN",
       "title": "NXDN speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "Others start from FM audio, SDR-- from IQ.",
       "results": [
         {
           "tool": "SDR--",
@@ -442,6 +457,7 @@
     },
     {
       "id": "nxdn-noise",
+      "subject": "NXDN",
       "title": "NXDN in noise",
       "unit": "% decoded",
       "better": "higher",
@@ -461,10 +477,10 @@
     },
     {
       "id": "ysf-speed",
+      "subject": "YSF",
       "title": "YSF speed",
       "unit": "× realtime",
       "better": "higher",
-      "note": "Others start from FM audio, SDR-- from IQ.",
       "results": [
         {
           "tool": "SDR--",
@@ -480,6 +496,7 @@
     },
     {
       "id": "ysf-noise",
+      "subject": "YSF",
       "title": "YSF in noise",
       "unit": "% decoded",
       "better": "higher",

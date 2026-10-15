@@ -28,6 +28,7 @@ pub struct Machine {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Group {
     pub id: String,
+    pub subject: String,
     pub title: String,
     pub unit: String,
     pub better: Better,
@@ -51,9 +52,10 @@ pub struct Entry {
 }
 
 impl Group {
-    pub fn new(id: &str, title: &str, unit: &str, better: Better) -> Self {
+    pub fn new(id: &str, subject: &str, title: &str, unit: &str, better: Better) -> Self {
         Self {
             id: id.to_owned(),
+            subject: subject.to_owned(),
             title: title.to_owned(),
             unit: unit.to_owned(),
             better,
@@ -202,7 +204,7 @@ mod tests {
     use super::*;
 
     fn suite(tool: &str, value: f64) -> Suite {
-        let mut group = Group::new("fir", "FIR", "Msps", Better::Higher);
+        let mut group = Group::new("fir", "FIR", "FIR", "Msps", Better::Higher);
         group.push(tool, "1", value);
         Suite {
             machine: Machine {

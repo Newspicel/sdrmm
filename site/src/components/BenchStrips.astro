@@ -1,0 +1,309 @@
+---
+import {
+  amount,
+  best,
+  find,
+  type Group,
+  kind,
+  label,
+  margin,
+  metrics,
+  mine,
+  ours,
+  plotted,
+  position,
+  scale,
+  subjects,
+  tick,
+} from "../bench";
+
+interface Props {
+  groups: Group[];
+}
+
+const { groups } = Astro.props;
+
+const columns = metrics(groups).map((unit) => {
+  const first = groups.find((group) => group.unit === unit);
+  const measure = kind(unit, groups);
+  return {
+    unit,
+    measure,
+    title: first === undefined ? unit : label(first),
+    axis: measure === "count" ? undefined : scale(unit, groups),
+  };
+});
+---
+
+<table class="strips">
+  <thead>
+    <tr>
+      <th scope="col" class="subject"><span class="hidden">Decoder</span></th>
+      {
+        columns.map((column) => (
+          <th scope="col" class={column.measure}>
+            <span class="name">
+              {column.title} <span class="unit">{column.unit}</span>
+            </span>
+            {column.axis && (
+              <span class="axis" aria-hidden="true">
+                <span class="ticks">
+                  {column.axis.ticks.map((value) => (
+                    <span style={`--x: ${position(value, column.axis)}`}>{tick(value)}</span>
+                  ))}
+                </span>
+              </span>
+            )}
+          </th>
+        ))
+      }
+    </tr>
+  </thead>
+  <tbody>
+    {
+      subjects(groups).map((subject) => (
+        <tr>
+          <th scope="row">{subject}</th>
+          {columns.map((column) => {
+            const group = find(groups, subject, column.unit);
+            const own = group === undefined ? undefined : mine(group);
+            const rival = group === undefined ? undefined : best(group);
+            return group === undefined || own === undefined ? (
+              <td class="none" data-label={column.title}>
+                <span class="hidden">Not measured</span>
+              </td>
+            ) : (
+              <td data-label={column.title}>
+                <div class:list={["cell", { plain: column.axis === undefined }]}>
+                  {column.axis && (
+                    <span class="strip">
+                      {column.axis.ticks.map((value) => (
+                        <span class="grid" style={`--x: ${position(value, column.axis)}`} />
+                      ))}
+                      {plotted(group).map((entry) => (
+                        <span
+                          class:list={["dot", { own: ours(entry) }]}
+                          style={`--x: ${position(entry.value, column.axis)}`}
+                          title={`${entry.tool} ${entry.version}: ${amount(entry.value)} ${group.unit}`}
+                        />
+                      ))}
+                    </span>
+                  )}
+                  <span class="read">
+                    <b>{amount(own.value)}</b>
+                    {rival && (
+                      <small>
+                        {margin(group, column.measure)} vs {rival.tool}
+                      </small>
+                    )}
+                  </span>
+                  {group.note && <small class="fine">{group.note}</small>}
+                </div>
+              </td>
+            );
+          })}
+        </tr>
+      ))
+    }
+  </tbody>
+</table>
+
+<style>
+  .strips {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font: 13px var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  th,
+  td {
+    padding: 14px 28px 14px 0;
+    border-top: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+    font-weight: 400;
+  }
+  th:last-child,
+  td:last-child {
+    padding-right: 0;
+  }
+  thead th {
+    border-top: 0;
+    padding-block: 0 8px;
+  }
+  .subject {
+    width: 10%;
+  }
+  .share,
+  .rate {
+    width: 38%;
+  }
+  .name {
+    display: block;
+    font: 500 14px var(--sans);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .unit {
+    margin-left: 4px;
+    font: 12px var(--mono);
+    color: var(--ink-faint);
+  }
+  .axis {
+    display: grid;
+    grid-template-columns: 1fr 23ch;
+    gap: 16px;
+    margin-top: 10px;
+  }
+  .ticks {
+    position: relative;
+    height: 14px;
+    margin-inline: 6px;
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .ticks > span {
+    position: absolute;
+    left: calc(var(--x) * 100%);
+    translate: -50% 0;
+  }
+  tbody th {
+    padding-top: 15px;
+    font: 500 15px var(--sans);
+    color: var(--ink);
+  }
+  .cell {
+    display: grid;
+    grid-template-columns: 1fr 23ch;
+    align-items: center;
+    gap: 4px 16px;
+  }
+  .cell.plain {
+    grid-template-columns: 1fr;
+  }
+  .strip {
+    position: relative;
+    height: 22px;
+    margin-inline: 6px;
+  }
+  .strip::before {
+    content: "";
+    position: absolute;
+    inset: 50% -6px auto;
+    height: 1px;
+    background: var(--line-strong);
+  }
+  .grid {
+    position: absolute;
+    left: calc(var(--x) * 100%);
+    top: 50%;
+    width: 1px;
+    height: 7px;
+    translate: 0 -50%;
+    background: var(--line-strong);
+  }
+  .dot {
+    position: absolute;
+    left: calc(var(--x) * 100%);
+    top: 50%;
+    width: 9px;
+    height: 9px;
+    translate: -50% -50%;
+    border: 1.5px solid var(--ink-faint);
+    border-radius: 50%;
+    background: var(--panel);
+  }
+  .dot::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+  .dot:hover {
+    border-color: var(--ink);
+  }
+  .dot.own {
+    width: 12px;
+    height: 12px;
+    border: 0;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--panel);
+  }
+  .read {
+    display: grid;
+    gap: 2px;
+  }
+  .read b {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  small {
+    font: 12px var(--sans);
+    color: var(--ink-faint);
+  }
+  .read small {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--ink-dim);
+  }
+  .fine {
+    grid-column: 1 / -1;
+    font-size: 11.5px;
+  }
+  td.none::before {
+    content: "";
+    display: inline-block;
+    width: 12px;
+    height: 1px;
+    margin-top: 12px;
+    vertical-align: middle;
+    background: var(--line-strong);
+  }
+  .hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 760px) {
+    .strips,
+    tbody,
+    tr {
+      display: block;
+    }
+    thead {
+      display: none;
+    }
+    tr {
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+    }
+    tbody th,
+    td {
+      display: block;
+      padding: 0;
+      border: 0;
+    }
+    td {
+      margin-top: 10px;
+    }
+    td::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 2px;
+      font: 12px var(--sans);
+      color: var(--ink-faint);
+    }
+    td.none {
+      display: none;
+    }
+    .cell {
+      grid-template-columns: 1fr 21ch;
+    }
+  }
+</style>

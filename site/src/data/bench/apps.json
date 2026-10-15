@@ -7,6 +7,7 @@
   "groups": [
     {
       "id": "nfm-1-cpu",
+      "subject": "1 NFM receiver",
       "title": "1 NFM receiver, CPU",
       "unit": "% core",
       "better": "lower",
@@ -35,6 +36,7 @@
     },
     {
       "id": "nfm-1-memory",
+      "subject": "1 NFM receiver",
       "title": "1 NFM receiver, memory",
       "unit": "MiB",
       "better": "lower",
@@ -63,6 +65,7 @@
     },
     {
       "id": "nfm-4-cpu",
+      "subject": "4 NFM receivers",
       "title": "4 NFM receivers, CPU",
       "unit": "% core",
       "better": "lower",
@@ -86,6 +89,7 @@
     },
     {
       "id": "nfm-4-memory",
+      "subject": "4 NFM receivers",
       "title": "4 NFM receivers, memory",
       "unit": "MiB",
       "better": "lower",
@@ -109,6 +113,7 @@
     },
     {
       "id": "nfm-16-cpu",
+      "subject": "16 NFM receivers",
       "title": "16 NFM receivers, CPU",
       "unit": "% core",
       "better": "lower",
@@ -132,6 +137,7 @@
     },
     {
       "id": "nfm-16-memory",
+      "subject": "16 NFM receivers",
       "title": "16 NFM receivers, memory",
       "unit": "MiB",
       "better": "lower",

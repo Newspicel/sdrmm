@@ -1,0 +1,106 @@
+---
+import { amount, type Group, ours, ranked } from "../bench";
+
+interface Props {
+  groups: Group[];
+}
+
+const { groups } = Astro.props;
+---
+
+<details>
+  <summary>All numbers</summary>
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Test</th>
+        <th scope="col">Tool</th>
+        <th scope="col">Version</th>
+        <th scope="col" class="num">Value</th>
+      </tr>
+    </thead>
+    {
+      groups.map((group) => (
+        <tbody>
+          {ranked(group).map((entry, index) => (
+            <tr class:list={{ own: ours(entry) }}>
+              {index === 0 && (
+                <th scope="rowgroup" rowspan={group.results.length}>
+                  {group.title}
+                  <small>{group.better === "higher" ? "Higher" : "Lower"} is better</small>
+                  {group.note && <small>{group.note}</small>}
+                </th>
+              )}
+              <td>{entry.tool}</td>
+              <td class="version">{entry.version}</td>
+              <td class="num">
+                {amount(entry.value)} <span>{group.unit}</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      ))
+    }
+  </table>
+</details>
+
+<style>
+  details {
+    margin-top: 28px;
+  }
+  summary {
+    width: fit-content;
+    cursor: pointer;
+    font: 13px var(--mono);
+    color: var(--ink-dim);
+  }
+  summary:hover {
+    color: var(--ink);
+  }
+  table {
+    display: block;
+    overflow-x: auto;
+    margin-top: 16px;
+    border-collapse: collapse;
+    font: 13px var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-dim);
+  }
+  th,
+  td {
+    padding: 6px 24px 6px 0;
+    text-align: left;
+    vertical-align: top;
+    font-weight: 400;
+  }
+  thead th {
+    color: var(--ink-faint);
+  }
+  tbody {
+    border-top: 1px solid var(--line);
+  }
+  tbody th {
+    max-width: 28ch;
+    font: 500 14px var(--sans);
+    color: var(--ink);
+  }
+  small {
+    display: block;
+    font: 12px var(--sans);
+    color: var(--ink-faint);
+  }
+  .own td {
+    color: var(--ink);
+  }
+  .version {
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .num {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .num span {
+    color: var(--ink-faint);
+  }
+</style>

@@ -1,6 +1,8 @@
 ---
-import { machine, measured, SECTIONS } from "../bench";
-import BenchGroup from "../components/BenchGroup.astro";
+import { machine, measured, SECTIONS, single, tables } from "../bench";
+import BenchNumbers from "../components/BenchNumbers.astro";
+import BenchRows from "../components/BenchRows.astro";
+import BenchStrips from "../components/BenchStrips.astro";
 import Page from "../layouts/Page.astro";
 
 const summary = "SDR-- measured against other SDR software and libraries on the same machine.";
@@ -11,6 +13,13 @@ const sections = measured(SECTIONS);
   <div class="wrap top">
     <h1>Benchmarks</h1>
     <p class="lede">Same machine, same input, release builds. Run them yourself.</p>
+    <p class="key">
+      <span class="own">SDR--</span>
+      <span>Others</span>
+    </p>
+    <nav aria-label="Sections">
+      {sections.map((section) => <a href={`#${section.id}`}>{section.title}</a>)}
+    </nav>
   </div>
 
   {
@@ -20,14 +29,19 @@ const sections = measured(SECTIONS);
           <h2>{section.title}</h2>
           <p class="machine">{machine(section.suite)}</p>
         </header>
-        <div class="groups">
-          {section.suite.groups.map((group) => (
-            <BenchGroup group={group} />
-          ))}
+        <div class="sheet">
+          {section.form === "strips" ? (
+            <BenchStrips groups={section.suite.groups} />
+          ) : (
+            tables(section.suite.groups).map((table) => (
+              <BenchRows table={table} span={section.span} lead={single(table.rows)} />
+            ))
+          )}
         </div>
         <p class="note">
           <code>{section.command}</code>
         </p>
+        <BenchNumbers groups={section.suite.groups} />
       </section>
     ))
   }
@@ -35,12 +49,31 @@ const sections = measured(SECTIONS);
 
 <style>
   .top { padding-top: clamp(56px, 9vw, 112px); }
-  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; }
+  .key { display: flex; gap: 20px; margin: 0 0 20px; font: 13px var(--mono); color: var(--ink-dim); }
+  .key span::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 8px;
+    border: 1.5px solid var(--ink-faint);
+    border-radius: 50%;
+    vertical-align: -1px;
+  }
+  .key .own { color: var(--ink); }
+  .key .own::before { border: 0; background: var(--accent); }
+  nav { display: flex; flex-wrap: wrap; gap: 6px 24px; font: 14px var(--mono); }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin-bottom: 28px; }
+  h2 { margin: 0; }
+  section { scroll-margin-top: 48px; }
   .machine { margin: 0; font: 13px var(--mono); color: var(--ink-faint); }
-  .groups {
+  .sheet {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
-    gap: 16px;
-    margin-top: 24px;
+    gap: 48px;
+    padding: clamp(20px, 3vw, 32px);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-face);
   }
 </style>

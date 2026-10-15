@@ -60,12 +60,14 @@ fn blank(receivers: usize, kind: Kind) -> Group {
     match kind {
         Kind::Cpu => Group::new(
             &format!("{case}-cpu"),
+            &what,
             &format!("{what}, CPU"),
             "% core",
             Better::Lower,
         ),
         Kind::Memory => Group::new(
             &format!("{case}-memory"),
+            &what,
             &format!("{what}, memory"),
             "MiB",
             Better::Lower,

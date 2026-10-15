@@ -1,0 +1,229 @@
+---
+import {
+  amount,
+  best,
+  type Group,
+  kind,
+  margin,
+  ours,
+  peak,
+  result,
+  type Span,
+  type Table,
+} from "../bench";
+
+interface Props {
+  table: Table;
+  span: Span;
+  lead: boolean;
+}
+
+const { table, span, lead } = Astro.props;
+const top = peak(table.rows);
+const fill = (value: number, row: Group) => {
+  const max = span === "table" ? top : peak([row]);
+  return max > 0 ? value / max : 0;
+};
+const measure = kind(table.unit, table.rows);
+const direction = table.better === "higher" ? "higher is better" : "lower is better";
+---
+
+<table class="rows" style={`--tools: ${table.tools.length}`}>
+  <caption><b>{table.unit}</b> {direction}</caption>
+  <thead>
+    <tr>
+      <th scope="col" class="subject"><span class="hidden">Test</span></th>
+      {table.tools.map((tool) => <th scope="col">{tool}</th>)}
+      {lead && <th scope="col" class="lead">Lead</th>}
+    </tr>
+  </thead>
+  <tbody>
+    {
+      table.rows.map((row) => (
+        <tr>
+          <th scope="row">
+            {row.subject}
+            {row.note && <small>{row.note}</small>}
+          </th>
+          {table.tools.map((tool) => {
+            const entry = result(row, tool);
+            return entry === undefined ? (
+              <td class="none" data-tool={tool}>
+                <span class="hidden">Not measured</span>
+              </td>
+            ) : (
+              <td data-tool={tool} class:list={{ own: ours(entry) }} title={`${tool} ${entry.version}`}>
+                <span class="meter" style={`--w: ${fill(entry.value, row)}`} />
+                <span class="value">{amount(entry.value)}</span>
+              </td>
+            );
+          })}
+          {lead && (
+            <td class="lead">
+              <b>{margin(row, measure)}</b>
+              <small>vs {best(row)?.tool}</small>
+            </td>
+          )}
+        </tr>
+      ))
+    }
+  </tbody>
+</table>
+
+<style>
+  .rows {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font: 13px var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  caption {
+    caption-side: top;
+    text-align: left;
+    padding-bottom: 14px;
+    font: 13px var(--sans);
+    color: var(--ink-faint);
+  }
+  caption b {
+    margin-right: 6px;
+    font: 500 14px var(--mono);
+    color: var(--ink);
+  }
+  th,
+  td {
+    padding: 12px 14px 12px 0;
+    border-top: 1px solid var(--line);
+    text-align: left;
+    vertical-align: middle;
+    font-weight: 400;
+  }
+  thead th {
+    border-top: 0;
+    padding-block: 0 10px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+  .subject {
+    width: 24%;
+  }
+  tbody th {
+    font: 500 15px var(--sans);
+    color: var(--ink);
+  }
+  small {
+    display: block;
+    margin-top: 2px;
+    font: 12px var(--sans);
+    color: var(--ink-faint);
+  }
+  td {
+    color: var(--ink-dim);
+    white-space: nowrap;
+  }
+  td > .meter {
+    --fill: var(--ink-faint);
+    display: inline-block;
+    vertical-align: middle;
+    height: 10px;
+    width: calc(100% - 8ch);
+    margin-right: 8px;
+    background: linear-gradient(
+      90deg,
+      var(--fill) 0 max(3px, calc(var(--w) * 100%)),
+      var(--line) 0
+    );
+    mask: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 5px);
+  }
+  td.own {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  td.own > .meter {
+    --fill: var(--accent);
+  }
+  td.none::before {
+    content: "";
+    display: inline-block;
+    width: 12px;
+    height: 1px;
+    vertical-align: middle;
+    background: var(--line-strong);
+  }
+  .lead {
+    width: 136px;
+    padding-right: 0;
+    text-align: right;
+  }
+  td.lead b {
+    font: 600 16px var(--mono);
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+  .hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 760px) {
+    .rows,
+    tbody {
+      display: block;
+    }
+    thead {
+      display: none;
+    }
+    caption {
+      display: block;
+    }
+    tr {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px 12px;
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+    }
+    tbody th,
+    td {
+      padding: 0;
+      border: 0;
+    }
+    tbody th {
+      width: auto;
+    }
+    td[data-tool] {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 12ch 1fr 7ch;
+      align-items: center;
+      gap: 10px;
+    }
+    td[data-tool]::before {
+      content: attr(data-tool);
+      color: var(--ink-faint);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    td > .meter {
+      width: 100%;
+      margin: 0;
+    }
+    td.none {
+      display: none;
+    }
+    .value {
+      text-align: right;
+    }
+    .lead {
+      grid-row: 1;
+      grid-column: 2;
+      width: auto;
+    }
+  }
+</style>

@@ -63,7 +63,7 @@ const { group } = Astro.props;
     width: calc(var(--w) * 100%);
     min-width: 2px;
     background: var(--line-strong);
-    border-radius: 2px;
+    mask: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 5px);
   }
   .value { text-align: right; }
   .fine { margin: 12px 0 0; font-size: 13px; color: var(--ink-faint); }
