@@ -15,7 +15,7 @@ use crate::{
     RatePatchGuard, RebuildEntry, dc_block, fault_kind, hotplug, ids_of, lock_runtime,
     planning::{plan_center, validate_streams},
     refusal,
-    runtime::{CaptureRuntime, DeviceRuntime, ring_capacity},
+    runtime::{CaptureRuntime, DeviceRuntime, ring_capacity, spectrum_size},
     sample_rate_of, teardown_set,
 };
 
@@ -1038,7 +1038,8 @@ impl Engine {
                 history.center_hz = center_hz;
             }
             let rate = sample_rate_of(&state.settings);
-            let resized = ring_capacity(rate) != ring_capacity(old_rate);
+            let resized = ring_capacity(rate) != ring_capacity(old_rate)
+                || spectrum_size(rate) != spectrum_size(old_rate);
             let rebuilds: Vec<RebuildEntry> = if rate == old_rate || resized {
                 Vec::new()
             } else {

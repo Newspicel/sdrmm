@@ -2,7 +2,13 @@ use super::*;
 
 #[test]
 fn every_rate_keeps_the_same_slack_in_seconds() {
-    for rate in [2_048_000.0, 2_400_000.0, 8_000_000.0, 20_000_000.0] {
+    for rate in [
+        2_048_000.0,
+        2_400_000.0,
+        8_000_000.0,
+        20_000_000.0,
+        245_760_000.0,
+    ] {
         let seconds = ring_capacity(rate) as f64 / rate;
         assert!(
             seconds >= RING_SECONDS,
@@ -14,6 +20,7 @@ fn every_rate_keeps_the_same_slack_in_seconds() {
 #[test]
 fn a_fast_radio_is_capped_and_a_slow_one_floored() {
     assert_eq!(ring_capacity(1_000_000_000.0), RING_MAX);
+    assert_eq!(ring_capacity(245_760_000.0), 24_576_000);
     assert_eq!(ring_capacity(48_000.0), RING_MIN);
     assert_eq!(ring_capacity(2_400_000.0), 240_000);
 }

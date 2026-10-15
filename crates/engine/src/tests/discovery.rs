@@ -54,6 +54,38 @@ async fn spectrum_flows_with_a_visible_tone() {
     assert!(engine.snapshot().device_sets.is_empty());
 }
 
+#[tokio::test]
+async fn a_wider_rate_resizes_the_spectrum_to_keep_its_bins_narrow() {
+    const WIDE_RATE: f64 = 10_000_000.0;
+    let engine = virtual_engine();
+    let ds = engine.create_device_set("virtual:band").unwrap();
+    let mut rx = engine.subscribe_spectrum(ds, 0).unwrap();
+    engine
+        .patch_device(
+            ds,
+            DeviceSettings {
+                sample_rate: Some(WIDE_RATE),
+                ..DeviceSettings::default()
+            },
+        )
+        .unwrap();
+
+    let wide = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.recv().await {
+                Ok(snap) if f64::from(snap.span_hz) == WIDE_RATE => break snap,
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(error) => panic!("spectrum closed: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("a spectrum at the wider rate");
+    assert_eq!(wide.db.len(), 16_384);
+
+    engine.remove_device_set(ds).unwrap();
+}
+
 #[test]
 fn the_builtin_registry_carries_every_backend_this_build_compiled_in() {
     let ids: Vec<&str> = builtin_registry(None)

@@ -47,6 +47,10 @@ impl SpectrumPlan {
         }
     }
 
+    pub(crate) const fn size(&self) -> usize {
+        self.size
+    }
+
     pub(crate) fn analyzer(&self) -> SpectrumAnalyzer {
         #[cfg(feature = "gpu-fft")]
         if let Some(context) = &self.gpu {

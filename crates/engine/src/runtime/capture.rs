@@ -16,23 +16,25 @@ use sdrmm_wire::{DeviceSettings, MAX_STREAMS, StreamScope, array::MAX_VIRTUAL_LA
 use tokio::sync::broadcast;
 
 use super::{
-    DspCommand, DspMeta, FFT_SIZE, SpectrumSnapshot, Waker,
+    DspCommand, DspMeta, SpectrumSnapshot, Waker,
     clip::ClipMeter,
     retire::Reclaimer,
+    spectrum_size,
     worker::{LaneShared, dsp_loop},
 };
 use crate::{
     array::{TapPort, TapWriter},
     capture_ring::{CaptureConsumer, CaptureProducer, capture_ring},
     publishing::spectrum::SpectrumPublisher,
-    spectrum::{SpectrumAnalyzer, SpectrumFrame, SpectrumPlan, cpu_analyzer},
+    spectrum::{SpectrumFrame, SpectrumPlan, cpu_analyzer},
 };
 
 pub(crate) const RING_SECONDS: f64 = 0.1;
 const LIVE_MAX_AGE: Duration = Duration::from_millis(100);
 const RING_MIN: usize = 1 << 17;
-const RING_MAX: usize = 1 << 23;
+const RING_MAX: usize = 1 << 25;
 const SPECTRUM_TAP_SLOTS: usize = 8;
+const SWEEP_FFT_SIZE: usize = 4_096;
 
 pub(crate) fn ring_capacity(sample_rate: f64) -> usize {
     ((sample_rate * RING_SECONDS) as usize).clamp(RING_MIN, RING_MAX)
@@ -104,19 +106,21 @@ impl Lane {
         name: String,
         mut consumer: CaptureConsumer,
         commands: mpsc::Receiver<DspCommand>,
-        analyzer: SpectrumAnalyzer,
+        plan: &SpectrumPlan,
         max_age: Duration,
     ) -> Result<(), DeviceError> {
+        let analyzer = plan.analyzer();
         let shared = LaneShared {
             meta: self.meta.clone(),
             stop: self.stop.clone(),
             stalled_us: self.stalled_us.clone(),
             waker: self.waker.clone(),
             max_age,
+            spectrum_size: plan.size(),
         };
         let publisher = SpectrumPublisher::with_metrics(
             self.spectrum_tx.clone(),
-            FFT_SIZE,
+            plan.size(),
             self.spectrum_metrics.clone(),
         )
         .map_err(|error| DeviceError::Io(format!("start spectrum publisher: {error}")))?;
@@ -215,7 +219,6 @@ pub struct CaptureRuntime {
 struct LaneTail {
     consumer: CaptureConsumer,
     commands: mpsc::Receiver<DspCommand>,
-    analyzer: SpectrumAnalyzer,
 }
 
 impl CaptureRuntime {
@@ -275,7 +278,7 @@ impl CaptureRuntime {
             ));
         };
         let fatal: Arc<Mutex<Option<FatalReport>>> = Arc::new(Mutex::new(Some(Box::new(on_fatal))));
-        let plan = SpectrumPlan::new(FFT_SIZE, lane_count);
+        let plan = SpectrumPlan::new(spectrum_size(sample_rate), lane_count);
         let mut sinks = Vec::with_capacity(lane_count);
         let mut runtime = Self {
             device: None,
@@ -320,7 +323,6 @@ impl CaptureRuntime {
             tails.push(LaneTail {
                 consumer,
                 commands: cmd_rx,
-                analyzer: plan.analyzer(),
             });
         }
         for (index, tail) in tails.into_iter().enumerate() {
@@ -328,7 +330,7 @@ impl CaptureRuntime {
                 format!("sdrmm-dsp-{index}"),
                 tail.consumer,
                 tail.commands,
-                tail.analyzer,
+                &plan,
                 max_age,
             );
             if let Err(error) = started {
@@ -422,12 +424,11 @@ impl CaptureRuntime {
             cmd_tx.clone(),
             consumer.metrics.clone(),
         );
-        let analyzer = SpectrumPlan::new(FFT_SIZE, 1).analyzer();
         lane.spawn(
             format!("sdrmm-dsp-v{stream}"),
             consumer,
             cmd_rx,
-            analyzer,
+            &SpectrumPlan::new(spectrum_size(sample_rate), 1),
             self.max_age,
         )?;
         let sink = VirtualLaneSink {
@@ -636,20 +637,20 @@ fn sweep_sink(
     offset_hz: f64,
     on_fatal: impl FnOnce(DeviceError) + Send + 'static,
 ) -> Result<SweepSink, DeviceError> {
-    let mut publisher = SpectrumPublisher::new(tx, FFT_SIZE)
+    let mut publisher = SpectrumPublisher::new(tx, SWEEP_FFT_SIZE)
         .map_err(|error| DeviceError::Io(format!("start sweep publisher: {error}")))?;
-    let mut analyzer = cpu_analyzer(FFT_SIZE);
-    let mut db = vec![0.0f32; FFT_SIZE];
+    let mut analyzer = cpu_analyzer(SWEEP_FFT_SIZE);
+    let mut db = vec![0.0f32; SWEEP_FFT_SIZE];
     let mut seq = 0u32;
     let mut timestamp = 0u64;
     let mut short = 0u64;
     Ok(SweepSink::with_fatal_handler(
         move |center_hz, samples| {
-            let Some(window) = samples.get(..FFT_SIZE) else {
+            let Some(window) = samples.get(..SWEEP_FFT_SIZE) else {
                 short += 1;
                 tracing::warn!(
                     samples = samples.len(),
-                    wanted = FFT_SIZE,
+                    wanted = SWEEP_FFT_SIZE,
                     total = short,
                     "sweep block too short to transform; that tuning went unread"
                 );

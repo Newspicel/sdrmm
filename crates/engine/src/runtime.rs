@@ -18,9 +18,9 @@ pub(crate) use command::DspCommand;
 pub use frontend::DspMeta;
 pub(crate) use patches::DeviceRuntime;
 pub use spectrum::SpectrumSnapshot;
+pub(crate) use spectrum::spectrum_size;
 pub(crate) use worker::Waker;
 
-const FFT_SIZE: usize = 4096;
 pub(crate) const DSP_BLOCK: usize = 2048;
 pub(crate) const MAX_DSP_BLOCK: usize = 8192;
 

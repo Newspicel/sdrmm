@@ -10,7 +10,7 @@ use std::{
 use arc_swap::ArcSwap;
 
 use super::{
-    ChannelHost, DspCommand, DspMeta, FFT_SIZE, dsp_block_len,
+    ChannelHost, DspCommand, DspMeta, dsp_block_len,
     frontend::Frontend,
     retire::Reclaimer,
     spectrum::{average::FrameAverage, history::SpectrumHistory},
@@ -51,6 +51,7 @@ pub(super) struct LaneShared {
     pub(super) stalled_us: Arc<AtomicU64>,
     pub(super) waker: Arc<Waker>,
     pub(super) max_age: Duration,
+    pub(super) spectrum_size: usize,
 }
 
 pub(super) enum Retired {
@@ -90,12 +91,14 @@ pub(super) fn dsp_loop(
         stop,
         stalled_us,
         max_age,
+        spectrum_size,
         ..
     } = lane;
-    let mut spectrum_history = SpectrumHistory::new(FFT_SIZE);
-    let mut db = vec![0.0f32; FFT_SIZE];
-    let mut frame_average = FrameAverage::new(FFT_SIZE);
-    let mut averaged = vec![0.0f32; FFT_SIZE];
+    let size = *spectrum_size;
+    let mut spectrum_history = SpectrumHistory::new(size);
+    let mut db = vec![0.0f32; size];
+    let mut frame_average = FrameAverage::new(size);
+    let mut averaged = vec![0.0f32; size];
     let mut channels: Vec<(u32, Box<ChannelHost>)> = Vec::new();
     let mut monitors = Vec::with_capacity(128);
     let mut tap: Option<RecorderTap> = None;
@@ -123,7 +126,7 @@ pub(super) fn dsp_loop(
             &mut retirement,
         );
         let snapshot = *meta.load_full();
-        let (hop, averages) = spectrum_cadence(snapshot.sample_rate);
+        let (hop, averages) = spectrum_cadence(snapshot.sample_rate, size);
         frontend.follow(snapshot);
         subbands.prepare(&mut channels, snapshot.center_hz, snapshot.sample_rate);
         let block_len = dsp_block_len(snapshot.sample_rate);
@@ -203,9 +206,9 @@ pub(super) fn dsp_loop(
     }
 }
 
-fn spectrum_cadence(sample_rate: f64) -> (usize, u32) {
+fn spectrum_cadence(sample_rate: f64, size: usize) -> (usize, u32) {
     let per_frame = (sample_rate / TARGET_FPS).max(1.0);
-    let hop = ((per_frame / f64::from(SPECTRUM_AVERAGES)) as usize).max(FFT_SIZE / 4);
+    let hop = ((per_frame / f64::from(SPECTRUM_AVERAGES)) as usize).max(size / 4);
     let averages = (per_frame / hop as f64).round() as u32;
     (hop, averages.clamp(1, SPECTRUM_AVERAGES))
 }
@@ -383,8 +386,8 @@ mod tests {
 
     #[test]
     fn each_published_frame_averages_the_transforms_that_fit_its_period() {
-        for rate in [2_400_000.0, 20_000_000.0] {
-            let (hop, averages) = spectrum_cadence(rate);
+        for rate in [2_400_000.0, 20_000_000.0, 61_440_000.0, 245_760_000.0] {
+            let (hop, averages) = spectrum_cadence(rate, crate::runtime::spectrum_size(rate));
             assert_eq!(averages, SPECTRUM_AVERAGES);
             let covered = hop as f64 * f64::from(averages) / rate;
             assert!(
@@ -392,8 +395,8 @@ mod tests {
                 "{rate}: {covered} s"
             );
         }
-        assert_eq!(spectrum_cadence(48_000.0), (FFT_SIZE / 4, 2));
-        assert_eq!(spectrum_cadence(8_000.0).1, 1);
+        assert_eq!(spectrum_cadence(48_000.0, 4_096), (1_024, 2));
+        assert_eq!(spectrum_cadence(8_000.0, 4_096).1, 1);
     }
 
     #[test]

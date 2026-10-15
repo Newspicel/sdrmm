@@ -1,7 +1,7 @@
 use num_complex::Complex;
 use sdrmm_dsp::IqDcBlocker;
 
-use super::{FFT_SIZE, MAX_DSP_BLOCK};
+use super::{MAX_DSP_BLOCK, spectrum_size};
 
 #[derive(Clone, Copy, PartialEq)]
 pub struct DspMeta {
@@ -11,7 +11,7 @@ pub struct DspMeta {
 }
 
 fn dc_block_corner_hz(sample_rate: f64) -> f64 {
-    (sample_rate / FFT_SIZE as f64 * 0.25).clamp(1.0, 500.0)
+    (sample_rate / spectrum_size(sample_rate) as f64 * 0.25).clamp(1.0, 500.0)
 }
 
 pub(super) struct Frontend {
