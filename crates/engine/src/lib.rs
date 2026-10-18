@@ -102,6 +102,10 @@ const SDRPLAY_PRIORITY: u8 = 25;
     feature = "hackrf",
     feature = "airspy",
     feature = "airspyhf",
+    all(
+        feature = "funcube",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ),
     feature = "espsdr",
     feature = "ad936x"
 ))]
@@ -135,6 +139,11 @@ pub fn soapy_handled_natively() -> Vec<&'static str> {
         "airspy",
         #[cfg(feature = "airspyhf")]
         "airspyhf",
+        #[cfg(all(
+            feature = "funcube",
+            any(target_os = "macos", target_os = "linux", target_os = "windows")
+        ))]
+        "fcdpp",
         #[cfg(feature = "ad936x")]
         "plutosdr",
     ]
@@ -200,6 +209,14 @@ pub fn builtin_registry_accelerated(
     registry.register(
         NATIVE_PRIORITY,
         Box::new(sdrmm_device_airspyhf::AirspyHfDriver::new()),
+    );
+    #[cfg(all(
+        feature = "funcube",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    registry.register(
+        NATIVE_PRIORITY,
+        Box::new(sdrmm_device_funcube::FunCubeDriver::new()),
     );
     #[cfg(feature = "espsdr")]
     registry.register(

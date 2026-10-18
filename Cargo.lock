@@ -4303,6 +4303,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-core-audio"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1eebcea8b0dbff5f7c8504f3107c68fc061a3eb44932051c8cf8a68d969c3b2"
+dependencies = [
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-core-audio-types"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a89f2ec274a0cf4a32642b2991e8b351a404d290da87bb6a9a9d8632490bd1c"
+dependencies = [
+ "bitflags 2.13.2",
+]
+
+[[package]]
 name = "objc2-core-data"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4393,6 +4412,18 @@ dependencies = [
  "block2",
  "libc",
  "objc2",
+ "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-io-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
+dependencies = [
+ "bitflags 2.13.2",
+ "dispatch2",
+ "libc",
  "objc2-core-foundation",
 ]
 
@@ -6038,6 +6069,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdrmm-device-funcube"
+version = "0.0.0"
+dependencies = [
+ "block2",
+ "dispatch2",
+ "num-complex",
+ "nusb",
+ "objc2-core-audio",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-io-kit",
+ "rtrb",
+ "rustix",
+ "sdrmm-device",
+ "sdrmm-dsp",
+ "sdrmm-wire",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "sdrmm-device-hackrf"
 version = "0.0.0"
 dependencies = [
@@ -6203,6 +6257,7 @@ dependencies = [
  "sdrmm-device-airspyhf",
  "sdrmm-device-cr8",
  "sdrmm-device-espsdr",
+ "sdrmm-device-funcube",
  "sdrmm-device-hackrf",
  "sdrmm-device-kiwisdr",
  "sdrmm-device-recording",

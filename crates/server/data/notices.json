@@ -3906,6 +3906,22 @@
       "texts": []
     },
     {
+      "name": "objc2-core-audio",
+      "version": "0.3.2",
+      "license": "Zlib OR Apache-2.0 OR MIT",
+      "source": "rust",
+      "url": "https://github.com/madsmtm/objc2",
+      "texts": []
+    },
+    {
+      "name": "objc2-core-audio-types",
+      "version": "0.3.2",
+      "license": "Zlib OR Apache-2.0 OR MIT",
+      "source": "rust",
+      "url": "https://github.com/madsmtm/objc2",
+      "texts": []
+    },
+    {
       "name": "objc2-core-data",
       "version": "0.3.2",
       "license": "Zlib OR Apache-2.0 OR MIT",
@@ -3973,6 +3989,14 @@
       "name": "objc2-foundation",
       "version": "0.3.2",
       "license": "MIT",
+      "source": "rust",
+      "url": "https://github.com/madsmtm/objc2",
+      "texts": []
+    },
+    {
+      "name": "objc2-io-kit",
+      "version": "0.3.2",
+      "license": "Zlib OR Apache-2.0 OR MIT",
       "source": "rust",
       "url": "https://github.com/madsmtm/objc2",
       "texts": []

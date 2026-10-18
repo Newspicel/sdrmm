@@ -13,6 +13,7 @@ Packaged builds include every driver here except CR-8:
 | [KrakenSDR, KerberosSDR](#krakensdr) | USB | Nothing |
 | [HackRF](#hackrf) | USB | Nothing |
 | [Airspy R2, Mini, HF+, HF+ Discovery](#airspy) | USB | Nothing |
+| [FUNcube Dongle Pro+](#funcube-dongle-pro) | USB | WinUSB on Windows |
 | [ESP32 with ESP-SDR](#esp-sdr) | USB serial, Ethernet (S31) | [ESP-SDR firmware](https://github.com/ESPARGOS/esp-sdr) |
 | [AntSDR](#antsdr) | Ethernet or USB | Nothing |
 | [ADALM-Pluto, other AD936x boards](#plutosdr-and-other-ad936x-boards) | USB or Ethernet | Nothing |
@@ -35,6 +36,7 @@ Making a radio? Write to [hi@jhaag.me](mailto:hi@jhaag.me) to get it supported a
 | Airspy R2 | 24 MHz to 1.8 GHz | 10 MS/s | 9 MHz | 12 | 1 | 0 | No |
 | Airspy Mini | 24 MHz to 1.8 GHz | 10 MS/s | 6 MHz | 12 | 1 | 0 | No |
 | Airspy HF+ Discovery | 1 kHz to 31 MHz, 60 to 260 MHz | 768 kS/s | 660 kHz | 16 | 1 | 0 | Some rates |
+| FUNcube Dongle Pro+ | 150 kHz to 260 MHz, 410 MHz to 2.05 GHz | 192 kS/s | 192 kHz | 16 | 1 | 0 | Yes |
 | ESP32 with ESP-SDR | 2.4 GHz, 5 GHz on C5 | 80 MS/s, bursts | Per chip, up to 69 MHz | 8 or 10 | 1 | 0 | Yes |
 | AntSDR E200, E310 | 70 MHz to 6 GHz | 61.44 MS/s | 56 MHz | 12 | 2 | 2 | Yes |
 | ADALM-Pluto | 325 MHz to 3.8 GHz | 61.44 MS/s | 20 MHz | 12 | 1 | 1 | Yes |
@@ -207,6 +209,24 @@ tunes to that floor, and the band still shows it. **DC block** appears only at r
 spike at the centre.
 
 Tested on hardware provided by [Airspy](https://airspy.com). Thank you.
+
+## FUNcube Dongle Pro+
+
+Built in. Controls are LNA and Mixer (on or off), IF gain 0 to 59 dB, IF filter (BW, 200 kHz to 8
+MHz), RF filter (auto or a fixed band), bias tee, and PPM. Rate is 192 kS/s. With LNA and Mixer on,
+IF gain above about 25 dB can overload it.
+
+The dongle presents itself as a sound card, so each system needs one step:
+
+- **Linux:** SDR-- reads it over raw USB and takes it from the sound and HID drivers while it is
+  open. The user needs access to the USB node, for example with
+  `SUBSYSTEM=="usb", ATTRS{idVendor}=="04d8", ATTRS{idProduct}=="fb31", MODE="0660", GROUP="plugdev"`.
+- **Windows:** raw USB through WinUSB. In Zadig, turn on **List All Devices**, turn off **Ignore
+  Hubs or Composite Parents**, pick **FUNcube Dongle V2.0 (Composite Parent)**, and install WinUSB.
+  It then no longer shows up as a sound card.
+- **macOS:** samples come through Core Audio, since macOS keeps raw USB for its own driver. Allow
+  **Microphone** for SDR-- (or the terminal running `sdrmm`) in System Settings, or the node
+  reports silence.
 
 ## ESP-SDR
 

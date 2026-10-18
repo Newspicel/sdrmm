@@ -11,7 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [features]
-default = ["soapy", "sdrplay", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "espsdr", "ad936x", "net-client", "gpu-fft"]
+default = ["soapy", "sdrplay", "cr8", "rtlsdr", "hackrf", "airspy", "airspyhf", "funcube", "espsdr", "ad936x", "net-client", "gpu-fft"]
 soapy = ["dep:sdrmm-device-soapy"]
 # SDRplay RSP receivers through the vendor API, which is resolved at runtime and never linked,
 # so this costs a release artifact nothing and simply finds no hardware without it installed.
@@ -25,6 +25,7 @@ rtlsdr = ["dep:sdrmm-device-rtlsdr"]
 hackrf = ["dep:sdrmm-device-hackrf"]
 airspy = ["dep:sdrmm-device-airspy"]
 airspyhf = ["dep:sdrmm-device-airspyhf"]
+funcube = ["dep:sdrmm-device-funcube"]
 # ESP32 boards running ESP-SDR firmware, over plain serial.
 espsdr = ["dep:sdrmm-device-espsdr"]
 # AntSDR, PlutoSDR and every other AD936x board that serves libiio, over ethernet or usb. The
@@ -57,6 +58,7 @@ sdrmm-device-rtlsdr = { workspace = true, optional = true }
 sdrmm-device-hackrf = { workspace = true, optional = true }
 sdrmm-device-airspy = { workspace = true, optional = true }
 sdrmm-device-airspyhf = { workspace = true, optional = true }
+sdrmm-device-funcube = { workspace = true, optional = true }
 sdrmm-device-espsdr = { workspace = true, optional = true }
 sdrmm-device-ad936x = { workspace = true, optional = true }
 sdrmm-device-rtltcp = { workspace = true, optional = true }

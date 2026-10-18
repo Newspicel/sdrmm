@@ -1,0 +1,46 @@
+[package]
+name = "sdrmm-device-funcube"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+sdrmm-wire.workspace = true
+sdrmm-device.workspace = true
+nusb.workspace = true
+num-complex.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2.workspace = true
+dispatch2.workspace = true
+objc2-core-audio.workspace = true
+objc2-core-audio-types.workspace = true
+objc2-core-foundation = { workspace = true, features = ["CFDictionary", "CFSet"] }
+objc2-io-kit.workspace = true
+rtrb.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true, features = ["event"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Usb",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+sdrmm-dsp.workspace = true

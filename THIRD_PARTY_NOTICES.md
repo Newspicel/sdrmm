@@ -4,7 +4,7 @@
 
 SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 
-## Rust crates (797)
+## Rust crates (800)
 
 | Component | Version | License |
 | --- | --- | --- |
@@ -377,6 +377,8 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [objc2](https://github.com/madsmtm/objc2) | 0.6.4 | MIT |
 | [objc2-app-kit](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-cloud-kit](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| [objc2-core-audio](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
+| [objc2-core-audio-types](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-core-data](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-core-foundation](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-core-graphics](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
@@ -386,6 +388,7 @@ SDR-- is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [objc2-encode](https://github.com/madsmtm/objc2) | 4.1.0 | MIT |
 | [objc2-exception-helper](https://github.com/madsmtm/objc2) | 0.1.1 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-foundation](https://github.com/madsmtm/objc2) | 0.3.2 | MIT |
+| [objc2-io-kit](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-io-surface](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-metal](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-osa-kit](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |

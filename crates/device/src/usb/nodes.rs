@@ -65,6 +65,11 @@ const RADIOS: &[UsbIdentity] = &[
         name: "Airspy HF+",
     },
     UsbIdentity {
+        vendor: 0x04d8,
+        product: Some(0xfb31),
+        name: "FUNcube Dongle Pro+",
+    },
+    UsbIdentity {
         vendor: 0x2cf0,
         product: Some(0x5246),
         name: "bladeRF x40/x115",
