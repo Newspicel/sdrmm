@@ -2,10 +2,15 @@ use num_complex::Complex;
 
 use crate::{
     ddc::STOPBAND_DB,
-    fir::{StreamFir, design_lowpass_kaiser},
+    fir::{StreamFir, design_lowpass_kaiser, kaiser_transition},
 };
 
 pub const DEFAULT_TAPS: usize = 131;
+
+#[must_use]
+pub fn clean_fraction(taps: usize) -> f64 {
+    1.0 - 2.0 * kaiser_transition(taps, STOPBAND_DB)
+}
 
 /// Turns the real samples a quadrature-sampling receiver delivers into the complex baseband the
 /// rest of the chain expects, at half the input rate.
@@ -157,8 +162,8 @@ mod tests {
     }
 
     #[test]
-    fn the_mirror_stays_a_hundred_db_down_across_nine_tenths_of_the_band() {
-        for share in [0.1, 0.5, 0.8, 0.88] {
+    fn the_mirror_stays_a_hundred_db_down_across_the_clean_fraction() {
+        for share in [0.1, 0.5, 0.8, clean_fraction(DEFAULT_TAPS)] {
             let frequency = 0.25 + share * 0.25;
             let input: Vec<f32> = (0..32_768)
                 .map(|k| (TAU * frequency * k as f64).cos() as f32)
@@ -171,7 +176,10 @@ mod tests {
                 windowed_level(tail, -share / 2.0),
             );
             let image = 20.0 * (a.min(b) / a.max(b)).log10();
-            assert!(image < -100.0, "{share} of the band: image at {image} dB");
+            assert!(
+                image < 1.0 - STOPBAND_DB,
+                "{share} of the band: image at {image} dB"
+            );
         }
     }
 

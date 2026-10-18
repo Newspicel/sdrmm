@@ -4,7 +4,9 @@ use sdrmm_wire::{
     GainStage, GainValue, Range, StreamScope, any_range_holds,
 };
 
-use crate::driver::{Config, FILTER_WIDTHS_HZ, FilterWidth, snap_filter_width};
+use crate::driver::{
+    Config, FILTER_WIDTHS_HZ, FilterWidth, filter_rate_fraction, snap_filter_width,
+};
 
 pub(crate) const ANTENNA: &str = "RX";
 
@@ -76,6 +78,7 @@ pub(crate) fn capabilities() -> Capabilities {
         noise_source: sdrmm_wire::NoiseSource::None,
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
+        clean_fraction: Some(filter_rate_fraction()),
     }
 }
 

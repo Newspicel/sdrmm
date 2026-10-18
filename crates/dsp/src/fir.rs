@@ -31,9 +31,17 @@ pub fn design_lowpass(taps: usize, cutoff: f64) -> Vec<f32> {
     h.into_iter().map(|v| v as f32).collect()
 }
 
+const KAISER_OFFSET_DB: f64 = 7.95;
+const KAISER_SLOPE: f64 = 14.36;
+
 #[must_use]
 pub fn kaiser_taps(transition: f64, attenuation_db: f64) -> usize {
-    (((attenuation_db - 7.95) / (14.36 * transition)).ceil() as usize + 1) | 1
+    (((attenuation_db - KAISER_OFFSET_DB) / (KAISER_SLOPE * transition)).ceil() as usize + 1) | 1
+}
+
+#[must_use]
+pub fn kaiser_transition(taps: usize, attenuation_db: f64) -> f64 {
+    (attenuation_db - KAISER_OFFSET_DB) / (KAISER_SLOPE * taps.saturating_sub(1).max(1) as f64)
 }
 
 #[must_use]
@@ -218,6 +226,20 @@ mod tests {
             im += f64::from(v) * w.sin();
         }
         10.0 * (re * re + im * im).log10()
+    }
+
+    #[test]
+    fn a_kaiser_design_reaches_its_stopband_within_the_predicted_transition() {
+        for (taps, attenuation_db) in [(64, 72.0), (128, 72.0), (131, 100.0)] {
+            let width = kaiser_transition(taps, attenuation_db);
+            let h = design_lowpass_kaiser(taps, 0.2, attenuation_db);
+            let stop = 0.2 + width / 2.0;
+            let worst = (0..200)
+                .map(|step| response_db(&h, stop + (0.5 - stop) * f64::from(step) / 200.0))
+                .fold(f64::NEG_INFINITY, f64::max);
+            assert!(worst < 3.0 - attenuation_db, "{taps} taps: {worst:.1} dB");
+            assert!(kaiser_taps(width, attenuation_db) <= taps + 2);
+        }
     }
 
     #[test]

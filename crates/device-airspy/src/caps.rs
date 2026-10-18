@@ -1,4 +1,5 @@
 use sdrmm_device::{DeviceError, check_stream_settings};
+use sdrmm_dsp::realiq;
 use sdrmm_wire::{
     Agc, AgcReach, AgcSetting, ArgumentOption, Capabilities, Coherence, DcArtifact, DeviceSettings,
     Duplex, GainKind, GainStage, GainUnit, GainValue, Range, StreamScope, any_range_holds,
@@ -80,6 +81,7 @@ pub(crate) fn capabilities(sample_rates: &[u32]) -> Capabilities {
         noise_source: sdrmm_wire::NoiseSource::None,
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
+        clean_fraction: Some(realiq::clean_fraction(realiq::DEFAULT_TAPS)),
     }
 }
 

@@ -95,6 +95,7 @@ impl FilePlayback {
             noise_source: sdrmm_wire::NoiseSource::None,
             retune_keeps_phase: false,
             rx_inputs: Vec::new(),
+            clean_fraction: None,
         };
         let settings = DeviceSettings {
             center_hz: Some(center_hz),

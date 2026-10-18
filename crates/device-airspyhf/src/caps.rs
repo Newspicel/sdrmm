@@ -81,6 +81,7 @@ pub(crate) fn capabilities(sample_rates: &[u32], low_if: bool) -> Capabilities {
         noise_source: sdrmm_wire::NoiseSource::None,
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
+        clean_fraction: None,
     }
 }
 

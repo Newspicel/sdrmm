@@ -1102,6 +1102,7 @@ mod contract_tests {
                 noise_source: crate::device::NoiseSource::None,
                 retune_keeps_phase: false,
                 rx_inputs: Vec::new(),
+                clean_fraction: None,
             },
             settings: DeviceSettings::default(),
             status: DeviceSetStatus::Running,

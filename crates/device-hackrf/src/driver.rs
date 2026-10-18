@@ -8,7 +8,9 @@ mod sweep;
 mod tx;
 mod types;
 
-pub(crate) use config::{Config, FILTER_WIDTHS_HZ, FilterWidth, snap_filter_width};
+pub(crate) use config::{
+    Config, FILTER_WIDTHS_HZ, FilterWidth, filter_rate_fraction, snap_filter_width,
+};
 pub(crate) use discovery::DeviceDescriptor;
 pub(crate) use error::Error;
 pub(crate) use radio::{HackRf, RX_TRANSFER_SIZE};

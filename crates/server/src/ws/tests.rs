@@ -781,6 +781,7 @@ impl sdrmm_device::DeviceDriver for FaultingDriver {
                 noise_source: sdrmm_wire::NoiseSource::None,
                 retune_keeps_phase: false,
                 rx_inputs: Vec::new(),
+                clean_fraction: None,
             },
             settings: sdrmm_wire::DeviceSettings {
                 sample_rate: Some(2_048_000.0),

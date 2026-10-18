@@ -78,6 +78,7 @@ mod tests {
             noise_source: NoiseSource::Isolated,
             retune_keeps_phase,
             rx_inputs: Vec::new(),
+            clean_fraction: None,
         }
     }
 

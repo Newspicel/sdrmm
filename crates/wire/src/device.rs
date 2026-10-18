@@ -892,6 +892,8 @@ pub struct Capabilities {
     pub retune_keeps_phase: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rx_inputs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clean_fraction: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, ToSchema)]
@@ -1450,6 +1452,7 @@ mod tests {
             noise_source: NoiseSource::None,
             retune_keeps_phase: false,
             rx_inputs: Vec::new(),
+            clean_fraction: None,
         }
     }
 

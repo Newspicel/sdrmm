@@ -1,4 +1,4 @@
-use sdrmm_dsp::fir::design_lowpass_kaiser;
+use sdrmm_dsp::fir::{design_lowpass_kaiser, kaiser_transition};
 
 pub(crate) const FIR_CONFIG: &str = "filter_fir_config";
 pub(crate) const FIR_CHANNEL: &str = "out";
@@ -11,6 +11,12 @@ const FULL_TAPS_MAX_HZ: f64 = 40_000_000.0;
 const MID_TAPS_MAX_HZ: f64 = 160_000_000.0 / 3.0;
 const ATTENUATION_DB: f64 = 72.0;
 const UNITY: f64 = 32_768.0;
+const DESIGNS: [(f64, u32, usize); 4] = [
+    (QUAD_DECIMATION_MAX_HZ, 4, 128),
+    (FULL_TAPS_MAX_HZ, 2, 128),
+    (MID_TAPS_MAX_HZ, 2, 96),
+    (f64::INFINITY, 2, 64),
+];
 const TX_GAIN: f64 = 2.0;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,15 +28,7 @@ pub(crate) struct Fir {
 
 impl Fir {
     pub(crate) fn for_rate(rate_hz: f64) -> Self {
-        let (decimation, taps) = if rate_hz <= QUAD_DECIMATION_MAX_HZ {
-            (4, 128)
-        } else if rate_hz <= FULL_TAPS_MAX_HZ {
-            (2, 128)
-        } else if rate_hz <= MID_TAPS_MAX_HZ {
-            (2, 96)
-        } else {
-            (2, 64)
-        };
+        let (decimation, taps) = design(rate_hz);
         let shape = design_lowpass_kaiser(taps, 0.5 / f64::from(decimation), ATTENUATION_DB);
         let peak = shape
             .iter()
@@ -61,6 +59,22 @@ impl Fir {
             .map(|(rx, tx)| format!("{rx},{tx}\n"));
         std::iter::once(header).chain(taps).collect()
     }
+}
+
+fn design(rate_hz: f64) -> (u32, usize) {
+    DESIGNS
+        .iter()
+        .find(|(max_hz, ..)| rate_hz <= *max_hz)
+        .map_or((2, 64), |&(_, decimation, taps)| (decimation, taps))
+}
+
+pub(crate) fn clean_fraction() -> f64 {
+    DESIGNS
+        .iter()
+        .map(|&(_, decimation, taps)| {
+            1.0 - f64::from(decimation) * kaiser_transition(taps, ATTENUATION_DB)
+        })
+        .fold(1.0, f64::min)
 }
 
 pub(crate) fn needs_safe_rate(rate_hz: f64) -> bool {
@@ -105,6 +119,22 @@ mod tests {
             }
             for hz in [0.6 * rate, 0.75 * rate, 0.95 * rate] {
                 assert!(response_db(&fir.rx, hz / input) < -55.0, "{rate} {hz}");
+            }
+        }
+    }
+
+    #[test]
+    fn nothing_folds_into_the_clean_fraction() {
+        let clean = clean_fraction();
+        assert!((0.8..0.9).contains(&clean), "{clean}");
+        for rate in [10e6, 30.72e6, 50e6, 61.44e6] {
+            let fir = Fir::for_rate(rate);
+            let input = rate * f64::from(fir.decimation);
+            let fold = (1.0 - clean / 2.0) * rate;
+            for step in 0..50 {
+                let hz = fold + (input / 2.0 - fold) * f64::from(step) / 50.0;
+                let db = response_db(&fir.rx, hz / input);
+                assert!(db < -60.0, "{rate}: {hz} at {db:.1} dB");
             }
         }
     }

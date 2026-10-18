@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FULL_VIEW } from "../../components/spectrumView";
-import { type PlotFrame, readoutAt, tracePoints } from "./scopePlot";
+import { type PlotFrame, readoutAt, rollOffShare, tracePoints } from "./scopePlot";
 
 function frame(db: number[]): PlotFrame {
   return {
@@ -76,5 +76,18 @@ describe("tracePoints", () => {
 
   it("has nothing to draw without bins", () => {
     expect(tracePoints(Float32Array.of(-90), FULL_VIEW, 100, -50).count).toBe(0);
+  });
+});
+
+describe("rollOffShare", () => {
+  it("shades each edge outside the clean fraction", () => {
+    expect(rollOffShare(0.86, 20e6, 20e6)).toBeCloseTo(0.07);
+  });
+
+  it("shades nothing for unknown radios or a span the radio did not sample", () => {
+    expect(rollOffShare(null, 20e6, 20e6)).toBe(0);
+    expect(rollOffShare(0.86, null, 20e6)).toBe(0);
+    expect(rollOffShare(0.86, 20e6, 400e6)).toBe(0);
+    expect(rollOffShare(1, 20e6, 20e6)).toBe(0);
   });
 });

@@ -89,6 +89,7 @@ fn capabilities(per_stream: StreamScope) -> Capabilities {
         noise_source: NoiseSource::None,
         retune_keeps_phase: false,
         rx_inputs: Vec::new(),
+        clean_fraction: None,
     }
 }
 

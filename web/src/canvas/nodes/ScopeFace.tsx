@@ -103,7 +103,7 @@ import {
   takeCreationTune,
   tuneOnCreate,
 } from "./scopePick";
-import { DensityLayer, drawPlot, type PlotFrame, type PlotTrace } from "./scopePlot";
+import { DensityLayer, drawPlot, type PlotFrame, type PlotTrace, rollOffShare } from "./scopePlot";
 
 const DRAG_SLOP_PX = 4;
 const GRAB_PX = 12;
@@ -252,8 +252,13 @@ function Spectrum({
   const modesRef = useRef(traceModes);
   const rangeRef = useRef(range);
   const averageRef = useRef(average);
+  const cleanRef = useRef<number | null>(null);
+  const rateRef = useRef<number | null>(null);
   useLayoutEffect(() => {
     viewRef.current = view;
+    cleanRef.current =
+      source?.virtual === undefined ? (set?.capabilities.clean_fraction ?? null) : null;
+    rateRef.current = set?.settings.sample_rate ?? null;
     averageRef.current = average;
     modesRef.current = traceModes;
     rangeRef.current = range;
@@ -494,6 +499,7 @@ function Spectrum({
         density: densityRef.current,
         cursor: hoverRef.current,
         readout: readoutRef.current,
+        rollOff: frame === null ? 0 : rollOffShare(cleanRef.current, rateRef.current, frame.spanHz),
       });
       raf = requestAnimationFrame(loop);
     };

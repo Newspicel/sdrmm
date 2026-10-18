@@ -122,6 +122,7 @@ fn capabilities(reader: &CollectionReader) -> Capabilities {
         noise_source: NoiseSource::Replayed,
         retune_keeps_phase: reader.array().retune_keeps_phase,
         rx_inputs: Vec::new(),
+        clean_fraction: None,
     }
 }
 

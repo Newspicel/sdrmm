@@ -3019,6 +3019,8 @@ export interface components {
             bandwidth_ranges?: components["schemas"]["Range"][];
             bandwidths: number[];
             bias_tee?: boolean;
+            /** Format: double */
+            clean_fraction?: number | null;
             coherence?: components["schemas"]["Coherence"];
             dc_artifact?: components["schemas"]["DcArtifact"];
             directional?: components["schemas"]["DirectionalCapabilities"] | null;

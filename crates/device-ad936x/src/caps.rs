@@ -6,7 +6,7 @@ use sdrmm_wire::{
 
 use crate::{
     chip::Chip,
-    fir::{FIR_CHANNEL, FIR_CONFIG, FIR_ENABLE},
+    fir::{FIR_CHANNEL, FIR_CONFIG, FIR_ENABLE, clean_fraction},
     iio::{Client, Context, Direction},
     layout::{
         BB_DC_TRACKING, CONVERTER_CHANNEL, FREQUENCY, GAIN_CONTROL_MODE, HARDWAREGAIN, Layout,
@@ -399,6 +399,7 @@ pub(crate) fn capabilities(front: &Front, layout: &Layout) -> Capabilities {
         } else {
             Vec::new()
         },
+        clean_fraction: Some(clean_fraction()),
     };
     stream_lanes(&mut capabilities, 1, layout);
     capabilities

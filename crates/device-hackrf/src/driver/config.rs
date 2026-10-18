@@ -88,6 +88,10 @@ pub(crate) fn snap_filter_width(bandwidth_hz: u32) -> u32 {
         .unwrap_or(FILTER_WIDTHS_HZ[0])
 }
 
+pub(crate) fn filter_rate_fraction() -> f64 {
+    FILTER_RATE_FRACTION_NUM as f64 / FILTER_RATE_FRACTION_DEN as f64
+}
+
 pub(crate) fn filter_width_for_rate(sample_rate_hz: u32) -> u32 {
     let target = u64::from(sample_rate_hz) * FILTER_RATE_FRACTION_NUM / FILTER_RATE_FRACTION_DEN;
     snap_filter_width(target as u32)

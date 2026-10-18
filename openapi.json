@@ -10410,6 +10410,13 @@
           "bias_tee": {
             "type": "boolean"
           },
+          "clean_fraction": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "coherence": {
             "$ref": "#/components/schemas/Coherence"
           },

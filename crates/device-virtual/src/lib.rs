@@ -213,6 +213,7 @@ fn band_capabilities() -> Capabilities {
         coherence: sdrmm_wire::Coherence::None,
         noise_source: sdrmm_wire::NoiseSource::None,
         rx_inputs: Vec::new(),
+        clean_fraction: None,
         retune_keeps_phase: false,
     }
 }

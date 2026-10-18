@@ -25,6 +25,8 @@ import { token } from "../../lib/tokens";
 export const AXIS_H = 16;
 const TRACE_FILL_ALPHA = 0.2;
 const BAND_FILL_ALPHA = 0.3;
+const ROLL_OFF_ALPHA = 0.14;
+const RATE_MATCH = 0.01;
 const scratch = emptyPoints();
 
 export const TRACE_INK: Record<TraceMode, string> = {
@@ -54,6 +56,24 @@ export interface PlotOptions {
   cursor?: number | null;
   readout?: ReadoutHold;
   offsetAxis?: boolean;
+  rollOff?: number;
+}
+
+export function rollOffShare(
+  cleanFraction: number | null,
+  sampleRateHz: number | null,
+  spanHz: number,
+): number {
+  if (cleanFraction === null || sampleRateHz === null || !(sampleRateHz > 0)) {
+    return 0;
+  }
+  if (!(cleanFraction > 0 && cleanFraction < 1)) {
+    return 0;
+  }
+  if (Math.abs(spanHz - sampleRateHz) > sampleRateHz * RATE_MATCH) {
+    return 0;
+  }
+  return (1 - cleanFraction) / 2;
 }
 
 export function readoutAt(
@@ -198,6 +218,7 @@ export function drawPlot(canvas: HTMLCanvasElement | null, options: PlotOptions)
   ctx.textBaseline = "middle";
   ctx.lineWidth = 1;
   drawGrid(ctx, frame, view, dbWindow, width, height, plotH, options.offsetAxis === true);
+  drawRollOff(ctx, view, options.rollOff ?? 0, width, plotH);
 
   ctx.lineJoin = "round";
   for (const trace of options.traces) {
@@ -229,6 +250,32 @@ export function drawPlot(canvas: HTMLCanvasElement | null, options: PlotOptions)
   if (cursor !== null) {
     drawCursor(ctx, frame, view, cursor, width, plotH, options.readout);
   }
+}
+
+function drawRollOff(
+  ctx: CanvasRenderingContext2D,
+  view: SpectrumView,
+  share: number,
+  width: number,
+  plotH: number,
+): void {
+  if (!(share > 0)) {
+    return;
+  }
+  ctx.fillStyle = token("plot-ink-dim");
+  ctx.globalAlpha = ROLL_OFF_ALPHA;
+  const edges: readonly (readonly [number, number])[] = [
+    [0, share],
+    [1 - share, 1],
+  ];
+  for (const [from, to] of edges) {
+    const left = Math.max(0, spanToView(view, from) * width);
+    const right = Math.min(width, spanToView(view, to) * width);
+    if (right > left) {
+      ctx.fillRect(left, 0, right - left, plotH);
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawCursor(

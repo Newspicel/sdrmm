@@ -142,6 +142,7 @@ pub(crate) fn capabilities(spec: &BenchDeviceSpec) -> Capabilities {
         noise_source: spec.noise_source,
         retune_keeps_phase: spec.retune_keeps_phase,
         rx_inputs: Vec::new(),
+        clean_fraction: None,
     }
 }
 
