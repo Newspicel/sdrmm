@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  advanceRing,
   backingPx,
   fitExtent,
-  nextRingRow,
   pixelRatio,
   rowsForHeight,
   seedPlacement,
@@ -85,10 +85,10 @@ describe("rowsForHeight", () => {
   });
 });
 
-describe("nextRingRow", () => {
+describe("advanceRing", () => {
   it("wraps at the top of the ring", () => {
-    expect(nextRingRow(0, 4)).toBe(1);
-    expect(nextRingRow(3, 4)).toBe(0);
+    expect(advanceRing(0, 4)).toBe(1);
+    expect(advanceRing(3, 4)).toBe(0);
   });
 
   it("visits every row exactly once per lap", () => {
@@ -96,10 +96,15 @@ describe("nextRingRow", () => {
     let row = 0;
     for (let i = 0; i < 8; i++) {
       seen.add(row);
-      row = nextRingRow(row, 8);
+      row = advanceRing(row, 8);
     }
     expect(seen.size).toBe(8);
     expect(row).toBe(0);
+  });
+
+  it("wraps a whole run of rows at once", () => {
+    expect(advanceRing(6, 8, 2)).toBe(0);
+    expect(advanceRing(6, 8, 5)).toBe(3);
   });
 });
 

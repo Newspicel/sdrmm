@@ -17,16 +17,18 @@ function canvas() {
 function harness() {
   const draw = vi.fn();
   const uniform3fv = vi.fn();
+  const texSubImage2D = vi.fn();
   const callbacks = new Map<number, FrameRequestCallback>();
   const observers: IntersectionObserverCallback[] = [];
   const listeners = new Map<string, EventListener>();
   let next = 0;
   const gl = new Proxy(
-    { drawArrays: draw, uniform3fv },
+    { drawArrays: draw, uniform3fv, texSubImage2D },
     {
       get(target, name) {
         if (name === "drawArrays") return target.drawArrays;
         if (name === "uniform3fv") return target.uniform3fv;
+        if (name === "texSubImage2D") return target.texSubImage2D;
         if (name === "getExtension") return () => null;
         if (String(name).toUpperCase() === name) return 1;
         return () => ({});
@@ -59,6 +61,7 @@ function harness() {
   return {
     draw,
     uniform3fv,
+    texSubImage2D,
     canvas,
     frame() {
       const pending = [...callbacks.values()];
@@ -118,6 +121,23 @@ describe("waterfall repainting", () => {
     h.frame();
     h.frame();
     expect(h.draw).toHaveBeenCalledTimes(5);
+  });
+
+  it("uploads a run of rows in one call and wraps at the ring edge", () => {
+    const h = harness();
+    const view = attachWaterfall(h.canvas().element);
+    views.push(view);
+    const runs = (): number[][] =>
+      h.texSubImage2D.mock.calls.map((call) => [call[3], call[4], call[5]]);
+    h.texSubImage2D.mockClear();
+    view.pushRows(new Uint8Array(3 * 8), 3);
+    expect(runs()).toEqual([[0, 8, 3]]);
+    h.texSubImage2D.mockClear();
+    view.pushRows(new Uint8Array(1024 * 8), 1024);
+    expect(runs()).toEqual([
+      [3, 8, 1021],
+      [0, 8, 3],
+    ]);
   });
 
   it("keeps a custom palette set before the first paint", () => {

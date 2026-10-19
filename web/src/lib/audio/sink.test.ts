@@ -250,6 +250,39 @@ describe("createWebAudioSink", () => {
     expect(Array.from(posted ?? [])).toEqual([0.25, 0.25, -0.5, -0.5]);
   });
 
+  it("reaches playback before any monitor sees the samples", async () => {
+    let emit: ((pcm: Float32Array) => void) | undefined;
+    createDecoder.mockImplementation((channels: number, onPcm: (pcm: Float32Array) => void) => {
+      emit = onPcm;
+      return Promise.resolve({ channels, decode: vi.fn(), close: vi.fn() });
+    });
+    const { createWebAudioSink } = await importSink();
+    const { watchAudio } = await import("./monitor");
+
+    await createWebAudioSink(
+      "1:1",
+      1,
+      () => {},
+      () => {},
+    );
+    const node = FakeWorkletNode.instances[0];
+    node?.port.postMessage.mockClear();
+
+    const order: string[] = [];
+    const seen: number[][] = [];
+    node?.port.postMessage.mockImplementation(() => order.push("playback"));
+    const stop = watchAudio("1:1", (pcm) => {
+      order.push("monitor");
+      seen.push([...pcm]);
+    });
+
+    emit?.(Float32Array.from([0.25, 0.25, -0.5, -0.5]));
+    stop();
+
+    expect(order).toEqual(["playback", "monitor"]);
+    expect(seen).toEqual([[0.25, 0.25, -0.5, -0.5]]);
+  });
+
   it("accepts the first stereo packet and repeated layout changes without replacing the decoder", async () => {
     const decoders: {
       channels: number;

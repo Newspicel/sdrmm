@@ -181,15 +181,24 @@ export const createWebAudioSink: SinkFactory = async (key, volume, onError, onRe
       1000 * (frames / SAMPLE_RATE + (context.baseLatency ?? 0) + (context.outputLatency ?? 0))
     );
   });
+  let monitored = new Float32Array(0);
   const emit = (pcm: Float32Array): void => {
     if (closed) {
       return;
     }
-    if (isWatched(key)) {
-      publishAudio(key, pcm, CHANNELS);
+    const watched = isWatched(key);
+    const samples = pcm.length;
+    if (watched) {
+      if (monitored.length < samples) {
+        monitored = new Float32Array(samples);
+      }
+      monitored.set(pcm);
     }
     received = true;
     playback.send(pcm);
+    if (watched) {
+      publishAudio(key, monitored.subarray(0, samples), CHANNELS);
+    }
   };
 
   let decoder: OpusPacketDecoder;

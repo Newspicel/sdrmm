@@ -1,9 +1,9 @@
 import { token } from "../lib/tokens";
 import { COLORMAP_GLSL, CUSTOM_STOPS, type Palette, paletteIndex, type Rgb } from "./colormap";
 import {
+  advanceRing,
   backingPx,
   fitExtent,
-  nextRingRow,
   pixelRatio,
   rowsForHeight,
   seedPlacement,
@@ -105,6 +105,7 @@ const TICK_FONT = '"JetBrains Mono Variable", ui-monospace, Menlo, monospace';
 
 export interface WaterfallView {
   pushRow(bins: Uint8Array, level?: RowLevel): void;
+  pushRows(rows: Uint8Array, count: number, levels?: readonly RowLevel[]): void;
   seed(rows: Uint8Array, count: number, bins: number, levels?: readonly RowLevel[]): void;
   shiftRows(delta: number): void;
   setWindow(start: number, width: number): void;
@@ -240,29 +241,40 @@ class Plot implements WaterfallView {
   }
 
   pushRow(bins: Uint8Array, level: RowLevel = PLAIN_ROW): void {
+    this.pushRows(bins, 1, [level]);
+  }
+
+  pushRows(rows: Uint8Array, count: number, levels: readonly RowLevel[] = []): void {
     const live = this.live;
-    if (live === null || bins.length === 0) {
+    const bins = count > 0 ? Math.floor(rows.length / count) : 0;
+    if (live === null || bins === 0) {
       return;
     }
-    const gl = live.context.gl;
-    if (bins.length !== this.bins) {
-      this.allocate(bins.length);
+    if (bins !== this.bins) {
+      this.allocate(bins);
     }
-    this.storeRow(this.writeRow, level);
+    const gl = live.context.gl;
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, live.texture);
-    gl.texSubImage2D(
-      gl.TEXTURE_2D,
-      0,
-      0,
-      this.writeRow,
-      this.bins,
-      1,
-      gl.RED,
-      gl.UNSIGNED_BYTE,
-      bins,
-    );
-    this.writeRow = nextRingRow(this.writeRow, HISTORY_ROWS);
+    for (let done = Math.max(0, count - HISTORY_ROWS); done < count; ) {
+      const span = Math.min(count - done, HISTORY_ROWS - this.writeRow);
+      for (let row = 0; row < span; row++) {
+        this.storeRow(this.writeRow + row, levels[done + row] ?? PLAIN_ROW);
+      }
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        this.writeRow,
+        bins,
+        span,
+        gl.RED,
+        gl.UNSIGNED_BYTE,
+        rows.subarray(done * bins, (done + span) * bins),
+      );
+      this.writeRow = advanceRing(this.writeRow, HISTORY_ROWS, span);
+      done += span;
+    }
     this.dirty = true;
   }
 

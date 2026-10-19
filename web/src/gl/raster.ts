@@ -21,8 +21,8 @@ export function rowsForHeight(heightPx: number, ratio: number, rings: number): n
   return Math.max(2, Math.min(rings, Math.round(heightPx / (ratio > 0 ? ratio : 1))));
 }
 
-export function nextRingRow(row: number, rings: number): number {
-  return rings > 0 ? (row + 1) % rings : 0;
+export function advanceRing(row: number, rings: number, step = 1): number {
+  return rings > 0 ? (row + step) % rings : 0;
 }
 
 export function seedPlacement(

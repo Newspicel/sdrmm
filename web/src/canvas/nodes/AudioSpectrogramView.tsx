@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { type Colormap, DEFAULT_COLORMAP } from "../../gl/colormap";
+import { RowQueue } from "../../gl/rowQueue";
 import { attachWaterfall, GRAPHICS_HELP, type WaterfallView } from "../../gl/waterfall";
 import { watchAudio } from "../../lib/audio/monitor";
 import { AudioSpectrogram, audioNyquistHz } from "../../lib/dsp/audioSpectrum";
 
 const TICKS_HZ = [3000, 6000, 12_000, 18_000];
+
+const BACKLOG_ROWS = 128;
 
 export function AudioSpectrogramView({
   source,
@@ -45,12 +48,24 @@ export function AudioSpectrogramView({
       return;
     }
     const spectrogram = new AudioSpectrogram();
+    const queue = new RowQueue(spectrogram.bins, BACKLOG_ROWS);
     const stop = watchAudio(source, (pcm, channels) => {
-      spectrogram.push(pcm, channels, (row) => {
-        rendererRef.current?.pushRow(row);
-      });
+      spectrogram.push(pcm, channels, (row) => queue.push(row));
     });
-    return stop;
+    let raf = 0;
+    const loop = (): void => {
+      raf = requestAnimationFrame(loop);
+      const renderer = rendererRef.current;
+      if (renderer === null) {
+        return;
+      }
+      queue.drain((rows, count) => renderer.pushRows(rows, count));
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      stop();
+      cancelAnimationFrame(raf);
+    };
   }, [source, playing]);
 
   return (
