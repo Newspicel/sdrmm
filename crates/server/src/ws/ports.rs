@@ -6,8 +6,9 @@ use sdrmm_wire::{
 use tokio::task::JoinHandle;
 
 use super::{
-    MEDIA_ID_BASE, SPECTRUM_ID_BASE, Session, SpectrumLane, alloc_stream_id, flatten_join,
-    spawn_audio, spawn_iq, spawn_spectrum, spawn_symbols, spawn_video, text_event,
+    MEDIA_ID_BASE, SPECTRUM_ID_BASE, Session, SpectrumLane, alloc_stream_id,
+    derived::{spawn_iq_spectrum, spawn_pcm_spectrum},
+    flatten_join, spawn_audio, spawn_iq, spawn_spectrum, spawn_symbols, spawn_video, text_event,
 };
 
 const NO_NODE: &str = "No such node";
@@ -20,15 +21,23 @@ const NO_STREAM_IDS: &str = "Too many streams";
 pub(super) enum Tapped {
     Spectrum { device_set: u32, stream: u32 },
     Audio(AudioRoute),
+    AudioSpectrum(AudioRoute),
     Iq(ChannelAddr),
+    BasebandSpectrum(ChannelAddr),
     Symbols(ChannelAddr),
     Video(ChannelAddr),
 }
 
 impl Tapped {
+    const fn derived(&self) -> bool {
+        matches!(self, Self::AudioSpectrum(_) | Self::BasebandSpectrum(_))
+    }
+
     const fn kind(&self) -> StreamKind {
         match self {
-            Self::Spectrum { .. } => StreamKind::Spectrum,
+            Self::Spectrum { .. } | Self::AudioSpectrum(_) | Self::BasebandSpectrum(_) => {
+                StreamKind::Spectrum
+            }
             Self::Audio(_) => StreamKind::Audio,
             Self::Iq(_) => StreamKind::Iq,
             Self::Symbols(_) => StreamKind::Symbols,
@@ -173,12 +182,19 @@ fn of_feed(feed: &Feed) -> Vec<Wanted> {
 
 fn channel_streams(port_type: PortType, addr: ChannelAddr, via: &[String]) -> Vec<Tapped> {
     match port_type {
-        PortType::Audio => vec![Tapped::Audio(AudioRoute {
-            device_set: addr.device_set,
-            channel: addr.channel,
-            fx: via.to_vec(),
-        })],
-        PortType::Baseband => vec![Tapped::Iq(addr), Tapped::Symbols(addr)],
+        PortType::Audio => {
+            let route = AudioRoute {
+                device_set: addr.device_set,
+                channel: addr.channel,
+                fx: via.to_vec(),
+            };
+            vec![Tapped::Audio(route.clone()), Tapped::AudioSpectrum(route)]
+        }
+        PortType::Baseband => vec![
+            Tapped::Iq(addr),
+            Tapped::Symbols(addr),
+            Tapped::BasebandSpectrum(addr),
+        ],
         PortType::Video => vec![Tapped::Video(addr)],
         _ => Vec::new(),
     }
@@ -217,16 +233,38 @@ impl Session {
         port: String,
         params: StreamParams,
     ) {
-        self.unsubscribe_port(&node, &port).await;
-        self.ports.subs.insert(
-            (node.clone(), port.clone()),
-            PortSub {
-                params,
-                streams: HashMap::new(),
-                refused: None,
-            },
-        );
+        let key = (node.clone(), port.clone());
+        let retuned = match self.ports.subs.get_mut(&key) {
+            Some(sub) => std::mem::replace(&mut sub.params, params) != params,
+            None => {
+                self.ports.subs.insert(
+                    key.clone(),
+                    PortSub {
+                        params,
+                        streams: HashMap::new(),
+                        refused: None,
+                    },
+                );
+                false
+            }
+        };
+        if retuned {
+            self.drop_spectrum(&key).await;
+        }
         self.sync_port(&node, &port).await;
+    }
+
+    async fn drop_spectrum(&mut self, key: &(String, String)) {
+        let Some(sub) = self.ports.subs.get_mut(key) else {
+            return;
+        };
+        let stale: Vec<(Tapped, Live)> = sub
+            .streams
+            .extract_if(|tapped, _| tapped.kind() == StreamKind::Spectrum)
+            .collect();
+        for (tapped, live) in stale {
+            self.stop_stream(&tapped, live).await;
+        }
     }
 
     pub(super) async fn unsubscribe_port(&mut self, node: &str, port: &str) {
@@ -249,10 +287,16 @@ impl Session {
         let key = (node.to_owned(), port.to_owned());
         let resolved = self.state.resolved.current();
         let wanted = wanted(&resolved.patch, node, port);
-        let keep: Vec<Wanted> = wanted.clone().unwrap_or_default();
         let Some(sub) = self.ports.subs.get_mut(&key) else {
             return;
         };
+        let derived = sub.params.spectrum;
+        let keep: Vec<Wanted> = wanted
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|want| derived || !want.tapped.derived())
+            .collect();
         let gone: Vec<(Tapped, Live)> = sub
             .streams
             .extract_if(|tapped, live| {
@@ -404,6 +448,28 @@ impl Session {
                     .await,
                 )?;
                 Ok(spawn_iq(id, rx, out))
+            }
+            Tapped::BasebandSpectrum(at) => {
+                let rx = flatten_join(
+                    tokio::task::spawn_blocking(move || {
+                        engine.subscribe_iq(at.device_set, at.channel)
+                    })
+                    .await,
+                )?;
+                Ok(spawn_iq_spectrum(id, params.fps, params.bins, rx, out))
+            }
+            Tapped::AudioSpectrum(route) => {
+                let resolved = self.state.resolved.clone();
+                let rx = flatten_join(
+                    tokio::task::spawn_blocking(move || {
+                        if !route.fx.is_empty() {
+                            crate::audio_fx::sync(&engine, &resolved);
+                        }
+                        engine.subscribe_route_pcm(&route)
+                    })
+                    .await,
+                )?;
+                Ok(spawn_pcm_spectrum(id, params.fps, params.bins, rx, out))
             }
             Tapped::Symbols(at) => {
                 let rx = flatten_join(

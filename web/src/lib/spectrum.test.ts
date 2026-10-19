@@ -238,7 +238,7 @@ describe("SpectrumHub resolution", () => {
   it("subscribes at the widest resolution any watcher wants and settles back", () => {
     const { fake, hub } = bench();
     hub.subscribe("s1", "iq", () => {});
-    const dropWide = hub.subscribe("s1", "iq", () => {}, 4096);
+    const dropWide = hub.subscribe("s1", "iq", () => {}, { bins: 4096 });
     dropWide();
 
     const asked = subscribes(fake.sent).map((c) => c.data.params?.bins ?? 0);

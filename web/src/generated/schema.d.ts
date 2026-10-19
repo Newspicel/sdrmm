@@ -9570,6 +9570,11 @@ export interface components {
             bins?: number;
             /** Format: int32 */
             fps?: number;
+            /**
+             * @description Also send the spectrum this port can derive from its own signal, for ports that carry
+             *     something else as well.
+             */
+            spectrum?: boolean;
         };
         StreamScope: {
             agc?: boolean;

@@ -410,7 +410,11 @@ mod contract_tests {
         let cmd = ClientCommand::SubscribePort {
             node: "scope".to_owned(),
             port: "iq".to_owned(),
-            params: ws::StreamParams { fps: 20, bins: 512 },
+            params: ws::StreamParams {
+                fps: 20,
+                bins: 512,
+                spectrum: false,
+            },
         };
         let json = serde_json::to_string(&cmd).unwrap();
         let back: ClientCommand = serde_json::from_str(&json).unwrap();

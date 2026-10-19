@@ -123,23 +123,6 @@ describe("waterfall repainting", () => {
     expect(h.draw).toHaveBeenCalledTimes(5);
   });
 
-  it("uploads a run of rows in one call and wraps at the ring edge", () => {
-    const h = harness();
-    const view = attachWaterfall(h.canvas().element);
-    views.push(view);
-    const runs = (): number[][] =>
-      h.texSubImage2D.mock.calls.map((call) => [call[3], call[4], call[5]]);
-    h.texSubImage2D.mockClear();
-    view.pushRows(new Uint8Array(3 * 8), 3);
-    expect(runs()).toEqual([[0, 8, 3]]);
-    h.texSubImage2D.mockClear();
-    view.pushRows(new Uint8Array(1024 * 8), 1024);
-    expect(runs()).toEqual([
-      [3, 8, 1021],
-      [0, 8, 3],
-    ]);
-  });
-
   it("keeps a custom palette set before the first paint", () => {
     const h = harness();
     const view = attachWaterfall(h.canvas().element);

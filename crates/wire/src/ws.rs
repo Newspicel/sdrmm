@@ -78,6 +78,10 @@ pub struct StreamParams {
     pub fps: u16,
     #[serde(default = "default_bins")]
     pub bins: u16,
+    /// Also send the spectrum this port can derive from its own signal, for ports that carry
+    /// something else as well.
+    #[serde(default)]
+    pub spectrum: bool,
 }
 
 const fn default_fps() -> u16 {
@@ -97,6 +101,7 @@ impl Default for StreamParams {
         Self {
             fps: default_fps(),
             bins: default_bins(),
+            spectrum: false,
         }
     }
 }

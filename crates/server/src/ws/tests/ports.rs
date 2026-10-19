@@ -62,20 +62,28 @@ fn the_fx_chain_comes_from_via() {
             channel: 4,
         },
     );
+    let route = AudioRoute {
+        device_set: 1,
+        channel: 4,
+        fx: vec!["fx".to_owned()],
+    };
+    let from = Upstream {
+        source: "voice".to_owned(),
+        via: vec!["fx".to_owned()],
+        index: 0,
+    };
     assert_eq!(
         wanted(&patch, "spk", "audio"),
-        Ok(vec![Wanted {
-            tapped: Tapped::Audio(AudioRoute {
-                device_set: 1,
-                channel: 4,
-                fx: vec!["fx".to_owned()],
-            }),
-            from: Upstream {
-                source: "voice".to_owned(),
-                via: vec!["fx".to_owned()],
-                index: 0,
+        Ok(vec![
+            Wanted {
+                tapped: Tapped::Audio(route.clone()),
+                from: from.clone(),
             },
-        }])
+            Wanted {
+                tapped: Tapped::AudioSpectrum(route),
+                from,
+            },
+        ])
     );
 }
 
@@ -97,11 +105,12 @@ fn a_trunk_feed_gives_one_stream_per_follower() {
     let streams = wanted(&patch, "spk", "audio").expect("streams");
     let sources: Vec<(&str, u32)> = streams
         .iter()
+        .filter(|want| matches!(want.tapped, Tapped::Audio(_)))
         .map(|want| (want.from.source.as_str(), want.from.index))
         .collect();
     assert_eq!(sources, [("trunk", 0), ("trunk", 1)]);
     assert_eq!(
-        streams[1].tapped,
+        streams[2].tapped,
         Tapped::Audio(AudioRoute::channel(1, 3)),
         "each follower is its own stream"
     );

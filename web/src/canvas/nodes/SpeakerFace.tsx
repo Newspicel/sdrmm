@@ -108,7 +108,12 @@ function AudioInput({ node, input, port }: { node: string; input: Input; port?: 
           />
         }
       />
-      <AudioSpectrogramView source={source} playing={audio.playing} />
+      <AudioSpectrogramView
+        node={node}
+        port="audio"
+        source={input.source}
+        playing={audio.playing}
+      />
       {audio.error !== null && <FaceFault message={audio.error} />}
     </div>
   );

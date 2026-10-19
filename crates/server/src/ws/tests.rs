@@ -304,6 +304,70 @@ async fn a_baseband_port_streams_iq_and_symbols_in_the_media_id_space() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_port_derives_a_spectrum_from_its_own_signal_only_when_asked() {
+    let (mut ws, _, _) = bench(graph(
+        vec![
+            radio("band"),
+            channel("voice", "nfm"),
+            of("spk", sdrmm_wire::NodeKind::Speaker),
+        ],
+        vec![
+            wire(("radio", "iq"), ("voice", "iq")),
+            wire(("voice", "audio"), ("spk", "audio")),
+        ],
+    ))
+    .await;
+    subscribe_port(&mut ws, "spk", "audio").await;
+    let (audio_id, kind, _) = port_stream(&mut ws).await;
+    assert_eq!(kind, StreamKind::Audio);
+
+    subscribe_with(
+        &mut ws,
+        "spk",
+        "audio",
+        sdrmm_wire::StreamParams {
+            fps: 30,
+            bins: 512,
+            spectrum: true,
+        },
+    )
+    .await;
+    let (spectrum_id, kind, source) = port_stream(&mut ws).await;
+    assert_eq!((kind, source.as_str()), (StreamKind::Spectrum, "voice"));
+    assert!(
+        spectrum_id < MEDIA_ID_BASE,
+        "a derived spectrum takes a spectrum id, got {spectrum_id:#x}"
+    );
+
+    loop {
+        let (kind, stream_id) = next_frame_header(&mut ws).await;
+        if kind == sdrmm_wire::FrameKind::Spectrum as u8 {
+            assert_eq!(stream_id, spectrum_id);
+            break;
+        }
+    }
+
+    subscribe_with(
+        &mut ws,
+        "spk",
+        "audio",
+        sdrmm_wire::StreamParams {
+            fps: 30,
+            bins: 512,
+            spectrum: false,
+        },
+    )
+    .await;
+    assert_eq!(
+        stopped(&mut ws).await,
+        (spectrum_id, StreamKind::Spectrum),
+        "dropping the ask stops the derived stream and leaves the audio running"
+    );
+    unsubscribe_port(&mut ws, "spk", "audio").await;
+    assert_eq!(stopped(&mut ws).await, (audio_id, StreamKind::Audio));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_video_port_streams_pictures_in_the_media_id_space() {
     let (mut ws, _, _) = bench(graph(
         vec![
@@ -374,7 +438,11 @@ async fn two_lanes_of_one_radio_stream_independently() {
         ],
     ))
     .await;
-    let params = sdrmm_wire::StreamParams { fps: 30, bins: 64 };
+    let params = sdrmm_wire::StreamParams {
+        fps: 30,
+        bins: 64,
+        spectrum: false,
+    };
     subscribe_with(&mut ws, "first", "iq", params).await;
     let (lane0, _, _) = port_stream(&mut ws).await;
     subscribe_with(&mut ws, "third", "iq", params).await;
@@ -411,7 +479,11 @@ async fn spectrum_lifecycle_reports_kind_and_streams_frames() {
         &mut ws,
         "scope",
         "iq",
-        sdrmm_wire::StreamParams { fps: 30, bins: 64 },
+        sdrmm_wire::StreamParams {
+            fps: 30,
+            bins: 64,
+            spectrum: false,
+        },
     )
     .await;
     let (allocated, kind, source) = port_stream(&mut ws).await;
@@ -683,7 +755,11 @@ async fn spectrum_resumes_after_a_reconnect_without_a_resubscribe() {
         &mut ws,
         "scope",
         "iq",
-        sdrmm_wire::StreamParams { fps: 30, bins: 64 },
+        sdrmm_wire::StreamParams {
+            fps: 30,
+            bins: 64,
+            spectrum: false,
+        },
     )
     .await;
     let (first, _, _) = port_stream(&mut ws).await;

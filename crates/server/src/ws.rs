@@ -23,6 +23,7 @@ use sdrmm_wire::{
 };
 use tokio::sync::{broadcast, watch};
 
+mod derived;
 mod outbox;
 mod phone;
 mod ports;

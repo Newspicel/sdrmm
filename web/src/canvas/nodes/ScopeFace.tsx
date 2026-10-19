@@ -480,7 +480,7 @@ function Spectrum({
         setMeta(metaOf(frame));
       }
     };
-    return spectrumHub.subscribe(node, SCOPE_PORT, listener, SPECTRUM_MAX_BINS);
+    return spectrumHub.subscribe(node, SCOPE_PORT, listener, { bins: SPECTRUM_MAX_BINS });
   }, [setId, node]);
 
   useEffect(() => {

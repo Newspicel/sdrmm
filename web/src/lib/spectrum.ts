@@ -1,6 +1,6 @@
 import type { SpectrumFrame } from "./frame";
 import type { Listener, Unsubscribe } from "./listeners";
-import { type PortHub, portHub, portKey } from "./ports";
+import { type PortHub, portHub, portKey, sourceKey } from "./ports";
 
 export interface SpectrumSocket {
   on<K extends "spectrum">(kind: K, listener: Listener<K>): Unsubscribe;
@@ -13,7 +13,16 @@ export const SPECTRUM_MAX_BINS = 4096;
 
 export const SPECTRUM_HISTORY_ROWS = 1024;
 
+export const AUDIO_RATE_HZ = 48_000;
+export const AUDIO_SPECTRUM_BINS = 256;
+export const AUDIO_SPECTRUM_FPS = 15;
+
+export function audioNyquistHz(sampleRate = AUDIO_RATE_HZ): number {
+  return sampleRate / 2;
+}
+
 const RELEASE_GRACE_MS = 5_000;
+const MIN_LANE_BINS = 16;
 
 export function resampleRows(
   rows: Uint8Array,
@@ -44,19 +53,41 @@ export function resampleRows(
   return out;
 }
 
-function resolveBins(desired: Iterable<number>): number {
-  let top = SPECTRUM_BINS;
-  for (const bins of desired) {
-    if (bins > top) {
-      top = bins;
-    }
+interface Want {
+  bins: number;
+  fps: number;
+}
+
+export interface SpectrumWant {
+  bins?: number;
+  fps?: number;
+  source?: string;
+}
+
+function resolveBins(desired: Iterable<Want>): number {
+  let top = 0;
+  for (const want of desired) {
+    top = Math.max(top, want.bins);
   }
-  return Math.min(SPECTRUM_MAX_BINS, top);
+  return Math.min(SPECTRUM_MAX_BINS, Math.max(MIN_LANE_BINS, top));
+}
+
+function resolveFps(desired: Iterable<Want>): number {
+  let top = 0;
+  for (const want of desired) {
+    top = Math.max(top, want.fps);
+  }
+  return Math.max(1, top);
 }
 
 export interface Lane {
   node: string;
   port: string;
+  source?: string;
+}
+
+function laneKey(node: string, port: string, source?: string): string {
+  return source === undefined ? portKey(node, port) : sourceKey(node, port, source);
 }
 
 export interface RowMeta {
@@ -131,10 +162,11 @@ class History {
 
 interface Watched {
   lane: Lane;
-  listeners: Map<(frame: SpectrumFrame) => void, number>;
+  listeners: Map<(frame: SpectrumFrame) => void, Want>;
   history: History;
   release: number;
   bins: number;
+  fps: number;
   hold: (() => void) | null;
 }
 
@@ -151,7 +183,9 @@ export class SpectrumHub {
     if (stream === undefined || stream.kind !== "spectrum") {
       return;
     }
-    const lane = this.lanes.get(portKey(stream.node, stream.port));
+    const lane =
+      this.lanes.get(sourceKey(stream.node, stream.port, stream.source)) ??
+      this.lanes.get(portKey(stream.node, stream.port));
     if (lane === undefined) {
       return;
     }
@@ -182,17 +216,20 @@ export class SpectrumHub {
     node: string,
     port: string,
     listener: (frame: SpectrumFrame) => void,
-    bins: number = SPECTRUM_BINS,
+    options: SpectrumWant = {},
   ): () => void {
-    const key = portKey(node, port);
+    const { bins = SPECTRUM_BINS, fps = SPECTRUM_FPS, source } = options;
+    const want: Want = { bins, fps };
+    const key = laneKey(node, port, source);
     let lane = this.lanes.get(key);
     if (lane === undefined) {
       lane = {
-        lane: { node, port },
-        listeners: new Map([[listener, bins]]),
+        lane: { node, port, ...(source === undefined ? {} : { source }) },
+        listeners: new Map([[listener, want]]),
         history: new History(),
         release: 0,
-        bins: resolveBins([bins]),
+        bins: resolveBins([want]),
+        fps: resolveFps([want]),
         hold: null,
       };
       this.lanes.set(key, lane);
@@ -203,7 +240,7 @@ export class SpectrumHub {
       clearTimeout(lane.release);
       lane.release = 0;
     }
-    lane.listeners.set(listener, bins);
+    lane.listeners.set(listener, want);
     this.refresh(lane);
     return () => this.release(key, listener);
   }
@@ -218,9 +255,9 @@ export class SpectrumHub {
     }
   }
 
-  history(node: string, port: string): SpectrumHistory {
+  history(node: string, port: string, source?: string): SpectrumHistory {
     return (
-      this.lanes.get(portKey(node, port))?.history.read() ?? {
+      this.lanes.get(laneKey(node, port, source))?.history.read() ?? {
         rows: new Uint8Array(0),
         count: 0,
         bins: 0,
@@ -229,8 +266,8 @@ export class SpectrumHub {
     );
   }
 
-  latest(node: string, port: string): SpectrumFrame | null {
-    return this.lanes.get(portKey(node, port))?.history.latest ?? null;
+  latest(node: string, port: string, source?: string): SpectrumFrame | null {
+    return this.lanes.get(laneKey(node, port, source))?.history.latest ?? null;
   }
 
   watched(): Lane[] {
@@ -258,17 +295,20 @@ export class SpectrumHub {
   }
 
   private refresh(watched: Watched): void {
-    const resolved = resolveBins(watched.listeners.values());
-    if (resolved !== watched.bins) {
-      watched.bins = resolved;
+    const bins = resolveBins(watched.listeners.values());
+    const fps = resolveFps(watched.listeners.values());
+    if (bins !== watched.bins || fps !== watched.fps) {
+      watched.bins = bins;
+      watched.fps = fps;
       this.send(watched);
     }
   }
 
   private send(watched: Watched): void {
     const params = {
-      fps: this.hidden ? SPECTRUM_HIDDEN_FPS : SPECTRUM_FPS,
+      fps: this.hidden ? SPECTRUM_HIDDEN_FPS : watched.fps,
       bins: watched.bins,
+      spectrum: true,
     };
     const { node, port } = watched.lane;
     if (watched.hold === null) {

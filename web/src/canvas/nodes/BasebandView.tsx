@@ -27,11 +27,13 @@ import { colormapLut } from "../../components/persistence";
 import { Segmented } from "../../components/Segmented";
 import { SettingsPanel, SettingsSection } from "../../components/SettingsPanel";
 import { Switch } from "../../components/Switch";
+import { dequantize } from "../../components/spectrumTraces";
 import { FULL_VIEW } from "../../components/spectrumView";
 import type { Palette } from "../../gl/colormap";
-import { SpectrumAnalyzer } from "../../lib/dsp/fft";
-import type { IqFrame, SymbolFrame } from "../../lib/frame";
+import type { IqFrame, SpectrumFrame, SymbolFrame } from "../../lib/frame";
+import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
 import { iqHub, symbolHub } from "../../lib/portTaps";
+import { spectrumHub } from "../../lib/spectrum";
 import { token } from "../../lib/tokens";
 import { measurements } from "./basebandMeasure";
 import { drawPlot, GridBitmap, PLOT_FONT, prepareCanvas } from "./scopePlot";
@@ -62,9 +64,8 @@ const EYE_OPTIONS = [
   { value: "frequency", label: "freq" },
 ] as const satisfies readonly { value: EyeComponent; label: string }[];
 
-const FFT_SIZE = 2048;
+const SPECTRUM_BINS = 512;
 const GRID = 320;
-const SPECTRUM_RANGE_DB = 90;
 const MIN_SYMBOL_RATE = 1;
 const TREND_POINTS = 240;
 const SCATTER_VIEWS: readonly BasebandView[] = ["constellation", "eye"];
@@ -94,7 +95,7 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
   const gridRef = useRef<BasebandGrid | null>(null);
   const scaleRef = useRef(1);
   const bitmapRef = useRef<GridBitmap | null>(null);
-  const analyzerRef = useRef<SpectrumAnalyzer | null>(null);
+  const spectrumRef = useRef<SpectrumFrame | null>(null);
   const dbRef = useRef<Float32Array | null>(null);
   const settingsRef = useRef({ view, eyeComponent, symbolRate, decimate });
   useLayoutEffect(() => {
@@ -176,6 +177,21 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
     });
   }, [node]);
 
+  const showsSpectrum = view === "spectrum";
+  useEffect(() => {
+    if (!showsSpectrum) {
+      return;
+    }
+    return spectrumHub.subscribe(
+      node,
+      PORT,
+      (row) => {
+        spectrumRef.current = row;
+      },
+      { bins: SPECTRUM_BINS },
+    );
+  }, [node, showsSpectrum]);
+
   useEffect(() => {
     let raf = 0;
     const loop = () => {
@@ -187,7 +203,7 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
         { grid: gridRef.current, scale: scaleRef.current },
         bitmapRef,
         colormap,
-        analyzerRef,
+        spectrumRef,
         dbRef,
         { mer: merRef.current, margin: marginRef.current, drift: driftRef.current },
         insetRef.current,
@@ -414,7 +430,7 @@ function draw(
   scatter: Scatter,
   bitmapRef: { current: GridBitmap | null },
   colormap: Palette,
-  analyzerRef: { current: SpectrumAnalyzer | null },
+  spectrumRef: { current: SpectrumFrame | null },
   dbRef: { current: Float32Array | null },
   trends: Trends,
   inset: PlotInset,
@@ -454,34 +470,29 @@ function draw(
     drawLevels(canvas, frame, block, settings, inset);
     return;
   }
-  if (frame === null) {
-    return;
-  }
   if (view === "spectrum") {
-    const analyzer = analyzerRef.current ?? new SpectrumAnalyzer(FFT_SIZE);
-    analyzerRef.current = analyzer;
-    const db = analyzer.powerDb(frame.samples, dbRef.current ?? new Float32Array(FFT_SIZE));
-    dbRef.current = db;
-    let peak = Number.NEGATIVE_INFINITY;
-    for (const value of db) {
-      if (value > peak) {
-        peak = value;
-      }
+    const spectrum = spectrumRef.current;
+    if (spectrum === null) {
+      return;
     }
-    const top = Math.ceil(peak / 10) * 10;
+    const db = dequantize(spectrum, dbRef.current);
+    dbRef.current = db;
     drawPlot(canvas, {
       frame: {
-        centerHz: frame.centerHz,
-        spanHz: frame.sampleRate,
-        signalDb: Number.NEGATIVE_INFINITY,
+        centerHz: spectrum.centerHz,
+        spanHz: spectrum.spanHz,
+        signalDb: spectrum.floorDb + SPECTRUM_SIGNAL_MARGIN_DB,
         db,
       },
       view: FULL_VIEW,
-      window: { min: top - SPECTRUM_RANGE_DB, max: top },
+      window: { min: spectrum.dbMin, max: spectrum.dbMax },
       traces: [],
       density: null,
       offsetAxis: true,
     });
+    return;
+  }
+  if (frame === null) {
     return;
   }
   drawScatter(canvas, scatter, bitmapRef, colormap, view, settings.eyeComponent);

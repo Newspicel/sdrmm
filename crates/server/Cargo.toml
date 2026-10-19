@@ -33,6 +33,7 @@ local-ip-address = "0.6"
 sdrmm-wire = { workspace = true, features = ["pin"] }
 sdrmm-engine.workspace = true
 sdrmm-dsp.workspace = true
+num-complex.workspace = true
 sdrmm-orbit.workspace = true
 sdrmm-channels.workspace = true
 sdrmm-device.workspace = true

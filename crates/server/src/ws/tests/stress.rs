@@ -218,6 +218,7 @@ async fn listen(mut socket: WsClient, channels: usize, ear: &Ear) {
         sdrmm_wire::StreamParams {
             fps: 30,
             bins: 4096,
+            spectrum: false,
         },
     )
     .await;

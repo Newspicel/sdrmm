@@ -207,7 +207,7 @@ export class PortHub {
 }
 
 function sameParams(a: StreamParams | undefined, b: StreamParams): boolean {
-  return a !== undefined && a.fps === b.fps && a.bins === b.bins;
+  return a !== undefined && a.fps === b.fps && a.bins === b.bins && a.spectrum === b.spectrum;
 }
 
 export const portHub = new PortHub();
