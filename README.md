@@ -76,8 +76,9 @@ through it. [Radios](https://sdrmm.com/docs/hardware) covers other hardware.
 
 ## Thanks
 
-[KrakenRF](https://www.krakenrf.com), [Airspy](https://airspy.com) and
-[AntSDR](https://www.microphase.cn/) provided hardware for development and testing.
+[KrakenRF](https://www.krakenrf.com), [Airspy](https://airspy.com),
+[AntSDR](https://www.microphase.cn/), [FUNcube Dongle](https://www.funcubedongle.com) and
+[Aaronia](https://aaronia.com) provided hardware for development and testing.
 
 Making a radio? Write to [hi@jhaag.me](mailto:hi@jhaag.me) to get it supported and tested.
 

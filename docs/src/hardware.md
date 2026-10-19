@@ -228,6 +228,8 @@ The dongle presents itself as a sound card, so each system needs one step:
   **Microphone** for SDR-- (or the terminal running `sdrmm`) in System Settings, or the node
   reports silence.
 
+Tested on hardware provided by [FUNcube Dongle](https://www.funcubedongle.com). Thank you.
+
 ## ESP-SDR
 
 An ESP32 running [ESP-SDR](https://github.com/ESPARGOS/esp-sdr) firmware receives with its Wi-Fi
