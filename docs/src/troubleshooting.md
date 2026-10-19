@@ -29,7 +29,7 @@ SDRMM_LINUX_GRAPHICS=safe sdrmm-desktop
 
 | Value | Does |
 |---|---|
-| `auto` | Default. Turns off DMABUF when the NVIDIA driver is loaded. |
+| `auto` | Default. Where a display hangs off an NVIDIA card: turns off NVIDIA explicit sync on Wayland, DMABUF on X11. |
 | `safe` | Turns off DMABUF and accelerated compositing. The waterfall may run slower. |
 | `off` | Changes nothing |
 
