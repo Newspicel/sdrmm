@@ -72,6 +72,63 @@ async fn channel_levels_are_measured_and_pushed_without_invalidating_state() {
 }
 
 #[tokio::test]
+async fn a_channel_level_reports_the_gate_that_let_audio_through() {
+    let engine = virtual_engine();
+    let ds = engine
+        .create_device_set("virtual:band")
+        .expect("device set");
+    let passing = engine
+        .add_channel(
+            ds,
+            0,
+            ChannelSettings {
+                frequency_hz: TEST_CENTER_HZ,
+                squelch: sdrmm_wire::Squelch::Off,
+                params: ChannelParams::Nfm(NfmParams::default()),
+                blanker: Default::default(),
+            },
+        )
+        .expect("passing channel");
+    let shut = engine
+        .add_channel(
+            ds,
+            0,
+            ChannelSettings {
+                frequency_hz: TEST_CENTER_HZ,
+                squelch: sdrmm_wire::Squelch::Manual { level_db: 0.0 },
+                params: ChannelParams::Nfm(NfmParams::default()),
+                blanker: Default::default(),
+            },
+        )
+        .expect("shut channel");
+
+    let mut opened = false;
+    for _ in 0..200 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let levels = engine.channel_levels(ds);
+        let Some(level) = levels.iter().find(|entry| entry.channel == passing) else {
+            continue;
+        };
+        opened = level.open;
+        let gated = levels
+            .iter()
+            .find(|entry| entry.channel == shut)
+            .expect("both channels report");
+        assert!(
+            !gated.open,
+            "a squelch at full scale let audio through at {} dB",
+            gated.level_db
+        );
+        if opened {
+            break;
+        }
+    }
+    assert!(opened, "an open squelch never reported audio passing");
+
+    engine.remove_device_set(ds).expect("remove device set");
+}
+
+#[tokio::test]
 async fn a_channel_baseband_recording_lands_as_a_sigmf_pair_at_the_channel_rate() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());

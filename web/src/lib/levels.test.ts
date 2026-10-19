@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  audioPassing,
   FLUSH_MS,
   formatLevel,
   gateDb,
-  gateOpen,
   heardHz,
   LEVEL_FLOOR_DB,
   levelUnit,
@@ -146,20 +146,22 @@ function reading(over: Partial<ChannelLevel> = {}): ChannelLevel {
 describe("the gate a level is measured against", () => {
   it("prefers the measured threshold to the setting", () => {
     expect(gateDb(reading({ squelch_db: -62 }), -100)).toBe(-62);
-    expect(gateOpen(reading({ squelch_db: -62 }), -100)).toBe(true);
-    expect(gateOpen(reading({ level_db: -70, squelch_db: -62 }), -100)).toBe(false);
   });
 
   it("falls back to the setting until a reading arrives", () => {
     expect(gateDb(undefined, -70)).toBe(-70);
-    expect(gateOpen(undefined, -70)).toBe(false);
     expect(gateDb(reading(), -70)).toBe(-70);
+  });
+
+  it("reports audio passing only where the server said so", () => {
+    expect(audioPassing(reading({ open: true }))).toBe(true);
+    expect(audioPassing(reading())).toBe(false);
+    expect(audioPassing(undefined)).toBe(false);
   });
 
   it("has no gate at all where nothing states one", () => {
     expect(gateDb(reading(), null)).toBeNull();
     expect(gateDb(undefined, undefined)).toBeNull();
-    expect(gateOpen(reading(), null)).toBe(false);
   });
 });
 

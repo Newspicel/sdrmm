@@ -20,7 +20,7 @@ import {
 } from "../../components/format";
 import { SignalRow } from "../../components/SignalRow";
 import { useBroadcast } from "../../lib/broadcast";
-import { heardHz, useLevelStore } from "../../lib/levels";
+import { audioPassing, heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, queueLagging, usePipelineHealth } from "../../lib/pipeline";
 import { controllerOf, heldByOf, runsOf, sweptBy } from "../../lib/resolved";
 import type { BandMiss, BroadcastStatus, PatchNode, PatchNodeOf } from "../../lib/types";
@@ -102,6 +102,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
       badge={
         widthHz === null ? undefined : <span title="Channel bandwidth">{formatHz(widthHz)}</span>
       }
+      live={audioPassing(level)}
       width={channelHasAudio(descriptor) ? AUDIO_FACE_W : undefined}
     >
       <FaceBody>

@@ -758,18 +758,19 @@ mod contract_tests {
 
     #[test]
     fn a_channel_level_carries_the_gate_it_is_measured_against() {
-        let open = ChannelLevel {
+        let plain = ChannelLevel {
             channel: 1,
             level_db: -42.0,
             peak_db: -30.0,
             squelch_db: None,
             shift_hz: None,
+            open: false,
         };
-        let json = serde_json::to_value(open).unwrap();
+        let json = serde_json::to_value(plain).unwrap();
         assert!(json.get("squelch_db").is_none());
         let gated = ChannelLevel {
             squelch_db: Some(-61.5),
-            ..open
+            ..plain
         };
         assert_eq!(
             serde_json::to_value(gated).unwrap()["squelch_db"],
@@ -777,7 +778,28 @@ mod contract_tests {
         );
         let back: ChannelLevel =
             serde_json::from_str(r#"{"channel":1,"level_db":-42.0,"peak_db":-30.0}"#).unwrap();
-        assert_eq!(back, open);
+        assert_eq!(back, plain);
+    }
+
+    #[test]
+    fn a_channel_level_says_open_only_while_audio_passed() {
+        let closed = ChannelLevel {
+            channel: 1,
+            level_db: -42.0,
+            peak_db: -30.0,
+            squelch_db: Some(-30.5),
+            shift_hz: None,
+            open: false,
+        };
+        assert!(serde_json::to_value(closed).unwrap().get("open").is_none());
+        let passed = ChannelLevel {
+            open: true,
+            ..closed
+        };
+        assert_eq!(
+            serde_json::to_value(passed).unwrap()["open"],
+            serde_json::json!(true)
+        );
     }
 
     #[test]
@@ -788,6 +810,7 @@ mod contract_tests {
             peak_db: -30.0,
             squelch_db: None,
             shift_hz: Some(8_200.5),
+            open: false,
         };
         assert_eq!(
             serde_json::to_value(steered).unwrap()["shift_hz"],

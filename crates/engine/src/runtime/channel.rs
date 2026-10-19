@@ -1,6 +1,6 @@
 use std::sync::{
     Arc,
-    atomic::{AtomicU32, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     mpsc,
 };
 
@@ -127,6 +127,7 @@ pub(crate) struct ChannelSinks {
     pub(crate) level_db: Arc<AtomicU32>,
     pub(crate) peak_db: Arc<AtomicU32>,
     pub(crate) squelch_db: Arc<AtomicU32>,
+    pub(crate) audio_open: Arc<AtomicBool>,
     pub(crate) shift_hz: Arc<AtomicU64>,
     pub(crate) rejected: Arc<AtomicU32>,
     pub(crate) skipped: Arc<AtomicU32>,
@@ -137,6 +138,7 @@ pub(crate) struct ChannelHost {
     filter: ChannelFilter,
     squelch: Squelch,
     squelched: bool,
+    has_audio: bool,
     audio_rec: Option<AudioTaps>,
     rx: Box<dyn ChannelRx>,
     blanker: Option<NoiseBlanker>,
@@ -218,6 +220,7 @@ impl ChannelHost {
             filter,
             squelch,
             squelched: !settings.squelch.is_off(),
+            has_audio: descriptor.has_audio,
             audio_rec: None,
             rx,
             blanker: (descriptor.has_audio && settings.blanker.enabled)
@@ -399,6 +402,9 @@ impl ChannelHost {
         let baseband_start = self.baseband_pos;
         self.sink_baseband();
         let open = !self.squelched || self.squelch.process(&self.filtered, &self.scratch);
+        if self.has_audio && open {
+            self.sinks.audio_open.store(true, Ordering::Relaxed);
+        }
         self.sinks.squelch_db.store(
             if self.squelched {
                 self.squelch.threshold_db().to_bits()
@@ -637,6 +643,7 @@ mod tests {
             level_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
             peak_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
             squelch_db: Arc::new(AtomicU32::new(f32::NAN.to_bits())),
+            audio_open: Arc::new(AtomicBool::new(false)),
             shift_hz: Arc::new(AtomicU64::new(0.0_f64.to_bits())),
             rejected: Arc::new(AtomicU32::new(0)),
             skipped: Arc::new(AtomicU32::new(0)),

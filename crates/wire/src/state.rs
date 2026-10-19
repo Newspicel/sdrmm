@@ -125,6 +125,8 @@ pub struct ChannelLevel {
     pub squelch_db: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shift_hz: Option<f64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub open: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

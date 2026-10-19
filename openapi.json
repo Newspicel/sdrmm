@@ -11129,6 +11129,9 @@
             "type": "number",
             "format": "float"
           },
+          "open": {
+            "type": "boolean"
+          },
           "peak_db": {
             "type": "number",
             "format": "float"

@@ -106,14 +106,6 @@ export function gateDb(
   return level?.squelch_db ?? settingDb ?? null;
 }
 
-export function gateOpen(
-  level: ChannelLevel | undefined,
-  settingDb: number | null | undefined,
-): boolean {
-  const gate = gateDb(level, settingDb);
-  return level !== undefined && gate !== null && level.level_db >= gate;
-}
-
 export function heardHz(frequencyHz: number, level: ChannelLevel | undefined): number {
   return frequencyHz + Math.round(level?.shift_hz ?? 0);
 }
@@ -123,4 +115,8 @@ export function formatLevel(db: number | undefined): string {
     return "-";
   }
   return `${db.toFixed(1)} dB`;
+}
+
+export function audioPassing(level: ChannelLevel | undefined): boolean {
+  return level?.open === true;
 }

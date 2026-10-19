@@ -3237,6 +3237,7 @@ export interface components {
             channel: number;
             /** Format: float */
             level_db: number;
+            open?: boolean;
             /** Format: float */
             peak_db: number;
             /** Format: double */

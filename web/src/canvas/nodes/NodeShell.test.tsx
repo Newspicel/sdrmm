@@ -10,15 +10,19 @@ import { CanvasSurface, NodeShell } from "./NodeShell";
 
 const NODE: PatchNode = placed("scan1", { kind: "scanner", data: {} });
 
-function render(content: string): string {
+function render(content: string, over: { selected?: string; live?: boolean } = {}): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <ReactFlowProvider>
         <WorkspaceProvider
-          value={stubWorkspace({ graph: { nodes: [NODE], edges: [] }, resolved: null })}
+          value={stubWorkspace({
+            graph: { nodes: [NODE], edges: [] },
+            resolved: null,
+            selected: over.selected ?? null,
+          })}
         >
           <CanvasSurface>
-            <NodeShell node={NODE} title="Scanner" category="tool">
+            <NodeShell node={NODE} title="Scanner" category="tool" live={over.live}>
               {content}
             </NodeShell>
           </CanvasSurface>
@@ -34,5 +38,17 @@ describe("NodeShell on the canvas", () => {
       expect(markup).toContain("width:400px");
       expect(markup).not.toContain("w-max");
     }
+  });
+
+  it("carries the accent along the top bar of the selected face", () => {
+    expect(render("idle", { selected: NODE.id })).toContain(
+      "shadow-[inset_0_2px_0_var(--color-accent)]",
+    );
+    expect(render("idle")).toContain("shadow-[inset_0_2px_0_var(--color-cat-tool)]");
+  });
+
+  it("tints the top bar of a face that is passing audio", () => {
+    expect(render("idle", { live: true })).toContain("bg-ok/25");
+    expect(render("idle")).toContain("bg-cat-tool/15");
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { useLevelStore } from "../../lib/levels";
 import { useSatelliteStore } from "../../lib/satellite";
 import type { ChannelInfo, DeviceSet, PatchGraph } from "../../lib/types";
 import { renderFace } from "../../test/faceHarness";
@@ -74,6 +75,14 @@ describe("ChannelFace", () => {
     expect(html).not.toContain("Skipped");
   });
 
+  it("marks the face while audio passes the squelch", () => {
+    expect(face(0)).not.toContain("Passing audio");
+    useLevelStore.setState({
+      byDeviceSet: { 1: { 3: { channel: 3, level_db: -40, peak_db: -30, open: true } } },
+    });
+    expect(face(0)).toContain('aria-label="Passing audio"');
+  });
+
   it("names no satellite that drives it without a wire", () => {
     useSatelliteStore.setState({
       byNode: { sat: { node: "sat", name: "NOAA 19", driving: ["ble"], visible: true } },
@@ -82,4 +91,7 @@ describe("ChannelFace", () => {
   });
 });
 
-afterEach(() => useSatelliteStore.setState({ byNode: {} }));
+afterEach(() => {
+  useSatelliteStore.setState({ byNode: {} });
+  useLevelStore.getState().reset();
+});

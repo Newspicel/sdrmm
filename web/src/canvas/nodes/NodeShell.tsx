@@ -90,12 +90,25 @@ const CATEGORY_STRIP: Record<NodeCategory, string> = {
   output: "bg-cat-output shadow-[0_0_8px_var(--color-cat-output)]",
 };
 
-const CATEGORY_BAR: Record<NodeCategory, string> = {
-  source: "bg-cat-source/15 shadow-[inset_0_2px_0_var(--color-cat-source)]",
-  channel: "bg-cat-channel/15 shadow-[inset_0_2px_0_var(--color-cat-channel)]",
-  tool: "bg-cat-tool/15 shadow-[inset_0_2px_0_var(--color-cat-tool)]",
-  output: "bg-cat-output/15 shadow-[inset_0_2px_0_var(--color-cat-output)]",
+const LIVE_STRIP = "bg-ok shadow-[0_0_10px_2px_var(--color-ok)]";
+
+const CATEGORY_TINT: Record<NodeCategory, string> = {
+  source: "bg-cat-source/15",
+  channel: "bg-cat-channel/15",
+  tool: "bg-cat-tool/15",
+  output: "bg-cat-output/15",
 };
+
+const LIVE_TINT = "bg-ok/25";
+
+const CATEGORY_RULE: Record<NodeCategory, string> = {
+  source: "shadow-[inset_0_2px_0_var(--color-cat-source)]",
+  channel: "shadow-[inset_0_2px_0_var(--color-cat-channel)]",
+  tool: "shadow-[inset_0_2px_0_var(--color-cat-tool)]",
+  output: "shadow-[inset_0_2px_0_var(--color-cat-output)]",
+};
+
+const SELECTED_RULE = "shadow-[inset_0_2px_0_var(--color-accent)]";
 
 function PortGlyph({ type }: { type: PortType }) {
   const common = {
@@ -136,6 +149,7 @@ export interface NodeShellProps {
   subtitle?: ReactNode;
   badge?: ReactNode;
   actions?: ReactNode;
+  live?: boolean;
   width?: number;
   rowPorts?: readonly string[];
   children: ReactNode;
@@ -148,6 +162,7 @@ export function NodeShell({
   subtitle,
   badge,
   actions,
+  live = false,
   width,
   rowPorts,
   children,
@@ -188,14 +203,25 @@ export function NodeShell({
           />
         )}
         <header
-          className={`flex h-6.5 shrink-0 items-center gap-2 rounded-t-control border-b border-line pr-1 pl-2 ${CATEGORY_BAR[category]} ${
+          className={`flex h-6.5 shrink-0 items-center gap-2 rounded-t-control border-b border-line pr-1 pl-2 transition-colors duration-150 ${
+            live ? LIVE_TINT : CATEGORY_TINT[category]
+          } ${selected ? SELECTED_RULE : CATEGORY_RULE[category]} ${
             surface === "canvas" ? "node-drag cursor-grab active:cursor-grabbing" : ""
           }`}
         >
-          <span
-            aria-hidden
-            className={`size-[7px] shrink-0 rounded-full ${CATEGORY_STRIP[category]}`}
-          />
+          {live ? (
+            <span
+              role="img"
+              aria-label="Passing audio"
+              title="Audio is passing the squelch"
+              className={`size-[7px] shrink-0 rounded-full ${LIVE_STRIP}`}
+            />
+          ) : (
+            <span
+              aria-hidden
+              className={`size-[7px] shrink-0 rounded-full ${CATEGORY_STRIP[category]}`}
+            />
+          )}
           <NodeName node={node} title={title} />
           {badge !== undefined && (
             <span className="shrink-0 font-mono text-2xs text-ink-dim">{badge}</span>

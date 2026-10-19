@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard, PoisonError,
-        atomic::{AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc,
     },
     thread::JoinHandle,
@@ -438,6 +438,7 @@ impl ChannelMedia {
                 level_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
                 peak_db: Arc::new(AtomicU32::new(sdrmm_dsp::LEVEL_FLOOR_DB.to_bits())),
                 squelch_db: Arc::new(AtomicU32::new(f32::NAN.to_bits())),
+                audio_open: Arc::new(AtomicBool::new(false)),
                 shift_hz: Arc::new(AtomicU64::new(0.0_f64.to_bits())),
                 rejected: Arc::new(AtomicU32::new(0)),
                 skipped: Arc::new(AtomicU32::new(0)),

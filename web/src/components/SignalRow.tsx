@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatLevel, gateDb, gateOpen, levelUnit } from "../lib/levels";
+import { audioPassing, formatLevel, gateDb, levelUnit } from "../lib/levels";
 import type { ChannelLevel, Squelch } from "../lib/types";
 import { AutoToggle } from "./AgcAuto";
 import {
@@ -79,7 +79,7 @@ function SquelchRow({
     onSquelch(db <= FLOOR ? squelchAt("off", held()) : { mode: "manual", level_db: db }),
   );
   const shown = slider.pending ?? (mode === "off" ? FLOOR : (gate ?? heldDb));
-  const open = mode === "off" || gateOpen(level, squelchLevelDb(squelch));
+  const open = audioPassing(level);
   const auto = mode === "auto" && slider.pending === null;
   return (
     <MeterRow
