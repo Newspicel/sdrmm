@@ -433,13 +433,7 @@ jobs:
         run: scripts/ci/collect-bundles.sh "${{ matrix.target }}" "${{ needs.version.outputs.version }}"
       - name: Notarize disk image
         if: runner.os == 'macOS'
-        run: |
-          for dmg in bundles/*.dmg; do
-            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-            xcrun stapler staple "$dmg"
-            xcrun stapler validate "$dmg"
-            spctl --assess --type open --context context:primary-signature -v "$dmg"
-          done
+        run: scripts/ci/notarize-dmg.sh
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.label }}
