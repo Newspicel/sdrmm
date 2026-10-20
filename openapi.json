@@ -16413,6 +16413,9 @@
           },
           "split_tuning": {
             "type": "boolean"
+          },
+          "stopped": {
+            "type": "boolean"
           }
         }
       },
@@ -37751,7 +37754,8 @@
           "radio_absent",
           "radio_closed",
           "not_placed",
-          "not_running"
+          "not_running",
+          "stopped"
         ]
       },
       "Unit": {

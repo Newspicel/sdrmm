@@ -254,6 +254,7 @@ fn a_device_node_saved_before_the_frequency_lock_existed_still_loads_unlocked() 
         device: device.device,
         locked_streams: vec![1],
         split_tuning: false,
+        stopped: false,
     });
     let json = serde_json::to_string(&locked).expect("serialize the body");
     let NodeBody::Device(back) =
@@ -1672,6 +1673,42 @@ fn a_stopped_generator_stays_stopped_when_the_patch_is_applied_again() {
         serde_json::from_value(serde_json::json!({ "kind": "signal_gen", "data": {} }))
             .expect("a generator saved before the switch existed");
     assert_eq!(older, NodeBody::SignalGen(SignalGenNode { running: true }));
+}
+
+#[test]
+fn a_stopped_radio_keeps_its_reference_and_claims_no_device() {
+    let reference = DeviceRef {
+        backend: "rtlsdr".to_owned(),
+        serial: Some("00000001".to_owned()),
+        key: None,
+    };
+    let stopped = NodeBody::Device(DeviceNode {
+        device: Some(reference.clone()),
+        stopped: true,
+        ..DeviceNode::default()
+    });
+    assert!(stopped.device_ref("dev").is_none());
+    assert!(stopped.stopped());
+    assert!(stopped.opens_device());
+
+    let json = serde_json::to_value(&stopped).expect("serialize the body");
+    assert_eq!(json["data"]["stopped"], true);
+    assert_eq!(
+        serde_json::from_value::<NodeBody>(json).expect("a stopped radio round-trips"),
+        stopped
+    );
+
+    let running = NodeBody::Device(DeviceNode {
+        device: Some(reference),
+        ..DeviceNode::default()
+    });
+    assert!(!running.stopped());
+    assert!(
+        serde_json::to_value(&running).expect("serialize the body")["data"]
+            .get("stopped")
+            .is_none()
+    );
+    assert!(!NodeBody::Device(DeviceNode::default()).stopped());
 }
 
 #[test]

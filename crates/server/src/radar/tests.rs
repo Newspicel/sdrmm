@@ -456,8 +456,7 @@ fn graph(wiring: Wiring) -> PatchGraph {
                         serial: None,
                         key: Some("kraken5".to_owned()),
                     }),
-                    locked_streams: Vec::new(),
-                    split_tuning: false,
+                    ..DeviceNode::default()
                 }),
             ),
             node(

@@ -115,6 +115,8 @@ pub struct DeviceNode {
     pub locked_streams: Vec<u32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub split_tuning: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stopped: bool,
 }
 
 impl DeviceNode {
@@ -377,7 +379,7 @@ impl NodeBody {
     #[must_use]
     pub fn device_ref(&self, node_id: &str) -> Option<DeviceRef> {
         match self {
-            Self::Device(device) => device.device.clone(),
+            Self::Device(device) => device.device.clone().filter(|_| !device.stopped),
             Self::Recording(recording) => recording.device_ref(),
             Self::SignalGen(generator) => generator.running.then(|| DeviceRef {
                 backend: SIGGEN_DRIVER_ID.to_owned(),
@@ -385,6 +387,15 @@ impl NodeBody {
                 key: Some(siggen_key(node_id)),
             }),
             _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn stopped(&self) -> bool {
+        match self {
+            Self::Device(device) => device.stopped && device.device.is_some(),
+            Self::SignalGen(generator) => !generator.running,
+            _ => false,
         }
     }
 }

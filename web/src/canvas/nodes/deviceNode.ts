@@ -225,6 +225,12 @@ const FAULTS: Record<string, string> = {
     "may not be opened by this user. Open Check hardware for the USB permission line, which names the device node and the group that owns it.",
 };
 
+function listed(names: readonly string[]): string {
+  return names.length === 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
 export function refusalSaid(set: DeviceSet): string | null {
   const names = set.refused?.settings;
   if (set.error != null || names === undefined) {
@@ -233,12 +239,25 @@ export function refusalSaid(set: DeviceSet): string | null {
   if (names.length === 0) {
     return "Radio refused the change";
   }
-  const listed =
-    names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
-  return `Radio refused the new ${listed}`;
+  return `Radio refused the new ${listed(names)}`;
 }
 
 export function faultSaid(set: DeviceSet): string | null {
   const said = set.fault == null ? undefined : FAULTS[set.fault];
   return said == null ? null : `${set.device.label} ${said}`;
+}
+
+export function capturesOn(set: DeviceSet): string[] {
+  return [
+    set.recording == null ? null : "a baseband recording",
+    set.network_export == null ? null : "a network export",
+    set.time_machine == null ? null : "its time machine",
+  ].filter((name): name is string => name !== null);
+}
+
+export function stopSaid(set: DeviceSet): string {
+  const live = capturesOn(set);
+  return live.length === 0
+    ? "Close this radio and keep it on the node, wires and settings included"
+    : `Closing this radio also stops ${listed(live)}`;
 }

@@ -12,6 +12,11 @@ describe("unboundOf", () => {
     expect(unboundOf({ runs: "unbound", reason: "not_placed" })?.action).toBe("Start channel");
     expect(unboundOf({ runs: "unbound", reason: "radio_absent" })?.action).toBeNull();
     expect(unboundOf({ runs: "unbound", reason: "not_wired" })?.status).toBeNull();
+    expect(unboundOf({ runs: "unbound", reason: "stopped" })).toEqual({
+      status: "stopped",
+      hint: "Start it on the node that feeds this one",
+      action: null,
+    });
     expect(unboundOf({ runs: "channel", device_set: 1, channel: 2, stream: 0 })).toBeNull();
     expect(unboundOf(undefined)).toBeNull();
   });

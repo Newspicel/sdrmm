@@ -731,6 +731,56 @@ fn an_unbound_decoder_says_why_from_its_radio() {
     assert_eq!(reason(&patch, "voice"), Some(UnboundReason::NotRunning));
 }
 
+fn stopped(id: &str, key: &str) -> PatchNode {
+    let mut held = radio(id, key);
+    if let NodeBody::Device(device) = &mut held.body {
+        device.stopped = true;
+    }
+    held
+}
+
+#[test]
+fn a_stopped_radio_frees_its_device_and_says_so() {
+    let graph = PatchGraph {
+        nodes: vec![stopped("dev", "band"), channel("voice", "nfm")],
+        edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
+    };
+    let state = live(vec![set(1, "band", Vec::new())]);
+    let (patch, problems) = bound(&graph, &state);
+    let reason = |node: &str| match patch.runs(node) {
+        Some(Runs::Unbound { reason }) => Some(*reason),
+        _ => None,
+    };
+    assert_eq!(reason("dev"), Some(UnboundReason::Stopped));
+    assert_eq!(reason("voice"), Some(UnboundReason::Stopped));
+    assert!(
+        graph
+            .node("dev")
+            .and_then(|node| node.body.device_ref("dev"))
+            .is_none()
+    );
+    assert!(
+        problems
+            .iter()
+            .all(|problem| problem.text != UnboundReason::RadioClosed.text())
+    );
+}
+
+#[test]
+fn a_stopped_array_member_leaves_the_beam_unbound() {
+    let mut graph = beam_graph();
+    graph.nodes[0] = stopped("dev", "band");
+    let (patch, _) = bound(&graph, &live(vec![set(1, "band", Vec::new())]));
+    assert_eq!(
+        patch.runs("dev"),
+        Some(&Runs::Unbound {
+            reason: UnboundReason::Stopped
+        })
+    );
+    assert!(patch.feeds("arr", "lane")[0].tap.is_none());
+    assert!(matches!(patch.runs("voice"), Some(Runs::Unbound { .. })));
+}
+
 #[test]
 fn a_controller_sees_where_its_target_runs_and_a_target_who_sweeps_it() {
     let graph = PatchGraph {

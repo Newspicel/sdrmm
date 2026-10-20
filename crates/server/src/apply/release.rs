@@ -55,6 +55,32 @@ fn close_dropped_channels(
     refused
 }
 
+pub(crate) fn drops_radio(state: &AppState, before: &PatchGraph, after: &PatchGraph) -> bool {
+    !dropped_radios(&state.engine.snapshot(), before, after).is_empty()
+}
+
+fn dropped_radios(
+    snapshot: &StateSnapshot,
+    before: &PatchGraph,
+    after: &PatchGraph,
+) -> Vec<(String, u32)> {
+    workspace::bind_devices(before, snapshot)
+        .into_iter()
+        .filter(|(node, device_set)| {
+            snapshot
+                .device_sets
+                .iter()
+                .find(|set| set.id == *device_set)
+                .is_some_and(|set| {
+                    !after
+                        .node(node)
+                        .and_then(|kept| kept.body.device_ref(&kept.id))
+                        .is_some_and(|reference| reference.matches(&set.device))
+                })
+        })
+        .collect()
+}
+
 fn close_dropped_radios(
     state: &AppState,
     snapshot: &StateSnapshot,
@@ -62,17 +88,7 @@ fn close_dropped_radios(
     after: &PatchGraph,
 ) -> Vec<PatchRefusal> {
     let mut refused = Vec::new();
-    for (node, device_set) in workspace::bind_devices(before, snapshot) {
-        let Some(set) = snapshot.device_sets.iter().find(|set| set.id == device_set) else {
-            continue;
-        };
-        let held = after
-            .node(&node)
-            .and_then(|kept| kept.body.device_ref(&kept.id))
-            .is_some_and(|reference| reference.matches(&set.device));
-        if held {
-            continue;
-        }
+    for (node, device_set) in dropped_radios(snapshot, before, after) {
         if let Err(err) = state.engine.remove_device_set(device_set) {
             refused.push(PatchRefusal {
                 node,

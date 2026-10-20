@@ -58,27 +58,31 @@ async fn send(ws: &mut WsClient, cmd: &ClientCommand) {
         .expect("send");
 }
 
-async fn next_event(ws: &mut WsClient) -> ServerEvent {
+async fn next_message(ws: &mut WsClient, deadline: Instant, waited: &str) -> tungstenite::Message {
+    let left = deadline.saturating_duration_since(Instant::now());
+    timeout(left, ws.next())
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {waited}"))
+        .expect("socket ended")
+        .expect("socket error")
+}
+
+async fn next_event_by(ws: &mut WsClient, deadline: Instant) -> ServerEvent {
     loop {
-        let msg = timeout(WAIT, ws.next())
-            .await
-            .expect("timed out waiting for event")
-            .expect("socket ended")
-            .expect("socket error");
-        if let tungstenite::Message::Text(text) = msg {
+        if let tungstenite::Message::Text(text) = next_message(ws, deadline, "an event").await {
             return serde_json::from_str(text.as_str()).expect("event json");
         }
     }
 }
 
+async fn next_event(ws: &mut WsClient) -> ServerEvent {
+    next_event_by(ws, Instant::now() + WAIT).await
+}
+
 async fn next_frame_header(ws: &mut WsClient) -> (u8, u16) {
+    let deadline = Instant::now() + WAIT;
     loop {
-        let msg = timeout(WAIT, ws.next())
-            .await
-            .expect("timed out waiting for frame")
-            .expect("socket ended")
-            .expect("socket error");
-        if let tungstenite::Message::Binary(buf) = msg {
+        if let tungstenite::Message::Binary(buf) = next_message(ws, deadline, "a frame").await {
             let id = u16::from_le_bytes([buf[2], buf[3]]);
             return (buf[1], id);
         }
@@ -130,8 +134,7 @@ fn radio_of(backend: &str, key: &str) -> sdrmm_wire::PatchNode {
                 serial: None,
                 key: Some(key.to_owned()),
             }),
-            locked_streams: Vec::new(),
-            split_tuning: false,
+            ..sdrmm_wire::DeviceNode::default()
         }),
     )
 }
@@ -224,8 +227,9 @@ async fn unsubscribe_port(ws: &mut WsClient, node: &str, port: &str) {
 }
 
 async fn next_port_event(ws: &mut WsClient) -> ServerEvent {
+    let deadline = Instant::now() + WAIT;
     loop {
-        let event = next_event(ws).await;
+        let event = next_event_by(ws, deadline).await;
         if matches!(
             event,
             ServerEvent::PortStream { .. }
@@ -508,7 +512,7 @@ async fn spectrum_lifecycle_reports_kind_and_streams_frames() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn audio_ids_disjoint_from_spectrum_and_a_repeat_subscribe_replaces_the_stream() {
+async fn audio_ids_disjoint_from_spectrum_and_a_repeat_subscribe_answers_with_the_live_stream() {
     let (mut ws, _, _) = bench(graph(
         vec![
             radio("band"),
@@ -527,12 +531,11 @@ async fn audio_ids_disjoint_from_spectrum_and_a_repeat_subscribe_replaces_the_st
     assert!(first_id >= MEDIA_ID_BASE);
 
     subscribe_port(&mut ws, "spk", "audio").await;
-    assert_eq!(stopped(&mut ws).await, (first_id, StreamKind::Audio));
-    let (second_id, _, _) = port_stream(&mut ws).await;
-    assert_ne!(second_id, first_id);
+    let (again, kind, _) = port_stream(&mut ws).await;
+    assert_eq!((again, kind), (first_id, StreamKind::Audio));
 
     unsubscribe_port(&mut ws, "spk", "audio").await;
-    assert_eq!(stopped(&mut ws).await, (second_id, StreamKind::Audio));
+    assert_eq!(stopped(&mut ws).await, (first_id, StreamKind::Audio));
 }
 
 #[test]

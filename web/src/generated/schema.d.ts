@@ -4526,6 +4526,7 @@ export interface components {
             device?: components["schemas"]["DeviceRef"] | null;
             locked_streams?: number[];
             split_tuning?: boolean;
+            stopped?: boolean;
         };
         DeviceProfile: {
             coherence?: components["schemas"]["Coherence"];
@@ -10144,7 +10145,7 @@ export interface components {
         /** @enum {string} */
         UlaSide: "both" | "front" | "back";
         /** @enum {string} */
-        UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running";
+        UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running" | "stopped";
         /** @enum {string} */
         Unit: "none" | "hz" | "db" | "dbfs" | "degrees" | "feet" | "metres" | "kilometres" | "knots" | "metres_per_second" | "feet_per_minute" | "celsius" | "percent" | "hectopascal" | "seconds" | "baud" | "millimetres" | "volts" | "db_hz" | "kilometres_per_hour" | "watts_per_square_metre" | "chips" | "wpm" | "dbm" | "psi" | "lux" | "kelvin";
         UpdateNanoVnaMeasurementRequest: {

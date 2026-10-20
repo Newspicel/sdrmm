@@ -2,7 +2,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link2, Radar } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN_PRIMARY, BTN_QUIET_DANGER, BTN_SM, ICON_BTN } from "../../components/controls";
+import { ConfirmButton } from "../../components/ConfirmButton";
+import {
+  BTN_PRIMARY,
+  BTN_QUIET,
+  BTN_QUIET_DANGER,
+  BTN_SM,
+  ICON_BTN,
+} from "../../components/controls";
 import { inTuningRange, isTunable, tuningRange } from "../../components/dial";
 import { dialId, FrequencyDial } from "../../components/FrequencyDial";
 import { FaceFault } from "../../components/face/Fault";
@@ -36,6 +43,7 @@ import {
   anyLocked,
   autoTuning,
   bondSaid,
+  capturesOn,
   clippingLanes,
   deviceRefOf,
   faultSaid,
@@ -47,6 +55,7 @@ import {
   lossSaid,
   refLabel,
   refusalSaid,
+  stopSaid,
   type TunerDial,
   tunerDials,
 } from "./deviceNode";
@@ -352,6 +361,25 @@ function Refused({ set }: { set: DeviceSet }) {
   return said == null ? null : <FaceFault message={said} detail={set.refused?.error} />;
 }
 
+function idleSaid(stopped: boolean, onBus: boolean): string {
+  if (stopped) {
+    return "stopped";
+  }
+  return onBus ? "not open" : "disconnected";
+}
+
+function StopButton({ set, onStop }: { set: DeviceSet; onStop: () => void }) {
+  const said = stopSaid(set);
+  if (capturesOn(set).length > 0) {
+    return <ConfirmButton label="Stop" title={said} onConfirm={onStop} />;
+  }
+  return (
+    <Button type="button" className={BTN_QUIET} title={said} onClick={onStop}>
+      Stop
+    </Button>
+  );
+}
+
 function iqOutputs(resolved: ResolvedPatch | null, node: string): string[] {
   return (resolvedNode(resolved, node)?.ports ?? [])
     .filter((port) => port.direction === "out" && port.port_type === "iq")
@@ -365,6 +393,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
   const reference = node.kind === "device" ? (node.data.device ?? null) : null;
   const lockedStreams = node.kind === "device" ? (node.data.locked_streams ?? []) : [];
   const split = node.kind === "device" && node.data.split_tuning === true;
+  const stopped = node.kind === "device" && node.data.stopped === true;
   const set = workspace.devices.get(node.id) ?? null;
   const runs = runsOf(workspace.resolved, node.id);
   const onBus = runs?.runs === "unbound" && runs.reason === "radio_closed";
@@ -377,12 +406,20 @@ export function DeviceFace({ node }: { node: PatchNode }) {
       ),
     }));
 
-  const nameRadio = (chosen: DeviceRef | null): void => editNode({ device: chosen });
+  const nameRadio = (chosen: DeviceRef | null): void =>
+    editNode({ device: chosen, stopped: false });
 
   const forget = (): void => nameRadio(null);
 
   const bind = (device: DeviceInfo): void => {
     nameRadio(deviceRefOf(device));
+    workspace.apply();
+  };
+
+  const stop = (): void => editNode({ stopped: true });
+
+  const start = (): void => {
+    editNode({ stopped: false });
     workspace.apply();
   };
 
@@ -413,12 +450,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
 
   if (set === null) {
     return (
-      <NodeShell
-        node={node}
-        title="Device"
-        category="source"
-        subtitle={onBus ? "not open" : "disconnected"}
-      >
+      <NodeShell node={node} title="Device" category="source" subtitle={idleSaid(stopped, onBus)}>
         <FaceBody>
           <p className="p-3 font-mono text-sm text-ink">{refLabel(reference)}</p>
         </FaceBody>
@@ -431,19 +463,30 @@ export function DeviceFace({ node }: { node: PatchNode }) {
           >
             Forget radio
           </Button>
-          <Button
-            type="button"
-            className={BTN_PRIMARY}
-            title={
-              onBus
-                ? "Open this radio and start the channels wired to it"
-                : "Nothing to open until the radio is plugged back in"
-            }
-            onClick={() => workspace.apply()}
-            disabled={!onBus}
-          >
-            Open radio
-          </Button>
+          {stopped ? (
+            <Button
+              type="button"
+              className={BTN_PRIMARY}
+              title="Open this radio again and start the decoders wired to it"
+              onClick={start}
+            >
+              Start
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className={BTN_PRIMARY}
+              title={
+                onBus
+                  ? "Open this radio and start the channels wired to it"
+                  : "Nothing to open until the radio is plugged back in"
+              }
+              onClick={() => workspace.apply()}
+              disabled={!onBus}
+            >
+              Open radio
+            </Button>
+          )}
         </FaceFooter>
       </NodeShell>
     );
@@ -508,6 +551,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
       <FaceFooter>
         <DeviceHealth set={set} />
         <MakeArrayButton node={node.id} />
+        <StopButton set={set} onStop={stop} />
         <Button
           type="button"
           className={BTN_QUIET_DANGER}

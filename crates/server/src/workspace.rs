@@ -624,8 +624,7 @@ pub(crate) mod tests {
             id: "device".to_string(),
             body: NodeBody::Device(DeviceNode {
                 device: Some(reference),
-                locked_streams: Vec::new(),
-                split_tuning: false,
+                ..DeviceNode::default()
             }),
             position: Position { x: 0.0, y: 0.0 },
             size: None,

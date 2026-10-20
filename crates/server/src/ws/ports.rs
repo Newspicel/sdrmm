@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use sdrmm_wire::{
     AudioRoute, ChannelAddr, Feed, PortType, ResolvedPatch, ServerEvent, StreamKind, StreamParams,
@@ -129,6 +129,23 @@ impl Ports {
     }
 }
 
+fn stream_started(
+    key: &(String, String),
+    stream_id: u16,
+    kind: StreamKind,
+    from: &Upstream,
+) -> ServerEvent {
+    ServerEvent::PortStream {
+        stream_id,
+        node: key.0.clone(),
+        port: key.1.clone(),
+        source: from.source.clone(),
+        via: from.via.clone(),
+        index: from.index,
+        kind,
+    }
+}
+
 pub(super) fn wanted(patch: &ResolvedPatch, node: &str, port: &str) -> Result<Vec<Wanted>, String> {
     let found = patch.node(node).ok_or(NO_NODE)?;
     if let Some(input) = found.input(port) {
@@ -248,10 +265,32 @@ impl Session {
                 false
             }
         };
+        let held = self.live_ids(&key);
         if retuned {
             self.drop_spectrum(&key).await;
         }
         self.sync_port(&node, &port).await;
+        if self.live_ids(&key) == held {
+            self.announce(&key).await;
+        }
+    }
+
+    fn live_ids(&self, key: &(String, String)) -> BTreeSet<u16> {
+        self.ports
+            .subs
+            .get(key)
+            .map(|sub| sub.streams.values().map(|live| live.id).collect())
+            .unwrap_or_default()
+    }
+
+    async fn announce(&self, key: &(String, String)) {
+        let Some(sub) = self.ports.subs.get(key) else {
+            return;
+        };
+        for (tapped, live) in &sub.streams {
+            let started = stream_started(key, live.id, tapped.kind(), &live.from);
+            let _ = self.out.send(text_event(&started)).await;
+        }
     }
 
     async fn drop_spectrum(&mut self, key: &(String, String)) {
@@ -347,15 +386,7 @@ impl Session {
         let kind = want.tapped.kind();
         let id = self.port_stream_id(kind).ok_or(NO_STREAM_IDS)?;
         let task = self.spawn_tapped(id, &want.tapped, params).await?;
-        let started = ServerEvent::PortStream {
-            stream_id: id,
-            node: key.0.clone(),
-            port: key.1.clone(),
-            source: want.from.source.clone(),
-            via: want.from.via.clone(),
-            index: want.from.index,
-            kind,
-        };
+        let started = stream_started(key, id, kind, &want.from);
         let _ = self.out.send(text_event(&started)).await;
         if let Some(sub) = self.ports.subs.get_mut(key) {
             sub.streams.insert(

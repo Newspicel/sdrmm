@@ -169,6 +169,9 @@ fn radio_runs(
         return None;
     }
     let Some(reference) = node.body.device_ref(id) else {
+        if node.body.stopped() {
+            return Some(unbound(UnboundReason::Stopped));
+        }
         return Some(unbound(UnboundReason::NoRadio));
     };
     if let Some((_, device_set)) = devices.iter().find(|(bound, _)| bound == id) {

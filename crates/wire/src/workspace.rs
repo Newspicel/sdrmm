@@ -830,6 +830,7 @@ mod tests {
                 device: Some(rtlsdr()),
                 locked_streams: Vec::new(),
                 split_tuning: false,
+                stopped: false,
             })
         );
         assert!(
@@ -849,6 +850,7 @@ mod tests {
             device: None,
             locked_streams: vec![0],
             split_tuning: false,
+            stopped: false,
         });
         let mut snap = WorkspaceSnapshot::starter();
         snap.merge_patch(&locked, "held:", Some(&rtlsdr()));
@@ -858,6 +860,7 @@ mod tests {
                 device: Some(rtlsdr()),
                 locked_streams: vec![0],
                 split_tuning: false,
+                stopped: false,
             })
         );
     }

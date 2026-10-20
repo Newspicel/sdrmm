@@ -46,8 +46,9 @@ its sample rate can hold, and its header counts them: `5/5` is green, `3/5` yell
 [Tuning](../user-guide/channels.md#tuning).
 
 A Device node remembers which radio it holds. Unplug it and the node, wires, and settings stay.
-Plug the same radio back in and it reconnects, or press **Open radio**. **Forget radio** frees the
-node for another one.
+Plug the same radio back in and it reconnects, or press **Open radio**. **Stop** closes the radio
+and releases it to other programs, keeping the node as it is; **Start** opens it again with its
+settings. **Forget radio** frees the node for another one.
 
 ## Changes apply live
 

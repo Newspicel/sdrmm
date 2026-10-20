@@ -18,6 +18,7 @@ const UNBOUND: Record<UnboundReason, Unbound> = {
     action: "Start channel",
   },
   not_running: { status: "not running", hint: "Its source is not running yet", action: null },
+  stopped: { status: "stopped", hint: "Start it on the node that feeds this one", action: null },
 };
 
 export function unboundOf(runs: Runs | undefined): Unbound | null {

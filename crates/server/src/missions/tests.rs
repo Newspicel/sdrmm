@@ -60,8 +60,7 @@ fn radio(id: &str, key: &str) -> PatchNode {
                 serial: None,
                 key: Some(key.to_owned()),
             }),
-            locked_streams: Vec::new(),
-            split_tuning: false,
+            ..DeviceNode::default()
         }),
     )
 }

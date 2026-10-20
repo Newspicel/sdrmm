@@ -14,6 +14,7 @@ import {
   anyLocked,
   autoTuning,
   bondSaid,
+  capturesOn,
   clippingLanes,
   faultSaid,
   hearing,
@@ -27,6 +28,7 @@ import {
   radioAgc,
   refLabel,
   refusalSaid,
+  stopSaid,
   tuneAllDelta,
   tuneDelta,
   tunerDials,
@@ -535,6 +537,83 @@ describe("agcTip", () => {
     );
     expect(agcTip(deviceSet({ settings: { agc: { on: false } } }), 0, true)).toBe(
       "AGC off, as coherent lanes want",
+    );
+  });
+});
+
+describe("stopping a radio", () => {
+  const node: PatchNode = {
+    id: "dev",
+    position: { x: 0, y: 0 },
+    kind: "device",
+    data: { device: { backend: "virtual", key: "band" } },
+  };
+  const graph: PatchGraph = { nodes: [node], edges: [] };
+  const open = deviceSet({ settings: { center_hz: 145_500_000, sample_rate: 2_048_000 } });
+
+  it("offers Stop on an open radio and says what it keeps", () => {
+    const html = renderFace(DeviceFace, node, { graph, devices: new Map([["dev", open]]) });
+    expect(html).toContain("Stop");
+    expect(html).toContain("keep it on the node, wires and settings included");
+  });
+
+  it("asks twice when a capture is running on the radio", () => {
+    const capturing = {
+      ...open,
+      recording: {
+        bytes: 1,
+        file: "take.iq",
+        overruns: 0,
+        samples: 1,
+        started_at: "2026-01-01T00:00:00Z",
+      },
+    };
+    const html = renderFace(DeviceFace, node, { graph, devices: new Map([["dev", capturing]]) });
+    expect(html).toContain("also stops a baseband recording");
+  });
+
+  it("offers Start on a stopped node and keeps the radio named", () => {
+    const stopped = { ...node, data: { ...node.data, stopped: true } };
+    const html = renderFace(DeviceFace, stopped, {
+      graph: { nodes: [stopped], edges: [] },
+      devices: new Map(),
+    });
+    expect(html).toContain("stopped");
+    expect(html).toContain("Start");
+    expect(html).toContain("virtual · band");
+    expect(html).not.toContain("Open radio");
+  });
+});
+
+describe("capturesOn", () => {
+  it("names every capture a close would stop", () => {
+    expect(capturesOn(deviceSet())).toEqual([]);
+    const busy = deviceSet({
+      network_export: {
+        node: "net",
+        bytes: 0,
+        center_hz: 145_500_000,
+        overruns: 0,
+        packets: 0,
+        sample_rate: 2_048_000,
+        samples: 0,
+        settings: { address: "127.0.0.1:7355", format: "cf32_le", transport: "udp" },
+        stream: 0,
+      },
+      time_machine: {
+        node: "tm",
+        capacity_samples: 1,
+        center_hz: 145_500_000,
+        held_samples: 1,
+        history_seconds: 30,
+        overruns: 0,
+        sample_rate: 2_048_000,
+        stream: 0,
+      },
+    });
+    expect(capturesOn(busy)).toEqual(["a network export", "its time machine"]);
+    expect(stopSaid(busy)).toBe(
+      "Closing this radio also stops a network export and its time machine",
     );
   });
 });

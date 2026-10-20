@@ -562,6 +562,11 @@ pub(super) async fn update_workspace(
         let _serialized = lock_gate(&app.apply_gate);
         let active = store.active_workspace_id()? == Some(id);
         let before = active.then(|| store.workspace(id)).transpose()?;
+        if let (Some(before), Some(wanted)) = (&before, &req.snapshot)
+            && crate::apply::drops_radio(&app, &before.snapshot.graph, &wanted.graph)
+        {
+            workspace::save_active(&app)?;
+        }
         let detail = store.update_workspace(id, &req, author.as_deref())?;
         if let Some(before) = before {
             crate::apply::release(&app, &before.snapshot.graph, &detail.snapshot.graph);

@@ -59,7 +59,8 @@ See [Radios](hardware.md) for each radio's requirements.
 ## A radio is plugged in but its node stays disconnected
 
 The node waits for the exact radio it saved, by serial number. If it shows **Open radio**, press it.
-To use a different radio, press **Forget radio** and pick the new one.
+A node that says `stopped` was stopped by hand: press **Start**. To use a different radio, press
+**Forget radio** and pick the new one.
 
 ## Spectrum works but audio is silent
 

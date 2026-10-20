@@ -30,6 +30,64 @@ async fn applying_a_workspace_opens_its_radio_and_adds_its_channels_once() {
 }
 
 #[tokio::test]
+async fn stopping_a_device_node_closes_its_radio_and_starting_it_brings_the_settings_back() {
+    let app = test_router();
+    let running = virtual_snapshot("band", &[("voice", "nfm", "iq")]);
+    let workspace = put_active_workspace(&app, &running).await;
+    assert_eq!(apply(&app, workspace).await.opened, 1);
+
+    let ds = get_state(&app).await.device_sets[0].id;
+    let (status, _) = patch_node_device(
+        &app,
+        &radio_at(&app, ds).await,
+        r#"{"center_hz":145500000.0}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let channel = get_state(&app).await.device_sets[0].channels[0].id;
+    let (status, body) = request(
+        app.clone(),
+        "PATCH",
+        &format!(
+            "/api/workspaces/active/nodes/{}/channel",
+            channel_at(&app, ds, channel).await
+        ),
+        Some(
+            r#"{"settings":{"frequency_hz":145512500.0,"squelch":{"mode":"manual","level_db":-42.0},"params":{"type":"nfm","settings":{}}}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let mut stopped = running.clone();
+    let sdrmm_wire::NodeBody::Device(node) = &mut stopped.graph.nodes[0].body else {
+        panic!("the default workspace opens with a receiver")
+    };
+    node.stopped = true;
+    put_active_workspace(&app, &stopped).await;
+    assert!(
+        get_state(&app).await.device_sets.is_empty(),
+        "a stopped node holds no radio"
+    );
+    assert_eq!(apply(&app, workspace).await.opened, 0, "it stays stopped");
+
+    put_active_workspace(&app, &running).await;
+    let report = apply(&app, workspace).await;
+    assert_eq!(report.opened, 1);
+    assert_eq!(report.created, 1);
+    assert!(report.refused.is_empty(), "{:?}", report.refused);
+    let set = &get_state(&app).await.device_sets[0];
+    assert_eq!(set.settings.center_hz, Some(145_500_000.0));
+    assert_eq!(set.channels.len(), 1);
+    assert_eq!(set.channels[0].settings.frequency_hz, 145_512_500.0);
+}
+
+#[tokio::test]
 async fn applying_a_workspace_reports_an_absent_radio() {
     let app = test_router();
     let mut snapshot = sdrmm_wire::WorkspaceSnapshot::starter();
@@ -1258,8 +1316,7 @@ fn two_radio_snapshot(taps: &[(&str, &str)]) -> sdrmm_wire::WorkspaceSnapshot {
                 serial: None,
                 key: Some("halfduplex".to_string()),
             }),
-            locked_streams: Vec::new(),
-            split_tuning: false,
+            ..sdrmm_wire::DeviceNode::default()
         }),
         position: sdrmm_wire::Position { x: 0.0, y: 300.0 },
         size: None,

@@ -172,6 +172,7 @@ pub enum UnboundReason {
     RadioClosed,
     NotPlaced,
     NotRunning,
+    Stopped,
 }
 
 impl UnboundReason {
@@ -184,6 +185,7 @@ impl UnboundReason {
             Self::RadioClosed => "Radio not open",
             Self::NotPlaced => "Not placed on its radio",
             Self::NotRunning => "Not running",
+            Self::Stopped => "Radio stopped",
         }
     }
 }

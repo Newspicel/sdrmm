@@ -125,8 +125,7 @@ async fn a_preset_carries_every_radio_the_workspace_draws() {
                 serial: None,
                 key: Some("array4".to_string()),
             }),
-            locked_streams: Vec::new(),
-            split_tuning: false,
+            ..sdrmm_wire::DeviceNode::default()
         }),
         position: sdrmm_wire::Position { x: 0.0, y: 600.0 },
         size: None,

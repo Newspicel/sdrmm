@@ -1,0 +1,59 @@
+{
+  "name": "ecc6721c37ac1fa5",
+  "test": "stopping a radio > asks twice when a capture is running on the radio",
+  "graph": {
+    "nodes": [
+      {
+        "id": "dev",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "band"
+          }
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "band",
+          "label": "Test band"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "extra": [],
+          "duplex": "rx_only"
+        },
+        "settings": {
+          "center_hz": 145500000,
+          "sample_rate": 2048000
+        },
+        "status": "running",
+        "channels": [],
+        "overruns": 0,
+        "recording": {
+          "bytes": 1,
+          "file": "take.iq",
+          "overruns": 0,
+          "samples": 1,
+          "started_at": "2026-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "revision": 0
+  }
+}

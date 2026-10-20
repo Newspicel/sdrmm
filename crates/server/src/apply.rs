@@ -5,7 +5,7 @@ use sdrmm_wire::{
 
 mod release;
 
-pub(crate) use release::release;
+pub(crate) use release::{drops_radio, release};
 
 use crate::{
     AppState, array, radar,
