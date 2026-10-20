@@ -40,14 +40,14 @@ suffixes are unsupported. The task validates these limits.
 ## Portable archives
 
 ```sh
-cargo xtask dist
-cargo xtask dist --target aarch64-unknown-linux-gnu
+cargo xtask-release dist
+cargo xtask-release dist --target aarch64-unknown-linux-gnu
 ```
 
 The task installs a missing Rust target, builds the frontend and release binary, verifies embedded
 assets, and writes a `.tar.gz` or `.zip` under `dist/` with the binary, the FFmpeg libraries,
-`README.md`, `LICENSE`, and `THIRD_PARTY_NOTICES.md`. `cargo xtask source-dist` writes the source
-tarball with the built frontend. `cargo xtask link-check <dir>` checks that macOS and Windows
+`README.md`, `LICENSE`, and `THIRD_PARTY_NOTICES.md`. `cargo xtask-release source-dist` writes the source
+tarball with the built frontend. `cargo xtask-release link-check <dir>` checks that macOS and Windows
 binaries link only bundled and system libraries.
 
 Archives load SoapySDR at runtime without linking or bundling it. Verify startup on a clean machine

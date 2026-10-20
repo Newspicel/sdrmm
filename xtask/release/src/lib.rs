@@ -1,10 +1,18 @@
+#![allow(clippy::expect_used)]
 mod aur;
+pub mod bundled;
 pub mod changeset;
 mod discord;
+pub mod dist;
 mod ios;
+pub mod linkage;
+pub mod media;
+pub mod pack;
+pub mod proc;
 mod sums;
 mod updater;
 mod version;
+pub mod web;
 
 use std::path::{Path, PathBuf};
 
@@ -61,6 +69,22 @@ pub enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    Dist {
+        #[arg(long)]
+        target: Option<String>,
+    },
+    SourceDist,
+    BundledConfig {
+        #[arg(long)]
+        target: Option<String>,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    LinkCheck {
+        path: PathBuf,
+        #[arg(long = "external")]
+        external: Vec<String>,
+    },
 }
 
 pub fn run(root: &Path, cmd: &Cmd) -> Result<()> {
@@ -82,6 +106,12 @@ pub fn run(root: &Path, cmd: &Cmd) -> Result<()> {
             out,
         } => updater::manifest(dir, version, base_url, out.as_deref()),
         Cmd::Aur { version, sums, out } => aur::packages(sums, version, out),
+        Cmd::Dist { target } => dist::dist(root, target.as_deref()),
+        Cmd::SourceDist => dist::source_dist(root),
+        Cmd::BundledConfig { target, out } => {
+            bundled::write_desktop_config(root, target.as_deref(), out)
+        }
+        Cmd::LinkCheck { path, external } => linkage::check(path, external),
     }
 }
 

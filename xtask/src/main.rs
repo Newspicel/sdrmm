@@ -15,13 +15,17 @@ use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};
 use notify::{Config, Event, EventKind, PollWatcher, RecursiveMode, Watcher};
 use num_complex::Complex;
+pub(crate) use xtask_release::bundled;
+pub(crate) use xtask_release::dist::release_features;
+pub(crate) use xtask_release::media::{ensure_target, media_dir, media_env, run_against_media};
+pub(crate) use xtask_release::proc::{run, run_with_env};
+pub(crate) use xtask_release::web::{PNPM, assert_web_dist, ensure_web_deps, web_build};
 
 mod architecture;
 mod bandplan;
 mod ber;
 mod broadcast_fixtures;
 mod bundle;
-mod bundled;
 mod capture;
 mod compare;
 mod denoise_model;
@@ -30,7 +34,6 @@ mod icons;
 mod ident_matrix;
 mod ios;
 mod licenses;
-mod linkage;
 mod mobile;
 mod nixhash;
 mod replay;
@@ -95,27 +98,11 @@ enum Cmd {
     Icons,
     IdentMatrix,
     NixHash,
-    Dist {
-        #[arg(long)]
-        target: Option<String>,
-    },
-    SourceDist,
     Desktop {
         #[arg(long)]
         target: Option<String>,
         #[arg(long)]
         bundles: Option<String>,
-    },
-    BundledConfig {
-        #[arg(long)]
-        target: Option<String>,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    LinkCheck {
-        path: PathBuf,
-        #[arg(long = "external")]
-        external: Vec<String>,
     },
     #[command(flatten)]
     Release(xtask_release::Cmd),
@@ -160,29 +147,15 @@ fn main() -> Result<()> {
         Cmd::Icons => icons::icons(&root()),
         Cmd::IdentMatrix => ident_matrix::run(&root()),
         Cmd::NixHash => nixhash::run(&root()),
-        Cmd::Dist { target } => dist(&root(), target.as_deref()),
-        Cmd::SourceDist => source_dist(&root()),
         Cmd::Desktop { target, bundles } => desktop(&root(), target.as_deref(), bundles.as_deref()),
-        Cmd::BundledConfig { target, out } => {
-            bundled::write_desktop_config(&root(), target.as_deref(), &out)
-        }
-        Cmd::LinkCheck { path, external } => linkage::check(&path, &external),
         Cmd::Release(cmd) => xtask_release::run(&root(), &cmd),
         Cmd::Mobile(args) => mobile::run(&root(), &args),
         Cmd::Ios { action } => ios::run(&root(), &action),
     }
 }
 
-#[cfg(windows)]
-const PNPM: &str = "pnpm.cmd";
-#[cfg(not(windows))]
-const PNPM: &str = "pnpm";
-
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask has a parent")
-        .to_path_buf()
+    xtask_release::root().expect("workspace root")
 }
 
 fn codegen(root: &Path) -> Result<()> {
@@ -830,318 +803,6 @@ fn agree(what: &str, pins: &[(String, String)]) -> Result<()> {
 const NO_SOAPY_RUNTIME: (&str, &str) = ("SDRMM_SOAPY_LIBRARY", "/nonexistent/libSoapySDR");
 const NO_SOAPY_TARGET: &str = "target/no-soapy";
 
-fn release_features() -> [String; 3] {
-    [
-        "--no-default-features".to_string(),
-        "--features".to_string(),
-        "soapy,sdrplay,rtlsdr,hackrf,airspy,airspyhf,funcube,espsdr,ad936x,net-client,gpu-fft"
-            .to_string(),
-    ]
-}
-
-fn web_build(root: &Path) -> Result<()> {
-    ensure_web_deps(root)?;
-    run(PNPM, &["--dir", "web", "build"], root)
-}
-
-fn assert_web_dist(root: &Path) -> Result<()> {
-    let index = root.join("web/dist/index.html");
-    ensure!(
-        index.exists(),
-        "{} is missing after the web build: the artifact would embed an empty UI",
-        index.display()
-    );
-    Ok(())
-}
-
-fn dist(root: &Path, target: Option<&str>) -> Result<()> {
-    web_build(root)?;
-    assert_web_dist(root)?;
-    ensure_target(root, target)?;
-
-    let features = release_features();
-    let mut args = vec![
-        "build",
-        "--release",
-        "--locked",
-        "-p",
-        "sdrmm",
-        &features[0],
-        &features[1],
-        &features[2],
-    ];
-    if let Some(triple) = target {
-        args.push("--target");
-        args.push(triple);
-    }
-    run_against_media(&args, root, media_dir(root, target)?.as_deref())?;
-
-    let triple = match target {
-        Some(triple) => triple.to_string(),
-        None => host_triple()?,
-    };
-    let windows = triple.contains("windows");
-    let exe = if windows { "sdrmm.exe" } else { "sdrmm" };
-    let built = match target {
-        Some(triple) => root.join("target").join(triple).join("release").join(exe),
-        None => root.join("target").join("release").join(exe),
-    };
-
-    let out = root.join("dist");
-    let name = format!("sdrmm-{}-{triple}", env!("CARGO_PKG_VERSION"));
-    let staged = out.join(&name);
-    if staged.exists() {
-        std::fs::remove_dir_all(&staged)
-            .with_context(|| format!("cannot clear {}", staged.display()))?;
-    }
-    std::fs::create_dir_all(&staged)
-        .with_context(|| format!("cannot create {}", staged.display()))?;
-
-    std::fs::copy(&built, staged.join(exe))
-        .with_context(|| format!("cannot stage {}", built.display()))?;
-    bundled::stage(&bundled::libraries(root, target)?, &staged)?;
-    for doc in ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"] {
-        std::fs::copy(root.join(doc), staged.join(doc))
-            .with_context(|| format!("cannot stage {doc}"))?;
-    }
-
-    if triple.contains("linux") {
-        run(
-            "strip",
-            &[staged.join(exe).to_str().expect("utf8 path")],
-            root,
-        )?;
-    }
-
-    let archive = archive(root, &out, &name, windows)?;
-    println!("dist: {}", archive.display());
-    Ok(())
-}
-
-fn source_dist(root: &Path) -> Result<()> {
-    web_build(root)?;
-    assert_web_dist(root)?;
-
-    let out = root.join("dist");
-    let name = format!("sdrmm-{}-src", env!("CARGO_PKG_VERSION"));
-    let staged = out.join(&name);
-    if staged.exists() {
-        std::fs::remove_dir_all(&staged)
-            .with_context(|| format!("cannot clear {}", staged.display()))?;
-    }
-    std::fs::create_dir_all(&staged)
-        .with_context(|| format!("cannot create {}", staged.display()))?;
-
-    let tar = out.join(format!("{name}.tar"));
-    run(
-        "git",
-        &[
-            "archive",
-            "--format=tar",
-            "--output",
-            tar.to_str().expect("utf8 path"),
-            "HEAD",
-        ],
-        root,
-    )?;
-    run(
-        "tar",
-        &[
-            "-xf",
-            tar.to_str().expect("utf8 path"),
-            "-C",
-            staged.to_str().expect("utf8 path"),
-        ],
-        root,
-    )?;
-    std::fs::remove_file(&tar).with_context(|| format!("cannot clear {}", tar.display()))?;
-
-    // The stamped manifests and the built UI are what the commit cannot carry: one names the
-    // release, the other is embedded by `crates/server` at compile time.
-    for manifest in ["Cargo.toml", "Cargo.lock"] {
-        std::fs::copy(root.join(manifest), staged.join(manifest))
-            .with_context(|| format!("cannot stage {manifest}"))?;
-    }
-    copy_tree(&root.join("web/dist"), &staged.join("web/dist"))?;
-
-    let archive = archive(root, &out, &name, false)?;
-    println!("source dist: {}", archive.display());
-    Ok(())
-}
-
-fn copy_tree(from: &Path, to: &Path) -> Result<()> {
-    std::fs::create_dir_all(to).with_context(|| format!("cannot create {}", to.display()))?;
-    for entry in
-        std::fs::read_dir(from).with_context(|| format!("cannot read {}", from.display()))?
-    {
-        let entry = entry?;
-        let target = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            copy_tree(&entry.path(), &target)?;
-        } else {
-            std::fs::copy(entry.path(), &target)
-                .with_context(|| format!("cannot copy {}", entry.path().display()))?;
-        }
-    }
-    Ok(())
-}
-
-fn archive(root: &Path, out: &Path, name: &str, windows: bool) -> Result<PathBuf> {
-    let ext = if windows { "zip" } else { "tar.gz" };
-    let path = out.join(format!("{name}.{ext}"));
-    match std::fs::remove_file(&path) {
-        Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(err).with_context(|| format!("replace {}", path.display())),
-    }
-
-    if windows {
-        run(
-            "powershell",
-            &[
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                &format!(
-                    "Add-Type -AssemblyName System.IO.Compression.FileSystem; \
-                     [System.IO.Compression.ZipFile]::CreateFromDirectory('{}', '{}', \
-                     [System.IO.Compression.CompressionLevel]::Optimal, $true)",
-                    out.join(name).display(),
-                    path.display()
-                ),
-            ],
-            root,
-        )?;
-    } else {
-        run_with_env(
-            "tar",
-            &[
-                "-C",
-                out.to_str().expect("utf8 path"),
-                "-czf",
-                path.to_str().expect("utf8 path"),
-                name,
-            ],
-            root,
-            &[("COPYFILE_DISABLE", "1")],
-        )?;
-    }
-    Ok(path)
-}
-
-fn ensure_target(root: &Path, target: Option<&str>) -> Result<()> {
-    let Some(triple) = target else {
-        return Ok(());
-    };
-    if triple == host_triple()? {
-        return Ok(());
-    }
-    run("rustup", &["target", "add", triple], root)
-}
-
-fn host_triple() -> Result<String> {
-    let out = Command::new("rustc")
-        .arg("-vV")
-        .output()
-        .context("failed to spawn `rustc`")?;
-    ensure!(out.status.success(), "`rustc -vV` failed");
-    let stdout = String::from_utf8(out.stdout).context("`rustc -vV` printed non-utf8")?;
-    stdout
-        .lines()
-        .find_map(|line| line.strip_prefix("host: "))
-        .map(str::to_string)
-        .context("`rustc -vV` printed no host line")
-}
-
-// Every codec build lands in its own `.media/<triple>`, so a cross build has to be pointed at the
-// tree for the target rather than the one the host happens to have.
-fn media_dir(root: &Path, target: Option<&str>) -> Result<Option<PathBuf>> {
-    let triple = target.map(str::to_owned).map_or_else(host_triple, Ok)?;
-    let dir = root.join(".media").join(triple);
-    Ok(dir.join("sdrmm-build.txt").is_file().then_some(dir))
-}
-
-const WINDOWS_LIBCLANG_RELOAD_ATTEMPTS: usize = 3;
-
-fn run_against_media(args: &[&str], cwd: &Path, media: Option<&Path>) -> Result<()> {
-    let attempts = if cfg!(windows) {
-        WINDOWS_LIBCLANG_RELOAD_ATTEMPTS
-    } else {
-        1
-    };
-    retry(attempts, || match media {
-        Some(dir) => {
-            let env = media_env(dir);
-            let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-            run_with_env("cargo", args, cwd, &env)
-        }
-        None => run("cargo", args, cwd),
-    })
-}
-
-const LIBRARY_PATH_VAR: Option<&str> = if cfg!(target_os = "linux") {
-    Some("LD_LIBRARY_PATH")
-} else if cfg!(target_os = "macos") {
-    Some("DYLD_LIBRARY_PATH")
-} else {
-    None
-};
-
-fn media_env(dir: &Path) -> Vec<(&'static str, String)> {
-    let mut env = vec![("FFMPEG_DIR", dir.to_string_lossy().into_owned())];
-    if let Some(var) = LIBRARY_PATH_VAR {
-        env.push((var, library_path(var, dir)));
-    }
-    env
-}
-
-fn library_path(var: &str, media: &Path) -> String {
-    let lib = media.join("lib").to_string_lossy().into_owned();
-    match std::env::var(var) {
-        Ok(existing) if !existing.is_empty() => format!("{lib}:{existing}"),
-        _ => lib,
-    }
-}
-
-fn retry(attempts: usize, mut run: impl FnMut() -> Result<()>) -> Result<()> {
-    let mut outcome = run();
-    for attempt in 2..=attempts {
-        if outcome.is_ok() {
-            break;
-        }
-        println!("retrying after ffmpeg-sys build script crash ({attempt}/{attempts})");
-        outcome = run();
-    }
-    outcome
-}
-
-#[cfg(test)]
-mod retry_tests {
-    use super::*;
-
-    #[test]
-    fn retries_until_success() {
-        let mut calls = 0;
-        let outcome = retry(3, || {
-            calls += 1;
-            if calls < 3 { bail!("crash") } else { Ok(()) }
-        });
-        assert!(outcome.is_ok());
-        assert_eq!(calls, 3);
-    }
-
-    #[test]
-    fn gives_up_after_attempts() {
-        let mut calls = 0;
-        let outcome = retry(2, || {
-            calls += 1;
-            bail!("crash")
-        });
-        assert!(outcome.is_err());
-        assert_eq!(calls, 2);
-    }
-}
-
 fn desktop(root: &Path, target: Option<&str>, bundles: Option<&str>) -> Result<()> {
     ensure_target(root, target)?;
     let features = release_features();
@@ -1629,33 +1290,6 @@ fn write_fixture(
         iq.len() as f64 / rate,
         sdrmm_wire::units::sample_rate(rate),
     );
-    Ok(())
-}
-
-fn ensure_web_deps(root: &Path) -> Result<()> {
-    for dir in ["web", "site"] {
-        if !root.join(dir).join("node_modules").is_dir() {
-            run(PNPM, &["--dir", dir, "install", "--frozen-lockfile"], root)?;
-        }
-    }
-    Ok(())
-}
-
-fn run(program: &str, args: &[&str], cwd: &Path) -> Result<()> {
-    run_with_env(program, args, cwd, &[])
-}
-
-fn run_with_env(program: &str, args: &[&str], cwd: &Path, env: &[(&str, &str)]) -> Result<()> {
-    println!("$ {program} {}", args.join(" "));
-    let status = Command::new(program)
-        .args(args)
-        .envs(env.iter().copied())
-        .current_dir(cwd)
-        .status()
-        .with_context(|| format!("failed to spawn `{program}` (is it installed?)"))?;
-    if !status.success() {
-        bail!("`{program} {}` failed with {status}", args.join(" "));
-    }
     Ok(())
 }
 

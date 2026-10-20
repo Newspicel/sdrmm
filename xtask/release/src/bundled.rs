@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use serde_json::{Map, Value, json};
 
 pub fn libraries(root: &Path, target: Option<&str>) -> Result<Vec<PathBuf>> {
-    let triple = target.map_or_else(crate::host_triple, |triple| Ok(triple.to_owned()))?;
-    match crate::media_dir(root, target)? {
+    let triple = target.map_or_else(crate::media::host_triple, |triple| Ok(triple.to_owned()))?;
+    match crate::media::media_dir(root, target)? {
         Some(media) => media_runtime(&media, &triple),
         None => Ok(Vec::new()),
     }
@@ -60,7 +60,7 @@ pub fn stage(libraries: &[PathBuf], dir: &Path) -> Result<()> {
 }
 
 pub fn desktop_config_for(root: &Path, target: Option<&str>) -> Result<String> {
-    let triple = target.map_or_else(crate::host_triple, |triple| Ok(triple.to_owned()))?;
+    let triple = target.map_or_else(crate::media::host_triple, |triple| Ok(triple.to_owned()))?;
     Ok(desktop_config(&libraries(root, target)?, &triple))
 }
 

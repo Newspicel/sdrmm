@@ -134,7 +134,8 @@ jobs:
       - run: sudo xcode-select -s /Applications/Xcode_27.app
       - uses: ./.github/actions/rust
         with:
-          cache: release-ios
+          cache: ios
+          save: ${{ github.ref_type != 'tag' }}
       - uses: actions/download-artifact@v8
         with:
           name: version-stamp
@@ -182,18 +183,19 @@ jobs:
       - uses: ./.github/actions/rust
         with:
           cache: release-${{ matrix.target }}
+          save: ${{ github.ref_type != 'tag' }}
           target: ${{ matrix.target }}
       - uses: actions/download-artifact@v8
         with:
           name: version-stamp
       - uses: ./.github/actions/node
-      - run: cargo xtask dist --target ${{ matrix.target }}
+      - run: cargo xtask-release dist --target ${{ matrix.target }}
       - name: Archive
         shell: bash
         run: test -s "$STAGED.tar.gz" || test -s "$STAGED.zip"
       - name: Linking
         if: runner.os != 'Linux'
-        run: cargo xtask link-check "${{ env.STAGED }}"
+        run: cargo xtask-release link-check "${{ env.STAGED }}"
       - name: Version
         if: ${{ !matrix.cross }}
         shell: bash
@@ -228,7 +230,7 @@ jobs:
         with:
           name: version-stamp
       - uses: ./.github/actions/node
-      - run: cargo xtask source-dist
+      - run: cargo xtask-release source-dist
       - name: Contents
         run: |
           tar -tzf "dist/$ROOT.tar.gz" > listing
@@ -379,6 +381,7 @@ jobs:
       - uses: ./.github/actions/rust
         with:
           cache: release-desktop-${{ matrix.label }}
+          save: ${{ github.ref_type != 'tag' }}
           target: ${{ matrix.target }}
           tauri: true
       - uses: actions/download-artifact@v8
@@ -389,7 +392,7 @@ jobs:
       - name: UI built
         shell: bash
         run: test -f web/dist/index.html
-      - run: cargo xtask bundled-config --target ${{ matrix.target }} --out bundled.tauri.json
+      - run: cargo xtask-release bundled-config --target ${{ matrix.target }} --out bundled.tauri.json
       - if: contains(matrix.bundles, 'appimage')
         run: scripts/ci/prefetch-appimage-tools.sh "${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}"
       - id: bundle
@@ -417,14 +420,14 @@ jobs:
           args: ${{ env.TAURI_ARGS }}
       - name: App linking
         if: runner.os == 'macOS'
-        run: cargo xtask link-check "target/${{ matrix.target }}/release/bundle/macos"
+        run: cargo xtask-release link-check "target/${{ matrix.target }}/release/bundle/macos"
       - name: Installer linking
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $setup = Get-ChildItem "target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe"
           Start-Process $setup.FullName -ArgumentList '/S', "/D=$PWD\installed" -Wait
-          cargo xtask link-check installed
+          cargo xtask-release link-check installed
       - name: AppImage audio
         if: contains(matrix.bundles, 'appimage')
         run: scripts/ci/check-appimage-audio.sh "target/${{ matrix.target }}/release/bundle/appimage"
