@@ -450,7 +450,6 @@ async fn a_hand_picked_radio_comes_up_with_the_nodes_stored_settings() {
 #[tokio::test]
 async fn a_partial_restore_lands_what_fits_and_keeps_remembering_the_rest() {
     let (app, state) = test_router_with_state();
-    let workspace = store_siggen_workspace(&app).await;
     let planted = sdrmm_wire::WorkspaceState {
         trunks: Vec::new(),
         arrays: Vec::new(),
@@ -466,10 +465,12 @@ async fn a_partial_restore_lands_what_fits_and_keeps_remembering_the_rest() {
             },
         }],
     };
+    let workspace = workspaces(&app).await.active.expect("seeded workspace");
     state
         .store
         .put_workspace_state(workspace, &planted)
         .expect("plant the stored settings");
+    assert_eq!(store_siggen_workspace(&app).await, workspace);
 
     let report = apply(&app, workspace).await;
     assert!(
