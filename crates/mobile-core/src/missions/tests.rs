@@ -930,6 +930,19 @@ impl Api for FakeApi {
 }
 
 #[test]
+fn opening_echoes_the_mission_before_the_loop_answers() {
+    let (input, _inputs) = mpsc::unbounded_channel();
+    let hub = MissionHub {
+        input,
+        shared: Arc::new(Mutex::new(Shared::default())),
+    };
+    hub.open(Some("ghost".to_owned()));
+    assert_eq!(hub.shared().open.as_deref(), Some("ghost"));
+    hub.open(None);
+    assert_eq!(hub.shared().open, None);
+}
+
+#[test]
 fn the_hub_fetches_missions_when_live_and_publishes_its_state() {
     let runtime = crate::runtime::CoreRuntime::start().expect("runtime");
     let events = EventQueue::default();
@@ -973,7 +986,6 @@ fn the_hub_fetches_missions_when_live_and_publishes_its_state() {
     }
     assert!(activity_rx.borrow().mission_open);
     hub.open(Some("ghost".to_owned()));
-    assert_eq!(hub.shared().open.as_deref(), Some("ghost"));
     while hub.shared().open.as_deref() == Some("ghost") && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }
