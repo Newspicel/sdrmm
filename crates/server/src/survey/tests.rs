@@ -308,7 +308,27 @@ async fn survey_bench(with_position: bool) -> (axum::Router, AppState) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    wait_for_radio(&state).await;
     (app, state)
+}
+
+async fn wait_for_radio(state: &AppState) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let wired = state
+            .survey
+            .lock()
+            .get("map")
+            .is_some_and(|session| session.wiring.radio.is_some());
+        if wired {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the survey never saw its radio"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
 }
 
 async fn act(app: &axum::Router, action: &str) -> (StatusCode, axum::body::Bytes) {

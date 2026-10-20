@@ -515,32 +515,52 @@ impl ChannelAudioRecording {
         if let Some(control) = &self.fx_control {
             let _ = control.send(audio_fx::FxControl::Record(None));
         }
-        self.finish();
+        let _ = self.finish();
     }
 
-    fn finish(self) {
+    fn finish(self) -> AudioRecordingStatus {
         let Self {
+            node,
+            route,
+            file,
+            started_at,
+            channels,
             tap,
+            shared,
             writer,
             fx_control,
             ..
         } = self;
         drop(tap);
-        if fx_control.is_some() {
-            let deadline = Instant::now() + FX_RECORDING_DRAIN;
-            while !writer.is_finished() {
-                if Instant::now() >= deadline {
-                    tracing::warn!(
-                        "audio FX recording is still draining; its file closes once the FX stream next runs"
-                    );
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(5));
+        close_audio_writer(writer, fx_control.is_some());
+        AudioRecordingStatus {
+            node,
+            fx: route.fx,
+            file,
+            started_at,
+            channels,
+            frames: shared.frames(),
+            bytes: shared.bytes(),
+            error: shared.error(),
+        }
+    }
+}
+
+fn close_audio_writer(writer: JoinHandle<()>, draining: bool) {
+    if draining {
+        let deadline = Instant::now() + FX_RECORDING_DRAIN;
+        while !writer.is_finished() {
+            if Instant::now() >= deadline {
+                tracing::warn!(
+                    "audio FX recording is still draining; its file closes once the FX stream next runs"
+                );
+                return;
             }
+            std::thread::sleep(Duration::from_millis(5));
         }
-        if writer.join().is_err() {
-            tracing::error!("audio recording writer thread panicked");
-        }
+    }
+    if writer.join().is_err() {
+        tracing::error!("audio recording writer thread panicked");
     }
 }
 

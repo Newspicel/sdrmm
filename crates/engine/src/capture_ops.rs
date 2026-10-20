@@ -369,8 +369,7 @@ impl Engine {
             inner.revision += 1;
             recording
         };
-        let status = recording.status();
-        recording.finish();
+        let status = recording.finish();
         self.emit(ServerEvent::StateChanged {
             scope: StateScope::DeviceSet(ds),
         });
