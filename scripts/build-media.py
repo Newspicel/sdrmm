@@ -7,6 +7,7 @@ import platform
 import shutil
 import subprocess
 import tarfile
+import time
 import urllib.request
 
 
@@ -16,6 +17,8 @@ FDK_VERSION = "2.0.3"
 FDK_SHA256 = "e25671cd96b10bad896aa42ab91a695a9e573395262baed4e4a2ff178d6a3a78"
 ROOT = Path(__file__).resolve().parents[1]
 LIBRARY_PATH = {"Darwin": "DYLD_LIBRARY_PATH", "Linux": "LD_LIBRARY_PATH"}
+DOWNLOAD_ATTEMPTS = 5
+DOWNLOAD_TIMEOUT = 120
 
 
 def target_name():
@@ -75,10 +78,21 @@ def require_msys_shell(env):
         raise RuntimeError("Cygwin bash cannot build FFmpeg for clang-cl, put MSYS2 usr\\bin in MEDIA_SHELL_BIN")
 
 
+def download(url, destination):
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response:
+                destination.write_bytes(response.read())
+                return
+        except OSError as error:
+            if attempt + 1 == DOWNLOAD_ATTEMPTS:
+                raise RuntimeError(f"{url} unreachable after {DOWNLOAD_ATTEMPTS} attempts") from error
+            time.sleep(2**attempt)
+
+
 def unpack(work, archive, url, sha256, name):
     if not archive.exists():
-        with urllib.request.urlopen(url) as response:
-            archive.write_bytes(response.read())
+        download(url, archive)
     if hashlib.sha256(archive.read_bytes()).hexdigest() != sha256:
         raise RuntimeError(f"{name} source checksum mismatch")
     source = work / name
