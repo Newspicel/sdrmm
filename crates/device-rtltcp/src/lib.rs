@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use sdrmm_device::{
     BlockPool, Capture, CaptureConfig, CaptureRadio, DeviceDriver, DeviceError, RxSink, SdrDevice,
@@ -19,6 +22,9 @@ mod proto;
 mod stream;
 
 const DRIVER_ID: &str = "rtltcp";
+
+const GREETING_PATIENCE: Duration = Duration::from_secs(15);
+const GREETING_HANDOFF: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Default)]
 pub struct RtlTcpDriver {
@@ -70,17 +76,20 @@ impl DeviceDriver for RtlTcpDriver {
 
 fn connect(endpoint: &Endpoint) -> Result<(Connection, Greeting), DeviceError> {
     let connection = Connection::new(endpoint.connect()?);
+    let deadline = Instant::now() + GREETING_PATIENCE;
     let mut bytes = [0u8; GREETING_LEN];
     let mut got = 0;
     while got < GREETING_LEN {
-        match connection.read(&mut bytes[got..], CONNECT_TIMEOUT) {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(DeviceError::InUse(format!(
+                "{endpoint}: no rtl_tcp greeting within {GREETING_PATIENCE:?}; the server serves \
+                 one client at a time"
+            )));
+        }
+        match connection.read(&mut bytes[got..], left.min(CONNECT_TIMEOUT)) {
             Read::Got(n) => got += n,
-            Read::Idle => {
-                return Err(DeviceError::InUse(format!(
-                    "{endpoint}: no rtl_tcp greeting within {CONNECT_TIMEOUT:?}; the server serves \
-                     one client at a time"
-                )));
-            }
+            Read::Idle => {}
             Read::Ended => {
                 return Err(DeviceError::Io(format!(
                     "{endpoint}: {}",
@@ -94,8 +103,15 @@ fn connect(endpoint: &Endpoint) -> Result<(Connection, Greeting), DeviceError> {
 }
 
 #[derive(Debug)]
+struct Greeted {
+    connection: Arc<Connection>,
+    at: Instant,
+}
+
+#[derive(Debug)]
 struct RtlRadio {
     endpoint: Endpoint,
+    greeted: Mutex<Option<Greeted>>,
     connection: Mutex<Option<Arc<Connection>>>,
     remote: Mutex<Remote>,
     pool: BlockPool,
@@ -111,29 +127,37 @@ impl RtlRadio {
         }
         Ok(())
     }
+
+    fn link(&self) -> Result<Arc<Connection>, DeviceError> {
+        if let Some(greeted) = lock(&self.greeted).take() {
+            if greeted.at.elapsed() < GREETING_HANDOFF {
+                return Ok(greeted.connection);
+            }
+            greeted.connection.close();
+        }
+        Ok(Arc::new(connect(&self.endpoint)?.0))
+    }
 }
 
 impl CaptureRadio for RtlRadio {
     type Stream = RtlTcpStream;
 
     fn arm(&self) -> Result<RtlTcpStream, DeviceError> {
-        let (connection, greeting) = connect(&self.endpoint)?;
-        let connection = Arc::new(connection);
+        let connection = self.link()?;
         let remote = lock(&self.remote);
         for (command, param) in remote.replay() {
             connection.send(&frame(command, param))?;
         }
         *lock(&self.connection) = Some(connection.clone());
         drop(remote);
-        tracing::debug!(
-            endpoint = %self.endpoint,
-            tuner = greeting.tuner.name(),
-            "rtl_tcp stream armed"
-        );
+        tracing::debug!(endpoint = %self.endpoint, "rtl_tcp stream armed");
         Ok(RtlTcpStream::new(connection, self.pool.clone()))
     }
 
     fn disarm(&self) {
+        if let Some(greeted) = lock(&self.greeted).take() {
+            greeted.connection.close();
+        }
         if let Some(connection) = lock(&self.connection).take() {
             connection.close();
         }
@@ -151,7 +175,6 @@ pub struct RtlTcpDevice {
 impl RtlTcpDevice {
     fn open(endpoint: Endpoint) -> Result<Self, DeviceError> {
         let (connection, greeting) = connect(&endpoint)?;
-        connection.close();
         let gain_table = caps::gain_table(greeting.tuner, greeting.gain_steps);
         tracing::info!(
             %endpoint,
@@ -167,6 +190,10 @@ impl RtlTcpDevice {
             gain_table,
             radio: Arc::new(RtlRadio {
                 endpoint,
+                greeted: Mutex::new(Some(Greeted {
+                    connection: Arc::new(connection),
+                    at: Instant::now(),
+                })),
                 connection: Mutex::new(None),
                 remote: Mutex::new(remote),
                 pool: BlockPool::default(),

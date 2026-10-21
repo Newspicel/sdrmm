@@ -16,9 +16,8 @@ use sdrmm_wire::{Agc, AgcSetting, DeviceSettings, GainKind, GainValue};
 
 type Observed = Arc<Mutex<HashMap<usize, Vec<(u8, u32)>>>>;
 
-const OPENED: usize = 0;
-const CAPTURING: usize = 1;
-const RECONNECTED: usize = 2;
+const GREETED: usize = 0;
+const RECONNECTED: usize = 1;
 
 const REPLAY_IN_AGC: usize = 6;
 
@@ -34,15 +33,14 @@ fn ramp() -> Vec<u8> {
     (0..=255u8).collect()
 }
 
-fn fake_rtl_tcp(
+fn rtl_tcp_session(
     magic: [u8; 4],
     tuner: u32,
     gain_steps: u32,
-    drop_capture: bool,
-) -> (FakeServer, Observed) {
-    let observed: Observed = Arc::new(Mutex::new(HashMap::new()));
-    let recorder = observed.clone();
-    let server = FakeServer::spawn(move |mut stream: TcpStream, nth| {
+    stall_first: bool,
+    recorder: Observed,
+) -> impl Fn(TcpStream, usize) + Send + Sync + 'static {
+    move |mut stream: TcpStream, nth| {
         if stream
             .write_all(&greeting(&magic, tuner, gain_steps))
             .is_err()
@@ -64,13 +62,29 @@ fn fake_rtl_tcp(
         let block = ramp();
         let started = std::time::Instant::now();
         while stream.write_all(&block).is_ok() {
-            if drop_capture && nth == CAPTURING && started.elapsed() > Duration::from_millis(100) {
+            if stall_first && nth == GREETED && started.elapsed() > Duration::from_millis(100) {
                 return;
             }
             std::thread::sleep(Duration::from_millis(2));
         }
-    });
-    (server, observed)
+    }
+}
+
+fn fake_rtl_tcp(
+    magic: [u8; 4],
+    tuner: u32,
+    gain_steps: u32,
+    stall_first: bool,
+) -> (FakeServer, Observed) {
+    let observed: Observed = Arc::new(Mutex::new(HashMap::new()));
+    let session = rtl_tcp_session(magic, tuner, gain_steps, stall_first, observed.clone());
+    (FakeServer::spawn(session), observed)
+}
+
+fn one_client_rtl_tcp(teardown: Duration) -> (FakeServer, Observed) {
+    let observed: Observed = Arc::new(Mutex::new(HashMap::new()));
+    let session = rtl_tcp_session(*b"RTL0", 5, 29, false, observed.clone());
+    (FakeServer::spawn_single_client(teardown, session), observed)
 }
 
 fn open(driver: &RtlTcpDriver, endpoint: &str) -> Result<Box<dyn SdrDevice>, DeviceError> {
@@ -108,7 +122,7 @@ fn opening_reads_the_greeting_and_reports_that_tuners_capabilities() {
     assert!(caps.bias_tee);
     assert_eq!(caps.agc, Agc::Switch);
 
-    assert_eq!(server.connections(), OPENED + 1);
+    assert_eq!(server.connections(), GREETED + 1);
     let settings = device.settings();
     assert_eq!(settings.center_hz, Some(100_000_000.0));
     assert_eq!(settings.sample_rate, Some(2_048_000.0));
@@ -170,10 +184,10 @@ fn capturing_replays_every_setting_before_the_first_sample_and_streams() {
     assert!(!block.is_empty());
 
     eventually("the replay", || {
-        (commands(&observed, CAPTURING).len() > REPLAY_IN_AGC).then_some(())
+        (commands(&observed, GREETED).len() > REPLAY_IN_AGC).then_some(())
     });
     assert_eq!(
-        commands(&observed, CAPTURING),
+        commands(&observed, GREETED),
         vec![
             (0x02, 2_400_000),
             (0x01, 433_920_000),
@@ -197,7 +211,7 @@ fn a_retune_while_streaming_reaches_the_server() {
     device.rx_start(vec![sink]).expect("streams");
     blocks.recv_timeout(DEADLINE).expect("samples arrive");
     eventually("the replay", || {
-        (commands(&observed, CAPTURING).len() >= REPLAY_IN_AGC).then_some(())
+        (commands(&observed, GREETED).len() >= REPLAY_IN_AGC).then_some(())
     });
 
     device
@@ -207,7 +221,7 @@ fn a_retune_while_streaming_reaches_the_server() {
         })
         .expect("retunes");
     eventually("the retune", || {
-        (commands(&observed, CAPTURING).contains(&(0x01, 144_800_000))).then_some(())
+        (commands(&observed, GREETED).contains(&(0x01, 144_800_000))).then_some(())
     });
     assert_eq!(device.settings().center_hz, Some(144_800_000.0));
     device.rx_stop();
@@ -285,5 +299,51 @@ fn stopping_closes_the_connection_and_the_device_can_stream_again() {
     device.rx_start(vec![sink]).expect("streams again");
     blocks.recv_timeout(DEADLINE).expect("samples arrive again");
     device.rx_stop();
-    assert!(server.connections() >= 3);
+    assert_eq!(
+        server.connections(),
+        2,
+        "one to open and stream, one to resume"
+    );
+}
+
+#[test]
+fn a_server_that_serves_one_client_streams_on_the_connection_it_greeted() {
+    let (server, observed) = one_client_rtl_tcp(Duration::from_millis(0));
+    let driver = RtlTcpDriver::new();
+    let mut device = open(&driver, &server.endpoint()).expect("opens");
+    let (sink, blocks) = blocking_sink();
+    device.rx_start(vec![sink]).expect("streams");
+    blocks.recv_timeout(DEADLINE).expect("samples arrive");
+
+    assert_eq!(
+        server.connections(),
+        1,
+        "a second connection would queue behind the client it already has"
+    );
+    eventually("the replay", || {
+        (commands(&observed, GREETED).len() >= REPLAY_IN_AGC).then_some(())
+    });
+    device.rx_stop();
+}
+
+#[test]
+fn streaming_again_waits_out_a_server_still_letting_go_of_its_last_client() {
+    let teardown = Duration::from_secs(6);
+    let (server, _) = one_client_rtl_tcp(teardown);
+    let driver = RtlTcpDriver::new();
+    let mut device = open(&driver, &server.endpoint()).expect("opens");
+    let (sink, blocks) = blocking_sink();
+    device.rx_start(vec![sink]).expect("streams");
+    blocks.recv_timeout(DEADLINE).expect("samples arrive");
+    device.rx_stop();
+
+    let (sink, blocks) = blocking_sink();
+    device
+        .rx_start(vec![sink])
+        .expect("streams again once the server is free");
+    blocks
+        .recv_timeout(DEADLINE)
+        .expect("samples arrive on the second client");
+    device.rx_stop();
+    assert_eq!(server.connections(), 2);
 }

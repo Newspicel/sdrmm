@@ -62,6 +62,29 @@ impl FakeServer {
         Self { addr, connections }
     }
 
+    /// Starts one that serves a single client at a time, taking `teardown` to let go of a client
+    /// before it accepts the next, the way rtl_tcp and other one-client servers do.
+    ///
+    /// # Panics
+    /// If the loopback interface cannot be bound.
+    pub fn spawn_single_client(
+        teardown: Duration,
+        handle: impl Fn(TcpStream, usize) + Send + Sync + 'static,
+    ) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let addr = listener.local_addr().expect("a bound address");
+        let connections = Arc::new(AtomicUsize::new(0));
+        let counted = connections.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let nth = counted.fetch_add(1, Ordering::SeqCst);
+                handle(stream, nth);
+                std::thread::sleep(teardown);
+            }
+        });
+        Self { addr, connections }
+    }
+
     #[must_use]
     pub fn endpoint(&self) -> String {
         self.addr.to_string()
