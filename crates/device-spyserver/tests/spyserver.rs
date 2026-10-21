@@ -29,8 +29,8 @@ const SETTING_IQ_DIGITAL_GAIN: u32 = 103;
 
 type Observed = Arc<Mutex<HashMap<usize, Vec<(u32, u32)>>>>;
 
-const CAPTURING: usize = 1;
-const RECONNECTED: usize = 2;
+const HANDSHOOK: usize = 0;
+const RECONNECTED: usize = 1;
 
 const SENT: i16 = 16_384;
 const EXPECTED: f32 = 0.5;
@@ -173,7 +173,7 @@ fn fake_spyserver(behaviour: Behaviour) -> (FakeServer, Observed) {
                     return;
                 }
                 if behaviour.drop_capture
-                    && nth == CAPTURING
+                    && nth == HANDSHOOK
                     && started.elapsed() > Duration::from_millis(100)
                 {
                     return;
@@ -229,7 +229,7 @@ fn opening_reads_the_capability_set_off_the_handshake() {
     assert_eq!(device.settings().gain("TUNER"), Some(12.0));
 
     assert_eq!(device.settings().center_hz, Some(100_000_000.0));
-    assert_eq!(server.connections(), 1, "the handshake hangs up");
+    assert_eq!(server.connections(), 1);
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn capturing_configures_the_stream_before_enabling_it_and_samples_arrive() {
     assert!((block[0].im - EXPECTED).abs() < 1e-6, "{:?}", block[0]);
 
     assert_eq!(
-        settings(&observed, CAPTURING),
+        settings(&observed, HANDSHOOK),
         vec![
             (SETTING_IQ_FORMAT, 2),
             (SETTING_IQ_DECIMATION, 1),
@@ -280,6 +280,11 @@ fn capturing_configures_the_stream_before_enabling_it_and_samples_arrive() {
             (SETTING_STREAMING_ENABLED, 1),
         ],
         "the stream is set up, then turned on"
+    );
+    assert_eq!(
+        server.connections(),
+        1,
+        "the handshake connection is the one that streams"
     );
     device.rx_stop();
 }
@@ -320,11 +325,11 @@ fn a_retune_while_streaming_reaches_the_server() {
         })
         .expect("retunes");
     eventually("the retune", || {
-        (settings(&observed, CAPTURING).contains(&(SETTING_IQ_FREQUENCY, 144_800_000)))
+        (settings(&observed, HANDSHOOK).contains(&(SETTING_IQ_FREQUENCY, 144_800_000)))
             .then_some(())
     });
     eventually("the gain", || {
-        (settings(&observed, CAPTURING).contains(&(SETTING_GAIN, 20))).then_some(())
+        (settings(&observed, HANDSHOOK).contains(&(SETTING_GAIN, 20))).then_some(())
     });
     assert_eq!(device.settings().center_hz, Some(144_800_000.0));
     assert_eq!(device.settings().gain("TUNER"), Some(20.0));
@@ -373,6 +378,26 @@ fn a_dropped_connection_reconnects_and_replays_the_stream_setup() {
 }
 
 #[test]
+fn a_second_stream_dials_again_once_the_handshake_connection_is_spent() {
+    let (server, observed) = fake_spyserver(Behaviour::default());
+    let driver = SpyServerDriver::new();
+    let mut device = open(&driver, &server.endpoint()).expect("opens");
+    let (sink, blocks) = blocking_sink();
+    device.rx_start(vec![sink]).expect("streams");
+    blocks.recv_timeout(DEADLINE).expect("samples arrive");
+    device.rx_stop();
+
+    let (sink, blocks) = blocking_sink();
+    device.rx_start(vec![sink]).expect("streams again");
+    blocks.recv_timeout(DEADLINE).expect("samples arrive again");
+    assert_eq!(server.connections(), 2);
+    eventually("the replayed setup", || {
+        (settings(&observed, RECONNECTED).contains(&(SETTING_STREAMING_ENABLED, 1))).then_some(())
+    });
+    device.rx_stop();
+}
+
+#[test]
 fn stopping_asks_the_server_to_stop_streaming() {
     let (server, observed) = fake_spyserver(Behaviour::default());
     let driver = SpyServerDriver::new();
@@ -382,6 +407,6 @@ fn stopping_asks_the_server_to_stop_streaming() {
     blocks.recv_timeout(DEADLINE).expect("samples arrive");
     device.rx_stop();
     eventually("the streaming-off setting", || {
-        (settings(&observed, CAPTURING).contains(&(SETTING_STREAMING_ENABLED, 0))).then_some(())
+        (settings(&observed, HANDSHOOK).contains(&(SETTING_STREAMING_ENABLED, 0))).then_some(())
     });
 }

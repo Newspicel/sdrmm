@@ -139,6 +139,7 @@ fn connect(endpoint: &Endpoint) -> Result<(Connection, DeviceInfo, ClientSync), 
 struct SpyRadio {
     endpoint: Endpoint,
     info: DeviceInfo,
+    handshook: Mutex<Option<Arc<Connection>>>,
     connection: Mutex<Option<Arc<Connection>>>,
     remote: Mutex<Remote>,
     coding: Coding,
@@ -155,25 +156,32 @@ impl SpyRadio {
         }
         Ok(())
     }
+
+    fn link(&self) -> Result<Arc<Connection>, DeviceError> {
+        if let Some(connection) = lock(&self.handshook).take() {
+            return Ok(connection);
+        }
+        Ok(Arc::new(connect(&self.endpoint)?.0))
+    }
+
+    fn replay(&self, connection: &Connection, remote: &Remote) -> Result<(), DeviceError> {
+        for (target, value) in remote.replay(self.info) {
+            connection.send(&setting(target, value))?;
+        }
+        Ok(())
+    }
 }
 
 impl CaptureRadio for SpyRadio {
     type Stream = SpyStream;
 
     fn arm(&self) -> Result<SpyStream, DeviceError> {
-        let (connection, _, sync) = connect(&self.endpoint)?;
-        let connection = Arc::new(connection);
+        let connection = self.link()?;
         let remote = lock(&self.remote);
-        for (target, value) in remote.replay(self.info) {
-            connection.send(&setting(target, value))?;
-        }
+        self.replay(&connection, &remote)?;
         *lock(&self.connection) = Some(connection.clone());
         drop(remote);
-        tracing::debug!(
-            endpoint = %self.endpoint,
-            can_control = sync.can_control,
-            "SpyServer stream armed"
-        );
+        tracing::debug!(endpoint = %self.endpoint, "SpyServer stream armed");
         Ok(SpyStream::new(
             connection,
             self.pool.clone(),
@@ -182,6 +190,9 @@ impl CaptureRadio for SpyRadio {
     }
 
     fn disarm(&self) {
+        if let Some(connection) = lock(&self.handshook).take() {
+            connection.close();
+        }
         if let Some(connection) = lock(&self.connection).take() {
             let _ = connection.send(&setting(Setting::StreamingEnabled, 0));
             connection.close();
@@ -199,7 +210,6 @@ pub struct SpyServerDevice {
 impl SpyServerDevice {
     fn open(endpoint: Endpoint) -> Result<Self, DeviceError> {
         let (connection, info, sync) = connect(&endpoint)?;
-        connection.close();
         let formats = match IqFormat::forced(info.forced_iq_format)? {
             Some(forced) => vec![forced],
             None => vec![IqFormat::Uint8, IqFormat::Int16, IqFormat::Float32],
@@ -229,6 +239,7 @@ impl SpyServerDevice {
             radio: Arc::new(SpyRadio {
                 endpoint,
                 info,
+                handshook: Mutex::new(Some(Arc::new(connection))),
                 connection: Mutex::new(None),
                 remote: Mutex::new(remote),
                 coding: Coding::default(),
