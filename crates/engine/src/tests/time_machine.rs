@@ -5,17 +5,20 @@ async fn the_time_machine_captures_the_seconds_that_already_went_past() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    let settings = TimeMachineNode { history_seconds: 2 };
+    let settings = TimeMachineNode {
+        history_seconds: 2,
+        armed: true,
+    };
 
     let armed = engine
-        .control_time_machine(ds, "tm".to_owned(), 0, TimeMachineAction::Arm, settings)
+        .arm_time_machine(ds, "tm".to_owned(), 0, settings)
         .unwrap();
     assert_eq!(armed.capacity_samples, 2 * 2_048_000);
     assert_eq!(armed.history_seconds, 2);
     assert!(armed.capture.is_none());
     assert!(
         engine
-            .control_time_machine(ds, "tm2".to_owned(), 0, TimeMachineAction::Arm, settings)
+            .arm_time_machine(ds, "tm2".to_owned(), 0, settings)
             .is_err(),
         "one time machine per radio"
     );
@@ -27,13 +30,13 @@ async fn the_time_machine_captures_the_seconds_that_already_went_past() {
     );
 
     let capturing = engine
-        .control_time_machine(ds, "tm".to_owned(), 0, TimeMachineAction::Capture, settings)
+        .control_time_machine(ds, "tm", TimeMachineAction::Capture)
         .unwrap();
     let capture = capturing.capture.expect("a capture is running");
     assert!(capture.file.starts_with(&format!("tm_{ds}_")));
 
     let stopped = engine
-        .control_time_machine(ds, "tm".to_owned(), 0, TimeMachineAction::Stop, settings)
+        .control_time_machine(ds, "tm", TimeMachineAction::Stop)
         .unwrap();
     let finished = stopped.capture.expect("the stop reports what it wrote");
     assert_eq!(finished.file, capture.file);
@@ -55,9 +58,7 @@ async fn the_time_machine_captures_the_seconds_that_already_went_past() {
     );
     assert_eq!(reader.meta().global.sample_rate, Some(2_048_000.0));
 
-    let disarmed = engine
-        .control_time_machine(ds, "tm".to_owned(), 0, TimeMachineAction::Disarm, settings)
-        .unwrap();
+    let disarmed = engine.disarm_time_machine(ds, "tm").unwrap();
     assert_eq!(disarmed.node, "tm");
     assert!(engine.snapshot().device_sets[0].time_machine.is_none());
     engine.remove_device_set(ds).unwrap();
@@ -70,13 +71,13 @@ async fn an_armed_time_machine_locks_the_sample_rate_and_refuses_a_window_that_w
     let ds = engine.create_device_set("virtual:band").unwrap();
 
     let too_wide = engine
-        .control_time_machine(
+        .arm_time_machine(
             ds,
             "tm".to_owned(),
             0,
-            TimeMachineAction::Arm,
             TimeMachineNode {
                 history_seconds: MAX_TIME_MACHINE_SECONDS,
+                armed: true,
             },
         )
         .unwrap_err();
@@ -86,12 +87,14 @@ async fn an_armed_time_machine_locks_the_sample_rate_and_refuses_a_window_that_w
     );
 
     engine
-        .control_time_machine(
+        .arm_time_machine(
             ds,
             "tm".to_owned(),
             0,
-            TimeMachineAction::Arm,
-            TimeMachineNode { history_seconds: 1 },
+            TimeMachineNode {
+                history_seconds: 1,
+                armed: true,
+            },
         )
         .unwrap();
     let locked = engine
@@ -108,15 +111,7 @@ async fn an_armed_time_machine_locks_the_sample_rate_and_refuses_a_window_that_w
         "the refusal says what to do: {locked}"
     );
 
-    engine
-        .control_time_machine(
-            ds,
-            "tm".to_owned(),
-            0,
-            TimeMachineAction::Disarm,
-            TimeMachineNode::default(),
-        )
-        .unwrap();
+    engine.disarm_time_machine(ds, "tm").unwrap();
     engine
         .patch_device(
             ds,
@@ -134,29 +129,26 @@ async fn a_time_machine_action_names_the_node_that_owns_the_history() {
     let dir = tempfile::TempDir::new().unwrap();
     let engine = recording_engine(dir.path());
     let ds = engine.create_device_set("virtual:band").unwrap();
-    let settings = TimeMachineNode { history_seconds: 1 };
+    let settings = TimeMachineNode {
+        history_seconds: 1,
+        armed: true,
+    };
 
     let idle = engine
-        .control_time_machine(ds, "tm".to_owned(), 0, TimeMachineAction::Capture, settings)
+        .control_time_machine(ds, "tm", TimeMachineAction::Capture)
         .unwrap_err();
     assert!(idle.to_string().contains("no time machine"));
 
     engine
-        .control_time_machine(ds, "tm".to_owned(), 0, TimeMachineAction::Arm, settings)
+        .arm_time_machine(ds, "tm".to_owned(), 0, settings)
         .unwrap();
     let stranger = engine
-        .control_time_machine(
-            ds,
-            "other".to_owned(),
-            0,
-            TimeMachineAction::Capture,
-            settings,
-        )
+        .control_time_machine(ds, "other", TimeMachineAction::Capture)
         .unwrap_err();
     assert!(stranger.to_string().contains("belongs to node `tm`"));
 
     let idle_stop = engine
-        .control_time_machine(ds, "tm".to_owned(), 0, TimeMachineAction::Stop, settings)
+        .control_time_machine(ds, "tm", TimeMachineAction::Stop)
         .unwrap_err();
     assert!(idle_stop.to_string().contains("not laying down a capture"));
     engine.remove_device_set(ds).unwrap();

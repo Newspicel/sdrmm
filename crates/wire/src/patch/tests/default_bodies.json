@@ -173,6 +173,7 @@
   {
     "kind": "time_machine",
     "data": {
+      "armed": false,
       "history_seconds": 10
     }
   },

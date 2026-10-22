@@ -536,6 +536,7 @@ fn a_time_machine_holds_a_window_the_engine_can_afford() {
                 "history",
                 NodeBody::TimeMachine(crate::TimeMachineNode {
                     history_seconds: seconds,
+                    armed: true,
                 }),
             ),
         ],

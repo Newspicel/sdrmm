@@ -1,16 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { DeviceSet, PatchGraph, TimeMachineStatus } from "../../lib/types";
+import type { DeviceSet, PatchGraph, PatchNode, TimeMachineStatus } from "../../lib/types";
 import { renderFace } from "../../test/faceHarness";
 import { deviceSet, placed } from "../../test/fixtures";
 import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
 import { TimeMachineFace } from "./TimeMachineFace";
 
-const NODE = placed("history", { kind: "time_machine", data: { history_seconds: 10 } });
+function node(armed: boolean): PatchNode {
+  return placed("history", { kind: "time_machine", data: { history_seconds: 10, armed } });
+}
 
-const GRAPH: PatchGraph = {
-  nodes: [placed("radio", { kind: "device", data: { device: { backend: "virtual" } } }), NODE],
-  edges: [{ from: { node: "radio", port: "iq" }, to: { node: "history", port: "iq" } }],
-};
+function graph(armed: boolean): PatchGraph {
+  return {
+    nodes: [
+      placed("radio", { kind: "device", data: { device: { backend: "virtual" } } }),
+      node(armed),
+    ],
+    edges: [{ from: { node: "radio", port: "iq" }, to: { node: "history", port: "iq" } }],
+  };
+}
 
 const RESOLVED = resolvedPatch([
   resolvedNodeOf("history", "time_machine", [
@@ -21,9 +28,9 @@ const RESOLVED = resolvedPatch([
   ]),
 ]);
 
-function held(node: string): TimeMachineStatus {
+function held(owner: string): TimeMachineStatus {
   return {
-    node,
+    node: owner,
     stream: 0,
     history_seconds: 10,
     sample_rate: 2_048_000,
@@ -34,7 +41,7 @@ function held(node: string): TimeMachineStatus {
   };
 }
 
-const capture = {
+const CAPTURE = {
   file: "tm_1_20261023T000000Z",
   stream: 0,
   started_at: "2026-10-23T00:00:00Z",
@@ -43,28 +50,33 @@ const capture = {
   overruns: 0,
 };
 
-function face(set: DeviceSet): string {
-  return renderFace(TimeMachineFace, NODE, {
-    graph: GRAPH,
+function face(armed: boolean, set: DeviceSet): string {
+  return renderFace(TimeMachineFace, node(armed), {
+    graph: graph(armed),
     devices: new Map([["radio", set]]),
     resolved: RESOLVED,
   });
 }
 
 describe("TimeMachineFace", () => {
-  it("offers arm and the held window to the node that owns the buffer", () => {
-    expect(face(deviceSet({ time_machine: null }))).toContain(">Arm<");
-    const armed = face(deviceSet({ time_machine: held("history") }));
+  it("arms by the patch and reads the window the radio holds", () => {
+    expect(face(false, deviceSet())).toContain(">Arm<");
+    const waiting = face(true, deviceSet());
+    expect(waiting).toContain("Waiting");
+    expect(waiting).toContain(">Disarm<");
+    const armed = face(true, deviceSet({ time_machine: held("history") }));
     expect(armed).toContain("Capture</button>");
-    expect(armed).toContain(">Disarm<");
-    const capturing = face(deviceSet({ time_machine: { ...held("history"), capture } }));
-    expect(capturing).toContain(">Stop<");
+    expect(armed).toContain("5.0 s");
+    expect(
+      face(true, deviceSet({ time_machine: { ...held("history"), capture: CAPTURE } })),
+    ).toContain(">Stop<");
   });
 
-  it("offers no stop for a buffer another node holds", () => {
-    const html = face(deviceSet({ time_machine: held("other") }));
+  it("offers no controls for a window another node holds", () => {
+    const html = face(false, deviceSet({ time_machine: held("other") }));
     expect(html).not.toContain(">Stop<");
     expect(html).not.toContain(">Disarm<");
     expect(html).toContain("Another time machine already holds this history");
+    expect(html).toMatch(/disabled=""[^>]*>Arm</);
   });
 });

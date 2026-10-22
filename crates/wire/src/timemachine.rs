@@ -16,12 +16,14 @@ const fn default_history_seconds() -> u32 {
 #[serde(default)]
 pub struct TimeMachineNode {
     pub history_seconds: u32,
+    pub armed: bool,
 }
 
 impl Default for TimeMachineNode {
     fn default() -> Self {
         Self {
             history_seconds: default_history_seconds(),
+            armed: false,
         }
     }
 }
@@ -37,10 +39,8 @@ impl TimeMachineNode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TimeMachineAction {
-    Arm,
     Capture,
     Stop,
-    Disarm,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

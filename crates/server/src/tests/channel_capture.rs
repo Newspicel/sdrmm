@@ -232,12 +232,13 @@ async fn the_time_machine_arms_captures_and_files_its_window_over_http() {
     draw(
         &app,
         node,
-        sdrmm_wire::NodeBody::TimeMachine(sdrmm_wire::TimeMachineNode { history_seconds: 1 }),
+        history_node(true),
         &[["radio:band", "iq", node, "iq"]],
     )
     .await;
 
-    let armed = history(&app, node, "arm").await;
+    let armed = wait_for_history(&app, ds).await;
+    assert_eq!(armed.node, node);
     assert_eq!(armed.history_seconds, 1);
     assert_eq!(armed.capacity_samples, 2_048_000);
     assert!(armed.capture.is_none());
@@ -278,10 +279,10 @@ async fn the_time_machine_arms_captures_and_files_its_window_over_http() {
         .expect("the captured window is in the library");
     assert_eq!(entry.sample_rate, 2_048_000.0);
 
-    history(&app, node, "disarm").await;
-    assert!(get_state(&app).await.device_sets[0].time_machine.is_none());
+    edit_node(&app, node, history_node(false)).await;
+    wait_for_no_history(&app, ds).await;
 
     let (status, body) = time_machine(&app, node, "capture").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(String::from_utf8_lossy(&body).contains("no time machine"));
+    assert!(String::from_utf8_lossy(&body).contains("Arm it first"));
 }

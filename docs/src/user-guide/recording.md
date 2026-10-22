@@ -34,6 +34,9 @@ Capture a signal after it happened:
 3. Press **Capture** to save the buffer and keep recording live.
 4. **Stop** ends the file and stays armed. **Disarm** frees the memory.
 
+Arming belongs to the workspace: switching away lets the radio go, switching back arms it
+again.
+
 The buffer uses `seconds × sample rate × 8` bytes, up to 1 GiB. **Memory** shows it. The sample
 rate is locked while armed. Retuning starts a new segment in the same recording.
 

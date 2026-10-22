@@ -747,6 +747,60 @@ async fn wait_for_baseband_samples(app: &Router, ds: u32, ch: u32, min: u64) {
     }
 }
 
+fn history_node(armed: bool) -> sdrmm_wire::NodeBody {
+    sdrmm_wire::NodeBody::TimeMachine(sdrmm_wire::TimeMachineNode {
+        history_seconds: 1,
+        armed,
+    })
+}
+
+async fn edit_node(app: &Router, id: &str, body: sdrmm_wire::NodeBody) {
+    let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let mut snapshot = workspace_detail(app, workspace).await.snapshot;
+    let node = snapshot
+        .graph
+        .nodes
+        .iter_mut()
+        .find(|node| node.id == id)
+        .expect("the node is drawn");
+    node.body = body;
+    put_workspace(app, &snapshot).await;
+}
+
+async fn history_of(app: &Router, ds: u32) -> Option<TimeMachineStatus> {
+    get_state(app)
+        .await
+        .device_sets
+        .iter()
+        .find(|set| set.id == ds)
+        .and_then(|set| set.time_machine.clone())
+}
+
+async fn wait_for_history(app: &Router, ds: u32) -> TimeMachineStatus {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(history) = history_of(app, ds).await {
+            return history;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the patch never armed the time machine"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn wait_for_no_history(app: &Router, ds: u32) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while history_of(app, ds).await.is_some() {
+        assert!(
+            Instant::now() < deadline,
+            "the time machine never let go of the radio"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 async fn time_machine(app: &Router, node: &str, action: &str) -> (StatusCode, Bytes) {
     act_on(
         app,

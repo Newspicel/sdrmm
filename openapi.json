@@ -36870,15 +36870,17 @@
       "TimeMachineAction": {
         "type": "string",
         "enum": [
-          "arm",
           "capture",
-          "stop",
-          "disarm"
+          "stop"
         ]
       },
       "TimeMachineNode": {
         "type": "object",
         "properties": {
+          "armed": {
+            "type": "boolean",
+            "default": false
+          },
           "history_seconds": {
             "type": "integer",
             "format": "int32",

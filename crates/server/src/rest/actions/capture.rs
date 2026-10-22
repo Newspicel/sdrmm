@@ -1,7 +1,7 @@
 use sdrmm_wire::{
     BASEBAND_PORT, DeviceSet, IQ_PORT, NetworkExportAction, NetworkExportSettings,
     NetworkExportStatus, NodeBody, PlaybackRequest, PlaybackStatus, StateScope, StateSnapshot,
-    TimeMachineAction, TimeMachineNode, TimeMachineStatus,
+    TimeMachineAction, TimeMachineStatus,
 };
 
 use super::{node_of, takes_no_such_action};
@@ -11,7 +11,7 @@ use crate::{
     rest::{AppError, lock_gate, reconcile_recordings},
 };
 
-const WIRE_IQ: &str = "Wire a running radio's IQ into it";
+const ARM_IT: &str = "Arm it first";
 
 pub(super) fn time_machine(
     state: &AppState,
@@ -19,13 +19,12 @@ pub(super) fn time_machine(
     action: TimeMachineAction,
 ) -> Result<TimeMachineStatus, AppError> {
     let resolved = state.resolved.current();
-    let NodeBody::TimeMachine(settings) = &node_of(&resolved, node)?.body else {
+    if !matches!(node_of(&resolved, node)?.body, NodeBody::TimeMachine(_)) {
         return Err(takes_no_such_action(node));
-    };
-    let (set, stream) = holding_history(&state.engine.snapshot(), node)
-        .or_else(|| fed_lane(&resolved, node))
-        .ok_or_else(|| AppError::bad_request(WIRE_IQ))?;
-    let status = drive_history(state, node, set, stream, action, *settings)?;
+    }
+    let set = holding_history(&state.engine.snapshot(), node)
+        .ok_or_else(|| AppError::bad_request(ARM_IT))?;
+    let status = drive_history(state, node, set, action)?;
     state.gps.route_current(state);
     Ok(status)
 }
@@ -34,15 +33,10 @@ fn drive_history(
     state: &AppState,
     node: &str,
     set: u32,
-    stream: u32,
     action: TimeMachineAction,
-    settings: TimeMachineNode,
 ) -> Result<TimeMachineStatus, AppError> {
-    let finalizes = matches!(action, TimeMachineAction::Stop | TimeMachineAction::Disarm);
-    let status =
-        state
-            .engine
-            .control_time_machine(set, node.to_owned(), stream, action, settings)?;
+    let finalizes = matches!(action, TimeMachineAction::Stop);
+    let status = state.engine.control_time_machine(set, node, action)?;
     if finalizes && let Some(dir) = state.engine.recordings_dir() {
         {
             let _gate = lock_gate(&state.recordings_gate);
@@ -53,13 +47,15 @@ fn drive_history(
     Ok(status)
 }
 
-fn holding_history(live: &StateSnapshot, node: &str) -> Option<(u32, u32)> {
-    live.device_sets.iter().find_map(|set| {
-        set.time_machine
-            .as_ref()
-            .filter(|held| held.node == node)
-            .map(|held| (set.id, held.stream))
-    })
+fn holding_history(live: &StateSnapshot, node: &str) -> Option<u32> {
+    live.device_sets
+        .iter()
+        .find(|set| {
+            set.time_machine
+                .as_ref()
+                .is_some_and(|held| held.node == node)
+        })
+        .map(|set| set.id)
 }
 
 fn fed_lane(resolved: &Resolved, node: &str) -> Option<(u32, u32)> {

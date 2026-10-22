@@ -1531,7 +1531,8 @@
       "default_body": {
         "kind": "time_machine",
         "data": {
-          "history_seconds": 10
+          "history_seconds": 10,
+          "armed": false
         }
       }
     },

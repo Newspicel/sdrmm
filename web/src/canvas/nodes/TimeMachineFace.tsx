@@ -40,13 +40,14 @@ function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
   const phase = timeMachinePhase(set, node.id);
   const status = phase.kind === "armed" || phase.kind === "capturing" ? phase.status : null;
   const control = useMutation(timeMachineMutationOptions(node.id));
+  const armed = node.data.armed ?? false;
 
-  const edit = (history_seconds: number) => {
+  const edit = (next: Partial<typeof node.data>) => {
     workspace.edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "time_machine"
-          ? { ...current, data: { ...current.data, history_seconds } }
+          ? { ...current, data: { ...current.data, ...next } }
           : current,
       ),
     }));
@@ -64,12 +65,12 @@ function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
             min={MIN_HISTORY_SECONDS}
             max={MAX_HISTORY_SECONDS}
             step={1}
-            disabled={phase.kind !== "idle" || control.isPending}
-            onCommit={edit}
+            disabled={armed}
+            onCommit={(history_seconds) => edit({ history_seconds })}
           />
         </Chips>
         {status === null ? (
-          <FaceEmpty hint={hintFor(phase, seconds)} />
+          <FaceEmpty hint={hintFor(phase, seconds, armed)} />
         ) : (
           <HistoryReadout status={status} />
         )}
@@ -83,32 +84,9 @@ function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
             </Stat>
           </FaceStats>
         )}
-        {status === null ? (
-          <Button
-            type="button"
-            className={BTN}
-            disabled={phase.kind !== "idle" || control.isPending}
-            title="Hold the last seconds of IQ in memory"
-            onClick={() => control.mutate("arm")}
-          >
-            Arm
-          </Button>
-        ) : (
+        {armed ? (
           <>
-            {phase.kind === "armed" ? (
-              <Button
-                type="button"
-                className={BTN}
-                disabled={control.isPending}
-                title="Write the buffered past to a SigMF pair and keep recording"
-                onClick={() => control.mutate("capture")}
-              >
-                <span className="flex text-danger">
-                  <Icon glyph={Circle} size={12} filled />
-                </span>
-                Capture
-              </Button>
-            ) : (
+            {phase.kind === "capturing" ? (
               <Button
                 type="button"
                 className={BTN_DANGER}
@@ -117,31 +95,53 @@ function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
               >
                 Stop
               </Button>
+            ) : (
+              <Button
+                type="button"
+                className={BTN}
+                disabled={status === null || control.isPending}
+                title="Write the buffered past to a SigMF pair and keep recording"
+                onClick={() => control.mutate("capture")}
+              >
+                <span className="flex text-danger">
+                  <Icon glyph={Circle} size={12} filled />
+                </span>
+                Capture
+              </Button>
             )}
             <Button
               type="button"
               className={BTN}
-              disabled={control.isPending}
               title="Release the buffer"
-              onClick={() => control.mutate("disarm")}
+              onClick={() => edit({ armed: false })}
             >
               Disarm
             </Button>
           </>
+        ) : (
+          <Button
+            type="button"
+            className={BTN}
+            disabled={phase.kind !== "idle"}
+            title="Hold the last seconds of IQ in memory"
+            onClick={() => edit({ armed: true })}
+          >
+            Arm
+          </Button>
         )}
       </FaceFooter>
     </NodeShell>
   );
 }
 
-function hintFor(phase: TimeMachinePhase, seconds: number): string {
+function hintFor(phase: TimeMachinePhase, seconds: number, armed: boolean): string {
   switch (phase.kind) {
     case "unavailable":
       return "Wire a device's IQ in";
     case "busy":
       return "Another time machine already holds this history";
     default:
-      return `Arm it to keep the last ${seconds} s in memory`;
+      return armed ? "Waiting" : `Arm it to keep the last ${seconds} s in memory`;
   }
 }
 

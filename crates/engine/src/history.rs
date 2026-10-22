@@ -72,25 +72,54 @@ fn await_finalized(shared: &TimeMachineShared, node: &str) {
     );
 }
 
+fn named(node: &str) -> Result<(), EngineError> {
+    if node.is_empty() || node.len() > sdrmm_wire::patch::MAX_NODE_ID_LEN {
+        return Err(EngineError::Recording(
+            "node id is empty or too long".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 impl Engine {
-    pub fn control_time_machine(
+    pub fn arm_time_machine(
         &self,
         ds: u32,
         node: String,
         stream: u32,
-        action: TimeMachineAction,
         settings: TimeMachineNode,
     ) -> Result<TimeMachineStatus, EngineError> {
-        if node.is_empty() || node.len() > sdrmm_wire::patch::MAX_NODE_ID_LEN {
-            return Err(EngineError::Recording(
-                "node id is empty or too long".to_owned(),
-            ));
-        }
+        named(&node)?;
+        let status = self.arm_history(ds, node, stream, settings)?;
+        self.emit(ServerEvent::StateChanged {
+            scope: StateScope::DeviceSet(ds),
+        });
+        Ok(status)
+    }
+
+    pub fn disarm_time_machine(
+        &self,
+        ds: u32,
+        node: &str,
+    ) -> Result<TimeMachineStatus, EngineError> {
+        named(node)?;
+        let status = self.disarm_history(ds, node)?;
+        self.emit(ServerEvent::StateChanged {
+            scope: StateScope::DeviceSet(ds),
+        });
+        Ok(status)
+    }
+
+    pub fn control_time_machine(
+        &self,
+        ds: u32,
+        node: &str,
+        action: TimeMachineAction,
+    ) -> Result<TimeMachineStatus, EngineError> {
+        named(node)?;
         let status = match action {
-            TimeMachineAction::Arm => self.arm_time_machine(ds, node, stream, settings)?,
-            TimeMachineAction::Capture => self.capture_time_machine(ds, &node)?,
-            TimeMachineAction::Stop => self.stop_time_machine_capture(ds, &node)?,
-            TimeMachineAction::Disarm => self.disarm_time_machine(ds, &node)?,
+            TimeMachineAction::Capture => self.capture_time_machine(ds, node)?,
+            TimeMachineAction::Stop => self.stop_time_machine_capture(ds, node)?,
         };
         self.emit(ServerEvent::StateChanged {
             scope: StateScope::DeviceSet(ds),
@@ -98,7 +127,7 @@ impl Engine {
         Ok(status)
     }
 
-    fn arm_time_machine(
+    fn arm_history(
         &self,
         ds: u32,
         node: String,
@@ -308,7 +337,7 @@ impl Engine {
         Ok(status)
     }
 
-    fn disarm_time_machine(&self, ds: u32, node: &str) -> Result<TimeMachineStatus, EngineError> {
+    fn disarm_history(&self, ds: u32, node: &str) -> Result<TimeMachineStatus, EngineError> {
         let (history, overruns) = {
             let mut inner = self.lock();
             let state = inner

@@ -3,8 +3,8 @@ use std::time::Duration;
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
     ChannelInfo, ChannelSettings, DeviceSet, DeviceSettings, Held, PatchGraph, ResolveCtx,
-    ResolvedPatch, ServerEvent, StateScope, StateSnapshot, TimeMachineAction, TimeMachineNode,
-    WorkspaceChannel, WorkspaceDevice, WorkspaceState, patch::resolve,
+    ResolvedPatch, ServerEvent, StateScope, StateSnapshot, WorkspaceChannel, WorkspaceDevice,
+    WorkspaceState, patch::resolve,
 };
 use tokio::{sync::broadcast::error::RecvError, time::Instant};
 
@@ -421,7 +421,11 @@ pub(crate) fn reconcile(
                 tracing::warn!(%err, set = set.id, "could not stop a hunt on switch");
             }
         }
-        let_go_of_captures(engine, set);
+        if let Some(export) = set.network_export.as_ref()
+            && let Err(err) = engine.stop_network_export(set.id, &export.node)
+        {
+            tracing::warn!(%err, set = set.id, "could not stop a network export on switch");
+        }
         for channel in &set.channels {
             if binding.channels.iter().any(|(_, id)| *id == channel.id) {
                 continue;
@@ -458,25 +462,6 @@ pub(crate) fn reconcile(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone_from(&report.unrestored);
     report
-}
-
-fn let_go_of_captures(engine: &Engine, set: &DeviceSet) {
-    if let Some(history) = set.time_machine.as_ref()
-        && let Err(err) = engine.control_time_machine(
-            set.id,
-            history.node.clone(),
-            history.stream,
-            TimeMachineAction::Disarm,
-            TimeMachineNode::default(),
-        )
-    {
-        tracing::warn!(%err, set = set.id, "could not disarm a time machine on switch");
-    }
-    if let Some(export) = set.network_export.as_ref()
-        && let Err(err) = engine.stop_network_export(set.id, &export.node)
-    {
-        tracing::warn!(%err, set = set.id, "could not stop a network export on switch");
-    }
 }
 
 /// How much of what a node remembered the radio bound there could actually take.

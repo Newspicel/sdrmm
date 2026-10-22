@@ -1,6 +1,4 @@
-use sdrmm_wire::{
-    NodeBody, PatchGraph, PatchRefusal, StateSnapshot, TimeMachineAction, TimeMachineNode,
-};
+use sdrmm_wire::{NodeBody, PatchGraph, PatchRefusal, StateSnapshot};
 
 use crate::{AppState, resolved::Resolved, workspace};
 
@@ -122,16 +120,6 @@ fn stop_dropped_captures(
                 &export.node,
                 engine.stop_network_export(set.id, &export.node).map(drop),
             );
-        }
-        if let Some(history) = set.time_machine.as_ref().filter(|h| dropped(&h.node)) {
-            let stopped = engine.control_time_machine(
-                set.id,
-                history.node.clone(),
-                history.stream,
-                TimeMachineAction::Disarm,
-                TimeMachineNode::default(),
-            );
-            note(&history.node, stopped.map(drop));
         }
         for channel in &set.channels {
             if let Some(export) = channel.network_export.as_ref().filter(|e| dropped(&e.node)) {

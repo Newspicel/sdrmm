@@ -14,6 +14,7 @@ const NODE: &str = "capture-health-history";
 fn settings() -> TimeMachineNode {
     TimeMachineNode {
         history_seconds: super::number("SDRMM_CAPTURE_HISTORY_SECONDS", 1),
+        armed: true,
     }
 }
 
@@ -33,7 +34,7 @@ pub(super) fn start(engine: &Engine, sets: &[(u32, Vec<u32>)]) {
     let settings = settings();
     for (ds, _) in sets {
         engine
-            .control_time_machine(*ds, NODE.to_owned(), 0, TimeMachineAction::Arm, settings)
+            .arm_time_machine(*ds, NODE.to_owned(), 0, settings)
             .expect("arm history");
     }
     let deadline = Instant::now() + Duration::from_secs(10 + u64::from(settings.history_seconds));
@@ -56,13 +57,7 @@ pub(super) fn start(engine: &Engine, sets: &[(u32, Vec<u32>)]) {
     }
     for (ds, _) in sets {
         engine
-            .control_time_machine(
-                *ds,
-                NODE.to_owned(),
-                0,
-                TimeMachineAction::Capture,
-                settings,
-            )
+            .control_time_machine(*ds, NODE, TimeMachineAction::Capture)
             .expect("capture history");
     }
 }
@@ -77,7 +72,7 @@ pub(super) fn finish(
     let settings = settings();
     for (ds, _) in sets {
         let status = engine
-            .control_time_machine(*ds, NODE.to_owned(), 0, TimeMachineAction::Stop, settings)
+            .control_time_machine(*ds, NODE, TimeMachineAction::Stop)
             .expect("finish history capture");
         let capture = status.capture.expect("history recording");
         eprintln!(
@@ -102,7 +97,7 @@ pub(super) fn finish(
             );
         }
         engine
-            .control_time_machine(*ds, NODE.to_owned(), 0, TimeMachineAction::Disarm, settings)
+            .disarm_time_machine(*ds, NODE)
             .expect("disarm history");
     }
 }

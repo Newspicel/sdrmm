@@ -6,7 +6,7 @@ use std::{
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
     AUDIO_PORT, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeKind, NodeProblem, PatchGraph,
-    ProblemSource, ResolvedPatch, StateScope, StateSnapshot,
+    ProblemSource, ResolvedPatch, StateScope, StateSnapshot, TimeMachineNode,
 };
 
 use crate::{
@@ -26,6 +26,7 @@ pub(crate) struct Hooks {
 
 const ONE_TAKE_PER_CHANNEL: &str = "Records each channel once";
 const ONE_TAKE_PER_RADIO: &str = "Another recorder holds this radio";
+const ONE_HISTORY_PER_RADIO: &str = "Another time machine holds this radio";
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct AudioTake {
@@ -45,6 +46,7 @@ enum Target {
     Audio(AudioTake),
     Iq { device_set: u32 },
     Baseband { device_set: u32, channel: u32 },
+    History { device_set: u32 },
 }
 
 #[derive(Default)]
@@ -73,6 +75,8 @@ impl Recorders {
         let (audio, mut doubled) = wanted_audio(graph, patch);
         let (iq, held) = wanted_iq(graph, patch);
         doubled.extend(held);
+        let (history, taken) = wanted_history(graph, patch);
+        doubled.extend(taken);
         hooks
             .problems
             .replace(engine, ProblemSource::Recorder, &doubled);
@@ -84,6 +88,7 @@ impl Recorders {
             &mut wanted_targets,
         );
         self.iq(&mut tick, iq, &snapshot, &mut wanted_targets);
+        self.history(&mut tick, history, &snapshot, &mut wanted_targets);
         self.failures
             .retain(|target, _| wanted_targets.contains(target));
         tick.finish();
@@ -169,6 +174,46 @@ impl Recorders {
                     device_set,
                     channel,
                 }),
+        );
+    }
+
+    fn history(
+        &mut self,
+        tick: &mut Tick<'_>,
+        wanted: HashMap<u32, Hold>,
+        snapshot: &StateSnapshot,
+        targets: &mut HashSet<Target>,
+    ) {
+        let current = held_history(snapshot);
+        for (&device_set, hold) in &current {
+            if wanted.get(&device_set) == Some(hold) {
+                continue;
+            }
+            match tick.engine.disarm_time_machine(device_set, &hold.node) {
+                Ok(status) => tick.finished |= status.capture.is_some(),
+                Err(error) => {
+                    tracing::warn!(device_set, %error, "could not let go of a time machine");
+                }
+            }
+        }
+        for (&device_set, want) in &wanted {
+            if current.get(&device_set) == Some(want) {
+                continue;
+            }
+            let settings = TimeMachineNode {
+                history_seconds: want.history_seconds,
+                armed: true,
+            };
+            let result = tick
+                .engine
+                .arm_time_machine(device_set, want.node.clone(), want.stream, settings)
+                .map(|_| ());
+            self.outcome(Target::History { device_set }, result);
+        }
+        targets.extend(
+            wanted
+                .into_keys()
+                .map(|device_set| Target::History { device_set }),
         );
     }
 
@@ -398,6 +443,71 @@ fn wanted_iq(graph: &PatchGraph, patch: &ResolvedPatch) -> (HashMap<u32, Take>, 
     (wanted, held)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Hold {
+    node: String,
+    stream: u32,
+    history_seconds: u32,
+}
+
+fn held_history(snapshot: &StateSnapshot) -> HashMap<u32, Hold> {
+    snapshot
+        .device_sets
+        .iter()
+        .filter_map(|set| {
+            set.time_machine.as_ref().map(|held| {
+                let hold = Hold {
+                    node: held.node.clone(),
+                    stream: held.stream,
+                    history_seconds: held.history_seconds,
+                };
+                (set.id, hold)
+            })
+        })
+        .collect()
+}
+
+fn armed_history(body: &NodeBody) -> Option<&TimeMachineNode> {
+    match body {
+        NodeBody::TimeMachine(history) if history.armed => Some(history),
+        _ => None,
+    }
+}
+
+fn wanted_history(
+    graph: &PatchGraph,
+    patch: &ResolvedPatch,
+) -> (HashMap<u32, Hold>, Vec<NodeProblem>) {
+    let mut wanted: HashMap<u32, Hold> = HashMap::new();
+    let mut taken = Vec::new();
+    for node in &graph.nodes {
+        let Some(history) = armed_history(&node.body) else {
+            continue;
+        };
+        let mut shut_out = false;
+        for (device_set, stream) in patch
+            .feeds(&node.id, IQ_PORT)
+            .iter()
+            .filter_map(|feed| feed.tap.as_ref()?.lane())
+        {
+            let hold = wanted.entry(device_set).or_insert_with(|| Hold {
+                node: node.id.clone(),
+                stream,
+                history_seconds: history.history_seconds,
+            });
+            shut_out |= hold.node != node.id;
+        }
+        if shut_out {
+            taken.push(NodeProblem {
+                node: node.id.clone(),
+                source: ProblemSource::Recorder,
+                text: ONE_HISTORY_PER_RADIO.to_owned(),
+            });
+        }
+    }
+    (wanted, taken)
+}
+
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::{
@@ -446,6 +556,22 @@ mod tests {
 
     fn on(recording: bool) -> RecorderNode {
         RecorderNode { recording }
+    }
+
+    fn history_node(armed: bool) -> TimeMachineNode {
+        TimeMachineNode {
+            history_seconds: 1,
+            armed,
+        }
+    }
+
+    fn hooks() -> Hooks {
+        Hooks {
+            store: Arc::new(Store::open(None).expect("store")),
+            gate: Arc::new(Mutex::new(())),
+            gps: Arc::new(GpsHub::default()),
+            problems: Arc::default(),
+        }
     }
 
     fn audio_on(recording: bool) -> AudioRecorderNode {
@@ -615,16 +741,81 @@ mod tests {
     }
 
     #[test]
+    fn a_second_time_machine_on_one_radio_says_it_is_shut_out() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let (engine, ds, _) = radio(&dir);
+        let mut graph = patch(false);
+        for id in ["history", "late"] {
+            graph
+                .nodes
+                .push(node(id, NodeBody::TimeMachine(history_node(true))));
+            graph.edges.push(wire(("dev", "iq"), (id, "iq")));
+        }
+        let resolved = resolved(Some(graph), &engine);
+        let (wanted, taken) = wanted_history(&resolved.graph, &resolved.patch);
+        assert_eq!(
+            wanted.get(&ds).map(|hold| hold.node.as_str()),
+            Some("history")
+        );
+        assert_eq!(
+            taken,
+            vec![NodeProblem {
+                node: "late".to_owned(),
+                source: ProblemSource::Recorder,
+                text: ONE_HISTORY_PER_RADIO.to_owned(),
+            }]
+        );
+        engine.remove_device_set(ds).expect("close");
+    }
+
+    #[test]
+    fn the_patch_arms_the_time_machine_and_takes_it_back() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let (engine, ds, _) = radio(&dir);
+        let hooks = hooks();
+        let mut recorders = Recorders::default();
+        let drawn = |armed: bool| {
+            let mut graph = patch(false);
+            graph
+                .nodes
+                .push(node("history", NodeBody::TimeMachine(history_node(armed))));
+            graph.edges.push(wire(("dev", "iq"), ("history", "iq")));
+            graph
+        };
+        let holder = || {
+            engine.snapshot().device_sets[0]
+                .time_machine
+                .as_ref()
+                .map(|held| held.node.clone())
+        };
+
+        recorders.reconcile(&engine, &resolved(Some(drawn(true)), &engine), &hooks);
+        assert_eq!(holder().as_deref(), Some("history"));
+        recorders.reconcile(&engine, &resolved(Some(drawn(true)), &engine), &hooks);
+        assert_eq!(
+            holder().as_deref(),
+            Some("history"),
+            "a second tick re-armed"
+        );
+
+        recorders.reconcile(&engine, &resolved(Some(drawn(false)), &engine), &hooks);
+        assert_eq!(holder(), None);
+
+        recorders.reconcile(&engine, &resolved(Some(drawn(true)), &engine), &hooks);
+        recorders.reconcile(&engine, &resolved(Some(patch(false)), &engine), &hooks);
+        assert_eq!(
+            holder(),
+            None,
+            "a time machine off the canvas holds nothing"
+        );
+        engine.remove_device_set(ds).expect("close");
+    }
+
+    #[test]
     fn the_switches_on_the_patch_start_and_stop_every_kind_of_recording() {
         let dir = tempfile::TempDir::new().expect("tempdir");
         let (engine, ds, ch) = radio(&dir);
-        let store = Arc::new(Store::open(None).expect("store"));
-        let hooks = Hooks {
-            store,
-            gate: Arc::new(Mutex::new(())),
-            gps: Arc::new(GpsHub::default()),
-            problems: Arc::default(),
-        };
+        let hooks = hooks();
         let mut recorders = Recorders::default();
 
         recorders.reconcile(&engine, &resolved(Some(patch(true)), &engine), &hooks);

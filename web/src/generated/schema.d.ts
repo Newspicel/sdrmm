@@ -9874,8 +9874,10 @@ export interface components {
             uplink_scrambling: number;
         };
         /** @enum {string} */
-        TimeMachineAction: "arm" | "capture" | "stop" | "disarm";
+        TimeMachineAction: "capture" | "stop";
         TimeMachineNode: {
+            /** @default false */
+            armed: boolean;
             /**
              * Format: int32
              * @default 10

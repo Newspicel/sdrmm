@@ -603,7 +603,7 @@ async fn switching_between_workspaces_sharing_a_radio_restores_each_ones_setting
 }
 
 #[tokio::test]
-async fn switching_workspaces_lets_go_of_the_time_machine_the_old_one_armed() {
+async fn a_time_machine_follows_its_workspace_in_and_out() {
     let (app, _state) = test_router_with_state();
     let first = store_siggen_workspace(&app).await;
     apply(&app, first).await;
@@ -612,52 +612,38 @@ async fn switching_workspaces_lets_go_of_the_time_machine_the_old_one_armed() {
     draw(
         &app,
         "history",
-        history_node(),
+        history_node(true),
         &[[&radio, "iq", "history", "iq"]],
     )
     .await;
-    arm_history(&app, "history").await;
+    assert_eq!(wait_for_history(&app, ds).await.node, "history");
 
     let second = store_second_workspace(&app, "Marine", "am").await;
     activate(&app, second).await;
-
     let sets = get_state(&app).await.device_sets;
     assert_eq!(sets.len(), 1, "the shared radio stayed open");
-    assert!(
-        sets[0].time_machine.is_none(),
-        "the switch left the outgoing workspace's time machine holding the radio"
-    );
+    wait_for_no_history(&app, sets[0].id).await;
 
     let radio = radio_at(&app, sets[0].id).await;
     draw(
         &app,
-        "history-b",
-        history_node(),
-        &[[&radio, "iq", "history-b", "iq"]],
+        "other-history",
+        history_node(true),
+        &[[&radio, "iq", "other-history", "iq"]],
     )
     .await;
-    arm_history(&app, "history-b").await;
     assert_eq!(
-        get_state(&app).await.device_sets[0]
-            .time_machine
-            .as_ref()
-            .map(|held| held.node.as_str()),
-        Some("history-b")
+        wait_for_history(&app, sets[0].id).await.node,
+        "other-history"
     );
-}
 
-fn history_node() -> sdrmm_wire::NodeBody {
-    sdrmm_wire::NodeBody::TimeMachine(sdrmm_wire::TimeMachineNode { history_seconds: 1 })
-}
-
-async fn arm_history(app: &Router, node: &str) {
-    let (status, body) = act_on(
-        app,
-        node,
-        serde_json::json!({"action": "time_machine", "with": "arm"}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    activate(&app, first).await;
+    let ds = get_state(&app).await.device_sets[0].id;
+    assert_eq!(
+        wait_for_history(&app, ds).await.node,
+        "history",
+        "the first workspace came back without its own time machine"
+    );
 }
 
 #[tokio::test]

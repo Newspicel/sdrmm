@@ -77,16 +77,16 @@ describe("timeMachineMutationOptions", () => {
     });
     const options = timeMachineMutationOptions("history", request);
 
-    await options.mutationFn("arm");
-    await options.mutationFn("disarm");
+    await options.mutationFn("capture");
+    await options.mutationFn("stop");
 
     expect(seen).toEqual([
-      { action: "time_machine", with: "arm" },
-      { action: "time_machine", with: "disarm" },
+      { action: "time_machine", with: "capture" },
+      { action: "time_machine", with: "stop" },
     ]);
     expect(request).toHaveBeenLastCalledWith("history", {
       action: "time_machine",
-      with: "disarm",
+      with: "stop",
     });
   });
 
@@ -94,7 +94,7 @@ describe("timeMachineMutationOptions", () => {
     const notify = vi.fn();
     const options = timeMachineMutationOptions("history", vi.fn(), notify);
 
-    options.onError(new Error("Wire a running radio's IQ into it"));
-    expect(notify).toHaveBeenCalledWith("Wire a running radio's IQ into it");
+    options.onError(new Error("Arm it first"));
+    expect(notify).toHaveBeenCalledWith("Arm it first");
   });
 });
