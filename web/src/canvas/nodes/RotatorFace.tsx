@@ -27,22 +27,36 @@ import {
   AZIMUTH_RANGES,
   aimLabel,
   elevationMax,
+  flipped,
+  flipsOver,
   parsedBaud,
   ROTATOR_AXES,
   ROTATOR_BAUDS,
   ROTATOR_MODES,
   rotctldLink,
   serialLink,
+  winegardLink,
   withRange,
 } from "./rotator";
 
 type Pick = (link: RotatorLink) => void;
-type LinkTab = "gs232" | "rotctld";
+type LinkTab = "gs232" | "winegard" | "rotctld";
+type SerialRotator = Extract<RotatorLink, { type: "gs232" | "winegard" }>;
 
 const LINK_TABS = [
   { value: "gs232" as const, label: "GS-232", title: "A Yaesu GS-232 controller on a serial port" },
+  {
+    value: "winegard" as const,
+    label: "Winegard",
+    title: "A Winegard Trav'ler motor console on a serial port",
+  },
   { value: "rotctld" as const, label: "rotctld", title: "A Hamlib rotctld daemon" },
 ];
+
+const PORT_TITLES: Record<SerialRotator["type"], string> = {
+  gs232: "Serial port of the GS-232 controller",
+  winegard: "Serial port of the Trav'ler motor console",
+};
 
 export function RotatorFace({ node }: { node: PatchNode }) {
   if (node.kind !== "rotator") {
@@ -150,7 +164,7 @@ function AimChips({
           value={aim.elevation_deg}
           unit="°"
           min={0}
-          max={elevationMax(axes, data.flip ?? false)}
+          max={elevationMax(axes, flipped(data))}
           step={1}
           onCommit={(elevation_deg) => set({ elevation_deg })}
         />
@@ -177,7 +191,7 @@ function MountChips({ data, onEdit }: { data: RotatorNode; onEdit: Edit }) {
         options={AZIMUTH_RANGES}
         onChange={(azimuth_max_deg) => onEdit(withRange(data, azimuth_max_deg))}
       />
-      {axes === "azimuth_elevation" && (
+      {axes === "azimuth_elevation" && flipsOver(data.link) && (
         <ChoiceChip
           label="Flip"
           title="Elevation reaches 180°, so passes over the top need no azimuth swing"
@@ -210,12 +224,16 @@ function LinkChoices({ onPick }: { onPick: Pick }) {
   return (
     <div className="flex flex-col gap-2 p-2">
       <Segmented label="Rotator link" value={tab} options={LINK_TABS} onChange={setTab} fill />
-      {tab === "gs232" ? <SerialChoices onPick={onPick} /> : <RotctldForm onPick={onPick} />}
+      {tab === "rotctld" ? (
+        <RotctldForm onPick={onPick} />
+      ) : (
+        <SerialChoices onPick={onPick} make={tab === "winegard" ? winegardLink : serialLink} />
+      )}
     </div>
   );
 }
 
-function SerialChoices({ onPick }: { onPick: Pick }) {
+function SerialChoices({ onPick, make }: { onPick: Pick; make: (device: string) => RotatorLink }) {
   const devices = useQuery(nmeaDevicesQuery());
   const listed = devices.data?.devices ?? [];
   return (
@@ -227,7 +245,7 @@ function SerialChoices({ onPick }: { onPick: Pick }) {
             key={device.path}
             type="button"
             className={`${BTN} h-auto min-h-7 justify-start py-1.5 text-left`}
-            onClick={() => onPick(serialLink(device.path))}
+            onClick={() => onPick(make(device.path))}
           >
             <span className="flex w-full min-w-0 flex-col gap-0.5">
               <span className="truncate">{device.path}</span>
@@ -298,17 +316,11 @@ function LinkChips({ link, onChange }: { link: RotatorLink; onChange: Pick }) {
   return <SerialChips link={link} onChange={onChange} />;
 }
 
-function SerialChips({
-  link,
-  onChange,
-}: {
-  link: Extract<RotatorLink, { type: "gs232" }>;
-  onChange: Pick;
-}) {
+function SerialChips({ link, onChange }: { link: SerialRotator; onChange: Pick }) {
   const devices = useQuery(nmeaDevicesQuery());
   return (
     <>
-      <SettingChip label="Port" value={link.device} title="Serial port of the GS-232 controller">
+      <SettingChip label="Port" value={link.device} title={PORT_TITLES[link.type]}>
         {() => (
           <ChipField label="Serial device">
             <TextAutocomplete

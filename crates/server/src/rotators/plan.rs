@@ -16,7 +16,7 @@ pub(super) struct Mount {
 impl Mount {
     pub(super) fn of(node: &RotatorNode) -> Self {
         Self {
-            azimuth_max_deg: node.azimuth_max_deg,
+            azimuth_max_deg: node.azimuth_reach_deg(),
             elevation_max_deg: node.elevation_max_deg(),
             flips: node.flips(),
         }

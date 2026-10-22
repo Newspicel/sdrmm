@@ -32177,6 +32177,30 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "device",
+              "baud",
+              "type"
+            ],
+            "properties": {
+              "baud": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "device": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "winegard"
+                ]
+              }
+            }
           }
         ]
       },

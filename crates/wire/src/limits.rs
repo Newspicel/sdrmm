@@ -117,6 +117,7 @@ pub struct RotatorLimits {
     pub level_elevation_deg: f64,
     pub flip_elevation_deg: f64,
     pub gs232_baud: u32,
+    pub winegard_baud: u32,
     pub rotctld_address: &'static str,
 }
 
@@ -133,6 +134,7 @@ pub const ROTATOR_LIMITS: RotatorLimits = RotatorLimits {
     level_elevation_deg: crate::rotator::LEVEL_ELEVATION_DEG,
     flip_elevation_deg: crate::rotator::FLIP_ELEVATION_DEG,
     gs232_baud: crate::rotator::DEFAULT_GS232_BAUD,
+    winegard_baud: crate::rotator::DEFAULT_WINEGARD_BAUD,
     rotctld_address: crate::rotator::DEFAULT_ROTCTLD_ADDRESS,
 };
 

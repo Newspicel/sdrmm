@@ -8,6 +8,9 @@ use crate::{
 
 pub const DEFAULT_ROTCTLD_ADDRESS: &str = "127.0.0.1:4533";
 pub const DEFAULT_GS232_BAUD: u32 = 9_600;
+pub const DEFAULT_WINEGARD_BAUD: u32 = 57_600;
+pub const MAX_WINEGARD_AZIMUTH_DEG: f64 = 445.0;
+pub const MAX_WINEGARD_ELEVATION_DEG: f64 = 94.0;
 pub const DEFAULT_ROTATOR_TOLERANCE_DEG: f64 = 2.0;
 pub const MIN_ROTATOR_TOLERANCE_DEG: f64 = 0.5;
 pub const MAX_ROTATOR_TOLERANCE_DEG: f64 = 20.0;
@@ -21,13 +24,14 @@ pub const FLIP_ELEVATION_DEG: f64 = 180.0;
 pub enum RotatorLink {
     Gs232 { device: String, baud: u32 },
     Rotctld { address: String },
+    Winegard { device: String, baud: u32 },
 }
 
 impl RotatorLink {
     #[must_use]
     pub fn valid(&self) -> bool {
         match self {
-            Self::Gs232 { device, baud } => {
+            Self::Gs232 { device, baud } | Self::Winegard { device, baud } => {
                 !device.is_empty()
                     && device.len() <= MAX_POSITION_ENDPOINT_LEN
                     && (MIN_NMEA_BAUD..=MAX_NMEA_BAUD).contains(baud)
@@ -35,6 +39,22 @@ impl RotatorLink {
             Self::Rotctld { address } => {
                 address.len() <= MAX_POSITION_ENDPOINT_LEN && valid_host_port(address)
             }
+        }
+    }
+
+    #[must_use]
+    pub const fn azimuth_limit_deg(&self) -> f64 {
+        match self {
+            Self::Winegard { .. } => MAX_WINEGARD_AZIMUTH_DEG,
+            _ => MAX_ROTATOR_AZIMUTH_DEG,
+        }
+    }
+
+    #[must_use]
+    pub const fn elevation_limit_deg(&self) -> f64 {
+        match self {
+            Self::Winegard { .. } => MAX_WINEGARD_ELEVATION_DEG,
+            _ => FLIP_ELEVATION_DEG,
         }
     }
 }
@@ -121,16 +141,29 @@ impl RotatorNode {
 
     #[must_use]
     pub fn flips(&self) -> bool {
-        self.flip && self.axes == RotatorAxes::AzimuthElevation
+        self.flip
+            && self.axes == RotatorAxes::AzimuthElevation
+            && self.limited(FLIP_ELEVATION_DEG, RotatorLink::elevation_limit_deg)
+                >= FLIP_ELEVATION_DEG
     }
 
     #[must_use]
     pub fn elevation_max_deg(&self) -> f64 {
-        match (self.axes, self.flips()) {
+        let max = match (self.axes, self.flips()) {
             (RotatorAxes::Azimuth, _) => 0.0,
             (_, true) => FLIP_ELEVATION_DEG,
             (_, false) => LEVEL_ELEVATION_DEG,
-        }
+        };
+        self.limited(max, RotatorLink::elevation_limit_deg)
+    }
+
+    #[must_use]
+    pub fn azimuth_reach_deg(&self) -> f64 {
+        self.limited(self.azimuth_max_deg, RotatorLink::azimuth_limit_deg)
+    }
+
+    fn limited(&self, max: f64, limit: fn(&RotatorLink) -> f64) -> f64 {
+        self.link.as_ref().map_or(max, |link| max.min(limit(link)))
     }
 
     #[must_use]
@@ -231,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn both_links_take_their_usual_settings() {
+    fn every_link_takes_its_usual_settings() {
         for link in [
             RotatorLink::Gs232 {
                 device: "/dev/ttyUSB0".to_owned(),
@@ -240,9 +273,51 @@ mod tests {
             RotatorLink::Rotctld {
                 address: DEFAULT_ROTCTLD_ADDRESS.to_owned(),
             },
+            RotatorLink::Winegard {
+                device: "/dev/ttyUSB0".to_owned(),
+                baud: DEFAULT_WINEGARD_BAUD,
+            },
         ] {
             assert!(link.valid(), "{link:?}");
         }
+        assert!(
+            !RotatorLink::Winegard {
+                device: String::new(),
+                baud: DEFAULT_WINEGARD_BAUD,
+            }
+            .valid()
+        );
+    }
+
+    #[test]
+    fn a_winegard_mount_reaches_no_further_than_its_travel() {
+        let travler = RotatorNode {
+            link: Some(RotatorLink::Winegard {
+                device: "/dev/ttyUSB0".to_owned(),
+                baud: DEFAULT_WINEGARD_BAUD,
+            }),
+            azimuth_max_deg: MAX_ROTATOR_AZIMUTH_DEG,
+            flip: true,
+            ..RotatorNode::default()
+        };
+        assert!(travler.valid());
+        assert!((travler.azimuth_reach_deg() - MAX_WINEGARD_AZIMUTH_DEG).abs() < f64::EPSILON);
+        assert!(!travler.flips());
+        assert!((travler.elevation_max_deg() - LEVEL_ELEVATION_DEG).abs() < f64::EPSILON);
+        let turntable = RotatorNode {
+            axes: RotatorAxes::Azimuth,
+            ..travler
+        };
+        assert!(turntable.elevation_max_deg().abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn a_rotator_without_a_link_reaches_its_whole_range() {
+        let node = RotatorNode {
+            azimuth_max_deg: MAX_ROTATOR_AZIMUTH_DEG,
+            ..RotatorNode::default()
+        };
+        assert!((node.azimuth_reach_deg() - MAX_ROTATOR_AZIMUTH_DEG).abs() < f64::EPSILON);
     }
 
     #[test]

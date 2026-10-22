@@ -15,12 +15,18 @@ On auto tuning the radio follows the decoder, as it does for a scanner.
 
 ## Point an antenna
 
-1. Add **Rotator** and pick its link: a Yaesu **GS-232** controller on a serial port, or Hamlib
-   **rotctld** (`127.0.0.1:4533` by default).
+1. Add **Rotator** and pick its link: a Yaesu **GS-232** controller on a serial port, a
+   **Winegard** Trav'ler mount on a serial port, or Hamlib **rotctld** (`127.0.0.1:4533` by
+   default).
 2. Wire Satellite `control` to the Rotator's `control`.
 
 During a pass the rotator follows the satellite. Between passes it waits where the next one
 rises.
+
+A Winegard link talks to the motor console at 57600 baud, on the ODU debug port or the board's
+MOT/DCM header. It reads the steps per revolution each motor reports, so SM and LG elevation
+motors need no setting, and it holds the mount inside its own travel of 445° azimuth and 94°
+elevation.
 
 | Setting | Does |
 |---|---|

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { aimLabel, elevationMax, parsedBaud, rotctldLink, serialLink, withRange } from "./rotator";
+import {
+  aimLabel,
+  elevationMax,
+  flipped,
+  parsedBaud,
+  rotctldLink,
+  serialLink,
+  winegardLink,
+  withRange,
+} from "./rotator";
 
 describe("aimLabel", () => {
   it("names the bearing and the elevation", () => {
@@ -19,6 +28,19 @@ describe("elevationMax", () => {
     expect(elevationMax("azimuth_elevation", false)).toBe(90);
     expect(elevationMax("azimuth_elevation", true)).toBe(180);
     expect(elevationMax("azimuth", true)).toBe(0);
+  });
+});
+
+describe("flipped", () => {
+  it("stays off for a mount whose elevation cannot pass level", () => {
+    const flip = { tolerance_deg: 2, flip: true };
+    expect(flipped({ ...flip, link: { type: "gs232", device: "/dev/ttyUSB0", baud: 9_600 } })).toBe(
+      true,
+    );
+    expect(
+      flipped({ ...flip, link: { type: "winegard", device: "/dev/ttyUSB0", baud: 57_600 } }),
+    ).toBe(false);
+    expect(flipped({ tolerance_deg: 2 })).toBe(false);
   });
 });
 
@@ -46,6 +68,11 @@ describe("links", () => {
       type: "gs232",
       device: "/dev/ttyUSB0",
       baud: 9_600,
+    });
+    expect(winegardLink("/dev/ttyUSB0")).toEqual({
+      type: "winegard",
+      device: "/dev/ttyUSB0",
+      baud: 57_600,
     });
     expect(rotctldLink()).toEqual({ type: "rotctld", address: "127.0.0.1:4533" });
   });

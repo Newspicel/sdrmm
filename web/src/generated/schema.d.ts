@@ -8625,6 +8625,12 @@ export interface components {
             address: string;
             /** @enum {string} */
             type: "rotctld";
+        } | {
+            /** Format: int32 */
+            baud: number;
+            device: string;
+            /** @enum {string} */
+            type: "winegard";
         };
         /** @enum {string} */
         RotatorMode: "track" | "manual" | "park" | "stop";

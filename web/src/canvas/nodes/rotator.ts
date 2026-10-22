@@ -3,7 +3,7 @@ import { ROTATOR_LIMITS } from "../../lib/limits";
 import type { RotatorAxes, RotatorLink, RotatorMode, RotatorNode, SkyPoint } from "../../lib/types";
 import { compass } from "./satellite";
 
-export const ROTATOR_BAUDS = [1_200, 4_800, 9_600, 19_200, 38_400].map((baud) => ({
+export const ROTATOR_BAUDS = [1_200, 4_800, 9_600, 19_200, 38_400, 57_600, 115_200].map((baud) => ({
   value: String(baud),
 }));
 
@@ -39,6 +39,14 @@ export function elevationMax(axes: RotatorAxes, flip: boolean): number {
   return flip ? ROTATOR_LIMITS.flip_elevation_deg : ROTATOR_LIMITS.level_elevation_deg;
 }
 
+export function flipsOver(link: RotatorLink | null | undefined): boolean {
+  return link?.type !== "winegard";
+}
+
+export function flipped(data: RotatorNode): boolean {
+  return (data.flip ?? false) && flipsOver(data.link);
+}
+
 export function withRange(data: RotatorNode, azimuthMaxDeg: number): Partial<RotatorNode> {
   const within = (aim: SkyPoint | undefined): SkyPoint | undefined =>
     aim === undefined
@@ -49,6 +57,10 @@ export function withRange(data: RotatorNode, azimuthMaxDeg: number): Partial<Rot
 
 export function serialLink(device: string): RotatorLink {
   return { type: "gs232", device, baud: ROTATOR_LIMITS.gs232_baud };
+}
+
+export function winegardLink(device: string): RotatorLink {
+  return { type: "winegard", device, baud: ROTATOR_LIMITS.winegard_baud };
 }
 
 export function rotctldLink(address: string = ROTATOR_LIMITS.rotctld_address): RotatorLink {

@@ -15,6 +15,7 @@ mod gs232;
 mod link;
 mod plan;
 mod rotctld;
+mod winegard;
 
 use driver::Driver;
 

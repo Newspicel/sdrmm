@@ -405,6 +405,7 @@
     "level_elevation_deg": 90.0,
     "flip_elevation_deg": 180.0,
     "gs232_baud": 9600,
+    "winegard_baud": 57600,
     "rotctld_address": "127.0.0.1:4533"
   },
   "patch": {

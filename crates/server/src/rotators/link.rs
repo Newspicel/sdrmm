@@ -6,7 +6,7 @@ use std::{
 
 use sdrmm_wire::{RotatorAxes, RotatorLink, SkyPoint};
 
-use super::{gs232::Gs232, rotctld::Rotctld};
+use super::{gs232::Gs232, rotctld::Rotctld, winegard::Winegard};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
@@ -36,6 +36,10 @@ pub(super) fn open(link: &RotatorLink, axes: RotatorAxes) -> Result<Box<dyn Link
         RotatorLink::Gs232 { device, baud } => {
             let port = serialport::new(device, *baud).timeout(IO_TIMEOUT).open()?;
             Ok(Box::new(Gs232::new(port, axes)))
+        }
+        RotatorLink::Winegard { device, baud } => {
+            let port = serialport::new(device, *baud).timeout(IO_TIMEOUT).open()?;
+            Ok(Box::new(Winegard::open(port)?))
         }
         RotatorLink::Rotctld { address } => {
             let target = address
