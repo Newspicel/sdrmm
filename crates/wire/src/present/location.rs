@@ -1,6 +1,6 @@
 use super::{
-    EventPayload, Field, Place, Presentation, Unit, bearing, feet_to_metres, fields, lat_lon,
-    number, position, text, trimmed,
+    EventPayload, Field, Place, Presentation, Unit, bearing, feet_to_metres, fields,
+    knots_to_kilometres_per_hour, lat_lon, number, position, text, trimmed,
 };
 use crate::{
     decode::{AprsPacket, EventKind},
@@ -31,8 +31,22 @@ fn aprs_fields(p: &AprsPacket) -> Vec<Field> {
         ("Symbol", text(p.symbol.as_deref())),
         ("Position", position(p.lat, p.lon)),
         ("Course", number(p.course_deg, Unit::Degrees, 0)),
-        ("Speed", number(p.speed_kt, Unit::Knots, 1)),
-        ("Altitude", number(p.altitude_ft, Unit::Feet, 0)),
+        (
+            "Speed",
+            number(
+                p.speed_kt.map(knots_to_kilometres_per_hour),
+                Unit::KilometresPerHour,
+                1,
+            ),
+        ),
+        (
+            "Altitude",
+            number(
+                p.altitude_ft.map(|feet| feet_to_metres(feet.into())),
+                Unit::Metres,
+                0,
+            ),
+        ),
         ("Message", text(p.mic_e_message.as_deref())),
         ("Comment", text(p.comment.as_deref())),
     ]);
@@ -106,11 +120,16 @@ mod tests {
         );
         assert_eq!(
             view.field("Speed"),
-            number(Some(20.0), Unit::Knots, 1).as_ref()
+            number(
+                Some(knots_to_kilometres_per_hour(20.0)),
+                Unit::KilometresPerHour,
+                1
+            )
+            .as_ref()
         );
         assert_eq!(
             view.field("Altitude"),
-            number(Some(1500), Unit::Feet, 0).as_ref()
+            number(Some(feet_to_metres(1500.0)), Unit::Metres, 0).as_ref()
         );
         assert_eq!(view.field("Message"), text(Some("En Route")).as_ref());
         assert_eq!(

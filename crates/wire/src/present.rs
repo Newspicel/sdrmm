@@ -28,6 +28,7 @@ pub use wsjt::{grid_lat_lon, square_of};
 mod tests;
 
 const FEET_TO_METRES: f64 = 0.3048;
+const KNOTS_TO_KILOMETRES_PER_HOUR: f64 = 1.852;
 
 pub trait EventPayload: Clone + Serialize + DeserializeOwned {
     fn present(&self, kind: EventKind) -> Presentation;
@@ -291,6 +292,11 @@ pub fn lat_lon(lat: Option<f64>, lon: Option<f64>) -> Option<LatLon> {
 #[must_use]
 pub fn feet_to_metres(feet: f64) -> f32 {
     (feet * FEET_TO_METRES) as f32
+}
+
+#[must_use]
+pub fn knots_to_kilometres_per_hour(knots: f64) -> f32 {
+    (knots * KNOTS_TO_KILOMETRES_PER_HOUR) as f32
 }
 
 #[must_use]
