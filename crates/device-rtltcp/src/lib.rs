@@ -23,7 +23,8 @@ mod stream;
 
 const DRIVER_ID: &str = "rtltcp";
 
-const GREETING_PATIENCE: Duration = Duration::from_secs(15);
+const PATIENCE: Duration = Duration::from_secs(15);
+const BETWEEN_DIALS: Duration = Duration::from_millis(500);
 const GREETING_HANDOFF: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Default)]
@@ -74,17 +75,31 @@ impl DeviceDriver for RtlTcpDriver {
     }
 }
 
+fn dial(endpoint: &Endpoint) -> Result<Connection, DeviceError> {
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        let unanswered = match endpoint.connect_within(CONNECT_TIMEOUT) {
+            Ok(socket) => return Ok(Connection::new(socket)),
+            Err(unanswered) => unanswered,
+        };
+        if Instant::now() + BETWEEN_DIALS >= deadline {
+            return Err(unanswered);
+        }
+        std::thread::sleep(BETWEEN_DIALS);
+    }
+}
+
 fn connect(endpoint: &Endpoint) -> Result<(Connection, Greeting), DeviceError> {
-    let connection = Connection::new(endpoint.connect()?);
-    let deadline = Instant::now() + GREETING_PATIENCE;
+    let connection = dial(endpoint)?;
+    let deadline = Instant::now() + PATIENCE;
     let mut bytes = [0u8; GREETING_LEN];
     let mut got = 0;
     while got < GREETING_LEN {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return Err(DeviceError::InUse(format!(
-                "{endpoint}: no rtl_tcp greeting within {GREETING_PATIENCE:?}; the server serves \
-                 one client at a time"
+                "{endpoint}: no rtl_tcp greeting within {PATIENCE:?}; the server serves one \
+                 client at a time"
             )));
         }
         match connection.read(&mut bytes[got..], left.min(CONNECT_TIMEOUT)) {

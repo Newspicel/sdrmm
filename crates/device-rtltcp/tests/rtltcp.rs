@@ -81,6 +81,12 @@ fn fake_rtl_tcp(
     (FakeServer::spawn(session), observed)
 }
 
+fn late_rtl_tcp(away: Duration) -> (FakeServer, Observed) {
+    let observed: Observed = Arc::new(Mutex::new(HashMap::new()));
+    let session = rtl_tcp_session(*b"RTL0", 5, 29, false, observed.clone());
+    (FakeServer::spawn_after(away, session), observed)
+}
+
 fn one_client_rtl_tcp(teardown: Duration) -> (FakeServer, Observed) {
     let observed: Observed = Arc::new(Mutex::new(HashMap::new()));
     let session = rtl_tcp_session(*b"RTL0", 5, 29, false, observed.clone());
@@ -324,6 +330,18 @@ fn a_server_that_serves_one_client_streams_on_the_connection_it_greeted() {
         (commands(&observed, GREETED).len() >= REPLAY_IN_AGC).then_some(())
     });
     device.rx_stop();
+}
+
+#[test]
+fn opening_waits_out_a_server_whose_port_is_not_answering_yet() {
+    let (server, _) = late_rtl_tcp(Duration::from_secs(7));
+    let driver = RtlTcpDriver::new();
+    let mut device = open(&driver, &server.endpoint()).expect("opens once the server is back");
+    let (sink, blocks) = blocking_sink();
+    device.rx_start(vec![sink]).expect("streams");
+    blocks.recv_timeout(DEADLINE).expect("samples arrive");
+    device.rx_stop();
+    assert_eq!(server.connections(), 1);
 }
 
 #[test]

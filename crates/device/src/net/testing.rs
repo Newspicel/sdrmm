@@ -47,11 +47,30 @@ impl FakeServer {
     /// # Panics
     /// If the loopback interface cannot be bound.
     pub fn spawn(handle: impl Fn(TcpStream, usize) + Send + Sync + 'static) -> Self {
+        Self::spawn_after(Duration::ZERO, handle)
+    }
+
+    /// Starts one whose port only answers once `away` has passed, the way a server that is
+    /// restarting or still letting go of its last client does not answer yet.
+    ///
+    /// # Panics
+    /// If the loopback interface cannot be bound.
+    pub fn spawn_after(
+        away: Duration,
+        handle: impl Fn(TcpStream, usize) + Send + Sync + 'static,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
         let addr = listener.local_addr().expect("a bound address");
         let connections = Arc::new(AtomicUsize::new(0));
         let counted = connections.clone();
         std::thread::spawn(move || {
+            let listener = if away.is_zero() {
+                listener
+            } else {
+                drop(listener);
+                std::thread::sleep(away);
+                TcpListener::bind(addr).expect("rebind loopback")
+            };
             let handle = Arc::new(handle);
             for stream in listener.incoming().flatten() {
                 let nth = counted.fetch_add(1, Ordering::SeqCst);
