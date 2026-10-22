@@ -16,6 +16,7 @@ import {
   historyFill,
   MAX_HISTORY_SECONDS,
   MIN_HISTORY_SECONDS,
+  type TimeMachinePhase,
   timeMachineMutationOptions,
   timeMachinePhase,
 } from "../../components/timeMachine";
@@ -68,13 +69,7 @@ function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
           />
         </Chips>
         {status === null ? (
-          <FaceEmpty
-            hint={
-              phase.kind !== "unavailable"
-                ? `Arm it to keep the last ${seconds} s in memory`
-                : "Wire a device's IQ in"
-            }
-          />
+          <FaceEmpty hint={hintFor(phase, seconds)} />
         ) : (
           <HistoryReadout status={status} />
         )}
@@ -88,7 +83,7 @@ function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
             </Stat>
           </FaceStats>
         )}
-        {phase.kind === "idle" || phase.kind === "unavailable" ? (
+        {status === null ? (
           <Button
             type="button"
             className={BTN}
@@ -137,6 +132,17 @@ function TimeMachineNodeFace({ node }: { node: PatchNodeOf<"time_machine"> }) {
       </FaceFooter>
     </NodeShell>
   );
+}
+
+function hintFor(phase: TimeMachinePhase, seconds: number): string {
+  switch (phase.kind) {
+    case "unavailable":
+      return "Wire a device's IQ in";
+    case "busy":
+      return "Another time machine already holds this history";
+    default:
+      return `Arm it to keep the last ${seconds} s in memory`;
+  }
 }
 
 function HistoryReadout({ status }: { status: TimeMachineStatus }) {
