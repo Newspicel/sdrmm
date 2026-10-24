@@ -2145,7 +2145,9 @@
       "noaa weather",
       "weather radio",
       "wx",
-      "nws"
+      "nws",
+      "same",
+      "eas"
     ],
     "suggested": {
       "settings": {

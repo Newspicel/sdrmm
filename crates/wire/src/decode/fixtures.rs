@@ -189,6 +189,10 @@ const FIXTURES: &[(EventKind, &str)] = &[
         r#"{"seq":1,"ioc":"ioc576","lpm":"lpm120","width":1809,"lines":1200,"complete":true,"duration_ms":600000}"#,
     ),
     (
+        EventKind::Same,
+        r#"{"body":{"header":"alert","originator":"WXR","originator_name":"National Weather Service","event":"TOR","event_name":"Tornado Warning","locations":[{"part":0,"state":48,"county":201,"name":"Harris, TX"}],"valid_minutes":30,"issued_day":123,"issued_hour":22,"issued_minute":0,"station":"KEC55/NW"},"copies":3,"raw":"ZCZC-WXR-TOR-048201+0030-1232200-KEC55/NW-"}"#,
+    ),
+    (
         EventKind::Radiosonde,
         r#"{"sonde":"rs41","serial":"S1234567","lat":52.2,"lon":14.1,"altitude_m":12000.0,"heading_deg":45.0,"errors_corrected":0,"forecast":{"burst":{"lat":52.4,"lon":14.3},"burst_altitude_m":31000.0,"burst_seen":false,"landing":{"lat":52.3,"lon":14.6},"landing_in_s":5400.0,"path":[{"lat":52.2,"lon":14.1},{"lat":52.4,"lon":14.3},{"lat":52.3,"lon":14.6}]}}"#,
     ),

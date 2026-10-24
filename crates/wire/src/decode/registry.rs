@@ -311,6 +311,8 @@ decoder_events! {
         info("Meteor LRPT", "Pictures", Hue::Orange).caps(&[Log, Picture])),
     (Wefax, "wefax", crate::weather::WefaxPicture,
         info("WEFAX", "Pictures", Hue::Orange).caps(&[Log, Picture])),
+    (Same, "same", crate::same::SameMessage,
+        info("SAME", "Alerts", Hue::Orange).caps(&[Log, Station]).sighting()),
     (Radiosonde, "radiosonde", crate::weather::RadiosondeFrame,
         info("Radiosonde", "Sondes", Hue::Orange)
             .caps(&[Log, Station, Geo]).symbol(Symbol::Balloon).sighting()),

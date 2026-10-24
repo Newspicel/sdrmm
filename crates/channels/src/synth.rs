@@ -36,6 +36,7 @@ pub mod radiosonde;
 pub mod rds;
 pub mod remote_id;
 pub mod rtty;
+pub mod same;
 pub mod sarsat;
 pub mod selcall;
 pub mod sid;

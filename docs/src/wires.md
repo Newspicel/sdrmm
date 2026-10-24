@@ -70,6 +70,7 @@ Every port has a type and a contract. A wire joins an output to an input of the 
 | `apt` | NOAA APT | Pictures | log, picture |
 | `lrpt` | Meteor LRPT | Pictures | log, picture |
 | `wefax` | WEFAX | Pictures | log, picture |
+| `same` | SAME | Alerts | log, station |
 | `radiosonde` | Radiosonde | Sondes | log, station, geo |
 | `lora` | LoRa | Nodes | log, station, geo |
 | `remote_id` | Remote ID | Drones | log, station, geo |
@@ -356,7 +357,7 @@ Every decoded message in a table
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 58 kinds | many, keeps history, clips |
+| `events` | in | Events | 59 kinds | many, keeps history, clips |
 
 ### Event output
 
@@ -364,7 +365,7 @@ Sends events out, saves call audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 58 kinds | many |
+| `events` | in | Events | 59 kinds | many |
 
 ### Video
 
@@ -423,7 +424,7 @@ Saves logged rows as CSV or JSON
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `events` | in | Events | 58 kinds | many, keeps history |
+| `events` | in | Events | 59 kinds | many, keeps history |
 
 ### Rotator
 

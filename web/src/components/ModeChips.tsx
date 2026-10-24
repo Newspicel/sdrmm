@@ -92,7 +92,8 @@ export function ModeChips({
     case "ermes":
       return <PagerChips params={params} {...mode} />;
     case "eot":
-      return <EotChips params={params} {...mode} />;
+    case "same":
+      return <NarrowBandwidthChips params={params} {...mode} />;
     case "ism":
       return <IsmChips params={params} {...mode} />;
     case "wmbus":
@@ -412,15 +413,13 @@ function PagerChips({ params, onParams }: Mode<"flex" | "ermes">) {
   );
 }
 
-function EotChips({ params, onParams }: Mode<"eot">) {
-  const { settings } = params;
+function NarrowBandwidthChips({ params, onParams }: Mode<"eot" | "same">) {
+  const { type, settings } = params;
   return (
     <BandwidthChip
       valueHz={settings.bandwidth_hz ?? 12_500}
       optionsHz={[12_500, 25_000]}
-      onCommit={(bandwidth_hz) =>
-        onParams({ type: "eot", settings: { ...settings, bandwidth_hz } })
-      }
+      onCommit={(bandwidth_hz) => onParams({ type, settings: { ...settings, bandwidth_hz } })}
     />
   );
 }

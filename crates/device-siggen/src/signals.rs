@@ -117,6 +117,12 @@ pub static SIGNALS: &[Signal] = &[
         render: eot,
     },
     Signal {
+        id: "same",
+        label: "SAME alert",
+        rate_hz: NARROW,
+        render: same,
+    },
+    Signal {
         id: "sarsat",
         label: "406 MHz beacon",
         rate_hz: NARROW,
@@ -630,6 +636,12 @@ fn eot() -> Vec<Complex<f32>> {
         },
         NARROW,
     ));
+    iq
+}
+
+fn same() -> Vec<Complex<f32>> {
+    let mut iq = synth::same::alert("ZCZC-WXR-TOR-048201-048157+0030-1232200-KEC55/NW-", NARROW);
+    iq.extend(synth::same::alert("NNNN", NARROW));
     iq
 }
 

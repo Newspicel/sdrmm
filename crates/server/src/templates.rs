@@ -9,7 +9,7 @@ use sdrmm_wire::{
     IsmSurveyParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NodeBody,
     NoiseFigureParams, PatchEdge, PatchGraph, PatchNode, PerParams, PocsagParams, PortRef,
     Position, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
-    RttyParams, SarsatParams, SidParams, Squelch, SsbParams, SstvParams, StanagParams,
+    RttyParams, SameParams, SarsatParams, SidParams, Squelch, SsbParams, SstvParams, StanagParams,
     TemplateInfo, TetraParams, VIDEO_PORT, WMBUS_T_C_HZ, WefaxParams, WfmParams,
     WifiOccupancyParams, WmbusParams, WsjtParams, WsprParams, YsfParams,
 };
@@ -330,6 +330,27 @@ static TEMPLATES: &[Entry] = &[
             || ChannelParams::Eot(EotParams::default()),
             LOG_READ,
         )],
+    },
+    Entry {
+        id: "weather-radio",
+        name: "NOAA Weather Radio",
+        description: "Forecast voice plus the SAME alert headers that drive it.",
+        explainer: "The seven NWR channels between 162.400 and 162.550 MHz carry continuous \
+                    forecast voice. An alert is announced by a SAME header burst sent three \
+                    times before the voice and closed by an end-of-message burst after it. \
+                    The speaker plays the voice; the SAME node logs the event code, the \
+                    counties it covers and how long it stays valid. Retune both channels to \
+                    whichever of the seven your transmitter uses.",
+        center_hz: 162_475_000.0,
+        sample_rate: 1_024_000.0,
+        channels: &[
+            Channel::at(162_550_000.0, fm_voice, LISTEN),
+            Channel::at(
+                162_550_000.0,
+                || ChannelParams::Same(SameParams::default()),
+                LOG,
+            ),
+        ],
     },
     Entry {
         id: "distress-beacons",

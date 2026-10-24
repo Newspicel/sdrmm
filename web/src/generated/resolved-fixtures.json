@@ -381,6 +381,7 @@
                   "apt",
                   "lrpt",
                   "wefax",
+                  "same",
                   "radiosonde",
                   "lora",
                   "remote_id",
@@ -397,7 +398,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
+              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, SAME, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
             }
           ],
           "runs": {
@@ -651,6 +652,7 @@
                   "apt",
                   "lrpt",
                   "wefax",
+                  "same",
                   "radiosonde",
                   "lora",
                   "remote_id",
@@ -2727,6 +2729,7 @@
                   "apt",
                   "lrpt",
                   "wefax",
+                  "same",
                   "radiosonde",
                   "lora",
                   "remote_id",
@@ -2743,7 +2746,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
+              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, SAME, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
             }
           ],
           "runs": {
@@ -5714,6 +5717,7 @@
                   "apt",
                   "lrpt",
                   "wefax",
+                  "same",
                   "radiosonde",
                   "lora",
                   "remote_id",
@@ -5730,7 +5734,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
+              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, SAME, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
             }
           ],
           "runs": {
@@ -8492,6 +8496,7 @@
                   "apt",
                   "lrpt",
                   "wefax",
+                  "same",
                   "radiosonde",
                   "lora",
                   "remote_id",
@@ -8508,7 +8513,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
+              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, SAME, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
             }
           ],
           "runs": {
@@ -8949,6 +8954,7 @@
                   "apt",
                   "lrpt",
                   "wefax",
+                  "same",
                   "radiosonde",
                   "lora",
                   "remote_id",
@@ -8965,7 +8971,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
+              "takes": "Transmission, RDS, POCSAG, FLEX, ERMES, End-of-Train, 406 MHz beacon, Tetrapol, ADS-B, AIS, APRS, RTTY, Morse, CW skimmer, Selcall, NAVTEX, ACARS, Tone, Scrambler, Digital voice, Call, FT8, FT4, PSK, WSPR, Signal ID, Broadcast data, Radio clock, GNSS lab, SSTV, VOR, ILS, DSC, Inmarsat STD-C, Inmarsat Aero, VDL Mode 2, HFDL, Iridium, Bearing, Fix, Radar, DECT, GSM, NOAA APT, Meteor LRPT, WEFAX, SAME, Radiosonde, LoRa, Remote ID, BLE, Wi-Fi load, 2.4 GHz, ISM sensor, wM-Bus, Noise figure, PER, SID, STANAG"
             }
           ],
           "runs": {
@@ -10692,6 +10698,7 @@
                   "hfdl",
                   "iridium",
                   "dect",
+                  "same",
                   "lora",
                   "ism",
                   "wmbus"
@@ -10775,6 +10782,7 @@
                   "hfdl",
                   "iridium",
                   "dect",
+                  "same",
                   "lora",
                   "ism",
                   "wmbus"

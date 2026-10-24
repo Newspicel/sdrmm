@@ -12194,6 +12194,24 @@
             ],
             "properties": {
               "settings": {
+                "$ref": "#/components/schemas/SameParams"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "same"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "settings",
+              "type"
+            ],
+            "properties": {
+              "settings": {
                 "$ref": "#/components/schemas/RadiosondeParams"
               },
               "type": {
@@ -15226,6 +15244,24 @@
                 "type": "string",
                 "enum": [
                   "wefax"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/SameMessage"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "same"
                 ]
               }
             }
@@ -18750,6 +18786,7 @@
           "apt",
           "lrpt",
           "wefax",
+          "same",
           "radiosonde",
           "lora",
           "remote_id",
@@ -21796,6 +21833,7 @@
             "apt",
             "lrpt",
             "wefax",
+            "same",
             "radiosonde",
             "lora",
             "remote_id",
@@ -32467,6 +32505,168 @@
             }
           }
         ]
+      },
+      "SameAlert": {
+        "type": "object",
+        "required": [
+          "originator",
+          "event",
+          "locations",
+          "valid_minutes",
+          "issued_day",
+          "issued_hour",
+          "issued_minute",
+          "station"
+        ],
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "event_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issued_day": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "issued_hour": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "issued_minute": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SameLocation"
+            }
+          },
+          "originator": {
+            "type": "string"
+          },
+          "originator_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "station": {
+            "type": "string"
+          },
+          "valid_minutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SameBody": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SameAlert"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "header"
+                ],
+                "properties": {
+                  "header": {
+                    "type": "string",
+                    "enum": [
+                      "alert"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "header"
+            ],
+            "properties": {
+              "header": {
+                "type": "string",
+                "enum": [
+                  "end_of_message"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "SameLocation": {
+        "type": "object",
+        "required": [
+          "part",
+          "state",
+          "county"
+        ],
+        "properties": {
+          "county": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "part": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "state": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SameMessage": {
+        "type": "object",
+        "required": [
+          "body",
+          "copies",
+          "raw"
+        ],
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/SameBody"
+          },
+          "copies": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "raw": {
+            "type": "string"
+          }
+        }
+      },
+      "SameParams": {
+        "type": "object",
+        "properties": {
+          "bandwidth_hz": {
+            "type": "number",
+            "format": "double"
+          }
+        }
       },
       "SarsatBeacon": {
         "type": "string",

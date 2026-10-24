@@ -8,8 +8,8 @@ use sdrmm_wire::{
     IsmSurveyParams, LoraParams, LrptMode, LrptParams, M17Params, MorseParams, NavtexParams,
     NfmParams, NfmToneMode, NoiseFigureParams, NxdnParams, P25Params, PerParams, PocsagParams,
     PskBaud, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
-    RttyParams, SarsatParams, SelcallParams, SelcallSystem, SidParams, SondeType, SstvMode,
-    SstvParams, StanagParams, TetraParams, TetrapolParams, VorParams, WefaxIoc, WefaxLpm,
+    RttyParams, SameParams, SarsatParams, SelcallParams, SelcallSystem, SidParams, SondeType,
+    SstvMode, SstvParams, StanagParams, TetraParams, TetrapolParams, VorParams, WefaxIoc, WefaxLpm,
     WefaxParams, WfmParams, WifiOccupancyParams, WsjtParams, WsprParams, YsfParams,
 };
 
@@ -161,6 +161,7 @@ fn heard(type_id: &str) -> Option<Heard> {
         "apt" => apt(),
         "lrpt" => lrpt(),
         "wefax" => wefax(),
+        "same" => same(),
         "radiosonde" => radiosonde(),
         "vor" => vor(),
         "ils" => ils(),
@@ -273,6 +274,13 @@ fn eot() -> Fixture {
     };
     let rate = Fixture::rate(&params);
     let iq = synth::eot::rear_transmission(&rear, rate);
+    Fixture::new(params, with_tail(iq, rate, 0.5))
+}
+
+fn same() -> Fixture {
+    let params = ChannelParams::Same(SameParams::default());
+    let rate = Fixture::rate(&params);
+    let iq = synth::same::transmission("ZCZC-WXR-TOR-048201+0030-1232200-KEC55/NW-", 2, rate);
     Fixture::new(params, with_tail(iq, rate, 0.5))
 }
 
@@ -849,6 +857,7 @@ emitted_kinds_are_declared! {
     apt_emits_what_it_declares => "apt",
     lrpt_emits_what_it_declares => "lrpt",
     wefax_emits_what_it_declares => "wefax",
+    same_emits_what_it_declares => "same",
     radiosonde_emits_what_it_declares => "radiosonde",
     vor_emits_what_it_declares => "vor",
     ils_emits_what_it_declares => "ils",

@@ -90,6 +90,8 @@ fn openapi_registers_paths_and_ws_schemas() {
         "ErmesMessage",
         "EotMessage",
         "EotParams",
+        "SameMessage",
+        "SameParams",
         "SarsatMessage",
         "SarsatParams",
         "TetrapolMessage",

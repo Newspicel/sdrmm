@@ -16,7 +16,7 @@ covers the modes that need more than a frequency.
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
 | Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager, [End-of-Train](#end-of-train) | |
 | Pictures and video | [SSTV](#sstv) | ATV | |
-| Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | | |
+| Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | [SAME alerts](#same-alerts) | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
 | Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems), [Wireless M-Bus](#wireless-m-bus) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
@@ -178,6 +178,24 @@ calibration data has arrived, about a minute after first lock.
 On **Map** a climbing or falling sonde gets a dashed forecast path, a ring at the burst point and a
 landing mark. The forecast uses the winds the sonde measured on the way up. **Burst** is the altitude
 assumed while it still climbs; **Ground** is the altitude it lands at.
+
+## SAME alerts
+
+The SAME alerts channel reads the headers NOAA Weather Radio and the Emergency Alert System send
+ahead of an announcement. Tune one of the seven NWR channels between 162.400 and 162.550 MHz. Each
+alert gives the event code and its name, the originator, the counties it covers, how long it stays
+valid and the station that sent it; the closing `NNNN` burst is logged as its own end-of-message
+entry. Wire `events` to **Decoder log** to keep them, or to an
+[**Event output**](network-iq.md#webhooks-matrix-and-mqtt) to drive your own notifications.
+
+A header is sent three times. Two matching copies settle it, and three copies that differ by a
+byte settle by majority vote. A burst that never finds a match inside 20 s is dropped and counted
+in **Rejected**. The channel reads no audio: add an NFM channel on the same frequency for the
+forecast voice, which the **NOAA Weather Radio** template does for you.
+
+County names come from the
+[NWS SAME code list](https://www.weather.gov/source/nwr/SameCode.txt); a code outside it is shown
+as its six digits.
 
 ## Map
 

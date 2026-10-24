@@ -3473,6 +3473,10 @@ export interface components {
             /** @enum {string} */
             type: "wefax";
         } | {
+            settings: components["schemas"]["SameParams"];
+            /** @enum {string} */
+            type: "same";
+        } | {
             settings: components["schemas"]["RadiosondeParams"];
             /** @enum {string} */
             type: "radiosonde";
@@ -4263,6 +4267,10 @@ export interface components {
             data: components["schemas"]["WefaxPicture"];
             /** @enum {string} */
             kind: "wefax";
+        } | {
+            data: components["schemas"]["SameMessage"];
+            /** @enum {string} */
+            kind: "same";
         } | {
             data: components["schemas"]["RadiosondeFrame"];
             /** @enum {string} */
@@ -5162,7 +5170,7 @@ export interface components {
             url: string;
         };
         /** @enum {string} */
-        EventKind: "transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "wmbus" | "noise_figure" | "per" | "sid" | "stanag";
+        EventKind: "transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "same" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "wmbus" | "noise_figure" | "per" | "sid" | "stanag";
         EventKindEntry: {
             caps: components["schemas"]["Capability"][];
             hue: components["schemas"]["Hue"];
@@ -5953,7 +5961,7 @@ export interface components {
         ItuRegion: "r1" | "r2" | "r3";
         /** @enum {string} */
         Keeps: "history" | "clips" | "pictures";
-        KindSet: ("transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "wmbus" | "noise_figure" | "per" | "sid" | "stanag")[];
+        KindSet: ("transmission" | "rds" | "pocsag" | "flex" | "ermes" | "eot" | "sarsat" | "tetrapol" | "adsb" | "ais" | "aprs" | "rtty" | "morse" | "cw_skimmer" | "selcall" | "navtex" | "acars" | "tone" | "scrambler" | "dv" | "call" | "ft8" | "ft4" | "psk" | "wspr" | "ident" | "broadcast_data" | "broadcast" | "radio_clock" | "gnss" | "sstv" | "vor" | "ils" | "dsc" | "inmarsat_stdc" | "inmarsat_aero" | "vdl2" | "hfdl" | "iridium" | "df" | "df_fix" | "radar" | "radar_sites" | "nav" | "satellite" | "dect" | "gsm" | "apt" | "lrpt" | "wefax" | "same" | "radiosonde" | "lora" | "remote_id" | "ble" | "wifi_occupancy" | "ism_survey" | "ism" | "wmbus" | "noise_figure" | "per" | "sid" | "stanag")[];
         LaneLevel: {
             /** Format: float */
             peak_db: number;
@@ -8697,6 +8705,48 @@ export interface components {
         } | {
             /** @enum {string} */
             runs: "server";
+        };
+        SameAlert: {
+            event: string;
+            event_name?: string | null;
+            /** Format: int32 */
+            issued_day: number;
+            /** Format: int32 */
+            issued_hour: number;
+            /** Format: int32 */
+            issued_minute: number;
+            locations: components["schemas"]["SameLocation"][];
+            originator: string;
+            originator_name?: string | null;
+            station: string;
+            /** Format: int32 */
+            valid_minutes: number;
+        };
+        SameBody: (components["schemas"]["SameAlert"] & {
+            /** @enum {string} */
+            header: "alert";
+        }) | {
+            /** @enum {string} */
+            header: "end_of_message";
+        };
+        SameLocation: {
+            /** Format: int32 */
+            county: number;
+            name?: string | null;
+            /** Format: int32 */
+            part: number;
+            /** Format: int32 */
+            state: number;
+        };
+        SameMessage: {
+            body: components["schemas"]["SameBody"];
+            /** Format: int32 */
+            copies: number;
+            raw: string;
+        };
+        SameParams: {
+            /** Format: double */
+            bandwidth_hz?: number;
         };
         /** @enum {string} */
         SarsatBeacon: "epirb" | "elt" | "plb" | "ship_security" | "test" | "other";

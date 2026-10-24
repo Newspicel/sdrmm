@@ -163,6 +163,7 @@ const EOT_CHANNELS: &[Range] = &[
     spot_khz(450_262.5, 6.25),
     spot_khz(477_700.0, 6.25),
 ];
+const NWR_CHANNELS: &[Range] = &[mhz(162.4, 162.56)];
 const SARSAT_BAND: &[Range] = &[mhz(406.0, 406.1)];
 const TETRAPOL_BANDS: &[Range] = &[mhz(70.0, 87.5), mhz(380.0, 400.0), mhz(410.0, 430.0)];
 const ISM: &[Range] = &[
@@ -532,6 +533,18 @@ const SIGNATURES: &[Signature] = &[
             &[Modulation::Fm, Modulation::Fsk2],
             range(6_000.0, 20_000.0),
             "1200 baud tones inside an FM channel on a railroad telemetry frequency",
+        )
+    },
+    Signature {
+        symbol_rate_hz: Some(about(520.83, 0.06)),
+        deviation_hz: Some(range(2_000.0, 5_500.0)),
+        frequencies: NWR_CHANNELS,
+        ..signature(
+            "SAME alert header (AFSK over FM)",
+            Some("same"),
+            &[Modulation::Fm, Modulation::Fsk2],
+            range(6_000.0, 20_000.0),
+            "521 baud tones inside an FM channel on a weather radio frequency",
         )
     },
     Signature {

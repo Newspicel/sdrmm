@@ -58,6 +58,7 @@ mod radiosonde;
 mod rds;
 mod remote_id;
 mod rtty;
+mod same;
 mod sarsat;
 mod selcall;
 mod sid;
@@ -141,6 +142,7 @@ pub use radio_clock::RadioClockChannel;
 pub use radiosonde::RadiosondeChannel;
 pub use remote_id::RemoteIdChannel;
 pub use rtty::RttyChannel;
+pub use same::SameChannel;
 pub use sarsat::SarsatChannel;
 use sdrmm_dsp::{Decimator, FirC};
 use sdrmm_wire::{
@@ -247,6 +249,7 @@ pub fn occupied_band(params: &ChannelParams) -> (f64, f64) {
         ChannelParams::Apt(p) => apt::occupied_band(p),
         ChannelParams::Lrpt(p) => lrpt::occupied_band(p),
         ChannelParams::Wefax(p) => wefax::occupied_band(p),
+        ChannelParams::Same(p) => same::occupied_band(p),
         ChannelParams::Radiosonde(p) => radiosonde::occupied_band(p),
         ChannelParams::Lora(p) => lora::occupied_band(p),
         ChannelParams::RemoteId(p) => remote_id::occupied_band(p),
@@ -345,6 +348,7 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
         ChannelParams::Apt(p) => apt::channel_filter(p),
         ChannelParams::Lrpt(p) => lrpt::channel_filter(p),
         ChannelParams::Wefax(p) => wefax::channel_filter(p),
+        ChannelParams::Same(p) => same::channel_filter(p),
         ChannelParams::Radiosonde(p) => radiosonde::channel_filter(p),
         ChannelParams::Lora(p) => Ok(lora::channel_filter(p)),
         ChannelParams::RemoteId(p) => Ok(remote_id::channel_filter(p)),
@@ -773,6 +777,11 @@ const REGISTRY: &[Registration] = &[
         create_tx: None,
     },
     Registration {
+        descriptor: SameChannel::descriptor,
+        create: boxed::<SameChannel>,
+        create_tx: None,
+    },
+    Registration {
         descriptor: RadiosondeChannel::descriptor,
         create: boxed::<RadiosondeChannel>,
         create_tx: None,
@@ -1018,6 +1027,7 @@ mod tests {
             "apt" => ChannelParams::Apt(AptParams::default()),
             "lrpt" => ChannelParams::Lrpt(LrptParams::default()),
             "wefax" => ChannelParams::Wefax(WefaxParams::default()),
+            "same" => ChannelParams::Same(sdrmm_wire::SameParams::default()),
             "radiosonde" => ChannelParams::Radiosonde(RadiosondeParams::default()),
             "lora" => ChannelParams::Lora(sdrmm_wire::LoraParams::default()),
             "remote_id" => ChannelParams::RemoteId(sdrmm_wire::RemoteIdParams::default()),
@@ -1139,6 +1149,7 @@ mod tests {
                 "apt",
                 "lrpt",
                 "wefax",
+                "same",
                 "radiosonde",
                 "lora",
                 "remote_id",
@@ -1201,6 +1212,7 @@ mod tests {
                 "apt" => (40_000.0, 60_000.0),
                 "lrpt" => (140_000.0, 288_000.0),
                 "wefax" => (1_600.0, 12_000.0),
+                "same" => (12_500.0, 50_000.0),
                 "radiosonde" => (20_000.0, 48_000.0),
                 "lora" => (125_000.0, 250_000.0),
                 "remote_id" | "ble" => (2_000_000.0, 4_000_000.0),

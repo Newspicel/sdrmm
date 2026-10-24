@@ -177,6 +177,7 @@ impl ChannelParams {
             | Self::Flex(_)
             | Self::Ermes(_)
             | Self::Eot(_)
+            | Self::Same(_)
             | Self::Sarsat(_)
             | Self::Adsb(_)
             | Self::Morse(_)

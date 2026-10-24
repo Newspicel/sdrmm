@@ -18,10 +18,11 @@ use sdrmm_wire::{
     LoraParams, LrptMode, LrptParams, Modulation, MorseParams, NavtexParams, NfmParams,
     NfmToneMode, NoiseFigureParams, PerParams, PipelineStage, PocsagBaud, PocsagParams, PskBaud,
     PskParams, RadiosondeParams, RdsUpdate, RemoteIdLink, RemoteIdMessage, RemoteIdParams,
-    RemoteIdTransport, RttyParams, SarsatParams, SelcallParams, SelcallSystem, ServerEvent,
-    SidParams, SondeType, StanagModem, StanagParams, SymbolPlane, TetraParams, TetrapolParams,
-    TetrapolPayload, UaType, UasIdType, VorParams, WMBUS_T_C_HZ, WefaxIoc, WefaxLpm, WefaxParams,
-    WfmParams, WmbusFormat, WmbusMode, WmbusParams, WsjtParams, WsprParams, YsfParams,
+    RemoteIdTransport, RttyParams, SameBody, SameParams, SarsatParams, SelcallParams,
+    SelcallSystem, ServerEvent, SidParams, SondeType, StanagModem, StanagParams, SymbolPlane,
+    TetraParams, TetrapolParams, TetrapolPayload, UaType, UasIdType, VorParams, WMBUS_T_C_HZ,
+    WefaxIoc, WefaxLpm, WefaxParams, WfmParams, WmbusFormat, WmbusMode, WmbusParams, WsjtParams,
+    WsprParams, YsfParams,
 };
 use tempfile::TempDir;
 
@@ -392,6 +393,39 @@ async fn a_tetrapol_control_channel_survives_the_ddc_and_reaches_the_decoded_str
     };
     assert_eq!(message.scrambling, 70);
     assert_eq!(message.station().as_deref(), Some("28.2.7"));
+}
+
+#[tokio::test]
+async fn a_same_alert_survives_the_ddc_and_reaches_the_decoded_stream() {
+    let dir = TempDir::new().unwrap();
+    let engine = engine_for(dir.path());
+    let offset_hz = 25_000.0;
+    let header = "ZCZC-WXR-TOR-048201+0030-1232200-KEC55/NW-";
+    let mut iq = synth::same::transmission(header, 2, NARROW_DEVICE_RATE);
+    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    let device = plant(dir.path(), "same", iq, NARROW_DEVICE_RATE);
+    let record = decode_first(
+        &engine,
+        &device,
+        ChannelSettings {
+            frequency_hz: CENTER_HZ + offset_hz,
+            squelch: sdrmm_wire::Squelch::Off,
+            params: ChannelParams::Same(SameParams::default()),
+            blanker: Default::default(),
+        },
+        |event| matches!(event, DecoderEvent::Same(_)),
+    )
+    .await;
+    let DecoderEvent::Same(message) = record.event else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(message.raw, header);
+    let SameBody::Alert(alert) = message.body else {
+        panic!("expected an alert")
+    };
+    assert_eq!(alert.event_name.as_deref(), Some("Tornado Warning"));
+    assert_eq!(alert.locations[0].name.as_deref(), Some("Harris, TX"));
+    assert_eq!(alert.station, "KEC55/NW");
 }
 
 #[tokio::test]

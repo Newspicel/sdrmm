@@ -44,6 +44,7 @@ pub mod remote;
 pub mod remote_id;
 pub mod rest;
 pub mod rotator;
+pub mod same;
 pub mod sarsat;
 pub mod satellite;
 pub mod scan;
@@ -295,6 +296,11 @@ pub use rotator::{
     MAX_ROTATOR_TOLERANCE_DEG, MAX_WINEGARD_AZIMUTH_DEG, MAX_WINEGARD_ELEVATION_DEG,
     MIN_ROTATOR_AZIMUTH_DEG, MIN_ROTATOR_TOLERANCE_DEG, RotatorAxes, RotatorLink, RotatorMode,
     RotatorNode, RotatorStatus,
+};
+pub use same::{
+    MAX_SAME_BANDWIDTH_HZ, MAX_SAME_LOCATIONS, MIN_SAME_BANDWIDTH_HZ, SAME_BANDWIDTH_HZ, SAME_BAUD,
+    SAME_BURSTS, SAME_MARK_HZ, SAME_SPACE_HZ, SameAlert, SameBody, SameLocation, SameMessage,
+    SameParams,
 };
 pub use sarsat::{
     MAX_SARSAT_BANDWIDTH_HZ, MIN_SARSAT_BANDWIDTH_HZ, SARSAT_BANDWIDTH_HZ, SarsatBeacon,
