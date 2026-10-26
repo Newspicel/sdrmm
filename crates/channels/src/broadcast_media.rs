@@ -48,6 +48,7 @@ pub enum Kind {
     Mpeg2,
     H264,
     H265,
+    Silence,
 }
 
 impl Kind {
@@ -55,7 +56,7 @@ impl Kind {
         match self {
             Self::Mp2 => Id::MP2,
             Self::Eac3 => Id::EAC3,
-            Self::DabPad | Self::DabPacket => Id::None,
+            Self::DabPad | Self::DabPacket | Self::Silence => Id::None,
             Self::Aac | Self::DrmXhe => Id::AAC,
             Self::Latm | Self::DrmAudio => Id::AAC_LATM,
             Self::Ac3 => Id::AC3,
@@ -78,12 +79,31 @@ struct Input {
     mot_app: Option<u8>,
     packet: Option<PacketConfig>,
     length: usize,
+    frames: usize,
     bytes: [u8; CHUNK_BYTES],
+}
+
+impl Input {
+    fn new(epoch: u64, kind: Kind) -> Self {
+        Self {
+            epoch,
+            kind,
+            pts: None,
+            format: None,
+            drm: None,
+            mot_app: None,
+            packet: None,
+            length: 0,
+            frames: 0,
+            bytes: [0; CHUNK_BYTES],
+        }
+    }
 }
 
 enum Payload {
     Data(PadEvent),
     Audio(Vec<f32>),
+    Silence(usize),
     Video(VideoPicture),
     Error { video: bool, message: String },
 }
@@ -99,6 +119,7 @@ impl Output {
         std::mem::size_of::<Self>()
             + match &self.payload {
                 Payload::Audio(pcm) => pcm.capacity() * 4,
+                Payload::Silence(_) => 0,
                 Payload::Video(picture) => picture.rgb.capacity() + picture.luma.capacity(),
                 Payload::Data(PadEvent::Object(object)) => {
                     object.bytes.capacity()
@@ -227,6 +248,20 @@ fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: Arc<A
             ) {
                 return;
             }
+        }
+        if item.kind == Kind::Silence {
+            if !publish(
+                &mut output,
+                &resident,
+                Output {
+                    epoch,
+                    pts: None,
+                    payload: Payload::Silence(item.frames),
+                },
+            ) {
+                return;
+            }
+            continue;
         }
         if matches!(item.kind, Kind::DabPad | Kind::DabPacket) {
             continue;
@@ -393,10 +428,23 @@ impl BroadcastMedia {
         self.input.slots() == INPUT_SLOTS
     }
 
-    pub fn audio_gap(&mut self, count: u32, reason: &str) {
-        self.epoch = self.epoch.wrapping_add(1);
+    pub fn audio_gap(&mut self, frames: usize, count: u32, reason: &str) {
         self.audio_errors = self.audio_errors.saturating_add(count);
         self.audio_error = Some(reason.to_owned());
+        self.conceal(frames);
+    }
+
+    fn conceal(&mut self, frames: usize) {
+        if frames == 0 {
+            return;
+        }
+        let item = Input {
+            frames,
+            ..Input::new(self.epoch, Kind::Silence)
+        };
+        if self.input.slots() == 0 || self.input.push(item).is_err() {
+            self.failed(false, "Broadcast media input overflow".to_owned());
+        }
     }
 
     fn failed(&mut self, video: bool, error: String) {
@@ -453,15 +501,13 @@ impl BroadcastMedia {
         }
         for (index, chunk) in bytes.chunks(CHUNK_BYTES).enumerate() {
             let mut item = Input {
-                epoch: self.epoch,
-                kind,
                 pts: pts.filter(|_| index == 0).map(|v| v as i64),
                 format,
                 drm,
                 mot_app: self.mot_app,
                 packet: self.packet_config,
                 length: chunk.len(),
-                bytes: [0; CHUNK_BYTES],
+                ..Input::new(self.epoch, kind)
             };
             item.bytes[..chunk.len()].copy_from_slice(chunk);
             if self.input.push(item).is_err() {
@@ -511,6 +557,10 @@ impl BroadcastMedia {
                     out.audio_rate = AUDIO_RATE;
                     out.audio_pcm.extend_from_slice(&pcm);
                     self.audio_frames = self.audio_frames.saturating_add(1);
+                }
+                Payload::Silence(frames) => {
+                    out.audio_rate = AUDIO_RATE;
+                    out.audio_pcm.resize(out.audio_pcm.len() + frames * 2, 0.0);
                 }
                 Payload::Video(picture) => {
                     out.video.push(picture);

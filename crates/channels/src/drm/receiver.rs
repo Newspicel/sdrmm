@@ -2,7 +2,10 @@ use num_complex::Complex;
 
 use super::{
     aac::{AudioConfig, Coding},
-    audio::{Superframes, XheAssembler, aac_frames, aac_superframe, join_protected, split_text},
+    audio::{
+        Superframes, XheAssembler, aac_frames, aac_superframe, frame_audio_frames, join_protected,
+        split_text,
+    },
     bits::pack,
     cells::{Cell as Kind, Layout},
     coding::{Plan, Qam},
@@ -413,7 +416,7 @@ impl Receiver {
         if found {
             self.play(&logical_bytes, logical, media);
         } else {
-            media.audio_gap(1, "Audio stream outside the multiplex");
+            media.audio_gap(0, 1, "Audio stream outside the multiplex");
         }
         self.logical = logical_bytes;
     }
@@ -491,15 +494,16 @@ impl Receiver {
         media: &mut BroadcastMedia,
     ) {
         let Some(count) = aac_frames(self.mode.plus(), config.rate_hz) else {
-            media.audio_gap(1, "Unsupported DRM AAC sampling rate");
+            media.audio_gap(0, 1, "Unsupported DRM AAC sampling rate");
             return;
         };
+        let lost = count * frame_audio_frames(config.rate_hz);
         let mut joined = std::mem::take(&mut self.joined);
         let mut ranges = std::mem::take(&mut self.ranges);
         let superframe = if higher > 0 && !self.mode.plus() {
             if let Err(reason) = join_protected(superframe, count, higher, &mut ranges, &mut joined)
             {
-                media.audio_gap(count as u32, reason);
+                media.audio_gap(lost, count as u32, reason);
                 self.joined = joined;
                 self.ranges = ranges;
                 return;
@@ -519,7 +523,7 @@ impl Receiver {
                 }
             }
             Err(reason) => {
-                media.audio_gap(count as u32, reason);
+                media.audio_gap(lost, count as u32, reason);
                 self.pairing_failures += 1;
                 if self.mode.plus() && self.pairing_failures >= 2 {
                     self.pairing_phase ^= 1;
@@ -540,10 +544,10 @@ impl Receiver {
     ) {
         let pushed = self.xhe.push(superframe, |frame| match frame {
             Ok(body) => media.push_drm(body, *config),
-            Err(reason) => media.audio_gap(1, reason),
+            Err(reason) => media.audio_gap(0, 1, reason),
         });
         if let Err(reason) = pushed {
-            media.audio_gap(1, reason);
+            media.audio_gap(0, 1, reason);
         }
     }
 }

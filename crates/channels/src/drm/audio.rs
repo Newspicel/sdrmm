@@ -20,6 +20,14 @@ pub const fn aac_frames(plus: bool, rate_hz: u32) -> Option<usize> {
     }
 }
 
+pub const fn frame_audio_frames(rate_hz: u32) -> usize {
+    if rate_hz == 0 {
+        0
+    } else {
+        crate::AUDIO_RATE as usize * 960 / rate_hz as usize
+    }
+}
+
 pub(crate) const fn header_bytes(frames: usize) -> usize {
     ((frames - 1) * 12).div_ceil(8)
 }

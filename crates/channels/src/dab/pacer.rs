@@ -33,7 +33,7 @@ impl Pacer {
         self.dropped_frames = 0;
     }
 
-    fn buffered(&self) -> usize {
+    pub(crate) fn buffered(&self) -> usize {
         self.fifo.len() / CHANNELS
     }
 

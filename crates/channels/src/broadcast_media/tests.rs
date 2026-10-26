@@ -209,6 +209,59 @@ fn resetting_a_fragmented_parser_recovers_at_the_next_complete_stream() {
     }
 }
 
+fn dab_media_pcm(units: &[&[u8]], format: AudioFormat, gap_before: Option<usize>) -> Vec<f32> {
+    let mut media = BroadcastMedia::new().expect("worker");
+    for (index, unit) in units.iter().enumerate() {
+        if gap_before == Some(index) {
+            media.audio_gap(
+                format.unit_audio_frames(),
+                1,
+                "DAB+ access-unit CRC failure",
+            );
+        }
+        media.push(Kind::Latm, unit, None, Some(format));
+    }
+    let mut out = ChannelOutputs::default();
+    for _ in 0..2000 {
+        media.drain(&mut out);
+        if media.audio_frames >= units.len() as u32 {
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        media.audio_frames,
+        units.len() as u32,
+        "{:?}",
+        media.audio_error
+    );
+    out.audio_pcm
+}
+
+#[test]
+fn an_audio_gap_conceals_its_length_and_keeps_the_audio_around_it() {
+    let format = AudioFormat {
+        sample_rate_hz: 48_000,
+        spectral_band_replication: true,
+        parametric_stereo: false,
+        stereo_core: true,
+        surround: 0,
+    };
+    let units = access_units(include_bytes!(
+        "../../../../fixtures/broadcast_audio/dab_he_stereo_48k.aus"
+    ));
+    let plain = dab_media_pcm(&units[..12], format, None);
+    let gapped = dab_media_pcm(&units[..12], format, Some(6));
+    assert_eq!(gapped.len(), plain.len() + format.unit_audio_frames() * 2);
+    let energy = |pcm: &[f32]| {
+        pcm.iter()
+            .map(|s| f64::from(*s) * f64::from(*s))
+            .sum::<f64>()
+    };
+    assert!(energy(&plain) > 0.0);
+    assert!((energy(&gapped) - energy(&plain)).abs() < energy(&plain) / 1e6);
+}
+
 #[test]
 fn data_input_errors_are_reported_as_data_errors() {
     let mut media = BroadcastMedia::new().expect("worker");

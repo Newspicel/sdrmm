@@ -62,6 +62,12 @@ impl Header {
     }
 }
 
+impl Header {
+    fn output_samples(self) -> usize {
+        2 * 1152 * AUDIO_RATE as usize / self.rate as usize
+    }
+}
+
 struct Encoded {
     epoch: u64,
     discontinuity: bool,
@@ -72,6 +78,7 @@ struct Encoded {
 struct Decoded {
     epoch: u64,
     length: usize,
+    conceal: usize,
     pcm: [f32; PCM_SAMPLES],
     error: Option<&'static str>,
 }
@@ -187,11 +194,14 @@ fn run(mut decoder: Decoder, mut input: Consumer<Encoded>, mut output: Producer<
         let mut decoded = Decoded {
             epoch,
             length: 0,
+            conceal: 0,
             pcm: [0.0; PCM_SAMPLES],
             error: None,
         };
         if let Err(error) = decoder.decode(&encoded, &mut decoded) {
             decoded.error = Some(error);
+            decoded.length = 0;
+            decoded.conceal = encoded.header.output_samples();
             decoder.reset();
         }
         while let Err(PushError::Full(held)) = output.push(decoded) {
@@ -309,6 +319,9 @@ impl LayerTwoAudio {
             }
             if let Some(error) = decoded.error {
                 self.failed(error);
+                out.audio_rate = AUDIO_RATE;
+                out.audio_pcm
+                    .resize(out.audio_pcm.len() + decoded.conceal, 0.0);
                 continue;
             }
             out.audio_rate = AUDIO_RATE;
@@ -454,7 +467,7 @@ mod tests {
         assert_eq!(audio.frames_ok, 1);
         assert_eq!(audio.frames_bad, 1);
         assert_eq!(audio.error, Some("MPEG Layer II audio CRC mismatch"));
-        assert_eq!(out.audio_pcm.len(), 2304);
+        assert_eq!(out.audio_pcm.len(), 2 * 2304);
         assert!(out.audio_pcm.iter().all(|&sample| sample == 0.0));
     }
 
@@ -488,6 +501,7 @@ mod tests {
         let mut decoded = Decoded {
             epoch: 0,
             length: 0,
+            conceal: 0,
             pcm: [0.0; PCM_SAMPLES],
             error: None,
         };

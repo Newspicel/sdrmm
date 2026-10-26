@@ -16,7 +16,7 @@ use super::{
     ofdm::{FrameSync, SymbolDemod},
     pacer::Pacer,
     prs::PrsProbe,
-    superframe::{AccessUnits, SuperframeAssembler},
+    superframe::{AccessUnits, CIF_AUDIO_FRAMES, Superframe, SuperframeAssembler},
     sync::{self, MIN_COHERENCE, SEARCH, Tracker},
 };
 use crate::{
@@ -419,20 +419,36 @@ impl DabChannel {
                 self.media
                     .push(MediaKind::DabPad, &self.logical, None, None);
             }
-            if let Some(assembler) = &mut selection.assembler
-                && let Some(units) = assembler.frame(&self.logical)
-            {
-                self.superframes += 1;
-                self.units += units.units.len() as u32;
-                if units.dropped > 0 {
-                    self.media
-                        .audio_gap(units.dropped, "DAB+ access-unit CRC failure");
+            let Some(assembler) = &mut selection.assembler else {
+                continue;
+            };
+            match assembler.frame(&self.logical) {
+                Superframe::Pending => {}
+                Superframe::Lost(cifs) => {
+                    if self.superframes > 0 {
+                        self.media.audio_gap(
+                            cifs * CIF_AUDIO_FRAMES,
+                            cifs as u32,
+                            "DAB+ superframe lost",
+                        );
+                    }
                 }
-                for unit in &units.units {
-                    self.media
-                        .push(MediaKind::Latm, unit, None, Some(units.format));
+                Superframe::Ready(units) => {
+                    self.superframes += 1;
+                    self.units += units.units.len() as u32;
+                    if units.dropped > 0 {
+                        self.media.audio_gap(
+                            units.dropped as usize * units.format.unit_audio_frames(),
+                            units.dropped,
+                            "DAB+ access-unit CRC failure",
+                        );
+                    }
+                    for unit in &units.units {
+                        self.media
+                            .push(MediaKind::Latm, unit, None, Some(units.format));
+                    }
+                    self.last_format = Some(units);
                 }
-                self.last_format = Some(units);
             }
         }
     }
@@ -1100,11 +1116,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn an_ensemble_six_db_above_the_noise_decodes_its_audio() {
-        let clean = synth::dab::ensemble(40);
+    fn with_noise(clean: &[Complex<f32>], snr_db: f32) -> Vec<Complex<f32>> {
         let power = clean.iter().map(|s| s.norm_sqr()).sum::<f32>() / clean.len() as f32;
-        let variance = power * INPUT_RATE_HZ as f32 / (BANDWIDTH_HZ as f32 * 10f32.powf(0.6));
+        let variance =
+            power * INPUT_RATE_HZ as f32 / (BANDWIDTH_HZ as f32 * 10f32.powf(snr_db / 10.0));
         let deviation = (variance / 2.0).sqrt();
         let mut state = 0x7777_1234u32;
         let mut uniform = move || {
@@ -1113,17 +1128,22 @@ mod tests {
             state ^= state << 5;
             (state as f32 + 0.5) / 4_294_967_296.0
         };
-        let iq: Vec<_> = clean
+        clean
             .iter()
             .map(|&sample| {
                 let (a, b) = (uniform(), uniform());
-                let noise = Complex::from_polar(
-                    (-2.0 * a.ln()).sqrt() * deviation,
-                    std::f32::consts::TAU * b,
-                );
-                sample + noise
+                sample
+                    + Complex::from_polar(
+                        (-2.0 * a.ln()).sqrt() * deviation,
+                        std::f32::consts::TAU * b,
+                    )
             })
-            .collect();
+            .collect()
+    }
+
+    #[test]
+    fn an_ensemble_six_db_above_the_noise_decodes_its_audio() {
+        let iq = with_noise(&synth::dab::ensemble(40), 6.0);
         let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(16_384) {
@@ -1134,6 +1154,41 @@ mod tests {
             channel.superframes >= 25,
             "{} superframes",
             channel.superframes
+        );
+    }
+
+    fn audio_frames_delivered(iq: &[Complex<f32>]) -> (usize, u32) {
+        let mut channel = channel(Some(synth::dab::MUSIC_SERVICE));
+        let mut out = ChannelOutputs::default();
+        let mut played = 0usize;
+        for block in iq.chunks(2048) {
+            channel.process(block, &mut out);
+            played += out.audio_pcm.len() / 2;
+            out.reset();
+            std::thread::sleep(std::time::Duration::from_micros(150));
+        }
+        for _ in 0..200 {
+            channel.collect_audio(&mut out);
+            played += out.audio_pcm.len() / 2;
+            out.reset();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(channel.pacer.dropped_frames, 0);
+        (
+            played + channel.pacer.buffered(),
+            channel.media.audio_errors,
+        )
+    }
+
+    #[test]
+    fn access_units_lost_to_noise_leave_a_gap_of_their_own_length() {
+        let clean = synth::dab::ensemble(40);
+        let (whole, _) = audio_frames_delivered(&clean);
+        let (damaged, errors) = audio_frames_delivered(&with_noise(&clean, 4.5));
+        assert!(errors > 0, "no access unit was lost");
+        assert!(
+            damaged * 10 >= whole * 9,
+            "{damaged} of {whole} frames after {errors} errors"
         );
     }
 
