@@ -250,7 +250,8 @@ impl OfdmDemod {
 
     fn estimate_long(&mut self, x: &[Complex<f32>], long_start: usize) {
         let fft = self.params.fft();
-        let long_start = long_start - self.backoff.min(self.params.preamble().long_guard);
+        let long_start =
+            long_start.saturating_sub(self.backoff.min(self.params.preamble().long_guard));
         self.read_training(x, long_start, long_start + fft, |params, index| {
             (
                 params.map().occupied()[index].bin,
@@ -266,7 +267,7 @@ impl OfdmDemod {
         let short_start = long_start
             .saturating_sub(preamble.long_guard)
             .saturating_sub(short_samples);
-        let base = short_start + (short_samples - 2 * fft) - self.backoff;
+        let base = (short_start + (short_samples - 2 * fft)).saturating_sub(self.backoff);
         self.read_training(x, base, base + fft, |params, index| {
             (params.short_bins()[index].bin, params.short_training(index))
         });
