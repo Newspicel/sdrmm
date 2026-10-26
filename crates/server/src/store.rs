@@ -2202,11 +2202,9 @@ mod history;
 mod log_groups;
 mod nanovna;
 mod phones;
-mod remote;
 mod steps;
 
 pub(crate) use phones::{OfferFailure, OfferRow, PairWrite, PhoneRow};
-pub use remote::RemotePairing;
 pub(crate) use steps::upgrade_import;
 
 #[cfg(test)]

@@ -70,7 +70,6 @@ import type {
   RecordingFormat,
   RecordingInfo,
   RecordingsResponse,
-  RemoteStatus,
   ResolvedState,
   SatelliteCatalogResponse,
   SavedRadio,
@@ -131,7 +130,6 @@ export const DIAGNOSTICS_KEY = ["get", "/api/diagnostics"] as const;
 export const OCCUPANCY_KEY = ["get", "/api/occupancy"] as const;
 export const IONOSONDE_KEY = ["get", "/api/ionosonde"] as const;
 export const ABOUT_KEY = ["get", "/api/about"] as const;
-export const REMOTE_KEY = ["get", "/api/remote"] as const;
 export const WORKSPACES_KEY = ["get", "/api/workspaces"] as const;
 export const PATCH_CATALOG_KEY = ["get", "/api/patch/catalog"] as const;
 export const RESOLVED_KEY = ["get", "/api/workspaces/active/resolved"] as const;
@@ -310,22 +308,6 @@ export async function deleteBookmark(id: number): Promise<void> {
       params: { path: { id } },
     }),
   );
-}
-
-export function remoteQuery(pollMs: (status: RemoteStatus | undefined) => number | false) {
-  return queryOptions({
-    queryKey: REMOTE_KEY,
-    queryFn: async (): Promise<RemoteStatus> => unwrap(await client.GET("/api/remote")),
-    refetchInterval: (query) => pollMs(query.state.data),
-  });
-}
-
-export async function pairRemote(): Promise<RemoteStatus> {
-  return unwrap(await client.POST("/api/remote/pair", {}));
-}
-
-export async function unpairRemote(): Promise<void> {
-  unwrap(await client.DELETE("/api/remote", {}));
 }
 
 export function denoiseModelsQuery(enabled: boolean) {

@@ -1,6 +1,5 @@
 ---
 import { COMMUNITY, DOWNLOAD, isCurrent, PRIMARY } from "../nav";
-import SignIn from "./SignIn.astro";
 
 const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" : undefined);
 ---
@@ -17,7 +16,6 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
       </ul>
     </nav>
     <div class="act">
-      <button type="button" class="signin-button" popovertarget="signin">Sign in</button>
       <a class="get" href={DOWNLOAD.href} aria-current={current(DOWNLOAD.href)}>{DOWNLOAD.label}</a>
       <button type="button" class="menu-button" popovertarget="menu" aria-label="Menu">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path class="top" d="M3 7h14" /><path class="bottom" d="M3 13h14" /></svg>
@@ -26,10 +24,6 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
   </div>
 </header>
 
-<div id="signin" class="signin-pop" popover>
-  <SignIn />
-</div>
-
 <nav id="menu" class="menu" popover aria-label="Menu">
   <ul>
     {PRIMARY.map((link) => <li><a href={link.href} aria-current={current(link.href)}>{link.label}</a></li>)}
@@ -37,7 +31,6 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
   <ul class="community">
     {COMMUNITY.map((link) => <li><a href={link.href}>{link.label}</a></li>)}
   </ul>
-  <SignIn />
 </nav>
 
 <style>
@@ -112,7 +105,6 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
     padding-left: 24px;
     border-left: 1px solid var(--line);
   }
-  .signin-button,
   .get,
   .menu-button {
     display: inline-flex;
@@ -124,14 +116,6 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
     font: 500 14px var(--sans);
     text-decoration: none;
     cursor: pointer;
-  }
-  .signin-button {
-    background: none;
-    color: var(--ink-dim);
-  }
-  .signin-button:hover {
-    color: var(--ink);
-    border-color: var(--line-strong);
   }
   .get {
     border-color: var(--accent);
@@ -177,7 +161,6 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
     transform: translateY(-3px) rotate(-45deg);
   }
 
-  .signin-pop,
   .menu {
     margin: 0;
     padding: 0;
@@ -186,11 +169,6 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
     color: var(--ink);
     overflow: visible;
   }
-  .signin-pop {
-    inset: 68px max(var(--pad), calc((100vw - 1180px) / 2 + var(--pad))) auto auto;
-    width: min(340px, calc(100vw - 2 * var(--pad)));
-  }
-
   .menu {
     inset: 60px 0 auto;
     width: auto;
@@ -234,7 +212,6 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
   }
 
   @media (prefers-reduced-motion: no-preference) {
-    .signin-pop,
     .menu {
       transition:
         opacity 0.15s,
@@ -242,13 +219,11 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
         display 0.15s allow-discrete,
         overlay 0.15s allow-discrete;
     }
-    .signin-pop:not(:popover-open),
     .menu:not(:popover-open) {
       opacity: 0;
       translate: 0 -6px;
     }
     @starting-style {
-      .signin-pop:popover-open,
       .menu:popover-open {
         opacity: 0;
         translate: 0 -6px;
@@ -257,8 +232,7 @@ const current = (href: string) => (isCurrent(href, Astro.url.pathname) ? "page" 
   }
 
   @media (max-width: 960px) {
-    .links,
-    .signin-button {
+    .links {
       display: none;
     }
     .mark {

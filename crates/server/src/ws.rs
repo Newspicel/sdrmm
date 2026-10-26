@@ -59,13 +59,9 @@ pub(crate) async fn handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
-    relayed: Option<Extension<sdrmm_tunnel::Relayed>>,
 ) -> Response {
-    let fallback = relayed
-        .map(|Extension(relayed)| relayed.user)
-        .unwrap_or_default();
     ws.protocols([WS_SUBPROTOCOL])
-        .on_upgrade(move |socket| handle_socket(socket, state, identity, fallback))
+        .on_upgrade(move |socket| handle_socket(socket, state, identity, String::new()))
 }
 
 struct Session {

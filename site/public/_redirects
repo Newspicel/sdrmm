@@ -2,4 +2,5 @@
 /docs/index.html /docs/ 301
 /introduction.html /docs/ 301
 /introduction /docs/ 301
+/remote /docs/server/tunnels 301
 /*.html /:splat 301

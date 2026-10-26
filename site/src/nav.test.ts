@@ -54,7 +54,7 @@ describe("isCurrent", () => {
   });
 
   it("never marks other pages or external links", () => {
-    expect(isCurrent("/remote", "/download")).toBe(false);
-    expect(isCurrent("https://app.sdrmm.com", "/")).toBe(false);
+    expect(isCurrent("/business", "/download")).toBe(false);
+    expect(isCurrent("https://discord.gg/dYaRyGwBNw", "/")).toBe(false);
   });
 });

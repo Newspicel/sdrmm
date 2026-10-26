@@ -10,20 +10,16 @@ export interface LinkGroup {
   links: Link[];
 }
 
-export const APP = "https://app.sdrmm.com";
 export const DISCORD = "https://discord.gg/dYaRyGwBNw";
 export const DOWNLOAD: Link = { label: "Download", href: "/download" };
-export const REMOTE: Link = { label: "Remote access", href: "/remote" };
 export const BENCHMARKS: Link = { label: "Benchmarks", href: "/benchmarks" };
 export const BUSINESS: Link = { label: "Business", href: "/business" };
 export const CONTACT = `${BUSINESS.href}#contact`;
-export const SIGN_IN: Link = { label: "Sign in", href: APP };
 
 export const PRIMARY: Link[] = [
   { label: "Docs", href: "/docs/" },
   { label: "Hardware", href: "/docs/hardware" },
   BENCHMARKS,
-  REMOTE,
   BUSINESS,
 ];
 
@@ -47,7 +43,7 @@ export const FOOTER: LinkGroup[] = [
   },
   {
     title: "Services",
-    links: [REMOTE, { label: "Sign in to app.sdrmm.com", href: APP }, BUSINESS],
+    links: [BUSINESS],
   },
   { title: "Community", links: COMMUNITY },
 ];

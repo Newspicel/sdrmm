@@ -31,7 +31,7 @@ curl -H "Authorization: Bearer $SDRMM_TOKEN" http://receiver.local:8080/api/stat
 | Processing nodes | `/api/arrays`, `/api/radar`, `/api/fusion`, `/api/survey`, `/api/missions` |
 | Tools | `/api/tools`, `/api/cps` (radio programmer), `/api/denoise-models` |
 | Reference | `/api/bandplan`, `/api/satellites`, `/api/ionosonde`, `/api/position/nmea-devices` |
-| Access | `/api/auth`, `/api/phones`, `/api/remote` |
+| Access | `/api/auth`, `/api/phones` |
 | Server | `/api/status`, `/api/about`, `/api/doctor`, `/api/diagnostics` |
 
 Errors are JSON with `error`, an optional `detail`, and an optional stable `code` such as

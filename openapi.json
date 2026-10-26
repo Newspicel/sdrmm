@@ -472,16 +472,6 @@
           "204": {
             "description": "The file is selected in the machine's file manager"
           },
-          "403": {
-            "description": "Asked through remote access",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
           "404": {
             "description": "Audio recording not found, or this server has no file manager",
             "content": {
@@ -3865,16 +3855,6 @@
           "204": {
             "description": "The recordings folder is open in the machine's file manager"
           },
-          "403": {
-            "description": "Asked through remote access",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
           "404": {
             "description": "Nothing is recorded to disk, or this server has no file manager",
             "content": {
@@ -4080,100 +4060,8 @@
           "204": {
             "description": "The recording is selected in the machine's file manager"
           },
-          "403": {
-            "description": "Asked through remote access",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
           "404": {
             "description": "Recording not found, or this server has no file manager",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/remote": {
-      "get": {
-        "operationId": "get_remote",
-        "responses": {
-          "200": {
-            "description": "Remote access through the app",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RemoteStatus"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "unpair_remote",
-        "responses": {
-          "204": {
-            "description": "Remote access is off and the pairing forgotten"
-          },
-          "403": {
-            "description": "Asked through remote access",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/remote/pair": {
-      "post": {
-        "operationId": "pair_remote",
-        "responses": {
-          "200": {
-            "description": "A code to approve in the app",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RemoteStatus"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Asked through remote access",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Already paired",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The app refused or could not be reached",
             "content": {
               "application/json": {
                 "schema": {
@@ -8598,12 +8486,6 @@
           "token_required"
         ],
         "properties": {
-          "login_url": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "token_required": {
             "type": "boolean"
           }
@@ -31900,66 +31782,6 @@
           "wifi_beacon_dji",
           "wifi_nan"
         ]
-      },
-      "RemoteState": {
-        "type": "string",
-        "enum": [
-          "unpaired",
-          "pairing",
-          "connecting",
-          "online",
-          "retrying",
-          "rejected"
-        ]
-      },
-      "RemoteStatus": {
-        "type": "object",
-        "required": [
-          "state",
-          "app_origin",
-          "via_relay"
-        ],
-        "properties": {
-          "app_origin": {
-            "type": "string"
-          },
-          "device_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "error": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "state": {
-            "$ref": "#/components/schemas/RemoteState"
-          },
-          "user_code": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "verification_uri": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "verification_uri_complete": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "via_relay": {
-            "type": "boolean"
-          }
-        }
       },
       "RenamePhoneRequest": {
         "type": "object",

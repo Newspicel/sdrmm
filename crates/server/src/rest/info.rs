@@ -150,17 +150,9 @@ pub(super) async fn get_ionosonde(State(state): State<AppState>) -> Json<Ionoson
         body = AuthInfo,
     )),
 )]
-pub(super) async fn get_auth(
-    State(state): State<AppState>,
-    relayed: Option<axum::Extension<sdrmm_tunnel::Relayed>>,
-) -> Json<AuthInfo> {
-    let token_required = match relayed {
-        Some(axum::Extension(relayed)) => relayed.user.is_empty(),
-        None => state.auth.required(),
-    };
+pub(super) async fn get_auth(State(state): State<AppState>) -> Json<AuthInfo> {
     Json(AuthInfo {
-        token_required,
-        login_url: None,
+        token_required: state.auth.required(),
     })
 }
 

@@ -180,50 +180,6 @@ async fn unauthorized_answers_in_the_api_error_shape() {
     assert_eq!(error.code, Some(ErrorCode::Auth));
 }
 
-async fn relayed(app: &Router, uri: &str, user: &str) -> Answer {
-    let response = app
-        .clone()
-        .oneshot(
-            HttpRequest::builder()
-                .uri(uri)
-                .extension(sdrmm_tunnel::Relayed {
-                    user: user.to_owned(),
-                })
-                .body(Body::empty())
-                .expect("request"),
-        )
-        .await
-        .expect("response");
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), 1 << 16)
-        .await
-        .expect("body");
-    Answer {
-        status,
-        body: String::from_utf8_lossy(&bytes).into_owned(),
-        challenge: None,
-    }
-}
-
-#[tokio::test]
-async fn a_relayed_user_passes_the_token_check() {
-    let answer = relayed(&main_app(Some("s3cret")), "/api/state", "user-1").await;
-    assert_eq!(
-        (answer.status, answer.body.as_str()),
-        (StatusCode::OK, "Operator")
-    );
-}
-
-#[tokio::test]
-async fn an_anonymous_relayed_request_still_needs_the_token() {
-    let app = main_app(Some("s3cret"));
-    assert_eq!(
-        relayed(&app, "/api/state", "").await.status,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(relayed(&app, "/api/auth", "").await.status, StatusCode::OK);
-}
-
 #[tokio::test]
 async fn a_phone_token_opens_allowlisted_routes_only() {
     let phones = phones();
@@ -607,75 +563,16 @@ async fn dev_cors_lets_a_foreign_page_in() {
     assert_eq!(answer.status, StatusCode::OK);
 }
 
-async fn relayed_with(app: &Router, user: &str, headers: &[(&str, &str)]) -> StatusCode {
-    call_relayed(app, "/api/state", user, headers).await
-}
-
-async fn call_relayed(app: &Router, uri: &str, user: &str, headers: &[(&str, &str)]) -> StatusCode {
-    let mut request = HttpRequest::builder()
-        .uri(uri)
-        .extension(sdrmm_tunnel::Relayed {
-            user: user.to_owned(),
-        });
-    for (name, value) in headers {
-        request = request.header(*name, *value);
-    }
-    app.clone()
-        .oneshot(request.body(Body::empty()).expect("request"))
-        .await
-        .expect("response")
-        .status()
-}
-
 #[tokio::test]
-async fn a_signed_in_relay_reaches_an_open_loopback_server() {
+async fn a_foreign_host_cannot_reach_a_local_hosts_only_server() {
     let mut local = gate(ListenerRole::Main, false, None, &phones());
     local.local_hosts_only = true;
     let app = app(local);
-    let relay = [
-        ("host", "abc.sdrmm.link"),
-        ("origin", "https://abc.sdrmm.link"),
-    ];
-    assert_eq!(relayed_with(&app, "user-1", &relay).await, StatusCode::OK);
     assert_eq!(
-        relayed_with(&app, "", &relay).await,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        relayed_with(
-            &app,
-            "user-1",
-            &[
-                ("host", "abc.sdrmm.link"),
-                ("origin", "https://evil.example")
-            ]
-        )
-        .await,
-        StatusCode::FORBIDDEN
-    );
-    assert_eq!(
-        call(&app, "GET", "/api/state", &[("host", "abc.sdrmm.link")])
+        call(&app, "GET", "/api/state", &[("host", "abc.example")])
             .await
             .status,
         StatusCode::FORBIDDEN
-    );
-}
-
-#[tokio::test]
-async fn an_anonymous_relay_reads_auth_on_an_open_loopback_server() {
-    let mut local = gate(ListenerRole::Main, false, None, &phones());
-    local.local_hosts_only = true;
-    let app = app(local);
-    let answer = call_relayed(&app, "/api/auth", "", &[("host", "abc.sdrmm.link")]).await;
-    assert_eq!(answer, StatusCode::OK);
-}
-
-#[tokio::test]
-async fn an_anonymous_relay_cannot_reach_an_open_server() {
-    let app = main_app(None);
-    assert_eq!(
-        relayed(&app, "/api/state", "").await.status,
-        StatusCode::UNAUTHORIZED
     );
 }
 

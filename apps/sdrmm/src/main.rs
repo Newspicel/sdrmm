@@ -9,7 +9,6 @@ use clap::Parser;
 use sdrmm_engine::Engine;
 use sdrmm_server::{Config, ServerOptions, serve, tls::Tls};
 
-mod pair;
 mod phone;
 
 #[derive(Parser, Debug)]
@@ -23,8 +22,6 @@ struct Args {
     dev_cors: bool,
     #[arg(long)]
     db: Option<PathBuf>,
-    #[arg(long, env = "SDRMM_REMOTE_APP")]
-    remote_app: Option<url::Url>,
     #[arg(long)]
     recordings_dir: Option<PathBuf>,
     #[arg(long, hide = true, default_value_t = 1.0, value_parser = parse_playback_speed)]
@@ -54,8 +51,6 @@ struct Args {
 enum Command {
     #[command(about = "Show a QR code that pairs a phone")]
     Phone(phone::PhoneArgs),
-    #[command(about = "Pair this server with app.sdrmm.com")]
-    Pair(pair::PairArgs),
 }
 
 impl Args {
@@ -63,10 +58,6 @@ impl Args {
         let mut command = self.command.take()?;
         match &mut command {
             Command::Phone(phone) => phone.db = phone.db.take().or_else(|| self.db.take()),
-            Command::Pair(pair) => {
-                pair.db = pair.db.take().or_else(|| self.db.take());
-                pair.remote_app = pair.remote_app.take().or_else(|| self.remote_app.take());
-            }
         }
         Some(command)
     }
@@ -140,10 +131,6 @@ fn main() -> ExitCode {
 fn run(mut args: Args) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(Command::Phone(phone)) => return phone::run(phone),
-        Some(Command::Pair(pair)) => {
-            sdrmm_server::diagnostics::install_tracing()?;
-            return pair::run(pair);
-        }
         None => {}
     }
     sdrmm_server::diagnostics::install_tracing()?;
@@ -187,7 +174,6 @@ fn run(mut args: Args) -> anyhow::Result<()> {
             dev_cors: args.dev_cors,
             token: args.token,
             shell: None,
-            remote_app: args.remote_app,
         },
     };
     serve_until_stopped(config, engine)
@@ -419,55 +405,19 @@ mod tests {
     }
 
     #[test]
-    fn pair_links_the_app_and_reads_the_server_flags() {
-        let serve = Args::try_parse_from(["sdrmm"]).expect("parse");
-        assert!(serve.command.is_none());
-        assert!(serve.remote_app.is_none());
-        let mut own = Args::try_parse_from([
-            "sdrmm",
-            "pair",
-            "--db",
-            "x.db",
-            "--remote-app",
-            "http://localhost:5173",
-        ])
-        .expect("parse");
-        let Some(Command::Pair(pair)) = own.subcommand() else {
-            panic!("no pair command");
-        };
-        assert_eq!(pair.db, Some(PathBuf::from("x.db")));
-        assert_eq!(
-            pair.remote_app.map(|url| url.to_string()).as_deref(),
-            Some("http://localhost:5173/")
-        );
-        let mut server = Args::try_parse_from([
-            "sdrmm",
-            "--db",
-            "y.db",
-            "--remote-app",
-            "http://localhost:4000",
-            "pair",
-        ])
-        .expect("parse");
-        let Some(Command::Pair(pair)) = server.subcommand() else {
-            panic!("no pair command");
-        };
-        assert_eq!(pair.db, Some(PathBuf::from("y.db")));
-        assert_eq!(
-            pair.remote_app.map(|url| url.to_string()).as_deref(),
-            Some("http://localhost:4000/")
-        );
-        assert!(Args::try_parse_from(["sdrmm", "--remote-app", "not a url"]).is_err());
-    }
-
-    #[test]
     fn routing_flags_are_gone() {
-        for flag in ["--routing-key", "--routing-url", "--routing-backend"] {
+        for flag in [
+            "--routing-key",
+            "--routing-url",
+            "--routing-backend",
+            "--remote-app",
+        ] {
             assert!(
                 Args::try_parse_from(["sdrmm", flag, "x"]).is_err(),
                 "accepted {flag}"
             );
         }
+        assert!(Args::try_parse_from(["sdrmm", "pair"]).is_err());
     }
 
     #[test]

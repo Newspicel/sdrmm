@@ -1,8 +1,3 @@
----
-import { APP, REMOTE } from "../nav";
-import { euros, lowest, PLANS } from "../plans";
----
-
 <ul class="setups">
   <li>
     <h3>On your desk</h3>
@@ -13,15 +8,6 @@ import { euros, lowest, PLANS } from "../plans";
     <h3>By the antenna</h3>
     <p>A Pi in the loft runs the server. Open it from any browser at home.</p>
     <p class="cost"><span class="free">Free</span></p>
-  </li>
-  <li>
-    <h3>Away from home</h3>
-    <p>Reach the server through your own tunnel, or sign in at app.sdrmm.com.
-      <a href={REMOTE.href}>Compare both</a></p>
-    <p class="cost">
-      <span><span class="free">Free</span> with your own tunnel</span>
-      <span>From {euros(lowest(PLANS))} a month with <a href={APP}>app.sdrmm.com</a></span>
-    </p>
   </li>
 </ul>
 

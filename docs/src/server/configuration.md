@@ -14,23 +14,21 @@ Out of the box it listens on `0.0.0.0:8080` with **no authentication**.
 | `--tls-cert <PATH>`, `--tls-key <PATH>` | None | HTTPS certificate chain and key, PEM; always together |
 | `--tls-self-signed` | Off | HTTPS with a self-signed certificate |
 | `--tls-name <NAME>` | Found addresses | Name the self-signed certificate must cover; repeatable or comma-separated |
-| `--remote-app <URL>` | `https://app.sdrmm.com` | App for [remote access](tunnels.md#appsdrmmcom) |
 | `--dev-cors` | Off | Allow a separate frontend origin, for development only |
 | `--doctor` | | Print diagnostics and exit |
 | `--doctor-rates` | | Probe connected radios' sample rates and exit |
 
-`SDRMM_TOKEN`, `SDRMM_TLS_NAMES` and `SDRMM_REMOTE_APP` set `--token`, `--tls-name` and
-`--remote-app`. The platform data folder is `~/.local/share` on Linux,
+`SDRMM_TOKEN` and `SDRMM_TLS_NAMES` set `--token` and `--tls-name`. The platform data folder is
+`~/.local/share` on Linux,
 `~/Library/Application Support` on macOS and `%APPDATA%` on Windows. For a service, use absolute
 paths for `--db` and `--recordings-dir`.
 
-Subcommands: [`sdrmm phone`](#phones) pairs a phone, [`sdrmm pair`](tunnels.md#appsdrmmcom)
-pairs with app.sdrmm.com.
+Subcommand: [`sdrmm phone`](#phones) pairs a phone.
 
 ## Data
 
 The database holds workspaces, presets, bookmarks, saved radios, the recording index, the decoder
-log, paired phones and the app.sdrmm.com pairing. The `tls` folder beside it holds the
+log and paired phones. The `tls` folder beside it holds the
 self-signed certificate. Recording files hold the signals. Back up all three. Stop the server
 before copying the database, or use SQLite's backup, and finish recordings before copying them.
 

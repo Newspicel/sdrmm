@@ -1,10 +1,8 @@
 ---
 import { CONTACT_PATH, type ContactOutcome, FIELDS, LIMITS } from "../contact";
 import Page from "../layouts/Page.astro";
-import { euros, PLANS } from "../plans";
 
 const mail = "hi@jhaag.me";
-const team = PLANS.find((plan) => plan.perSeat);
 
 const offers = [
   {
@@ -50,17 +48,6 @@ const outcomes: { id: ContactOutcome; text: string }[] = [
               <p>{offer.text}</p>
             </li>
           ))
-        }
-        {
-          team && (
-            <li>
-              <h2>Remote access for a team</h2>
-              <p>
-                app.sdrmm.com for everyone at {euros(team.monthly)} per seat a month, from {team.minSeats} seats.
-                <a href="/remote#pricing">Pricing</a>
-              </p>
-            </li>
-          )
         }
       </ul>
       <p class="else">Something else? Rough ideas welcome.</p>

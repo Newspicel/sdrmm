@@ -43,8 +43,7 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-cps` | Codeplug reading, writing, and conversion |
 | `sdrmm-test-support` | Allocation and timing helpers for tests |
 | `sdrmm-engine` | Device supervision, channelization, scanning, streams, recording, and state snapshots |
-| `sdrmm-tunnel` | Outbound relay client, device key, and pairing for app.sdrmm.com |
-| `sdrmm-server` | REST, WebSocket, MCP, persistence, band plans, auth, phones, remote access, and embedded assets |
+| `sdrmm-server` | REST, WebSocket, MCP, persistence, band plans, auth, phones, and embedded assets |
 | `sdrmm-mobile-core` | Pairing, pinned TLS client, missions, and pose fusion for the phone apps |
 
 `apps/sdrmm` is the CLI and owns the process. `apps/desktop` starts the same server on a random

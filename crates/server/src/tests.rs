@@ -35,7 +35,6 @@ mod phones;
 mod presets;
 mod rebind;
 mod recordings;
-mod remote;
 mod scanning;
 mod templates;
 mod tls;

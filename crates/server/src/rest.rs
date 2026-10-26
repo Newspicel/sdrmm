@@ -52,7 +52,6 @@ mod phones;
 mod presets;
 mod radar;
 mod recordings;
-mod remote;
 mod satellites;
 mod sinks;
 mod survey;
@@ -70,7 +69,6 @@ pub(crate) use media::{call_audio_path, captured_image_path};
 pub(crate) use nodes::{channel_settings, edit_channel, radio_of, set_channel, set_device};
 use presets::*;
 use recordings::*;
-use remote::*;
 use satellites::*;
 use workspaces::*;
 pub(crate) use workspaces::{
@@ -133,20 +131,8 @@ impl AppError {
         )
     }
 
-    fn forbidden(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::FORBIDDEN, ErrorCode::Forbidden, message.into())
-    }
-
     fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, ErrorCode::Conflict, message.into())
-    }
-
-    fn bad_gateway(message: impl Into<String>) -> Self {
-        Self::new(
-            StatusCode::BAD_GATEWAY,
-            ErrorCode::Unavailable,
-            message.into(),
-        )
     }
 
     fn with_detail(mut self, detail: String) -> Self {
@@ -190,22 +176,6 @@ impl<T: serde::Serialize> IntoResponse for Json<T> {
 #[derive(FromRequestParts)]
 #[from_request(via(axum::extract::Path), rejection(AppError))]
 pub(crate) struct Path<T>(pub T);
-
-pub(crate) struct LocalOnly;
-
-impl<S: Send + Sync> FromRequestParts<S> for LocalOnly {
-    type Rejection = AppError;
-
-    async fn from_request_parts(
-        parts: &mut axum::http::request::Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
-        if parts.extensions.get::<sdrmm_tunnel::Relayed>().is_some() {
-            return Err(AppError::forbidden("not allowed through remote access"));
-        }
-        Ok(Self)
-    }
-}
 
 #[derive(FromRequestParts)]
 #[from_request(via(axum::extract::Query), rejection(AppError))]
@@ -516,8 +486,6 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(run_tool))
         .routes(routes!(get_about))
         .routes(routes!(get_license_text))
-        .routes(routes!(get_remote, unpair_remote))
-        .routes(routes!(pair_remote))
         .merge(arrays::routes())
         .merge(radar::routes())
         .merge(phones::routes())
