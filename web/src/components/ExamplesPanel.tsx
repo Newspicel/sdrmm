@@ -4,8 +4,8 @@ import { pushToast } from "../lib/toasts";
 import type { ExampleInfo } from "../lib/types";
 import { Button } from "./BaseControls";
 import { BTN_SM, CHIP_READOUT } from "./controls";
-import { exampleNeeds, kindLabels } from "./examples";
-import { List, ListRow, Panel } from "./ListPanel";
+import { exampleNeeds, examplesHint, kindLabels } from "./examples";
+import { List, ListRow, Panel, PanelHint } from "./ListPanel";
 
 export function ExamplesPanel({ onImported }: { onImported: (id: number) => void }) {
   const queryClient = useQueryClient();
@@ -23,8 +23,11 @@ export function ExamplesPanel({ onImported }: { onImported: (id: number) => void
     onSettled: () => void queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY }),
   });
 
+  const hint = examplesHint(examples.isPending, examples.error);
+
   return (
     <Panel>
+      {hint !== null && <PanelHint>{hint}</PanelHint>}
       <List>
         {list.map((example) => (
           <ListRow

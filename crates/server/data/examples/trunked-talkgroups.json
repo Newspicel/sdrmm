@@ -5,62 +5,178 @@
     "version": 4,
     "graph": {
       "nodes": [
-        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
-        { "id": "scope", "kind": "scope", "position": { "x": 520.0, "y": -40.0 } },
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "scope",
+          "kind": "scope",
+          "position": {
+            "x": 520.0,
+            "y": -40.0
+          }
+        },
         {
           "id": "trunk",
           "kind": "dmr_trunk",
           "data": {
             "protocol": "auto",
-            "discovery": { "enabled": true, "max_probes": 4 },
+            "discovery": {
+              "enabled": true,
+              "max_probes": 4
+            },
             "ignore_crc": false
           },
-          "position": { "x": 520.0, "y": 340.0 }
+          "position": {
+            "x": 520.0,
+            "y": 340.0
+          }
         },
         {
           "id": "fx",
           "kind": "audio_fx",
           "data": {},
-          "position": { "x": 1040.0, "y": 340.0 }
+          "position": {
+            "x": 1040.0,
+            "y": 340.0
+          }
         },
-        { "id": "spk", "kind": "speaker", "position": { "x": 1560.0, "y": 300.0 } },
+        {
+          "id": "spk",
+          "kind": "speaker",
+          "position": {
+            "x": 1560.0,
+            "y": 300.0
+          }
+        },
         {
           "id": "arec",
           "kind": "audio_recorder",
-          "data": { "recording": false, "skip_silence": true },
-          "position": { "x": 1560.0, "y": 640.0 }
+          "data": {
+            "recording": false,
+            "skip_silence": true
+          },
+          "position": {
+            "x": 1560.0,
+            "y": 640.0
+          }
         },
-        { "id": "log", "kind": "decoder_log", "data": {}, "position": { "x": 1040.0, "y": 760.0 } },
+        {
+          "id": "log",
+          "kind": "decoder_log",
+          "data": {},
+          "position": {
+            "x": 1040.0,
+            "y": 760.0
+          }
+        },
         {
           "id": "note",
           "kind": "note",
           "data": {
             "text": "## Trunked talkgroups\n\n**DMR trunk system** is not a decoder you tune. Give it the control channel and it follows the traffic itself: it reads which talkgroup moved to which frequency and decodes the voice there. One node instead of a channel per slot.\n\nDiscovery is on, so it probes for the control channel rather than waiting to be told.\n\n**Audio FX** cleans what comes out. Trunked voice is often clipped and noisy; the filter and denoise settings here are worth more than on broadcast audio.\n\n**Audio recorder** keeps the calls, skipping the silence between them.\n\n**Decoder log** records who called which talkgroup and when, which is the part you search later.\n\nSet the Device to your local DMR control channel."
           },
-          "position": { "x": 0.0, "y": 420.0 }
+          "position": {
+            "x": 0.0,
+            "y": 420.0
+          },
+          "size": {
+            "w": 560.0,
+            "h": 460.0
+          }
         }
       ],
       "edges": [
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "trunk", "port": "iq" } },
         {
-          "from": { "node": "trunk", "port": "audio" },
-          "to": { "node": "fx", "port": "audio" }
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "scope",
+            "port": "iq"
+          }
         },
-        { "from": { "node": "fx", "port": "audio" }, "to": { "node": "spk", "port": "audio" } },
-        { "from": { "node": "fx", "port": "audio" }, "to": { "node": "arec", "port": "audio" } },
         {
-          "from": { "node": "trunk", "port": "events" },
-          "to": { "node": "log", "port": "events" }
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "trunk",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "trunk",
+            "port": "audio"
+          },
+          "to": {
+            "node": "fx",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "fx",
+            "port": "audio"
+          },
+          "to": {
+            "node": "spk",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "fx",
+            "port": "audio"
+          },
+          "to": {
+            "node": "arec",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "trunk",
+            "port": "events"
+          },
+          "to": {
+            "node": "log",
+            "port": "events"
+          }
         }
       ]
     },
-    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
   },
   "state": {
     "version": 2,
     "devices": [
-      { "node": "dev", "settings": { "center_hz": 439000000.0, "sample_rate": 2400000.0 } }
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 439000000.0,
+          "sample_rate": 2400000.0
+        }
+      }
     ]
   }
 }

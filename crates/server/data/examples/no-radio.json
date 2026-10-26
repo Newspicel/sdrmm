@@ -8,29 +8,49 @@
         {
           "id": "gen",
           "kind": "signal_gen",
-          "data": { "running": true },
-          "position": { "x": 0.0, "y": 0.0 }
+          "data": {
+            "running": true
+          },
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
         },
         {
           "id": "scope",
           "kind": "scope",
-          "position": { "x": 520.0, "y": -40.0 }
+          "position": {
+            "x": 520.0,
+            "y": -40.0
+          }
         },
         {
           "id": "ch",
           "kind": "channel",
-          "data": { "channel_type": "nfm", "tuning_locked": false },
-          "position": { "x": 520.0, "y": 340.0 }
+          "data": {
+            "channel_type": "nfm",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520.0,
+            "y": 340.0
+          }
         },
         {
           "id": "bb",
           "kind": "baseband_scope",
-          "position": { "x": 1040.0, "y": 300.0 }
+          "position": {
+            "x": 1040.0,
+            "y": 300.0
+          }
         },
         {
           "id": "spk",
           "kind": "speaker",
-          "position": { "x": 1040.0, "y": 680.0 }
+          "position": {
+            "x": 1040.0,
+            "y": 680.0
+          }
         },
         {
           "id": "note",
@@ -38,31 +58,92 @@
           "data": {
             "text": "## No radio needed\n\n**Signal generator** stands in for a radio: it makes a synthetic signal, so the canvas works with no hardware plugged in.\n\n**Scope** draws the spectrum it produces.\n\n**Channel** tunes and demodulates one signal out of that spectrum.\n\n**Baseband scope** shows the channel's constellation and eye, which is how you tell a locked decoder from a guessing one.\n\n**Speaker** plays the channel's audio.\n\nChange the generator's settings and watch both scopes follow."
           },
-          "position": { "x": 0.0, "y": 420.0 }
+          "position": {
+            "x": 0.0,
+            "y": 420.0
+          },
+          "size": {
+            "w": 560.0,
+            "h": 460.0
+          }
         }
       ],
       "edges": [
-        { "from": { "node": "gen", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
-        { "from": { "node": "gen", "port": "iq" }, "to": { "node": "ch", "port": "iq" } },
         {
-          "from": { "node": "ch", "port": "baseband" },
-          "to": { "node": "bb", "port": "baseband" }
+          "from": {
+            "node": "gen",
+            "port": "iq"
+          },
+          "to": {
+            "node": "scope",
+            "port": "iq"
+          }
         },
-        { "from": { "node": "ch", "port": "audio" }, "to": { "node": "spk", "port": "audio" } }
+        {
+          "from": {
+            "node": "gen",
+            "port": "iq"
+          },
+          "to": {
+            "node": "ch",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "ch",
+            "port": "baseband"
+          },
+          "to": {
+            "node": "bb",
+            "port": "baseband"
+          }
+        },
+        {
+          "from": {
+            "node": "ch",
+            "port": "audio"
+          },
+          "to": {
+            "node": "spk",
+            "port": "audio"
+          }
+        }
       ]
     },
     "rack": {
-      "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }]
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
     }
   },
   "state": {
     "version": 2,
+    "devices": [
+      {
+        "node": "gen",
+        "settings": {
+          "center_hz": 145000000.0,
+          "sample_rate": 240000.0,
+          "tuning": "manual"
+        }
+      }
+    ],
     "channels": [
       {
         "node": "ch",
         "settings": {
-          "frequency_hz": 100000000.0,
-          "params": { "type": "nfm", "settings": {} }
+          "frequency_hz": 145000000.0,
+          "params": {
+            "type": "nfm",
+            "settings": {}
+          }
         }
       }
     ]

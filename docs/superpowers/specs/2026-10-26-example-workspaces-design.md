@@ -132,7 +132,7 @@ is there. A test asserts every example contains at least one `Note` node.
 This is the part that answers the original question, and it survives the file
 being modified and re-shared, which a list description does not.
 
-## The eleven examples
+## The twelve examples
 
 | id | needs | orphan kinds covered |
 |---|---|---|
@@ -145,10 +145,15 @@ being modified and re-shared, which a list description does not.
 | `network-feed` | 1 radio | `network_export`, `export`, `event_output` |
 | `df-drive` | 2 lanes | `signal_map` |
 | `passive-radar` | 2 lanes | `passive_radar` |
-| `beam-and-stitch` | 2 lanes | `beamformer`, `stitch` |
+| `beam-steer` | 2 lanes | `beamformer` |
+| `stitch-wide` | 2 lanes | `stitch` |
 | `array-lab` | 2 lanes | `spatial_spectrum`, `correlator`, `polarimeter` |
 
-`note` is covered by all eleven. Together they cover all 27.
+`note` is covered by all twelve. Together they cover all 27.
+
+Beam steering and Stitch wide are separate files because their nodes demand opposite
+Array tuning: the beamformer and direction finder need `together`, stitch needs `spread`,
+and each refuses the other. One file would ship half of itself refused.
 
 `no-radio` runs on a Signal generator, so the canvas can be learned before
 buying a dongle.

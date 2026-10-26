@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExampleInfo, ExampleNeeds, NodeKind, PatchCatalog } from "../lib/types";
-import { exampleNeeds, kindLabels } from "./examples";
+import { exampleNeeds, examplesHint, kindLabels } from "./examples";
 
 function example(needs: Partial<ExampleNeeds>, node_kinds: NodeKind[] = []): ExampleInfo {
   return {
@@ -31,6 +31,26 @@ describe("exampleNeeds", () => {
 
   it("counts recordings", () => {
     expect(exampleNeeds(example({ recordings: 1 }))).toBe("1 recording");
+  });
+});
+
+describe("examplesHint", () => {
+  it("says nothing once the list has loaded", () => {
+    expect(examplesHint(false, null)).toBeNull();
+  });
+
+  it("says it is loading while the query is pending", () => {
+    expect(examplesHint(true, null)).toBe("Loading examples.");
+  });
+
+  it("surfaces the server's reason rather than showing an empty tab", () => {
+    expect(examplesHint(false, new Error("the no-radio example is malformed: bad gzip"))).toBe(
+      "the no-radio example is malformed: bad gzip",
+    );
+  });
+
+  it("falls back to a message when the error carries none", () => {
+    expect(examplesHint(false, new Error(""))).toBe("The examples could not be read.");
   });
 });
 

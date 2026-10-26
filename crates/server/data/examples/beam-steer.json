@@ -1,0 +1,214 @@
+{
+  "version": 2,
+  "name": "Beam steering",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "array",
+          "kind": "array",
+          "data": {
+            "geometry": {
+              "kind": "uca",
+              "radius_m": 0.35,
+              "first_deg": 0.0,
+              "winding": "clockwise"
+            },
+            "orientation": {
+              "kind": "fixed",
+              "azimuth_deg": 0.0
+            },
+            "declared": "time_sync",
+            "tuning": "together",
+            "cal": {
+              "source": {
+                "kind": "noise"
+              },
+              "check_s": 60,
+              "equaliser": false,
+              "warm_start": true
+            }
+          },
+          "position": {
+            "x": 520.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "df",
+          "kind": "df",
+          "data": {},
+          "position": {
+            "x": 1040.0,
+            "y": -360.0
+          }
+        },
+        {
+          "id": "beam",
+          "kind": "beamformer",
+          "data": {
+            "settings": {
+              "mode": "das"
+            }
+          },
+          "position": {
+            "x": 1040.0,
+            "y": 60.0
+          }
+        },
+        {
+          "id": "ch",
+          "kind": "channel",
+          "data": {
+            "channel_type": "nfm",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 1560.0,
+            "y": 60.0
+          }
+        },
+        {
+          "id": "spk",
+          "kind": "speaker",
+          "position": {
+            "x": 2080.0,
+            "y": 60.0
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Beam steering\n\nTwo coherent lanes, aimed by what they hear.\n\n**Array** holds them as one instrument. `tuning` is `together`, which both nodes here require: they compare phase between lanes, so the lanes must sit on the same frequency.\n\n**Direction finder** says where the signal is. **Beamformer** points at it: the `steer` wire carries the DF's live bearing, and `mode` is `das`, one of the modes that actually uses it. The default `mrc` ignores the bearing and just maximises signal to noise, so the wire would be drawn and do nothing.\n\nTo null an interferer instead of pointing at a signal, set `nulls_deg`, or switch `mode` to `canceller`.\n\nThe beam leaves as one clean lane, so a **Channel** decodes it exactly as it would a plain radio.\n\nFor joining lanes into a wider band instead, see the Stitch wide example: it needs `spread` tuning, which these nodes refuse."
+          },
+          "position": {
+            "x": 0.0,
+            "y": 520.0
+          },
+          "size": {
+            "w": 560.0,
+            "h": 460.0
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "array",
+            "port": "lane"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq2"
+          },
+          "to": {
+            "node": "array",
+            "port": "lane2"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "port": "array"
+          },
+          "to": {
+            "node": "df",
+            "port": "array"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "port": "array"
+          },
+          "to": {
+            "node": "beam",
+            "port": "array"
+          }
+        },
+        {
+          "from": {
+            "node": "df",
+            "port": "bearing"
+          },
+          "to": {
+            "node": "beam",
+            "port": "steer"
+          }
+        },
+        {
+          "from": {
+            "node": "beam",
+            "port": "beam"
+          },
+          "to": {
+            "node": "ch",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "ch",
+            "port": "audio"
+          },
+          "to": {
+            "node": "spk",
+            "port": "audio"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 145500000.0,
+          "sample_rate": 2400000.0
+        }
+      }
+    ],
+    "channels": [
+      {
+        "node": "ch",
+        "settings": {
+          "frequency_hz": 145500000.0,
+          "params": {
+            "type": "nfm",
+            "settings": {}
+          }
+        }
+      }
+    ]
+  }
+}

@@ -65,10 +65,16 @@ static EXAMPLES: &[Example] = &[
         body: packed_data!("examples/passive-radar.json"),
     },
     Example {
-        id: "beam-and-stitch",
-        name: "Beam and stitch",
-        description: "Aim the array at what the direction finder sees, or join its lanes wide.",
-        body: packed_data!("examples/beam-and-stitch.json"),
+        id: "beam-steer",
+        name: "Beam steering",
+        description: "Aim the array at whatever the direction finder currently sees.",
+        body: packed_data!("examples/beam-steer.json"),
+    },
+    Example {
+        id: "stitch-wide",
+        name: "Stitch wide",
+        description: "Lanes on adjacent slices, joined into one band wider than the radio.",
+        body: packed_data!("examples/stitch-wide.json"),
     },
     Example {
         id: "array-lab",
@@ -237,12 +243,39 @@ mod tests {
     #[test]
     fn the_array_examples_ask_for_lanes() {
         let listed = all().expect("examples list");
-        for id in ["df-drive", "passive-radar", "beam-and-stitch", "array-lab"] {
+        for id in [
+            "df-drive",
+            "passive-radar",
+            "beam-steer",
+            "stitch-wide",
+            "array-lab",
+        ] {
             let info = listed.iter().find(|e| e.id == id).expect(id);
             assert!(
                 info.needs.lanes >= 2,
                 "{id} asks for {} lanes",
                 info.needs.lanes
+            );
+        }
+    }
+
+    #[test]
+    fn no_example_loses_a_wire_on_import() {
+        for example in EXAMPLES {
+            let shipped: WorkspaceExport =
+                crate::json::from_value(&export(example.id).expect("export")).expect(example.id);
+            let mut document = export(example.id).expect("export");
+            let notices = crate::store::upgrade_import(&mut document);
+            assert!(
+                notices.is_empty(),
+                "{} imports with notices: {notices:?}",
+                example.id
+            );
+            let imported: WorkspaceExport = crate::json::from_value(&document).expect(example.id);
+            assert_eq!(
+                imported.snapshot.graph.edges, shipped.snapshot.graph.edges,
+                "{} loses wires on import",
+                example.id
             );
         }
     }

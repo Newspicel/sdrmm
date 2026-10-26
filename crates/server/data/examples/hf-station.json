@@ -5,20 +5,55 @@
     "version": 4,
     "graph": {
       "nodes": [
-        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
-        { "id": "scope", "kind": "scope", "position": { "x": 520.0, "y": -40.0 } },
-        { "id": "gps", "kind": "gps", "data": {}, "position": { "x": 0.0, "y": 380.0 } },
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "scope",
+          "kind": "scope",
+          "position": {
+            "x": 520.0,
+            "y": -40.0
+          }
+        },
+        {
+          "id": "gps",
+          "kind": "gps",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 380.0
+          }
+        },
         {
           "id": "ft8",
           "kind": "channel",
-          "data": { "channel_type": "ft8", "tuning_locked": false },
-          "position": { "x": 520.0, "y": 340.0 }
+          "data": {
+            "channel_type": "ft8",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520.0,
+            "y": 340.0
+          }
         },
         {
           "id": "wspr",
           "kind": "channel",
-          "data": { "channel_type": "wspr", "tuning_locked": false },
-          "position": { "x": 520.0, "y": 700.0 }
+          "data": {
+            "channel_type": "wspr",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520.0,
+            "y": 700.0
+          }
         },
         {
           "id": "prop",
@@ -29,7 +64,10 @@
             "show_paths": true,
             "compare_forecast": true
           },
-          "position": { "x": 1040.0, "y": 340.0 }
+          "position": {
+            "x": 1040.0,
+            "y": 340.0
+          }
         },
         {
           "id": "filter",
@@ -42,59 +80,172 @@
             "radios": [],
             "min_duration_ms": 0
           },
-          "position": { "x": 1040.0, "y": 760.0 }
+          "position": {
+            "x": 1040.0,
+            "y": 760.0
+          }
         },
-        { "id": "log", "kind": "decoder_log", "data": {}, "position": { "x": 1560.0, "y": 760.0 } },
+        {
+          "id": "log",
+          "kind": "decoder_log",
+          "data": {},
+          "position": {
+            "x": 1560.0,
+            "y": 760.0
+          }
+        },
         {
           "id": "note",
           "kind": "note",
           "data": {
             "text": "## HF station\n\nTwo decoders on one radio. **FT8** and **WSPR** both run from the same Device, because one HF radio can carry several narrow decoders at once.\n\n**Propagation map** turns their decodes into where the signals came from, which is the point of listening to either. It needs **GPS position** to know where the other end of each path is.\n\n**Event filter** sits between the decoders and the log. Empty, it keeps everything. Add a callsign to `stations` and the log holds only that station.\n\n**Decoder log** keeps what got through the filter.\n\nTuned to 20m FT8 at 14.074 MHz. Move the Device for another band; both decoders follow."
           },
-          "position": { "x": 0.0, "y": 760.0 }
+          "position": {
+            "x": 0.0,
+            "y": 760.0
+          },
+          "size": {
+            "w": 560.0,
+            "h": 460.0
+          }
         }
       ],
       "edges": [
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "ft8", "port": "iq" } },
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "wspr", "port": "iq" } },
         {
-          "from": { "node": "gps", "port": "position" },
-          "to": { "node": "prop", "port": "position" }
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "scope",
+            "port": "iq"
+          }
         },
         {
-          "from": { "node": "ft8", "port": "events" },
-          "to": { "node": "prop", "port": "events" }
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "ft8",
+            "port": "iq"
+          }
         },
         {
-          "from": { "node": "wspr", "port": "events" },
-          "to": { "node": "prop", "port": "events" }
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "wspr",
+            "port": "iq"
+          }
         },
         {
-          "from": { "node": "ft8", "port": "events" },
-          "to": { "node": "filter", "port": "events" }
+          "from": {
+            "node": "gps",
+            "port": "position"
+          },
+          "to": {
+            "node": "prop",
+            "port": "position"
+          }
         },
         {
-          "from": { "node": "filter", "port": "events" },
-          "to": { "node": "log", "port": "events" }
+          "from": {
+            "node": "ft8",
+            "port": "events"
+          },
+          "to": {
+            "node": "prop",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "wspr",
+            "port": "events"
+          },
+          "to": {
+            "node": "prop",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "ft8",
+            "port": "events"
+          },
+          "to": {
+            "node": "filter",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "wspr",
+            "port": "events"
+          },
+          "to": {
+            "node": "filter",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "filter",
+            "port": "events"
+          },
+          "to": {
+            "node": "log",
+            "port": "events"
+          }
         }
       ]
     },
-    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
   },
   "state": {
     "version": 2,
     "devices": [
-      { "node": "dev", "settings": { "center_hz": 14074000.0, "sample_rate": 192000.0 } }
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 14074000.0,
+          "sample_rate": 192000.0
+        }
+      }
     ],
     "channels": [
       {
         "node": "ft8",
-        "settings": { "frequency_hz": 14074000.0, "params": { "type": "ft8", "settings": {} } }
+        "settings": {
+          "frequency_hz": 14074000.0,
+          "params": {
+            "type": "ft8",
+            "settings": {}
+          }
+        }
       },
       {
         "node": "wspr",
-        "settings": { "frequency_hz": 14095600.0, "params": { "type": "wspr", "settings": {} } }
+        "settings": {
+          "frequency_hz": 14095600.0,
+          "params": {
+            "type": "wspr",
+            "settings": {}
+          }
+        }
       }
     ]
   }

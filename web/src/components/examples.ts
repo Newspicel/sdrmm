@@ -12,6 +12,12 @@ export function exampleNeeds(example: ExampleInfo): string {
   return "no radio";
 }
 
+export function examplesHint(pending: boolean, error: Error | null): string | null {
+  if (error !== null) return error.message || "The examples could not be read.";
+  if (pending) return "Loading examples.";
+  return null;
+}
+
 export function kindLabels(example: ExampleInfo, catalog: PatchCatalog | undefined): string[] {
   return example.node_kinds.map(
     (kind) => catalog?.nodes.find((type) => type.kind === kind)?.name ?? kind,

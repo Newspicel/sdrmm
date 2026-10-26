@@ -5,15 +5,36 @@
     "version": 4,
     "graph": {
       "nodes": [
-        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
-        { "id": "scope", "kind": "scope", "position": { "x": 520.0, "y": -40.0 } },
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "scope",
+          "kind": "scope",
+          "position": {
+            "x": 520.0,
+            "y": -40.0
+          }
+        },
         {
           "id": "scan",
           "kind": "scanner",
           "data": {
             "settings": {
               "mode": "targets",
-              "ranges": [{ "start_hz": 144000000.0, "stop_hz": 146000000.0, "step_hz": 12500.0 }],
+              "ranges": [
+                {
+                  "start_hz": 144000000.0,
+                  "stop_hz": 146000000.0,
+                  "step_hz": 12500.0
+                }
+              ],
               "frequencies": [],
               "dwell_ms": 250,
               "resume_ms": 1500,
@@ -22,64 +43,192 @@
               "margin_db": 12.0
             }
           },
-          "position": { "x": 520.0, "y": 340.0 }
+          "position": {
+            "x": 520.0,
+            "y": 340.0
+          }
         },
         {
           "id": "ch",
           "kind": "channel",
-          "data": { "channel_type": "nfm", "tuning_locked": false },
-          "position": { "x": 1040.0, "y": 340.0 }
+          "data": {
+            "channel_type": "nfm",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 1040.0,
+            "y": 340.0
+          }
         },
         {
           "id": "mon",
           "kind": "spectrum_monitor",
-          "data": { "min_confidence": 0.7, "report_unidentified": true },
-          "position": { "x": 520.0, "y": 700.0 }
+          "data": {
+            "min_confidence": 0.7,
+            "report_unidentified": true
+          },
+          "position": {
+            "x": 520.0,
+            "y": 700.0
+          }
         },
         {
           "id": "hunt",
           "kind": "hunt",
           "data": {},
-          "position": { "x": 520.0, "y": 1060.0 }
+          "position": {
+            "x": 520.0,
+            "y": 1060.0
+          }
         },
-        { "id": "spk", "kind": "speaker", "position": { "x": 1560.0, "y": 300.0 } },
-        { "id": "log", "kind": "decoder_log", "data": {}, "position": { "x": 1560.0, "y": 680.0 } },
+        {
+          "id": "spk",
+          "kind": "speaker",
+          "position": {
+            "x": 1560.0,
+            "y": 300.0
+          }
+        },
+        {
+          "id": "log",
+          "kind": "decoder_log",
+          "data": {},
+          "position": {
+            "x": 1560.0,
+            "y": 680.0
+          }
+        },
         {
           "id": "note",
           "kind": "note",
           "data": {
             "text": "## Scanner sweep\n\n**Scanner** steps the radio across a range and stops when something is loud enough. Its wire into the Channel's control port is what makes the decoder follow: the scanner decides the frequency, the channel decodes whatever it lands on.\n\n**Spectrum monitor** watches the same band and names what it recognises, whether or not the scanner stopped there. Use it to find out what lives in a band before you scan it.\n\n**Signal hunt** is the other way round: it walks you towards one transmitter by comparing how strong it is as you turn. It needs a directional antenna and a GPS node to be useful; wire one to its position port.\n\n**Decoder log** keeps every hit from the monitor.\n\nEdit the scanner's range for your local allocation."
           },
-          "position": { "x": 0.0, "y": 700.0 }
+          "position": {
+            "x": 0.0,
+            "y": 700.0
+          },
+          "size": {
+            "w": 560.0,
+            "h": 460.0
+          }
         }
       ],
       "edges": [
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "ch", "port": "iq" } },
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "scan", "port": "iq" } },
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "mon", "port": "iq" } },
-        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "hunt", "port": "iq" } },
         {
-          "from": { "node": "scan", "port": "control" },
-          "to": { "node": "ch", "port": "control" }
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "scope",
+            "port": "iq"
+          }
         },
-        { "from": { "node": "ch", "port": "audio" }, "to": { "node": "spk", "port": "audio" } },
-        { "from": { "node": "mon", "port": "events" }, "to": { "node": "log", "port": "events" } }
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "ch",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "scan",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "mon",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "hunt",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "scan",
+            "port": "control"
+          },
+          "to": {
+            "node": "ch",
+            "port": "control"
+          }
+        },
+        {
+          "from": {
+            "node": "ch",
+            "port": "audio"
+          },
+          "to": {
+            "node": "spk",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "mon",
+            "port": "events"
+          },
+          "to": {
+            "node": "log",
+            "port": "events"
+          }
+        }
       ]
     },
-    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
   },
   "state": {
     "version": 2,
     "devices": [
-      { "node": "dev", "settings": { "center_hz": 145000000.0, "sample_rate": 2400000.0 } }
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 145000000.0,
+          "sample_rate": 2400000.0
+        }
+      }
     ],
     "channels": [
       {
         "node": "ch",
         "settings": {
           "frequency_hz": 145500000.0,
-          "params": { "type": "nfm", "settings": {} }
+          "params": {
+            "type": "nfm",
+            "settings": {}
+          }
         }
       }
     ]

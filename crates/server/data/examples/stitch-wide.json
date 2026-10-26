@@ -1,0 +1,147 @@
+{
+  "version": 2,
+  "name": "Stitch wide",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "array",
+          "kind": "array",
+          "data": {
+            "geometry": {
+              "kind": "uca",
+              "radius_m": 0.35,
+              "first_deg": 0.0,
+              "winding": "clockwise"
+            },
+            "orientation": {
+              "kind": "fixed",
+              "azimuth_deg": 0.0
+            },
+            "declared": "time_sync",
+            "tuning": "spread",
+            "cal": {
+              "source": {
+                "kind": "noise"
+              },
+              "check_s": 60,
+              "equaliser": false,
+              "warm_start": true
+            }
+          },
+          "position": {
+            "x": 520.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "stitch",
+          "kind": "stitch",
+          "data": {},
+          "position": {
+            "x": 1040.0,
+            "y": 0.0
+          }
+        },
+        {
+          "id": "wide",
+          "kind": "scope",
+          "position": {
+            "x": 1560.0,
+            "y": -40.0
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Stitch wide\n\nOne band wider than any single radio here can sample.\n\n**Array** is set to `spread` tuning, not `together`. That is the whole difference from the Beam steering example: spread puts each lane on its own slice of spectrum instead of all on one frequency. **Stitch** requires it and refuses without it, and the direction finder and beamformer require the opposite, which is why the two examples are separate.\n\n**Stitch** joins the slices into one continuous band. It equalises the noise floor between lanes, flattens the seams and rejects the spurs that land where two lanes meet, so the result reads as one radio rather than two stuck together.\n\n**Scope** draws the joined span. Two 2.4 MHz lanes give roughly 4.8 MHz, minus the overlap it needs to match phase across the seam.\n\nSet the lane frequencies on the Array so the slices are adjacent. Leave a little overlap: with none, the seam has nothing to match on."
+          },
+          "position": {
+            "x": 0.0,
+            "y": 420.0
+          },
+          "size": {
+            "w": 560.0,
+            "h": 460.0
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "array",
+            "port": "lane"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq2"
+          },
+          "to": {
+            "node": "array",
+            "port": "lane2"
+          }
+        },
+        {
+          "from": {
+            "node": "array",
+            "port": "array"
+          },
+          "to": {
+            "node": "stitch",
+            "port": "array"
+          }
+        },
+        {
+          "from": {
+            "node": "stitch",
+            "port": "wide"
+          },
+          "to": {
+            "node": "wide",
+            "port": "iq"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 145000000.0,
+          "sample_rate": 2400000.0
+        }
+      }
+    ]
+  }
+}
