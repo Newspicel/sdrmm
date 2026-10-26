@@ -3,9 +3,9 @@ use std::sync::LazyLock;
 mod array;
 
 use sdrmm_wire::{
-    AUDIO_PORT, AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, AptParams, BleLink,
-    BleParams, ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams,
-    DstarParams, EVENTS_PORT, EotParams, ErmesParams, FlexParams, GnssParams, IQ_PORT, IsmParams,
+    AUDIO_PORT, AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, BleLink, BleParams,
+    ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
+    EVENTS_PORT, EotParams, ErmesParams, FlexParams, GnssParams, IQ_PORT, IsmParams,
     IsmSurveyParams, LrptParams, M17Params, MorseParams, NavtexParams, NfmParams, NodeBody,
     NoiseFigureParams, PatchEdge, PatchGraph, PatchNode, PerParams, PocsagParams, PortRef,
     Position, PskParams, RadioClockParams, RadiosondeParams, RemoteIdLink, RemoteIdParams,
@@ -805,25 +805,19 @@ static TEMPLATES: &[Entry] = &[
     },
     Entry {
         id: "weather-sats",
-        name: "Weather satellites (137 MHz)",
-        description: "NOAA APT and Meteor LRPT pictures during a pass.",
-        explainer: "Polar weather satellites send pictures while they pass overhead. NOAA \
-                    APT is analog on 137.100 MHz, Meteor LRPT digital on 137.900 MHz. Retune \
-                    to the satellite in view and use the Satellite node for Doppler.",
-        center_hz: 137_500_000.0,
+        name: "Weather satellites (137.9 MHz)",
+        description: "Meteor-M LRPT pictures during a pass.",
+        explainer: "Meteor-M N2-4 sends a digital picture on 137.900 MHz while it passes \
+                    overhead, OQPSK at 72k. It is the last 137 MHz weather satellite: the \
+                    NOAA APT ones left the air in August 2025. Use the Satellite node for \
+                    Doppler.",
+        center_hz: 137_900_000.0,
         sample_rate: 1_024_000.0,
-        channels: &[
-            Channel::at(
-                137_100_000.0,
-                || ChannelParams::Apt(AptParams::default()),
-                WATCH,
-            ),
-            Channel::at(
-                137_900_000.0,
-                || ChannelParams::Lrpt(LrptParams::default()),
-                WATCH,
-            ),
-        ],
+        channels: &[Channel::at(
+            137_900_000.0,
+            || ChannelParams::Lrpt(LrptParams::default()),
+            WATCH,
+        )],
     },
     Entry {
         id: "hf-wefax",

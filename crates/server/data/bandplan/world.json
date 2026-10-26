@@ -1580,7 +1580,7 @@
         "lrpt"
       ],
       "name": "Meteorological satellite downlink",
-      "notes": "NOAA APT at 137.100, 137.620 and 137.9125 MHz; Meteor-M LRPT nearby. Right-hand circular polarisation, so a linear antenna loses 3 dB.",
+      "notes": "Meteor-M LRPT at 137.900 MHz; the NOAA APT satellites left the air in August 2025. Right-hand circular polarisation, so a linear antenna loses 3 dB.",
       "service": "satellite",
       "start_hz": 137000000.0,
       "stop_hz": 138000000.0,

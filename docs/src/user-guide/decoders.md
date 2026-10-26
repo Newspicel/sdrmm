@@ -16,7 +16,7 @@ covers the modes that need more than a frequency.
 | Amateur and HF | CW skimmer, FT8, FT4, WSPR, RTTY, Morse (CW), PSK, APRS / AX.25 with [weather](#aprs-weather) | | |
 | Paging and telemetry | POCSAG, FLEX pager, Selcall (CCIR/ZVEI), Radio clock (DCF77 / WWVB / MSF / JJY) | ERMES pager, [End-of-Train](#end-of-train) | |
 | Pictures and video | [SSTV](#sstv) | ATV | |
-| Weather and satellites | [WEFAX](#wefax), [NOAA APT, Meteor LRPT](#weather-satellites), [Radiosonde](#radiosondes) | [SAME alerts](#same-alerts) | |
+| Weather and satellites | [WEFAX](#wefax), [Meteor LRPT, NOAA APT](#weather-satellites), [Radiosonde](#radiosondes) | [SAME alerts](#same-alerts) | |
 | Broadcast digital | [DAB / DAB+](#dab-and-dab), [DRM30](#drm) | [DRM+](#drm) | [DVB-T/T2, DATV (DVB-S / S2)](#dvb) |
 | Utility | [Signal identifier](scanning.md#identify-a-signal), [Iridium bursts](#inmarsat-and-iridium), [DECT](#dect), [GSM downlink](#gsm-downlink), [LoRa](#lora), [BLE advertisements](#ble-advertisements), [2.4 GHz survey, Wi-Fi occupancy](#24-ghz-survey-and-wi-fi-occupancy), [HF modems](#hf-modems), [Wireless M-Bus](#wireless-m-bus) | [ISM sensors](#ism-sensors), [LoRaWAN, Meshtastic, MeshCore](#lora), [Noise figure, PER tester, SID monitor](#measurements) | GNSS lab (GPS L1 C/A) |
 
@@ -146,12 +146,13 @@ gallery and are kept as PNG on the server for 24 hours, up to 512 pictures or 25
 
 ## Weather satellites
 
-**NOAA APT** decodes the analog picture on 137 MHz: both AVHRR channels side by side, with the
-channel numbers read from the telemetry wedges. **Partial** keeps a pass cut short.
-
 **Meteor LRPT** decodes the digital picture from Meteor-M on 137.9 MHz. It composes channels 64
 and 65 into colour, or shows the strongest single channel. Set **Mode** to QPSK 72k, OQPSK 72k or
-OQPSK 80k to match the satellite.
+OQPSK 80k to match the satellite; Meteor-M N2-4 sends OQPSK 72k.
+
+**NOAA APT** decodes the analog picture on 137 MHz: both AVHRR channels side by side, with the
+channel numbers read from the telemetry wedges. **Partial** keeps a pass cut short. NOAA-15, 18
+and 19 were decommissioned in 2025, so this is for recordings.
 
 A picture starts when the signal locks and is saved when the pass ends, in the same store as SSTV.
 Use a [Satellite](satellites.md) node to follow Doppler and know when a pass begins.
