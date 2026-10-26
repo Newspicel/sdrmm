@@ -127,7 +127,7 @@ export function attachGrid(canvas: HTMLCanvasElement, options: GridOptions): Gri
       }
       const ratio = pixelRatio(
         window.devicePixelRatio,
-        zoomOf(canvas.clientWidth, canvas.offsetWidth || canvas.clientWidth),
+        zoomOf(canvas.getBoundingClientRect().width, canvas.clientWidth),
       );
       const width = backingPx(canvas.clientWidth, ratio);
       const height = backingPx(canvas.clientHeight, ratio);
