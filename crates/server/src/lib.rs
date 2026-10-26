@@ -38,6 +38,7 @@ pub mod diagnostics;
 pub mod doctor;
 mod event_output;
 mod events;
+mod examples;
 mod fusion_routes;
 mod gps;
 mod images;
