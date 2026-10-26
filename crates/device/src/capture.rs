@@ -239,36 +239,63 @@ fn supervise<R: CaptureRadio, C: SampleConverter>(
         );
         let recovering = Instant::now();
         drop(stream);
-        std::thread::sleep(delay);
         converter.reset();
+        let Some(fresh) = rearm(radio, running, &mut policy, &mut sink, config, delay) else {
+            break;
+        };
+        *lock(published) = Some(fresh.stop_handle());
         if !running.load(Ordering::Acquire) {
             break;
         }
-        match radio.arm() {
-            Ok(fresh) => {
-                *lock(published) = Some(fresh.stop_handle());
-                if !running.load(Ordering::Acquire) {
-                    break;
-                }
-                tracing::info!(radio = config.radio, attempt, "stream restarted");
-                let lost = ((quiet + recovering.elapsed()).as_secs_f64() * config.sample_rate)
-                    .ceil() as u64;
-                sink.dropped_estimate(lost, lost, GapScope::Lane);
-                sink.realigned(Uncertainty::Rearmed, UNKNOWN_ERROR, GapScope::Lane);
-                dropped = 0;
-                stream = fresh;
-            }
-            Err(DeviceError::Disconnected(reason)) => {
-                sink.fail(DeviceError::Disconnected(reason));
-                break;
-            }
-            Err(e) => {
-                sink.fail(DeviceError::Io(format!("stream restart failed: {e}")));
-                break;
-            }
-        }
+        tracing::info!(radio = config.radio, attempt, "stream restarted");
+        let lost =
+            ((quiet + recovering.elapsed()).as_secs_f64() * config.sample_rate).ceil() as u64;
+        sink.dropped_estimate(lost, lost, GapScope::Lane);
+        sink.realigned(Uncertainty::Rearmed, UNKNOWN_ERROR, GapScope::Lane);
+        dropped = 0;
+        stream = fresh;
     }
     radio.disarm();
+}
+
+fn rearm<R: CaptureRadio>(
+    radio: &R,
+    running: &AtomicBool,
+    policy: &mut RestartPolicy,
+    sink: &mut RxSink,
+    config: &CaptureConfig,
+    mut delay: Duration,
+) -> Option<R::Stream> {
+    loop {
+        std::thread::sleep(delay);
+        if !running.load(Ordering::Acquire) {
+            return None;
+        }
+        let refused = match radio.arm() {
+            Ok(fresh) => return Some(fresh),
+            Err(DeviceError::Disconnected(reason)) => {
+                sink.fail(DeviceError::Disconnected(reason));
+                return None;
+            }
+            Err(e) => e,
+        };
+        let Recovery::RetryAfter {
+            attempt,
+            delay: again,
+        } = policy.on_failure(Duration::ZERO)
+        else {
+            sink.fail(DeviceError::Io(format!("stream restart failed: {refused}")));
+            return None;
+        };
+        tracing::warn!(
+            radio = config.radio,
+            attempt,
+            ?again,
+            reason = %refused,
+            "could not re-arm the radio; dialling again"
+        );
+        delay = again;
+    }
 }
 
 pub fn drain_stream<S: CaptureStream, C: SampleConverter>(
@@ -474,6 +501,7 @@ mod tests {
         disarms: AtomicUsize,
         armed: AtomicBool,
         refuse_arm_from: AtomicUsize,
+        refuse_arm_once: AtomicUsize,
         unplugged: AtomicBool,
         stop_on_failure: AtomicBool,
         running: Mutex<Option<Arc<AtomicBool>>>,
@@ -487,6 +515,7 @@ mod tests {
                 disarms: AtomicUsize::new(0),
                 armed: AtomicBool::new(false),
                 refuse_arm_from: AtomicUsize::new(usize::MAX),
+                refuse_arm_once: AtomicUsize::new(usize::MAX),
                 unplugged: AtomicBool::new(false),
                 stop_on_failure: AtomicBool::new(false),
                 running: Mutex::new(None),
@@ -513,6 +542,10 @@ mod tests {
             self.refuse_arm_from.store(n, Ordering::SeqCst);
         }
 
+        fn refuse_arm(&self, n: usize) {
+            self.refuse_arm_once.store(n, Ordering::SeqCst);
+        }
+
         fn unplugged_from(&self, n: usize) {
             self.unplugged.store(true, Ordering::SeqCst);
             self.refuse_arm_from(n);
@@ -524,6 +557,9 @@ mod tests {
 
         fn arm(&self) -> Result<FakeStream, DeviceError> {
             let nth = self.arms.fetch_add(1, Ordering::SeqCst);
+            if nth == self.refuse_arm_once.load(Ordering::SeqCst) {
+                return Err(DeviceError::Io("radio busy".to_string()));
+            }
             if nth >= self.refuse_arm_from.load(Ordering::SeqCst) {
                 return Err(if self.unplugged.load(Ordering::SeqCst) {
                     DeviceError::Disconnected("control transfer failed".to_string())
@@ -737,12 +773,41 @@ mod tests {
     }
 
     #[test]
-    fn a_radio_that_cannot_re_arm_reports_instead_of_spinning() {
+    fn a_radio_that_cannot_re_arm_is_tried_again_until_the_budget_is_out() {
         let radio = FakeRadio::with([stalled()]);
         radio.refuse_arm_from(1);
         let run = supervised(&radio, config());
         let fault = run.fault.expect("a fault");
         assert!(fault.contains("stream restart failed"), "{fault}");
+        assert_eq!(
+            radio.arms(),
+            4,
+            "a radio that refuses once is dialled again, within the restart budget"
+        );
+    }
+
+    #[test]
+    fn a_radio_that_refuses_once_streams_again_on_the_next_attempt() {
+        let radio = FakeRadio::with([
+            stalled(),
+            vec![
+                Step::Block(vec![9]),
+                Step::Fail {
+                    reason: "unplugged",
+                    gone: true,
+                },
+            ],
+        ]);
+        radio.refuse_arm(1);
+        let run = supervised(&radio, config());
+        assert_eq!(run.blocks, vec![vec![9.0]]);
+        assert_eq!(
+            radio.arms(),
+            3,
+            "the refused attempt did not end the stream"
+        );
+        let fault = run.fault.expect("the unplug ends it");
+        assert!(!fault.contains("restart failed"), "{fault}");
     }
 
     #[test]
