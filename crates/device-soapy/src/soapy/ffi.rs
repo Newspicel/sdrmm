@@ -21,7 +21,7 @@ pub const ARG_INFO_BOOL: c_int = 0;
 pub const ARG_INFO_INT: c_int = 1;
 pub const ARG_INFO_FLOAT: c_int = 2;
 
-pub const ABI_VERSION: &str = "0.8";
+pub const ABI_VERSIONS: [&str; 2] = ["0.9", "0.8"];
 pub const FORMAT_CF32: &[u8] = b"CF32\0";
 
 #[repr(C)]

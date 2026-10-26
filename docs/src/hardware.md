@@ -428,7 +428,7 @@ Packaged builds load SoapySDR at runtime and work without it. The container ship
 bladeRF, LimeSDR, and SoapyRemote modules. A remote `SoapySDRServer` shows up in the normal radio
 list, through SoapyRemote.
 
-SDR-- needs SoapySDR 0.8 and modules built for it. For unusual install locations:
+SDR-- needs SoapySDR 0.9 or 0.8 and modules built for it. For unusual install locations:
 
 | Variable | Value |
 |---|---|

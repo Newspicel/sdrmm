@@ -128,13 +128,12 @@ impl Library {
             .map_err(|error| format!("{} could not be loaded: {error}", path.display()))?;
         let entries = Entries::load(&library)?;
         let abi = unsafe { text((entries.abi_version)()) };
-        if abi != ffi::ABI_VERSION {
+        if !ffi::ABI_VERSIONS.contains(&abi.as_str()) {
             return Err(format!(
-                "{} reports SoapySDR ABI {abi}, and this build speaks {}. Install a SoapySDR \
-                 {} runtime, or point {LIBRARY_ENV} at one.",
+                "{} reports SoapySDR ABI {abi}, and this build speaks {}. Install one of those \
+                 runtimes, or point {LIBRARY_ENV} at one.",
                 path.display(),
-                ffi::ABI_VERSION,
-                ffi::ABI_VERSION
+                ffi::ABI_VERSIONS.join(" or "),
             ));
         }
         let version = unsafe { text((entries.lib_version)()) };
@@ -197,24 +196,30 @@ fn candidates(override_path: Option<OsString>, root: Option<OsString>) -> Vec<Pa
     let mut names: Vec<PathBuf> = Vec::new();
     if let Some(root) = root {
         let root = Path::new(&root);
-        names.push(root.join(library_dir()).join(versioned_name()));
-        names.push(root.join(library_dir()).join(bare_name()));
+        let lib = root.join(library_dir());
+        names.extend(versioned_names().map(|name| lib.join(name)));
+        names.push(lib.join(bare_name()));
     }
-    names.extend(
-        install_prefixes()
-            .into_iter()
-            .map(|prefix| Path::new(prefix).join(library_dir()).join(versioned_name())),
-    );
+    for prefix in install_prefixes() {
+        let lib = Path::new(prefix).join(library_dir());
+        names.extend(versioned_names().map(|name| lib.join(name)));
+    }
     // A leaf name reaches the loader's own search, which on Linux includes the `DT_RUNPATH` a
     // packager set on this binary. macOS searches `LC_RPATH` only for a path that asks for it,
     // so an `@rpath` spelling is what lets a Homebrew-style rpath answer there too.
     if cfg!(target_os = "macos") {
-        names.push(PathBuf::from(format!("@rpath/{}", versioned_name())));
+        names.extend(versioned_names().map(|name| PathBuf::from(format!("@rpath/{name}"))));
         names.push(PathBuf::from(format!("@rpath/{}", bare_name())));
     }
-    names.push(PathBuf::from(versioned_name()));
+    names.extend(versioned_names().map(PathBuf::from));
     names.push(PathBuf::from(bare_name()));
+    names.dedup();
     names
+}
+
+/// Newest ABI first, so a host with both runtimes installed gets the one this build prefers.
+fn versioned_names() -> impl Iterator<Item = String> {
+    ffi::ABI_VERSIONS.into_iter().map(versioned_name)
 }
 
 const fn library_dir() -> &'static str {
@@ -225,19 +230,19 @@ const fn library_dir() -> &'static str {
     }
 }
 
-const fn versioned_name() -> &'static str {
-    #[cfg(target_os = "windows")]
-    {
-        "SoapySDR.dll"
-    }
-    #[cfg(target_os = "macos")]
-    {
-        "libSoapySDR.0.8.dylib"
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        "libSoapySDR.so.0.8"
-    }
+#[cfg(target_os = "windows")]
+fn versioned_name(_abi: &str) -> String {
+    "SoapySDR.dll".to_string()
+}
+
+#[cfg(target_os = "macos")]
+fn versioned_name(abi: &str) -> String {
+    format!("libSoapySDR.{abi}.dylib")
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn versioned_name(abi: &str) -> String {
+    format!("libSoapySDR.so.{abi}")
 }
 
 const fn bare_name() -> &'static str {
@@ -382,19 +387,35 @@ mod tests {
     fn the_bare_library_name_is_always_tried_last() {
         let found = candidates(None, None);
         assert_eq!(found.last(), Some(&PathBuf::from(bare_name())));
-        assert!(found.contains(&PathBuf::from(versioned_name())));
+        for name in versioned_names() {
+            assert!(found.contains(&PathBuf::from(name)));
+        }
+    }
+
+    #[test]
+    fn every_abi_this_build_speaks_is_looked_for_newest_first() {
+        let found = candidates(None, None);
+        let places: Vec<usize> = versioned_names()
+            .map(|name| {
+                found
+                    .iter()
+                    .position(|path| path.file_name() == Some(Path::new(&name).as_os_str()))
+                    .unwrap_or_else(|| panic!("{name} is looked for"))
+            })
+            .collect();
+        assert!(
+            places.windows(2).all(|pair| pair[0] < pair[1]),
+            "{places:?}"
+        );
     }
 
     #[test]
     fn a_configured_root_is_searched_before_any_package_manager_prefix() {
         let found = candidates(None, Some(OsString::from("/opt/sdr")));
+        let newest = versioned_names().next().expect("an ABI this build speaks");
         assert_eq!(
             found.first(),
-            Some(
-                &Path::new("/opt/sdr")
-                    .join(library_dir())
-                    .join(versioned_name())
-            )
+            Some(&Path::new("/opt/sdr").join(library_dir()).join(newest))
         );
     }
 
@@ -416,11 +437,13 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn a_homebrew_prefix_the_loader_ignores_is_searched_explicitly() {
-        assert!(
-            candidates(None, None)
-                .contains(&PathBuf::from("/opt/homebrew/lib/libSoapySDR.0.8.dylib")),
-            "dlopen falls back to /usr/local and /usr/lib only, so this prefix needs naming"
-        );
+        let found = candidates(None, None);
+        for name in versioned_names() {
+            assert!(
+                found.contains(&PathBuf::from(format!("/opt/homebrew/lib/{name}"))),
+                "dlopen falls back to /usr/local and /usr/lib only, so this prefix needs naming"
+            );
+        }
     }
 
     #[test]
