@@ -37,6 +37,12 @@ Select nodes, then `Ctrl`/`⌘ C` and `Ctrl`/`⌘ V`. Copies land beside the ori
 between them. Pasted Device and Recording nodes need a radio or file picked. The clipboard works
 across workspaces while the tab stays open.
 
+### Notes
+
+A **Note** node, under Tools, holds markdown: headings, bold, code, lists, quotes, rules, and
+links. Double-click it to write, click away to keep. It travels with the workspace, so an exported
+file carries its own instructions. Pin it to the rack to keep it in view.
+
 ### Export and import
 
 The download button beside a workspace saves it as JSON, with its tuning. **Import a workspace

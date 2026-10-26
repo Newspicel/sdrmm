@@ -414,6 +414,7 @@
     "streams": 16
   },
   "name_len": 64,
+  "note_len": 4096,
   "filter": {
     "ids": 256,
     "duration_ms": 600000,

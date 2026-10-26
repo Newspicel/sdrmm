@@ -31,7 +31,7 @@ A wire joins an output port to an input port that carries the same kind of data:
 |---|---|
 | Sources | Device, Recording, Signal generator, GPS position |
 | Decoders | AM, NFM, WFM, ADS-B, DMR, and every other [decoder](../user-guide/decoders.md), by family |
-| Tools | Scanner, Signal hunt, Satellite, Spectrum monitor, DMR trunk system, Event filter, Audio FX, Array, Direction finder, Beamformer, Passive radar, Stitch, Spatial spectrum, Correlator, Polarimeter, Triangulation |
+| Tools | Scanner, Signal hunt, Satellite, Spectrum monitor, DMR trunk system, Event filter, Audio FX, Array, Direction finder, Beamformer, Passive radar, Stitch, Spatial spectrum, Correlator, Polarimeter, Triangulation, Note |
 | Outputs | Scope, Baseband scope, Speaker, Readout, Decoder log, Map, Video, Signal survey, Propagation map, Recorder, Audio recorder, Baseband recorder, Time machine, Network IQ, Event output, Export |
 
 **+ Add** lists what the running server offers. To add a node at the cursor, double-click the

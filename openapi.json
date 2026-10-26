@@ -26514,6 +26514,24 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/NoteNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "note"
+                ]
+              }
+            }
           }
         ]
       },
@@ -26566,7 +26584,8 @@
           "spatial_spectrum",
           "correlator",
           "polarimeter",
-          "triangulation"
+          "triangulation",
+          "note"
         ]
       },
       "NodeProblem": {
@@ -26743,6 +26762,15 @@
           "width_hz": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "NoteNode": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "default": ""
           }
         }
       },

@@ -32,6 +32,7 @@ pub mod measurement;
 pub mod mission;
 pub mod network;
 pub mod node_action;
+pub mod note;
 pub mod patch;
 pub mod phone;
 pub mod position;
@@ -40,7 +41,6 @@ pub mod present;
 pub mod processor;
 pub mod propagation;
 pub mod radar;
-pub mod remote;
 pub mod remote_id;
 pub mod rest;
 pub mod rotator;
@@ -206,6 +206,7 @@ pub use network::{
     NetworkExportStatus, NetworkSampleFormat, NetworkTransport,
 };
 pub use node_action::{NetworkRadioRequest, NodeActed, NodeAction};
+pub use note::{MAX_NOTE_LEN, NoteNode};
 pub use patch::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, BASEBAND_PORT,
     BEAM_PORT, BEARING_PORT, BeamformerNode, CONTROL_PORT, ChannelAddr, ChannelNode,
@@ -266,10 +267,6 @@ pub use radar::{
     RadarFix, RadarGeometry, RadarHealth, RadarProblem, RadarSite, RadarSites, RadarTrack,
     RadarTrackEvent, RadarTrailPoint, RadarUpdate, ReferenceCleaning, ReferenceHealth,
     ReferenceMode, SurveillanceSet, TrackChange, TrackState, TrackerParams,
-};
-pub use remote::{
-    DEFAULT_REMOTE_APP, MAX_HEALTH_LABEL_CHARS, MAX_HEALTH_RADIOS, RadioHealth, RemoteState,
-    RemoteStatus, SiteHealth,
 };
 pub use remote_id::{
     AuthType, EuCategory, EuClassification, HeightReference, OperatorLocationType, RemoteIdFrame,

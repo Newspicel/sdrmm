@@ -31,6 +31,7 @@ export const MAX_NODES = limits.patch.nodes;
 export const MAX_EDGES = limits.patch.wires;
 export const MAX_STREAMS = limits.patch.streams;
 export const MAX_NAME_LEN = limits.name_len;
+export const MAX_NOTE_LEN = limits.note_len;
 export const MAX_FILTER_IDS = limits.filter.ids;
 export const MAX_FILTER_DURATION_MS = limits.filter.duration_ms;
 export const MAX_FILTER_TEXT_LEN = limits.filter.text_len;

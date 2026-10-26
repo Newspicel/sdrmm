@@ -2468,6 +2468,32 @@
           }
         }
       }
+    },
+    {
+      "kind": "note",
+      "name": "Note",
+      "category": "tool",
+      "summary": "Markdown you leave on the canvas",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 320,
+        "height": 200,
+        "min": {
+          "width": 200,
+          "height": 120
+        },
+        "dial": false
+      },
+      "ports": [],
+      "needs_channel_type": false,
+      "default_body": {
+        "kind": "note",
+        "data": {
+          "text": ""
+        }
+      }
     }
   ],
   "port_types": [

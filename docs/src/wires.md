@@ -290,6 +290,10 @@ Crosses bearings into a position
 | `position` | in | Position |  | one. Vehicle to guide |
 | `events` | out | Events | Fix, Guidance | many |
 
+### Note
+
+Markdown you leave on the canvas
+
 ## Outputs
 
 ### Scope

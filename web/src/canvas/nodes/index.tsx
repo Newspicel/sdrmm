@@ -21,6 +21,7 @@ import { HuntFace } from "./HuntFace";
 import { MapFace } from "./MapFace";
 import { NetworkExportFace } from "./NetworkExportFace";
 import { CanvasSurface } from "./NodeShell";
+import { NoteFace } from "./NoteFace";
 import { PolarimeterFace } from "./PolarimeterFace";
 import { PropagationFace } from "./PropagationFace";
 import { RadarFace } from "./RadarFace";
@@ -92,6 +93,7 @@ export const NODE_TYPES: Record<NodeKind, ComponentType<NodeProps<Node<FlowData>
   spatial_spectrum: mount(SpatialSpectrumFace),
   correlator: mount(CorrelatorFace),
   polarimeter: mount(PolarimeterFace),
+  note: mount(NoteFace),
 };
 
 export const FACES: Record<NodeKind, Face> = {
@@ -133,6 +135,7 @@ export const FACES: Record<NodeKind, Face> = {
   spatial_spectrum: SpatialSpectrumFace,
   correlator: CorrelatorFace,
   polarimeter: PolarimeterFace,
+  note: NoteFace,
 };
 
 export function faceSize(node: PatchNode): CSSProperties {

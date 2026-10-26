@@ -7049,11 +7049,15 @@ export interface components {
             data: components["schemas"]["TriangulationNode"];
             /** @enum {string} */
             kind: "triangulation";
+        } | {
+            data: components["schemas"]["NoteNode"];
+            /** @enum {string} */
+            kind: "note";
         };
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "recording" | "signal_gen" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "dmr_trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "time_machine" | "network_export" | "export" | "scanner" | "hunt" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation";
+        NodeKind: "device" | "recording" | "signal_gen" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "dmr_trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "time_machine" | "network_export" | "export" | "scanner" | "hunt" | "satellite" | "rotator" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "triangulation" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -7107,6 +7111,10 @@ export interface components {
             freq_hz?: number;
             /** Format: double */
             width_hz?: number;
+        };
+        NoteNode: {
+            /** @default  */
+            text: string;
         };
         NoticeWire: {
             from: components["schemas"]["PortRef"];

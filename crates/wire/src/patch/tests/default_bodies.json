@@ -333,7 +333,7 @@
             "kind": "ca"
           },
           "window": "range",
-          "pfa": 0.00001,
+          "pfa": 1e-05,
           "guard_range": 2,
           "train_range": 8,
           "guard_doppler": 1,
@@ -426,5 +426,11 @@
         "align": true
       }
     }
+  },
+  {
+    "data": {
+      "text": ""
+    },
+    "kind": "note"
   }
 ]

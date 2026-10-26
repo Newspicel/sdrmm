@@ -16,6 +16,7 @@ use crate::{
     filter::EventFilterNode,
     monitor::SpectrumMonitorNode,
     network::NetworkExportNode,
+    note::NoteNode,
     processor::processors,
     propagation::PropagationNode,
     rotator::RotatorNode,
@@ -525,6 +526,8 @@ macro_rules! node_registry {
                 position_in().noted("Vehicle to guide"),
                 events_out(Accept::Kinds(&[EventKind::DfFix, EventKind::Nav])),
             ]),
+            (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
+                Role::Plain, Face::sized(320, 200).min(200, 120), []),
         }
     };
 }

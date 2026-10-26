@@ -39,6 +39,7 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("correlator", Face::sized(520, 460).min(380, 340)),
     ("polarimeter", Face::fit(360)),
     ("stitch", Face::fit(360)),
+    ("note", Face::sized(320, 200).min(200, 120)),
 ];
 
 fn as_sent(body: &NodeBody) -> serde_json::Value {

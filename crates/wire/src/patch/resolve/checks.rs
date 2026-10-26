@@ -95,6 +95,7 @@ fn settings_valid(body: &NodeBody) -> bool {
     match body {
         NodeBody::Recording(recording) => recording.valid(),
         NodeBody::EventFilter(settings) => settings.valid(),
+        NodeBody::Note(note) => note.valid(),
         NodeBody::AudioFx(fx) => fx.settings.validate().is_ok(),
         NodeBody::SpectrumMonitor(settings) => settings.valid(),
         NodeBody::Propagation(settings) => settings.valid(),

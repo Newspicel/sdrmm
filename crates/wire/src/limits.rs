@@ -92,6 +92,7 @@ pub struct Limits {
     pub rotator: RotatorLimits,
     pub patch: PatchLimits,
     pub name_len: usize,
+    pub note_len: usize,
     pub filter: FilterLimits,
 }
 
@@ -449,6 +450,7 @@ pub const LIMITS: Limits = Limits {
         streams: crate::patch::MAX_STREAMS,
     },
     name_len: crate::workspace::MAX_NAME_LEN,
+    note_len: crate::note::MAX_NOTE_LEN,
     filter: FilterLimits {
         ids: crate::filter::MAX_FILTER_IDS,
         duration_ms: crate::filter::MAX_FILTER_DURATION_MS,
