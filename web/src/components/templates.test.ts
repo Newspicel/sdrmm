@@ -18,8 +18,16 @@ function template(extra: Partial<TemplateInfo>): TemplateInfo {
 }
 
 describe("templateSize", () => {
-  it("counts lanes for an array template and channels otherwise", () => {
-    expect(templateSize(template({ min_lanes: 5 }))).toBe("5 lanes");
+  it("counts channels", () => {
     expect(templateSize(template({}))).toBe("0 ch");
+    expect(
+      templateSize(
+        template({
+          channels: [
+            { frequency_hz: 100e6, params: { type: "nfm", settings: {} } },
+          ] as TemplateInfo["channels"],
+        }),
+      ),
+    ).toBe("1 ch");
   });
 });

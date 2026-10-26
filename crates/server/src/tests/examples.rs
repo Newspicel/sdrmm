@@ -69,6 +69,39 @@ async fn importing_twice_gives_two_workspaces_with_distinct_names() {
 }
 
 #[tokio::test]
+async fn the_df_drive_example_wires_every_lane_into_one_array() {
+    let app = test_router();
+    let (status, body) = import(&app, "df-drive").await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let created: sdrmm_wire::CreatedRowId = serde_json::from_slice(&body).expect("json");
+
+    let (_, body) = request(
+        app.clone(),
+        "GET",
+        &format!("/api/workspaces/{}", created.id),
+        None,
+    )
+    .await;
+    let detail: sdrmm_wire::WorkspaceDetail = serde_json::from_slice(&body).expect("json");
+    let graph = &detail.snapshot.graph;
+    let lanes = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.from.node == "dev" && edge.to.node == "array")
+        .count();
+    assert_eq!(lanes, 5);
+
+    let patch = sdrmm_wire::patch::resolve::compile(graph, &Default::default()).expect("compiles");
+    assert_eq!(
+        patch
+            .first_feed("df", "array")
+            .map(|feed| feed.source.as_str()),
+        Some("array")
+    );
+    detail.snapshot.validate().expect("a valid workspace");
+}
+
+#[tokio::test]
 async fn an_unknown_example_is_not_found() {
     let app = test_router();
     let (status, _) = import(&app, "nope").await;

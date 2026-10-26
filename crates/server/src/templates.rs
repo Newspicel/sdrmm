@@ -1,7 +1,5 @@
 use std::sync::LazyLock;
 
-mod array;
-
 use sdrmm_wire::{
     AUDIO_PORT, AcarsParams, AdsbParams, AisParams, AmParams, AprsParams, BleLink, BleParams,
     ChannelNode, ChannelParams, ChannelSettings, DabParams, DeviceNode, DmrParams, DstarParams,
@@ -893,10 +891,8 @@ pub(crate) fn all() -> &'static [TemplateInfo] {
                     patch: Some(patch(entry.channels)),
                     direction: sdrmm_wire::Direction::Rx,
                     supported_devices: Vec::new(),
-                    min_lanes: 1,
                 }
             })
-            .chain(std::iter::once(array::df_drive()))
             .collect()
     });
     &BUILT
@@ -912,6 +908,27 @@ mod tests {
     use sdrmm_wire::{MAX_SQUELCH_AUTO_MARGIN_DB, MIN_SQUELCH_AUTO_MARGIN_DB, WorkspaceSnapshot};
 
     use super::*;
+
+    #[test]
+    fn every_template_runs_on_one_radio() {
+        for template in all() {
+            let patch = template.patch.as_ref().expect("a template draws a patch");
+            let devices = patch
+                .nodes
+                .iter()
+                .filter(|node| matches!(node.body, NodeBody::Device(_)))
+                .count();
+            assert_eq!(devices, 1, "{} opens {devices} radios", template.id);
+            assert!(
+                !patch
+                    .nodes
+                    .iter()
+                    .any(|node| matches!(node.body, NodeBody::Array(_))),
+                "{} builds an array; that is an example, not a template",
+                template.id
+            );
+        }
+    }
 
     #[test]
     fn ids_are_unique_and_slug_shaped() {
@@ -1007,7 +1024,7 @@ mod tests {
         }];
 
         for template in all() {
-            if template.min_freq_hz < 70_000_000.0 || template.min_lanes > 1 {
+            if template.min_freq_hz < 70_000_000.0 {
                 continue;
             }
             let rate = template

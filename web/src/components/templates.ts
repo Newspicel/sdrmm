@@ -17,6 +17,5 @@ export function templatesHint(
 }
 
 export function templateSize(template: TemplateInfo): string {
-  const lanes = template.min_lanes ?? 1;
-  return lanes > 1 ? `${lanes} lanes` : `${template.channels.length} ch`;
+  return `${template.channels.length} ch`;
 }
