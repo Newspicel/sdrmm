@@ -1565,7 +1565,8 @@ async fn a_decoder_wired_to_one_radio_keeps_it_while_the_flexible_ones_move_asid
 #[tokio::test]
 async fn applying_never_adopts_a_channel_opened_for_no_node() {
     let (app, state) = test_router_with_state();
-    let workspace = put_active_workspace(&app, &two_radio_snapshot(&[("voice", "nfm")])).await;
+    let workspace =
+        put_active_workspace(&app, &virtual_snapshot("band", &[("voice", "nfm", "iq")])).await;
     let set = state.engine.create_device_set("virtual:band").unwrap();
     let settings = ChannelSettings::default_for("nfm").unwrap();
     let stray = state.engine.add_channel(set, 0, settings).unwrap();
