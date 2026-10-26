@@ -189,6 +189,10 @@ export function WorkspaceBar({
                 close();
                 onOpenTool(id);
               }}
+              onActivate={(id) => {
+                close();
+                onActivate(id);
+              }}
             />
           )}
         </Popover>

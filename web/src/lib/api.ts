@@ -41,6 +41,7 @@ import type {
   DiagnosticsReport,
   DoctorReport,
   ErrorCode,
+  ExamplesResponse,
   ExportFormat,
   IonosondeReport,
   LicenseTextResponse,
@@ -124,6 +125,7 @@ export const RECORDINGS_KEY = ["get", "/api/recordings"] as const;
 export const AUDIO_RECORDINGS_KEY = ["get", "/api/audiorecordings"] as const;
 export const DECODER_LOG_KEY = ["get", "/api/decoderlog"] as const;
 export const TEMPLATES_KEY = ["get", "/api/templates"] as const;
+export const EXAMPLES_KEY = ["get", "/api/examples"] as const;
 export const AUTH_KEY = ["get", "/api/auth"] as const;
 export const DOCTOR_KEY = ["get", "/api/doctor"] as const;
 export const DIAGNOSTICS_KEY = ["get", "/api/diagnostics"] as const;
@@ -456,6 +458,18 @@ export async function applyTemplate(id: string, node: string): Promise<void> {
       body: { node },
     }),
   );
+}
+
+export function examplesQuery() {
+  return queryOptions({
+    queryKey: EXAMPLES_KEY,
+    queryFn: async (): Promise<ExamplesResponse> => unwrap(await client.GET("/api/examples")),
+    staleTime: 30_000,
+  });
+}
+
+export async function importExample(id: string): Promise<number> {
+  return unwrap(await client.POST("/api/examples/{id}/import", { params: { path: { id } } })).id;
 }
 
 export function authQuery() {

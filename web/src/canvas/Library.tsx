@@ -2,6 +2,7 @@ import { Tabs } from "@base-ui/react/tabs";
 import { BandsPanel } from "../components/BandsPanel";
 import { BookmarksPanel } from "../components/BookmarksPanel";
 import { TAB_BAR, tab } from "../components/controls";
+import { ExamplesPanel } from "../components/ExamplesPanel";
 import { OccupancyPanel } from "../components/OccupancyPanel";
 import { PresetsPanel } from "../components/PresetsPanel";
 import { RecordingsPanel } from "../components/RecordingsPanel";
@@ -17,6 +18,7 @@ import { useNodePlacement } from "./placement";
 
 const TABS = [
   { id: "templates", label: "Templates" },
+  { id: "examples", label: "Examples" },
   { id: "presets", label: "Presets" },
   { id: "bookmarks", label: "Bookmarks" },
   { id: "bands", label: "Bands" },
@@ -26,7 +28,13 @@ const TABS = [
   { id: "phones", label: "Phones" },
 ] as const;
 
-export function Library({ onOpenTool }: { onOpenTool: (id: string) => void }) {
+export function Library({
+  onOpenTool,
+  onActivate,
+}: {
+  onOpenTool: (id: string) => void;
+  onActivate: (id: number) => void;
+}) {
   const workspace = useWorkspaceContext();
   const placeNode = useNodePlacement();
   const active =
@@ -61,6 +69,9 @@ export function Library({ onOpenTool }: { onOpenTool: (id: string) => void }) {
           active={active}
           onApplied={() => workspace.apply()}
         />
+      </Tabs.Panel>
+      <Tabs.Panel value="examples" className="max-h-[28rem] overflow-y-auto">
+        <ExamplesPanel onImported={onActivate} />
       </Tabs.Panel>
       <Tabs.Panel value="presets" className="max-h-[28rem] overflow-y-auto">
         <PresetsPanel />
