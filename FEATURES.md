@@ -4,9 +4,8 @@ Remove an item once it ships.
 
 ## 1. Transmit
 
-Already there: TX streams on HackRF, AD936x/Pluto and Soapy, a reserved `tx` input on transmit-capable
-Device nodes that takes no wire yet, and modulators for NFM, AM, SSB, APRS, DMR, dPMR, D-Star,
-M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
+Already there: TX streams on HackRF, AD936x/Pluto and Soapy, and modulators for NFM, AM, SSB,
+APRS, DMR, dPMR, D-Star, M17, NXDN, P25 and YSF. Only the Signal generator uses the modulators.
 
 ### Foundation
 - Transmit gate: the only node that may feed a Device's `tx` input

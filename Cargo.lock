@@ -5900,7 +5900,6 @@ dependencies = [
  "sdrmm-device-soapy",
  "sdrmm-engine",
  "sdrmm-server",
- "sdrmm-wire",
  "tokio",
  "tracing",
  "url",
@@ -6219,7 +6218,6 @@ dependencies = [
  "num-complex",
  "sdrmm-device",
  "sdrmm-dsp",
- "sdrmm-recorder",
  "sdrmm-wire",
  "tempfile",
 ]

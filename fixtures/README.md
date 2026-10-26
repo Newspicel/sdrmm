@@ -11,7 +11,7 @@ fixture's centre plus the offset listed below. Rates in the tables are samples p
 ## Generated fixtures
 
 Run `cargo xtask fixtures` to create these pairs. The task uses the same modulators as unit and
-engine tests. Most use `channels::testgen`; APRS uses its `ChannelTx` implementation and resamples
+engine tests. Most use `channels::synth`; APRS uses its `ChannelTx` implementation and resamples
 to the fixture's device rate.
 
 Generated pairs are ignored by Git. Commit generator and expected-output changes together.

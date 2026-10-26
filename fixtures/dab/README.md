@@ -3,7 +3,7 @@
 These frozen synthetic SigMF captures contain one complete transmission frame in each of
 Modes II, III and IV at 2.048 MS/s. Repeat a frame to exercise continuous acquisition.
 They were produced by the independent Python/NumPy modulator in
-`crates/modem-test-support/scripts/dab_reference.py`, not by `channels::testgen`.
+`crates/modem-test-support/scripts/dab_reference.py`, not by `channels::synth`.
 They are not antenna recordings. The MSC carries random data, so these fixtures verify FIC
 reception and service discovery, not audio decoding.
 
