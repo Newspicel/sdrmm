@@ -1,0 +1,68 @@
+{
+  "version": 2,
+  "name": "Record and replay",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        { "id": "file", "kind": "recording", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
+        { "id": "scope", "kind": "scope", "position": { "x": 520.0, "y": -40.0 } },
+        {
+          "id": "ch",
+          "kind": "channel",
+          "data": { "channel_type": "nfm", "tuning_locked": false },
+          "position": { "x": 520.0, "y": 340.0 }
+        },
+        { "id": "bbscope", "kind": "baseband_scope", "position": { "x": 1040.0, "y": 300.0 } },
+        {
+          "id": "bbrec",
+          "kind": "baseband_recorder",
+          "data": { "recording": false },
+          "position": { "x": 1040.0, "y": 680.0 }
+        },
+        {
+          "id": "tm",
+          "kind": "time_machine",
+          "data": { "history_seconds": 30, "armed": false },
+          "position": { "x": 520.0, "y": 700.0 }
+        },
+        { "id": "spk", "kind": "speaker", "position": { "x": 1560.0, "y": 300.0 } },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Record and replay\n\n**Recording** plays an IQ file back as if it were a radio. Pick a file on it to start: nothing else here needs hardware.\n\n**Scope** draws the file's spectrum. Scrub the Recording node and the waterfall follows.\n\n**Channel** demodulates one signal out of it.\n\n**Baseband scope** shows the channel's constellation and eye. This is how you tell a locked decoder from a guessing one.\n\n**Baseband recorder** keeps just that channel, already down-converted, which is far smaller than the whole band.\n\n**Time machine** holds the last 30 seconds of IQ. Arm it, and when you hear something you missed you can replay it without having recorded the whole session.\n\n**Speaker** plays the audio."
+          },
+          "position": { "x": 0.0, "y": 700.0 }
+        }
+      ],
+      "edges": [
+        { "from": { "node": "file", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
+        { "from": { "node": "file", "port": "iq" }, "to": { "node": "ch", "port": "iq" } },
+        { "from": { "node": "file", "port": "iq" }, "to": { "node": "tm", "port": "iq" } },
+        {
+          "from": { "node": "ch", "port": "baseband" },
+          "to": { "node": "bbscope", "port": "baseband" }
+        },
+        {
+          "from": { "node": "ch", "port": "baseband" },
+          "to": { "node": "bbrec", "port": "baseband" }
+        },
+        { "from": { "node": "ch", "port": "audio" }, "to": { "node": "spk", "port": "audio" } }
+      ]
+    },
+    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+  },
+  "state": {
+    "version": 2,
+    "channels": [
+      {
+        "node": "ch",
+        "settings": {
+          "frequency_hz": 145500000.0,
+          "params": { "type": "nfm", "settings": {} }
+        }
+      }
+    ]
+  }
+}

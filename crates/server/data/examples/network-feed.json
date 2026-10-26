@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "name": "Network feed",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
+        { "id": "scope", "kind": "scope", "position": { "x": 520.0, "y": -40.0 } },
+        {
+          "id": "ch",
+          "kind": "channel",
+          "data": { "channel_type": "adsb", "tuning_locked": false },
+          "position": { "x": 520.0, "y": 340.0 }
+        },
+        {
+          "id": "iqout",
+          "kind": "network_export",
+          "data": { "transport": "udp", "format": "cf32_le", "address": "127.0.0.1:7355" },
+          "position": { "x": 520.0, "y": 760.0 }
+        },
+        { "id": "map", "kind": "map", "position": { "x": 1040.0, "y": 300.0 } },
+        { "id": "out", "kind": "export", "position": { "x": 1040.0, "y": 700.0 } },
+        {
+          "id": "feed",
+          "kind": "event_output",
+          "data": { "target": { "service": "webhook", "url": "", "format": "json" } },
+          "position": { "x": 1040.0, "y": 1020.0 }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Network feed\n\nOne radio, three ways out.\n\n**Export** writes decoded events to a file on demand: CSV or JSON, for a spreadsheet or a script.\n\n**Event output** pushes every event as it happens to a webhook, MQTT broker or database. Its URL is empty on purpose. Fill it in and it starts sending; leave it and nothing leaves the machine.\n\n**Network IQ** is a different thing again: it sends the raw samples, not decodes, so another program on the network can demodulate them itself. The default address feeds a local listener on port 7355.\n\n**Map** keeps the aircraft on screen locally while all of that happens.\n\nTuned to 1090 MHz. Range here is about antenna height, not gain."
+          },
+          "position": { "x": 0.0, "y": 760.0 }
+        }
+      ],
+      "edges": [
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "ch", "port": "iq" } },
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "iqout", "port": "iq" } },
+        { "from": { "node": "ch", "port": "events" }, "to": { "node": "map", "port": "events" } },
+        { "from": { "node": "ch", "port": "events" }, "to": { "node": "out", "port": "events" } },
+        { "from": { "node": "ch", "port": "events" }, "to": { "node": "feed", "port": "events" } }
+      ]
+    },
+    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      { "node": "dev", "settings": { "center_hz": 1090000000.0, "sample_rate": 2400000.0 } }
+    ],
+    "channels": [
+      {
+        "node": "ch",
+        "settings": {
+          "frequency_hz": 1090000000.0,
+          "params": { "type": "adsb", "settings": {} }
+        }
+      }
+    ]
+  }
+}

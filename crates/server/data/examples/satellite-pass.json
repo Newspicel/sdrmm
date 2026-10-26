@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "name": "Satellite pass",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
+        { "id": "scope", "kind": "scope", "position": { "x": 520.0, "y": -40.0 } },
+        { "id": "gps", "kind": "gps", "data": {}, "position": { "x": 0.0, "y": 380.0 } },
+        {
+          "id": "sat",
+          "kind": "satellite",
+          "data": { "tuning_locked": false },
+          "position": { "x": 520.0, "y": 380.0 }
+        },
+        {
+          "id": "ch",
+          "kind": "channel",
+          "data": { "channel_type": "apt", "tuning_locked": false },
+          "position": { "x": 1040.0, "y": 340.0 }
+        },
+        {
+          "id": "rot",
+          "kind": "rotator",
+          "data": {},
+          "position": { "x": 1040.0, "y": 700.0 }
+        },
+        {
+          "id": "rec",
+          "kind": "recorder",
+          "data": { "recording": false },
+          "position": { "x": 520.0, "y": 760.0 }
+        },
+        { "id": "map", "kind": "map", "position": { "x": 1560.0, "y": 340.0 } },
+        { "id": "log", "kind": "decoder_log", "data": {}, "position": { "x": 1560.0, "y": 760.0 } },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Satellite pass\n\n**GPS position** is your station. Everything that points or predicts needs it.\n\n**Satellite** predicts the next pass and, during it, drives two things at once: the decoder's tuning for Doppler, and the rotator's aim.\n\n**Rotator** points the antenna. Without one, delete it: the rest still works on a fixed antenna.\n\n**Channel** decodes APT. Pick the satellite in the Satellite node, not here.\n\n**Recorder** keeps the raw IQ of the pass, so you can decode it again later with different settings.\n\n**Map** draws the ground track. **Decoder log** keeps what came down.\n\nPick a radio on the Device node to start."
+          },
+          "position": { "x": 0.0, "y": 760.0 }
+        }
+      ],
+      "edges": [
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "ch", "port": "iq" } },
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "rec", "port": "iq" } },
+        {
+          "from": { "node": "gps", "port": "position" },
+          "to": { "node": "sat", "port": "position" }
+        },
+        {
+          "from": { "node": "gps", "port": "position" },
+          "to": { "node": "map", "port": "position" }
+        },
+        {
+          "from": { "node": "sat", "port": "control" },
+          "to": { "node": "ch", "port": "control" }
+        },
+        {
+          "from": { "node": "sat", "port": "control" },
+          "to": { "node": "rot", "port": "control" }
+        },
+        { "from": { "node": "sat", "port": "events" }, "to": { "node": "map", "port": "events" } },
+        { "from": { "node": "ch", "port": "events" }, "to": { "node": "log", "port": "events" } }
+      ]
+    },
+    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": { "center_hz": 137100000.0, "sample_rate": 2400000.0 }
+      }
+    ],
+    "channels": [
+      {
+        "node": "ch",
+        "settings": {
+          "frequency_hz": 137100000.0,
+          "params": { "type": "apt", "settings": {} }
+        }
+      }
+    ]
+  }
+}

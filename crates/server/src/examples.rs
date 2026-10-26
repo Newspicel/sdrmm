@@ -9,12 +9,50 @@ struct Example {
     body: &'static [u8],
 }
 
-static EXAMPLES: &[Example] = &[Example {
-    id: "no-radio",
-    name: "No radio",
-    description: "A receiver built on a signal generator, for learning the canvas with no hardware.",
-    body: packed_data!("examples/no-radio.json"),
-}];
+static EXAMPLES: &[Example] = &[
+    Example {
+        id: "no-radio",
+        name: "No radio",
+        description: "A receiver on a signal generator, for learning the canvas with no hardware.",
+        body: packed_data!("examples/no-radio.json"),
+    },
+    Example {
+        id: "satellite-pass",
+        name: "Satellite pass",
+        description: "Predicts a pass, points a rotator, keeps the IQ.",
+        body: packed_data!("examples/satellite-pass.json"),
+    },
+    Example {
+        id: "record-replay",
+        name: "Record and replay",
+        description: "Play an IQ file back, keep the channel, hold the last 30 seconds.",
+        body: packed_data!("examples/record-replay.json"),
+    },
+    Example {
+        id: "scanner-sweep",
+        name: "Scanner sweep",
+        description: "A scanner drives the decoder while a monitor names what else is there.",
+        body: packed_data!("examples/scanner-sweep.json"),
+    },
+    Example {
+        id: "hf-station",
+        name: "HF station",
+        description: "FT8 and WSPR on one radio, into a propagation map.",
+        body: packed_data!("examples/hf-station.json"),
+    },
+    Example {
+        id: "trunked-talkgroups",
+        name: "Trunked talkgroups",
+        description: "A trunk system follows its own traffic, cleaned and recorded.",
+        body: packed_data!("examples/trunked-talkgroups.json"),
+    },
+    Example {
+        id: "network-feed",
+        name: "Network feed",
+        description: "Decodes to a file, a webhook, and raw IQ over the network.",
+        body: packed_data!("examples/network-feed.json"),
+    },
+];
 
 #[derive(Debug)]
 pub(crate) enum ExampleError {
@@ -126,6 +164,25 @@ mod tests {
             .expect("no-radio");
         assert_eq!(info.needs.radios, 0);
         assert_eq!(info.needs.recordings, 0);
+    }
+
+    #[test]
+    fn each_example_asks_for_the_hardware_its_graph_implies() {
+        let listed = all().expect("examples list");
+        let needs = |id: &str| {
+            listed
+                .iter()
+                .find(|e| e.id == id)
+                .map(|e| (e.needs.radios, e.needs.recordings, e.needs.lanes))
+                .expect(id)
+        };
+        assert_eq!(needs("no-radio"), (0, 0, 0));
+        assert_eq!(needs("satellite-pass"), (1, 0, 0));
+        assert_eq!(needs("record-replay"), (0, 1, 0));
+        assert_eq!(needs("scanner-sweep"), (1, 0, 0));
+        assert_eq!(needs("hf-station"), (1, 0, 0));
+        assert_eq!(needs("trunked-talkgroups"), (1, 0, 0));
+        assert_eq!(needs("network-feed"), (1, 0, 0));
     }
 
     #[test]
