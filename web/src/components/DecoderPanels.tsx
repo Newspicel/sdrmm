@@ -628,7 +628,7 @@ function GsmView({ records }: PanelProps<"gsm">) {
       </div>
     );
   }
-  const log = records.slice(-GSM_LOG_ROWS).toReversed();
+  const log = records.slice(0, GSM_LOG_ROWS);
   return (
     <div className={PANE}>
       {gsmCells(records).map((cell) => (

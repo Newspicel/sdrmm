@@ -74,8 +74,15 @@ describe("gsm", () => {
     );
   });
 
-  it("gathers a cell from its broadcasts and counts who was paged", () => {
+  it("gathers a cell from newest-first broadcasts and counts who was paged", () => {
     const cells = gsmCells([
+      record(
+        frame(
+          { type: "paging", identities: [{ kind: "tmsi", value: "015C5703" }] },
+          { snr_db: 18.1, frequency_error_hz: 4_200 },
+        ),
+        "2026-10-12T01:00:01Z",
+      ),
       record(
         frame(
           {
@@ -87,10 +94,6 @@ describe("gsm", () => {
         ),
         "2026-10-12T01:00:00Z",
       ),
-      record(
-        frame({ type: "paging", identities: [{ kind: "tmsi", value: "015C5703" }] }),
-        "2026-10-12T01:00:01Z",
-      ),
     ]);
     expect(cells).toHaveLength(1);
     expect(cells[0]).toMatchObject({
@@ -100,6 +103,9 @@ describe("gsm", () => {
       ccch: "1 CCCH",
       neighbours: [730, 733],
       paged: 1,
+      at: "2026-10-12T01:00:01Z",
+      snrDb: 18.1,
+      frequencyErrorHz: 4_200,
     });
   });
 });

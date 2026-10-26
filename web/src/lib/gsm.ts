@@ -143,15 +143,16 @@ export function gsmCells(records: readonly DecodedRecordOf<"gsm">[]): GsmCellVie
       assignments: 0,
       at: record.at,
     };
-    view.cgi = frame.cgi ?? view.cgi;
-    view.frequencyErrorHz = frame.frequency_error_hz;
-    view.snrDb = frame.snr_db;
-    view.at = record.at;
+    view.cgi = view.cgi ?? frame.cgi ?? null;
     const message = frame.message;
     if (message.type === "system_information") {
-      view.ccch = ccchLabel(message.cell.ccch) ?? view.ccch;
-      view.neighbours = message.cell.neighbours ?? view.neighbours;
-      view.systemInformation = (message.cell.system_information ?? []).map(siLabel);
+      view.ccch = view.ccch ?? ccchLabel(message.cell.ccch);
+      if (view.neighbours.length === 0) {
+        view.neighbours = message.cell.neighbours ?? [];
+      }
+      if (view.systemInformation.length === 0) {
+        view.systemInformation = (message.cell.system_information ?? []).map(siLabel);
+      }
     } else if (message.type === "paging") {
       view.paged += message.identities.length;
     } else if (message.type === "immediate_assignment") {
