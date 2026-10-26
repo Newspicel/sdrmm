@@ -262,6 +262,8 @@ pub enum EngineError {
     StreamOutOfRange { stream: u32, streams: u32 },
     #[error("device {0} is already open in device set {1}")]
     DeviceAlreadyOpen(String, u32),
+    #[error("device {0} is already being opened")]
+    DeviceOpening(String),
     #[error(transparent)]
     Device(#[from] DeviceError),
     #[error(transparent)]
@@ -335,6 +337,7 @@ impl EngineError {
         matches!(
             self,
             Self::DeviceAlreadyOpen(..)
+                | Self::DeviceOpening(_)
                 | Self::Device(DeviceError::InUse(_))
                 | Self::Processor(_)
                 | Self::Array(_)
@@ -1030,6 +1033,7 @@ impl Drop for RatePatchGuard<'_> {
 #[derive(Default)]
 struct Inner {
     device_sets: BTreeMap<u32, DeviceSetState>,
+    opening: HashSet<String>,
     creating: HashSet<u32>,
     pending_faults: HashMap<u32, DeviceError>,
     next_ds_id: u32,

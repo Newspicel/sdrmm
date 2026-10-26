@@ -29,6 +29,77 @@ async fn one_radio_opens_into_one_device_set() {
     engine.create_device_set("virtual:band").unwrap();
 }
 
+struct GatedDriver {
+    opens: Arc<AtomicUsize>,
+    entered: Mutex<std::sync::mpsc::Sender<()>>,
+    released: Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl DeviceDriver for GatedDriver {
+    fn id(&self) -> &'static str {
+        "mock"
+    }
+
+    fn probe(&self) -> Vec<DeviceInfo> {
+        vec![mock_info("gated", None)]
+    }
+
+    fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        self.opens.fetch_add(1, Ordering::SeqCst);
+        let _ = lock(&self.entered).send(());
+        let _ = lock(&self.released).recv_timeout(Duration::from_secs(5));
+        Ok(Box::new(SilentDevice {
+            capabilities: empty_capabilities(),
+            settings: mock_settings(),
+        }))
+    }
+}
+
+#[test]
+fn a_radio_opened_from_two_places_at_once_is_only_dialled_once() {
+    let (entered, waiting) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel();
+    let opens = Arc::new(AtomicUsize::new(0));
+    let mut registry = DeviceRegistry::new();
+    registry.register(
+        0,
+        Box::new(GatedDriver {
+            opens: opens.clone(),
+            entered: Mutex::new(entered),
+            released: Mutex::new(released),
+        }),
+    );
+    let engine = Engine::with_registry(registry, None);
+
+    let opening = {
+        let engine = engine.clone();
+        std::thread::spawn(move || engine.create_device_set("mock:gated"))
+    };
+    waiting
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the driver is inside open");
+    let refused = engine
+        .create_device_set("mock:gated")
+        .expect_err("one radio, one open");
+    assert!(
+        matches!(&refused, EngineError::DeviceOpening(device) if device == "mock:gated"),
+        "expected a refusal while it is being opened, got {refused}"
+    );
+    assert!(refused.is_conflict());
+
+    let _ = release.send(());
+    let ds = opening.join().expect("the open finishes").expect("opens");
+    assert_eq!(
+        opens.load(Ordering::SeqCst),
+        1,
+        "the radio was dialled once"
+    );
+    assert_eq!(engine.snapshot().device_sets.len(), 1);
+
+    engine.remove_device_set(ds).unwrap();
+    engine.shutdown();
+}
+
 #[tokio::test]
 async fn spectrum_flows_with_a_visible_tone() {
     let engine = virtual_engine();
