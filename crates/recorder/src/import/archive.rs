@@ -6,6 +6,7 @@ pub const ARCHIVE_SUFFIX: &str = ".sigmf";
 
 const BLOCK: usize = 512;
 const MAX_META_BYTES: u64 = 8 * 1024 * 1024;
+const MEMBER_TOO_LARGE: &str = "the archive declares a member longer than the archive itself";
 const ONE_RECORDING: &str =
     "a .sigmf archive must hold one .sigmf-meta and one .sigmf-data, or a collection and its lanes";
 
@@ -105,7 +106,10 @@ pub fn read_archive(mut archive: impl Read) -> Result<Archive, SigmfError> {
     while fill(&mut archive, &mut header)? && header.iter().any(|byte| *byte != 0) {
         let entry = entry_name(&header)?;
         let size = entry_size(&header)?;
-        let padded = size.div_ceil(BLOCK as u64) * BLOCK as u64;
+        let padded = size
+            .div_ceil(BLOCK as u64)
+            .checked_mul(BLOCK as u64)
+            .ok_or_else(|| SigmfError::Malformed(MEMBER_TOO_LARGE.to_owned()))?;
         let Some(suffix) = member_suffix(&entry) else {
             skip(&mut archive, padded)?;
             continue;
@@ -115,8 +119,10 @@ pub fn read_archive(mut archive: impl Read) -> Result<Archive, SigmfError> {
                 "the archive's metadata is larger than any SigMF metadata".to_owned(),
             ));
         }
-        let mut body = vec![0u8; size as usize];
-        archive.read_exact(&mut body)?;
+        let mut body = Vec::new();
+        if archive.by_ref().take(size).read_to_end(&mut body)? as u64 != size {
+            return Err(SigmfError::Malformed(MEMBER_TOO_LARGE.to_owned()));
+        }
         skip(&mut archive, padded - size)?;
         parts.take(stem_of(&entry, suffix), suffix, body)?;
     }
@@ -240,6 +246,24 @@ mod tests {
         assert_eq!(member.data.len(), 128 * 8);
         let meta: crate::SigmfMeta = serde_json::from_slice(&member.meta).expect("meta");
         assert_eq!(meta.global.sample_rate, Some(48_000.0));
+    }
+
+    #[test]
+    fn a_member_longer_than_the_archive_is_refused_without_allocating_for_it() {
+        let mut header = [0u8; BLOCK];
+        header[..12].copy_from_slice(b"x.sigmf-data");
+        header[124] = 0x80;
+        header[128..136].copy_from_slice(&(1u64 << 48).to_be_bytes());
+        let mut bytes = header.to_vec();
+        bytes.extend_from_slice(b"short");
+
+        let Err(error) = read_archive(bytes.as_slice()) else {
+            panic!("a member longer than the archive must be refused");
+        };
+        assert!(
+            matches!(&error, SigmfError::Malformed(why) if why == MEMBER_TOO_LARGE),
+            "{error:?}"
+        );
     }
 
     #[test]
