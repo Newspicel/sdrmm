@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import type {
   ChannelInfo,
   ChannelSettings,
@@ -14,12 +14,16 @@ import { type Box, face, fitPatch, node, nodeUrl, radioNodeOf, stage, wire } fro
 
 const BAND: DeviceRef = { backend: "virtual", key: "band" };
 const BAND_CENTER_HZ = 100_000_000;
+const SSTV_PICTURE = /Robot 36/;
+const SCAN_RESTARTED = 0.1;
+const SCAN_SHOWN = 0.85;
 
 export interface Scene {
   id: string;
   title: string;
   stage(page: Page): Promise<void>;
   ready(page: Page): Promise<void>;
+  settle?(page: Page): Promise<void>;
   speaker?: string;
   settleSeconds: number;
 }
@@ -92,6 +96,35 @@ async function tune(page: Page, device: DeviceRef, offsets: Record<string, numbe
   }
 }
 
+function drawnDown(shell: Locator): Promise<number> {
+  return shell.locator("canvas").evaluate((element) => {
+    const painted = element as HTMLCanvasElement;
+    const context = painted.getContext("2d");
+    if (context === null) {
+      return 0;
+    }
+    const { data, width, height } = context.getImageData(0, 0, painted.width, painted.height);
+    for (let row = height - 1; row >= 0; row--) {
+      for (let column = 0; column < width; column++) {
+        const at = (row * width + column) * 4;
+        if (data[at] !== 0 || data[at + 1] !== 0 || data[at + 2] !== 0) {
+          return (row + 1) / height;
+        }
+      }
+    }
+    return 0;
+  });
+}
+
+async function midScan(shell: Locator): Promise<void> {
+  await expect
+    .poll(() => drawnDown(shell), { timeout: 60_000, intervals: [200] })
+    .toBeLessThan(SCAN_RESTARTED);
+  await expect
+    .poll(() => drawnDown(shell), { timeout: 60_000, intervals: [100] })
+    .toBeGreaterThanOrEqual(SCAN_SHOWN);
+}
+
 async function fitForCapture(page: Page): Promise<void> {
   await fitPatch(page);
   await page.keyboard.press("Escape");
@@ -108,6 +141,10 @@ async function idle(page: Page): Promise<void> {
   await page
     .locator("body")
     .evaluate((element) => (element.ownerDocument.activeElement as HTMLElement | null)?.blur());
+}
+
+function rackScreen(page: Page): Locator {
+  return page.locator('.grid > [data-id="video"]');
 }
 
 async function showRack(page: Page): Promise<void> {
@@ -283,8 +320,8 @@ const ais: Scene = {
 
 const sstv: Scene = {
   id: "sstv",
-  title: "an SSTV picture in the readout",
-  settleSeconds: 2,
+  title: "an SSTV picture as it lands",
+  settleSeconds: 0,
   async stage(page) {
     const device = await recording(page, "sstv_robot36_48k");
     await stage(page, "SSTV", {
@@ -293,14 +330,14 @@ const sstv: Scene = {
         nodes: [
           node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
           channel("ch", "sstv", { x: 540, y: 0, w: 420, h: 218 }),
-          node("scope", { kind: "scope" }, { x: 0, y: 258, w: 960, h: 582 }),
-          node("readout", { kind: "readout" }, { x: 1100, y: 0, w: 800, h: 530 }),
-          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 570, w: 800, h: 270 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 258, w: 960, h: 622 }),
+          node("video", { kind: "video" }, { x: 1100, y: 0, w: 800, h: 880 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 0, y: 920, w: 1900, h: 200 }),
         ],
         edges: [
           wire(["dev", "iq"], ["scope", "iq"]),
           wire(["dev", "iq"], ["ch", "iq"]),
-          wire(["ch", "events"], ["readout", "events"]),
+          wire(["ch", "video"], ["video", "video"]),
           wire(["ch", "events"], ["log", "events"]),
         ],
       },
@@ -309,11 +346,12 @@ const sstv: Scene = {
     await fitForCapture(page);
   },
   async ready(page) {
-    const readout = face(page, "readout");
-    await expect(readout.getByRole("img", { name: /picture received/i })).toBeVisible({
+    await expect(face(page, "video").getByRole("img", { name: SSTV_PICTURE })).toBeVisible({
       timeout: 120_000,
     });
-    await expect(readout.getByText("complete")).toBeVisible({ timeout: 120_000 });
+  },
+  async settle(page) {
+    await midScan(face(page, "video"));
   },
 };
 
@@ -511,7 +549,7 @@ const atv: Scene = {
 const rack: Scene = {
   id: "rack",
   title: "three receivers in one rack",
-  settleSeconds: 6,
+  settleSeconds: 0,
   async stage(page) {
     const aisDevice = await recording(page, "ais_position_240k");
     const pocsagDevice = await recording(page, "pocsag_1200_240k");
@@ -541,7 +579,7 @@ const rack: Scene = {
           node("scope", { kind: "scope" }, { x: 940, y: 0, w: 700, h: 300 }),
           node("map", { kind: "map" }, { x: 940, y: 340, w: 700, h: 300 }),
           node("log", { kind: "decoder_log", data: {} }, { x: 940, y: 680, w: 700, h: 300 }),
-          node("readout", { kind: "readout" }, { x: 1700, y: 0, w: 700, h: 300 }),
+          node("video", { kind: "video" }, { x: 1700, y: 0, w: 700, h: 300 }),
         ],
         edges: [
           wire(["sea", "iq"], ["scope", "iq"]),
@@ -550,7 +588,7 @@ const rack: Scene = {
           wire(["pic", "iq"], ["ch_sstv", "iq"]),
           wire(["ch_ais", "events"], ["map", "events"]),
           wire(["ch_pocsag", "events"], ["log", "events"]),
-          wire(["ch_sstv", "events"], ["readout", "events"]),
+          wire(["ch_sstv", "video"], ["video", "video"]),
         ],
       },
       rack: {
@@ -558,7 +596,7 @@ const rack: Scene = {
           slot("scope", { x: 0, y: 0, w: 8, h: 3 }),
           slot("map", { x: 8, y: 0, w: 4, h: 3 }),
           slot("log", { x: 0, y: 3, w: 8, h: 5 }),
-          slot("readout", { x: 8, y: 3, w: 4, h: 5 }),
+          slot("video", { x: 8, y: 3, w: 4, h: 5 }),
         ],
       },
     });
@@ -568,11 +606,13 @@ const rack: Scene = {
     await showRack(page);
   },
   async ready(page) {
-    const readout = page.locator('.grid > [data-id="readout"]');
-    await expect(readout.getByRole("img", { name: /picture received/i })).toBeVisible({
+    await expect(rackScreen(page).getByRole("img", { name: SSTV_PICTURE })).toBeVisible({
       timeout: 180_000,
     });
     await page.mouse.move(0, 0);
+  },
+  async settle(page) {
+    await midScan(rackScreen(page));
   },
 };
 

@@ -33,11 +33,18 @@ fn ramp() -> Vec<u8> {
     (0..=255u8).collect()
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum FirstClient {
+    Streams,
+    HangsUp,
+    GoesQuiet,
+}
+
 fn rtl_tcp_session(
     magic: [u8; 4],
     tuner: u32,
     gain_steps: u32,
-    stall_first: bool,
+    first: FirstClient,
     recorder: Observed,
 ) -> impl Fn(TcpStream, usize) + Send + Sync + 'static {
     move |mut stream: TcpStream, nth| {
@@ -49,6 +56,7 @@ fn rtl_tcp_session(
         }
         let commands = recorder.clone();
         let mut reader = stream.try_clone().expect("clone for reading");
+        let (hung_up, gone) = mpsc::channel();
         std::thread::spawn(move || {
             let mut frame = [0u8; 5];
             while reader.read_exact(&mut frame).is_ok() {
@@ -58,12 +66,20 @@ fn rtl_tcp_session(
                     .or_default()
                     .push((frame[0], param));
             }
+            let _ = hung_up.send(());
         });
         let block = ramp();
         let started = std::time::Instant::now();
         while stream.write_all(&block).is_ok() {
-            if stall_first && nth == GREETED && started.elapsed() > Duration::from_millis(100) {
-                return;
+            if nth == GREETED && started.elapsed() > Duration::from_millis(100) {
+                match first {
+                    FirstClient::Streams => {}
+                    FirstClient::HangsUp => return,
+                    FirstClient::GoesQuiet => {
+                        let _ = gone.recv_timeout(DEADLINE);
+                        return;
+                    }
+                }
             }
             std::thread::sleep(Duration::from_millis(2));
         }
@@ -74,22 +90,22 @@ fn fake_rtl_tcp(
     magic: [u8; 4],
     tuner: u32,
     gain_steps: u32,
-    stall_first: bool,
+    first: FirstClient,
 ) -> (FakeServer, Observed) {
     let observed: Observed = Arc::new(Mutex::new(HashMap::new()));
-    let session = rtl_tcp_session(magic, tuner, gain_steps, stall_first, observed.clone());
+    let session = rtl_tcp_session(magic, tuner, gain_steps, first, observed.clone());
     (FakeServer::spawn(session), observed)
 }
 
 fn late_rtl_tcp(away: Duration) -> (FakeServer, Observed) {
     let observed: Observed = Arc::new(Mutex::new(HashMap::new()));
-    let session = rtl_tcp_session(*b"RTL0", 5, 29, false, observed.clone());
+    let session = rtl_tcp_session(*b"RTL0", 5, 29, FirstClient::Streams, observed.clone());
     (FakeServer::spawn_after(away, session), observed)
 }
 
-fn one_client_rtl_tcp(teardown: Duration) -> (FakeServer, Observed) {
+fn one_client_rtl_tcp(teardown: Duration, first: FirstClient) -> (FakeServer, Observed) {
     let observed: Observed = Arc::new(Mutex::new(HashMap::new()));
-    let session = rtl_tcp_session(*b"RTL0", 5, 29, false, observed.clone());
+    let session = rtl_tcp_session(*b"RTL0", 5, 29, first, observed.clone());
     (FakeServer::spawn_single_client(teardown, session), observed)
 }
 
@@ -114,7 +130,7 @@ fn commands(observed: &Observed, connection: usize) -> Vec<(u8, u32)> {
 
 #[test]
 fn opening_reads_the_greeting_and_reports_that_tuners_capabilities() {
-    let (server, _) = fake_rtl_tcp(*b"RTL0", 5, 29, false);
+    let (server, _) = fake_rtl_tcp(*b"RTL0", 5, 29, FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let device = open(&driver, &server.endpoint()).expect("opens");
 
@@ -138,7 +154,7 @@ fn opening_reads_the_greeting_and_reports_that_tuners_capabilities() {
 
 #[test]
 fn a_tuner_this_backend_has_no_table_for_still_opens() {
-    let (server, _) = fake_rtl_tcp(*b"RTL0", 0, 0, false);
+    let (server, _) = fake_rtl_tcp(*b"RTL0", 0, 0, FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let device = open(&driver, &server.endpoint()).expect("opens");
     assert!(
@@ -149,7 +165,7 @@ fn a_tuner_this_backend_has_no_table_for_still_opens() {
 
 #[test]
 fn a_port_that_is_not_an_rtl_tcp_server_is_refused_by_name() {
-    let (server, _) = fake_rtl_tcp(*b"HTTP", 5, 29, false);
+    let (server, _) = fake_rtl_tcp(*b"HTTP", 5, 29, FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let Err(error) = open(&driver, &server.endpoint()) else {
         panic!("a server that is not rtl_tcp must be refused");
@@ -168,7 +184,7 @@ fn nothing_listening_is_an_error_naming_the_endpoint() {
 
 #[test]
 fn capturing_replays_every_setting_before_the_first_sample_and_streams() {
-    let (server, observed) = fake_rtl_tcp(*b"RTL0", 5, 29, false);
+    let (server, observed) = fake_rtl_tcp(*b"RTL0", 5, 29, FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let mut device = open(&driver, &server.endpoint()).expect("opens");
     device
@@ -210,7 +226,7 @@ fn capturing_replays_every_setting_before_the_first_sample_and_streams() {
 
 #[test]
 fn a_retune_while_streaming_reaches_the_server() {
-    let (server, observed) = fake_rtl_tcp(*b"RTL0", 5, 29, false);
+    let (server, observed) = fake_rtl_tcp(*b"RTL0", 5, 29, FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let mut device = open(&driver, &server.endpoint()).expect("opens");
     let (sink, blocks) = blocking_sink();
@@ -235,7 +251,7 @@ fn a_retune_while_streaming_reaches_the_server() {
 
 #[test]
 fn the_bytes_on_the_wire_arrive_as_rtl_sdr_samples() {
-    let (server, _) = fake_rtl_tcp(*b"RTL0", 5, 29, false);
+    let (server, _) = fake_rtl_tcp(*b"RTL0", 5, 29, FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let mut device = open(&driver, &server.endpoint()).expect("opens");
     let (sink, blocks) = blocking_sink();
@@ -251,7 +267,7 @@ fn the_bytes_on_the_wire_arrive_as_rtl_sdr_samples() {
 
 #[test]
 fn a_dropped_connection_reconnects_and_replays_the_tuning() {
-    let (server, observed) = fake_rtl_tcp(*b"RTL0", 5, 29, true);
+    let (server, observed) = fake_rtl_tcp(*b"RTL0", 5, 29, FirstClient::HangsUp);
     let driver = RtlTcpDriver::new();
     let mut device = open(&driver, &server.endpoint()).expect("opens");
     device
@@ -292,7 +308,7 @@ fn a_dropped_connection_reconnects_and_replays_the_tuning() {
 
 #[test]
 fn stopping_closes_the_connection_and_the_device_can_stream_again() {
-    let (server, _) = fake_rtl_tcp(*b"RTL0", 5, 29, false);
+    let (server, _) = fake_rtl_tcp(*b"RTL0", 5, 29, FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let mut device = open(&driver, &server.endpoint()).expect("opens");
     let (sink, blocks) = blocking_sink();
@@ -314,7 +330,7 @@ fn stopping_closes_the_connection_and_the_device_can_stream_again() {
 
 #[test]
 fn a_server_that_serves_one_client_streams_on_the_connection_it_greeted() {
-    let (server, observed) = one_client_rtl_tcp(Duration::from_millis(0));
+    let (server, observed) = one_client_rtl_tcp(Duration::from_millis(0), FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let mut device = open(&driver, &server.endpoint()).expect("opens");
     let (sink, blocks) = blocking_sink();
@@ -347,7 +363,7 @@ fn opening_waits_out_a_server_whose_port_is_not_answering_yet() {
 #[test]
 fn streaming_again_waits_out_a_server_still_letting_go_of_its_last_client() {
     let teardown = Duration::from_secs(6);
-    let (server, _) = one_client_rtl_tcp(teardown);
+    let (server, _) = one_client_rtl_tcp(teardown, FirstClient::Streams);
     let driver = RtlTcpDriver::new();
     let mut device = open(&driver, &server.endpoint()).expect("opens");
     let (sink, blocks) = blocking_sink();
@@ -364,4 +380,31 @@ fn streaming_again_waits_out_a_server_still_letting_go_of_its_last_client() {
         .expect("samples arrive on the second client");
     device.rx_stop();
     assert_eq!(server.connections(), 2);
+}
+
+#[test]
+fn a_server_that_went_quiet_is_let_go_of_before_the_next_dial() {
+    let (server, observed) = one_client_rtl_tcp(Duration::from_millis(0), FirstClient::GoesQuiet);
+    let driver = RtlTcpDriver::new();
+    let mut device = open(&driver, &server.endpoint()).expect("opens");
+    let (sink, blocks) = blocking_sink();
+    device.rx_start(vec![sink]).expect("streams");
+    blocks
+        .recv_timeout(DEADLINE)
+        .expect("samples before the server goes quiet");
+
+    eventually("a reconnect", || {
+        (server.connections() > RECONNECTED).then_some(())
+    });
+    eventually("the replay", || {
+        (commands(&observed, RECONNECTED).len() >= REPLAY_IN_AGC).then_some(())
+    });
+    let deadline = std::time::Instant::now() + DEADLINE;
+    while blocks.recv_timeout(Duration::from_millis(100)).is_err() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the stream never resumed"
+        );
+    }
+    device.rx_stop();
 }

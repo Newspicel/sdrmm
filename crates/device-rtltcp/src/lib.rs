@@ -144,6 +144,9 @@ impl RtlRadio {
     }
 
     fn link(&self) -> Result<Arc<Connection>, DeviceError> {
+        if let Some(stale) = lock(&self.connection).take() {
+            stale.close();
+        }
         if let Some(greeted) = lock(&self.greeted).take() {
             if greeted.at.elapsed() < GREETING_HANDOFF {
                 return Ok(greeted.connection);

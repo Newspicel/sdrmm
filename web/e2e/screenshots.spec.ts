@@ -30,9 +30,11 @@ for (const scene of SCENES) {
       await listen(page, scene.speaker);
     }
     await page.waitForTimeout(scene.settleSeconds * 1000);
+    await scene.settle?.(page);
     await capture(page, `${SHOTS}/${scene.id}-dark.png`);
     await page.emulateMedia({ colorScheme: "light" });
     await page.waitForTimeout(REPAINT_MS);
+    await scene.settle?.(page);
     await capture(page, `${SHOTS}/${scene.id}-light.png`);
   });
 }

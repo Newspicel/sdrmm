@@ -11,13 +11,32 @@ use sdrmm_wire::{
 };
 
 use crate::{
-    ChannelMedia, DEFAULT_CENTER_HZ, DeviceSetState, Engine, EngineError, FaultGate,
+    ChannelMedia, DEFAULT_CENTER_HZ, DeviceSetState, Engine, EngineError, FaultGate, Inner,
     RatePatchGuard, RebuildEntry, dc_block, fault_kind, hotplug, ids_of, lock_runtime,
     planning::{plan_center, validate_streams},
     refusal,
     runtime::{CaptureRuntime, DeviceRuntime, ring_capacity, spectrum_size},
     sample_rate_of, teardown_set,
 };
+
+struct Claim<'a> {
+    engine: &'a Engine,
+    device_id: String,
+}
+
+impl Drop for Claim<'_> {
+    fn drop(&mut self) {
+        self.engine.lock().opening.remove(&self.device_id);
+    }
+}
+
+fn opened_as(inner: &Inner, device_id: &str) -> Option<u32> {
+    inner
+        .device_sets
+        .iter()
+        .find(|(_, set)| set.info.id() == device_id)
+        .map(|(ds, _)| *ds)
+}
 
 #[derive(Default)]
 struct SinkPoll {
@@ -584,9 +603,28 @@ impl Engine {
     }
 
     pub fn create_device_set(&self, device_id: &str) -> Result<u32, EngineError> {
-        self.refuse_reopen(device_id)?;
+        let _claim = self.claim(device_id)?;
         let (info, device) = self.registry.open(device_id)?;
+        let resolved = info.id();
+        let _same_radio_other_spelling = (resolved != device_id)
+            .then(|| self.claim(&resolved))
+            .transpose()?;
         self.create_opened_set(info, device)
+    }
+
+    fn claim(&self, device_id: &str) -> Result<Claim<'_>, EngineError> {
+        let mut inner = self.lock();
+        if let Some(ds) = opened_as(&inner, device_id) {
+            return Err(EngineError::DeviceAlreadyOpen(device_id.to_owned(), ds));
+        }
+        if !inner.opening.insert(device_id.to_owned()) {
+            return Err(EngineError::DeviceOpening(device_id.to_owned()));
+        }
+        drop(inner);
+        Ok(Claim {
+            engine: self,
+            device_id: device_id.to_owned(),
+        })
     }
 
     pub(crate) fn create_opened_set(
@@ -705,13 +743,8 @@ impl Engine {
     }
 
     pub(crate) fn refuse_reopen(&self, device_id: &str) -> Result<(), EngineError> {
-        let inner = self.lock();
-        match inner
-            .device_sets
-            .iter()
-            .find(|(_, set)| set.info.id() == device_id)
-        {
-            Some((id, _)) => Err(EngineError::DeviceAlreadyOpen(device_id.to_owned(), *id)),
+        match opened_as(&self.lock(), device_id) {
+            Some(ds) => Err(EngineError::DeviceAlreadyOpen(device_id.to_owned(), ds)),
             None => Ok(()),
         }
     }
