@@ -40,18 +40,22 @@ import {
 } from "./rotator";
 
 type Pick = (link: RotatorLink) => void;
-type LinkTab = "gs232" | "winegard" | "rotctld";
+type LinkTab = RotatorLink["type"];
 type SerialRotator = Extract<RotatorLink, { type: "gs232" | "winegard" }>;
 
-const LINK_TABS = [
-  { value: "gs232" as const, label: "GS-232", title: "A Yaesu GS-232 controller on a serial port" },
-  {
-    value: "winegard" as const,
+const LINK_LABELS: Record<LinkTab, { label: string; title: string }> = {
+  gs232: { label: "GS-232", title: "A Yaesu GS-232 controller on a serial port" },
+  winegard: {
     label: "Winegard",
     title: "A Winegard Trav'ler motor console on a serial port",
   },
-  { value: "rotctld" as const, label: "rotctld", title: "A Hamlib rotctld daemon" },
-];
+  rotctld: { label: "rotctld", title: "A Hamlib rotctld daemon" },
+};
+
+const LINK_TABS = (Object.keys(LINK_LABELS) as LinkTab[]).map((value) => ({
+  value,
+  ...LINK_LABELS[value],
+}));
 
 const PORT_TITLES: Record<SerialRotator["type"], string> = {
   gs232: "Serial port of the GS-232 controller",
