@@ -592,6 +592,90 @@ const fn is_one_lane(lanes: &u32) -> bool {
     *lanes <= 1
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ExampleNeeds {
+    pub radios: u32,
+    pub lanes: u32,
+    pub recordings: u32,
+    pub min_freq_hz: f64,
+    pub max_freq_hz: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ExampleInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub needs: ExampleNeeds,
+    pub node_kinds: Vec<crate::patch::NodeKind>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ExamplesResponse {
+    pub examples: Vec<ExampleInfo>,
+}
+
+impl ExampleNeeds {
+    #[must_use]
+    pub fn of(graph: &crate::patch::PatchGraph, state: &crate::WorkspaceState) -> Self {
+        let kind_count = |kind: crate::patch::NodeKind| {
+            u32::try_from(
+                graph
+                    .nodes
+                    .iter()
+                    .filter(|node| node.body.kind() == kind)
+                    .count(),
+            )
+            .unwrap_or(u32::MAX)
+        };
+        let lanes = graph
+            .nodes
+            .iter()
+            .filter(|node| node.body.kind() == crate::patch::NodeKind::Array)
+            .map(|node| graph.wired_lanes(&node.id))
+            .max()
+            .unwrap_or(0);
+        let (min_freq_hz, max_freq_hz) = span(state);
+        Self {
+            radios: kind_count(crate::patch::NodeKind::Device),
+            lanes: u32::try_from(lanes).unwrap_or(u32::MAX),
+            recordings: kind_count(crate::patch::NodeKind::Recording),
+            min_freq_hz,
+            max_freq_hz,
+        }
+    }
+}
+
+fn span(state: &crate::WorkspaceState) -> (f64, f64) {
+    let mut tuned: Vec<f64> = state
+        .channels
+        .iter()
+        .map(|channel| channel.settings.frequency_hz)
+        .collect();
+    if tuned.is_empty() {
+        tuned = state
+            .devices
+            .iter()
+            .filter_map(|device| device.settings.center_hz)
+            .collect();
+    }
+    tuned
+        .iter()
+        .fold(None, |bounds: Option<(f64, f64)>, hz| {
+            Some(bounds.map_or((*hz, *hz), |(lo, hi)| (lo.min(*hz), hi.max(*hz))))
+        })
+        .unwrap_or((0.0, 0.0))
+}
+
+#[must_use]
+pub fn kinds_in(graph: &crate::patch::PatchGraph) -> Vec<crate::patch::NodeKind> {
+    let mut kinds: Vec<crate::patch::NodeKind> =
+        graph.nodes.iter().map(|node| node.body.kind()).collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    kinds
+}
+
 const fn receive() -> crate::device::Direction {
     crate::device::Direction::Rx
 }
@@ -691,6 +775,10 @@ pub struct ApiError {
 mod tests {
     use super::*;
     use crate::device::{Capabilities, DcArtifact, DeviceProfile, Duplex, Range, StreamScope};
+    use crate::patch::{
+        ARRAY_LANE_PORT, IQ_PORT, NodeBody, NodeKind, PatchEdge, PatchGraph, PatchNode, PortRef,
+        Position,
+    };
 
     fn scoped(nodes: Option<&str>, sources: Option<&str>) -> DecoderLogQuery {
         DecoderLogQuery {
@@ -954,6 +1042,149 @@ mod tests {
         .expect("a template from before the direction field");
         assert_eq!(parsed.direction, crate::device::Direction::Rx);
         assert!(parsed.supported_devices.is_empty());
+    }
+
+    fn graph_with(nodes: &[(&str, NodeBody)], lanes: &[(&str, &str, &str)]) -> PatchGraph {
+        PatchGraph {
+            nodes: nodes
+                .iter()
+                .map(|(id, body)| PatchNode {
+                    id: (*id).to_owned(),
+                    body: body.clone(),
+                    position: Position { x: 0.0, y: 0.0 },
+                    size: None,
+                    label: None,
+                })
+                .collect(),
+            edges: lanes
+                .iter()
+                .map(|(from, to, lane_port)| PatchEdge {
+                    from: PortRef {
+                        node: (*from).to_owned(),
+                        port: IQ_PORT.to_owned(),
+                    },
+                    to: PortRef {
+                        node: (*to).to_owned(),
+                        port: (*lane_port).to_owned(),
+                    },
+                })
+                .collect(),
+        }
+    }
+
+    fn tuned(channels: &[(&str, f64)], devices: &[(&str, f64)]) -> crate::WorkspaceState {
+        crate::WorkspaceState {
+            channels: channels
+                .iter()
+                .map(|(node, frequency_hz)| crate::WorkspaceChannel {
+                    node: (*node).to_owned(),
+                    settings: ChannelSettings {
+                        frequency_hz: *frequency_hz,
+                        ..ChannelSettings::default_for("nfm").expect("nfm settings")
+                    },
+                })
+                .collect(),
+            devices: devices
+                .iter()
+                .map(|(node, center_hz)| crate::WorkspaceDevice {
+                    node: (*node).to_owned(),
+                    settings: crate::DeviceSettings {
+                        center_hz: Some(*center_hz),
+                        ..crate::DeviceSettings::default()
+                    },
+                })
+                .collect(),
+            ..crate::WorkspaceState::new()
+        }
+    }
+
+    #[test]
+    fn needs_counts_sources_and_lanes() {
+        let graph = graph_with(
+            &[
+                ("dev", NodeBody::Device(crate::DeviceNode::default())),
+                ("rec", NodeBody::Recording(crate::RecordingNode::default())),
+                ("arr", NodeBody::Array(crate::ArrayNode::default())),
+            ],
+            &[("dev", "arr", ARRAY_LANE_PORT), ("rec", "arr", "lane2")],
+        );
+        let needs = ExampleNeeds::of(&graph, &crate::WorkspaceState::new());
+        assert_eq!(needs.radios, 1);
+        assert_eq!(needs.recordings, 1);
+        assert_eq!(needs.lanes, 2);
+    }
+
+    #[test]
+    fn needs_of_a_graph_without_sources_is_zero() {
+        let graph = graph_with(
+            &[("gen", NodeBody::SignalGen(crate::SignalGenNode::default()))],
+            &[],
+        );
+        let needs = ExampleNeeds::of(&graph, &crate::WorkspaceState::new());
+        assert_eq!(needs.radios, 0);
+        assert_eq!(needs.recordings, 0);
+        assert_eq!(needs.lanes, 0);
+    }
+
+    #[test]
+    fn a_single_lane_array_needs_one_lane() {
+        let graph = graph_with(
+            &[
+                ("dev", NodeBody::Device(crate::DeviceNode::default())),
+                ("arr", NodeBody::Array(crate::ArrayNode::default())),
+            ],
+            &[("dev", "arr", ARRAY_LANE_PORT)],
+        );
+        assert_eq!(
+            ExampleNeeds::of(&graph, &crate::WorkspaceState::new()).lanes,
+            1
+        );
+    }
+
+    #[test]
+    fn needs_span_the_tuned_channels() {
+        let graph = graph_with(
+            &[("dev", NodeBody::Device(crate::DeviceNode::default()))],
+            &[],
+        );
+        let needs = ExampleNeeds::of(
+            &graph,
+            &tuned(&[("a", 131_550_000.0), ("b", 131_725_000.0)], &[]),
+        );
+        assert_eq!(needs.min_freq_hz, 131_550_000.0);
+        assert_eq!(needs.max_freq_hz, 131_725_000.0);
+    }
+
+    #[test]
+    fn needs_fall_back_to_the_device_center_without_channels() {
+        let graph = graph_with(
+            &[("dev", NodeBody::Device(crate::DeviceNode::default()))],
+            &[],
+        );
+        let needs = ExampleNeeds::of(&graph, &tuned(&[], &[("dev", 98_000_000.0)]));
+        assert_eq!(needs.min_freq_hz, 98_000_000.0);
+        assert_eq!(needs.max_freq_hz, 98_000_000.0);
+    }
+
+    #[test]
+    fn needs_without_any_tuning_are_zero() {
+        let graph = graph_with(&[], &[]);
+        let needs = ExampleNeeds::of(&graph, &crate::WorkspaceState::new());
+        assert_eq!(needs.min_freq_hz, 0.0);
+        assert_eq!(needs.max_freq_hz, 0.0);
+    }
+
+    #[test]
+    fn kinds_in_is_sorted_and_deduplicated() {
+        let graph = graph_with(
+            &[
+                ("s", NodeBody::Speaker),
+                ("d", NodeBody::Device(crate::DeviceNode::default())),
+                ("s2", NodeBody::Speaker),
+            ],
+            &[],
+        );
+        assert_eq!(kinds_in(&graph), vec![NodeKind::Device, NodeKind::Speaker]);
     }
 
     #[test]
