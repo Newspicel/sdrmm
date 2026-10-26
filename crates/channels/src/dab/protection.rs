@@ -131,7 +131,7 @@ const UEP_PROFILES: [(u16, u8, [u16; 4], [u8; 4]); 64] = [
     (80, 4, [6, 10, 41, 3], [11, 6, 5, 6]),
     (80, 3, [6, 11, 40, 3], [16, 8, 6, 7]),
     (80, 2, [6, 10, 41, 3], [23, 13, 8, 13]),
-    (80, 1, [6, 10, 41, 3], [24, 7, 12, 18]),
+    (80, 1, [6, 10, 41, 3], [24, 17, 12, 18]),
     (96, 5, [7, 9, 53, 3], [5, 4, 2, 4]),
     (96, 4, [7, 10, 52, 3], [9, 6, 4, 6]),
     (96, 3, [6, 12, 51, 3], [16, 9, 6, 10]),
@@ -499,6 +499,12 @@ mod tests {
             assert_eq!(
                 protection.mask().filter(|&keep| keep).count(),
                 protection.coded_bits()
+            );
+            let capacity = 64 * usize::from(uep_size_cu(index).unwrap_or(0));
+            let spare = capacity - protection.coded_bits();
+            assert!(
+                spare <= TAIL,
+                "UEP index {index} leaves {spare} bits unused"
             );
         }
     }
