@@ -78,6 +78,9 @@ static EXAMPLES: &[Example] = &[
     },
 ];
 
+#[cfg(test)]
+const UNCOVERED: &[sdrmm_wire::NodeKind] = &[];
+
 #[derive(Debug)]
 pub(crate) enum ExampleError {
     Unknown(String),
@@ -207,6 +210,28 @@ mod tests {
         assert_eq!(needs("hf-station"), (1, 0, 0));
         assert_eq!(needs("trunked-talkgroups"), (1, 0, 0));
         assert_eq!(needs("network-feed"), (1, 0, 0));
+    }
+
+    #[test]
+    fn every_node_kind_is_covered_or_listed() {
+        let mut covered: BTreeSet<NodeKind> = UNCOVERED.iter().copied().collect();
+        for info in all().expect("examples list") {
+            covered.extend(info.node_kinds);
+        }
+        for template in crate::templates::all() {
+            if let Some(patch) = &template.patch {
+                covered.extend(patch.nodes.iter().map(|node| node.body.kind()));
+            }
+        }
+        let missing: Vec<NodeKind> = NodeKind::ALL
+            .iter()
+            .filter(|kind| !covered.contains(kind))
+            .copied()
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "no example shows {missing:?}; add one or list it in UNCOVERED"
+        );
     }
 
     #[test]
