@@ -52,6 +52,30 @@ static EXAMPLES: &[Example] = &[
         description: "Decodes to a file, a webhook, and raw IQ over the network.",
         body: packed_data!("examples/network-feed.json"),
     },
+    Example {
+        id: "df-drive",
+        name: "DF drive",
+        description: "Five coherent lanes into bearings, crossed into a fix as you drive.",
+        body: packed_data!("examples/df-drive.json"),
+    },
+    Example {
+        id: "passive-radar",
+        name: "Passive radar",
+        description: "Aircraft echoes of a broadcast FM station, without transmitting.",
+        body: packed_data!("examples/passive-radar.json"),
+    },
+    Example {
+        id: "beam-and-stitch",
+        name: "Beam and stitch",
+        description: "Aim the array at what the direction finder sees, or join its lanes wide.",
+        body: packed_data!("examples/beam-and-stitch.json"),
+    },
+    Example {
+        id: "array-lab",
+        name: "Array lab",
+        description: "Bearing over frequency, baseline visibilities and polarisation.",
+        body: packed_data!("examples/array-lab.json"),
+    },
 ];
 
 #[derive(Debug)]
@@ -183,6 +207,19 @@ mod tests {
         assert_eq!(needs("hf-station"), (1, 0, 0));
         assert_eq!(needs("trunked-talkgroups"), (1, 0, 0));
         assert_eq!(needs("network-feed"), (1, 0, 0));
+    }
+
+    #[test]
+    fn the_array_examples_ask_for_lanes() {
+        let listed = all().expect("examples list");
+        for id in ["df-drive", "passive-radar", "beam-and-stitch", "array-lab"] {
+            let info = listed.iter().find(|e| e.id == id).expect(id);
+            assert!(
+                info.needs.lanes >= 2,
+                "{id} asks for {} lanes",
+                info.needs.lanes
+            );
+        }
     }
 
     #[test]

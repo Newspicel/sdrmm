@@ -1,0 +1,86 @@
+{
+  "version": 2,
+  "name": "DF drive",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
+        { "id": "gps", "kind": "gps", "data": {}, "position": { "x": 0.0, "y": 420.0 } },
+        { "id": "scope", "kind": "scope", "position": { "x": 520.0, "y": -300.0 } },
+        {
+          "id": "array",
+          "kind": "array",
+          "data": {
+            "geometry": { "kind": "uca", "radius_m": 0.35, "first_deg": 0.0, "winding": "clockwise" },
+            "orientation": { "kind": "heading", "mount_offset_deg": 0.0 },
+            "declared": "time_sync",
+            "tuning": "together",
+            "cal": {
+              "source": { "kind": "noise" },
+              "check_s": 60,
+              "equaliser": false,
+              "warm_start": true
+            }
+          },
+          "position": { "x": 520.0, "y": 0.0 }
+        },
+        { "id": "df", "kind": "df", "data": {}, "position": { "x": 1040.0, "y": 0.0 } },
+        { "id": "fix", "kind": "triangulation", "data": {}, "position": { "x": 1560.0, "y": 0.0 } },
+        { "id": "map", "kind": "map", "position": { "x": 2080.0, "y": 0.0 } },
+        {
+          "id": "survey",
+          "kind": "signal_map",
+          "data": { "offset_hz": 0, "bandwidth_hz": 12500 },
+          "position": { "x": 1040.0, "y": 560.0 }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## DF drive\n\nFive lanes on one clock, which is a KrakenSDR or equivalent. A single dongle cannot run this: the lanes have to share a clock for the phases to mean anything.\n\n**Array** is the five antennas as one instrument. Mount element 1 facing forward and set the geometry to match your actual ring.\n\n**Direction finder** turns the array into bearings. Its wire to **Triangulation** is what crosses successive bearings into a position as you move, so a drive narrows the fix that a single bearing cannot.\n\n**GPS position** feeds the array its place and heading, and the fix its vehicle. Pick a paired phone here for both, and it gets directions to the fix.\n\n**Signal survey** maps raw signal strength along the same drive, which is the sanity check on a fix the bearings disagree about.\n\nTuned to 433.920 MHz."
+          },
+          "position": { "x": 0.0, "y": 900.0 }
+        }
+      ],
+      "edges": [
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "array", "port": "lane" } },
+        { "from": { "node": "dev", "port": "iq2" }, "to": { "node": "array", "port": "lane2" } },
+        { "from": { "node": "dev", "port": "iq3" }, "to": { "node": "array", "port": "lane3" } },
+        { "from": { "node": "dev", "port": "iq4" }, "to": { "node": "array", "port": "lane4" } },
+        { "from": { "node": "dev", "port": "iq5" }, "to": { "node": "array", "port": "lane5" } },
+        {
+          "from": { "node": "gps", "port": "position" },
+          "to": { "node": "array", "port": "position" }
+        },
+        {
+          "from": { "node": "array", "port": "array" },
+          "to": { "node": "df", "port": "array" }
+        },
+        { "from": { "node": "df", "port": "events" }, "to": { "node": "fix", "port": "events" } },
+        {
+          "from": { "node": "gps", "port": "position" },
+          "to": { "node": "fix", "port": "position" }
+        },
+        { "from": { "node": "fix", "port": "events" }, "to": { "node": "map", "port": "events" } },
+        {
+          "from": { "node": "gps", "port": "position" },
+          "to": { "node": "map", "port": "position" }
+        },
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "survey", "port": "iq" } },
+        {
+          "from": { "node": "gps", "port": "position" },
+          "to": { "node": "survey", "port": "position" }
+        }
+      ]
+    },
+    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      { "node": "dev", "settings": { "center_hz": 433920000.0, "sample_rate": 2400000.0 } }
+    ]
+  }
+}

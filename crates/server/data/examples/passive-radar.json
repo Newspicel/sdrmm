@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "name": "Passive radar",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
+        {
+          "id": "array",
+          "kind": "array",
+          "data": {
+            "geometry": { "kind": "uca", "radius_m": 0.35, "first_deg": 0.0, "winding": "clockwise" },
+            "orientation": { "kind": "fixed", "azimuth_deg": 0.0 },
+            "declared": "time_sync",
+            "tuning": "together",
+            "cal": {
+              "source": { "kind": "noise" },
+              "check_s": 60,
+              "equaliser": false,
+              "warm_start": true
+            }
+          },
+          "position": { "x": 520.0, "y": 0.0 }
+        },
+        { "id": "tx", "kind": "gps", "data": {}, "position": { "x": 520.0, "y": 480.0 } },
+        {
+          "id": "radar",
+          "kind": "passive_radar",
+          "data": {},
+          "position": { "x": 1040.0, "y": 0.0 }
+        },
+        { "id": "map", "kind": "map", "position": { "x": 1660.0, "y": 0.0 } },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Passive radar\n\nYou do not transmit. A broadcast FM station does, and this watches its signal bounce off aircraft.\n\n**Array** needs at least two coherent lanes: one antenna points at the transmitter for a clean reference, the others watch the sky. Set `reference_element` on the radar to whichever lane that is.\n\n**Passive radar** compares the two. What it subtracts is the direct signal and the ground clutter; what is left is the echo, and its delay and Doppler become a range and a speed.\n\n**GPS position** here is not your station. It is the **transmitter's** location, which the geometry needs to turn a delay into a position. Set it to a fixed point at the illuminator.\n\n**Map** draws the tracks.\n\nTune the Device to a strong local FM station. Strong matters more than close."
+          },
+          "position": { "x": 0.0, "y": 560.0 }
+        }
+      ],
+      "edges": [
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "array", "port": "lane" } },
+        { "from": { "node": "dev", "port": "iq2" }, "to": { "node": "array", "port": "lane2" } },
+        {
+          "from": { "node": "array", "port": "array" },
+          "to": { "node": "radar", "port": "array" }
+        },
+        { "from": { "node": "tx", "port": "position" }, "to": { "node": "radar", "port": "tx" } },
+        {
+          "from": { "node": "radar", "port": "events" },
+          "to": { "node": "map", "port": "events" }
+        }
+      ]
+    },
+    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      { "node": "dev", "settings": { "center_hz": 98000000.0, "sample_rate": 2400000.0 } }
+    ]
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "version": 2,
+  "name": "Array lab",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
+        { "id": "scope", "kind": "scope", "position": { "x": 520.0, "y": -400.0 } },
+        {
+          "id": "array",
+          "kind": "array",
+          "data": {
+            "geometry": { "kind": "uca", "radius_m": 0.35, "first_deg": 0.0, "winding": "clockwise" },
+            "orientation": { "kind": "fixed", "azimuth_deg": 0.0 },
+            "declared": "time_sync",
+            "tuning": "together",
+            "cal": {
+              "source": { "kind": "noise" },
+              "check_s": 60,
+              "equaliser": false,
+              "warm_start": true
+            }
+          },
+          "position": { "x": 520.0, "y": 0.0 }
+        },
+        {
+          "id": "spatial",
+          "kind": "spatial_spectrum",
+          "data": {},
+          "position": { "x": 1040.0, "y": -120.0 }
+        },
+        {
+          "id": "corr",
+          "kind": "correlator",
+          "data": {},
+          "position": { "x": 1040.0, "y": 420.0 }
+        },
+        {
+          "id": "pol",
+          "kind": "polarimeter",
+          "data": {},
+          "position": { "x": 1040.0, "y": 940.0 }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Array lab\n\nThree ways of measuring an array rather than listening to one. All three take the same `array` wire, so they run together.\n\n**Spatial spectrum** is bearing against frequency: a waterfall whose vertical axis is direction. Use it to see at a glance which direction each signal in the band arrives from, before pointing anything.\n\n**Correlator** reports the raw baseline visibilities, the per-pair phase and amplitude the other nodes consume as a middle step. When a direction finder gives nonsense, this is where you look: bad visibilities mean a cabling or calibration fault, not a bad algorithm.\n\n**Polarimeter** needs exactly two crossed antennas, set as `h_lane` and `v_lane`. It reports the wave's polarisation, and its beam output is the combination matched to it, which recovers a signal that a single fixed antenna receives badly.\n\nCalibrate the array before trusting any of them."
+          },
+          "position": { "x": 0.0, "y": 560.0 }
+        }
+      ],
+      "edges": [
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "scope", "port": "iq" } },
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "array", "port": "lane" } },
+        { "from": { "node": "dev", "port": "iq2" }, "to": { "node": "array", "port": "lane2" } },
+        {
+          "from": { "node": "array", "port": "array" },
+          "to": { "node": "spatial", "port": "array" }
+        },
+        {
+          "from": { "node": "array", "port": "array" },
+          "to": { "node": "corr", "port": "array" }
+        },
+        {
+          "from": { "node": "array", "port": "array" },
+          "to": { "node": "pol", "port": "array" }
+        }
+      ]
+    },
+    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      { "node": "dev", "settings": { "center_hz": 145000000.0, "sample_rate": 2400000.0 } }
+    ]
+  }
+}

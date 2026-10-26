@@ -1,0 +1,92 @@
+{
+  "version": 2,
+  "name": "Beam and stitch",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        { "id": "dev", "kind": "device", "data": {}, "position": { "x": 0.0, "y": 0.0 } },
+        {
+          "id": "array",
+          "kind": "array",
+          "data": {
+            "geometry": { "kind": "uca", "radius_m": 0.35, "first_deg": 0.0, "winding": "clockwise" },
+            "orientation": { "kind": "fixed", "azimuth_deg": 0.0 },
+            "declared": "time_sync",
+            "tuning": "together",
+            "cal": {
+              "source": { "kind": "noise" },
+              "check_s": 60,
+              "equaliser": false,
+              "warm_start": true
+            }
+          },
+          "position": { "x": 520.0, "y": 0.0 }
+        },
+        { "id": "df", "kind": "df", "data": {}, "position": { "x": 1040.0, "y": -360.0 } },
+        {
+          "id": "beam",
+          "kind": "beamformer",
+          "data": {},
+          "position": { "x": 1040.0, "y": 60.0 }
+        },
+        { "id": "stitch", "kind": "stitch", "data": {}, "position": { "x": 1040.0, "y": 520.0 } },
+        {
+          "id": "ch",
+          "kind": "channel",
+          "data": { "channel_type": "nfm", "tuning_locked": false },
+          "position": { "x": 1560.0, "y": 60.0 }
+        },
+        { "id": "spk", "kind": "speaker", "position": { "x": 2080.0, "y": 60.0 } },
+        { "id": "wide", "kind": "scope", "position": { "x": 1560.0, "y": 520.0 } },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Beam and stitch\n\nTwo things you can do with coherent lanes that one radio cannot.\n\n**Beamformer** combines the lanes so the array listens hardest in one direction. Its `steer` wire comes from the **Direction finder**, so it aims itself at whatever the DF currently sees: find the signal, then point at it, without turning anything by hand. Set `mode` to null instead and it does the opposite, putting a null on an interferer.\n\nThe beam leaves as one clean lane, so a **Channel** decodes it exactly as it would a plain radio.\n\n**Stitch** uses the same lanes for the other purpose: tune them to adjacent slices and it joins them into one band wider than any single radio could sample. The **Scope** on its output shows the joined span, with the seams flattened.\n\nYou cannot do both at full rate at once. Delete the half you are not using."
+          },
+          "position": { "x": 0.0, "y": 520.0 }
+        }
+      ],
+      "edges": [
+        { "from": { "node": "dev", "port": "iq" }, "to": { "node": "array", "port": "lane" } },
+        { "from": { "node": "dev", "port": "iq2" }, "to": { "node": "array", "port": "lane2" } },
+        {
+          "from": { "node": "array", "port": "array" },
+          "to": { "node": "df", "port": "array" }
+        },
+        {
+          "from": { "node": "array", "port": "array" },
+          "to": { "node": "beam", "port": "array" }
+        },
+        {
+          "from": { "node": "array", "port": "array" },
+          "to": { "node": "stitch", "port": "array" }
+        },
+        {
+          "from": { "node": "df", "port": "bearing" },
+          "to": { "node": "beam", "port": "steer" }
+        },
+        { "from": { "node": "beam", "port": "beam" }, "to": { "node": "ch", "port": "iq" } },
+        { "from": { "node": "ch", "port": "audio" }, "to": { "node": "spk", "port": "audio" } },
+        { "from": { "node": "stitch", "port": "wide" }, "to": { "node": "wide", "port": "iq" } }
+      ]
+    },
+    "rack": { "slots": [{ "node": "note", "x": 0, "y": 0, "w": 2, "h": 2 }] }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      { "node": "dev", "settings": { "center_hz": 145000000.0, "sample_rate": 2400000.0 } }
+    ],
+    "channels": [
+      {
+        "node": "ch",
+        "settings": {
+          "frequency_hz": 145500000.0,
+          "params": { "type": "nfm", "settings": {} }
+        }
+      }
+    ]
+  }
+}
