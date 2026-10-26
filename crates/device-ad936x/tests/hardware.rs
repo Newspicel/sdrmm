@@ -64,11 +64,15 @@ impl Drop for Radio {
     }
 }
 
-fn open() -> Radio {
+fn dial() -> Box<dyn SdrDevice> {
     let address = std::env::var(RADIO).expect("set SDRMM_AD936X to the radio's address");
     let driver = Ad936xDriver::searching([]);
     let info = driver.resolve(&address).expect("an addressable radio");
-    let device = driver.open(&info).expect("opens");
+    driver.open(&info).expect("opens")
+}
+
+fn open() -> Radio {
+    let device = dial();
     Radio {
         held: device.settings().clone(),
         device,
@@ -261,13 +265,6 @@ fn held(device: &dyn SdrDevice, name: &str) -> Option<serde_json::Value> {
         .map(|extra| extra.value.clone())
 }
 
-fn reopened() -> Box<dyn SdrDevice> {
-    let address = std::env::var(RADIO).expect("set SDRMM_AD936X to the radio's address");
-    let driver = Ad936xDriver::searching([]);
-    let info = driver.resolve(&address).expect("an addressable radio");
-    driver.open(&info).expect("opens a second time")
-}
-
 fn capture(device: &mut Radio, samples: usize) -> Vec<Sample> {
     let lanes = device.capabilities().rx_streams as usize;
     let taken: Arc<Mutex<Vec<Sample>>> = Arc::default();
@@ -333,7 +330,7 @@ fn a_real_radio_reads_out_its_temperature_and_signal_level() {
 #[test]
 #[ignore = "needs an AD936x radio at SDRMM_AD936X"]
 fn a_real_radio_holds_its_chip_settings() {
-    let mut device = open();
+    let mut device = dial();
     let names: Vec<String> = device
         .capabilities()
         .extra
@@ -361,21 +358,16 @@ fn a_real_radio_holds_its_chip_settings() {
         extra("agc_low", serde_json::json!(-15.0)),
         extra("ensm", serde_json::json!("fdd")),
     ];
+    let before: Vec<ExtraValue> = wanted
+        .iter()
+        .filter_map(|want| held(device.as_ref(), &want.name).map(|value| extra(&want.name, value)))
+        .collect();
     device
         .apply(&DeviceSettings {
             extra: wanted.to_vec(),
             ..DeviceSettings::default()
         })
         .expect("the chip takes them");
-    let fresh = reopened();
-    for want in &wanted {
-        assert_eq!(
-            held(fresh.as_ref(), &want.name).as_ref(),
-            Some(&want.value),
-            "{} reads back from the radio",
-            want.name
-        );
-    }
     assert!(
         device
             .apply(&DeviceSettings {
@@ -385,6 +377,23 @@ fn a_real_radio_holds_its_chip_settings() {
             .is_err(),
         "a low threshold above the high one is refused"
     );
+    drop(device);
+
+    let mut fresh = dial();
+    for want in &wanted {
+        assert_eq!(
+            held(fresh.as_ref(), &want.name).as_ref(),
+            Some(&want.value),
+            "{} reads back from the radio",
+            want.name
+        );
+    }
+    fresh
+        .apply(&DeviceSettings {
+            extra: before,
+            ..DeviceSettings::default()
+        })
+        .expect("the chip takes back what it held");
 }
 
 #[test]
