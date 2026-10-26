@@ -500,6 +500,64 @@ pub(super) async fn import_workspace(
     Ok(Json(CreatedRowId { id }))
 }
 
+impl From<crate::examples::ExampleError> for AppError {
+    fn from(err: crate::examples::ExampleError) -> Self {
+        match &err {
+            crate::examples::ExampleError::Unknown(id) => {
+                Self::not_found(format!("example {id} not found"))
+            }
+            crate::examples::ExampleError::Malformed { .. } => Self::internal(err.to_string()),
+        }
+    }
+}
+
+#[utoipa::path(
+    get, path = "/api/examples",
+    responses(
+        (
+            status = 200,
+            description = "Built-in example workspaces, importable as new workspaces",
+            body = ExamplesResponse,
+        ),
+        (status = 500, description = "A shipped example is malformed", body = ApiError),
+    ),
+)]
+pub(super) async fn list_examples() -> Result<Json<ExamplesResponse>, AppError> {
+    let examples = tokio::task::spawn_blocking(crate::examples::all).await??;
+    Ok(Json(ExamplesResponse { examples }))
+}
+
+#[utoipa::path(
+    post, path = "/api/examples/{id}/import",
+    params(("id" = String, Path, description = "Example id")),
+    responses(
+        (status = 200, description = "Example imported as a new workspace", body = CreatedRowId),
+        (status = 404, description = "No such example", body = ApiError),
+        (status = 500, description = "A shipped example is malformed", body = ApiError),
+    ),
+)]
+pub(super) async fn import_example(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<CreatedRowId>, AppError> {
+    let mut document = crate::examples::export(&id)?;
+    let notices = crate::store::upgrade_import(&mut document);
+    let export: WorkspaceExport = crate::json::from_value(&document).map_err(|err| {
+        AppError::internal(format!(
+            "the {id} example did not read as a workspace: {err}"
+        ))
+    })?;
+    let engine = state.engine.clone();
+    let store = state.store.clone();
+    let id = tokio::task::spawn_blocking(move || -> Result<i64, AppError> {
+        let id = store.import_workspace(&export, &notices)?;
+        engine.emit_scope(StateScope::Workspaces);
+        Ok(id)
+    })
+    .await??;
+    Ok(Json(CreatedRowId { id }))
+}
+
 #[utoipa::path(
     delete, path = "/api/workspaces/{id}/notices/{notice}",
     params(

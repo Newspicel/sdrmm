@@ -26,6 +26,7 @@ mod cps;
 mod decoderlog;
 mod devices;
 mod diagnostics;
+mod examples;
 mod fusion;
 mod mcp_canvas;
 mod nanovna;

@@ -2339,6 +2339,81 @@
         }
       }
     },
+    "/api/examples": {
+      "get": {
+        "operationId": "list_examples",
+        "responses": {
+          "200": {
+            "description": "Built-in example workspaces, importable as new workspaces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExamplesResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "A shipped example is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/examples/{id}/import": {
+      "post": {
+        "operationId": "import_example",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Example id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Example imported as a new workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedRowId"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such example",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "A shipped example is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/fusion/{node}": {
       "get": {
         "operationId": "get_fusion",
@@ -19014,6 +19089,85 @@
             }
           }
         ]
+      },
+      "ExampleInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "needs",
+          "node_kinds"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "needs": {
+            "$ref": "#/components/schemas/ExampleNeeds"
+          },
+          "node_kinds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeKind"
+            }
+          }
+        }
+      },
+      "ExampleNeeds": {
+        "type": "object",
+        "required": [
+          "radios",
+          "lanes",
+          "recordings",
+          "min_freq_hz",
+          "max_freq_hz"
+        ],
+        "properties": {
+          "lanes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max_freq_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "min_freq_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "radios": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "recordings": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ExamplesResponse": {
+        "type": "object",
+        "required": [
+          "examples"
+        ],
+        "properties": {
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExampleInfo"
+            }
+          }
+        }
       },
       "ExportFormat": {
         "type": "string",

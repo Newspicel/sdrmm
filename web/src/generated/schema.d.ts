@@ -724,6 +724,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_examples"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/examples/{id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["import_example"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fusion/{node}": {
         parameters: {
             query?: never;
@@ -5218,6 +5250,28 @@ export interface components {
             service: "influx";
             token?: string;
             url: string;
+        };
+        ExampleInfo: {
+            description: string;
+            id: string;
+            name: string;
+            needs: components["schemas"]["ExampleNeeds"];
+            node_kinds: components["schemas"]["NodeKind"][];
+        };
+        ExampleNeeds: {
+            /** Format: int32 */
+            lanes: number;
+            /** Format: double */
+            max_freq_hz: number;
+            /** Format: double */
+            min_freq_hz: number;
+            /** Format: int32 */
+            radios: number;
+            /** Format: int32 */
+            recordings: number;
+        };
+        ExamplesResponse: {
+            examples: components["schemas"]["ExampleInfo"][];
         };
         /** @enum {string} */
         ExportFormat: "csv" | "json";
@@ -12422,6 +12476,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DoctorReport"];
+                };
+            };
+        };
+    };
+    list_examples: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Built-in example workspaces, importable as new workspaces */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExamplesResponse"];
+                };
+            };
+            /** @description A shipped example is malformed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    import_example: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Example id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Example imported as a new workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedRowId"];
+                };
+            };
+            /** @description No such example */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description A shipped example is malformed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

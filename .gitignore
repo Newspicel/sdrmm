@@ -56,3 +56,5 @@ web/playwright-report/
 .dev.vars
 site/worker/worker-configuration.d.ts
 site/downloads/worker-configuration.d.ts
+
+.superpowers

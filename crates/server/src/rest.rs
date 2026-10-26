@@ -20,10 +20,10 @@ use sdrmm_wire::{
     CreateBookmarkRequest, CreatePresetRequest, CreateWorkspaceRequest, CreatedRowId,
     DecoderLogEntry, DecoderLogGroupsResponse, DecoderLogQuery, DecoderLogResponse, DeletedCount,
     DeviceInfo, DeviceSettings, DevicesResponse, DfFusionState, DiagnosticsReport, DoctorReport,
-    ErrorCode, ExportFormat, IonosondeReport, LicenseTextResponse, LocateQuery, LogGroupKey,
-    MAX_RECORDING_UPLOAD_BYTES, MAX_SATELLITE_QUERY_LEN, NmeaDevicesResponse, NodeBody,
-    OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport, PatchCatalog, PatchChannelRequest,
-    PatchGraph, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
+    ErrorCode, ExamplesResponse, ExportFormat, IonosondeReport, LicenseTextResponse, LocateQuery,
+    LogGroupKey, MAX_RECORDING_UPLOAD_BYTES, MAX_SATELLITE_QUERY_LEN, NmeaDevicesResponse,
+    NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport, PatchCatalog,
+    PatchChannelRequest, PatchGraph, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
     RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
     SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScannerStatus,
     ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo, TemplatesResponse,
@@ -435,6 +435,8 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(satellite_transmitters))
         .routes(routes!(list_templates))
         .routes(routes!(apply_template))
+        .routes(routes!(list_examples))
+        .routes(routes!(import_example))
         .routes(routes!(list_workspaces, create_workspace))
         .routes(routes!(import_workspace))
         .routes(routes!(dismiss_workspace_notice))
