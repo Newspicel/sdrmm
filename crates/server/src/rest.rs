@@ -356,6 +356,12 @@ pub(crate) fn reveal_path(
 }
 
 pub(crate) fn reconcile_recordings(dir: &std::path::Path, store: &Store) -> Result<(), AppError> {
+    if !dir
+        .try_exists()
+        .map_err(|err| AppError::internal(format!("reach {}: {err}", dir.display())))?
+    {
+        return Ok(());
+    }
     let library = scan_library(dir)
         .map_err(|err| AppError::internal(format!("scan {}: {err}", dir.display())))?;
     let mut kept = Vec::with_capacity(library.len());

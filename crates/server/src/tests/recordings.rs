@@ -307,6 +307,27 @@ async fn recordings_list_reconciles_planted_files_and_prunes_vanished_ones() {
 }
 
 #[tokio::test]
+async fn a_vanished_recordings_directory_keeps_the_index_instead_of_emptying_it() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let app = recording_router(dir.path());
+
+    let stem = dir.path().join("planted");
+    let block: Vec<num_complex::Complex<f32>> = vec![num_complex::Complex::new(0.5, -0.5); 4_800];
+    let mut writer =
+        sdrmm_recorder::SigmfWriter::create(&stem, 48_000.0, 7_100_000.0, "Foreign HW")
+            .expect("writer");
+    writer.write_block(&block).expect("write");
+    writer.finalize().expect("finalize");
+    assert_eq!(list_recordings(&app).await.len(), 1);
+
+    std::fs::remove_dir_all(dir.path()).expect("unmount");
+
+    let listed = list_recordings(&app).await;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].file, "planted");
+}
+
+#[tokio::test]
 async fn an_annotation_lands_in_the_sigmf_metadata_and_survives_a_reconcile() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let app = recording_router(dir.path());
