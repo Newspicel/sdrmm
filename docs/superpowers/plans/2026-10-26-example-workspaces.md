@@ -424,7 +424,7 @@ git commit -m "Examples: six receivers for one radio"
 | id | name | node kinds it must contain beyond device, array |
 |---|---|---|
 | `df-drive` | DF drive | `gps`, `df`, `triangulation`, `signal_map`, `map`, `note` |
-| `passive-radar` | Passive radar | `passive_radar`, `probe`, `gps`, `channel`, `map`, `note` |
+| `passive-radar` | Passive radar | `passive_radar`, `gps`, `map`, `note` |
 | `beam-and-stitch` | Beam and stitch | `beamformer`, `stitch`, `df`, `scope`, `note` |
 | `array-lab` | Array lab | `spatial_spectrum`, `correlator`, `polarimeter`, `note` |
 

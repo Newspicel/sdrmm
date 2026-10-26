@@ -3,11 +3,11 @@
 ## Problem
 
 Templates do not tell you which nodes a job needs. There are 36 of them and they
-instantiate 12 of the 40 node kinds. The other 28 appear in no template at all:
+instantiate 12 of the 39 node kinds. The other 27 appear in no template at all:
 
 ```
 beamformer  passive_radar  stitch  spatial_spectrum  correlator  polarimeter
-probe  recording  signal_gen  baseband_scope  signal_map  propagation
+recording  signal_gen  baseband_scope  signal_map  propagation
 spectrum_monitor  dmr_trunk  event_filter  audio_fx  event_output  recorder
 audio_recorder  baseband_recorder  time_machine  network_export  export
 scanner  hunt  satellite  rotator  note
@@ -144,11 +144,11 @@ being modified and re-shared, which a list description does not.
 | `trunked-talkgroups` | 1 radio | `dmr_trunk`, `audio_fx`, `audio_recorder` |
 | `network-feed` | 1 radio | `network_export`, `export`, `event_output` |
 | `df-drive` | 2 lanes | `signal_map` |
-| `passive-radar` | 2 lanes | `passive_radar`, `probe` |
+| `passive-radar` | 2 lanes | `passive_radar` |
 | `beam-and-stitch` | 2 lanes | `beamformer`, `stitch` |
 | `array-lab` | 2 lanes | `spatial_spectrum`, `correlator`, `polarimeter` |
 
-`note` is covered by all eleven. Together they cover all 28.
+`note` is covered by all eleven. Together they cover all 27.
 
 `no-radio` runs on a Signal generator, so the canvas can be learned before
 buying a dongle.

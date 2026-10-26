@@ -4,6 +4,7 @@
 |---|---|---|
 | Workspace | Nodes, wires, rack, radio settings, band-plan region | Keep a whole receiver |
 | Template | A ready-made receiver, built in | Start a common setup |
+| Example | A whole working workspace, built in | Learn which nodes a job needs |
 | Preset | Settings and channels of every open radio | Get back to a known state |
 | Bookmark | A frequency, a name, and an optional mode | Retune quickly |
 
@@ -57,6 +58,23 @@ template retunes that radio, sets its rate, and adds channels and outputs. Templ
 cannot run are greyed out.
 
 Undo removes the added nodes but leaves the radio's new frequency and rate.
+
+## Examples
+
+**Library → Examples** holds whole workspaces. **Import** adds one as a new workspace and switches
+to it, leaving the open one alone. A template changes the radio you already have; an example
+arrives with its own.
+
+Each row says what the example needs, and names the nodes it uses, so you can go the other way and
+find the example that shows a node you have not used. Nothing is greyed out: an example you lack
+the radios for still imports, and its Device and Recording nodes stand empty and say so, ready for
+you to pick replacements.
+
+Every example carries a **Note** naming each of its nodes and why it is there. The note travels
+with the workspace, so it survives your changes and an export.
+
+**No radio** runs on a Signal generator, so there is something to take apart before any hardware
+arrives.
 
 ## Presets
 
