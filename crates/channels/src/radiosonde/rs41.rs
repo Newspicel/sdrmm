@@ -38,6 +38,8 @@ pub(crate) const BLOCK_GPS_RAW: u8 = 0x7D;
 pub(crate) const BLOCK_EMPTY: u8 = 0x76;
 
 pub(crate) const STATUS_CALIBRATION_INDEX: usize = 23;
+const GPS_INFO_FIELDS_LEN: usize = 6;
+const GPS_POSITION_FIELDS_LEN: usize = 19;
 pub(crate) const PTU_SENSOR_TEMPERATURE: usize = 38;
 
 const SYNC_TOLERANCE: u32 = 4;
@@ -45,6 +47,16 @@ const SMOOTHING: f64 = 0.5;
 const MAX_CODEWORD: usize = 255;
 const CRC_POLY: u16 = 0x1021;
 const CRC_INIT: u16 = 0xFFFF;
+
+const fn fields_len(id: u8) -> usize {
+    match id {
+        BLOCK_STATUS => STATUS_CALIBRATION_INDEX + 1 + ptu::SUBFRAME_LEN,
+        BLOCK_PTU => PTU_SENSOR_TEMPERATURE + 2,
+        BLOCK_GPS_POSITION => GPS_POSITION_FIELDS_LEN,
+        BLOCK_GPS_INFO => GPS_INFO_FIELDS_LEN,
+        _ => 0,
+    }
+}
 
 pub(crate) fn crc(data: &[u8]) -> u16 {
     crc16_msb(CRC_POLY, CRC_INIT, data)
@@ -200,6 +212,11 @@ impl Rs41Frames {
             }
             if crc(&frame[pos + 2..end]) != u16_le(frame, end) {
                 self.rejected += u32::from(id != BLOCK_STATUS);
+                pos = end + 2;
+                continue;
+            }
+            if end - (pos + 2) < fields_len(id) {
+                self.rejected += 1;
                 pos = end + 2;
                 continue;
             }
@@ -368,5 +385,25 @@ impl Rs41 {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_block_too_short_for_its_fields_is_rejected_instead_of_read() {
+        let mut frames = Rs41Frames::new();
+        let mut frame = [0u8; EXTENDED_LEN];
+        let pos = BLOCKS_POS;
+        frame[pos] = BLOCK_STATUS;
+        frame[pos + 1] = 0;
+        frame[pos + 2..pos + 4].copy_from_slice(&crc(&[]).to_le_bytes());
+
+        let found = frames.blocks(&frame, pos + 4);
+
+        assert_eq!(found.status, None);
+        assert_eq!(frames.rejected(), 1);
     }
 }

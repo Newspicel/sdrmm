@@ -376,8 +376,10 @@ impl Decoder {
 
     fn push_text(&mut self, ch: char, out: &mut ChannelOutputs) {
         if self.tail == ['Z', 'C', 'Z', 'C'] {
+            self.tail = ['\0'; 4];
             if self.collecting {
-                self.body.truncate(self.body.len() - "ZCZ".len());
+                self.body
+                    .truncate(self.body.len().saturating_sub("ZCZ".len()));
                 self.emit_message(false, out);
             }
             self.body.clear();
@@ -389,7 +391,8 @@ impl Decoder {
             return;
         }
         if self.tail == ['N', 'N', 'N', 'N'] {
-            self.body.truncate(self.body.len() - "NNN".len());
+            self.body
+                .truncate(self.body.len().saturating_sub("NNN".len()));
             self.emit_message(true, out);
             return;
         }

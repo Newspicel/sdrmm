@@ -31,7 +31,10 @@ pub(super) fn raw_len(format: WmbusFormat, length: u8) -> Option<usize> {
             let data = usize::from(length - FORMAT_A_MIN_L);
             Some(FIRST_BLOCK + data + CRC * data.div_ceil(BLOCK))
         }
-        WmbusFormat::B if length >= FORMAT_B_MIN_L => Some(usize::from(length) + 1),
+        WmbusFormat::B if length >= FORMAT_B_MIN_L => {
+            let total = usize::from(length) + 1;
+            (total <= FORMAT_B_THIRD || total > FORMAT_B_THIRD + CRC).then_some(total)
+        }
         _ => None,
     }
 }
