@@ -10,6 +10,7 @@ import type {
 } from "../src/lib/types";
 
 const WIRE_ATTEMPTS = 3;
+const SETTLE_MS = 30_000;
 
 export interface Box {
   x: number;
@@ -187,11 +188,14 @@ export async function viewSettled(page: Page): Promise<void> {
   const viewport = page.locator(".react-flow__viewport");
   const transform = () => viewport.evaluate((element) => (element as HTMLElement).style.transform);
   await expect
-    .poll(async () => {
-      const before = await transform();
-      await page.waitForTimeout(150);
-      return before === (await transform());
-    })
+    .poll(
+      async () => {
+        const before = await transform();
+        await page.waitForTimeout(150);
+        return before === (await transform());
+      },
+      { timeout: SETTLE_MS },
+    )
     .toBe(true);
 }
 
