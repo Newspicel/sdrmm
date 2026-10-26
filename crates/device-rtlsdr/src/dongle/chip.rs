@@ -190,6 +190,12 @@ impl<T: Transport> Chip<T> {
         Ok(self.fetch(access, 1)?[0])
     }
 
+    fn send_demod(&self, access: Access, data: &[u8]) -> Result<()> {
+        let written = self.send(access, data);
+        self.read_demod(QUIRK_PAGE, QUIRK_REG).ok();
+        written
+    }
+
     pub(crate) fn write_demod(&self, page: u8, reg: u8, value: Value) -> Result<()> {
         let (bytes, len) = value.wire();
         let access = Access::Demod {
@@ -197,9 +203,13 @@ impl<T: Transport> Chip<T> {
             reg,
             dir: Dir::Write,
         };
-        self.send(access, &bytes[..len])?;
-        self.read_demod(QUIRK_PAGE, QUIRK_REG).ok();
-        Ok(())
+        match self.send_demod(access, &bytes[..len]) {
+            Err(stalled) if stalled.is_stall() => {
+                self.read_demod(page, reg).map_err(|_| stalled)?;
+                self.send_demod(access, &bytes[..len])
+            }
+            outcome => outcome,
+        }
     }
 
     pub(crate) fn demod(&self, page: u8, reg: u8, byte: u8) -> Result<()> {
@@ -342,6 +352,46 @@ mod tests {
                 Transfer::read(0x0120, 0x000a, 1),
             ]
         );
+    }
+
+    #[test]
+    fn a_stalled_demod_write_reads_the_register_and_writes_again() {
+        let (chip, fake) = chip();
+        fake.fail_writes(0x0120, 0x0001);
+        assert!(chip.demod(1, 0x01, 0x18).is_err());
+        assert_eq!(
+            fake.transfers(),
+            [
+                Transfer::write(0x0120, 0x0011, &[0x18]),
+                Transfer::read(0x0120, 0x000a, 1),
+                Transfer::read(0x0120, 0x0001, 1),
+                Transfer::write(0x0120, 0x0011, &[0x18]),
+                Transfer::read(0x0120, 0x000a, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_stall_that_cannot_read_the_register_back_surfaces_the_write() {
+        let (chip, fake) = chip();
+        fake.fail_writes(0x0120, 0x0001);
+        fake.fail_reads(0x0120, 0x0001);
+        let error = chip.demod(1, 0x01, 0x18).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                Error::Control {
+                    access: Access::Demod {
+                        page: 1,
+                        reg: 0x01,
+                        dir: Dir::Write
+                    },
+                    ..
+                }
+            ),
+            "{error}"
+        );
+        assert_eq!(fake.writes().len(), 1);
     }
 
     #[test]
