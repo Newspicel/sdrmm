@@ -43,6 +43,9 @@ impl Agc {
             self.gain = 1.0;
         }
         for s in samples {
+            if !s.is_finite() {
+                *s = 0.0;
+            }
             self.env += self.env_coeff * (*s * *s - self.env);
             let rms = self.env.max(0.0).sqrt();
             let desired = if rms > f32::MIN_POSITIVE {
@@ -130,6 +133,19 @@ mod tests {
         assert!(agc.gain().is_finite());
         let rms = rms_r(&loud[4_800..7_200]);
         assert!(within_3_db_of_target(rms), "rms {rms} after recovery");
+    }
+
+    #[test]
+    fn a_non_finite_sample_does_not_blast_the_rest_of_its_block() {
+        let mut agc = agc();
+        let mut block = vec![0.1f32; 480];
+        block[0] = f32::NAN;
+        agc.process(&mut block);
+
+        assert!(block.iter().all(|v| v.is_finite()), "{:?}", block[0]);
+        let peak = block[1..].iter().fold(0.0f32, |peak, v| peak.max(v.abs()));
+        assert!(peak < 0.5, "peak {peak} inside the poisoned block");
+        assert!(agc.gain() < 5.0, "gain {} ran toward max", agc.gain());
     }
 
     #[test]
