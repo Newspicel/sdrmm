@@ -203,7 +203,7 @@ symphonia-bundle-mp3 = { version = "0.6.1", default-features = false, features =
 ffmpeg-the-third = { version = "6.0.0", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
 
 # Persistence
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 jiff = "0.2"
 dirs = "7"
 
